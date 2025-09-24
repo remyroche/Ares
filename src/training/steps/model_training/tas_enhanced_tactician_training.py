@@ -1,7 +1,7 @@
 """
-TAS-Enhanced Tactician for 1m Timeframe Trading
+TAS-Enhanced Tactician Training Step
 
-This module implements the Tactician with TAS (Tree Architecture Search) integration
+This module implements the Tactician training with TAS (Tree Architecture Search) integration
 for 1m timeframe entry point optimization and trading signal generation.
 
 Key Features:
@@ -27,16 +27,16 @@ from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine impo
     EnhancedTASEngine, TASConfig, TASResult, TreeSearchStrategy
 )
 
-# Import existing Tactician components
-from src.tactician.tactician import Tactician
+# Import existing training components
+from src.training.steps.model_training.tactician_models_training_refactored import TacticianModelsTrainingStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
 
 logger = logging.getLogger(__name__)
 
 @dataclass
-class TASEnhancedTacticianConfig:
-    """Configuration for TAS-Enhanced Tactician."""
+class TASEnhancedTacticianTrainingConfig:
+    """Configuration for TAS-Enhanced Tactician Training."""
     # TAS Configuration
     tas_config: TASConfig
     enable_tas_architecture_search: bool = True
@@ -65,30 +65,27 @@ class TASEnhancedTacticianConfig:
                 "LGBMRegressor", 
                 "Ridge",
                 "ElasticNet",
-                "RandomForestRegressor",
-                "TAS_Discovered_Ensemble",  # TAS-discovered ensemble
-                "TAS_Discovered_Tree",      # TAS-discovered tree
-                "TAS_Discovered_Boosting"   # TAS-discovered boosting
+                "RandomForestRegressor"
             ]
 
-class TASEnhancedTactician:
+class TASEnhancedTacticianTrainingStep:
     """
-    TAS-Enhanced Tactician with sophisticated entry point optimization.
+    TAS-Enhanced Tactician Training Step with sophisticated entry point optimization.
     
     This class integrates TAS (Tree Architecture Search) as the base model for
     the Tactician, providing enhanced entry point optimization for 1m timeframe.
     """
     
-    def __init__(self, config: TASEnhancedTacticianConfig):
-        """Initialize TAS-Enhanced Tactician."""
+    def __init__(self, config: TASEnhancedTacticianTrainingConfig):
+        """Initialize TAS-Enhanced Tactician Training Step."""
         self.config = config
-        self.logger = system_logger.getChild("TASEnhancedTactician")
+        self.logger = system_logger.getChild("TASEnhancedTacticianTrainingStep")
         
         # Initialize TAS engine
         self.tas_engine = EnhancedTASEngine(config.tas_config)
         
-        # Initialize base Tactician
-        self.base_tactician = Tactician()
+        # Initialize base Tactician training step
+        self.base_tactician_training = TacticianModelsTrainingStep()
         
         # Model storage
         self.tas_architectures = {}  # TAS-discovered architectures
@@ -101,7 +98,7 @@ class TASEnhancedTactician:
         self.performance_history = []
         self.adaptation_history = []
         
-        self.logger.info("✅ TAS-Enhanced Tactician initialized")
+        self.logger.info("✅ TAS-Enhanced Tactician Training Step initialized")
         self.logger.info(f"   Timeframe: {config.tactician_timeframe}")
         self.logger.info(f"   TAS enabled: {config.enable_tas_architecture_search}")
         self.logger.info(f"   XGBoost removed: {config.remove_xgboost}")
@@ -109,29 +106,37 @@ class TASEnhancedTactician:
         self.logger.info(f"   Boosting: {config.enable_boosting}")
         self.logger.info(f"   Bagging: {config.enable_bagging}")
     
-    async def train_with_tas_integration(self, 
-                                       X_1m: np.ndarray, 
-                                       y_1m: np.ndarray, 
-                                       analyst_signals: np.ndarray,
-                                       analyst_outputs: Optional[Dict[str, Any]] = None,
-                                       market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    async def execute_training_step(self, 
+                                  training_input: Dict[str, Any], 
+                                  pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Train Tactician with TAS integration for 1m timeframe.
+        Execute TAS-Enhanced Tactician training step.
         
         Args:
-            X_1m: 1m timeframe features
-            y_1m: 1m timeframe targets
-            analyst_signals: Analyst directional signals (1=long, -1=short, 0=neutral)
-            analyst_outputs: Optional Analyst model outputs
-            market_data: Optional market data for enhanced training
+            training_input: Training input data
+            pipeline_state: Current pipeline state
             
         Returns:
             Training results with TAS integration
         """
         start_time = time.time()
-        self.logger.info("🚀 Starting TAS-Enhanced Tactician training...")
+        self.logger.info("🚀 Starting TAS-Enhanced Tactician training step...")
         
         try:
+            # Extract training data
+            X_1m = training_input.get('X_1m')
+            y_1m = training_input.get('y_1m')
+            analyst_signals = training_input.get('analyst_signals')
+            analyst_outputs = training_input.get('analyst_outputs')
+            market_data = training_input.get('market_data')
+            
+            if X_1m is None or y_1m is None or analyst_signals is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required training data',
+                    'step_name': 'tas_enhanced_tactician_training'
+                }
+            
             # Step 1: Filter data to only include Analyst green light periods
             green_light_data = await self._filter_green_light_data(
                 X_1m, y_1m, analyst_signals
@@ -142,6 +147,7 @@ class TASEnhancedTactician:
                 return {
                     'success': False,
                     'error': 'Insufficient green light data',
+                    'step_name': 'tas_enhanced_tactician_training',
                     'metadata': {'green_light_count': green_light_data['X_filtered'].shape[0]}
                 }
             
@@ -203,6 +209,7 @@ class TASEnhancedTactician:
             results = {
                 'success': True,
                 'execution_time': execution_time,
+                'step_name': 'tas_enhanced_tactician_training',
                 'green_light_data': green_light_data,
                 'tas_results': tas_results,
                 'tree_ensemble_results': tree_ensemble_results,
@@ -225,19 +232,20 @@ class TASEnhancedTactician:
                 }
             }
             
-            self.logger.info(f"✅ TAS-Enhanced Tactician training completed in {execution_time:.2f}s")
+            self.logger.info(f"✅ TAS-Enhanced Tactician training step completed in {execution_time:.2f}s")
             self._log_training_summary(results)
             
             return results
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"❌ TAS-Enhanced Tactician training failed: {e}")
+            self.logger.error(f"❌ TAS-Enhanced Tactician training step failed: {e}")
             
             return {
                 'success': False,
                 'execution_time': execution_time,
                 'error': str(e),
+                'step_name': 'tas_enhanced_tactician_training',
                 'metadata': {'error': str(e)}
             }
     
@@ -937,9 +945,9 @@ class TASEnhancedTactician:
             return False
 
 
-# Factory function for creating TAS-Enhanced Tactician
-def create_tas_enhanced_tactician(config: Optional[TASEnhancedTacticianConfig] = None) -> TASEnhancedTactician:
-    """Create TAS-Enhanced Tactician instance."""
+# Factory function for creating TAS-Enhanced Tactician Training Step
+def create_tas_enhanced_tactician_training_step(config: Optional[TASEnhancedTacticianTrainingConfig] = None) -> TASEnhancedTacticianTrainingStep:
+    """Create TAS-Enhanced Tactician Training Step instance."""
     if config is None:
         # Default configuration
         tas_config = TASConfig(
@@ -961,7 +969,7 @@ def create_tas_enhanced_tactician(config: Optional[TASEnhancedTacticianConfig] =
             allow_ensemble_methods=True
         )
         
-        config = TASEnhancedTacticianConfig(
+        config = TASEnhancedTacticianTrainingConfig(
             tas_config=tas_config,
             enable_tas_architecture_search=True,
             remove_xgboost=True,
@@ -970,4 +978,4 @@ def create_tas_enhanced_tactician(config: Optional[TASEnhancedTacticianConfig] =
             enable_bagging=True
         )
     
-    return TASEnhancedTactician(config)
+    return TASEnhancedTacticianTrainingStep(config)

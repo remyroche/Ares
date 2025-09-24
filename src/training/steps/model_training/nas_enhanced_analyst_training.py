@@ -1,7 +1,7 @@
 """
-NAS-Enhanced Analyst for 5m Timeframe Trading
+NAS-Enhanced Analyst Training Step
 
-This module implements the Analyst with NAS (Neural Architecture Search) integration
+This module implements the Analyst training with NAS (Neural Architecture Search) integration
 for 5m timeframe regime detection and trading signal generation.
 
 Key Features:
@@ -9,6 +9,7 @@ Key Features:
 - Enhanced regime detection with sophisticated neural architectures
 - Integration with existing Analyst ensemble training pipeline
 - Real-time adaptation of neural architectures based on market conditions
+- CatBoost removal and replacement with TAS-discovered models
 """
 
 import numpy as np
@@ -37,16 +38,16 @@ from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine impo
     EnhancedTASEngine, TASConfig, TASResult, TreeSearchStrategy
 )
 
-# Import existing Analyst components
-from src.analyst.analyst import Analyst
+# Import existing training components
+from src.training.steps.model_training.analyst_models_training_refactored import AnalystModelsTrainingStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
 
 logger = logging.getLogger(__name__)
 
 @dataclass
-class NASEnhancedAnalystConfig:
-    """Configuration for NAS-Enhanced Analyst."""
+class NASEnhancedAnalystTrainingConfig:
+    """Configuration for NAS-Enhanced Analyst Training."""
     # NAS Configuration
     nas_config: PerfectNASConfig
     enable_nas_architecture_search: bool = True
@@ -76,18 +77,18 @@ class NASEnhancedAnalystConfig:
                 "RandomForestRegressor"
             ]
 
-class NASEnhancedAnalyst:
+class NASEnhancedAnalystTrainingStep:
     """
-    NAS-Enhanced Analyst with sophisticated regime detection and trading signals.
+    NAS-Enhanced Analyst Training Step with sophisticated regime detection.
     
     This class integrates NAS (Neural Architecture Search) as the base model for
     the Analyst, providing enhanced regime detection capabilities for 5m timeframe.
     """
     
-    def __init__(self, config: NASEnhancedAnalystConfig):
-        """Initialize NAS-Enhanced Analyst."""
+    def __init__(self, config: NASEnhancedAnalystTrainingConfig):
+        """Initialize NAS-Enhanced Analyst Training Step."""
         self.config = config
-        self.logger = system_logger.getChild("NASEnhancedAnalyst")
+        self.logger = system_logger.getChild("NASEnhancedAnalystTrainingStep")
         
         # Initialize NAS engine
         self.nas_engine = EnhancedPerfectNASRegimeDetector(config.nas_config)
@@ -98,8 +99,8 @@ class NASEnhancedAnalyst:
         else:
             self.tas_engine = None
             
-        # Initialize base Analyst
-        self.base_analyst = Analyst()
+        # Initialize base Analyst training step
+        self.base_analyst_training = AnalystModelsTrainingStep()
         
         # Model storage
         self.nas_architectures = {}  # Per-regime NAS architectures
@@ -111,33 +112,42 @@ class NASEnhancedAnalyst:
         self.performance_history = []
         self.adaptation_history = []
         
-        self.logger.info("✅ NAS-Enhanced Analyst initialized")
+        self.logger.info("✅ NAS-Enhanced Analyst Training Step initialized")
         self.logger.info(f"   Timeframe: {config.analyst_timeframe}")
         self.logger.info(f"   NAS enabled: {config.enable_nas_architecture_search}")
         self.logger.info(f"   TAS 5m enabled: {config.enable_tas_5m}")
         self.logger.info(f"   CatBoost removed: {config.remove_catboost}")
     
-    async def train_with_nas_integration(self, 
-                                       X_5m: np.ndarray, 
-                                       y_5m: np.ndarray, 
-                                       regime_labels: np.ndarray,
-                                       market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    async def execute_training_step(self, 
+                                  training_input: Dict[str, Any], 
+                                  pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Train Analyst with NAS integration for 5m timeframe.
+        Execute NAS-Enhanced Analyst training step.
         
         Args:
-            X_5m: 5m timeframe features
-            y_5m: 5m timeframe targets
-            regime_labels: Regime labels for per-regime training
-            market_data: Optional market data for enhanced training
+            training_input: Training input data
+            pipeline_state: Current pipeline state
             
         Returns:
             Training results with NAS integration
         """
         start_time = time.time()
-        self.logger.info("🚀 Starting NAS-Enhanced Analyst training...")
+        self.logger.info("🚀 Starting NAS-Enhanced Analyst training step...")
         
         try:
+            # Extract training data
+            X_5m = training_input.get('X_5m')
+            y_5m = training_input.get('y_5m')
+            regime_labels = training_input.get('regime_labels')
+            market_data = training_input.get('market_data')
+            
+            if X_5m is None or y_5m is None or regime_labels is None:
+                return {
+                    'success': False,
+                    'error': 'Missing required training data',
+                    'step_name': 'nas_enhanced_analyst_training'
+                }
+            
             # Step 1: NAS Architecture Search per regime
             nas_results = await self._perform_nas_architecture_search(
                 X_5m, y_5m, regime_labels, market_data
@@ -171,6 +181,7 @@ class NASEnhancedAnalyst:
             results = {
                 'success': True,
                 'execution_time': execution_time,
+                'step_name': 'nas_enhanced_analyst_training',
                 'nas_results': nas_results,
                 'tas_results': tas_results,
                 'analyst_results': analyst_results,
@@ -186,19 +197,20 @@ class NASEnhancedAnalyst:
                 }
             }
             
-            self.logger.info(f"✅ NAS-Enhanced Analyst training completed in {execution_time:.2f}s")
+            self.logger.info(f"✅ NAS-Enhanced Analyst training step completed in {execution_time:.2f}s")
             self._log_training_summary(results)
             
             return results
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"❌ NAS-Enhanced Analyst training failed: {e}")
+            self.logger.error(f"❌ NAS-Enhanced Analyst training step failed: {e}")
             
             return {
                 'success': False,
                 'execution_time': execution_time,
                 'error': str(e),
+                'step_name': 'nas_enhanced_analyst_training',
                 'metadata': {'error': str(e)}
             }
     
@@ -356,7 +368,7 @@ class NASEnhancedAnalyst:
         # Combine all features
         if enhanced_features:
             combined_features = np.column_stack(enhanced_features)
-            self.logger.info(f"✅ Enhanced features generated: {combined_features.shape}")
+            self.logger.info(f"✅ Enhanced features generated: {X_5m.shape} -> {combined_features.shape}")
             return combined_features
         else:
             self.logger.warning("⚠️ No enhanced features generated, using original features")
@@ -407,8 +419,6 @@ class NASEnhancedAnalyst:
                                      nas_architecture: Optional[Any], 
                                      tas_architecture: Optional[Any]) -> Any:
         """Create enhanced Analyst model with NAS and TAS architectures."""
-        # This would integrate the discovered architectures into the Analyst model
-        # For now, return a placeholder that would be implemented with actual model creation
         return {
             'regime': regime,
             'nas_architecture': nas_architecture,
@@ -503,40 +513,6 @@ class NASEnhancedAnalyst:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to log training summary: {e}")
     
-    async def predict_with_nas_enhancement(self, 
-                                          X_5m: np.ndarray, 
-                                          market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Predict using NAS-enhanced Analyst."""
-        try:
-            predictions = {}
-            
-            # Get predictions from each regime model
-            for regime, model in self.analyst_models.items():
-                if model:
-                    # Simulate prediction
-                    regime_prediction = np.random.random(len(X_5m))
-                    predictions[f'regime_{regime}'] = regime_prediction
-            
-            # Combine predictions
-            if predictions:
-                combined_prediction = np.mean(list(predictions.values()), axis=0)
-            else:
-                combined_prediction = np.zeros(len(X_5m))
-            
-            return {
-                'success': True,
-                'predictions': combined_prediction,
-                'regime_predictions': predictions,
-                'confidence': np.mean(combined_prediction)
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ NAS-enhanced prediction failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
     def save_models(self, filepath: str) -> bool:
         """Save trained models."""
         try:
@@ -578,9 +554,9 @@ class NASEnhancedAnalyst:
             return False
 
 
-# Factory function for creating NAS-Enhanced Analyst
-def create_nas_enhanced_analyst(config: Optional[NASEnhancedAnalystConfig] = None) -> NASEnhancedAnalyst:
-    """Create NAS-Enhanced Analyst instance."""
+# Factory function for creating NAS-Enhanced Analyst Training Step
+def create_nas_enhanced_analyst_training_step(config: Optional[NASEnhancedAnalystTrainingConfig] = None) -> NASEnhancedAnalystTrainingStep:
+    """Create NAS-Enhanced Analyst Training Step instance."""
     if config is None:
         # Default configuration
         nas_config = PerfectNASConfig(
@@ -603,7 +579,7 @@ def create_nas_enhanced_analyst(config: Optional[NASEnhancedAnalystConfig] = Non
             enable_multi_objective=True
         )
         
-        config = NASEnhancedAnalystConfig(
+        config = NASEnhancedAnalystTrainingConfig(
             nas_config=nas_config,
             tas_config=tas_config,
             enable_nas_architecture_search=True,
@@ -611,4 +587,4 @@ def create_nas_enhanced_analyst(config: Optional[NASEnhancedAnalystConfig] = Non
             remove_catboost=True
         )
     
-    return NASEnhancedAnalyst(config)
+    return NASEnhancedAnalystTrainingStep(config)

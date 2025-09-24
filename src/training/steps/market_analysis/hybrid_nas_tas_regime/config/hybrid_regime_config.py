@@ -19,6 +19,9 @@ class RegimeCombinationStrategy(Enum):
     ECONOMIC_PRIORITY = "economic_priority"
     ADAPTIVE_FUSION = "adaptive_fusion"
     MULTI_OBJECTIVE = "multi_objective"
+    HIERARCHICAL = "hierarchical"
+    PERFORMANCE_ADAPTIVE = "performance_adaptive"
+    DYNAMIC_WEIGHTING = "dynamic_weighting"
 
 
 class EconomicSignificanceType(Enum):
@@ -29,6 +32,25 @@ class EconomicSignificanceType(Enum):
     CORRELATION_STRUCTURE = "correlation_structure"
     MARKET_EFFICIENCY = "market_efficiency"
     LIQUIDITY_REGIME = "liquidity_regime"
+    MICRO_REGIME = "micro_regime"
+    REGIME_STABILITY = "regime_stability"
+    TRANSITION_PROBABILITY = "transition_probability"
+
+
+class ClusteringAlgorithm(Enum):
+    """Available clustering algorithms."""
+    KMEANS = "kmeans"
+    HIERARCHICAL = "hierarchical"
+    DBSCAN = "dbscan"
+    GMM = "gmm"
+    HDBSCAN = "hdbscan"
+    SPECTRAL = "spectral"
+    OPTICS = "optics"
+    BIRCH = "birch"
+    AGGLOMERATIVE = "agglomerative"
+    MEANSHIFT = "meanshift"
+    ADAPTIVE = "adaptive"
+    ENSEMBLE = "ensemble"
 
 
 @dataclass
@@ -46,23 +68,35 @@ class HybridRegimeConfig:
     # Number of regimes to detect
     n_regimes: int = 8
 
-    # TAS (Tree Architecture Search) integration
+    # TAS (Tree Architecture Search) integration with adaptive weighting
     tas_config: Dict[str, Any] = field(default_factory=lambda: {
         "clustering_strategy": "auto",
         "tree_models": ["random_forest", "xgboost", "lightgbm", "extra_trees"],
         "max_features_per_model": 50,
         "min_feature_importance": 0.01,
-        "weight": 0.4  # Weight in hybrid combination
+        "base_weight": 0.4,  # Base weight in hybrid combination
+        "performance_weight": 0.3,  # Weight based on performance
+        "adaptive_weighting": True,
+        "performance_metrics": ["accuracy", "stability", "economic_significance"],
+        "weight_update_frequency": 50,  # Update weights every N samples
+        "min_weight": 0.1,  # Minimum weight allowed
+        "max_weight": 0.9   # Maximum weight allowed
     })
 
-    # NAS (Neural Architecture Search) integration
+    # NAS (Neural Architecture Search) integration with adaptive weighting
     nas_config: Dict[str, Any] = field(default_factory=lambda: {
         "primary_architecture": "hybrid",
         "enable_neural_odes": True,
         "enable_vision_transformers": True,
         "enable_meta_learning": True,
         "search_strategy": "evolutionary",
-        "weight": 0.6  # Weight in hybrid combination
+        "base_weight": 0.6,  # Base weight in hybrid combination
+        "performance_weight": 0.3,  # Weight based on performance
+        "adaptive_weighting": True,
+        "performance_metrics": ["accuracy", "stability", "economic_significance"],
+        "weight_update_frequency": 50,  # Update weights every N samples
+        "min_weight": 0.1,  # Minimum weight allowed
+        "max_weight": 0.9   # Maximum weight allowed
     })
 
     # Economic significance evaluation
@@ -74,7 +108,10 @@ class HybridRegimeConfig:
             EconomicSignificanceType.VOLUME_PROFILE.value,
             EconomicSignificanceType.CORRELATION_STRUCTURE.value,
             EconomicSignificanceType.MARKET_EFFICIENCY.value,
-            EconomicSignificanceType.LIQUIDITY_REGIME.value
+            EconomicSignificanceType.LIQUIDITY_REGIME.value,
+            EconomicSignificanceType.MICRO_REGIME.value,
+            EconomicSignificanceType.REGIME_STABILITY.value,
+            EconomicSignificanceType.TRANSITION_PROBABILITY.value
         ],
         "min_significance_score": 0.7,
         "volatility_threshold": 0.3,
@@ -93,14 +130,29 @@ class HybridRegimeConfig:
         "transition_smoothness": 0.8   # Smoothness of regime transitions
     })
 
-    # Clustering parameters
+    # Advanced clustering parameters
     clustering_config: Dict[str, Any] = field(default_factory=lambda: {
-        "algorithm": "adaptive",  # adaptive, kmeans, dbscan, agglomerative
+        "primary_algorithm": ClusteringAlgorithm.ADAPTIVE,
+        "ensemble_algorithms": [
+            ClusteringAlgorithm.KMEANS,
+            ClusteringAlgorithm.HIERARCHICAL,
+            ClusteringAlgorithm.DBSCAN,
+            ClusteringAlgorithm.GMM
+        ],
         "distance_metric": "euclidean",
         "min_cluster_size": 20,
         "max_cluster_size": None,
         "cluster_validation": True,
-        "optimize_clusters": True
+        "optimize_clusters": True,
+        "hybrid_clustering": True,
+        "regime_specific_clustering": True,
+        "economic_weights": True,
+        "financial_weights": True,
+        "ensemble_method": "voting",  # voting, stacking, bagging
+        "frontier_analysis": True,
+        "regime_transfer_optimization": True,
+        "matrix_optimization": True,
+        "hardware_acceleration": True
     })
 
     # Feature engineering
@@ -129,7 +181,7 @@ class HybridRegimeConfig:
         "backtesting_periods": 100
     })
 
-    # Performance and optimization
+    # Performance and optimization with adaptive weighting
     performance_config: Dict[str, Any] = field(default_factory=lambda: {
         "parallel_processing": True,
         "max_workers": None,  # Auto-detect
@@ -137,7 +189,12 @@ class HybridRegimeConfig:
         "gpu_acceleration": True,
         "cache_results": True,
         "cache_directory": "cache/hybrid_regime",
-        "execution_timeout": 300  # seconds
+        "execution_timeout": 300,  # seconds
+        "adaptive_weighting": True,
+        "performance_tracking": True,
+        "weight_optimization": True,
+        "matrix_optimization": True,
+        "hardware_acceleration": True
     })
 
     # Output and reporting
@@ -151,13 +208,24 @@ class HybridRegimeConfig:
         "report_format": ["json", "csv", "html"]
     })
 
-    # Regime tagging configuration
+    # Enhanced regime tagging configuration
     tagging_config: Dict[str, Any] = field(default_factory=lambda: {
         "tag_existing_data": True,
-        "tag_columns": ["regime_id", "regime_confidence", "economic_significance", "financial_relevance"],
+        "tag_columns": [
+            "regime_id", "regime_confidence", "economic_significance",
+            "financial_relevance", "regime_stability", "micro_regime_id",
+            "transition_probability", "regime_duration", "tag_validation_score"
+        ],
         "update_frequency": "daily",
         "preserve_original_data": True,
-        "tag_historical_data": True
+        "tag_historical_data": True,
+        "confidence_threshold": 0.7,
+        "validation_enabled": True,
+        "consistency_checking": True,
+        "tag_persistence": True,
+        "history_management": True,
+        "batch_size": 1000,
+        "max_history_days": 365
     })
 
 
@@ -192,5 +260,45 @@ def create_adaptive_config() -> HybridRegimeConfig:
     config = HybridRegimeConfig()
     config.combination_strategy = RegimeCombinationStrategy.ADAPTIVE_FUSION
     config.performance_config["parallel_processing"] = True
-    config.clustering_config["algorithm"] = "adaptive"
+    config.clustering_config["primary_algorithm"] = ClusteringAlgorithm.ADAPTIVE
+    config.tas_config["adaptive_weighting"] = True
+    config.nas_config["adaptive_weighting"] = True
+    return config
+
+
+def create_hierarchical_config() -> HybridRegimeConfig:
+    """Create configuration with hierarchical integration strategy."""
+    config = HybridRegimeConfig()
+    config.combination_strategy = RegimeCombinationStrategy.HIERARCHICAL
+    config.clustering_config["primary_algorithm"] = ClusteringAlgorithm.HIERARCHICAL
+    config.clustering_config["ensemble_algorithms"] = [
+        ClusteringAlgorithm.HIERARCHICAL,
+        ClusteringAlgorithm.AGGLOMERATIVE,
+        ClusteringAlgorithm.KMEANS
+    ]
+    return config
+
+
+def create_ensemble_config() -> HybridRegimeConfig:
+    """Create configuration with ensemble integration strategy."""
+    config = HybridRegimeConfig()
+    config.combination_strategy = RegimeCombinationStrategy.ENSEMBLE_VOTING
+    config.clustering_config["ensemble_method"] = "voting"
+    config.clustering_config["ensemble_algorithms"] = [
+        ClusteringAlgorithm.KMEANS,
+        ClusteringAlgorithm.GMM,
+        ClusteringAlgorithm.HIERARCHICAL,
+        ClusteringAlgorithm.DBSCAN
+    ]
+    return config
+
+
+def create_performance_adaptive_config() -> HybridRegimeConfig:
+    """Create configuration with performance-adaptive weighting."""
+    config = HybridRegimeConfig()
+    config.combination_strategy = RegimeCombinationStrategy.PERFORMANCE_ADAPTIVE
+    config.tas_config["adaptive_weighting"] = True
+    config.nas_config["adaptive_weighting"] = True
+    config.performance_config["weight_optimization"] = True
+    config.performance_config["performance_tracking"] = True
     return config

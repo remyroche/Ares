@@ -66,7 +66,7 @@ class TASIntegrationComponent:
 
     def extract_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Extract features using TAS approach.
+        Extract features using TAS approach with adaptive weighting.
 
         Args:
             market_data: Market data for feature extraction
@@ -82,13 +82,19 @@ class TASIntegrationComponent:
                 # Extract features from TAS results
                 features = self._extract_features_from_tas_results(tas_results)
 
+                # Calculate adaptive weight based on performance
+                adaptive_weight = self._calculate_adaptive_weight(tas_results)
+
                 # Add metadata
                 metadata = {
                     'method': 'tas_detector',
                     'feature_dimensions': features.shape[1] if features.ndim > 1 else 1,
                     'confidence': tas_results.get('clustering_metrics', {}).get('silhouette_score', 0.5),
                     'strategy': tas_results.get('strategy', 'unknown'),
-                    'execution_time': tas_results.get('execution_time', 0.0)
+                    'execution_time': tas_results.get('execution_time', 0.0),
+                    'adaptive_weight': adaptive_weight,
+                    'performance_metrics': self._extract_performance_metrics(tas_results),
+                    'feature_quality': self._calculate_feature_quality(features)
                 }
 
                 return features, metadata
@@ -283,6 +289,103 @@ class TASIntegrationComponent:
         except Exception as e:
             self.logger.warning(f"Feature confidence calculation failed: {e}")
             return 0.5
+
+    def _calculate_adaptive_weight(self, tas_results: Dict[str, Any]) -> float:
+        """Calculate adaptive weight based on TAS performance."""
+        try:
+            base_weight = self.config.get('base_weight', 0.4)
+            performance_weight = self.config.get('performance_weight', 0.3)
+
+            # Extract performance metrics
+            metrics = tas_results.get('clustering_metrics', {})
+
+            # Calculate performance score
+            performance_score = 0.0
+
+            # Silhouette score (0-1, higher is better)
+            silhouette = metrics.get('silhouette_score', 0.0)
+            performance_score += 0.4 * max(0, min(1, silhouette))
+
+            # Calinski-Harabasz score (normalized)
+            ch_score = metrics.get('calinski_harabasz_score', 0.0)
+            ch_normalized = min(ch_score / 1000.0, 1.0)  # Normalize to reasonable range
+            performance_score += 0.3 * max(0, ch_normalized)
+
+            # Davies-Bouldin score (lower is better, invert)
+            db_score = metrics.get('davies_bouldin_score', 1.0)
+            db_inverted = max(0, 1 - db_score)
+            performance_score += 0.3 * db_inverted
+
+            # Calculate adaptive weight
+            adaptive_weight = base_weight + performance_weight * performance_score
+
+            # Apply bounds
+            min_weight = self.config.get('min_weight', 0.1)
+            max_weight = self.config.get('max_weight', 0.9)
+
+            return max(min_weight, min(max_weight, adaptive_weight))
+
+        except Exception as e:
+            self.logger.warning(f"Adaptive weight calculation failed: {e}")
+            return self.config.get('base_weight', 0.4)
+
+    def _extract_performance_metrics(self, tas_results: Dict[str, Any]) -> Dict[str, float]:
+        """Extract performance metrics from TAS results."""
+        try:
+            metrics = tas_results.get('clustering_metrics', {})
+
+            return {
+                'silhouette_score': metrics.get('silhouette_score', 0.0),
+                'calinski_harabasz_score': metrics.get('calinski_harabasz_score', 0.0),
+                'davies_bouldin_score': metrics.get('davies_bouldin_score', 0.0),
+                'execution_time': tas_results.get('execution_time', 0.0),
+                'n_clusters': len(set(tas_results.get('labels', []))),
+                'confidence': metrics.get('silhouette_score', 0.5)
+            }
+
+        except Exception as e:
+            self.logger.warning(f"Performance metrics extraction failed: {e}")
+            return {}
+
+    def _calculate_feature_quality(self, features: np.ndarray) -> Dict[str, float]:
+        """Calculate feature quality metrics."""
+        try:
+            if features.size == 0:
+                return {'quality_score': 0.0}
+
+            quality = {}
+
+            # Feature variance (higher is better)
+            feature_variance = np.var(features, axis=0)
+            quality['avg_feature_variance'] = np.mean(feature_variance)
+            quality['min_feature_variance'] = np.min(feature_variance)
+            quality['max_feature_variance'] = np.max(feature_variance)
+
+            # Feature correlation (lower is better for diversity)
+            if features.shape[1] > 1:
+                correlations = np.corrcoef(features.T)
+                # Average absolute correlation (excluding diagonal)
+                n_features = correlations.shape[0]
+                avg_corr = (np.sum(np.abs(correlations)) - n_features) / (n_features * (n_features - 1))
+                quality['avg_correlation'] = avg_corr
+
+            # Signal-to-noise ratio approximation
+            signal = np.mean(feature_variance)
+            noise = np.mean(np.var(features - np.mean(features, axis=0), axis=0))
+            quality['signal_to_noise'] = signal / (noise + 1e-8)
+
+            # Overall quality score
+            quality_score = 0.6 * min(quality['avg_feature_variance'], 1.0)
+            if 'avg_correlation' in quality:
+                quality_score += 0.4 * (1 - min(quality['avg_correlation'], 1.0))
+
+            quality['quality_score'] = min(quality_score, 1.0)
+
+            return quality
+
+        except Exception as e:
+            self.logger.warning(f"Feature quality calculation failed: {e}")
+            return {'quality_score': 0.5}
 
 
 def create_tas_integration(config: Dict[str, Any]) -> TASIntegrationComponent:

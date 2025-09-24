@@ -83,13 +83,19 @@ class NASIntegrationComponent:
                 # Extract features from NAS results
                 features = self._extract_features_from_nas_results(nas_results)
 
+                # Calculate adaptive weight based on performance
+                adaptive_weight = self._calculate_adaptive_weight(nas_results)
+
                 # Add metadata
                 metadata = {
                     'method': 'nas_detector',
                     'feature_dimensions': features.shape[1] if features.ndim > 1 else 1,
                     'confidence': self._calculate_nas_confidence(nas_results),
                     'architecture': self.config.get('primary_architecture', 'unknown'),
-                    'execution_time': nas_results.execution_time if hasattr(nas_results, 'execution_time') else 0.0
+                    'execution_time': nas_results.execution_time if hasattr(nas_results, 'execution_time') else 0.0,
+                    'adaptive_weight': adaptive_weight,
+                    'performance_metrics': self._extract_performance_metrics(nas_results),
+                    'feature_quality': self._calculate_feature_quality(features)
                 }
 
                 return features, metadata
@@ -325,6 +331,134 @@ class NASIntegrationComponent:
         except Exception as e:
             self.logger.warning(f"Feature confidence calculation failed: {e}")
             return 0.5
+
+    def _calculate_adaptive_weight(self, nas_results) -> float:
+        """Calculate adaptive weight based on NAS performance."""
+        try:
+            base_weight = self.config.get('base_weight', 0.6)
+            performance_weight = self.config.get('performance_weight', 0.3)
+
+            # Extract performance metrics
+            performance_score = 0.0
+
+            # Success factor
+            if hasattr(nas_results, 'success') and nas_results.success:
+                performance_score += 0.3
+
+            # Economic significance factor
+            if hasattr(nas_results, 'economic_significance_scores'):
+                avg_economic = np.mean(nas_results.economic_significance_scores)
+                performance_score += 0.4 * min(avg_economic, 1.0)
+
+            # Financial relevance factor
+            if hasattr(nas_results, 'trading_viability_scores'):
+                avg_financial = np.mean(nas_results.trading_viability_scores)
+                performance_score += 0.3 * min(avg_financial, 1.0)
+
+            # Calculate adaptive weight
+            adaptive_weight = base_weight + performance_weight * performance_score
+
+            # Apply bounds
+            min_weight = self.config.get('min_weight', 0.1)
+            max_weight = self.config.get('max_weight', 0.9)
+
+            return max(min_weight, min(max_weight, adaptive_weight))
+
+        except Exception as e:
+            self.logger.warning(f"Adaptive weight calculation failed: {e}")
+            return self.config.get('base_weight', 0.6)
+
+    def _extract_performance_metrics(self, nas_results) -> Dict[str, float]:
+        """Extract performance metrics from NAS results."""
+        try:
+            metrics = {}
+
+            # Success metric
+            metrics['success'] = 1.0 if hasattr(nas_results, 'success') and nas_results.success else 0.0
+
+            # Economic significance
+            if hasattr(nas_results, 'economic_significance_scores'):
+                metrics['avg_economic_significance'] = np.mean(nas_results.economic_significance_scores)
+                metrics['max_economic_significance'] = np.max(nas_results.economic_significance_scores)
+                metrics['min_economic_significance'] = np.min(nas_results.economic_significance_scores)
+
+            # Financial viability
+            if hasattr(nas_results, 'trading_viability_scores'):
+                metrics['avg_financial_viability'] = np.mean(nas_results.trading_viability_scores)
+                metrics['max_financial_viability'] = np.max(nas_results.trading_viability_scores)
+                metrics['min_financial_viability'] = np.min(nas_results.trading_viability_scores)
+
+            # Execution time
+            if hasattr(nas_results, 'execution_time'):
+                metrics['execution_time'] = nas_results.execution_time
+
+            # Architecture used
+            metrics['architecture'] = self.config.get('primary_architecture', 'unknown')
+
+            return metrics
+
+        except Exception as e:
+            self.logger.warning(f"Performance metrics extraction failed: {e}")
+            return {}
+
+    def _calculate_feature_quality(self, features: np.ndarray) -> Dict[str, float]:
+        """Calculate feature quality metrics for NAS features."""
+        try:
+            if features.size == 0:
+                return {'quality_score': 0.0}
+
+            quality = {}
+
+            # Feature variance (higher is better)
+            feature_variance = np.var(features, axis=0)
+            quality['avg_feature_variance'] = np.mean(feature_variance)
+            quality['min_feature_variance'] = np.min(feature_variance)
+            quality['max_feature_variance'] = np.max(feature_variance)
+
+            # Feature correlation (lower is better for diversity)
+            if features.shape[1] > 1:
+                correlations = np.corrcoef(features.T)
+                # Average absolute correlation (excluding diagonal)
+                n_features = correlations.shape[0]
+                avg_corr = (np.sum(np.abs(correlations)) - n_features) / (n_features * (n_features - 1))
+                quality['avg_correlation'] = avg_corr
+
+            # Information content (entropy-based)
+            if features.shape[1] > 1:
+                # Normalize features for entropy calculation
+                normalized_features = (features - np.min(features, axis=0)) / (np.max(features, axis=0) - np.min(features, axis=0) + 1e-8)
+                normalized_features = np.nan_to_num(normalized_features, nan=0.5)
+
+                # Calculate entropy for each feature
+                entropies = []
+                for i in range(features.shape[1]):
+                    feature_vals = normalized_features[:, i]
+                    hist, _ = np.histogram(feature_vals, bins=10, range=(0, 1))
+                    hist_probs = hist / np.sum(hist)
+                    entropy = -np.sum(hist_probs * np.log2(hist_probs + 1e-8))
+                    entropies.append(entropy)
+
+                quality['avg_entropy'] = np.mean(entropies)
+                quality['information_content'] = np.mean(entropies) / np.log2(10)  # Normalized to max possible
+
+            # Neural network inspired metrics
+            # Feature complexity (higher variance in feature distributions)
+            complexity = np.mean([np.var(np.diff(np.sort(features[:, i]))) for i in range(features.shape[1])])
+            quality['feature_complexity'] = complexity
+
+            # Overall quality score
+            quality_score = 0.4 * min(quality.get('avg_feature_variance', 0.1), 1.0)
+            quality_score += 0.3 * quality.get('information_content', 0.5)
+            if 'avg_correlation' in quality:
+                quality_score += 0.3 * (1 - min(quality['avg_correlation'], 1.0))
+
+            quality['quality_score'] = min(quality_score, 1.0)
+
+            return quality
+
+        except Exception as e:
+            self.logger.warning(f"Feature quality calculation failed: {e}")
+            return {'quality_score': 0.5}
 
 
 def create_nas_integration(config: Dict[str, Any]) -> NASIntegrationComponent:

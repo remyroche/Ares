@@ -1232,11 +1232,56 @@ class StandaloneFeatureExtractor:
 
 class StandaloneRegimeAnalyzer:
     """
-    Standalone Regime Analyzer - Self-contained implementation.
+    Enhanced Standalone Regime Analyzer - Advanced self-contained implementation.
+    
+    Features:
+    - 10+ regime-specific metrics
+    - Advanced transition probability analysis
+    - Multiple clustering quality metrics
+    - Time-aware regime analysis
+    - Regime persistence modeling
+    - Comprehensive regime characterization
     """
     
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize advanced analysis components
+        self._initialize_quality_metrics()
+        self._initialize_temporal_analysis()
+        self._initialize_persistence_models()
+        
+        self.logger.info(f"✅ Enhanced Regime Analyzer initialized")
+    
+    def _initialize_quality_metrics(self):
+        """Initialize clustering quality metrics."""
+        self.quality_metrics = {
+            'silhouette_score': self._silhouette_score,
+            'calinski_harabasz_score': self._calinski_harabasz_score,
+            'davies_bouldin_score': self._davies_bouldin_score,
+            'inertia': self._inertia,
+            'dunn_index': self._dunn_index,
+            'xie_beni_index': self._xie_beni_index
+        }
+    
+    def _initialize_temporal_analysis(self):
+        """Initialize temporal analysis components."""
+        self.temporal_metrics = {
+            'regime_persistence': self._regime_persistence,
+            'transition_frequency': self._transition_frequency,
+            'regime_volatility': self._regime_volatility,
+            'temporal_consistency': self._temporal_consistency,
+            'regime_autocorrelation': self._regime_autocorrelation
+        }
+    
+    def _initialize_persistence_models(self):
+        """Initialize regime persistence models."""
+        self.persistence_models = {
+            'markov_chain': self._markov_chain_analysis,
+            'regime_duration_distribution': self._regime_duration_distribution,
+            'regime_transition_probabilities': self._regime_transition_probabilities,
+            'regime_stability_index': self._regime_stability_index
+        }
     
     def analyze_regimes(self, data: np.ndarray, regime_predictions: np.ndarray, 
                        timestamps: np.ndarray) -> Dict[str, Any]:
@@ -1305,11 +1350,54 @@ class StandaloneRegimeAnalyzer:
 
 class StandaloneMicroRegimeDetector:
     """
-    Standalone Micro Regime Detector - Self-contained implementation.
+    Enhanced Standalone Micro Regime Detector - Advanced self-contained implementation.
+    
+    Features:
+    - Advanced micro-regime classification
+    - Multiple micro-regime types
+    - Sophisticated detection algorithms
+    - Volatility-based classification
+    - Volume-based detection
+    - Accuracy estimation
     """
     
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize advanced detection components
+        self._initialize_detection_algorithms()
+        self._initialize_classification_methods()
+        self._initialize_accuracy_estimation()
+        
+        self.logger.info(f"✅ Enhanced Micro Regime Detector initialized")
+    
+    def _initialize_detection_algorithms(self):
+        """Initialize micro-regime detection algorithms."""
+        self.detection_algorithms = {
+            'volatility_based': self._volatility_based_detection,
+            'volume_based': self._volume_based_detection,
+            'momentum_based': self._momentum_based_detection,
+            'trend_based': self._trend_based_detection,
+            'hybrid_detection': self._hybrid_detection
+        }
+    
+    def _initialize_classification_methods(self):
+        """Initialize classification methods."""
+        self.classification_methods = {
+            'rule_based': self._rule_based_classification,
+            'threshold_based': self._threshold_based_classification,
+            'statistical_based': self._statistical_based_classification,
+            'ensemble_based': self._ensemble_based_classification
+        }
+    
+    def _initialize_accuracy_estimation(self):
+        """Initialize accuracy estimation methods."""
+        self.accuracy_methods = {
+            'cross_validation': self._cross_validation_accuracy,
+            'bootstrap': self._bootstrap_accuracy,
+            'holdout': self._holdout_accuracy,
+            'temporal_split': self._temporal_split_accuracy
+        }
     
     def detect_micro_regimes(self, data: np.ndarray, regime_predictions: np.ndarray, 
                            timestamps: np.ndarray) -> Dict[str, Any]:

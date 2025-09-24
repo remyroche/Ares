@@ -223,7 +223,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
     
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
-        return ['hmm_models_training_result']
+        return ['hmm_base_models_training_result']
     
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute HMM models training as a component."""
@@ -434,7 +434,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
             
             # Create comprehensive artifact
             artifact = {
-                'hmm_models_training_result': {
+                'hmm_base_models_training_result': {
                     'hmm_models': results.get('model_results', {}),
                     'hmm_training_metrics': results.get('comprehensive_report', {}),
                     'metadata': results.get('metadata', {}),
@@ -442,11 +442,11 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     'success': 'error' not in results
                 }
             }
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifact,
-                metadata={'component_type': 'hmm_models_training', 'execution_time': results.get('training_time', 0)}
+                metadata={'component_type': 'hmm_base_models_training', 'execution_time': results.get('training_time', 0)}
             )
             
         except Exception as e:
@@ -454,7 +454,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 success=False,
                 artifacts={},
                 error_message=str(e),
-                metadata={'component_type': 'hmm_models_training'}
+                metadata={'component_type': 'hmm_base_models_training'}
             )
 
 
@@ -715,9 +715,8 @@ class ComponentFactory:
         'nas_regime_discovery': NASRegimeDiscoveryComponent,  # NAS-based regime discovery
         'tas_regime_discovery': TASRegimeDiscoveryComponent,  # TAS-based regime discovery
         'nas_clustering': NASClusteringComponent,  # NAS-based optimal regime clustering
-        'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Keep for backward compatibility
-        # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
-        # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
+        'hmm_base_models_training': HMMModelsTrainingComponent,  # HMM base models training (still used)
+        'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # HMM ensemble training (still used)
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
@@ -769,14 +768,15 @@ class ComponentFactory:
             except ImportError as e:
                 raise ValueError(f"Failed to import NASTrainingStep: {e}")
 
-        # Handle legacy HMM training components (moved to hmm_models_training module)
-        if component_name == 'hmm_models_training':
+        # Handle HMM base models training (still actively used)
+        if component_name == 'hmm_base_models_training':
             try:
                 from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced
                 return HMMModelsTrainingComponentWrapper(HMMModelsTrainingEnhanced, config)
             except ImportError as e:
                 raise ValueError(f"Failed to import HMMModelsTrainingEnhanced: {e}")
 
+        # Handle HMM ensemble training (still actively used)
         if component_name == 'hmm_ensemble_training':
             try:
                 from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent
@@ -785,7 +785,7 @@ class ComponentFactory:
                 raise ValueError(f"Failed to import HMMEnsembleTrainingComponent: {e}")
         
         if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting', 'nas_models_training', 'hmm_models_training', 'hmm_ensemble_training']
+            available_components = list(self._components.keys()) + ['regime_data_splitting', 'nas_models_training', 'hmm_base_models_training', 'hmm_ensemble_training']
             raise ValueError(
                 f"Unknown component: {component_name}. "
                 f"Available components: {available_components}"
@@ -823,7 +823,7 @@ class ComponentFactory:
             List of component names
         """
         # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'nas_models_training', 'tas_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'nas_models_training', 'tas_regime_discovery', 'hmm_base_models_training', 'hmm_ensemble_training']
         return list(self._components.keys()) + lazy_components
     
     @classmethod
@@ -838,5 +838,5 @@ class ComponentFactory:
             True if component is available
         """
         # Check both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'nas_models_training', 'tas_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'nas_models_training', 'tas_regime_discovery', 'hmm_base_models_training', 'hmm_ensemble_training']
         return component_name in self._components or component_name in lazy_components

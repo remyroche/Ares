@@ -127,7 +127,9 @@ class SubPipelineResult:
             'nas_regime_discovery': ['nas_regime_discovery_result'],
             'nas_clustering': ['optimal_regime_clustering_result'],
             'nas_models_training': ['nas_models_training_result'],
-            'nas_ensemble_training': ['nas_ensemble_training_result'],
+            'hmm_base_models_training': ['hmm_base_models_training_result'],
+            'hmm_ensemble_training': ['hmm_ensemble_training_result'],
+            'nas_ensemble_training': ['hmm_ensemble_training_result'],  # Alias for HMM ensemble training
             'regime_data_splitting': ['regime_data_splitting_result'],
             # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
@@ -774,7 +776,7 @@ class MarketAnalysisSubPipeline:
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
             # Enforce 15m timeframe for HMM components only (log warning if overriding)
-            if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+            if sub_pipeline_name in ('hmm_base_models_training', 'hmm_ensemble_training'):
                 if component_config.timeframe != '15m':
                     self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
                 component_config.timeframe = '15m'
@@ -937,7 +939,7 @@ class MarketAnalysisSubPipeline:
             'nas_regime_discovery',
             'nas_clustering',
             'nas_models_training',
-            'nas_ensemble_training'
+            'hmm_ensemble_training'
         ]
         
         data_processing_steps = [
@@ -1004,7 +1006,7 @@ class MarketAnalysisSubPipeline:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
                 # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
-                if pipeline_name in ('nas_models_training', 'nas_ensemble_training'):
+                if pipeline_name in ('hmm_base_models_training', 'hmm_ensemble_training'):
                     # Avoid mutating the shared config; create a scoped copy for this call
                     from dataclasses import replace as _dc_replace
                     scoped_config = _dc_replace(config, timeframe='15m')

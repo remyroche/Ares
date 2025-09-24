@@ -11,80 +11,63 @@ Key Features:
 - Tags existing data with regime information
 - Replaces hmm_clustering functionality
 
-Architecture:
-- Core: Main hybrid regime detector and modeling components
-- Integration: TAS and NAS integration components
-- Clustering: Advanced clustering algorithms for regime detection
-- Modeling: Economic and financial regime modeling
+Superior Architecture:
+- Core: Main hybrid regime detector
+- Components: TAS and NAS integration components
+- Evaluation: Economic and financial evaluation
+- Integration: Main orchestrator (replaces HMM)
 - Tagging: Data tagging and labeling functionality
 - Config: Configuration management
-- Utils: Utility functions and helpers
+- Tests: Comprehensive test suite
 """
 
+# Main orchestrator (replaces HMM clustering)
+from .integration.hybrid_orchestrator import HybridOrchestrator
+
+# Core components
 from .core.hybrid_regime_detector import HybridRegimeDetector
-from .core.hybrid_regime_modeler import HybridRegimeModeler
-from .core.economic_regime_analyzer import EconomicRegimeAnalyzer
-from .core.financial_regime_analyzer import FinancialRegimeAnalyzer
 
-from .integration.tas_integration import TASIntegration
-from .integration.nas_integration import NASIntegration
-from .integration.hybrid_integration import HybridIntegration
+# Integration components
+from .components.tas_integration import TASIntegration
+from .components.nas_integration import NASIntegration
 
-from .clustering.hybrid_clusterer import HybridClusterer
-from .clustering.economic_clusterer import EconomicClusterer
-from .clustering.financial_clusterer import FinancialClusterer
+# Evaluation components
+from .evaluation.economic_evaluator import EconomicEvaluator
 
-from .modeling.regime_modeler import RegimeModeler
-from .modeling.economic_modeler import EconomicModeler
-from .modeling.financial_modeler import FinancialModeler
-
+# Tagging components
 from .tagging.regime_tagger import RegimeTagger
-from .tagging.economic_tagger import EconomicTagger
-from .tagging.financial_tagger import FinancialTagger
 
-from .config.hybrid_config import HybridNASConfig, HybridTASConfig, HybridRegimeConfig
-from .utils.regime_utils import RegimeUtils
-from .utils.economic_utils import EconomicUtils
-from .utils.financial_utils import FinancialUtils
+# Configuration
+from .config.hybrid_config import (
+    HybridRegimeConfig, HybridNASConfig, HybridTASConfig,
+    ClusteringMethod, IntegrationStrategy
+)
 
 __version__ = "1.0.0"
 __author__ = "Hybrid NAS TAS Regime System"
 __description__ = "Hybrid regime detection combining NAS and TAS with economic and financial relevance"
 
 __all__ = [
+    # Main orchestrator (HMM replacement)
+    'HybridOrchestrator',
+    
     # Core components
     'HybridRegimeDetector',
-    'HybridRegimeModeler', 
-    'EconomicRegimeAnalyzer',
-    'FinancialRegimeAnalyzer',
     
     # Integration components
     'TASIntegration',
     'NASIntegration',
-    'HybridIntegration',
     
-    # Clustering components
-    'HybridClusterer',
-    'EconomicClusterer',
-    'FinancialClusterer',
-    
-    # Modeling components
-    'RegimeModeler',
-    'EconomicModeler',
-    'FinancialModeler',
+    # Evaluation components
+    'EconomicEvaluator',
     
     # Tagging components
     'RegimeTagger',
-    'EconomicTagger',
-    'FinancialTagger',
     
     # Configuration
-    'HybridNASConfig',
-    'HybridTASConfig', 
     'HybridRegimeConfig',
-    
-    # Utilities
-    'RegimeUtils',
-    'EconomicUtils',
-    'FinancialUtils'
+    'HybridNASConfig',
+    'HybridTASConfig',
+    'ClusteringMethod',
+    'IntegrationStrategy'
 ]

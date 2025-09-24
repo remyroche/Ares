@@ -13,12 +13,14 @@ for financial machine learning applications, including:
 
 from .core.tas_config import TASConfig, TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from .core.advanced_tas_search import AdvancedTradingArchitectureSearch, AdvancedTASResult
+from .core.tree_cvlSA_architecture import TreeCVLSASearch, CVLSAResult
 from .components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from .components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
 from .evaluation.tas_evaluator import TASEvaluator, EvaluationResult
 
 # Convenience functions
 from .core.advanced_tas_search import optimize_advanced_trading_architecture
+from .core.tree_cvlSA_architecture import optimize_cvlSA_architecture
 
 __version__ = "2.0.0"
 __author__ = "Advanced TAS Team"
@@ -35,6 +37,8 @@ __all__ = [
     'MicroRegimeType',
     'AdvancedTradingArchitectureSearch',
     'AdvancedTASResult',
+    'TreeCVLSASearch',
+    'CVLSAResult',
 
     # Components
     'MicroRegimeDetector',
@@ -48,6 +52,7 @@ __all__ = [
 
     # Convenience functions
     'optimize_advanced_trading_architecture',
+    'optimize_cvlSA_architecture',
 
     # Configuration
     'DEFAULT_CONFIG'

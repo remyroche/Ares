@@ -18,6 +18,7 @@ import numpy as np
 class TASArchitectureType(Enum):
     """TAS architecture types for advanced trading."""
     TREE_ONLY = "tree_only"
+    CVLSA_TREE = "cvlSA_tree"  # Cascade Variable Length Selection Architecture
     HYBRID_TREE_NEURAL = "hybrid_tree_neural"
     NEURAL_ONLY = "neural_only"
     ENSEMBLE_HIERARCHICAL = "ensemble_hierarchical"
@@ -150,6 +151,16 @@ class TASConfig:
     mutation_rate: float = 0.1
     crossover_rate: float = 0.8
 
+    # CVLSA-specific parameters
+    enable_cvlSA_architecture: bool = True
+    cvlSA_cascade_depth: int = 3
+    cvlSA_variable_selection_methods: List[str] = field(default_factory=lambda: [
+        'variance_threshold', 'mutual_information', 'tree_importance',
+        'correlation_filter', 'recursive_elimination'
+    ])
+    cvlSA_feature_ensemble_method: str = "intersection"
+    cvlSA_optimization_objective: str = "cascade_efficiency"
+
     # Hardware acceleration
     enable_hardware_acceleration: bool = True
     enable_gpu_acceleration: bool = True
@@ -215,6 +226,8 @@ class TASConfig:
             regime_similarity_threshold=0.8,
             enable_uncertainty_quantification=True,
             integrate_with_nas_clustering=True,
+            enable_cvlSA_architecture=True,
+            cvlSA_cascade_depth=3,
             search_space_config={
                 'tree_search_space': {
                     'min_depth': [3, 5, 8, 10, 15],
@@ -245,6 +258,148 @@ class TASConfig:
                 'max_regime_volatility': 0.3,
                 'min_prediction_confidence': 0.6,
                 'max_model_complexity': 100
+            }
+        )
+
+    @classmethod
+    def create_cvlSA_tree_config(cls) -> 'TASConfig':
+        """Create configuration optimized for CVLSA tree architecture."""
+        return cls(
+            architecture_type=TASArchitectureType.CVLSA_TREE,
+            enable_micro_regime_detection=True,
+            enable_neural_components=False,  # Tree-only
+            enable_hierarchical_ensembles=True,
+            enable_meta_learning=True,
+            primary_timeframe="15m",
+            micro_timeframe="5m",
+            n_regimes=12,
+            min_regime_duration=15,
+            max_regime_duration=180,
+            data_driven_regimes=True,
+            regime_stability_threshold=0.7,
+            micro_regime_sensitivity=0.8,  # Higher sensitivity for CVLSA
+            micro_regime_detection_threshold=0.7,
+            trading_objectives=[
+                TradingObjective.PROFITABILITY,
+                TradingObjective.SHARPE_RATIO,
+                TradingObjective.ROBUSTNESS,
+                TradingObjective.ECONOMIC_SIGNIFICANCE,
+                TradingObjective.TRADING_VIABILITY,
+                TradingObjective.MICRO_REGIME_ACCURACY
+            ],
+            objective_weights=[0.25, 0.2, 0.15, 0.2, 0.15, 0.05],
+            economic_significance_threshold=0.7,
+            trading_viability_threshold=0.6,
+            regime_transition_cost=0.05,
+            enable_hardware_acceleration=False,  # Tree-focused, no GPU needed
+            enable_gpu_acceleration=False,
+            enable_batch_processing=True,
+            batch_size=500,  # Smaller batches for tree models
+            meta_learning_enabled=True,
+            regime_similarity_threshold=0.85,  # Higher similarity for cascade
+            enable_uncertainty_quantification=True,
+            integrate_with_nas_clustering=True,
+            enable_cvlSA_architecture=True,
+            cvlSA_cascade_depth=3,
+            cvlSA_variable_selection_methods=[
+                'variance_threshold',
+                'mutual_information',
+                'tree_importance',
+                'correlation_filter',
+                'recursive_elimination'
+            ],
+            cvlSA_feature_ensemble_method="intersection",
+            cvlSA_optimization_objective="cascade_efficiency",
+            search_space_config={
+                'tree_search_space': {
+                    'min_depth': [3, 5, 8, 10, 15],
+                    'max_depth': [5, 10, 15, 20, 25],
+                    'min_trees': [50, 100, 200, 300, 500],
+                    'max_trees': [100, 200, 400, 600, 800],
+                    'min_samples_split': [2, 5, 10, 20],
+                    'min_samples_leaf': [1, 2, 5, 10],
+                    'max_features': ['sqrt', 'log2', 'auto', 0.3, 0.5, 0.8],
+                    'splitting_strategies': [
+                        'gini', 'entropy', 'log_loss',
+                        'xgb_gbtree', 'xgb_dart',
+                        'lgb_gbdt', 'lgb_rf', 'lgb_dart'
+                    ]
+                },
+                'cvlSA_search_space': {
+                    'cascade_depths': [2, 3, 4, 5],
+                    'ensemble_methods': ['voting', 'stacking', 'weighted_voting'],
+                    'feature_selection_methods': [
+                        'variance_threshold', 'mutual_information', 'tree_importance'
+                    ],
+                    'optimization_objectives': ['accuracy', 'efficiency', 'robustness']
+                }
+            },
+            validation_config={
+                'min_regime_stability': 0.6,
+                'min_economic_significance': 0.7,
+                'min_trading_viability': 0.6,
+                'max_regime_volatility': 0.3,
+                'min_prediction_confidence': 0.6,
+                'max_model_complexity': 100,
+                'min_cascade_efficiency': 0.7,
+                'min_variable_selection_accuracy': 0.8
+            }
+        )
+
+    @classmethod
+    def create_tree_only_config(cls) -> 'TASConfig':
+        """Create configuration for tree-only architectures."""
+        return cls(
+            architecture_type=TASArchitectureType.TREE_ONLY,
+            enable_micro_regime_detection=True,
+            enable_neural_components=False,
+            enable_hierarchical_ensembles=True,
+            enable_meta_learning=False,  # Simpler tree-only approach
+            primary_timeframe="15m",
+            micro_timeframe="5m",
+            n_regimes=8,  # Fewer regimes for tree-only
+            min_regime_duration=15,
+            max_regime_duration=180,
+            data_driven_regimes=True,
+            regime_stability_threshold=0.6,
+            micro_regime_sensitivity=0.6,
+            micro_regime_detection_threshold=0.5,
+            trading_objectives=[
+                TradingObjective.PROFITABILITY,
+                TradingObjective.SHARPE_RATIO,
+                TradingObjective.ROBUSTNESS
+            ],
+            objective_weights=[0.4, 0.3, 0.3],
+            economic_significance_threshold=0.6,  # Lower threshold for tree-only
+            trading_viability_threshold=0.5,
+            regime_transition_cost=0.05,
+            enable_hardware_acceleration=False,
+            enable_gpu_acceleration=False,
+            enable_batch_processing=True,
+            batch_size=500,
+            meta_learning_enabled=False,
+            regime_similarity_threshold=0.7,
+            enable_uncertainty_quantification=True,
+            integrate_with_nas_clustering=False,  # Tree-only, no neural integration
+            enable_cvlSA_architecture=False,  # Use standard tree architecture
+            search_space_config={
+                'tree_search_space': {
+                    'min_depth': [3, 5, 8, 10],
+                    'max_depth': [5, 10, 15, 20],
+                    'min_trees': [50, 100, 200],
+                    'max_trees': [100, 200, 400],
+                    'min_samples_split': [2, 5, 10],
+                    'min_samples_leaf': [1, 2, 5],
+                    'max_features': ['sqrt', 'log2', 'auto']
+                }
+            },
+            validation_config={
+                'min_regime_stability': 0.5,
+                'min_economic_significance': 0.6,
+                'min_trading_viability': 0.5,
+                'max_regime_volatility': 0.4,
+                'min_prediction_confidence': 0.5,
+                'max_model_complexity': 50
             }
         )
 

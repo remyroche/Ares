@@ -55,6 +55,7 @@ class BinanceExchange(BaseExchange):
         self.testnet_url = "https://testnet.binance.vision"
         self.testnet_futures_url = "https://testnet.binancefuture.com"
         self.use_testnet = False  # Set to True for testing
+        self.is_futures = True  # Always use futures for perp trading
 
     async def _initialize_exchange(self) -> None:
         """Initialize the Binance exchange client."""
@@ -310,8 +311,8 @@ class BinanceExchange(BaseExchange):
         return []
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from Binance."""
-        return await self._make_request("GET", "/api/v3/account", signed=True) or {}
+        """Get raw account information from Binance Futures."""
+        return await self._make_request("GET", "/fapi/v2/account", signed=True, futures=True) or {}
 
     async def _create_order_raw(
         self,
@@ -336,43 +337,43 @@ class BinanceExchange(BaseExchange):
         if params:
             order_params.update(params)
             
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
+        return await self._make_request("POST", "/fapi/v1/order", order_params, signed=True, futures=True) or {}
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from Binance futures."""
+        """Get raw position risk information from Binance Futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
         data = await self._make_request("GET", "/fapi/v2/positionRisk", params, signed=True, futures=True)
-        
+
         if data and isinstance(data, list):
             # Return first matching position or first position if no symbol specified
             for position in data:
                 if not symbol or position.get("symbol", "").upper() == symbol.upper():
                     return position
             return data[0] if data else {}
-        
+
         return data or {}
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from Binance."""
+        """Get raw open orders from Binance Futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+        data = await self._make_request("GET", "/fapi/v1/openOrders", params, signed=True, futures=True)
         return data if isinstance(data, list) else []
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on Binance."""
+        """Cancel raw order on Binance Futures."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("DELETE", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("DELETE", "/fapi/v1/order", params, signed=True, futures=True) or {}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from Binance."""
+        """Get raw order status from Binance Futures."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("GET", "/fapi/v1/order", params, signed=True, futures=True) or {}
 
     async def _open_position_raw(
         self,
@@ -382,7 +383,7 @@ class BinanceExchange(BaseExchange):
         quantity: float,
         price: float | None
     ) -> dict[str, Any]:
-        """Open raw position on Binance."""
+        """Open raw position on Binance Futures."""
         order_params = {
             "symbol": symbol.upper(),
             "side": side.upper(),
@@ -393,7 +394,8 @@ class BinanceExchange(BaseExchange):
         if price is not None:
             order_params["price"] = price
 
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
+        # Use futures endpoint
+        return await self._make_request("POST", "/fapi/v1/order", order_params, signed=True, futures=True) or {}
 
     async def _close_position_raw(
         self,
@@ -402,7 +404,7 @@ class BinanceExchange(BaseExchange):
         quantity: float,
         trade_id: Any
     ) -> dict[str, Any]:
-        """Close raw position on Binance."""
+        """Close raw position on Binance Futures."""
         order_params = {
             "symbol": symbol.upper(),
             "side": side.upper(),
@@ -410,8 +412,8 @@ class BinanceExchange(BaseExchange):
             "quantity": quantity
         }
 
-        # Close position by creating opposite order
-        result = await self._make_request("POST", "/api/v3/order", order_params, signed=True)
+        # Close position by creating opposite order on futures
+        result = await self._make_request("POST", "/fapi/v1/order", order_params, signed=True, futures=True)
 
         if result:
             return {
@@ -422,13 +424,14 @@ class BinanceExchange(BaseExchange):
         return {}
 
     async def _get_trade_info_raw(self, symbol: str, trade_id: Any) -> dict[str, Any]:
-        """Get raw trade information from Binance."""
+        """Get raw trade information from Binance Futures."""
         params = {
-            "symbol": symbol.upper()
+            "symbol": symbol.upper(),
+            "orderId": str(trade_id)
         }
 
-        # Get order status which includes trade information
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
+        # Get order status which includes trade information from futures
+        return await self._make_request("GET", "/fapi/v1/order", params, signed=True, futures=True) or {}
 
     # Additional Binance-specific methods for data collection
 

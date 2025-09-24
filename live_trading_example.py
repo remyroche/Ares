@@ -152,8 +152,8 @@ class TradingBot:
                 logger.info(f"✅ Retrieved {len(asset_data)} data points for {symbol}")
                 logger.info(f"Latest price: {asset_data[-1].close}")
 
-            # Open a position with leverage
-            logger.info("🔓 Opening position with leverage...")
+            # Open a futures position with leverage
+            logger.info("🔓 Opening perpetual futures position with leverage...")
             position_result = await self.trading_manager.open_position(
                 symbol=symbol,
                 side="BUY",

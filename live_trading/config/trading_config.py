@@ -72,11 +72,11 @@ class TradingConfig:
             raise ValueError(f"Failed to save config to {config_path}: {e}")
 
 
-# Default configurations for different exchanges
+# Default configurations for different exchanges (futures/perp trading)
 DEFAULT_CONFIGS = {
     'binance': TradingConfig(
         exchange_name='binance',
-        symbols=['BTCUSDT', 'ETHUSDT', 'BNBUSDT'],
+        symbols=['BTCUSDT', 'ETHUSDT', 'BNBUSDT'],  # Futures symbols
         max_position_size=10000.0,
         max_daily_trades=20,
         risk_per_trade=0.02,

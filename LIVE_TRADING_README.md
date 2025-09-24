@@ -1,10 +1,10 @@
-# Live Trading System
+# Perpetual Futures Live Trading System
 
-This document describes the complete live trading system architecture that has been implemented for your trading bot.
+This document describes the complete live trading system architecture that has been implemented for perpetual futures trading.
 
 ## Architecture Overview
 
-The live trading system follows a modular, exchange-agnostic architecture with the following key components:
+The live trading system follows a modular, exchange-agnostic architecture optimized for perpetual futures trading with the following key components:
 
 ### 1. Live Trading Module (`live_trading/`)
 
@@ -146,33 +146,36 @@ result = await trading_manager.place_order(trade_decision)
 
 ### Position Management
 
-#### Opening Positions with Leverage
+#### Opening Perpetual Futures Positions with Leverage
 
 ```python
-# Open a position with leverage
+# Open a perpetual futures position with leverage
 position_result = await trading_manager.open_position(
-    symbol="BTCUSDT",
-    side="BUY",                    # "BUY" or "SELL"
-    quantity=0.001,               # Position size
-    leverage=5.0,                 # 5x leverage
-    order_type="MARKET",          # "MARKET" or "LIMIT"
-    price=None                    # Price for limit orders
+    symbol="BTCUSDT",             # Futures contract symbol
+    side="BUY",                   # "BUY" or "SELL"
+    quantity=0.001,              # Contract quantity
+    leverage=5.0,                # Leverage multiplier (1x to 125x)
+    order_type="MARKET",         # "MARKET" or "LIMIT"
+    price=None                   # Price for limit orders
 )
 
 if position_result and position_result.get("success"):
     trade_id = position_result.get("trade_id")
-    print(f"Position opened with trade ID: {trade_id}")
+    print(f"Futures position opened with trade ID: {trade_id}")
+    print(f"Leverage: {position_result.get('leverage', 1)}x")
 ```
 
-#### Closing Positions
+#### Closing Futures Positions
 
 ```python
-# Close position using trade ID
+# Close futures position using trade ID
 close_result = await trading_manager.close_position("BTCUSDT", trade_id)
 
 if close_result and close_result.get("success"):
     pnl = close_result.get("pnl", 0)
-    print(f"Position closed. P&L: {pnl}")
+    print(f"Futures position closed. P&L: {pnl}")
+    print(f"Close side: {close_result.get('close_side')}")
+    print(f"Close quantity: {close_result.get('close_quantity')}")
 ```
 
 #### Getting Trade Information
@@ -239,23 +242,27 @@ event_bus.subscribe("risk_limit_exceeded", your_risk_handler)
 ### Supported Exchanges
 
 1. **Binance** (`binance`)
-   - Spot and futures trading
-   - Complete API implementation
+   - Perpetual futures trading (USD-M and COIN-M contracts)
+   - Complete futures API implementation
+   - Leverage up to 125x
    - WebSocket support ready
 
 2. **OKX** (`okx`)
-   - Spot and futures trading
-   - Full API implementation
+   - Perpetual futures trading
+   - Cross and isolated margin modes
+   - Leverage up to 100x
    - Advanced order types
 
 3. **GateIO** (`gateio`)
-   - Spot trading
+   - Perpetual futures trading
+   - USD-M futures contracts
+   - Leverage up to 100x
    - Complete implementation
-   - Margin trading support
 
 4. **MEXC** (`mexc`)
-   - Spot and futures trading
-   - Full API implementation
+   - Perpetual futures trading
+   - USD-M futures contracts
+   - Leverage up to 125x
    - High-frequency trading support
 
 ### Adding New Exchanges

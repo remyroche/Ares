@@ -52,6 +52,8 @@ class GateioExchange(BaseExchange):
         self.session: aiohttp.ClientSession | None = None
         self.base_url = "https://api.gateio.ws"
         self.api_url = "https://api.gateio.ws/api/v4"
+        self.futures_api_url = "https://api.gateio.ws/api/v4/futures"
+        self.is_futures = True  # Focus on futures trading
 
     async def _initialize_exchange(self) -> None:
         """Initialize the GateIO exchange client."""
@@ -291,8 +293,8 @@ class GateioExchange(BaseExchange):
         return []
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from GateIO."""
-        return await self._make_request("GET", "/spot/accounts", signed=True) or {}
+        """Get raw account information from GateIO Futures."""
+        return await self._make_request("GET", "/futures/accounts", signed=True) or {}
 
     async def _create_order_raw(
         self,
@@ -317,30 +319,31 @@ class GateioExchange(BaseExchange):
         if params:
             order_params.update(params)
 
-        return await self._make_request("POST", "/spot/orders", order_params, signed=True) or {}
+        # Use futures endpoint for perp trading
+        return await self._make_request("POST", "/futures/orders", order_params, signed=True) or {}
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from GateIO."""
-        # GateIO spot doesn't have positions like futures, so return account balance
-        return await self._make_request("GET", "/spot/accounts", signed=True) or {}
+        """Get raw position risk information from GateIO Futures."""
+        # GateIO futures positions
+        return await self._make_request("GET", "/futures/positions", signed=True) or {}
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from GateIO."""
-        params = {"currency_pair": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/spot/orders", params, signed=True)
+        """Get raw open orders from GateIO Futures."""
+        params = {"contract": symbol.upper()} if symbol else {}
+        data = await self._make_request("GET", "/futures/orders", params, signed=True)
 
         if data:
             return data
         return []
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on GateIO."""
-        endpoint = f"/spot/orders/{order_id}"
+        """Cancel raw order on GateIO Futures."""
+        endpoint = f"/futures/orders/{order_id}"
         return await self._make_request("DELETE", endpoint, signed=True) or {}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from GateIO."""
-        endpoint = f"/spot/orders/{order_id}"
+        """Get raw order status from GateIO Futures."""
+        endpoint = f"/futures/orders/{order_id}"
         return await self._make_request("GET", endpoint, signed=True) or {}
 
     async def _open_position_raw(
@@ -362,7 +365,8 @@ class GateioExchange(BaseExchange):
         if price is not None:
             order_params["price"] = str(price)
 
-        return await self._make_request("POST", "/spot/orders", order_params, signed=True) or {}
+        # Use futures endpoint for perp trading
+        return await self._make_request("POST", "/futures/orders", order_params, signed=True) or {}
 
     async def _close_position_raw(
         self,
@@ -379,8 +383,8 @@ class GateioExchange(BaseExchange):
             "amount": str(quantity)
         }
 
-        # Close position by creating opposite order
-        result = await self._make_request("POST", "/spot/orders", order_params, signed=True)
+        # Close position by creating opposite order on futures
+        result = await self._make_request("POST", "/futures/orders", order_params, signed=True)
 
         if result:
             return {

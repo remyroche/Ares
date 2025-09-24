@@ -52,6 +52,8 @@ class MexcExchange(BaseExchange):
         self.session: aiohttp.ClientSession | None = None
         self.base_url = "https://api.mexc.com"
         self.api_url = "https://api.mexc.com/api/v3"
+        self.futures_api_url = "https://contract.mexc.com/api/v1"
+        self.is_futures = True  # Focus on futures trading
 
     async def _initialize_exchange(self) -> None:
         """Initialize the MEXC exchange client."""
@@ -279,8 +281,8 @@ class MexcExchange(BaseExchange):
         return []
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from MEXC."""
-        return await self._make_request("GET", "/account", signed=True) or {}
+        """Get raw account information from MEXC Futures."""
+        return await self._make_request("GET", "/contract/account/assets", signed=True) or {}
 
     async def _create_order_raw(
         self,
@@ -305,12 +307,13 @@ class MexcExchange(BaseExchange):
         if params:
             order_params.update(params)
 
-        return await self._make_request("POST", "/order", order_params, signed=True) or {}
+        # Use futures endpoint for perp trading
+        return await self._make_request("POST", "/contract/order", order_params, signed=True) or {}
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from MEXC."""
+        """Get raw position risk information from MEXC Futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/positionRisk", params, signed=True)
+        data = await self._make_request("GET", "/contract/position", params, signed=True)
 
         if data and isinstance(data, list):
             # Return first matching position or first position if no symbol specified
@@ -322,29 +325,29 @@ class MexcExchange(BaseExchange):
         return data or {}
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from MEXC."""
+        """Get raw open orders from MEXC Futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/openOrders", params, signed=True)
+        data = await self._make_request("GET", "/contract/openOrders", params, signed=True)
 
         if data and isinstance(data, list):
             return data
         return []
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on MEXC."""
+        """Cancel raw order on MEXC Futures."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("DELETE", "/order", params, signed=True) or {}
+        return await self._make_request("DELETE", "/contract/order", params, signed=True) or {}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from MEXC."""
+        """Get raw order status from MEXC Futures."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("GET", "/order", params, signed=True) or {}
+        return await self._make_request("GET", "/contract/order", params, signed=True) or {}
 
     async def _open_position_raw(
         self,
@@ -365,7 +368,8 @@ class MexcExchange(BaseExchange):
         if price is not None:
             order_params["price"] = price
 
-        return await self._make_request("POST", "/order", order_params, signed=True) or {}
+        # Use futures endpoint for perp trading
+        return await self._make_request("POST", "/contract/order", order_params, signed=True) or {}
 
     async def _close_position_raw(
         self,
@@ -382,8 +386,8 @@ class MexcExchange(BaseExchange):
             "quantity": quantity
         }
 
-        # Close position by creating opposite order
-        result = await self._make_request("POST", "/order", order_params, signed=True)
+        # Close position by creating opposite order on futures
+        result = await self._make_request("POST", "/contract/order", order_params, signed=True)
 
         if result:
             return {
@@ -400,7 +404,8 @@ class MexcExchange(BaseExchange):
             "orderId": str(trade_id)
         }
 
-        return await self._make_request("GET", "/order", params, signed=True) or {}
+        # Use futures endpoint for perp trading
+        return await self._make_request("GET", "/contract/order", params, signed=True) or {}
 
     # Additional MEXC-specific methods for data collection
 

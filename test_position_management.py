@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class PositionManagementTester:
-    """Test class for position management features"""
+    """Test class for perpetual futures position management features"""
 
     def __init__(self, exchange_name: str):
         self.exchange_name = exchange_name
         self.config = TradingConfig(
             exchange_name=exchange_name,
-            symbols=["BTCUSDT"],
+            symbols=["BTCUSDT"],  # Futures contract symbols
             max_position_size=10000.0,
             max_daily_trades=20,
             risk_per_trade=0.02,
@@ -83,49 +83,49 @@ class PositionManagementTester:
             return False
 
     async def test_position_operations(self) -> bool:
-        """Test position opening, closing, and trade info retrieval."""
+        """Test futures position opening, closing, and trade info retrieval."""
         try:
-            logger.info(f"🔓 Testing position operations for {self.exchange_name}")
+            logger.info(f"🔓 Testing perpetual futures position operations for {self.exchange_name}")
             symbol = "BTCUSDT"
 
             # Get current positions
             positions = await self.trading_manager.get_positions()
             logger.info(f"Current positions: {positions}")
 
-            # Test opening a position (this may fail without real API keys)
-            logger.info("Attempting to open position...")
+            # Test opening a futures position (this may fail without real API keys)
+            logger.info("Attempting to open perpetual futures position...")
             position_result = await self.trading_manager.open_position(
                 symbol=symbol,
                 side="BUY",
                 quantity=0.001,
-                leverage=1.0,  # Start with 1x leverage for testing
+                leverage=5.0,  # Futures leverage for testing
                 order_type="MARKET"
             )
 
             if position_result and position_result.get("success"):
                 trade_id = position_result.get("trade_id")
-                logger.info(f"✅ Position opened with trade ID: {trade_id}")
+                logger.info(f"✅ Futures position opened with trade ID: {trade_id}")
 
                 # Test getting trade information
-                logger.info("Getting trade information...")
+                logger.info("Getting futures trade information...")
                 trade_info = await self.trading_manager.get_trade_info(symbol, trade_id)
                 if trade_info:
-                    logger.info(f"✅ Retrieved trade info: {trade_info}")
+                    logger.info(f"✅ Retrieved futures trade info: {trade_info}")
                 else:
                     logger.warning("⚠️ Could not retrieve trade info (expected without real API keys)")
 
-                # Test closing position
-                logger.info("Attempting to close position...")
+                # Test closing futures position
+                logger.info("Attempting to close futures position...")
                 close_result = await self.trading_manager.close_position(symbol, trade_id)
 
                 if close_result and close_result.get("success"):
-                    logger.info(f"✅ Position closed successfully. PnL: {close_result.get('pnl', 0)}")
+                    logger.info(f"✅ Futures position closed successfully. P&L: {close_result.get('pnl', 0)}")
                 else:
                     logger.warning("⚠️ Could not close position (expected without real API keys)")
 
                 return True
             else:
-                logger.warning(f"⚠️ Could not open position (expected without real API keys): {position_result}")
+                logger.warning(f"⚠️ Could not open futures position (expected without real API keys): {position_result}")
                 return True  # Still consider test successful
 
         except Exception as e:

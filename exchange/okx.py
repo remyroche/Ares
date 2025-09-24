@@ -384,7 +384,7 @@ class OkxExchange(BaseExchange):
         quantity: float,
         price: float | None
     ) -> dict[str, Any]:
-        """Open raw position on OKX."""
+        """Open raw position on OKX Futures."""
         order_params = {
             "instId": symbol.upper(),
             "tdMode": "cross",  # Cross margin mode for futures

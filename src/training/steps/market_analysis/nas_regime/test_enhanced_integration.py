@@ -16,10 +16,10 @@ import os
 sys.path.append('/workspace/src')
 
 # Import enhanced components
-from training.steps.market_analysis.perfect_nas_regime_system.core.perfect_nas_config import (
+from training.steps.market_analysis.nas_regime.core.perfect_nas_config import (
     PerfectNASConfig, NeuralArchitectureType
 )
-from training.steps.market_analysis.perfect_nas_regime_system.core.perfect_nas_regime_detector import (
+from training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import (
     PerfectNASRegimeDetector
 )
 
@@ -218,8 +218,8 @@ def test_individual_integrations():
         # Test hardware integration
         logger.info("🖥️ Testing hardware integration...")
         try:
-            from training.steps.market_analysis.perfect_nas_regime_system.core.enhanced_perfect_nas_regime_detector import EnhancedPerfectNASRegimeDetector
-            from training.steps.market_analysis.perfect_nas_regime_system.core.perfect_nas_config import PerfectNASConfig
+            from training.steps.market_analysis.nas_regime.core.enhanced_perfect_nas_regime_detector import EnhancedPerfectNASRegimeDetector
+            from training.steps.market_analysis.nas_regime.core.perfect_nas_config import PerfectNASConfig
             
             config = PerfectNASConfig()
             detector = EnhancedPerfectNASRegimeDetector(config)
@@ -255,7 +255,7 @@ def test_individual_integrations():
         # Test matrix operations
         logger.info("🔢 Testing matrix operations...")
         try:
-            from training.steps.market_analysis.perfect_nas_regime_system.core.enhanced_matrix_operations import EnhancedMatrixOperations
+            from training.steps.market_analysis.nas_regime.core.enhanced_matrix_operations import EnhancedMatrixOperations
             
             matrix_ops = EnhancedMatrixOperations()
             test_data = np.random.randn(100, 5)
@@ -278,7 +278,7 @@ def test_individual_integrations():
         # Test ML common integration
         logger.info("🤖 Testing ML common integration...")
         try:
-            from training.steps.market_analysis.perfect_nas_regime_system.core.enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommonConfig
+            from training.steps.market_analysis.nas_regime.core.enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommonConfig
             
             ml_config = MLCommonConfig()
             ml_integration = EnhancedMLCommonIntegration(ml_config)
@@ -304,7 +304,7 @@ def test_individual_integrations():
         # Test NAS clustering integration
         logger.info("🔍 Testing NAS clustering integration...")
         try:
-            from training.steps.market_analysis.perfect_nas_regime_system.core.enhanced_nas_clustering_integration import EnhancedNASClusteringIntegration, NASClusteringConfig
+            from training.steps.market_analysis.nas_regime.core.enhanced_nas_clustering_integration import EnhancedNASClusteringIntegration, NASClusteringConfig
             
             clustering_config = NASClusteringConfig()
             clustering_integration = EnhancedNASClusteringIntegration(clustering_config)
@@ -334,7 +334,7 @@ def test_individual_integrations():
         # Test NAS modeling integration
         logger.info("🧠 Testing NAS modeling integration...")
         try:
-            from training.steps.market_analysis.perfect_nas_regime_system.core.enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
+            from training.steps.market_analysis.nas_regime.core.enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
             
             modeling_config = NASModelingConfig()
             modeling_integration = EnhancedNASModelingIntegration(modeling_config)

@@ -231,7 +231,7 @@ Enhanced Perfect NAS Regime System
 
 ### **Enhanced Mode (Default):**
 ```python
-from perfect_nas_regime_system import PerfectNASConfig, PerfectNASRegimeDetector
+from nas_regime import PerfectNASConfig, PerfectNASRegimeDetector
 
 # Create configuration
 config = PerfectNASConfig.create_short_term_trading_config()

@@ -55,7 +55,7 @@ This system represents the pinnacle of regime detection technology, integrating:
 ### **Enhanced Mode Usage (Maximum Advancement)**
 
 ```python
-from perfect_nas_regime_system import PerfectNASConfig, PerfectNASRegimeDetector
+from nas_regime import PerfectNASConfig, PerfectNASRegimeDetector
 
 # Create configuration
 config = PerfectNASConfig.create_short_term_trading_config()
@@ -237,7 +237,7 @@ pip install plotly       # For visualizations
 
 ```python
 import numpy as np
-from perfect_nas_regime_system import PerfectNASConfig, PerfectNASRegimeDetector
+from nas_regime import PerfectNASConfig, PerfectNASRegimeDetector
 
 # Generate sample data
 market_data = np.random.randn(1000, 5)  # OHLCV data

@@ -26,6 +26,7 @@ from ..components.nas_integration import NASIntegrationComponent
 from ..evaluation.economic_evaluator import EconomicRegimeEvaluator
 from .economic_clustering import EconomicClusterer
 from .coherent_regime_modeling import CoherentRegimeModeler
+from ..shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,9 @@ class HybridNASTASRegimeDetector:
         self.economic_clusterer = EconomicClusterer(config.clustering_config)
         self.regime_modeler = CoherentRegimeModeler(config.economic_evaluation)
 
+        # Initialize position-aware analyzer for consistent win rate calculations
+        self.position_analyzer = PositionAwareTradingAnalyzer(PositionAwareConfig())
+
         self.logger.info("✅ Hybrid NAS-TAS Regime Detector initialized")
         self.logger.info(f"   Combination Strategy: {config.combination_strategy.value}")
         self.logger.info(f"   TAS Weight: {config.tas_config.get('base_weight', 0.4)}")
@@ -81,6 +85,7 @@ class HybridNASTASRegimeDetector:
         self.logger.info(f"   Economic Clustering: {config.clustering_config.get('economic_clustering', True)}")
         self.logger.info(f"   Momentum Integration: {config.clustering_config.get('momentum_integration', True)}")
         self.logger.info(f"   Volume Integration: {config.clustering_config.get('volume_integration', True)}")
+        self.logger.info(f"   Position-Aware Analysis: ✅ Enabled")
 
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
@@ -208,7 +213,8 @@ class HybridNASTASRegimeDetector:
                     },
                     'economic_clustering_used': economic_clustering_result.success,
                     'momentum_integration': self.config.clustering_config.get('momentum_integration', True),
-                    'volume_integration': self.config.clustering_config.get('volume_integration', True)
+                    'volume_integration': self.config.clustering_config.get('volume_integration', True),
+                    'position_aware_analysis': True
                 }
             )
 

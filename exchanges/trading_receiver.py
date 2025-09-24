@@ -2,6 +2,7 @@
 Exchange-Agnostic Trading Receiver
 
 Receives trading orders and routes them to the appropriate exchange.
+Enhanced with multi-exchange support and base exchange components.
 """
 
 import asyncio
@@ -16,6 +17,9 @@ import logging
 from .order_router import OrderRouter
 from .data_aggregator import DataAggregator
 from .exchange_registry import ExchangeRegistry
+from .base_exchange import ExchangeMessageHandler, MultiExchangeBase, ExchangeResponseHandler
+from .base_exchange.message_handler import MessageBroker, MessageRouter
+from .base_exchange.response_handler import ResponseAggregator
 
 
 class MessageType(Enum):
@@ -56,15 +60,25 @@ class TradingResponse:
 
 class TradingReceiver:
     """Exchange-agnostic trading receiver that routes orders to appropriate exchanges"""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
-        # Initialize components
+
+        # Initialize base exchange components
         self.exchange_registry = ExchangeRegistry()
+        self.multi_exchange_base = MultiExchangeBase({})
+        self.message_handler = ExchangeMessageHandler(self.multi_exchange_base)
+        self.response_handler = ExchangeResponseHandler()
+        self.response_aggregator = ResponseAggregator()
+        self.message_broker = MessageBroker()
+
+        # Initialize legacy components for backward compatibility
         self.order_router = OrderRouter(self.exchange_registry)
         self.data_aggregator = DataAggregator(self.exchange_registry)
+
+        # Multi-exchange order tracking
+        self.pending_multi_exchange_orders: Dict[str, Dict[str, Any]] = {}
         
         # Message handling
         self.message_handlers: Dict[MessageType, List[Callable[[TradingMessage], Awaitable[TradingResponse]]]] = {
@@ -92,40 +106,65 @@ class TradingReceiver:
         # Running state
         self._running = False
         self._cleanup_task: Optional[asyncio.Task] = None
+
+        # Multi-exchange configuration
+        self.primary_exchange = self.config.get("primary_exchange", "binance")
+        self.failover_exchanges = self.config.get("failover_exchanges", ["okx", "gateio"])
+        self.broadcast_enabled = self.config.get("broadcast_enabled", True)
+        self.load_balancing_enabled = self.config.get("load_balancing_enabled", False)
         
     async def start(self) -> None:
         """Start the trading receiver"""
         if self._running:
             return
-            
+
         self.logger.info("Starting trading receiver...")
-        
+
         try:
             # Initialize exchange registry with configured exchanges
             await self._initialize_exchanges()
-            
+
+            # Initialize multi-exchange base with registered exchanges
+            exchanges = await self.exchange_registry.get_registered_exchanges()
+            self.multi_exchange_base = MultiExchangeBase({
+                name: await self.exchange_registry.get_exchange(name)
+                for name in exchanges
+            })
+
+            # Update message handler with new multi-exchange base
+            self.message_handler = ExchangeMessageHandler(self.multi_exchange_base)
+
+            # Start base exchange components
+            await self.message_handler.start()
+            await self.response_handler.start()
+            await self.message_broker.start()
+
             # Start cleanup task
             self._cleanup_task = asyncio.create_task(self._cleanup_expired_responses())
-            
+
             # Register default handlers
             self._register_default_handlers()
-            
+
+            # Register enhanced message handlers
+            self._register_enhanced_handlers()
+
             self._running = True
             self.logger.info("Trading receiver started successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to start trading receiver: {e}")
+            await self.stop()
             raise
     
     async def stop(self) -> None:
         """Stop the trading receiver"""
         if not self._running:
             return
-            
+
         self.logger.info("Stopping trading receiver...")
-        
+
         self._running = False
-        
+
         # Cancel cleanup task
         if self._cleanup_task:
             self._cleanup_task.cancel()
@@ -133,10 +172,16 @@ class TradingReceiver:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-        
+
+        # Stop base exchange components
+        await self.message_handler.stop()
+        await self.response_handler.stop()
+        await self.message_broker.stop()
+
         # Close all exchange connections
         await self.exchange_registry.close_all()
-        
+        await self.multi_exchange_base.close_all_exchanges()
+
         self.logger.info("Trading receiver stopped")
     
     def register_handler(self, message_type: MessageType, handler: Callable[[TradingMessage], Awaitable[TradingResponse]]) -> None:
@@ -289,6 +334,362 @@ class TradingReceiver:
 
         return responses
 
+    async def send_order_to_all_exchanges(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, TradingResponse]:
+        """
+        Send order to all configured exchanges.
+
+        Args:
+            symbol: Trading symbol
+            side: Order side ("buy" or "sell")
+            order_type: Order type ("market", "limit", etc.)
+            quantity: Order quantity
+            price: Order price (optional)
+            **kwargs: Additional order parameters
+
+        Returns:
+            Dictionary mapping exchange names to their responses
+        """
+        if not self._running:
+            return {"error": "Trading receiver is not running"}
+
+        # Get all registered exchanges
+        exchanges = await self.exchange_registry.get_registered_exchanges()
+        if not exchanges:
+            return {"error": "No exchanges registered"}
+
+        responses = {}
+
+        # Send order to each exchange
+        for exchange_name in exchanges:
+            try:
+                response = await self.send_order(
+                    exchange=exchange_name,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    **kwargs
+                )
+                responses[exchange_name] = response
+
+            except Exception as e:
+                self.logger.error(f"Error sending order to {exchange_name}: {e}")
+                responses[exchange_name] = TradingResponse(
+                    id=str(int(time.time() * 1000)),
+                    request_id=str(int(time.time() * 1000)),
+                    success=False,
+                    timestamp=datetime.now(),
+                    data={},
+                    error=str(e)
+                )
+
+        return responses
+
+    async def send_order_with_routing(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        routing_strategy: str = "broadcast",
+        **kwargs
+    ) -> Dict[str, TradingResponse]:
+        """
+        Send order using intelligent routing strategy.
+
+        Args:
+            symbol: Trading symbol
+            side: Order side ("buy" or "sell")
+            order_type: Order type ("market", "limit", etc.)
+            quantity: Order quantity
+            price: Order price (optional)
+            routing_strategy: Routing strategy ("broadcast", "primary", "failover", "best_price")
+            **kwargs: Additional order parameters
+
+        Returns:
+            Dictionary mapping exchange names to their responses
+        """
+        if not self._running:
+            return {"error": "Trading receiver is not running"}
+
+        if routing_strategy == "broadcast":
+            return await self.send_order_to_all_exchanges(symbol, side, order_type, quantity, price, **kwargs)
+
+        elif routing_strategy == "primary":
+            return await self.send_order_to_primary_with_failover(symbol, side, order_type, quantity, price, **kwargs)
+
+        elif routing_strategy == "best_price":
+            best_exchange = await self._get_best_execution_exchange(symbol, side, quantity)
+            if best_exchange:
+                response = await self.send_order(
+                    exchange=best_exchange,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    **kwargs
+                )
+                return {best_exchange: response}
+            else:
+                return {"error": "No suitable exchange found for best price execution"}
+
+        else:
+            return {"error": f"Unknown routing strategy: {routing_strategy}"}
+
+    async def send_order_to_primary_with_failover(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, TradingResponse]:
+        """
+        Send order to primary exchange with automatic failover.
+
+        Args:
+            symbol: Trading symbol
+            side: Order side ("buy" or "sell")
+            order_type: Order type ("market", "limit", etc.)
+            quantity: Order quantity
+            price: Order price (optional)
+            **kwargs: Additional order parameters
+
+        Returns:
+            Dictionary mapping exchange names to their responses
+        """
+        exchanges_to_try = [self.primary_exchange] + [ex for ex in self.failover_exchanges if ex != self.primary_exchange]
+
+        for exchange_name in exchanges_to_try:
+            try:
+                response = await self.send_order(
+                    exchange=exchange_name,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    **kwargs
+                )
+
+                # If successful, return the response
+                if response.success:
+                    return {exchange_name: response}
+                else:
+                    self.logger.warning(f"Order failed on {exchange_name}: {response.error}")
+                    continue
+
+            except Exception as e:
+                self.logger.error(f"Error sending order to {exchange_name}: {e}")
+                continue
+
+        # If all exchanges failed
+        return {"error": "All exchanges failed to execute order"}
+
+    async def _get_best_execution_exchange(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float
+    ) -> Optional[str]:
+        """
+        Determine the best exchange for order execution.
+
+        Args:
+            symbol: Trading symbol
+            side: Order side
+            quantity: Order quantity
+
+        Returns:
+            Name of the best exchange or None
+        """
+        try:
+            # Get best price information from data aggregator
+            price_info = await self.data_aggregator.get_aggregated_data(symbol, "ticker")
+
+            if not price_info.get("success"):
+                return self.primary_exchange  # Fallback to primary
+
+            exchange_data = price_info.get("exchange_data", {})
+
+            if side == "buy":
+                # For buys, prefer lowest ask price
+                best_exchange = None
+                best_ask = float('inf')
+
+                for exchange, data in exchange_data.items():
+                    ask = float(data.get("ask", 0))
+                    if ask > 0 and ask < best_ask:
+                        best_ask = ask
+                        best_exchange = exchange
+
+                return best_exchange or self.primary_exchange
+
+            else:
+                # For sells, prefer highest bid price
+                best_exchange = None
+                best_bid = 0
+
+                for exchange, data in exchange_data.items():
+                    bid = float(data.get("bid", 0))
+                    if bid > best_bid:
+                        best_bid = bid
+                        best_exchange = exchange
+
+                return best_exchange or self.primary_exchange
+
+        except Exception as e:
+            self.logger.error(f"Error determining best execution exchange: {e}")
+            return self.primary_exchange
+
+    async def _handle_multi_exchange_order(self, message: TradingMessage) -> None:
+        """
+        Handle orders that should be sent to multiple exchanges.
+
+        Args:
+            message: Trading message containing order information
+        """
+        try:
+            # Extract order information from message
+            symbol = message.symbol
+            side = message.data.get("side", "buy")
+            order_type = message.data.get("order_type", "market")
+            quantity = message.data.get("quantity", 0)
+            price = message.data.get("price")
+
+            # Determine target exchanges based on configuration
+            target_exchanges = await self._determine_target_exchanges(message)
+
+            # Send order to all target exchanges
+            responses = await self.send_order_to_all_exchanges(
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                **message.data
+            )
+
+            # Store multi-exchange order information
+            multi_order_id = f"multi_{symbol}_{int(time.time() * 1000)}"
+            self.pending_multi_exchange_orders[multi_order_id] = {
+                "symbol": symbol,
+                "side": side,
+                "order_type": order_type,
+                "quantity": quantity,
+                "price": price,
+                "target_exchanges": target_exchanges,
+                "responses": responses,
+                "timestamp": datetime.now(),
+                "status": "completed"
+            }
+
+            self.logger.info(f"Multi-exchange order {multi_order_id} completed for {symbol}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling multi-exchange order: {e}")
+
+    async def _determine_target_exchanges(self, message: TradingMessage) -> List[str]:
+        """
+        Determine which exchanges should receive the order.
+
+        Args:
+            message: Trading message
+
+        Returns:
+            List of exchange names
+        """
+        # Check if specific exchanges are requested
+        requested_exchanges = message.data.get("target_exchanges")
+        if requested_exchanges:
+            return requested_exchanges
+
+        # Use configured primary and failover exchanges
+        if self.broadcast_enabled:
+            return await self.exchange_registry.get_active_exchanges()
+        else:
+            return [self.primary_exchange] + self.failover_exchanges
+
+    async def get_multi_exchange_order_status(self, multi_order_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get status of a multi-exchange order.
+
+        Args:
+            multi_order_id: ID of the multi-exchange order
+
+        Returns:
+            Order status information or None if not found
+        """
+        return self.pending_multi_exchange_orders.get(multi_order_id)
+
+    async def get_all_multi_exchange_orders(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all multi-exchange orders.
+
+        Returns:
+            Dictionary of all multi-exchange orders
+        """
+        return dict(self.pending_multi_exchange_orders)
+
+    async def cancel_multi_exchange_order(self, multi_order_id: str) -> Dict[str, Any]:
+        """
+        Cancel a multi-exchange order on all exchanges.
+
+        Args:
+            multi_order_id: ID of the multi-exchange order
+
+        Returns:
+            Cancellation results from all exchanges
+        """
+        if multi_order_id not in self.pending_multi_exchange_orders:
+            return {"error": "Multi-exchange order not found"}
+
+        order_info = self.pending_multi_exchange_orders[multi_order_id]
+        responses = {}
+
+        # Cancel on each exchange where the order was sent
+        for exchange_name in order_info.get("target_exchanges", []):
+            try:
+                # Extract the original order ID for this exchange from responses
+                exchange_response = order_info.get("responses", {}).get(exchange_name, {})
+                if exchange_response.get("success"):
+                    order_id = exchange_response.get("data", {}).get("order_id")
+                    if order_id:
+                        cancel_response = await self.cancel_order(exchange_name, order_info["symbol"], order_id)
+                        responses[exchange_name] = cancel_response
+                    else:
+                        responses[exchange_name] = {"error": "No order ID found for cancellation"}
+                else:
+                    responses[exchange_name] = {"error": "Order was not successfully placed"}
+
+            except Exception as e:
+                responses[exchange_name] = {"error": str(e)}
+
+        # Update order status
+        order_info["status"] = "cancelled"
+        order_info["cancelled_at"] = datetime.now()
+
+        return {
+            "multi_order_id": multi_order_id,
+            "cancellation_responses": responses,
+            "successful_cancellations": [
+                ex for ex, resp in responses.items()
+                if resp.get("success", False)
+            ]
+        }
+
     async def request_data(
         self,
         exchange: str,
@@ -399,6 +800,18 @@ class TradingReceiver:
         self.register_handler(MessageType.POSITION_INFO, self._handle_position_info)
         self.register_handler(MessageType.CANCEL_ORDER, self._handle_cancel_order)
         self.register_handler(MessageType.HEARTBEAT, self._handle_heartbeat)
+
+    def _register_enhanced_handlers(self) -> None:
+        """Register enhanced multi-exchange message handlers"""
+        # Register handlers for the enhanced message handler
+        from .base_exchange.message_handler import MessageType as BaseMessageType
+
+        async def handle_multi_exchange_order(message: TradingMessage, exchange_name: str) -> None:
+            """Handle orders sent to multiple exchanges"""
+            await self._handle_multi_exchange_order(message)
+
+        # Note: This would register with the base exchange message handler
+        # For now, we'll use the existing structure but add multi-exchange capability
     
     async def _handle_order_message(self, message: TradingMessage) -> TradingResponse:
         """Handle order message"""
@@ -652,10 +1065,53 @@ class TradingReceiver:
     
     async def get_statistics(self) -> Dict[str, Any]:
         """Get receiver statistics"""
-        return {
-            "running": self._running,
-            "statistics": self.message_stats,
-            "registered_exchanges": await self.exchange_registry.get_registered_exchanges(),
-            "active_connections": len(self.pending_responses),
-            "timestamp": datetime.now().isoformat()
-        }
+        try:
+            # Get basic statistics
+            basic_stats = {
+                "running": self._running,
+                "statistics": self.message_stats,
+                "registered_exchanges": await self.exchange_registry.get_registered_exchanges(),
+                "active_connections": len(self.pending_responses),
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Get multi-exchange statistics
+            multi_exchange_stats = {
+                "multi_exchange_orders": len(self.pending_multi_exchange_orders),
+                "primary_exchange": self.primary_exchange,
+                "failover_exchanges": self.failover_exchanges,
+                "broadcast_enabled": self.broadcast_enabled,
+                "load_balancing_enabled": self.load_balancing_enabled,
+                "total_exchanges_configured": len(await self.exchange_registry.get_registered_exchanges())
+            }
+
+            # Get message handler statistics
+            message_handler_stats = {}
+            if hasattr(self.message_handler, 'get_queue_status'):
+                message_handler_stats = await self.message_handler.get_queue_status()
+
+            # Get response handler statistics
+            response_handler_stats = {}
+            if hasattr(self.response_handler, 'get_response_statistics'):
+                response_handler_stats = await self.response_handler.get_response_statistics()
+
+            return {
+                **basic_stats,
+                "multi_exchange": multi_exchange_stats,
+                "message_handler": message_handler_stats,
+                "response_handler": response_handler_stats,
+                "config": {
+                    "primary_exchange": self.primary_exchange,
+                    "failover_exchanges": self.failover_exchanges,
+                    "broadcast_enabled": self.broadcast_enabled,
+                    "load_balancing_enabled": self.load_balancing_enabled
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting statistics: {e}")
+            return {
+                "error": str(e),
+                "running": self._running,
+                "timestamp": datetime.now().isoformat()
+            }

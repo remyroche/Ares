@@ -40,8 +40,8 @@ CVLSA/
 ```python
 import numpy as np
 import pandas as pd
-from cvlsa_architecture import EnhancedCVLSAConfig, create_enhanced_cvlsa_model
-from configuration_simplification import create_configuration_simplification
+from src.utils.ml_common.cvlsa.cvlsa_architecture import EnhancedCVLSAConfig, create_enhanced_cvlsa_model
+from src.utils.ml_common.cvlsa.configuration_simplification import create_configuration_simplification
 
 # Create sample data
 X = np.random.randn(1000, 20)
@@ -75,12 +75,12 @@ if auto_result.success:
 ### Advanced Usage with All Components
 
 ```python
-from adaptive_cascade_architecture import create_adaptive_cascade
-from enhanced_variable_selection import create_enhanced_variable_selector
-from improved_feature_engineering import create_improved_feature_engineer
-from performance_memory_management import create_performance_memory_manager
-from robust_error_handling import create_robust_error_handler
-from advanced_monitoring_analytics import create_advanced_monitoring_analytics
+from src.utils.ml_common.cvlsa.adaptive_cascade_architecture import create_adaptive_cascade
+from src.utils.ml_common.cvlsa.enhanced_variable_selection import create_enhanced_variable_selector
+from src.utils.ml_common.cvlsa.improved_feature_engineering import create_improved_feature_engineer
+from src.utils.ml_common.cvlsa.performance_memory_management import create_performance_memory_manager
+from src.utils.ml_common.cvlsa.robust_error_handling import create_robust_error_handler
+from src.utils.ml_common.cvlsa.advanced_monitoring_analytics import create_advanced_monitoring_analytics
 
 # Create complete enhanced CVLSA system
 def create_enhanced_cvlsa_system(X, y, market_data, regimes=None):

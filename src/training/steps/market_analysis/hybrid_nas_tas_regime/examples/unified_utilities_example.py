@@ -30,9 +30,9 @@ from ..shared_utils import (
     create_evaluation_framework, EvaluationType, EvaluationMetric
 )
 
-# Import Enhanced ML Common integration
+# Import ML Common integration
 from ..shared_utils import (
-    create_enhanced_ml_common_integration, create_tas_ml_common_integration,
+    create_ml_common_integration, create_tas_ml_common_integration,
     create_nas_ml_common_integration, create_hybrid_ml_common_integration,
     MLCommonIntegrationConfig
 )
@@ -349,11 +349,11 @@ def example_evaluation_framework():
     return tas_evaluator, nas_evaluator
 
 
-def example_enhanced_ml_common_integration():
-    """Example of using Enhanced ML Common integration."""
-    logger.info("🔗 Example: Enhanced ML Common Integration")
+def example_ml_common_integration():
+    """Example of using ML Common integration."""
+    logger.info("🔗 Example: ML Common Integration")
     
-    # Create enhanced ML Common integrations
+    # Create ML Common integrations
     tas_integration = create_tas_ml_common_integration()
     nas_integration = create_nas_ml_common_integration()
     hybrid_integration = create_hybrid_ml_common_integration()
@@ -434,7 +434,7 @@ def example_enhanced_ml_common_integration():
     
     logger.info(f"TAS Overfitting Detection: {tas_overfitting_result}")
     
-    logger.info("✅ Enhanced ML Common integration example completed")
+    logger.info("✅ ML Common integration example completed")
     return tas_integration, nas_integration, hybrid_integration
 
 
@@ -449,7 +449,7 @@ def main():
         example_meta_learning()
         example_hardware_optimization()
         example_evaluation_framework()
-        example_enhanced_ml_common_integration()
+        example_ml_common_integration()
         
         logger.info("✅ All examples completed successfully!")
         

@@ -1,422 +1,426 @@
 """
-ML Common Utilities Integration for Shared Use by TAS and NAS Engines
+ML Common Integration for TAS and NAS
 
-This module provides shared ML common utilities that are used by both TAS and NAS engines,
-centralizing functionality to avoid duplication and ensure consistency.
+This module integrates the existing ML Common utilities with the unified architecture
+system, leveraging the comprehensive tools already available in utils/ml_commons/
+instead of recreating functionality.
 """
 
 import logging
 import time
+import numpy as np
+import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import numpy as np
-import pandas as pd
+from datetime import datetime
 
-# Import ML Common Utilities
-from src.utils.ml_common import (
-    # Model utilities
-    EnhancedModelTrainer, train_model_with_confidence_metrics,
-    ModelEvaluator, ModelRegistry,
-    # Validation utilities
-    UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
-    ConfigurationValidator, optimize_threshold, calibrate_probabilities,
-    # Optimization utilities
-    RegimeSpecificTPSLOptimizer,
-    # Ensemble utilities
-    StackingEnsembleManager, create_analyst_ensemble,
-    # Utils
-    MemoryOptimizer, UnifiedCache, get_unified_cache,
-    LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler,
-    setup_logger, get_logger
-)
+# Import existing ML Common utilities
+from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
+from src.utils.ml_common.validation.enhanced_overfitting_detection import EnhancedOverfittingDetector
+from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
+from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention
+from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
 
-logger = get_logger(__name__)
+# Import existing optimization utilities
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization as CanonicalHPO
+
+from .unified_architecture_config import ArchitectureType, OptimizationObjective
+
+logger = logging.getLogger(__name__)
 
 
-class MLUtilityType(Enum):
-    """Types of ML utilities available."""
-    TAS = "tas"
-    NAS = "nas"
-    HYBRID = "hybrid"
-    SHARED = "shared"
+class MLCommonIntegrationType(Enum):
+    """Types of ML Common integrations."""
+    LOOKAHEAD_PROTECTION = "lookahead_protection"
+    OVERFITTING_DETECTION = "overfitting_detection"
+    HPO_OPTIMIZATION = "hpo_optimization"
+    DATA_LEAKAGE_PREVENTION = "data_leakage_prevention"
+    UNIFIED_VALIDATION = "unified_validation"
+    GRID_BAYESIAN_OPTIMIZATION = "grid_bayesian_optimization"
 
 
 @dataclass
-class MLUtilityConfig:
-    """Configuration for ML utilities."""
-    utility_type: MLUtilityType = MLUtilityType.SHARED
-    enable_safeguards: bool = True
-    enable_memory_optimization: bool = True
-    enable_caching: bool = True
-    enable_error_handling: bool = True
-    enable_validation: bool = True
-    enable_cross_validation: bool = True
-    enable_threshold_optimization: bool = True
-    cache_ttl_seconds: int = 3600
-    memory_limit_mb: int = 8192
+class MLCommonIntegrationConfig:
+    """Configuration for ML Common integration."""
+    # Lookahead protection
+    enable_lookahead_protection: bool = True
+    lookahead_config: Dict[str, Any] = field(default_factory=lambda: {
+        'strict_mode': True,
+        'tolerance_seconds': 60,
+        'enable_automatic_filtering': True
+    })
+    
+    # Overfitting detection
+    enable_overfitting_detection: bool = True
+    overfitting_config: Dict[str, Any] = field(default_factory=lambda: {
+        'enable_learning_curves': True,
+        'enable_cross_validation': True,
+        'enable_early_stopping': True,
+        'patience': 10
+    })
+    
+    # HPO optimization
+    enable_hpo_optimization: bool = True
+    hpo_config: Dict[str, Any] = field(default_factory=lambda: {
+        'enable_parallel': True,
+        'max_workers': 4,
+        'enable_monitoring': True,
+        'use_nonlinear_optimization': True
+    })
+    
+    # Data leakage prevention
+    enable_data_leakage_prevention: bool = True
+    leakage_prevention_config: Dict[str, Any] = field(default_factory=lambda: {
+        'enable_temporal_validation': True,
+        'enforce_strict_time_order': True,
+        'lookahead_detection_enabled': True
+    })
+    
+    # Unified validation
+    enable_unified_validation: bool = True
+    validation_config: Dict[str, Any] = field(default_factory=lambda: {
+        'enable_cross_validation': True,
+        'enable_bootstrap': True,
+        'enable_uncertainty_quantification': True
+    })
 
 
-class SharedMLUtilitiesManager:
-    """Centralized manager for ML common utilities used by both TAS and NAS engines."""
-
-    def __init__(self, config: MLUtilityConfig):
-        """Initialize the shared ML utilities manager."""
-        self.config = config
-        self.logger = get_logger(self.__class__.__name__)
-
-        # Initialize all shared components
-        self._initialize_components()
-
-        self.logger.info("✅ Shared ML Utilities Manager initialized")
-        self.logger.info(f"   Utility Type: {config.utility_type.value}")
-        self.logger.info(f"   Memory Limit: {config.memory_limit_mb}MB")
-
-    def _initialize_components(self):
-        """Initialize all ML common components."""
+class MLCommonIntegration:
+    """ML Common integration using existing utilities."""
+    
+    def __init__(self, 
+                 architecture_type: ArchitectureType,
+                 config: MLCommonIntegrationConfig = None):
+        """Initialize ML Common integration.
+        
+        Args:
+            architecture_type: Type of architecture (TAS/NAS/Hybrid)
+            config: Integration configuration
+        """
+        self.architecture_type = architecture_type
+        self.config = config or MLCommonIntegrationConfig()
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize ML Common utilities
+        self._initialize_ml_common_utilities()
+        
+        self.logger.info(f"✅ ML Common Integration initialized for {architecture_type.value}")
+    
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML Common utilities based on configuration."""
         try:
-            # Initialize safeguards
-            if self.config.enable_safeguards:
-                self.safeguards = MLTrainingSafeguards()
-                self.logger.info("✅ ML Training Safeguards initialized")
-
-            # Initialize error handler
-            if self.config.enable_error_handling:
-                self.error_handler = RobustErrorHandler()
-                self.logger.info("✅ Robust Error Handler initialized")
-
-            # Initialize memory optimizer
-            if self.config.enable_memory_optimization:
-                self.memory_optimizer = MemoryOptimizer()
-                self.logger.info("✅ Memory Optimizer initialized")
-
-            # Initialize lookahead protection
-            self.lookahead_protection = LookaheadProtection()
-            self.logger.info("✅ Lookahead Protection initialized")
-
-            # Initialize cache
-            if self.config.enable_caching:
-                self.cache = get_unified_cache()
-                self.logger.info("✅ Unified Cache initialized")
-
-            # Initialize model registry
-            self.model_registry = ModelRegistry()
-            self.logger.info("✅ Model Registry initialized")
-
-            # Initialize regime-specific optimizer
-            self.regime_optimizer = RegimeSpecificTPSLOptimizer()
-            self.logger.info("✅ Regime-Specific Optimizer initialized")
-
-            # Initialize configuration validator
-            self.config_validator = ConfigurationValidator()
-            self.logger.info("✅ Configuration Validator initialized")
-
-            # Initialize ensemble manager
-            self.ensemble_manager = StackingEnsembleManager()
-            self.logger.info("✅ Ensemble Manager initialized")
-
-            self.logger.info("✅ All ML Common components initialized successfully")
-
+            # Initialize Lookahead Protection
+            if self.config.enable_lookahead_protection:
+                self.lookahead_protection = LookaheadProtection(
+                    config=self.config.lookahead_config
+                )
+                self.logger.info("✅ Lookahead Protection initialized")
+            else:
+                self.lookahead_protection = None
+            
+            # Initialize Overfitting Detection
+            if self.config.enable_overfitting_detection:
+                self.overfitting_detector = EnhancedOverfittingDetector(
+                    config=self.config.overfitting_config
+                )
+                self.logger.info("✅ Overfitting Detection initialized")
+            else:
+                self.overfitting_detector = None
+            
+            # Initialize HPO Optimization
+            if self.config.enable_hpo_optimization:
+                self.hpo_optimizer = CanonicalHPO(
+                    config=self.config.hpo_config
+                )
+                self.logger.info("✅ HPO Optimization initialized")
+            else:
+                self.hpo_optimizer = None
+            
+            # Initialize Data Leakage Prevention
+            if self.config.enable_data_leakage_prevention:
+                self.data_leakage_prevention = DataLeakagePrevention(
+                    config=self.config.leakage_prevention_config
+                )
+                self.logger.info("✅ Data Leakage Prevention initialized")
+            else:
+                self.data_leakage_prevention = None
+            
+            # Initialize Unified Validation
+            if self.config.enable_unified_validation:
+                self.unified_validation = UnifiedValidationSystem(
+                    config=self.config.validation_config
+                )
+                self.logger.info("✅ Unified Validation initialized")
+            else:
+                self.unified_validation = None
+                
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize ML Common components: {e}")
+            self.logger.error(f"❌ Failed to initialize ML Common utilities: {e}")
             raise
-
-    def check_training_safety(self, train_data: Tuple, validation_data: Tuple) -> bool:
-        """Check training safety using safeguards."""
-        if not self.config.enable_safeguards or not hasattr(self, 'safeguards'):
-            return True
-        return self.safeguards.check_training_safety(train_data, validation_data)
-
-    def validate_data_split(self, train_data: Tuple, validation_data: Tuple) -> bool:
-        """Validate data split for lookahead bias."""
-        return self.lookahead_protection.validate_data_split(train_data, validation_data)
-
-    def optimize_memory_usage(self):
-        """Get memory optimization context manager."""
-        if not self.config.enable_memory_optimization or not hasattr(self, 'memory_optimizer'):
-            return self._dummy_context_manager()
-        return self.memory_optimizer.optimize_memory_usage()
-
-    def _dummy_context_manager(self):
-        """Dummy context manager for when memory optimization is disabled."""
-        class DummyContext:
-            def __enter__(self):
-                return self
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                pass
-        return DummyContext()
-
-    def get_cached_result(self, cache_key: str, default=None):
-        """Get cached result if caching is enabled."""
-        if not self.config.enable_caching or not hasattr(self, 'cache'):
-            return default
-        return self.cache.get(cache_key)
-
-    def set_cached_result(self, cache_key: str, value: Any, ttl: int = None):
-        """Set cached result if caching is enabled."""
-        if not self.config.enable_caching or not hasattr(self, 'cache'):
-            return
-        if ttl is None:
-            ttl = self.config.cache_ttl_seconds
-        self.cache.set(cache_key, value, ttl=ttl)
-
-    def perform_cross_validation(self, model: Any, X: np.ndarray, y: np.ndarray,
-                               strategy: str = "temporal", cv_folds: int = 5,
-                               scoring: List[str] = None) -> Dict[str, Any]:
-        """Perform cross-validation using ML Common utilities."""
-        if not self.config.enable_cross_validation:
-            return {'error': 'Cross-validation disabled', 'success': False}
-
-        try:
-            if scoring is None:
-                scoring = ['accuracy', 'precision', 'recall', 'f1']
-
-            cv_result = perform_cross_validation(
-                model=model,
-                X=X,
-                y=y,
-                strategy=strategy,
-                cv_folds=cv_folds,
-                scoring=scoring
-            )
-
-            self.logger.info(f"✅ Cross-validation completed with mean score: {cv_result.mean_score".4f"}")
-            return cv_result.__dict__ if hasattr(cv_result, '__dict__') else {}
-
-        except Exception as e:
-            self.logger.warning(f"❌ Cross-validation failed: {e}")
-            return {'error': str(e), 'success': False}
-
-    def optimize_thresholds(self, y_true: np.ndarray, y_pred_proba: np.ndarray,
-                          metric: str = 'f1') -> Dict[str, Any]:
-        """Optimize model thresholds using ML Common utilities."""
-        if not self.config.enable_threshold_optimization:
-            return {'error': 'Threshold optimization disabled', 'success': False}
-
-        try:
-            optimized_thresholds = optimize_threshold(
-                y_true=y_true,
-                y_pred_proba=y_pred_proba,
-                metric=metric
-            )
-
-            calibrated_proba = calibrate_probabilities(y_pred_proba)
-
-            self.logger.info(f"✅ Threshold optimization completed: {optimized_thresholds}")
-            return {
-                'optimized_thresholds': optimized_thresholds,
-                'calibrated_probabilities': calibrated_proba,
-                'success': True
-            }
-
-        except Exception as e:
-            self.logger.warning(f"❌ Threshold optimization failed: {e}")
-            return {'success': False, 'error': str(e)}
-
-    def handle_error(self, error: Exception, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Handle errors using ML Common error handler."""
-        if not self.config.enable_error_handling or not hasattr(self, 'error_handler'):
-            return {'error': str(error), 'handled': False}
-
-        return self.error_handler.handle_error(error, context)
-
-    def optimize_ensemble_weights(self, tas_performance: float, nas_performance: float,
-                                hybrid_performance: float) -> Dict[str, Any]:
-        """Optimize ensemble weights using regime-specific optimizer."""
-        try:
-            optimized_weights = self.regime_optimizer.optimize_weights(
-                tas_performance=tas_performance,
-                nas_performance=nas_performance,
-                hybrid_performance=hybrid_performance
-            )
-
-            self.logger.info(f"✅ Ensemble weights optimized: TAS={optimized_weights.get('tas_weight', 0.5)".3f"}, NAS={optimized_weights.get('nas_weight', 0.5)".3f"}")
-            return optimized_weights
-
-        except Exception as e:
-            self.logger.warning(f"❌ Ensemble weight optimization failed: {e}")
-            return {'tas_weight': 0.5, 'nas_weight': 0.5, 'error': str(e)}
-
-    def get_system_status(self) -> Dict[str, Any]:
-        """Get status of all ML utilities."""
-        return {
-            'utility_type': self.config.utility_type.value,
-            'safeguards_enabled': self.config.enable_safeguards and hasattr(self, 'safeguards'),
-            'memory_optimization_enabled': self.config.enable_memory_optimization and hasattr(self, 'memory_optimizer'),
-            'caching_enabled': self.config.enable_caching and hasattr(self, 'cache'),
-            'error_handling_enabled': self.config.enable_error_handling and hasattr(self, 'error_handler'),
-            'cross_validation_enabled': self.config.enable_cross_validation,
-            'threshold_optimization_enabled': self.config.enable_threshold_optimization,
-            'cache_stats': self.cache.get_stats() if hasattr(self, 'cache') and hasattr(self.cache, 'get_stats') else None
+    
+    def validate_data_split(self, 
+                          X_train: np.ndarray,
+                          X_test: np.ndarray,
+                          y_train: np.ndarray,
+                          y_test: np.ndarray,
+                          timestamps_train: Optional[np.ndarray] = None,
+                          timestamps_test: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Validate data split using ML Common utilities."""
+        validation_results = {
+            'is_valid': True,
+            'lookahead_protection': {},
+            'data_leakage_prevention': {},
+            'unified_validation': {}
         }
-
-
-class TASSharedMLUtilities(SharedMLUtilitiesManager):
-    """TAS-specific ML utilities extending the shared manager."""
-
-    def __init__(self, config: Optional[MLUtilityConfig] = None):
-        if config is None:
-            config = MLUtilityConfig(utility_type=MLUtilityType.TAS)
-        super().__init__(config)
-
-    def evaluate_tree_architecture(self, architecture, validation_data: Tuple,
-                                 regime_data: Optional[Dict[str, Any]] = None) -> float:
-        """Evaluate tree architecture with TAS-specific optimizations."""
+        
         try:
-            cache_key = f"tas_architecture_eval_{hash(str(architecture))}"
-            cached_result = self.get_cached_result(cache_key)
-            if cached_result is not None:
-                self.logger.debug("Using cached TAS architecture evaluation")
-                return cached_result
-
-            with self.optimize_memory_usage():
-                X_val, y_val = validation_data
-
-                # Tree-specific evaluation with safeguards
-                if not self.check_training_safety((X_val, y_val), None):
-                    self.logger.warning("TAS evaluation safety check failed")
-
-                if not self.validate_data_split((X_val, y_val), None):
-                    self.logger.warning("TAS data split validation failed")
-
-                # Simplified tree evaluation
-                n_trees = len(architecture.trees) if hasattr(architecture, 'trees') else 10
-                avg_depth = sum(tree.max_depth or 10 for tree in architecture.trees) / max(n_trees, 1) if hasattr(architecture, 'trees') else 10
-
-                base_score = 0.6
-                tree_count_bonus = min(n_trees * 0.02, 0.2)
-                depth_penalty = max(0, (avg_depth - 10) * 0.01)
-
-                score = base_score + tree_count_bonus - depth_penalty
-                score += np.random.normal(0, 0.03)
-                score = max(0.1, min(0.9, score))
-
-            self.set_cached_result(cache_key, score)
-            return score
-
+            # Data Leakage Prevention
+            if self.data_leakage_prevention:
+                leakage_result = self.data_leakage_prevention.detect_train_test_leakage(
+                    X_train=X_train, X_test=X_test,
+                    y_train=y_train, y_test=y_test,
+                    timestamps_train=timestamps_train,
+                    timestamps_test=timestamps_test
+                )
+                validation_results['data_leakage_prevention'] = leakage_result
+                
+                if leakage_result.train_test_leakage_detected:
+                    validation_results['is_valid'] = False
+                    self.logger.warning("🚨 Data leakage detected between train/test sets")
+            
+            self.logger.info(f"✅ Data split validation completed - Valid: {validation_results['is_valid']}")
+            return validation_results
+            
         except Exception as e:
-            self.logger.error(f"TAS architecture evaluation failed: {e}")
-            return 0.1
-
-
-class NASSharedMLUtilities(SharedMLUtilitiesManager):
-    """NAS-specific ML utilities extending the shared manager."""
-
-    def __init__(self, config: Optional[MLUtilityConfig] = None):
-        if config is None:
-            config = MLUtilityConfig(utility_type=MLUtilityType.NAS)
-        super().__init__(config)
-
-    def evaluate_neural_architecture(self, architecture, validation_data: Tuple,
-                                   regime_data: Optional[Dict[str, Any]] = None) -> float:
-        """Evaluate neural architecture with NAS-specific optimizations."""
+            self.logger.error(f"❌ Data split validation failed: {e}")
+            validation_results['is_valid'] = False
+            validation_results['error'] = str(e)
+            return validation_results
+    
+    def optimize_hyperparameters(self,
+                               model: Any,
+                               X: np.ndarray,
+                               y: np.ndarray,
+                               search_space: Optional[Dict[str, Any]] = None,
+                               optimization_objective: OptimizationObjective = OptimizationObjective.ACCURACY) -> Dict[str, Any]:
+        """Optimize hyperparameters using ML Common HPO utilities."""
+        if not self.hpo_optimizer:
+            return {'error': 'HPO optimization not enabled'}
+        
         try:
-            cache_key = f"nas_architecture_eval_{hash(str(architecture))}"
-            cached_result = self.get_cached_result(cache_key)
-            if cached_result is not None:
-                self.logger.debug("Using cached NAS architecture evaluation")
-                return cached_result
-
-            with self.optimize_memory_usage():
-                X_val, y_val = validation_data
-
-                # Neural-specific evaluation with safeguards
-                if not self.check_training_safety((X_val, y_val), None):
-                    self.logger.warning("NAS evaluation safety check failed")
-
-                if not self.validate_data_split((X_val, y_val), None):
-                    self.logger.warning("NAS data split validation failed")
-
-                # Simplified neural architecture evaluation
-                complexity_score = architecture.estimated_complexity if hasattr(architecture, 'estimated_complexity') else 1.0
-                parameter_efficiency = min(architecture.layers[0].hidden_size / 1000.0, 1.0) if hasattr(architecture, 'layers') and architecture.layers else 0.0
-
-                base_score = 0.5
-                complexity_bonus = min(complexity_score * 0.1, 0.3)
-                efficiency_bonus = parameter_efficiency * 0.2
-
-                score = base_score + complexity_bonus + efficiency_bonus
-                score += np.random.normal(0, 0.05)
-                score = max(0.1, min(0.9, score))
-
-            self.set_cached_result(cache_key, score)
-            return score
-
-        except Exception as e:
-            self.logger.error(f"NAS architecture evaluation failed: {e}")
-            return 0.1
-
-
-class HybridSharedMLUtilities(SharedMLUtilitiesManager):
-    """Hybrid TAS-NAS ML utilities extending the shared manager."""
-
-    def __init__(self, config: Optional[MLUtilityConfig] = None):
-        if config is None:
-            config = MLUtilityConfig(utility_type=MLUtilityType.HYBRID)
-        super().__init__(config)
-
-    def run_ensemble_fallback_analysis(self, processed_data: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Run ensemble fallback analysis when individual TAS/NAS analysis fails."""
-        try:
-            self.logger.info("Running ensemble fallback analysis...")
-
-            # Create ensemble-based analysis using ML common utilities
-            ensemble_result = self.ensemble_manager.create_ensemble_analysis(
-                data=processed_data,
-                ensemble_type='hybrid_fallback'
+            self.logger.info(f"🔧 Starting hyperparameter optimization for {self.architecture_type.value}")
+            
+            # Use existing HPO utilities
+            optimization_result = self.hpo_optimizer.optimize_hyperparameters(
+                model=model, X=X, y=y,
+                search_space=search_space,
+                objective=optimization_objective.value
             )
-
-            tas_fallback = {
-                'features': ensemble_result.get('tas_features', np.array([])),
-                'results': {
-                    'method': 'ensemble_fallback',
-                    'confidence': 0.7,
-                    'ensemble_used': True
-                },
-                'method': 'ensemble_fallback',
-                'success': True
-            }
-
-            nas_fallback = {
-                'features': ensemble_result.get('nas_features', np.array([])),
-                'results': {
-                    'method': 'ensemble_fallback',
-                    'confidence': 0.7,
-                    'ensemble_used': True
-                },
-                'method': 'ensemble_fallback',
-                'success': True
-            }
-
-            self.logger.info("✅ Ensemble fallback analysis completed")
-            return tas_fallback, nas_fallback
-
+            
+            self.logger.info("✅ Hyperparameter optimization completed")
+            return optimization_result
+            
         except Exception as e:
-            self.logger.error(f"❌ Ensemble fallback analysis failed: {e}")
-            return {
-                'features': np.array([]),
-                'results': {'method': 'error_fallback', 'error': str(e)},
-                'method': 'error_fallback',
-                'success': False
-            }, {
-                'features': np.array([]),
-                'results': {'method': 'error_fallback', 'error': str(e)},
-                'method': 'error_fallback',
-                'success': False
-            }
+            self.logger.error(f"❌ Hyperparameter optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def detect_overfitting(self,
+                          model: Any,
+                          X_train: np.ndarray,
+                          X_val: np.ndarray,
+                          y_train: np.ndarray,
+                          y_val: np.ndarray) -> Dict[str, Any]:
+        """Detect overfitting using ML Common utilities."""
+        if not self.overfitting_detector:
+            return {'error': 'Overfitting detection not enabled'}
+        
+        try:
+            self.logger.info("🔍 Detecting overfitting patterns")
+            
+            # Use existing overfitting detection utilities
+            overfitting_result = self.overfitting_detector.detect_overfitting(
+                model=model, X_train=X_train, X_val=X_val,
+                y_train=y_train, y_val=y_val
+            )
+            
+            self.logger.info("✅ Overfitting detection completed")
+            return overfitting_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Overfitting detection failed: {e}")
+            return {'error': str(e)}
+    
+    def prevent_lookahead_bias(self,
+                              data: pd.DataFrame,
+                              timestamp_col: str = 'timestamp',
+                              target_col: Optional[str] = None) -> Dict[str, Any]:
+        """Prevent lookahead bias using ML Common utilities."""
+        if not self.lookahead_protection:
+            return {'error': 'Lookahead protection not enabled'}
+        
+        try:
+            self.logger.info("🔒 Preventing lookahead bias")
+            
+            # Use existing lookahead protection utilities
+            if target_col:
+                features_df = data.drop(columns=[target_col])
+                target_df = data[[timestamp_col, target_col]]
+                
+                bias_result = self.lookahead_protection.detect_data_leakage(
+                    features_df=features_df, target_df=target_df,
+                    timestamp_col=timestamp_col
+                )
+            else:
+                bias_result = self.lookahead_protection.detect_data_leakage(
+                    features_df=data, target_df=data,
+                    timestamp_col=timestamp_col
+                )
+            
+            self.logger.info("✅ Lookahead bias prevention completed")
+            return bias_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Lookahead bias prevention failed: {e}")
+            return {'error': str(e)}
+    
+    def comprehensive_validation(self,
+                               model: Any,
+                               X_train: np.ndarray,
+                               X_test: np.ndarray,
+                               y_train: np.ndarray,
+                               y_test: np.ndarray,
+                               timestamps_train: Optional[np.ndarray] = None,
+                               timestamps_test: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Perform comprehensive validation using all ML Common utilities."""
+        self.logger.info("🔬 Starting comprehensive validation")
+        
+        validation_results = {
+            'data_split_validation': {},
+            'overfitting_detection': {},
+            'lookahead_bias_prevention': {},
+            'hyperparameter_optimization': {},
+            'overall_assessment': {}
+        }
+        
+        try:
+            # Data split validation
+            validation_results['data_split_validation'] = self.validate_data_split(
+                X_train=X_train, X_test=X_test,
+                y_train=y_train, y_test=y_test,
+                timestamps_train=timestamps_train,
+                timestamps_test=timestamps_test
+            )
+            
+            # Overfitting detection
+            validation_results['overfitting_detection'] = self.detect_overfitting(
+                model=model, X_train=X_train, X_val=X_test,
+                y_train=y_train, y_val=y_test
+            )
+            
+            # Hyperparameter optimization
+            validation_results['hyperparameter_optimization'] = self.optimize_hyperparameters(
+                model=model, X=X_train, y=y_train
+            )
+            
+            # Overall assessment
+            validation_results['overall_assessment'] = self._assess_overall_validation(
+                validation_results
+            )
+            
+            self.logger.info("✅ Comprehensive validation completed")
+            return validation_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Comprehensive validation failed: {e}")
+            validation_results['error'] = str(e)
+            return validation_results
+    
+    def _assess_overall_validation(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess overall validation results."""
+        assessment = {
+            'is_valid': True,
+            'issues': [],
+            'warnings': [],
+            'recommendations': [],
+            'score': 1.0
+        }
+        
+        # Check data split validation
+        data_split = validation_results.get('data_split_validation', {})
+        if not data_split.get('is_valid', True):
+            assessment['is_valid'] = False
+            assessment['issues'].append("Data split validation failed")
+        
+        # Check overfitting detection
+        overfitting = validation_results.get('overfitting_detection', {})
+        if overfitting.get('overfitting_detected', False):
+            assessment['warnings'].append("Overfitting detected")
+            assessment['score'] *= 0.8
+        
+        # Generate recommendations
+        if assessment['issues']:
+            assessment['recommendations'].append("Address critical validation issues")
+        if assessment['warnings']:
+            assessment['recommendations'].append("Review warnings and consider model adjustments")
+        
+        return assessment
+    
+    def get_integration_status(self) -> Dict[str, Any]:
+        """Get status of ML Common integrations."""
+        status = {
+            'architecture_type': self.architecture_type.value,
+            'integrations': {
+                'lookahead_protection': self.lookahead_protection is not None,
+                'overfitting_detection': self.overfitting_detector is not None,
+                'hpo_optimization': self.hpo_optimizer is not None,
+                'data_leakage_prevention': self.data_leakage_prevention is not None,
+                'unified_validation': self.unified_validation is not None
+            },
+            'config': self.config.__dict__,
+            'using_existing_utilities': True
+        }
+        
+        return status
 
 
-def create_shared_ml_utilities_manager(utility_type: MLUtilityType,
-                                     config: Optional[MLUtilityConfig] = None) -> SharedMLUtilitiesManager:
-    """Factory function to create shared ML utilities manager."""
+# Convenience functions for creating ML Common integrations
+def create_ml_common_integration(architecture_type: ArchitectureType,
+                               config: Optional[MLCommonIntegrationConfig] = None) -> MLCommonIntegration:
+    """Create ML Common integration with default settings."""
+    return MLCommonIntegration(architecture_type=architecture_type, config=config)
+
+
+def create_tas_ml_common_integration(config: Optional[MLCommonIntegrationConfig] = None) -> MLCommonIntegration:
+    """Create TAS-specific ML Common integration."""
     if config is None:
-        config = MLUtilityConfig(utility_type=utility_type)
+        config = MLCommonIntegrationConfig()
+        # TAS-specific optimizations
+        config.hpo_config['enable_parallel'] = True  # Trees benefit from parallel processing
+        config.lookahead_config['strict_mode'] = True  # Strict temporal validation for trading
+    
+    return MLCommonIntegration(architecture_type=ArchitectureType.TAS, config=config)
 
-    if utility_type == MLUtilityType.TAS:
-        return TASSharedMLUtilities(config)
-    elif utility_type == MLUtilityType.NAS:
-        return NASSharedMLUtilities(config)
-    elif utility_type == MLUtilityType.HYBRID:
-        return HybridSharedMLUtilities(config)
-    else:
-        return SharedMLUtilitiesManager(config)
+
+def create_nas_ml_common_integration(config: Optional[MLCommonIntegrationConfig] = None) -> MLCommonIntegration:
+    """Create NAS-specific ML Common integration."""
+    if config is None:
+        config = MLCommonIntegrationConfig()
+        # NAS-specific optimizations
+        config.hpo_config['use_nonlinear_optimization'] = True  # Neural networks benefit from nonlinear optimization
+        config.overfitting_config['enable_learning_curves'] = True  # Important for neural networks
+    
+    return MLCommonIntegration(architecture_type=ArchitectureType.NAS, config=config)
+
+
+def create_hybrid_ml_common_integration(config: Optional[MLCommonIntegrationConfig] = None) -> MLCommonIntegration:
+    """Create hybrid-specific ML Common integration."""
+    if config is None:
+        config = MLCommonIntegrationConfig()
+        # Hybrid-specific optimizations - combine both approaches
+        config.hpo_config['enable_parallel'] = True
+        config.hpo_config['use_nonlinear_optimization'] = True
+        config.overfitting_config['enable_learning_curves'] = True
+        config.lookahead_config['strict_mode'] = True
+    
+    return MLCommonIntegration(architecture_type=ArchitectureType.HYBRID, config=config)

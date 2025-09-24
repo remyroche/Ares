@@ -121,7 +121,7 @@ status = hardware_manager.get_hardware_status()
 print(f"Hardware status: {status}")
 ```
 
-### 5. Enhanced ML Common Integration
+### 5. ML Common Integration
 
 ```python
 from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
@@ -129,7 +129,7 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils impor
     MLCommonIntegrationConfig
 )
 
-# Create enhanced ML Common integration
+# Create ML Common integration
 tas_integration = create_tas_ml_common_integration()
 
 # Comprehensive validation using existing ML Common utilities

@@ -6,6 +6,7 @@ from .gateio import GateioExchange
 from .mexc import MexcExchange
 from .okx import OkxExchange
 from .binance import BinanceExchange
+from .bitstamp import BitstampExchange
 import logging
 
 
@@ -47,6 +48,15 @@ class ExchangeFactory:
                 api_key=str(ex_cfg.get("api_key", "")),
                 api_secret=str(ex_cfg.get("api_secret", "")),
                 trade_symbol=str(symbol),
+            )
+
+        if name == "bitstamp":
+            return BitstampExchange(
+                api_key=str(ex_cfg.get("api_key", "")),
+                api_secret=str(ex_cfg.get("api_secret", "")),
+                trade_symbol=str(symbol),
+                password=str(ex_cfg.get("password", "")) or None,
+                client_id=str(ex_cfg.get("client_id", "")) or None,
             )
 
         msg = f"Unsupported exchange: {exchange_name}"

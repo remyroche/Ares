@@ -44,7 +44,7 @@ def get_trading_config() -> dict[str, Any]:
             "tas_timeframe": "1m",
             "tas_models_path": "models/tas/",
             "tas_architectures_path": "models/tas/architectures/"
-        }
+        },
         # --- Exchange Configurations ---
         "exchanges": {
             "binance": {

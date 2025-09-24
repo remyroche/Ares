@@ -11,6 +11,7 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
+from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
 
 class LiquidationRiskModel:
     """
@@ -44,12 +45,12 @@ class LiquidationRiskModel:
         )
         self.max_leverage: int = self.risk_config.get(
             "max_leverage",
-            100,
-        )  # Increased for high leverage
+            int(MAX_LEVERAGE),
+        )  # Using centralized max leverage
         self.min_leverage: int = self.risk_config.get(
             "min_leverage",
-            10,
-        )  # Increased minimum
+            int(MIN_LEVERAGE),
+        )  # Using centralized min leverage
 
         # Adverse movement thresholds for different leverage levels (10x-100x)
         self.leverage_risk_levels: dict[int, float] = {

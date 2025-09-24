@@ -13,6 +13,7 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.trading_config import TradingConfig
+from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
 
 logger = system_logger.getChild('LeverageManager')
 
@@ -41,9 +42,9 @@ class LeverageManager:
         self.config = config
         self.logger = logger.getChild('LeverageManager')
         
-        # Leverage configuration
-        self.min_leverage: float = 10.0  # Minimum leverage (10x)
-        self.max_leverage: float = 100.0  # Maximum leverage (100x)
+        # Leverage configuration - using centralized constants
+        self.min_leverage: float = MIN_LEVERAGE  # Minimum leverage (5x)
+        self.max_leverage: float = MAX_LEVERAGE  # Maximum leverage (100x)
         self.leverage_multiplier: float = 1.0  # Leverage multiplier
         self.leverage_combined_threshold: float = 0.75  # Minimum confidence threshold
         
@@ -134,7 +135,9 @@ class LeverageManager:
             
             # Calculate final leverage
             adjusted_leverage = base_leverage * intensity_factor * reliability_factor * risk_factor
-            final_leverage = max(self.min_leverage, min(self.max_leverage, adjusted_leverage))
+            # Validate and clamp leverage to centralized limits
+            final_leverage = validate_leverage(adjusted_leverage)
+            final_leverage = max(self.min_leverage, min(self.max_leverage, final_leverage))
             
             # Create result
             result = LeverageResult(

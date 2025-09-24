@@ -7,6 +7,7 @@ Configuration management for live trading operations.
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
+from src.config.leverage_constants import MAX_LEVERAGE, validate_leverage
 
 
 class TradingMode(Enum):
@@ -44,7 +45,7 @@ class TradingConfig:
     # Risk Management
     max_position_size: float = 1000.0
     max_daily_loss: float = 100.0
-    max_leverage: float = 10.0
+    max_leverage: float = MAX_LEVERAGE  # Using centralized max leverage
     stop_loss_percentage: float = 2.0
     take_profit_percentage: float = 4.0
     
@@ -76,6 +77,8 @@ class TradingConfig:
             raise ValueError("max_position_size must be positive")
         if self.max_daily_loss <= 0:
             raise ValueError("max_daily_loss must be positive")
+        # Validate leverage using centralized validation
+        self.max_leverage = validate_leverage(self.max_leverage)
         if self.max_leverage <= 0:
             raise ValueError("max_leverage must be positive")
         if self.stop_loss_percentage <= 0:

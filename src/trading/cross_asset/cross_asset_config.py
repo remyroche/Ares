@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from src.config.leverage_constants import MAX_LEVERAGE, validate_leverage
 
 
 @dataclass
@@ -8,7 +9,7 @@ class SymbolConfig:
     volatility_factor: float = 1.0
     liquidity_factor: float = 1.0
     max_position_usd: Optional[float] = None
-    max_leverage: float = 1.0
+    max_leverage: float = MAX_LEVERAGE  # Using centralized max leverage
     enabled: bool = True
     extra: Dict[str, Any] = field(default_factory=dict)
 

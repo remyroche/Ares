@@ -132,6 +132,45 @@ class TASRegimeConfig:
             enable_early_stopping=True
         )
 
+    # Multi-timeframe settings
+    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m"])
+    regime_detection_timeframe: str = "15m"
+    enable_multi_timeframe_training: bool = True
+
+    # NAS integration settings
+    enable_nas_integration: bool = True
+    nas_search_strategy: str = "evolutionary"
+    nas_population_size: int = 50
+    nas_generations: int = 100
+
+    # Multi-objective optimization
+    enable_multi_objective: bool = True
+    objective_weights: Dict[str, float] = field(default_factory=lambda: {
+        "accuracy": 0.3,
+        "economic_significance": 0.25,
+        "trading_viability": 0.25,
+        "computational_efficiency": 0.1,
+        "architecture_complexity": 0.1
+    })
+
+    # System identification
+    system_name: str = "Tree Architecture Search (TAS) Regime System"
+    version: str = "1.0.0"
+
+    # Execution settings
+    max_execution_time: int = 300  # seconds
+    enable_early_stopping: bool = True
+    early_stopping_patience: int = 10
+    enable_checkpointing: bool = True
+    checkpoint_interval: int = 10
+
+    # Logging and monitoring
+    log_level: str = "INFO"
+    enable_profiling: bool = True
+    enable_visualization: bool = True
+    save_results: bool = True
+    results_directory: str = "tas_regime_results"
+
     def validate_config(self) -> bool:
         """Validate configuration parameters."""
         if self.n_regimes < 2 or self.n_regimes > 20:
@@ -142,5 +181,16 @@ class TASRegimeConfig:
 
         if self.n_estimators < 100 or self.n_estimators > 5000:
             raise ValueError("n_estimators must be between 100 and 5000")
+
+        # Validate timeframes
+        if self.regime_detection_timeframe not in self.trading_timeframes:
+            raise ValueError("regime_detection_timeframe must be in trading_timeframes")
+
+        # Validate objective weights
+        total_weight = sum(self.objective_weights.values())
+        if abs(total_weight - 1.0) > 1e-6:
+            # Normalize weights
+            for obj in self.objective_weights:
+                self.objective_weights[obj] /= total_weight
 
         return True

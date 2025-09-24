@@ -36,6 +36,14 @@ from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, N
 
 # Enhanced-only implementation with full tool integration
 
+# Import shared utilities from hybrid regime system
+try:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.analysis_components import SharedClusteringUtilities
+    SHARED_UTILITIES_AVAILABLE = True
+except ImportError:
+    SHARED_UTILITIES_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -79,6 +87,10 @@ class PerfectNASRegimeDetector:
         
         # Initialize enhanced detector with full tool integration
         self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
+
+        # Initialize shared utilities
+        self._initialize_shared_utilities()
+
         self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
 
         self.logger.info(f"   Architecture: {config.primary_architecture.value}")
@@ -93,6 +105,38 @@ class PerfectNASRegimeDetector:
             self.logger.info(f"   Economic Learning: {config.adaptive_thresholds.enable_economic_learning}")
             self.logger.info(f"   Trading Learning: {config.adaptive_thresholds.enable_trading_learning}")
             self.logger.info(f"   Stability Learning: {config.adaptive_thresholds.enable_stability_learning}")
+
+    def _initialize_shared_utilities(self):
+        """Initialize shared utilities from hybrid regime system."""
+        if not SHARED_UTILITIES_AVAILABLE:
+            self.logger.warning("⚠️ Shared utilities not available")
+            self.search_strategy_manager = None
+            self.shared_clustering = None
+            return
+
+        try:
+            # Initialize search strategy manager
+            search_config = SearchStrategyConfig(
+                max_iterations=50,
+                n_initial_points=10,
+                acquisition_function="expected_improvement",
+                exploration_weight=0.1,
+                convergence_threshold=1e-6,
+                parallel_evaluations=1,
+                random_state=42,
+                use_bayesian_optimization=True,
+                use_grid_optimization=True
+            )
+            self.search_strategy_manager = SearchStrategyManager(search_config)
+
+            # Initialize shared clustering utilities
+            self.shared_clustering = SharedClusteringUtilities()
+
+            self.logger.info("✅ Shared utilities initialized")
+        except Exception as e:
+            self.logger.warning(f"Shared utilities initialization failed: {e}")
+            self.search_strategy_manager = None
+            self.shared_clustering = None
     
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],

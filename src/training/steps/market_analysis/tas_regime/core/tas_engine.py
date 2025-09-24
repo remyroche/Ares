@@ -40,6 +40,56 @@ from ...hybrid_nas_tas_regime.shared_utils import (
     create_unified_validation_system, quick_validation
 )
 
+# Import enhanced utility tools
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
+    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
+    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
+    check_disk_space, CommonUtilities
+)
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, safe_correlation,
+    safe_covariance, safe_mean, safe_std, safe_percentile,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    MathValidation, MathValidationError
+)
+
+from src.utils.matrix_operations.unified_operations import (
+    UnifiedMatrixOperations, get_unified_matrix_operations,
+    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+from src.utils.data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+# Import ML common utilities
+try:
+    from src.utils.ml_common.common_operations import get_ml_common_operations
+    from src.utils.ml_common.validation import get_validation_framework
+    from src.utils.ml_common.lookahead_bias_detector import LookaheadBiasDetector
+    from src.utils.ml_common.overfitting_detector import OverfittingDetector
+    from src.utils.ml_common.cv import CrossValidationManager
+    from src.utils.ml_common.hpo import HyperparameterOptimizer
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+
 # Import advanced components
 from ..meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML
 from ..search.evolutionary_search import EvolutionaryTreeSearch
@@ -125,6 +175,9 @@ class TreeArchitectureSearchEngine:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize utility tools
+        self._initialize_utility_tools()
+        
         # Initialize core components
         self.search_space = TreeSearchSpace(config.base_config)
         self.evaluator = TreeEvaluator(config.base_config)
@@ -138,7 +191,7 @@ class TreeArchitectureSearchEngine:
         self.current_search = None
         self.performance_monitor = None
         
-        self.logger.info("✅ Advanced TAS Engine initialized")
+        self.logger.info("✅ Advanced TAS Engine initialized with enhanced utilities")
         self.logger.info(f"🔍 Search strategy: {config.search_strategy.value}")
         self.logger.info(f"⚙️ Optimization mode: {config.optimization_mode.value}")
         self.logger.info(f"🧠 Meta-learning: {config.enable_meta_learning}")
@@ -146,6 +199,108 @@ class TreeArchitectureSearchEngine:
         self.logger.info(f"🎯 Uncertainty estimation: {config.enable_uncertainty_estimation}")
         self.logger.info(f"📊 Regime analysis: {config.enable_regime_analysis}")
         self.logger.info(f"⚡ Real-time adaptation: {config.enable_real_time_adaptation}")
+        self.logger.info(f"🛠️ Utility tools: {self._get_utility_status()}")
+    
+    def _initialize_utility_tools(self):
+        """Initialize enhanced utility tools."""
+        try:
+            # Initialize common utilities
+            self.common_utils = CommonUtilities()
+            self.logger.info("✅ Common utilities initialized")
+            
+            # Initialize math validation
+            self.math_validator = MathValidation()
+            self.logger.info("✅ Math validation initialized")
+            
+            # Initialize matrix operations
+            self.matrix_ops = get_unified_matrix_operations(
+                enable_gpu=True,
+                enable_memory_optimization=True,
+                enable_parallel=True
+            )
+            self.logger.info("✅ Matrix operations initialized")
+            
+            # Initialize serialization
+            self.serializer = UniversalSerializer()
+            self.logger.info("✅ Serialization utilities initialized")
+            
+            # Initialize data management
+            self.klines_manager = get_klines_manager()
+            self.logger.info("✅ Klines data manager initialized")
+            
+            # Initialize ML common utilities
+            if ML_COMMON_AVAILABLE:
+                self.ml_common_ops = get_ml_common_operations()
+                self.validation_framework = get_validation_framework()
+                self.lookahead_detector = LookaheadBiasDetector()
+                self.overfitting_detector = OverfittingDetector()
+                self.cv_manager = CrossValidationManager()
+                self.hpo_optimizer = HyperparameterOptimizer()
+                self.logger.info("✅ ML common utilities initialized")
+            else:
+                self.ml_common_ops = None
+                self.validation_framework = None
+                self.lookahead_detector = None
+                self.overfitting_detector = None
+                self.cv_manager = None
+                self.hpo_optimizer = None
+                self.logger.warning("⚠️ ML common utilities not available")
+            
+            # Initialize M1 optimizations
+            self._initialize_m1_optimizations()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Utility tools initialization failed: {e}")
+            # Set fallback values
+            self.common_utils = None
+            self.math_validator = None
+            self.matrix_ops = None
+            self.serializer = None
+            self.klines_manager = None
+            self.ml_common_ops = None
+            self.validation_framework = None
+            self.lookahead_detector = None
+            self.overfitting_detector = None
+            self.cv_manager = None
+            self.hpo_optimizer = None
+    
+    def _initialize_m1_optimizations(self):
+        """Initialize M1 hardware optimizations."""
+        try:
+            # Get M1 optimizers
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Integrate M1 optimizations
+            integration_result = integrate_with_m1_optimizers()
+            if integration_result.get('success', False):
+                self.logger.info("✅ M1 optimizations integrated successfully")
+                self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
+                self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
+                self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
+            else:
+                self.logger.warning("⚠️ M1 optimizations integration failed")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ M1 optimizations initialization failed: {e}")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+    
+    def _get_utility_status(self) -> str:
+        """Get status of utility tools."""
+        status = []
+        if self.common_utils: status.append("CommonOps")
+        if self.math_validator: status.append("MathVal")
+        if self.matrix_ops: status.append("MatrixOps")
+        if self.serializer: status.append("Serialization")
+        if self.klines_manager: status.append("DataManager")
+        if self.ml_common_ops: status.append("MLCommon")
+        if self.gpu_manager: status.append("M1GPU")
+        if self.memory_optimizer: status.append("M1Memory")
+        if self.cpu_optimizer: status.append("M1CPU")
+        return ", ".join(status) if status else "None"
     
     def _initialize_advanced_components(self):
         """Initialize advanced TAS components."""
@@ -218,7 +373,7 @@ class TreeArchitectureSearchEngine:
                search_strategy: Optional[SearchStrategy] = None,
                optimization_mode: Optional[OptimizationMode] = None) -> TASResult:
         """
-        Perform advanced tree architecture search.
+        Perform advanced tree architecture search with enhanced utility integration.
         
         Args:
             train_data: Training data (X, y)
@@ -232,7 +387,7 @@ class TreeArchitectureSearchEngine:
             TASResult with search results
         """
         start_time = time.time()
-        self.logger.info("🚀 Starting advanced tree architecture search")
+        self.logger.info("🚀 Starting enhanced tree architecture search")
         
         # Use provided strategy or default
         strategy = search_strategy or self.config.search_strategy
@@ -242,47 +397,55 @@ class TreeArchitectureSearchEngine:
         self.logger.info(f"⚙️ Using optimization mode: {mode.value}")
         
         try:
-            # Prepare search environment
-            search_env = self._prepare_search_environment(
+            # Enhanced data preparation with utility tools
+            train_data, validation_data, test_data = self._enhanced_data_preparation(
+                train_data, validation_data, test_data
+            )
+            
+            # Prepare search environment with utility tools
+            search_env = self._prepare_enhanced_search_environment(
                 train_data, validation_data, test_data, regime_data
             )
             
             # Select search strategy
             searcher = self._select_search_strategy(strategy)
             
-            # Perform search based on optimization mode
-            if mode == OptimizationMode.SINGLE_OBJECTIVE:
-                result = self._single_objective_search(searcher, search_env)
-            elif mode == OptimizationMode.MULTI_OBJECTIVE:
-                result = self._multi_objective_search(searcher, search_env)
-            elif mode == OptimizationMode.REGIME_AWARE:
-                result = self._regime_aware_search(searcher, search_env)
-            elif mode == OptimizationMode.REAL_TIME:
-                result = self._real_time_search(searcher, search_env)
-            elif mode == OptimizationMode.CONTINUAL:
-                result = self._continual_search(searcher, search_env)
-            else:
-                raise ValueError(f"Unknown optimization mode: {mode}")
+            # Perform search with hardware optimization context
+            with self._hardware_optimization_context():
+                # Perform search based on optimization mode
+                if mode == OptimizationMode.SINGLE_OBJECTIVE:
+                    result = self._single_objective_search(searcher, search_env)
+                elif mode == OptimizationMode.MULTI_OBJECTIVE:
+                    result = self._multi_objective_search(searcher, search_env)
+                elif mode == OptimizationMode.REGIME_AWARE:
+                    result = self._regime_aware_search(searcher, search_env)
+                elif mode == OptimizationMode.REAL_TIME:
+                    result = self._real_time_search(searcher, search_env)
+                elif mode == OptimizationMode.CONTINUAL:
+                    result = self._continual_search(searcher, search_env)
+                else:
+                    raise ValueError(f"Unknown optimization mode: {mode}")
             
-            # Post-process results
-            result = self._post_process_results(result, search_env)
+            # Enhanced post-processing with utility tools
+            result = self._enhanced_post_process_results(result, search_env)
             
-            # Save results if requested
+            # Save results with enhanced serialization
             if self.config.save_results:
-                self._save_search_results(result)
+                self._enhanced_save_search_results(result)
             
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             
-            self.logger.info(f"✅ Advanced TAS completed in {execution_time:.2f}s")
+            self.logger.info(f"✅ Enhanced TAS completed in {execution_time:.2f}s")
             self.logger.info(f"🏆 Best architecture: {result.best_architecture}")
             self.logger.info(f"🎯 Best score: {result.best_score:.4f}")
+            self.logger.info(f"🛠️ Utility tools used: {self._get_utility_status()}")
             
             return result
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"❌ Advanced TAS failed: {e}")
+            self.logger.error(f"❌ Enhanced TAS failed: {e}")
             
             return TASResult(
                 best_architecture=None,
@@ -579,3 +742,244 @@ def quick_search(train_data: Tuple[np.ndarray, np.ndarray],
     
     engine = TreeArchitectureSearchEngine(config)
     return engine.search(train_data, validation_data, test_data)
+
+
+# Enhanced utility methods for TAS engine
+def _enhanced_data_preparation(self, train_data, validation_data, test_data):
+    """Enhanced data preparation using utility tools."""
+    try:
+        self.logger.info("🔧 Enhanced data preparation with utility tools")
+        
+        # Convert to DataFrames for utility operations
+        train_X, train_y = train_data
+        val_X, val_y = validation_data
+        
+        # Create DataFrames
+        train_df = pd.DataFrame(train_X)
+        train_df['target'] = train_y
+        
+        val_df = pd.DataFrame(val_X)
+        val_df['target'] = val_y
+        
+        # Apply data quality checks
+        if self.common_utils:
+            # Validate data quality
+            train_quality = self.common_utils.get_data_summary(train_df)
+            val_quality = self.common_utils.get_data_summary(val_df)
+            
+            self.logger.info(f"📊 Training data quality: {train_quality.get('shape', 'Unknown')}")
+            self.logger.info(f"📊 Validation data quality: {val_quality.get('shape', 'Unknown')}")
+            
+            # Guard against nulls
+            train_df = guard_dataframe_nulls(train_df)
+            val_df = guard_dataframe_nulls(val_df)
+        
+        # Apply math validation
+        if self.math_validator:
+            # Validate numeric columns
+            numeric_cols = train_df.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                if col != 'target':
+                    train_df[col] = train_df[col].apply(
+                        lambda x: self.math_validator.validate_finite(x, f"train_{col}")
+                    )
+                    val_df[col] = val_df[col].apply(
+                        lambda x: self.math_validator.validate_finite(x, f"val_{col}")
+                    )
+        
+        # Apply matrix optimizations
+        if self.matrix_ops:
+            # Optimize dataframes
+            train_df = self.matrix_ops.optimize_dataframe(train_df)
+            val_df = self.matrix_ops.optimize_dataframe(val_df)
+        
+        # Convert back to numpy arrays
+        train_X_enhanced = train_df.drop('target', axis=1).values
+        train_y_enhanced = train_df['target'].values
+        val_X_enhanced = val_df.drop('target', axis=1).values
+        val_y_enhanced = val_df['target'].values
+        
+        # Handle test data if provided
+        if test_data is not None:
+            test_X, test_y = test_data
+            test_df = pd.DataFrame(test_X)
+            test_df['target'] = test_y
+            
+            if self.common_utils:
+                test_df = guard_dataframe_nulls(test_df)
+            
+            if self.matrix_ops:
+                test_df = self.matrix_ops.optimize_dataframe(test_df)
+            
+            test_X_enhanced = test_df.drop('target', axis=1).values
+            test_y_enhanced = test_df['target'].values
+            test_data_enhanced = (test_X_enhanced, test_y_enhanced)
+        else:
+            test_data_enhanced = None
+        
+        self.logger.info("✅ Enhanced data preparation completed")
+        return (train_X_enhanced, train_y_enhanced), (val_X_enhanced, val_y_enhanced), test_data_enhanced
+        
+    except Exception as e:
+        self.logger.warning(f"⚠️ Enhanced data preparation failed: {e}")
+        return train_data, validation_data, test_data
+
+
+def _prepare_enhanced_search_environment(self, train_data, validation_data, test_data, regime_data):
+    """Prepare enhanced search environment with utility tools."""
+    try:
+        search_env = {
+            'train_data': train_data,
+            'validation_data': validation_data,
+            'test_data': test_data,
+            'regime_data': regime_data,
+            'search_space': self.search_space,
+            'evaluator': self.evaluator,
+            'utility_tools': {
+                'common_utils': self.common_utils,
+                'math_validator': self.math_validator,
+                'matrix_ops': self.matrix_ops,
+                'serializer': self.serializer,
+                'klines_manager': self.klines_manager,
+                'ml_common_ops': self.ml_common_ops,
+                'validation_framework': self.validation_framework,
+                'lookahead_detector': self.lookahead_detector,
+                'overfitting_detector': self.overfitting_detector,
+                'cv_manager': self.cv_manager,
+                'hpo_optimizer': self.hpo_optimizer
+            }
+        }
+        
+        # Add advanced components if enabled
+        if self.config.enable_meta_learning:
+            search_env['meta_learner'] = self.meta_learner
+            search_env['maml'] = self.maml
+        
+        if self.config.enable_hardware_optimization:
+            search_env['hardware_optimizer'] = self.hardware_optimizer
+        
+        if self.config.enable_uncertainty_estimation:
+            search_env['uncertainty_estimator'] = self.uncertainty_estimator
+        
+        if self.config.enable_regime_analysis:
+            search_env['regime_analyzer'] = self.regime_analyzer
+        
+        if self.config.enable_real_time_adaptation:
+            search_env['real_time_adapter'] = self.real_time_adapter
+            search_env['performance_monitor'] = self.performance_monitor
+        
+        return search_env
+        
+    except Exception as e:
+        self.logger.error(f"❌ Enhanced search environment preparation failed: {e}")
+        raise
+
+
+@contextmanager
+def _hardware_optimization_context(self):
+    """Context manager for hardware optimization."""
+    try:
+        if self.memory_optimizer:
+            with memory_checkpoint("tas_search"):
+                if self.gpu_manager:
+                    with gpu_context("tas_search"):
+                        yield
+                else:
+                    yield
+        else:
+            yield
+    except Exception as e:
+        self.logger.warning(f"⚠️ Hardware optimization context failed: {e}")
+        yield
+
+
+def _enhanced_post_process_results(self, result, search_env):
+    """Enhanced post-processing with utility tools."""
+    try:
+        # Add uncertainty estimates if enabled
+        if self.config.enable_uncertainty_estimation and result.best_architecture:
+            uncertainty_estimator = search_env['uncertainty_estimator']
+            uncertainty = uncertainty_estimator.estimate_uncertainty(
+                result.best_architecture,
+                search_env['validation_data']
+            )
+            result.uncertainty_estimates = uncertainty
+        
+        # Add regime analysis if enabled
+        if self.config.enable_regime_analysis and result.best_architecture:
+            regime_analyzer = search_env['regime_analyzer']
+            regime_analysis = regime_analyzer.analyze_architecture_regimes(
+                result.best_architecture,
+                search_env['train_data']
+            )
+            result.regime_analysis = regime_analysis
+        
+        # Add lookahead bias detection
+        if self.lookahead_detector:
+            lookahead_analysis = self.lookahead_detector.detect_lookahead_bias(
+                search_env['train_data'], search_env['validation_data']
+            )
+            result.lookahead_analysis = lookahead_analysis
+        
+        # Add overfitting detection
+        if self.overfitting_detector:
+            overfitting_analysis = self.overfitting_detector.detect_overfitting(
+                search_env['train_data'], search_env['validation_data']
+            )
+            result.overfitting_analysis = overfitting_analysis
+        
+        # Add cross-validation results
+        if self.cv_manager:
+            cv_results = self.cv_manager.perform_cv_analysis(
+                search_env['train_data'], search_env['validation_data']
+            )
+            result.cv_results = cv_results
+        
+        return result
+        
+    except Exception as e:
+        self.logger.warning(f"⚠️ Enhanced post-processing failed: {e}")
+        return result
+
+
+def _enhanced_save_search_results(self, result):
+    """Enhanced save search results with utility tools."""
+    try:
+        output_dir = Path(self.config.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Use enhanced serialization
+        if self.serializer:
+            # Save result with enhanced serialization
+            result_file = output_dir / "enhanced_tas_result.json"
+            result_dict = result.to_dict()
+            
+            # Add utility tool information
+            result_dict['utility_tools_used'] = self._get_utility_status()
+            result_dict['enhanced_features'] = {
+                'data_quality_checks': self.common_utils is not None,
+                'math_validation': self.math_validator is not None,
+                'matrix_optimization': self.matrix_ops is not None,
+                'ml_common_integration': self.ml_common_ops is not None,
+                'm1_optimization': self.gpu_manager is not None
+            }
+            
+            self.serializer.save(result_dict, str(result_file))
+            self.logger.info(f"💾 Enhanced results saved to {result_file}")
+        
+        # Save best architecture if available
+        if result.best_architecture and self.config.save_models:
+            model_file = output_dir / "best_architecture.json"
+            if self.serializer:
+                self.serializer.save(result.best_architecture.to_dict(), str(model_file))
+            else:
+                # Fallback to JSON
+                with open(model_file, 'w') as f:
+                    json.dump(result.best_architecture.to_dict(), f, indent=2, default=str)
+        
+        self.logger.info(f"💾 Enhanced results saved to {output_dir}")
+        
+    except Exception as e:
+        self.logger.warning(f"⚠️ Enhanced save failed: {e}")
+        # Fallback to original save method
+        self._save_search_results(result)

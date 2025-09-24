@@ -22,6 +22,44 @@ from ..regime_analysis.unsupervised_regime_detection import UnsupervisedRegimeDe
 from ..regime_analysis.regime_qualification import RegimeQualifier, RegimeQualificationConfig
 from ..trading.trading_engine import TradingEngine, TradingConfig, TradingResult
 
+# Import enhanced utility tools
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
+    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
+    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
+    check_disk_space, CommonUtilities
+)
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, safe_correlation,
+    safe_covariance, safe_mean, safe_std, safe_percentile,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    MathValidation, MathValidationError
+)
+
+from src.utils.matrix_operations.unified_operations import (
+    UnifiedMatrixOperations, get_unified_matrix_operations,
+    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+from src.utils.data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,13 +171,16 @@ class BacktestingEngine:
     """
     
     def __init__(self, config: BacktestingConfig):
-        """Initialize backtesting engine.
+        """Initialize backtesting engine with enhanced utility integration.
         
         Args:
             config: Backtesting configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize enhanced utility tools
+        self._initialize_enhanced_utility_tools()
         
         # Initialize components
         self.regime_detector = UnsupervisedRegimeDetector(config.regime_detection_config)
@@ -158,9 +199,86 @@ class BacktestingEngine:
         self.current_drawdown = 0.0
         self.max_drawdown = 0.0
         
-        self.logger.info("✅ Backtesting Engine initialized")
+        self.logger.info("✅ Enhanced Backtesting Engine initialized")
         self.logger.info(f"📅 Backtesting period: {config.start_date} to {config.end_date}")
         self.logger.info(f"💰 Initial capital: ${config.initial_capital:,.2f}")
+        self.logger.info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
+    
+    def _initialize_enhanced_utility_tools(self):
+        """Initialize enhanced utility tools for backtesting."""
+        try:
+            # Initialize common utilities
+            self.common_utils = CommonUtilities()
+            self.logger.info("✅ Common utilities initialized")
+            
+            # Initialize math validation
+            self.math_validator = MathValidation()
+            self.logger.info("✅ Math validation initialized")
+            
+            # Initialize matrix operations
+            self.enhanced_matrix_ops = get_unified_matrix_operations(
+                enable_gpu=True,
+                enable_memory_optimization=True,
+                enable_parallel=True
+            )
+            self.logger.info("✅ Enhanced matrix operations initialized")
+            
+            # Initialize serialization
+            self.enhanced_serializer = UniversalSerializer()
+            self.logger.info("✅ Enhanced serialization initialized")
+            
+            # Initialize data management
+            self.enhanced_klines_manager = get_klines_manager()
+            self.logger.info("✅ Enhanced klines data manager initialized")
+            
+            # Initialize M1 optimizations
+            self._initialize_enhanced_m1_optimizations()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced utility tools initialization failed: {e}")
+            # Set fallback values
+            self.common_utils = None
+            self.math_validator = None
+            self.enhanced_matrix_ops = None
+            self.enhanced_serializer = None
+            self.enhanced_klines_manager = None
+    
+    def _initialize_enhanced_m1_optimizations(self):
+        """Initialize enhanced M1 hardware optimizations."""
+        try:
+            # Get M1 optimizers
+            self.enhanced_gpu_manager = get_m1_gpu_manager()
+            self.enhanced_memory_optimizer = get_m1_memory_optimizer()
+            self.enhanced_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Integrate M1 optimizations
+            integration_result = integrate_with_m1_optimizers()
+            if integration_result.get('success', False):
+                self.logger.info("✅ Enhanced M1 optimizations integrated successfully")
+                self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
+                self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
+                self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
+            else:
+                self.logger.warning("⚠️ Enhanced M1 optimizations integration failed")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
+            self.enhanced_gpu_manager = None
+            self.enhanced_memory_optimizer = None
+            self.enhanced_cpu_optimizer = None
+    
+    def _get_enhanced_utility_status(self) -> str:
+        """Get status of enhanced utility tools."""
+        status = []
+        if self.common_utils: status.append("CommonOps")
+        if self.math_validator: status.append("MathVal")
+        if self.enhanced_matrix_ops: status.append("MatrixOps")
+        if self.enhanced_serializer: status.append("Serialization")
+        if self.enhanced_klines_manager: status.append("DataManager")
+        if self.enhanced_gpu_manager: status.append("M1GPU")
+        if self.enhanced_memory_optimizer: status.append("M1Memory")
+        if self.enhanced_cpu_optimizer: status.append("M1CPU")
+        return ", ".join(status) if status else "None"
     
     def run_backtest(self, 
                     market_data: pd.DataFrame,

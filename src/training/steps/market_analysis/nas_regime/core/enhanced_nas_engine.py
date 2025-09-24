@@ -34,6 +34,24 @@ from ...hybrid_nas_tas_regime.core.architecture_encoder import (
     UnifiedArchitectureEncoder, create_unified_architecture_encoder
 )
 
+# Import unified utilities
+from ...hybrid_nas_tas_regime.shared_utils import (
+    UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
+    UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
+    UnifiedMultiObjectiveOptimizer, OptimizationConfig,
+    UnifiedHardwareOptimizer, HardwareConfig,
+    UnifiedRegimeAnalyzer, RegimeAnalysisConfig,
+    UnifiedValidationSystem, ValidationConfig,
+    UnifiedConfigManager, UnifiedRegimeConfig,
+    create_unified_economic_evaluator, quick_economic_evaluation,
+    create_unified_trading_viability_evaluator, quick_trading_viability_evaluation,
+    create_unified_multi_objective_optimizer, quick_multi_objective_optimization,
+    create_unified_hardware_optimizer, quick_hardware_optimization,
+    create_unified_regime_analyzer, quick_regime_analysis,
+    create_unified_config_manager, load_config_from_file, create_environment_config,
+    create_unified_validation_system, quick_validation
+)
+
 logger = logging.getLogger(__name__)
 
 

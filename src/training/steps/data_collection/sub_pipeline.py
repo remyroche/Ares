@@ -1,34 +1,17 @@
-from src.utils.tprint import tprint
-
 """
-Unified Data Collection Sub-Pipeline
+Updated Data Collection Sub-Pipeline using New Architecture
 
-This module provides a fully functional, consolidated data collection pipeline
-that combines all data collection, validation, conversion, and processing steps
-into a single, efficient system.
+This module provides the data collection pipeline updated to use:
+- Enhanced error system with rich context
+- Configuration schema validation
+- DataFrame memory management
+- Base pipeline architecture
 
 Features:
-- Data Download from multiple exchanges
-- Real-time data validation and quality checks
-- Data conversion and standardization
-- Resampling to multiple timeframes
-- Gap detection and filling
-- Memory-efficient processing
-- Comprehensive error handling and logging
-
-Sub-pipelines:
-1. Data Download - Download raw data from exchanges
-2. Data Conversion - Convert data formats and standardize
-3. Data Validation - Validate data quality and integrity
-4. Data Preparation - Prepare data for further processing
-5. Feature Engineering - Limited feature engineering (price returns, volume returns)
-6. Data Resampling - Resample to multiple timeframes
-7. Gap Filling - Detect and fill data gaps
-8. Data Quality Check - Comprehensive quality assessment
-9. Data Integration - Integrate multiple data sources with backwards compatibility
-10. Data Storage - Store processed data
-11. Data Monitoring - Monitor data collection process
-12. Data Export - Export data in various formats
+- Memory-optimized DataFrame operations
+- Comprehensive error handling with context
+- Configuration validation
+- Structured error recovery
 """
 
 import asyncio
@@ -46,21 +29,35 @@ from dataclasses import dataclass, field
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# New core imports
+from src.training.core.errors import (
+    TrainingError, PipelineError, DataError, ConfigurationError,
+    ErrorContext, ErrorHandler, get_error_handler, with_error_context,
+    data_processing_error, configuration_error
+)
+from src.training.core.config_schema import (
+    validate_data_collection_config, ConfigSchema, ConfigValidator,
+    create_data_collection_schema
+)
+from src.training.core.base_pipeline import (
+    BasePipeline, PipelineStage, ExecutionMode, PipelineStatus,
+    PipelineConfig as BasePipelineConfig, PipelineResult
+)
+from src.training.utils.dataframes import (
+    get_dataframe_manager, log_memory_usage,
+    memory_optimized_dataframe, cleanup_dataframe, optimize_dataframe_memory
+)
+
 # Core imports
 import pandas as pd
 import numpy as np
 
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, traced, log_execution_time
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.version_manager import get_version_manager
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls
-from src.utils.error_recovery.advanced_error_recovery import get_error_recovery, with_error_recovery
-from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
-from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
-
-logger = system_logger.getChild('DataCollectionSubPipeline')
+# Existing imports for compatibility
+try:
+    from src.utils.logger import system_logger
+    logger = system_logger.getChild('DataCollectionSubPipeline')
+except ImportError:
+    logger = logging.getLogger('DataCollectionSubPipeline')
 
 # Import unified components
 try:
@@ -78,292 +75,247 @@ except ImportError as e:
     logger.warning(f"⚠️ Some unified components not available: {e}")
     UNIFIED_COMPONENTS_AVAILABLE = False
 
-class ExecutionMode(Enum):
-    """Execution modes for sub-pipelines."""
-    FULL = "full"          # Complete execution with all features
-    LIGHT = "light"        # Lightweight execution with essential features only
-    BLANK = "blank"        # Minimal execution for testing/validation
-
-class SubPipelineStatus(Enum):
-    """Status of sub-pipeline execution."""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
+# Use the new base pipeline configuration and result classes
 @dataclass
-class LoggingConfig:
-    """Logging configuration for the sub-pipeline."""
-    level: str = "INFO"
-    enable_console: bool = True
-    enable_file: bool = False
-    log_file: Optional[str] = None
+class DataCollectionConfig(BasePipelineConfig):
+    """Data collection specific configuration."""
+    # Additional fields specific to data collection
+    target_timeframes: List[str] = field(default_factory=lambda: ['5m', '15m', '30m', '1h'])
+    lookback_days: int = 30
+    add_technical_indicators: bool = False
+    gap_fill_enabled: bool = True
+    quality_threshold: float = 0.8
 
-@dataclass
-class SubPipelineConfig:
-    """Configuration for sub-pipeline execution."""
-    mode: ExecutionMode = ExecutionMode.FULL
-    symbol: str = "BTCUSDT"
-    exchange: str = "binance"
-    timeframe: str = "1m"
-    data_dir: str = "historical_data"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    force_rerun: bool = False
-    parallel_processing: bool = True
-    max_workers: int = 4
-    validation_enabled: bool = True
-    monitoring_enabled: bool = True
-    single_stage_only: bool = False
-    custom_params: Dict[str, Any] = field(default_factory=dict)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
-
-@dataclass
-class SubPipelineResult:
-    """Result of sub-pipeline execution."""
-    sub_pipeline_name: str
-    status: SubPipelineStatus
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
-    output_files: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    error_message: Optional[str] = None
-    artifacts: Dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def success(self) -> bool:
-        return self.status == SubPipelineStatus.COMPLETED and self.error_message is None
-
-class DataCollectionSubPipeline:
+class DataCollectionSubPipeline(BasePipeline):
     """
-    Unified Data Collection Sub-Pipeline Manager.
-    
-    Provides comprehensive data collection, validation, conversion, and processing
-    using unified components with different execution modes and monitoring.
+    Updated Data Collection Sub-Pipeline using Base Architecture.
+
+    Provides data collection, validation, conversion, and processing
+    using the new error system, configuration validation, and memory management.
     """
-    
-    def __init__(self, config: Optional[SubPipelineConfig] = None):
-        """Initialize the unified data collection sub-pipeline."""
-        self.config = config or SubPipelineConfig()
-        self.logger = logger.getChild('DataCollectionSubPipeline')
-        self.results: List[SubPipelineResult] = []
-        
-        # Apply logging configuration
-        self._apply_logging_config(self.config.logging)
-        
-        # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
-        self.version_manager = get_version_manager()
-        
-        # Initialize advanced systems
-        self.error_recovery = get_error_recovery()
-        self.streaming_processor = get_streaming_processor()
-        self.quality_scorer = get_quality_scorer()
-        
-        # Initialize unified components
-        if UNIFIED_COMPONENTS_AVAILABLE:
-            self.downloader = UnifiedDataDownloader(self.config.data_dir)
-            self.loader = UnifiedDataLoader()
-            self.resampler = UnifiedResampler(self.config.data_dir)
-            self.gap_filler = UnifiedGapFiller(self.config.data_dir)
-            self.validators = {
-                DataType.KLINES: get_validator(DataType.KLINES),
-                DataType.AGGTRADES: get_validator(DataType.AGGTRADES),
-                DataType.FUTURES: get_validator(DataType.FUTURES),
-                DataType.UNIFIED: get_validator(DataType.UNIFIED)
-            }
-        else:
-            self.downloader = None
-            self.loader = None
-            self.resampler = None
-            self.gap_filler = None
-            self.validators = {}
-        
-        # Initialize sub-pipeline registry
-        self.sub_pipelines = {
-            'data_download': self._data_download_pipeline,
-            'data_conversion': self._data_conversion_pipeline,
-            'data_validation': self._data_validation_pipeline,
-            'data_preparation': self._data_preparation_pipeline,
-            'feature_engineering': self._feature_engineering_pipeline,
-            'data_resampling': self._data_resampling_pipeline,
-            'gap_filling': self._gap_filling_pipeline,
-            'data_quality_check': self._data_quality_check_pipeline,
-            'data_integration': self._data_integration_pipeline,
-            'data_storage': self._data_storage_pipeline,
-            'data_monitoring': self._data_monitoring_pipeline,
-            'data_export': self._data_export_pipeline
-        }
-    
-    def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
+
+    def __init__(self, config: Optional[DataCollectionConfig] = None):
+        """Initialize the data collection sub-pipeline."""
+        super().__init__(config, PipelineStage.DATA_COLLECTION)
+
+        # Validate configuration using schema
         try:
-            level = getattr(logging, str(logging_cfg.level).upper(), logging.INFO)
-            self.logger.setLevel(level)
-            if logging_cfg.enable_file and logging_cfg.log_file:
-                has_same_file = any(
-                    isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(Path(logging_cfg.log_file).resolve())
-                    for h in self.logger.handlers
-                )
-                if not has_same_file:
-                    Path(logging_cfg.log_file).parent.mkdir(parents=True, exist_ok=True)
-                    fh = logging.FileHandler(logging_cfg.log_file)
-                    fh.setLevel(level)
-                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                    fh.setFormatter(formatter)
-                    self.logger.addHandler(fh)
-        except Exception:
-            pass
+            if config:
+                validated_config = validate_data_collection_config(config.__dict__)
+                self.config = DataCollectionConfig(**validated_config)
+        except Exception as e:
+            raise configuration_error(
+                f"Configuration validation failed: {e}",
+                config_key="data_collection"
+            )
 
+        # Initialize memory manager
+        self.memory_manager = get_dataframe_manager()
+
+        # Log memory usage at start
+        log_memory_usage("data_collection_start")
+    
+    def _register_common_pipelines(self):
+        """Register data collection sub-pipelines."""
+        self.sub_pipeline_registry.register('data_download', self._data_download_pipeline)
+        self.sub_pipeline_registry.register('data_conversion', self._data_conversion_pipeline)
+        self.sub_pipeline_registry.register('data_validation', self._data_validation_pipeline)
+        self.sub_pipeline_registry.register('data_preparation', self._data_preparation_pipeline)
+        self.sub_pipeline_registry.register('feature_engineering', self._feature_engineering_pipeline)
+        self.sub_pipeline_registry.register('data_resampling', self._data_resampling_pipeline)
+        self.sub_pipeline_registry.register('gap_filling', self._gap_filling_pipeline)
+        self.sub_pipeline_registry.register('data_quality_check', self._data_quality_check_pipeline)
+        self.sub_pipeline_registry.register('data_integration', self._data_integration_pipeline)
+        self.sub_pipeline_registry.register('data_storage', self._data_storage_pipeline)
+        self.sub_pipeline_registry.register('data_monitoring', self._data_monitoring_pipeline)
+        self.sub_pipeline_registry.register('data_export', self._data_export_pipeline)
+
+    @with_error_context("execute_sub_pipeline")
     async def execute_sub_pipeline(
         self,
         sub_pipeline_name: str,
-        config: Optional[SubPipelineConfig] = None
-    ) -> SubPipelineResult:
+        config: Optional[DataCollectionConfig] = None
+    ) -> PipelineResult:
         """
-        Execute a specific sub-pipeline.
-        
+        Execute a specific sub-pipeline using the new architecture.
+
         Args:
             sub_pipeline_name: Name of the sub-pipeline to execute
             config: Optional configuration override
-            
+
         Returns:
-            SubPipelineResult with execution details
+            PipelineResult with execution details
         """
         config = config or self.config
-        self.logger.info(f"🚀 Starting sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
-        
+
+        # Get the pipeline function from registry
+        pipeline_func = self.sub_pipeline_registry.get(sub_pipeline_name)
+        if not pipeline_func:
+            error_msg = f"Unknown sub-pipeline: {sub_pipeline_name}"
+            self.logger.error(error_msg)
+            raise PipelineError(
+                error_msg,
+                stage=self.stage.value,
+                context=ErrorContext(
+                    operation="execute_sub_pipeline",
+                    step=sub_pipeline_name
+                )
+            )
+
         start_time = datetime.now()
-        result = SubPipelineResult(
-            sub_pipeline_name=sub_pipeline_name,
-            status=SubPipelineStatus.RUNNING,
-            start_time=start_time
-        )
-        
+        self.logger.info(f"🚀 Starting sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
+
         try:
-            if sub_pipeline_name not in self.sub_pipelines:
-                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-            
             # Execute the sub-pipeline
-            pipeline_func = self.sub_pipelines[sub_pipeline_name]
             artifacts = await pipeline_func(config)
-            
-            # Update result
+
+            # Create success result
             end_time = datetime.now()
-            result.status = SubPipelineStatus.COMPLETED
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            result.artifacts = artifacts
-            result.metadata = {
-                'mode': config.mode.value,
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe
-            }
-            
+            result = self.create_pipeline_result(
+                sub_pipeline_name=sub_pipeline_name,
+                status=PipelineStatus.COMPLETED,
+                start_time=start_time,
+                end_time=end_time,
+                artifacts=artifacts,
+                metadata={
+                    'mode': config.mode.value,
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': config.timeframe
+                }
+            )
+
             self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
-            
+
         except Exception as e:
             end_time = datetime.now()
-            result.status = SubPipelineStatus.FAILED
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            result.error_message = str(e)
-            
-            self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed: {e}")
-        
+
+            # Use enhanced error handling
+            if isinstance(e, TrainingError):
+                error_message = str(e)
+            else:
+                error_message = f"Sub-pipeline failed: {str(e)}"
+
+            # Create failure result
+            result = self.create_pipeline_result(
+                sub_pipeline_name=sub_pipeline_name,
+                status=PipelineStatus.FAILED,
+                start_time=start_time,
+                end_time=end_time,
+                error_message=error_message
+            )
+
+            self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed: {error_message}")
+
         self.results.append(result)
         return result
     
     async def execute_multiple_sub_pipelines(
         self,
         sub_pipeline_names: List[str],
-        config: Optional[SubPipelineConfig] = None,
+        config: Optional[DataCollectionConfig] = None,
         sequential: bool = False
-    ) -> List[SubPipelineResult]:
+    ) -> List[PipelineResult]:
         """
-        Execute multiple sub-pipelines.
-        
+        Execute multiple sub-pipelines using base class method.
+
         Args:
             sub_pipeline_names: List of sub-pipeline names to execute
             config: Optional configuration override
             sequential: Whether to execute sequentially or in parallel
-            
+
         Returns:
-            List of SubPipelineResult objects
+            List of PipelineResult objects
         """
-        config = config or self.config
-        self.logger.info(f"🚀 Starting {len(sub_pipeline_names)} sub-pipelines (sequential: {sequential})")
-        
-        if sequential:
-            results = []
-            for name in sub_pipeline_names:
-                result = await self.execute_sub_pipeline(name, config)
-                results.append(result)
-                if result.status == SubPipelineStatus.FAILED:
-                    self.logger.warning(f"⚠️ Stopping sequential execution due to failure in {name}")
-                    break
-            return results
-        else:
-            # Execute in parallel
-            tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
-            return await asyncio.gather(*tasks, return_exceptions=True)
+        return await super().execute_multiple_sub_pipelines(sub_pipeline_names, config, sequential)
     
-    # Sub-pipeline implementations
-    @log_important_calls
-    @with_error_recovery(service_name="data_download")
-    async def _data_download_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Data download sub-pipeline using unified downloader."""
-        self.logger.info("📥 Executing unified data download pipeline")
-        
+    # Sub-pipeline implementations using new architecture
+    @with_error_context("data_download_pipeline")
+    async def _data_download_pipeline(self, config: DataCollectionConfig) -> Dict[str, Any]:
+        """Data download sub-pipeline using unified downloader with enhanced error handling."""
+        self.logger.info("📥 Executing data download pipeline")
+
         artifacts = {
             'downloaded_files': [],
             'download_stats': {},
             'exchange_info': {},
             'data_types': []
         }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual download")
-            artifacts['downloaded_files'] = ['mock_data.parquet']
-            return artifacts
-        
-        if not self.downloader:
-            self.logger.warning("⚠️ Unified downloader not available, using fallback")
-            return await self._fallback_data_download(config)
-        
+
         try:
-            # Set date range
+            # Handle blank mode
+            if config.mode == ExecutionMode.BLANK:
+                self.logger.info("🔄 Blank mode: Skipping actual download")
+                artifacts['downloaded_files'] = ['mock_data.parquet']
+                return artifacts
+
+            if not self.downloader:
+                error_msg = "Unified downloader not available"
+                self.logger.error(error_msg)
+                raise DataError(
+                    error_msg,
+                    operation="data_download",
+                    symbol=config.symbol,
+                    exchange=config.exchange
+                )
+
+            # Set date range with configuration validation
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=config.custom_params.get('lookback_days', 30))
-            
-            # Download klines data
+            lookback_days = config.lookback_days if hasattr(config, 'lookback_days') else 30
+            start_date = end_date - timedelta(days=lookback_days)
+
+            # Download klines data with error context
             self.logger.info(f"📥 Downloading klines data for {config.exchange}_{config.symbol}_{config.timeframe}")
-            klines_success, klines_data, klines_error = await self.downloader.download_klines(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                start_date=start_date,
-                end_date=end_date
-            )
-            
+
+            try:
+                klines_success, klines_data, klines_error = await self.downloader.download_klines(
+                    symbol=config.symbol,
+                    exchange=config.exchange,
+                    timeframe=config.timeframe,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except Exception as download_error:
+                raise DataError(
+                    f"Data download failed: {str(download_error)}",
+                    operation="data_download",
+                    symbol=config.symbol,
+                    exchange=config.exchange,
+                    cause=download_error
+                )
+
             if klines_success and klines_data:
+                # Optimize memory usage for DataFrame operations
+                klines_df = pd.DataFrame(klines_data)
+
+                # Use memory optimization
+                if self.memory_manager.should_optimize_memory(klines_df):
+                    klines_df = self.memory_manager.optimize_dataframe(klines_df)
+                    self.logger.info("🔧 Applied memory optimization to downloaded data")
+
                 # Save klines data
                 klines_file = f"klines_{config.exchange}_{config.symbol}_{config.timeframe}_raw.parquet"
                 klines_path = os.path.join(config.data_dir, klines_file)
                 os.makedirs(config.data_dir, exist_ok=True)
-                
-                klines_df = pd.DataFrame(klines_data)
+
                 standardized_parquet_handler.write_parquet_standardized(klines_df, klines_path, index=False)
                 artifacts['downloaded_files'].append(klines_file)
                 artifacts['data_types'].append('klines')
+
                 self.logger.info(f"✅ Downloaded {len(klines_data)} klines records")
+                log_memory_usage("data_download_complete")
             else:
-                self.logger.warning(f"⚠️ Klines download failed: {klines_error}")
-            
-            # NOTE: Only downloading klines data as per new setup - aggtrades and futures removed
-            
+                error_msg = f"Klines download failed: {klines_error}"
+                self.logger.warning(f"⚠️ {error_msg}")
+
+                # Create recoverable error
+                raise DataError(
+                    error_msg,
+                    operation="data_download",
+                    symbol=config.symbol,
+                    exchange=config.exchange
+                )
+
             # Get download statistics
             artifacts['download_stats'] = self.downloader.get_download_stats()
             artifacts['exchange_info'] = {
@@ -372,17 +324,23 @@ class DataCollectionSubPipeline:
                 'timeframe': config.timeframe,
                 'download_period': f"{start_date} to {end_date}"
             }
-            
+
+            self.logger.info("✅ DATA DOWNLOAD SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+
         except Exception as e:
-            self.logger.exception(f"❌ Error in data download pipeline: {e}")
-            return await self._fallback_data_download(config)
-        
-        # Log completion
-        self.logger.info("🎉 DATA DOWNLOAD SUB-PIPELINE COMPLETED SUCCESSFULLY!")
-        self.logger.info(f"📁 Downloaded Files: {artifacts['downloaded_files']}")
-        self.logger.info(f"📊 Data Types: {artifacts['data_types']}")
-        self.logger.info(f"📈 Download Stats: {artifacts['download_stats']}")
-        
+            # Enhanced error handling with context
+            if isinstance(e, TrainingError):
+                raise  # Re-raise training errors as-is
+
+            # Convert to structured error
+            raise DataError(
+                f"Data download pipeline failed: {str(e)}",
+                operation="data_download_pipeline",
+                symbol=config.symbol,
+                exchange=config.exchange,
+                cause=e
+            )
+
         return artifacts
     
     async def _fallback_data_download(self, config: SubPipelineConfig) -> Dict[str, Any]:

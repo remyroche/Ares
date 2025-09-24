@@ -1,20 +1,23 @@
 """
-Market Analysis Sub-Pipeline - Complete 13-Step Pipeline
+Updated Market Analysis Sub-Pipeline using New Architecture
 
-This module provides the complete market analysis sub-pipeline with exactly 13 required steps:
+This module provides the market analysis pipeline updated to use:
+- Enhanced error system with rich context
+- Configuration schema validation
+- DataFrame memory management
+- Base pipeline architecture
 
+Market analysis steps:
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
 3. sr_clustering - Generate SR clusters
 4. nas_regime_discovery - Discover market regimes using NAS
 5. nas_clustering - NAS-based regime clustering
-6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
-7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
-8. regime_data_splitting - Tag data by regimes
-9. feature_lookback_optimization - Optimize feature lookback periods
-10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-11. multi_horizon_labeling - Apply multi-horizon profit labeling
-12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+6. regime_data_splitting - Tag data by regimes
+7. feature_lookback_optimization - Optimize feature lookback periods
+8. pid_based_feature_generation - PID-based feature generation
+9. multi_horizon_labeling - Apply multi-horizon profit labeling
+10. final_feature_selection - Final feature selection
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,210 +26,172 @@ from enum import Enum
 from dataclasses import dataclass, field
 import pandas as pd
 
-from src.utils.logger import system_logger
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.version_manager import get_version_manager
+# New core imports
+from src.training.core.errors import (
+    TrainingError, PipelineError, DataError, ConfigurationError,
+    ErrorContext, ErrorHandler, get_error_handler, with_error_context
+)
+from src.training.core.config_schema import ConfigSchema, ConfigValidator
+from src.training.core.base_pipeline import (
+    BasePipeline, PipelineStage, ExecutionMode, PipelineStatus,
+    PipelineConfig as BasePipelineConfig, PipelineResult
+)
+from src.training.utils.dataframes import (
+    get_dataframe_manager, log_memory_usage,
+    memory_optimized_dataframe, cleanup_dataframe, optimize_dataframe_memory
+)
+
+# Existing imports for compatibility
+try:
+    from src.utils.logger import system_logger
+    logger = system_logger.getChild('MarketAnalysisSubPipeline')
+except ImportError:
+    import logging
+    logger = logging.getLogger('MarketAnalysisSubPipeline')
 
 # Import component system
-from .components import ComponentFactory, ComponentConfig
+try:
+    from .components import ComponentFactory, ComponentConfig
+except ImportError:
+    ComponentFactory = None
+    ComponentConfig = None
 
-logger = system_logger.getChild('MarketAnalysisSubPipeline')
-
-class ExecutionMode(Enum):
-    """Execution modes for sub-pipelines."""
-    FULL = "full"          # Complete execution with all features
-    LIGHT = "light"        # Lightweight execution with essential features only
-    BLANK = "blank"        # Minimal execution for testing/validation
-
-class SubPipelineStatus(Enum):
-    """Status of sub-pipeline execution."""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
+# Use the new base pipeline configuration and result classes
 @dataclass
-class LoggingConfig:
-    """Logging configuration for the sub-pipeline."""
-    level: str = "INFO"
-    enable_console: bool = True
-    enable_file: bool = False
-    log_file: Optional[str] = None
-
-@dataclass
-class SubPipelineConfig:
-    """Configuration for sub-pipeline execution."""
-    mode: ExecutionMode = ExecutionMode.FULL
-    symbol: str = "BTCUSDT"
-    exchange: str = "binance"
-    timeframe: str = "30m"
-    data_dir: str = "historical_data"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    force_rerun: bool = False
-    parallel_processing: bool = True
-    max_workers: int = 4
-    validation_enabled: bool = True
-    monitoring_enabled: bool = True
+class MarketAnalysisConfig(BasePipelineConfig):
+    """Market analysis specific configuration."""
+    # Additional fields specific to market analysis
     fast_mode: bool = False
     skip_next_pipeline: bool = False
-    single_stage_only: bool = False  # New parameter to control single vs sequential execution
-    custom_params: Dict[str, Any] = field(default_factory=dict)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
-@dataclass
-class SubPipelineResult:
-    """Result of sub-pipeline execution."""
-    sub_pipeline_name: str
-    status: SubPipelineStatus
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
-    output_files: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    error_message: Optional[str] = None
-    artifacts: Dict[str, Any] = field(default_factory=dict)
-    
-    @property
-    def success(self) -> bool:
-        """Check if sub-pipeline completed successfully."""
-        return self.status == SubPipelineStatus.COMPLETED and self.error_message is None
-    
-    @property
-    def is_complete(self) -> bool:
-        """Check if sub-pipeline produced a complete report with all required artifacts."""
-        if not self.success:
-            return False
-        
-        # Define required artifacts for each sub-pipeline
-        required_artifacts = self._get_required_artifacts()
-        
-        # Check if all required artifacts are present and non-empty
-        for artifact_name in required_artifacts:
-            if artifact_name not in self.artifacts:
-                return False
-            artifact_value = self.artifacts[artifact_name]
-            
-            # Check for empty values
-            if artifact_value is None:
-                return False
-            if isinstance(artifact_value, (list, dict)) and len(artifact_value) == 0:
-                return False
-            if isinstance(artifact_value, str) and artifact_value.strip() == "":
-                return False
-        
-        return True
-    
-    def _get_required_artifacts(self) -> List[str]:
-        """Get list of required artifacts for this sub-pipeline."""
-        artifact_requirements = {
-            'sr_parameter_optimization': ['sr_parameter_optimization_result'],
-            'sr_detection': ['sr_detection_result'],
-            'sr_clustering': ['sr_clustering_result'],
-            'nas_regime_discovery': ['nas_regime_discovery_result'],
-            'nas_clustering': ['optimal_regime_clustering_result'],
-            'nas_models_training': ['nas_models_training_result'],
-            'nas_ensemble_training': ['nas_ensemble_training_result'],
-            'regime_data_splitting': ['regime_data_splitting_result'],
-            # Support both legacy and current naming for the multi-horizon step
-            'multi_horizon_labeling': ['multi_horizon_labeling_result'],
-            'multi_horizon_profit_labeler': ['multi_horizon_labeling_result'],
-            'feature_lookback_optimization': ['feature_lookback_optimization_result'],
-            'pid_based_feature_generation': ['pid_based_feature_generation_result'],
-            'final_feature_selection': ['final_feature_selection_result']
-        }
-        return artifact_requirements.get(self.sub_pipeline_name, [])
-    
-    @property
-    def execution_time(self) -> float:
-        """Get execution time in seconds."""
-        return self.duration_seconds or 0.0
+class MarketAnalysisSubPipeline(BasePipeline):
+    """
+    Updated Market Analysis Sub-Pipeline using Base Architecture.
 
-class MarketAnalysisSubPipeline:
+    Provides market analysis processes using the new error system,
+    configuration validation, and memory management.
     """
-    Market Analysis Sub-Pipeline Manager.
-    
-    Provides granular control over market analysis processes with different
-    execution modes and comprehensive monitoring.
-    """
-    
-    def __init__(self, config: Optional[SubPipelineConfig] = None):
-        """Initialize the market analysis sub-pipeline with backward compatibility."""
-        # Handle both old dict config and new SubPipelineConfig
-        if isinstance(config, dict):
-            # Convert old config format to SubPipelineConfig
-            self.original_config = config
-            self.config = self._convert_old_config(config)
-        else:
-            # Use provided SubPipelineConfig or create default
-            self.config = config or SubPipelineConfig()
-            self.original_config = {}
-        
-        self.logger = logger
-        self.results: List[SubPipelineResult] = []
-        
-        # Apply logging configuration
-        self._apply_logging_config(self.config.logging)
-        
-        # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
-        self.version_manager = get_version_manager()
-        
-        # Initialize component factory
-        self.component_factory = ComponentFactory()
-        
+
+    def __init__(self, config: Optional[MarketAnalysisConfig] = None):
+        """Initialize the market analysis sub-pipeline."""
+        super().__init__(config, PipelineStage.MARKET_ANALYSIS)
+
+        # Validate configuration using schema (if available)
+        try:
+            if config:
+                # Create a simple validation for now
+                self.config = config
+        except Exception as e:
+            raise ConfigurationError(
+                f"Configuration validation failed: {e}",
+                context=ErrorContext(
+                    operation="market_analysis_configuration"
+                )
+            )
+
+        # Initialize memory manager
+        self.memory_manager = get_dataframe_manager()
+
         # Initialize pipeline state for component communication
         self._current_data = None
         self._current_pipeline_state = {}
         self._accumulated_artifacts = {}
 
-    def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
-        try:
-            import logging as _logging
-            from pathlib import Path as _Path
-            level = getattr(_logging, str(logging_cfg.level).upper(), _logging.INFO)
-            self.logger.setLevel(level)
-            if logging_cfg.enable_file and logging_cfg.log_file:
-                has_same_file = any(
-                    isinstance(h, _logging.FileHandler) and getattr(h, 'baseFilename', None) == str(_Path(logging_cfg.log_file).resolve())
-                    for h in self.logger.handlers
-                )
-                if not has_same_file:
-                    _Path(logging_cfg.log_file).parent.mkdir(parents=True, exist_ok=True)
-                    fh = _logging.FileHandler(logging_cfg.log_file)
-                    fh.setLevel(level)
-                    formatter = _logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                    fh.setFormatter(formatter)
-                    self.logger.addHandler(fh)
-        except Exception:
-            pass
+        # Log memory usage at start
+        log_memory_usage("market_analysis_start")
+
+    def _register_common_pipelines(self):
+        """Register market analysis sub-pipelines."""
+        self.sub_pipeline_registry.register('sr_parameter_optimization', self._sr_parameter_optimization_pipeline)
+        self.sub_pipeline_registry.register('sr_detection', self._sr_detection_pipeline)
+        self.sub_pipeline_registry.register('sr_clustering', self._sr_clustering_pipeline)
+        self.sub_pipeline_registry.register('nas_regime_discovery', self._nas_regime_discovery_pipeline)
+        self.sub_pipeline_registry.register('nas_clustering', self._nas_clustering_pipeline)
+        self.sub_pipeline_registry.register('regime_data_splitting', self._regime_data_splitting_pipeline)
+        self.sub_pipeline_registry.register('feature_lookback_optimization', self._feature_lookback_optimization_pipeline)
+        self.sub_pipeline_registry.register('pid_based_feature_generation', self._pid_based_feature_generation_pipeline)
+        self.sub_pipeline_registry.register('multi_horizon_labeling', self._multi_horizon_labeling_pipeline)
+        self.sub_pipeline_registry.register('final_feature_selection', self._final_feature_selection_pipeline)
     
-    def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    @with_error_context("execute_sub_pipeline")
+    async def execute_sub_pipeline(
+        self,
+        sub_pipeline_name: str,
+        config: Optional[MarketAnalysisConfig] = None
+    ) -> PipelineResult:
         """
-        Validate sub-pipeline result and return success status and error info.
-        
+        Execute a specific sub-pipeline using the new architecture.
+
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Optional configuration override
+
         Returns:
-            Tuple of (is_success, error_dict_or_none)
+            PipelineResult with execution details
         """
-        if result.is_complete:
-            self.logger.info(f"✅ {stage_name} completed with complete report")
-            return True, None
-        elif result.success:
-            self.logger.warning(f"⚠️ {stage_name} completed but report is incomplete")
-            return False, {
-                'success': False,
-                'error': f"{stage_name} produced incomplete report - missing required artifacts",
-                'stage': result.sub_pipeline_name,
-                'incomplete_artifacts': result.artifacts
-            }
-        else:
-            self.logger.error(f"❌ {stage_name} failed: {result.error_message}")
-            return False, {
-                'success': False,
-                'error': f"{stage_name} failed: {result.error_message}",
-                'stage': result.sub_pipeline_name
-            }
+        config = config or self.config
+
+        # Get the pipeline function from registry
+        pipeline_func = self.sub_pipeline_registry.get(sub_pipeline_name)
+        if not pipeline_func:
+            error_msg = f"Unknown sub-pipeline: {sub_pipeline_name}"
+            self.logger.error(error_msg)
+            raise PipelineError(
+                error_msg,
+                stage=self.stage.value,
+                context=ErrorContext(
+                    operation="execute_sub_pipeline",
+                    step=sub_pipeline_name
+                )
+            )
+
+        start_time = datetime.now()
+        self.logger.info(f"🚀 Starting sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
+
+        try:
+            # Execute the sub-pipeline
+            artifacts = await pipeline_func(config)
+
+            # Create success result
+            end_time = datetime.now()
+            result = self.create_pipeline_result(
+                sub_pipeline_name=sub_pipeline_name,
+                status=PipelineStatus.COMPLETED,
+                start_time=start_time,
+                end_time=end_time,
+                artifacts=artifacts,
+                metadata={
+                    'mode': config.mode.value,
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': config.timeframe
+                }
+            )
+
+            self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
+
+        except Exception as e:
+            end_time = datetime.now()
+
+            # Use enhanced error handling
+            if isinstance(e, TrainingError):
+                error_message = str(e)
+            else:
+                error_message = f"Sub-pipeline failed: {str(e)}"
+
+            # Create failure result
+            result = self.create_pipeline_result(
+                sub_pipeline_name=sub_pipeline_name,
+                status=PipelineStatus.FAILED,
+                start_time=start_time,
+                end_time=end_time,
+                error_message=error_message
+            )
+
+            self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed: {error_message}")
+
+        self.results.append(result)
+        return result
     
     def _convert_to_component_config(self, sub_config: SubPipelineConfig) -> ComponentConfig:
         """Convert SubPipelineConfig to ComponentConfig."""

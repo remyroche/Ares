@@ -1,11 +1,45 @@
+"""
+MEXC Exchange Implementation
+
+This module provides a complete MEXC exchange implementation that follows
+the BaseExchange interface and integrates with the data collection system.
+"""
+
+import asyncio
+import hashlib
+import hmac
+import time
+from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
+
+try:
+    import ccxt.async_support as ccxt
+except ImportError:
+    ccxt = None
 
 from src.interfaces.base_interfaces import MarketData
+from src.utils.logger import system_logger
 
 from .base_exchange import BaseExchange
 
 
 class MexcExchange(BaseExchange):
+    """
+    MEXC exchange implementation following the BaseExchange interface.
+
+    Provides comprehensive data download capabilities for:
+    - Klines (OHLCV data)
+    - Aggregated trades
+    - Account information
+    - Order management
+    """
+
     def __init__(
         self,
         api_key: str,
@@ -14,9 +48,94 @@ class MexcExchange(BaseExchange):
         password: str | None = None,
     ) -> None:
         super().__init__(api_key, api_secret, trade_symbol, password)
+        self.logger = system_logger.getChild("MexcExchange")
+        self.session: aiohttp.ClientSession | None = None
+        self.base_url = "https://api.mexc.com"
+        self.api_url = "https://api.mexc.com/api/v3"
 
     async def _initialize_exchange(self) -> None:
-        self.exchange = None
+        """Initialize the MEXC exchange client."""
+        try:
+            if aiohttp is None:
+                self.logger.warning("⚠️ aiohttp not available, using mock session")
+                self.session = None
+                return
+
+            # Initialize aiohttp session with SSL configuration
+            timeout = aiohttp.ClientTimeout(total=30)
+            connector = aiohttp.TCPConnector(verify_ssl=False)
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+
+            # Test connection
+            await self._test_connection()
+
+            self.logger.info("✅ MEXC exchange initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize MEXC exchange: {e}")
+            raise
+
+    async def _test_connection(self) -> None:
+        """Test connection to MEXC API."""
+        try:
+            url = f"{self.api_url}/time"
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    server_time = data.get("serverTime")
+                    self.logger.info(f"Connected to MEXC API (Server time: {server_time})")
+                else:
+                    raise Exception(f"Connection test failed with status: {response.status}")
+        except Exception as e:
+            self.logger.error(f"Connection test failed: {e}")
+            raise
+
+    def _generate_signature(self, params: dict[str, Any]) -> str:
+        """Generate HMAC signature for MEXC authenticated requests."""
+        if not self.api_secret:
+            raise ValueError("API secret not configured")
+
+        query_string = urlencode(params)
+        return hmac.new(
+            self.api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+    async def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        signed: bool = False
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """Make HTTP request to MEXC API."""
+        if aiohttp is None or not self.session:
+            self.logger.warning("⚠️ aiohttp not available, returning mock data")
+            return []
+
+        url = f"{self.api_url}{endpoint}"
+
+        if params is None:
+            params = {}
+
+        headers = {"X-MEXC-APIKEY": self.api_key} if self.api_key else {}
+
+        if signed and self.api_key and self.api_secret:
+            params["timestamp"] = int(time.time() * 1000)
+            params["signature"] = self._generate_signature(params)
+
+        try:
+            async with self.session.request(method, url, params=params, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    self.logger.error(f"API request failed: {response.status} - {error_text}")
+                    return None
+        except Exception as e:
+            self.logger.error(f"Request failed: {e}")
+            return None
 
     async def _convert_to_market_data(
         self,
@@ -24,16 +143,144 @@ class MexcExchange(BaseExchange):
         symbol: str,
         interval: str,
     ) -> list[MarketData]:
-        return []
+        """Convert raw MEXC kline data to standardized MarketData format."""
+        market_data_list = []
+
+        for item in raw_data:
+            try:
+                # MEXC format: [open_time, open, high, low, close, volume, ...]
+                timestamp = datetime.fromtimestamp(int(item[0]) / 1000)
+                open_price = float(item[1])
+                high_price = float(item[2])
+                low_price = float(item[3])
+                close_price = float(item[4])
+                volume = float(item[5])
+
+                market_data = MarketData(
+                    symbol=symbol,
+                    timestamp=timestamp,
+                    open=open_price,
+                    high=high_price,
+                    low=low_price,
+                    close=close_price,
+                    volume=volume,
+                    interval=interval
+                )
+                market_data_list.append(market_data)
+
+            except Exception as e:
+                self.logger.warning(f"Failed to convert kline data: {e}")
+                continue
+
+        return market_data_list
 
     async def _get_market_id(self, symbol: str) -> str:
-        return symbol
+        """Get the market ID for a given symbol (MEXC uses symbol as-is)."""
+        return symbol.upper()
 
-    async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+    async def _get_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Get raw kline data from MEXC."""
+        # Convert interval format
+        interval_map = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "30m": "30m",
+            "1h": "1h",
+            "4h": "4h",
+            "1d": "1d",
+            "1w": "1w"
+        }
+
+        mexc_interval = interval_map.get(interval, "1m")
+
+        params = {
+            "symbol": symbol.upper(),
+            "interval": mexc_interval,
+            "limit": min(limit, 1000)  # MEXC max limit is 1000
+        }
+
+        data = await self._make_request("GET", "/klines", params, signed=False)
+
+        if data:
+            return data
+        return []
+
+    async def _get_historical_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Get raw historical kline data from MEXC."""
+        interval_map = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "30m": "30m",
+            "1h": "1h",
+            "4h": "4h",
+            "1d": "1d",
+            "1w": "1w"
+        }
+
+        mexc_interval = interval_map.get(interval, "1m")
+
+        params = {
+            "symbol": symbol.upper(),
+            "interval": mexc_interval,
+            "limit": min(limit, 1000),
+            "startTime": start_time_ms,
+            "endTime": end_time_ms
+        }
+
+        data = await self._make_request("GET", "/klines", params, signed=False)
+
+        if data:
+            return data
+        return []
+
+    async def _get_historical_agg_trades_raw(
+        self,
+        symbol: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Get raw historical aggregated trades from MEXC."""
+        params = {
+            "symbol": symbol.upper(),
+            "limit": min(limit, 1000),
+            "startTime": start_time_ms,
+            "endTime": end_time_ms
+        }
+
+        data = await self._make_request("GET", "/aggTrades", params, signed=False)
+
+        if data:
+            # Standardize field names
+            trades = []
+            for item in data:
+                trades.append({
+                    "timestamp": item.get("T", item.get("timestamp", 0)),
+                    "price": item.get("p", item.get("price", 0)),
+                    "quantity": item.get("q", item.get("quantity", 0)),
+                    "is_buyer_maker": item.get("m", item.get("is_buyer_maker", False)),
+                    "trade_id": item.get("a", item.get("trade_id", 0))
+                })
+            return trades
         return []
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
-        return {}
+        """Get raw account information from MEXC."""
+        return await self._make_request("GET", "/account", signed=True) or {}
 
     async def _create_order_raw(
         self,
@@ -44,35 +291,91 @@ class MexcExchange(BaseExchange):
         price: float | None,
         params: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return {}
+        """Create raw order on MEXC."""
+        order_params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": order_type.upper(),
+            "quantity": quantity
+        }
+
+        if price is not None:
+            order_params["price"] = price
+
+        if params:
+            order_params.update(params)
+
+        return await self._make_request("POST", "/order", order_params, signed=True) or {}
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        return {}
+        """Get raw position risk information from MEXC."""
+        params = {"symbol": symbol.upper()} if symbol else {}
+        data = await self._make_request("GET", "/positionRisk", params, signed=True)
 
-    async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        return []
+        if data and isinstance(data, list):
+            # Return first matching position or first position if no symbol specified
+            for position in data:
+                if not symbol or position.get("symbol", "").upper() == symbol.upper():
+                    return position
+            return data[0] if data else {}
 
-    async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        return []
+        return data or {}
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
+        """Get raw open orders from MEXC."""
+        params = {"symbol": symbol.upper()} if symbol else {}
+        data = await self._make_request("GET", "/openOrders", params, signed=True)
+
+        if data and isinstance(data, list):
+            return data
         return []
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        return {}
+        """Cancel raw order on MEXC."""
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": str(order_id)
+        }
+        return await self._make_request("DELETE", "/order", params, signed=True) or {}
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        return {}
+        """Get raw order status from MEXC."""
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": str(order_id)
+        }
+        return await self._make_request("GET", "/order", params, signed=True) or {}
+
+    # Additional MEXC-specific methods for data collection
+
+    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
+        """Get ticker data from MEXC."""
+        endpoint = "/ticker/24hr"
+        params = {"symbol": symbol.upper()} if symbol else {}
+        return await self._make_request("GET", endpoint, params, signed=False) or {}
+
+    async def get_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any]:
+        """Get order book data."""
+        params = {
+            "symbol": symbol.upper(),
+            "limit": str(min(limit, 5000))  # MEXC max limit is 5000
+        }
+        return await self._make_request("GET", "/depth", params, signed=False) or {}
+
+    async def close(self) -> None:
+        """Close the exchange connection."""
+        if self.session:
+            await self.session.close()
+            self.session = None
+        self.logger.info("MEXC exchange connection closed")
+
+
+# Factory function for creating MEXC exchange instances
+def create_mexc_exchange(
+    api_key: str = "",
+    api_secret: str = "",
+    trade_symbol: str = "BTCUSDT",
+    password: str | None = None,
+) -> MexcExchange:
+    """Create a new MEXC exchange instance."""
+    return MexcExchange(api_key, api_secret, trade_symbol, password)

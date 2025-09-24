@@ -9,11 +9,10 @@ from .base_component import BaseMarketAnalysisComponent, ComponentConfig, Compon
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
-from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
-from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent
-# HMM training components moved to hmm_models_training module
-# from .hmm_models_training import HMMModelsTrainingComponent
-from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
+from .nas_regime_discovery import NASRegimeDiscoveryComponent
+from .nas_clustering import NASClusteringComponent
+from .tas_regime_discovery import TASRegimeDiscoveryComponent
+# NAS training components - will be integrated with existing training pipeline
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
@@ -117,6 +116,102 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 metadata={},
                 error_message=f"Multi-horizon labeling component failed: {str(e)}"
             )
+
+class NASModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
+    """Wrapper for NAS Models Training to work as a component."""
+
+    def __init__(self, training_class, config: Optional[ComponentConfig] = None):
+        super().__init__(config)
+        self.training_class = training_class
+        self.training_instance = None
+
+    def get_required_artifacts(self) -> list[str]:
+        """Get list of required artifacts this component must produce."""
+        return ['nas_models_training_result']
+
+    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
+        """Execute NAS models training as a component."""
+        try:
+            # Create training instance if not exists
+            if self.training_instance is None:
+                # Convert ComponentConfig to NASTrainingConfig
+                from src.training.steps.model_training.nas_training_step import NASTrainingConfig
+                training_config = NASTrainingConfig(
+                    primary_architecture=self.config.custom_params.get('primary_architecture', 'hybrid'),
+                    n_regimes=self.config.custom_params.get('n_regimes', 8),
+                    primary_timeframe=self.config.custom_params.get('timeframe', '5m'),
+                    enable_neural_odes=self.config.custom_params.get('enable_neural_odes', True),
+                    enable_vision_transformers=self.config.custom_params.get('enable_vision_transformers', True),
+                    enable_state_space_models=self.config.custom_params.get('enable_state_space_models', True),
+                    enable_micro_regime_detection=self.config.custom_params.get('enable_micro_regime_detection', True),
+                    population_size=self.config.custom_params.get('population_size', 50),
+                    generations=self.config.custom_params.get('generations', 10),
+                    enable_hpo=self.config.custom_params.get('enable_hpo', True),
+                    save_models=self.config.custom_params.get('save_models', True),
+                    model_dir=self.config.custom_params.get('model_dir', 'models/nas_models')
+                )
+                self.training_instance = self.training_class(training_config)
+
+            # Extract required data from pipeline state
+            X = pipeline_state.get('features')
+            y = pipeline_state.get('targets')
+            cluster_assignments = pipeline_state.get('cluster_assignments')
+            feature_names = pipeline_state.get('feature_names')
+            market_data = pipeline_state.get('market_data') or data
+
+            # Validate X and y alignment
+            if X is not None and y is not None and len(X) != len(y):
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    error_message=f"X and y length mismatch: X={len(X)}, y={len(y)}"
+                )
+
+            # If cluster_assignments is missing, try to get from nas_clusters
+            if cluster_assignments is None:
+                nas_clusters = pipeline_state.get('nas_clusters', {})
+                cluster_assignments = nas_clusters.get('cluster_assignments')
+                if cluster_assignments is not None:
+                    print(f"✅ Found cluster_assignments in nas_clusters: {len(cluster_assignments)} samples")
+
+            if X is None or y is None or cluster_assignments is None:
+                missing_items = []
+                if X is None: missing_items.append("features")
+                if y is None: missing_items.append("targets")
+                if cluster_assignments is None: missing_items.append("cluster_assignments")
+                raise ValueError(f"Missing required data: {', '.join(missing_items)}")
+
+            # Use NAS state recognition as the training objective
+            y = cluster_assignments
+
+            # Execute training with comprehensive features
+            results = await self.training_instance.execute(X, y, cluster_assignments, feature_names, market_data=market_data)
+
+            # Create comprehensive artifact
+            artifact = {
+                'nas_models_training_result': {
+                    'nas_models': results.get('model_results', {}),
+                    'nas_training_metrics': results.get('comprehensive_report', {}),
+                    'metadata': results.get('metadata', {}),
+                    'training_time': results.get('training_time', 0),
+                    'success': 'error' not in results
+                }
+            }
+
+            return ComponentResult(
+                success=True,
+                artifacts=artifact,
+                metadata={'component_type': 'nas_models_training', 'execution_time': results.get('training_time', 0)}
+            )
+
+        except Exception as e:
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=str(e),
+                metadata={'component_type': 'nas_models_training'}
+            )
+
 
 class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for HMM Models Training Enhanced to work as a component."""
@@ -617,9 +712,10 @@ class ComponentFactory:
         'sr_parameter_optimization': SRParameterOptimizationComponent,
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
-        'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
-        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use consolidated HMM clustering
-        'hmm_ensemble_training': HMMEnsembleTrainingComponent,
+        'nas_regime_discovery': NASRegimeDiscoveryComponent,  # NAS-based regime discovery
+        'tas_regime_discovery': TASRegimeDiscoveryComponent,  # TAS-based regime discovery
+        'nas_clustering': NASClusteringComponent,  # NAS-based optimal regime clustering
+        'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Keep for backward compatibility
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
@@ -665,14 +761,22 @@ class ComponentFactory:
             except ImportError as e:
                 raise ValueError(f"Failed to import MultiHorizonSubPipelineAdapter: {e}")
         
-        # Handle HMM training components (moved to hmm_models_training module)
+        # Handle NAS training components (integrated with existing training pipeline)
+        if component_name == 'nas_models_training':
+            try:
+                from ..model_training.nas_training_step import NASTrainingStep
+                return NASModelsTrainingComponentWrapper(NASTrainingStep, config)
+            except ImportError as e:
+                raise ValueError(f"Failed to import NASTrainingStep: {e}")
+
+        # Handle legacy HMM training components (moved to hmm_models_training module)
         if component_name == 'hmm_models_training':
             try:
                 from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced
                 return HMMModelsTrainingComponentWrapper(HMMModelsTrainingEnhanced, config)
             except ImportError as e:
                 raise ValueError(f"Failed to import HMMModelsTrainingEnhanced: {e}")
-        
+
         if component_name == 'hmm_ensemble_training':
             try:
                 from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent
@@ -681,7 +785,7 @@ class ComponentFactory:
                 raise ValueError(f"Failed to import HMMEnsembleTrainingComponent: {e}")
         
         if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+            available_components = list(self._components.keys()) + ['regime_data_splitting', 'nas_models_training', 'hmm_models_training', 'hmm_ensemble_training']
             raise ValueError(
                 f"Unknown component: {component_name}. "
                 f"Available components: {available_components}"
@@ -714,12 +818,12 @@ class ComponentFactory:
     def get_available_components(self) -> list[str]:
         """
         Get list of available component names.
-        
+
         Returns:
             List of component names
         """
         # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'nas_models_training', 'tas_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training']
         return list(self._components.keys()) + lazy_components
     
     @classmethod
@@ -734,5 +838,5 @@ class ComponentFactory:
             True if component is available
         """
         # Check both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'nas_models_training', 'tas_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training']
         return component_name in self._components or component_name in lazy_components

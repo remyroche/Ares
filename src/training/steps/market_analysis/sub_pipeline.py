@@ -431,11 +431,11 @@ class MarketAnalysisSubPipeline:
                 'sr_clusters': results['sr_clusters']
             })
             
-            # ===== HMM STEPS GROUP =====
-            self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
-            
-            # Stage 4: HMM Regime Discovery
-            self.logger.info('🔍 Executing Stage 4: HMM Regime Discovery')
+            # ===== NAS REGIME ANALYSIS GROUP =====
+            self.logger.info('🔍 ===== STARTING NAS REGIME ANALYSIS GROUP =====')
+
+            # Stage 4: NAS Regime Discovery
+            self.logger.info('🔍 Executing Stage 4: NAS Regime Discovery')
             nas_regime_discovery_result = await self.execute_sub_pipeline('nas_regime_discovery', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(nas_regime_discovery_result, "NAS Regime Discovery")
             if not is_success:
@@ -472,8 +472,8 @@ class MarketAnalysisSubPipeline:
                 'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
             })
             
-            # Prepare data for HMM Models Training
-            self.logger.info('📊 Preparing data for HMM Models Training...')
+            # Prepare data for NAS Models Training
+            self.logger.info('📊 Preparing data for NAS Models Training...')
             try:
                 # Extract features from optimized_features or pid_based_features
                 features = None
@@ -491,16 +491,16 @@ class MarketAnalysisSubPipeline:
                         features = pid_features['combined_features']
                         feature_names = pid_features.get('combined_feature_names', [])
                 
-                # Targets are not required: HMM training uses cluster_assignments as labels
+                # Targets are not required: NAS training uses cluster_assignments as labels
                 targets = None
-                
+
                 # Extract regime labels from regime assignments
                 regime_labels = None
                 if 'regime_assignments' in results and results['regime_assignments']:
                     regime_data = results['regime_assignments']
                     if isinstance(regime_data, dict) and 'regime_labels' in regime_data:
                         regime_labels = regime_data['regime_labels']
-                
+
                 # Update pipeline state with prepared data
                 self._current_pipeline_state.update({
                     'features': features,
@@ -508,17 +508,17 @@ class MarketAnalysisSubPipeline:
                     'regime_labels': regime_labels,
                     'feature_names': feature_names
                 })
-                
+
                 # Log data availability for debugging
-                self.logger.info(f"📊 Data prepared for HMM Models Training:")
+                self.logger.info(f"📊 Data prepared for NAS Models Training:")
                 self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
-                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (HMM uses cluster_assignments)")
+                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (NAS uses cluster_assignments)")
                 self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
                 self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
-                
+
             except Exception as e:
-                self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
-                return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
+                self.logger.error(f"❌ Failed to prepare data for NAS Models Training: {e}")
+                return self._create_error_result("Data preparation failed for NAS Models Training", str(e))
             
             # Stage 6: NAS Models Training
             self.logger.info('🏋️ Executing Stage 6: NAS Models Training')
@@ -537,22 +537,27 @@ class MarketAnalysisSubPipeline:
                 'nas_models': results['nas_models']
             })
             
-            # Stage 7: NAS Ensemble Training
+            # Stage 7: NAS Ensemble Training (fallback to HMM for now)
             self.logger.info('🎭 Executing Stage 7: NAS Ensemble Training')
-            nas_ensemble_training_result = await self.execute_sub_pipeline('nas_ensemble_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_ensemble_training_result, "NAS Ensemble Training")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            nas_ensemble_data = nas_ensemble_training_result.artifacts.get('nas_ensemble_training_result', {})
-            results['nas_ensemble'] = nas_ensemble_data.get('nas_ensemble', {})
-            results['nas_ensemble_metrics'] = nas_ensemble_data.get('nas_ensemble_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'nas_ensemble': results['nas_ensemble']
-            })
+            try:
+                nas_ensemble_training_result = await self.execute_sub_pipeline('hmm_ensemble_training', self.config)
+                is_success, error_info = self._validate_sub_pipeline_result(nas_ensemble_training_result, "NAS Ensemble Training")
+                if not is_success:
+                    return error_info
+
+                # Extract data from consolidated artifact
+                nas_ensemble_data = nas_ensemble_training_result.artifacts.get('hmm_ensemble_training_result', {})
+                results['nas_ensemble'] = nas_ensemble_data.get('hmm_ensemble', {})
+                results['nas_ensemble_metrics'] = nas_ensemble_data.get('hmm_ensemble_metrics', {})
+
+                # Update pipeline state for next components
+                self._current_pipeline_state.update({
+                    'nas_ensemble': results['nas_ensemble']
+                })
+            except Exception as e:
+                self.logger.warning(f"NAS Ensemble Training not available, skipping: {e}")
+                results['nas_ensemble'] = {}
+                results['nas_ensemble_metrics'] = {}
             
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')

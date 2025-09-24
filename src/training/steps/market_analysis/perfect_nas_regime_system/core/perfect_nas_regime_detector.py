@@ -36,6 +36,13 @@ from .nas_search import (
 from .perfect_nas_config import PerfectNASConfig, NeuralArchitectureType
 from .hybrid_architecture import HybridRegimeArchitecture
 
+# Import enhanced integrations
+from .enhanced_perfect_nas_regime_detector import EnhancedPerfectNASRegimeDetector
+from .enhanced_matrix_operations import EnhancedMatrixOperations
+from .enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommonConfig
+from .enhanced_nas_clustering_integration import EnhancedNASClusteringIntegration, NASClusteringConfig
+from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -61,29 +68,39 @@ class PerfectNASRegimeDetector:
     
     Combines the best of both nas_modeling and nas_clustering systems with
     enhanced economic significance and trading viability evaluation.
+    Now includes full integration with existing tools infrastructure.
     """
     
-    def __init__(self, config: PerfectNASConfig):
+    def __init__(self, config: PerfectNASConfig, use_enhanced: bool = True):
         """Initialize Perfect NAS Regime Detector.
         
         Args:
             config: Perfect NAS configuration
+            use_enhanced: Whether to use enhanced integrations
         """
         self.config = config
+        self.use_enhanced = use_enhanced
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize components based on configuration
-        self._initialize_neural_architectures()
-        self._initialize_nas_search()
-        self._initialize_evaluation_components()
-        self._initialize_meta_learning()
+        if use_enhanced:
+            # Use enhanced detector with full tool integration
+            self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
+            self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
+        else:
+            # Initialize components based on configuration (original implementation)
+            self._initialize_neural_architectures()
+            self._initialize_nas_search()
+            self._initialize_evaluation_components()
+            self._initialize_meta_learning()
+            
+            self.logger.info(f"✅ Perfect NAS Regime Detector initialized (original)")
         
-        self.logger.info(f"✅ Perfect NAS Regime Detector initialized")
         self.logger.info(f"   Architecture: {config.primary_architecture.value}")
         self.logger.info(f"   Neural ODEs: {config.enable_neural_odes}")
         self.logger.info(f"   Vision Transformers: {config.enable_vision_transformers}")
         self.logger.info(f"   Meta-learning: {config.enable_meta_learning}")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
+        self.logger.info(f"   Enhanced Integration: {use_enhanced}")
     
     def _initialize_neural_architectures(self):
         """Initialize neural architecture components."""
@@ -227,10 +244,46 @@ class PerfectNASRegimeDetector:
         Returns:
             PerfectNASResult with regime detection results
         """
+        if self.use_enhanced:
+            # Use enhanced detector with full tool integration
+            enhanced_result = self.enhanced_detector.detect_regimes(
+                market_data, timestamps, optimize_architecture, enable_meta_learning
+            )
+            
+            # Convert enhanced result to standard result
+            return PerfectNASResult(
+                success=enhanced_result.success,
+                regime_predictions=enhanced_result.regime_predictions,
+                regime_probabilities=enhanced_result.regime_probabilities,
+                economic_significance_scores=enhanced_result.economic_significance_scores,
+                trading_viability_scores=enhanced_result.trading_viability_scores,
+                regime_stability_scores=enhanced_result.regime_stability_scores,
+                transition_probabilities=enhanced_result.transition_probabilities,
+                micro_regimes=enhanced_result.micro_regimes,
+                architecture_performance=enhanced_result.architecture_performance,
+                uncertainty_estimates=enhanced_result.uncertainty_estimates,
+                execution_time=enhanced_result.execution_time,
+                metadata=enhanced_result.metadata,
+                error_message=enhanced_result.error_message
+            )
+        else:
+            # Use original implementation
+            return self._detect_regimes_original(
+                market_data, timestamps, optimize_architecture, enable_meta_learning
+            )
+    
+    def _detect_regimes_original(self, 
+                               market_data: Union[pd.DataFrame, np.ndarray],
+                               timestamps: Optional[np.ndarray] = None,
+                               optimize_architecture: bool = True,
+                               enable_meta_learning: bool = True) -> PerfectNASResult:
+        """
+        Original regime detection implementation.
+        """
         start_time = time.time()
         
         try:
-            self.logger.info("🚀 Starting Perfect NAS regime detection")
+            self.logger.info("🚀 Starting Perfect NAS regime detection (original)")
             
             # Prepare data
             processed_data, processed_timestamps = self._prepare_data(market_data, timestamps)
@@ -301,7 +354,7 @@ class PerfectNASRegimeDetector:
                 uncertainty_estimates=uncertainty_estimates,
                 execution_time=execution_time,
                 metadata={
-                    'system': 'Perfect NAS Regime System',
+                    'system': 'Perfect NAS Regime System (Original)',
                     'version': self.config.version,
                     'architecture': self.config.primary_architecture.value,
                     'n_regimes': self.config.n_regimes,

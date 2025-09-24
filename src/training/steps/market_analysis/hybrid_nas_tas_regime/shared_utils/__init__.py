@@ -98,7 +98,14 @@ from .unified_validation_system import (
     create_unified_validation_system, quick_validation
 )
 
-# ML Common Integration - Shared utilities for TAS and NAS
+# ML Common Integration - Enhanced integration with existing utilities
+from .ml_common_integration_enhanced import (
+    EnhancedMLCommonIntegration, MLCommonIntegrationType, MLCommonIntegrationConfig,
+    create_enhanced_ml_common_integration, create_tas_ml_common_integration,
+    create_nas_ml_common_integration, create_hybrid_ml_common_integration
+)
+
+# Legacy ML Common Integration (kept for backward compatibility)
 from .ml_common_integration import (
     SharedMLUtilitiesManager, create_shared_ml_utilities_manager,
     TASSharedMLUtilities, NASSharedMLUtilities, HybridSharedMLUtilities,
@@ -204,7 +211,12 @@ __all__ = [
     'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
     'create_unified_validation_system', 'quick_validation',
 
-    # ML Common Integration - Shared utilities for TAS and NAS
+    # ML Common Integration - Enhanced integration with existing utilities
+    'EnhancedMLCommonIntegration', 'MLCommonIntegrationType', 'MLCommonIntegrationConfig',
+    'create_enhanced_ml_common_integration', 'create_tas_ml_common_integration',
+    'create_nas_ml_common_integration', 'create_hybrid_ml_common_integration',
+
+    # Legacy ML Common Integration (kept for backward compatibility)
     'SharedMLUtilitiesManager', 'create_shared_ml_utilities_manager',
     'TASSharedMLUtilities', 'NASSharedMLUtilities', 'HybridSharedMLUtilities',
     'MLUtilityType', 'MLUtilityConfig',

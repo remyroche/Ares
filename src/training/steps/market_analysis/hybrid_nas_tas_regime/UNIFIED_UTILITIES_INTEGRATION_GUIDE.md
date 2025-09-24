@@ -4,12 +4,13 @@ This guide explains how to use the newly implemented unified utilities that cons
 
 ## Overview
 
-The unified utilities provide a comprehensive framework for:
+The unified utilities provide a comprehensive framework that **leverages existing ML Common utilities** from `utils/ml_commons/` instead of recreating functionality:
 - **Configuration Management**: Unified configuration system for TAS, NAS, and hybrid architectures
 - **Performance Monitoring**: Real-time performance tracking and regime-specific analysis
 - **Meta-Learning**: Rapid adaptation and few-shot learning capabilities
 - **Hardware Optimization**: GPU acceleration, memory optimization, and adaptive resource allocation
 - **Evaluation Framework**: Comprehensive evaluation including economic significance and trading viability
+- **ML Common Integration**: Enhanced integration with existing lookahead protection, overfitting detection, HPO optimization, and data leakage prevention utilities
 
 ## Quick Start
 
@@ -120,7 +121,46 @@ status = hardware_manager.get_hardware_status()
 print(f"Hardware status: {status}")
 ```
 
-### 5. Evaluation Framework
+### 5. Enhanced ML Common Integration
+
+```python
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+    create_tas_ml_common_integration, create_nas_ml_common_integration,
+    MLCommonIntegrationConfig
+)
+
+# Create enhanced ML Common integration
+tas_integration = create_tas_ml_common_integration()
+
+# Comprehensive validation using existing ML Common utilities
+validation_result = tas_integration.comprehensive_validation(
+    model=model,
+    X_train=X_train,
+    X_test=X_test,
+    y_train=y_train,
+    y_test=y_test,
+    timestamps_train=timestamps_train,
+    timestamps_test=timestamps_test
+)
+
+# Use existing lookahead protection
+bias_result = tas_integration.prevent_lookahead_bias(
+    data=data,
+    timestamp_col='timestamp',
+    target_col='target'
+)
+
+# Use existing overfitting detection
+overfitting_result = tas_integration.detect_overfitting(
+    model=model,
+    X_train=X_train,
+    X_val=X_val,
+    y_train=y_train,
+    y_val=y_val
+)
+```
+
+### 6. Evaluation Framework
 
 ```python
 from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
@@ -482,12 +522,36 @@ The unified utilities framework is designed to be extensible. Future enhancement
 
 ## Conclusion
 
-The unified utilities provide a comprehensive, consolidated framework for managing TAS and NAS architectures. By using these utilities, you can:
+## Key Benefits of Using Existing ML Common Utilities
 
-- Reduce code duplication between TAS and NAS systems
-- Ensure consistency across different architectures
-- Leverage advanced features like meta-learning and hardware optimization
-- Perform comprehensive evaluations with economic significance
-- Monitor performance in real-time with regime-specific analysis
+### **Leveraging Proven Tools**
+- **✅ Lookahead Protection**: Uses `src.utils.ml_common.utils.lookahead_protection.LookaheadProtection`
+- **✅ Overfitting Detection**: Uses `src.utils.ml_common.validation.enhanced_overfitting_detection.EnhancedOverfittingDetector`
+- **✅ HPO Optimization**: Uses `src.utils.ml_common.utils.hpo_utils.HyperparameterOptimization`
+- **✅ Data Leakage Prevention**: Uses `src.utils.ml_common.validation.data_leakage_prevention.DataLeakagePrevention`
+- **✅ Unified Validation**: Uses `src.utils.ml_common.validation.unified_validation_system.UnifiedValidationSystem`
 
-Start with the basic examples and gradually incorporate more advanced features as needed for your specific use case.
+### **No Code Duplication**
+- Reuses existing, battle-tested implementations
+- Maintains consistency with the broader ML Common ecosystem
+- Reduces maintenance burden and potential bugs
+- Ensures compatibility with existing workflows
+
+### **Enhanced Integration**
+- Seamless integration between TAS and NAS architectures
+- Unified configuration management
+- Comprehensive validation pipeline
+- Real-time performance monitoring
+
+## Summary
+
+The unified utilities provide a comprehensive, consolidated framework that **leverages existing ML Common utilities** for managing TAS and NAS architectures. By using these utilities, you can:
+
+- **Reduce code duplication** between TAS and NAS systems
+- **Ensure consistency** across different architectures
+- **Leverage proven tools** from the existing ML Common ecosystem
+- **Avoid recreating functionality** that already exists and is well-tested
+- **Perform comprehensive evaluations** with economic significance
+- **Monitor performance** in real-time with regime-specific analysis
+
+Start with the basic examples and gradually incorporate more advanced features as needed for your specific use case. The enhanced ML Common integration ensures you get the best of both worlds: proven utilities and unified architecture management.

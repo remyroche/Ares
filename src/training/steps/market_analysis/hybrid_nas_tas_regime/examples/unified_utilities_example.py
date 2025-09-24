@@ -30,9 +30,11 @@ from ..shared_utils import (
     create_evaluation_framework, EvaluationType, EvaluationMetric
 )
 
-# Import ML Common integration
+# Import Enhanced ML Common integration
 from ..shared_utils import (
-    create_shared_ml_utilities_manager, MLUtilityType
+    create_enhanced_ml_common_integration, create_tas_ml_common_integration,
+    create_nas_ml_common_integration, create_hybrid_ml_common_integration,
+    MLCommonIntegrationConfig
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -347,59 +349,93 @@ def example_evaluation_framework():
     return tas_evaluator, nas_evaluator
 
 
-def example_ml_common_integration():
-    """Example of using ML Common integration."""
-    logger.info("🔗 Example: ML Common Integration")
+def example_enhanced_ml_common_integration():
+    """Example of using Enhanced ML Common integration."""
+    logger.info("🔗 Example: Enhanced ML Common Integration")
     
-    # Create shared ML utilities managers
-    tas_ml_utils = create_shared_ml_utilities_manager(
-        utility_type=MLUtilityType.TAS,
-        config={
-            'enable_safeguards': True,
-            'enable_memory_optimization': True,
-            'enable_caching': True
-        }
-    )
+    # Create enhanced ML Common integrations
+    tas_integration = create_tas_ml_common_integration()
+    nas_integration = create_nas_ml_common_integration()
+    hybrid_integration = create_hybrid_ml_common_integration()
     
-    nas_ml_utils = create_shared_ml_utils_manager(
-        utility_type=MLUtilityType.NAS,
-        config={
-            'enable_safeguards': True,
-            'enable_memory_optimization': True,
-            'enable_caching': True
-        }
-    )
-    
-    # Generate sample data
+    # Generate sample data with timestamps
     np.random.seed(42)
     X_train = np.random.randn(100, 10)
     y_train = np.random.randint(0, 2, 100)
     X_val = np.random.randn(50, 10)
     y_val = np.random.randint(0, 2, 50)
     
-    # Check training safety
-    tas_safety = tas_ml_utils.check_training_safety((X_train, y_train), (X_val, y_val))
-    nas_safety = nas_ml_utils.check_training_safety((X_train, y_train), (X_val, y_val))
+    # Create timestamps
+    timestamps_train = pd.date_range(start='2023-01-01', periods=100, freq='1H')
+    timestamps_val = pd.date_range(start='2023-01-05', periods=50, freq='1H')
     
-    logger.info(f"TAS Training Safety: {tas_safety}")
-    logger.info(f"NAS Training Safety: {nas_safety}")
+    # Mock model for testing
+    class MockModel:
+        def fit(self, X, y): pass
+        def predict(self, X): return np.random.randint(0, 2, len(X))
     
-    # Validate data split
-    tas_split = tas_ml_utils.validate_data_split((X_train, y_train), (X_val, y_val))
-    nas_split = nas_ml_utils.validate_data_split((X_train, y_train), (X_val, y_val))
+    mock_model = MockModel()
     
-    logger.info(f"TAS Data Split Valid: {tas_split}")
-    logger.info(f"NAS Data Split Valid: {nas_split}")
+    # Comprehensive validation for TAS
+    tas_validation = tas_integration.comprehensive_validation(
+        model=mock_model,
+        X_train=X_train,
+        X_test=X_val,
+        y_train=y_train,
+        y_test=y_val,
+        timestamps_train=timestamps_train,
+        timestamps_test=timestamps_val
+    )
     
-    # Get system status
-    tas_status = tas_ml_utils.get_system_status()
-    nas_status = nas_ml_utils.get_system_status()
+    # Comprehensive validation for NAS
+    nas_validation = nas_integration.comprehensive_validation(
+        model=mock_model,
+        X_train=X_train,
+        X_test=X_val,
+        y_train=y_train,
+        y_test=y_val,
+        timestamps_train=timestamps_train,
+        timestamps_test=timestamps_val
+    )
     
-    logger.info(f"TAS ML Utils Status: {tas_status['utility_type']}")
-    logger.info(f"NAS ML Utils Status: {nas_status['utility_type']}")
+    # Get integration status
+    tas_status = tas_integration.get_integration_status()
+    nas_status = nas_integration.get_integration_status()
+    hybrid_status = hybrid_integration.get_integration_status()
     
-    logger.info("✅ ML Common integration example completed")
-    return tas_ml_utils, nas_ml_utils
+    logger.info(f"TAS Integration Status: {tas_status['integrations']}")
+    logger.info(f"NAS Integration Status: {nas_status['integrations']}")
+    logger.info(f"Hybrid Integration Status: {hybrid_status['integrations']}")
+    
+    # Test lookahead bias prevention
+    sample_data = pd.DataFrame({
+        'feature1': np.random.randn(100),
+        'feature2': np.random.randn(100),
+        'target': np.random.randint(0, 2, 100),
+        'timestamp': timestamps_train[:100]
+    })
+    
+    tas_bias_result = tas_integration.prevent_lookahead_bias(
+        data=sample_data,
+        timestamp_col='timestamp',
+        target_col='target'
+    )
+    
+    logger.info(f"TAS Lookahead Bias Result: {tas_bias_result.get('leakage_detected', False)}")
+    
+    # Test overfitting detection
+    tas_overfitting_result = tas_integration.detect_overfitting(
+        model=mock_model,
+        X_train=X_train,
+        X_val=X_val,
+        y_train=y_train,
+        y_val=y_val
+    )
+    
+    logger.info(f"TAS Overfitting Detection: {tas_overfitting_result}")
+    
+    logger.info("✅ Enhanced ML Common integration example completed")
+    return tas_integration, nas_integration, hybrid_integration
 
 
 def main():
@@ -413,7 +449,7 @@ def main():
         example_meta_learning()
         example_hardware_optimization()
         example_evaluation_framework()
-        example_ml_common_integration()
+        example_enhanced_ml_common_integration()
         
         logger.info("✅ All examples completed successfully!")
         

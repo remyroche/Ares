@@ -645,11 +645,193 @@ def create_regime_analyzer(config: AnalysisComponentConfig) -> RegimeAnalyzer:
 
 def create_cluster_analyzer(config: AnalysisComponentConfig) -> ClusterAnalyzer:
     """Create a cluster analyzer instance.
-    
+
     Args:
         config: Analysis component configuration
-        
+
     Returns:
         ClusterAnalyzer instance
     """
     return ClusterAnalyzer(config)
+
+
+class SharedClusteringUtilities:
+    """Shared clustering utilities for TAS and NAS systems."""
+
+    def __init__(self):
+        """Initialize shared clustering utilities."""
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info("✅ Shared Clustering Utilities initialized")
+
+    def perform_shared_clustering(self, data: np.ndarray, n_clusters: int = 8,
+                                 algorithm: str = "auto") -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+        """Perform clustering using shared algorithms.
+
+        Args:
+            data: Input data for clustering
+            n_clusters: Number of clusters
+            algorithm: Clustering algorithm ("auto", "kmeans", "dbscan", "agglomerative", "gmm")
+
+        Returns:
+            Tuple of (cluster_labels, cluster_centers, metrics)
+        """
+        try:
+            self.logger.info(f"🔍 Performing shared clustering with {algorithm} algorithm...")
+
+            if not SKLEARN_AVAILABLE:
+                self.logger.warning("⚠️ sklearn not available, using fallback clustering")
+                return self._fallback_clustering(data, n_clusters)
+
+            # Auto-select best algorithm
+            if algorithm == "auto":
+                algorithm = self._select_best_algorithm(data, n_clusters)
+
+            # Perform clustering based on algorithm
+            if algorithm == "kmeans":
+                from sklearn.cluster import KMeans
+                clusterer = KMeans(n_clusters=n_clusters, random_state=42)
+                labels = clusterer.fit_predict(data)
+                centers = clusterer.cluster_centers_
+
+            elif algorithm == "dbscan":
+                from sklearn.cluster import DBSCAN
+                clusterer = DBSCAN(eps=0.5, min_samples=5)
+                labels = clusterer.fit_predict(data)
+                centers = self._calculate_cluster_centers(data, labels)
+
+            elif algorithm == "agglomerative":
+                from sklearn.cluster import AgglomerativeClustering
+                clusterer = AgglomerativeClustering(n_clusters=n_clusters)
+                labels = clusterer.fit_predict(data)
+                centers = self._calculate_cluster_centers(data, labels)
+
+            elif algorithm == "gmm":
+                from sklearn.mixture import GaussianMixture
+                clusterer = GaussianMixture(n_components=n_clusters, random_state=42)
+                labels = clusterer.fit_predict(data)
+                centers = clusterer.means_
+
+            else:
+                raise ValueError(f"Unknown clustering algorithm: {algorithm}")
+
+            # Calculate metrics
+            metrics = self._calculate_clustering_metrics(data, labels)
+
+            self.logger.info(f"✅ Clustering completed: {len(np.unique(labels))} clusters")
+            return labels, centers, metrics
+
+        except Exception as e:
+            self.logger.error(f"❌ Shared clustering failed: {e}")
+            return self._fallback_clustering(data, n_clusters)
+
+    def _select_best_algorithm(self, data: np.ndarray, n_clusters: int) -> str:
+        """Select the best clustering algorithm for the data."""
+        try:
+            if not SKLEARN_AVAILABLE or len(data) < 10:
+                return "kmeans"
+
+            algorithms = ["kmeans", "gmm", "agglomerative"]
+            best_score = -np.inf
+            best_algorithm = "kmeans"
+
+            for algorithm in algorithms:
+                try:
+                    if algorithm == "kmeans":
+                        from sklearn.cluster import KMeans
+                        clusterer = KMeans(n_clusters=n_clusters, random_state=42)
+                        labels = clusterer.fit_predict(data)
+
+                    elif algorithm == "gmm":
+                        from sklearn.mixture import GaussianMixture
+                        clusterer = GaussianMixture(n_components=n_clusters, random_state=42)
+                        labels = clusterer.fit_predict(data)
+
+                    elif algorithm == "agglomerative":
+                        from sklearn.cluster import AgglomerativeClustering
+                        clusterer = AgglomerativeClustering(n_clusters=n_clusters)
+                        labels = clusterer.fit_predict(data)
+
+                    if len(np.unique(labels)) > 1:
+                        score = silhouette_score(data, labels)
+                        if score > best_score:
+                            best_score = score
+                            best_algorithm = algorithm
+
+                except Exception:
+                    continue
+
+            return best_algorithm
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Algorithm selection failed: {e}")
+            return "kmeans"
+
+    def _calculate_clustering_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+        """Calculate clustering quality metrics."""
+        try:
+            if not SKLEARN_AVAILABLE or len(np.unique(labels)) < 2:
+                return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 1.0}
+
+            metrics = {}
+
+            # Silhouette score
+            try:
+                metrics['silhouette'] = silhouette_score(data, labels)
+            except Exception:
+                metrics['silhouette'] = 0.0
+
+            # Calinski-Harabasz score
+            try:
+                metrics['calinski_harabasz'] = calinski_harabasz_score(data, labels)
+            except Exception:
+                metrics['calinski_harabasz'] = 0.0
+
+            # Davies-Bouldin score
+            try:
+                metrics['davies_bouldin'] = davies_bouldin_score(data, labels)
+            except Exception:
+                metrics['davies_bouldin'] = 1.0
+
+            return metrics
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Metrics calculation failed: {e}")
+            return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 1.0}
+
+    def _calculate_cluster_centers(self, data: np.ndarray, labels: np.ndarray) -> np.ndarray:
+        """Calculate cluster centers manually."""
+        try:
+            unique_labels = np.unique(labels)
+            cluster_centers = []
+
+            for label in unique_labels:
+                if label == -1:  # Skip noise points in DBSCAN
+                    continue
+                cluster_data = data[labels == label]
+                if len(cluster_data) > 0:
+                    center = np.mean(cluster_data, axis=0)
+                    cluster_centers.append(center)
+
+            return np.array(cluster_centers) if cluster_centers else np.array([])
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cluster centers calculation failed: {e}")
+            return np.array([])
+
+    def _fallback_clustering(self, data: np.ndarray, n_clusters: int) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+        """Fallback clustering when sklearn is not available."""
+        try:
+            n_samples = len(data)
+            labels = np.random.randint(0, n_clusters, n_samples)
+            centers = np.random.rand(n_clusters, data.shape[1])
+
+            return labels, centers, {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 1.0}
+
+        except Exception as e:
+            self.logger.error(f"❌ Fallback clustering failed: {e}")
+            return np.array([]), np.array([]), {}
+
+
+def create_shared_clustering_utilities() -> SharedClusteringUtilities:
+    """Create shared clustering utilities instance."""
+    return SharedClusteringUtilities()

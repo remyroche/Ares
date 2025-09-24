@@ -52,6 +52,14 @@ try:
 except ImportError:
     ML_COMMON_AVAILABLE = False
 
+# Import shared utilities from hybrid regime system
+try:
+    from ..shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
+    from ..shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
+    SHARED_UTILITIES_AVAILABLE = True
+except ImportError:
+    SHARED_UTILITIES_AVAILABLE = False
+
 # Import CLVSA architecture for regime enhancement
 try:
     from src.utils.ml_common.models.clvsa_architecture import (
@@ -125,6 +133,7 @@ class TASRegimeDetector:
         self._initialize_clvsa_architecture()
         self._initialize_tree_components()
         self._initialize_advanced_tree_models()
+        self._initialize_shared_utilities()
 
         self.logger.info("✅ TAS Regime Detector initialized with full tool integration")
 
@@ -253,6 +262,38 @@ class TASRegimeDetector:
             self.logger.info("✅ Tree-based components initialized")
         except Exception as e:
             self.logger.warning(f"Tree components initialization failed: {e}")
+
+    def _initialize_shared_utilities(self):
+        """Initialize shared utilities from hybrid regime system."""
+        if not SHARED_UTILITIES_AVAILABLE:
+            self.logger.warning("⚠️ Shared utilities not available")
+            self.search_strategy_manager = None
+            self.shared_clustering = None
+            return
+
+        try:
+            # Initialize search strategy manager
+            search_config = SearchStrategyConfig(
+                max_iterations=50,
+                n_initial_points=10,
+                acquisition_function="expected_improvement",
+                exploration_weight=0.1,
+                convergence_threshold=1e-6,
+                parallel_evaluations=1,
+                random_state=42,
+                use_bayesian_optimization=True,
+                use_grid_optimization=True
+            )
+            self.search_strategy_manager = SearchStrategyManager(search_config)
+
+            # Initialize shared clustering utilities
+            self.shared_clustering = SharedClusteringUtilities()
+
+            self.logger.info("✅ Shared utilities initialized")
+        except Exception as e:
+            self.logger.warning(f"Shared utilities initialization failed: {e}")
+            self.search_strategy_manager = None
+            self.shared_clustering = None
             self.tree_search = None
 
     def _initialize_advanced_tree_models(self):

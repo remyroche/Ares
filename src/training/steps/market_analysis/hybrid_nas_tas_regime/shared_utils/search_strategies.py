@@ -512,43 +512,51 @@ class SearchStrategyManager:
         # Initialize optimizers
         self.bayesian_optimizer = None
         self.grid_optimizer = None
-        
+        self.evolutionary_optimizer = None
+
         if config.use_bayesian_optimization and BAYESIAN_OPTIMIZATION_AVAILABLE:
             self.bayesian_optimizer = BayesianOptimizer(config)
-        
+
         if config.use_grid_optimization:
             self.grid_optimizer = GridOptimizer(config)
-        
+
+        # Always initialize evolutionary optimizer
+        self.evolutionary_optimizer = EvolutionarySearch(config)
+
         self.logger.info("✅ Search Strategy Manager initialized")
     
-    def optimize_with_strategy(self, objective_function: Callable, parameter_space: Dict[str, Any], 
+    def optimize_with_strategy(self, objective_function: Callable, parameter_space: Dict[str, Any],
                               strategy: str = "auto") -> OptimizationResult:
         """Optimize using specified strategy.
-        
+
         Args:
             objective_function: Function to optimize
             parameter_space: Parameter space definition
-            strategy: Optimization strategy ("bayesian", "grid", "auto")
-            
+            strategy: Optimization strategy ("bayesian", "grid", "evolutionary", "auto")
+
         Returns:
             OptimizationResult with optimization results
         """
         try:
             self.logger.info(f"🔍 Starting optimization with strategy: {strategy}")
-            
+
             if strategy == "bayesian" or (strategy == "auto" and self.bayesian_optimizer is not None):
                 if self.bayesian_optimizer is None:
                     raise ValueError("Bayesian optimizer not available")
                 return self.bayesian_optimizer.optimize(objective_function, parameter_space)
-            
+
             elif strategy == "grid" or (strategy == "auto" and self.grid_optimizer is not None):
                 if self.grid_optimizer is None:
                     raise ValueError("Grid optimizer not available")
                 return self.grid_optimizer.optimize(objective_function, parameter_space)
-            
+
+            elif strategy == "evolutionary" or strategy == "auto":
+                # Use evolutionary optimizer as fallback or default
+                return self.evolutionary_optimizer.optimize(objective_function, parameter_space)
+
             else:
                 raise ValueError(f"Unknown strategy: {strategy}")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Strategy optimization failed: {e}")
             return OptimizationResult(
@@ -583,6 +591,10 @@ class SearchStrategyManager:
             if self.grid_optimizer is not None:
                 self.logger.info("🔍 Running grid optimization...")
                 results['grid'] = self.grid_optimizer.optimize(objective_function, parameter_space)
+
+            # Always run evolutionary optimization
+            self.logger.info("🔍 Running evolutionary optimization...")
+            results['evolutionary'] = self.evolutionary_optimizer.optimize(objective_function, parameter_space)
             
             # Compare results
             if results:
@@ -598,11 +610,245 @@ class SearchStrategyManager:
 
 def create_search_strategy_manager(config: SearchStrategyConfig) -> SearchStrategyManager:
     """Create a search strategy manager instance.
-    
+
     Args:
         config: Search strategy configuration
-        
+
     Returns:
         SearchStrategyManager instance
     """
     return SearchStrategyManager(config)
+
+
+class EvolutionarySearch(AdvancedSearchStrategy):
+    """Evolutionary search algorithm for optimization."""
+
+    def __init__(self, config: SearchStrategyConfig):
+        """Initialize the evolutionary search.
+
+        Args:
+            config: Search strategy configuration
+        """
+        super().__init__(config)
+        self.logger.info("✅ Evolutionary Search initialized")
+
+    def optimize(self, objective_function: Callable, parameter_space: Dict[str, Any]) -> OptimizationResult:
+        """Optimize using evolutionary search.
+
+        Args:
+            objective_function: Function to optimize
+            parameter_space: Parameter space definition
+
+        Returns:
+            OptimizationResult with optimization results
+        """
+        try:
+            self.logger.info("🔍 Starting evolutionary optimization...")
+            start_time = time.time()
+
+            # Initialize population
+            population = self._initialize_population(parameter_space)
+            best_score = -np.inf
+            best_parameters = {}
+
+            optimization_history = []
+
+            # Evolutionary loop
+            for generation in range(self.config.max_iterations):
+                self.logger.info(f"🔄 Generation {generation + 1}/{self.config.max_iterations}")
+
+                # Evaluate population
+                for individual in population:
+                    score = objective_function(individual)
+                    individual['fitness'] = score
+                    optimization_history.append({
+                        'parameters': individual.copy(),
+                        'score': score,
+                        'generation': generation
+                    })
+
+                    if score > best_score:
+                        best_score = score
+                        best_parameters = individual.copy()
+
+                # Select best individuals
+                population = self._select_best_individuals(population, self.config.max_iterations)
+
+                # Apply crossover
+                population = self._apply_crossover(population, parameter_space)
+
+                # Apply mutation
+                population = self._apply_mutation(population, parameter_space)
+
+                # Check convergence
+                if self._check_convergence(optimization_history):
+                    self.logger.info(f"✅ Convergence reached at generation {generation}")
+                    break
+
+            execution_time = time.time() - start_time
+
+            # Create convergence info
+            convergence_info = {
+                'total_generations': len(set(h['generation'] for h in optimization_history)),
+                'convergence_reached': len(set(h['generation'] for h in optimization_history)) < self.config.max_iterations,
+                'score_improvement': best_score - optimization_history[0]['score'] if optimization_history else 0.0
+            }
+
+            self.logger.info(f"✅ Evolutionary optimization completed: {best_score:.4f} in {execution_time:.2f}s")
+
+            return OptimizationResult(
+                best_parameters=best_parameters,
+                best_score=best_score,
+                optimization_history=optimization_history,
+                convergence_info=convergence_info,
+                execution_time=execution_time,
+                success=True
+            )
+
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self.logger.error(f"❌ Evolutionary optimization failed: {e}")
+            return OptimizationResult(
+                best_parameters={},
+                best_score=-np.inf,
+                optimization_history=[],
+                convergence_info={'error': str(e)},
+                execution_time=execution_time,
+                success=False,
+                error_message=str(e)
+            )
+
+    def _initialize_population(self, parameter_space: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Initialize population for evolutionary search."""
+        try:
+            population = []
+            np.random.seed(self.config.random_state)
+
+            for _ in range(self.config.n_initial_points):
+                individual = {}
+                for param_name, param_config in parameter_space.items():
+                    if isinstance(param_config, dict):
+                        if param_config['type'] == 'continuous':
+                            min_val = param_config['min']
+                            max_val = param_config['max']
+                            individual[param_name] = np.random.uniform(min_val, max_val)
+                        elif param_config['type'] == 'discrete':
+                            choices = param_config['choices']
+                            individual[param_name] = np.random.choice(choices)
+                        elif param_config['type'] == 'integer':
+                            min_val = param_config['min']
+                            max_val = param_config['max']
+                            individual[param_name] = np.random.randint(min_val, max_val + 1)
+                    else:
+                        # Simple range
+                        if isinstance(param_config, (list, tuple)) and len(param_config) == 2:
+                            min_val, max_val = param_config
+                            individual[param_name] = np.random.uniform(min_val, max_val)
+                        else:
+                            individual[param_name] = param_config
+
+                population.append(individual)
+
+            return population
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Population initialization failed: {e}")
+            return []
+
+    def _select_best_individuals(self, population: List[Dict[str, Any]], elite_size: int) -> List[Dict[str, Any]]:
+        """Select best individuals for next generation."""
+        try:
+            # Sort by fitness
+            sorted_population = sorted(population, key=lambda x: x.get('fitness', 0), reverse=True)
+
+            # Select elite individuals
+            elite = sorted_population[:elite_size]
+
+            return elite
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Individual selection failed: {e}")
+            return population
+
+    def _apply_crossover(self, population: List[Dict[str, Any]], parameter_space: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Apply crossover to create new individuals."""
+        try:
+            if len(population) < 2:
+                return population
+
+            new_population = population.copy()
+
+            for i in range(len(population)):
+                # Select two parents randomly
+                parent1 = np.random.choice(population)
+                parent2 = np.random.choice(population)
+
+                # Create offspring through crossover
+                offspring = {}
+
+                for param_name in parameter_space.keys():
+                    if np.random.random() < 0.5:
+                        offspring[param_name] = parent1[param_name]
+                    else:
+                        offspring[param_name] = parent2[param_name]
+
+                new_population.append(offspring)
+
+            return new_population
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Crossover failed: {e}")
+            return population
+
+    def _apply_mutation(self, population: List[Dict[str, Any]], parameter_space: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Apply mutation to individuals."""
+        try:
+            mutated_population = []
+
+            for individual in population:
+                mutated_individual = individual.copy()
+
+                for param_name, param_config in parameter_space.items():
+                    if np.random.random() < 0.1:  # 10% mutation rate
+                        if isinstance(param_config, dict):
+                            if param_config['type'] == 'continuous':
+                                min_val = param_config['min']
+                                max_val = param_config['max']
+                                # Small mutation
+                                current_val = mutated_individual[param_name]
+                                mutation = np.random.normal(0, (max_val - min_val) * 0.1)
+                                mutated_val = np.clip(current_val + mutation, min_val, max_val)
+                                mutated_individual[param_name] = mutated_val
+                            elif param_config['type'] == 'discrete':
+                                choices = param_config['choices']
+                                mutated_individual[param_name] = np.random.choice(choices)
+                            elif param_config['type'] == 'integer':
+                                min_val = param_config['min']
+                                max_val = param_config['max']
+                                current_val = mutated_individual[param_name]
+                                mutation = np.random.randint(-2, 3)  # Small integer mutation
+                                mutated_val = np.clip(current_val + mutation, min_val, max_val)
+                                mutated_individual[param_name] = mutated_val
+
+                mutated_population.append(mutated_individual)
+
+            return mutated_population
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Mutation failed: {e}")
+            return population
+
+    def _check_convergence(self, optimization_history: List[Dict[str, Any]]) -> bool:
+        """Check if optimization has converged."""
+        try:
+            if len(optimization_history) < 10:
+                return False
+
+            # Check if improvement is below threshold
+            recent_scores = [record['score'] for record in optimization_history[-10:]]
+            score_std = np.std(recent_scores)
+
+            return score_std < self.config.convergence_threshold
+
+        except Exception:
+            return False

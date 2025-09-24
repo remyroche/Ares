@@ -94,6 +94,94 @@ class HybridOrchestrator:
         self._initialize_managers()
         
         self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized")
+
+        # Initialize TAS and NAS systems
+        self.tas_system = None
+        self.nas_system = None
+        self._initialize_tas_system()
+        self._initialize_nas_system()
+
+    def _initialize_tas_system(self):
+        """Initialize TAS system."""
+        try:
+            self.logger.info("🔄 Initializing TAS system...")
+
+            # Import TAS components
+            try:
+                from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector
+                from src.training.steps.market_analysis.tas_regime.core.tas_regime_config import TASRegimeConfig
+            except ImportError:
+                self.logger.warning("⚠️ TAS components not available")
+                self.tas_system = None
+                return
+
+            # Create TAS configuration
+            tas_config = TASRegimeConfig(
+                n_regimes=8,
+                primary_timeframe="15m",
+                tree_depth=6,
+                n_estimators=1000,
+                min_samples_split=10,
+                min_samples_leaf=5,
+                max_features='sqrt',
+                enable_clvsa_enhancement=True,
+                enable_statistical_methods=True,
+                enable_economic_evaluation=True,
+                enable_meta_learning=True,
+                enable_hardware_optimization=True,
+                enable_multi_timeframe_training=True,
+                trading_timeframes=['1m', '5m', '15m'],
+                regime_detection_timeframe='15m'
+            )
+
+            # Initialize TAS system
+            self.tas_system = TASRegimeDetector(tas_config)
+
+            self.logger.info("✅ TAS system initialized successfully")
+        except Exception as e:
+            self.logger.error(f"❌ TAS system initialization failed: {e}")
+            self.tas_system = None
+
+    def _initialize_nas_system(self):
+        """Initialize NAS system."""
+        try:
+            self.logger.info("🔄 Initializing NAS system...")
+
+            # Import NAS components
+            try:
+                from src.training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector
+                from src.training.steps.market_analysis.nas_regime.core.perfect_nas_config import PerfectNASConfig
+            except ImportError:
+                self.logger.warning("⚠️ NAS components not available")
+                self.nas_system = None
+                return
+
+            # Create NAS configuration
+            nas_config = PerfectNASConfig(
+                primary_architecture='hybrid',
+                search_strategy='evolutionary',
+                population_size=50,
+                generations=100,
+                enable_neural_odes=True,
+                enable_vision_transformers=True,
+                enable_meta_learning=True,
+                n_regimes=8,
+                primary_timeframe='15m',
+                micro_timeframe='5m',
+                enable_micro_regime_detection=True,
+                accuracy_threshold=0.9,
+                enable_multi_timeframe_training=True,
+                trading_timeframes=['1m', '5m', '15m'],
+                regime_detection_timeframe='15m'
+            )
+
+            # Initialize NAS system
+            self.nas_system = PerfectNASRegimeDetector(nas_config)
+
+            self.logger.info("✅ NAS system initialized successfully")
+        except Exception as e:
+            self.logger.error(f"❌ NAS system initialization failed: {e}")
+            self.nas_system = None
     
     def _initialize_managers(self):
         """Initialize all component managers."""
@@ -641,6 +729,193 @@ class HybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Status retrieval failed: {e}")
             return {'orchestrator_active': False, 'error': str(e)}
+
+    def orchestrate_tas_nas_detection(self,
+                                    market_data: Union[pd.DataFrame, np.ndarray],
+                                    timestamps: Optional[np.ndarray] = None,
+                                    timeframes: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Orchestrate TAS and NAS regime detection."""
+        try:
+            self.logger.info("🚀 Starting TAS-NAS orchestration...")
+
+            # Use configured timeframes if not specified
+            if timeframes is None:
+                timeframes = ['1m', '5m', '15m']
+
+            results = {
+                'tas_results': {},
+                'nas_results': {},
+                'hybrid_analysis': {},
+                'timeframes_processed': timeframes,
+                'execution_time': 0.0
+            }
+
+            start_time = time.time()
+
+            # Run detection for each timeframe
+            for timeframe in timeframes:
+                self.logger.info(f"🔍 Processing timeframe: {timeframe}")
+
+                # Prepare data for timeframe
+                timeframe_data = self._prepare_timeframe_data(market_data, timeframe)
+
+                # Run TAS detection
+                if self.tas_system is not None:
+                    tas_result = self._run_tas_detection(timeframe_data, timestamps, timeframe)
+                    results['tas_results'][timeframe] = tas_result
+
+                # Run NAS detection
+                if self.nas_system is not None:
+                    nas_result = self._run_nas_detection(timeframe_data, timestamps, timeframe)
+                    results['nas_results'][timeframe] = nas_result
+
+            # Perform hybrid analysis on primary timeframe (15m)
+            primary_timeframe = '15m'
+            if primary_timeframe in results['tas_results'] and primary_timeframe in results['nas_results']:
+                hybrid_analysis = self._perform_hybrid_analysis(
+                    market_data, timestamps,
+                    results['tas_results'][primary_timeframe],
+                    results['nas_results'][primary_timeframe]
+                )
+                results['hybrid_analysis'] = hybrid_analysis
+
+            results['execution_time'] = time.time() - start_time
+
+            self.logger.info("✅ TAS-NAS orchestration completed successfully")
+            return results
+
+        except Exception as e:
+            self.logger.error(f"❌ TAS-NAS orchestration failed: {e}")
+            return {'error': str(e), 'execution_time': 0.0}
+
+    def _prepare_timeframe_data(self, market_data: Union[pd.DataFrame, np.ndarray],
+                               timeframe: str) -> Union[pd.DataFrame, np.ndarray]:
+        """Prepare data for specific timeframe."""
+        try:
+            if isinstance(market_data, np.ndarray):
+                # For numpy arrays, resample based on timeframe
+                if timeframe == '1m':
+                    return market_data
+                elif timeframe == '5m':
+                    if len(market_data) >= 5:
+                        indices = range(0, len(market_data), 5)
+                        return market_data[indices]
+                    else:
+                        return market_data
+                elif timeframe == '15m':
+                    if len(market_data) >= 15:
+                        indices = range(0, len(market_data), 15)
+                        return market_data[indices]
+                    else:
+                        return market_data
+                else:
+                    return market_data
+
+            elif isinstance(market_data, pd.DataFrame):
+                # For DataFrame, resample based on timeframe
+                if 'timestamp' in market_data.columns:
+                    market_data = market_data.set_index('timestamp')
+
+                if timeframe == '1m':
+                    return market_data
+                else:
+                    resampled = market_data.resample(timeframe).agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+                    return resampled.reset_index()
+
+            return market_data
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Timeframe data preparation failed: {e}")
+            return market_data
+
+    def _run_tas_detection(self, market_data: Union[pd.DataFrame, np.ndarray],
+                          timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
+        """Run TAS regime detection."""
+        try:
+            if self.tas_system is None:
+                return {'error': 'TAS system not initialized', 'timeframe': timeframe}
+
+            result = self.tas_system.detect_regimes(
+                market_data, timestamps, optimize_architecture=True, enable_meta_learning=True
+            )
+
+            return {
+                'success': result.success,
+                'regime_predictions': getattr(result, 'regime_predictions', np.array([])),
+                'regime_probabilities': getattr(result, 'regime_probabilities', np.array([])),
+                'execution_time': getattr(result, 'execution_time', 0.0),
+                'timeframe': timeframe,
+                'system': 'TAS'
+            }
+
+        except Exception as e:
+            return {'error': str(e), 'timeframe': timeframe, 'system': 'TAS'}
+
+    def _run_nas_detection(self, market_data: Union[pd.DataFrame, np.ndarray],
+                          timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
+        """Run NAS regime detection."""
+        try:
+            if self.nas_system is None:
+                return {'error': 'NAS system not initialized', 'timeframe': timeframe}
+
+            result = self.nas_system.detect_regimes(
+                market_data, timestamps, optimize_architecture=True, enable_meta_learning=True, learn_thresholds=True
+            )
+
+            return {
+                'success': result.success,
+                'regime_predictions': result.regime_predictions,
+                'regime_probabilities': result.regime_probabilities,
+                'economic_significance_scores': result.economic_significance_scores,
+                'trading_viability_scores': result.trading_viability_scores,
+                'execution_time': result.execution_time,
+                'timeframe': timeframe,
+                'system': 'NAS'
+            }
+
+        except Exception as e:
+            return {'error': str(e), 'timeframe': timeframe, 'system': 'NAS'}
+
+    def _perform_hybrid_analysis(self, market_data: Union[pd.DataFrame, np.ndarray],
+                                timestamps: Optional[np.ndarray],
+                                tas_result: Dict[str, Any],
+                                nas_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform hybrid analysis combining TAS and NAS results."""
+        try:
+            # Combine TAS and NAS predictions
+            tas_predictions = tas_result.get('regime_predictions', np.array([]))
+            nas_predictions = nas_result.get('regime_predictions', np.array([]))
+
+            if len(tas_predictions) == 0 or len(nas_predictions) == 0:
+                return {'error': 'Empty predictions from one or both systems'}
+
+            # Use shared clustering utilities for hybrid analysis
+            if hasattr(self, 'clustering_manager'):
+                # Perform hybrid clustering
+                combined_features = np.column_stack([tas_predictions, nas_predictions])
+                hybrid_labels, hybrid_centers, metrics = self.clustering_manager.perform_shared_clustering(
+                    combined_features, n_clusters=8, algorithm='auto'
+                )
+
+                return {
+                    'hybrid_labels': hybrid_labels,
+                    'hybrid_centers': hybrid_centers,
+                    'clustering_metrics': metrics,
+                    'tas_contribution': tas_result,
+                    'nas_contribution': nas_result,
+                    'success': True
+                }
+            else:
+                return {'error': 'Clustering manager not available', 'success': False}
+
+        except Exception as e:
+            return {'error': str(e), 'success': False}
 
 
 def create_hybrid_orchestrator(config: HybridOrchestratorConfig) -> HybridOrchestrator:

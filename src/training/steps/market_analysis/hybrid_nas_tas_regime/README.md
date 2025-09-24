@@ -19,13 +19,13 @@ This system provides a complete replacement for HMM-based clustering with enhanc
 - **Adaptive Fusion**: Intelligent combination of TAS and NAS inputs
 - **Economic Priority**: Focus on economically significant regimes
 
-### 🔍 Economic Clustering
+### 🔍 Economic Clustering (Optimized for 15m Short-Term Trading)
 - **Economic Significance Integration**: Directly incorporates economic factors into clustering
-- **Momentum Analysis**: Multi-timeframe momentum detection (5, 10, 20, 50 periods)
-- **Volume Analysis**: Volume-price correlation and volume trend analysis
-- **Advanced Economic Metrics**: Volatility, trend, efficiency, liquidity analysis
-- **Economic Distance Metrics**: Specialized distance calculations for economic clustering
-- **Economic-Aware Algorithms**: K-means, Hierarchical, GMM, and Adaptive clustering with economic awareness
+- **Short-Term Momentum Analysis**: Multi-timeframe momentum detection (1, 2, 5, 10 periods = 15m-2.5h)
+- **Volume Analysis**: Volume-price correlation and volume trend analysis for 15m microstructure
+- **Advanced Economic Metrics**: Volatility, trend, efficiency, liquidity analysis optimized for 15m
+- **Economic Distance Metrics**: Specialized distance calculations for short-term economic clustering
+- **Economic-Aware Algorithms**: K-means, Hierarchical, GMM, and Adaptive clustering with short-term economic awareness
 
 ### 🔍 Advanced Clustering with Economic Integration
 - **Economic Distance Metrics**: Specialized distance calculations incorporating economic significance
@@ -36,17 +36,17 @@ This system provides a complete replacement for HMM-based clustering with enhanc
 - **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering
 - **Adaptive Economic Selection**: Automatically chooses best algorithm based on economic performance
 
-### 📊 Economic Significance (Enhanced with Momentum & Volume)
-- **Volatility Regime Analysis**: Identifies distinct volatility patterns with momentum/volume factors
-- **Trend Strength Evaluation**: Measures regime trend characteristics with multi-timeframe analysis
-- **Market Efficiency Assessment**: Evaluates information efficiency and autocorrelation patterns
-- **Liquidity Regime Detection**: Identifies liquidity-based regimes with spread analysis
-- **Momentum Regime Analysis**: Detects momentum patterns across multiple timeframes (5, 10, 20, 50 periods)
-- **Volume-Momentum Analysis**: Analyzes volume-price correlations and volume trends
-- **Price Action Analysis**: Evaluates candlestick patterns and price behavior
-- **Market Microstructure Analysis**: Examines bid-ask spreads, order flow, and market impact
-- **Inter-Market Analysis**: Studies cross-market relationships and lead-lag patterns
-- **Sector Rotation Analysis**: Identifies sector rotation and market regime changes
+### 📊 Economic Significance (Enhanced for 15m Short-Term Trading)
+- **Volatility Regime Analysis**: Identifies distinct volatility patterns with short-term momentum/volume factors
+- **Trend Strength Evaluation**: Measures regime trend characteristics with 15m-optimized multi-timeframe analysis
+- **Market Efficiency Assessment**: Evaluates information efficiency and autocorrelation patterns for 15m bars
+- **Liquidity Regime Detection**: Identifies liquidity-based regimes with tight spread analysis for 15m
+- **Short-Term Momentum Analysis**: Detects momentum patterns across short timeframes (1, 2, 5, 10 periods = 15m-2.5h)
+- **Volume-Momentum Analysis**: Analyzes volume-price correlations and volume trends for 15m microstructure
+- **Intra-Bar Patterns Analysis**: Evaluates candlestick patterns and price behavior within 15m bars
+- **Market Microstructure Analysis**: Examines bid-ask spreads, order flow, and market impact for 15m trading
+- **Microstructure Patterns Analysis**: Detects market microstructure patterns crucial for short-term trading
+- **Sector Rotation Analysis**: Identifies rapid sector rotation and market regime changes for 15m timeframe
 
 ### 💰 Financial Relevance
 - **Trading Viability**: Ensures regimes are tradable
@@ -142,18 +142,22 @@ config = HybridRegimeConfig(
         "momentum_integration": True,
         "volume_integration": True,
         "momentum_threshold": 0.7,
-        "volume_threshold": 0.6
+        "volume_threshold": 0.6,
+        "momentum_periods": [1, 2, 5, 10],  # 15m-optimized periods
+        "short_term_focus": True
     },
     economic_evaluation={
         "enabled": True,
         "significance_types": [
-            EconomicSignificanceType.MOMENTUM_REGIME.value,
-            EconomicSignificanceType.VOLUME_MOMENTUM.value,
-            EconomicSignificanceType.VOLATILITY_REGIME.value
+            EconomicSignificanceType.SHORT_TERM_MOMENTUM.value,
+            EconomicSignificanceType.INTRA_BAR_PATTERNS.value,
+            EconomicSignificanceType.VOLATILITY_REGIME.value,
+            EconomicSignificanceType.MICROSTRUCTURE_PATTERNS.value
         ],
         "momentum_threshold": 0.7,
         "volume_threshold": 0.6,
-        "momentum_periods": [5, 10, 20, 50]
+        "momentum_periods": [1, 2, 5, 10],  # 15m, 30m, 1.25h, 2.5h for 15m trading
+        "short_term_trading": True
     }
 )
 
@@ -254,18 +258,20 @@ for regime_id in tagged_data['regime_id'].unique():
 
 ## Performance Characteristics
 
-### Advantages over HMM Clustering
+### Advantages over HMM Clustering (Optimized for 15m Short-Term Trading)
 
-1. **Economic Relevance**: Regimes have clear economic interpretation with momentum/volume analysis
-2. **Trading Viability**: Identified regimes are actually tradable with proven economic significance
-3. **Economic Clustering**: Directly integrates economic factors into the clustering process itself
-4. **Momentum Integration**: Analyzes momentum patterns across multiple timeframes (5, 10, 20, 50 periods)
-5. **Volume Analysis**: Incorporates volume-price correlations and volume trends into regime detection
-6. **Economic Distance Metrics**: Specialized distance calculations for economically meaningful clustering
-7. **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering
-8. **Adaptive Economic Selection**: Automatically chooses best algorithm based on economic performance
-9. **Advanced Economic Metrics**: Comprehensive evaluation including microstructure and inter-market analysis
-10. **Unified Processing**: Single dataset approach with tagging eliminates file management complexity
+1. **Economic Relevance**: Regimes have clear economic interpretation optimized for 15m short-term trading
+2. **Trading Viability**: Identified regimes are actually tradable with proven short-term economic significance
+3. **Economic Clustering**: Directly integrates short-term economic factors into the clustering process itself
+4. **Short-Term Momentum Integration**: Analyzes momentum patterns across 15m-optimized timeframes (1, 2, 5, 10 periods)
+5. **15m Volume Analysis**: Incorporates volume-price correlations and volume trends for 15m microstructure
+6. **Intra-Bar Pattern Detection**: Analyzes candlestick patterns and price behavior within 15m bars
+7. **Economic Distance Metrics**: Specialized distance calculations for short-term economically meaningful clustering
+8. **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering optimized for 15m data
+9. **Adaptive Economic Selection**: Automatically chooses best algorithm based on short-term economic performance
+10. **Advanced Economic Metrics**: Comprehensive evaluation including microstructure and rapid sector rotation analysis
+11. **15m Optimized Analysis**: Tighter spreads, shorter timeframes, and micro-pattern detection for short-term trading
+12. **Unified Processing**: Single dataset approach with tagging eliminates file management complexity
 
 ### Computational Complexity
 

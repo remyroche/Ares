@@ -26,14 +26,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_economic_test_data(n_samples: int = 2000) -> pd.DataFrame:
-    """Create test data with distinct economic regimes including momentum and volume patterns."""
+def create_economic_test_data(n_samples: int = 1000) -> pd.DataFrame:
+    """Create test data with distinct economic regimes for 15m short-term trading."""
     np.random.seed(42)
 
-    # Create timestamps
-    timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='1H')
+    # Create timestamps for 15m intervals
+    timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='15min')
 
-    # Generate price data with different economic regimes
+    # Generate price data with different economic regimes optimized for 15m trading
     prices = []
     volumes = []
     current_price = 100.0
@@ -42,65 +42,66 @@ def create_economic_test_data(n_samples: int = 2000) -> pd.DataFrame:
     regime_markers = []
 
     for i in range(n_samples):
-        # Create different regimes every 250 samples
-        if i % 250 == 0:
+        # Create different regimes every 100 samples (25 hours of 15m bars)
+        if i % 100 == 0:
             # New regime
-            regime_type = (i // 250) % 4
+            regime_type = (i // 100) % 4
             regime_markers.append(regime_type)
 
-        # Regime 0: High volatility, strong momentum (Trending)
-        if i // 250 % 4 == 0:
-            # Strong upward trend with high volatility
-            trend = 0.002  # Strong uptrend
-            volatility = 0.03  # High volatility
-            volume_trend = 0.001  # Increasing volume
-            current_volume *= (1 + np.random.normal(volume_trend, 0.1))
+        # Regime 0: Short-term momentum (15m-2.5h) with high volume
+        if i // 100 % 4 == 0:
+            # Strong short-term momentum (15m timeframe focus)
+            trend = 0.0015  # Moderate short-term trend
+            volatility = 0.02  # Medium volatility for 15m
+            volume_trend = 0.002  # Increasing volume
+            current_volume *= (1 + np.random.normal(volume_trend, 0.15))
 
-        # Regime 1: Low volatility, weak momentum (Sideways)
-        elif i // 250 % 4 == 1:
-            # Sideways movement with low volatility
-            trend = 0.0001  # Weak trend
-            volatility = 0.01  # Low volatility
-            volume_trend = -0.0005  # Decreasing volume
-            current_volume *= (1 + np.random.normal(volume_trend, 0.05))
-
-        # Regime 2: Medium volatility, strong momentum (Volatile Trending)
-        elif i // 250 % 4 == 2:
-            # Volatile trending with medium volatility
-            trend = 0.001  # Moderate trend
-            volatility = 0.02  # Medium volatility
-            volume_trend = 0.0008  # Increasing volume
+        # Regime 1: Low volatility, micro patterns (15m intra-bar focus)
+        elif i // 100 % 4 == 1:
+            # Low volatility with intra-bar patterns
+            trend = 0.0002  # Very weak trend
+            volatility = 0.008  # Low volatility for 15m
+            volume_trend = -0.001  # Decreasing volume
             current_volume *= (1 + np.random.normal(volume_trend, 0.08))
 
-        # Regime 3: High volatility, no momentum (Mean Reverting)
+        # Regime 2: High volatility, rapid rotations (15m sector rotation focus)
+        elif i // 100 % 4 == 2:
+            # High volatility with rapid rotations (15m-1h)
+            trend = 0.0008  # Moderate trend
+            volatility = 0.025  # Higher volatility for 15m
+            volume_trend = 0.0015  # Volatile volume
+            current_volume *= (1 + np.random.normal(volume_trend, 0.20))
+
+        # Regime 3: Microstructure patterns (15m microstructure focus)
         else:
-            # Mean reverting with high volatility
-            trend = -0.0005  # Slight downward drift
-            volatility = 0.04  # High volatility
-            volume_trend = 0.0002  # Slightly increasing volume
+            # Microstructure patterns with mean reversion
+            trend = -0.0003  # Slight mean reversion
+            volatility = 0.015  # Medium volatility
+            volume_trend = 0.0005  # Slightly increasing volume
             current_volume *= (1 + np.random.normal(volume_trend, 0.12))
 
-        # Generate price movement
+        # Generate price movement optimized for 15m bars
         price_change = np.random.normal(trend, volatility)
         current_price *= (1 + price_change)
         prices.append(current_price)
-        volumes.append(max(100, current_volume))  # Ensure minimum volume
+        volumes.append(max(50, current_volume))  # Lower minimum volume for 15m
 
     # Create DataFrame
     data = pd.DataFrame({
         'timestamp': timestamps,
         'open': prices,
-        'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-        'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
+        'high': [p * (1 + abs(np.random.normal(0, 0.003))) for p in prices],  # Tighter spreads for 15m
+        'low': [p * (1 - abs(np.random.normal(0, 0.003))) for p in prices],   # Tighter spreads for 15m
         'close': prices,
         'volume': volumes
     })
 
-    logger.info("✅ Created economic test data with 4 distinct regimes:")
-    logger.info("   Regime 0: High volatility, strong momentum (Trending)")
-    logger.info("   Regime 1: Low volatility, weak momentum (Sideways)")
-    logger.info("   Regime 2: Medium volatility, strong momentum (Volatile Trending)")
-    logger.info("   Regime 3: High volatility, no momentum (Mean Reverting)")
+    logger.info("✅ Created economic test data optimized for 15m short-term trading:")
+    logger.info("   Regime 0: Short-term momentum (15m-2.5h) with high volume")
+    logger.info("   Regime 1: Low volatility, micro patterns (15m intra-bar focus)")
+    logger.info("   Regime 2: High volatility, rapid rotations (15m sector rotation)")
+    logger.info("   Regime 3: Microstructure patterns (15m microstructure focus)")
+    logger.info("   Timeframe: 15m bars, optimized for short-term trading (5-30m)")
 
     return data
 
@@ -275,67 +276,68 @@ def demonstrate_economic_clustering():
 
 
 def demonstrate_momentum_volume_analysis():
-    """Demonstrate detailed momentum and volume analysis capabilities."""
+    """Demonstrate detailed momentum and volume analysis capabilities for 15m trading."""
 
-    logger.info("\n🔍 Detailed Momentum and Volume Analysis")
-    logger.info("=" * 50)
+    logger.info("\n🔍 Detailed Short-Term Momentum and Volume Analysis")
+    logger.info("=" * 60)
 
-    # Create market data with clear momentum and volume patterns
+    # Create market data with clear short-term momentum and volume patterns for 15m trading
     np.random.seed(42)
-    n_samples = 1000
-    timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='1H')
+    n_samples = 800  # ~200 hours of 15m bars
+    timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='15min')
 
-    # Generate price data with momentum patterns
+    # Generate price data with short-term momentum patterns (15m-2.5h focus)
     prices = []
     volumes = []
     current_price = 100.0
     current_volume = 1000.0
 
-    # Create 4 different momentum-volume regimes
+    # Create 4 different short-term momentum-volume regimes
     for i in range(n_samples):
-        regime = (i // 250) % 4
+        regime = (i // 200) % 4  # Shorter regimes for 15m analysis
 
         if regime == 0:
-            # Strong momentum, increasing volume
-            momentum = 0.002
-            volume_trend = 0.001
+            # Short-term momentum (15m-1h), high volume participation
+            momentum = 0.0012  # Moderate short-term momentum
+            volume_trend = 0.002  # Strong volume participation
         elif regime == 1:
-            # Weak momentum, decreasing volume
-            momentum = 0.0005
-            volume_trend = -0.0008
+            # Micro momentum (15m-30m), low volume
+            momentum = 0.0004  # Weak short-term momentum
+            volume_trend = -0.001  # Low volume participation
         elif regime == 2:
-            # Strong momentum, high volume volatility
-            momentum = 0.0015
-            volume_trend = 0.0005
+            # Rapid rotations (15m-45m), volatile volume
+            momentum = 0.0008  # Moderate momentum with rotations
+            volume_trend = 0.0015  # High volume volatility
         else:
-            # Mean reversion, stable volume
-            momentum = -0.0003
-            volume_trend = 0.0001
+            # Microstructure patterns (15m), stable volume
+            momentum = -0.0002  # Slight mean reversion
+            volume_trend = 0.0003  # Slightly increasing volume
 
-        # Generate price and volume
-        price_change = np.random.normal(momentum, 0.02)
+        # Generate price and volume optimized for 15m bars
+        price_change = np.random.normal(momentum, 0.015)  # Lower volatility for 15m
         current_price *= (1 + price_change)
 
-        volume_change = np.random.normal(volume_trend, 0.1)
+        volume_change = np.random.normal(volume_trend, 0.12)  # Volume volatility for 15m
         current_volume *= (1 + volume_change)
 
         prices.append(current_price)
-        volumes.append(max(100, current_volume))
+        volumes.append(max(50, current_volume))  # Lower minimum for 15m
 
     market_data = pd.DataFrame({
         'timestamp': timestamps,
         'open': prices,
-        'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-        'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
+        'high': [p * (1 + abs(np.random.normal(0, 0.002))) for p in prices],  # Tighter spreads
+        'low': [p * (1 - abs(np.random.normal(0, 0.002))) for p in prices],   # Tighter spreads
         'close': prices,
         'volume': volumes
     })
 
-    logger.info("✅ Created momentum-volume test data with 4 distinct patterns:")
-    logger.info("   Regime 0: Strong momentum, increasing volume")
-    logger.info("   Regime 1: Weak momentum, decreasing volume")
-    logger.info("   Regime 2: Strong momentum, volatile volume")
-    logger.info("   Regime 3: Mean reversion, stable volume")
+    logger.info("✅ Created short-term momentum-volume test data optimized for 15m trading:")
+    logger.info("   Timeframe: 15m bars (200 hours of data)")
+    logger.info("   Regime 0: Short-term momentum (15m-1h) with high volume participation")
+    logger.info("   Regime 1: Micro momentum (15m-30m) with low volume participation")
+    logger.info("   Regime 2: Rapid rotations (15m-45m) with volatile volume")
+    logger.info("   Regime 3: Microstructure patterns (15m) with stable volume")
 
     # Configure for detailed momentum-volume analysis
     config = HybridRegimeConfig(

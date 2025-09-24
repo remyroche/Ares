@@ -147,12 +147,22 @@ class EconomicRegimeEvaluator:
                 microstructure_score = self._evaluate_market_microstructure_regime(regime_data)
                 significance_scores.append(microstructure_score)
 
-            # 11. Inter-market analysis regime significance
-            if EconomicSignificanceType.INTER_MARKET_ANALYSIS.value in self.significance_types:
-                inter_market_score = self._evaluate_inter_market_analysis_regime(regime_data)
-                significance_scores.append(inter_market_score)
+            # 11. Short-term momentum regime significance (15m focused)
+            if EconomicSignificanceType.SHORT_TERM_MOMENTUM.value in self.significance_types:
+                short_term_momentum_score = self._evaluate_short_term_momentum_regime(regime_data)
+                significance_scores.append(short_term_momentum_score)
 
-            # 12. Sector rotation regime significance
+            # 12. Intra-bar patterns regime significance (15m bar analysis)
+            if EconomicSignificanceType.INTRA_BAR_PATTERNS.value in self.significance_types:
+                intra_bar_patterns_score = self._evaluate_intra_bar_patterns_regime(regime_data)
+                significance_scores.append(intra_bar_patterns_score)
+
+            # 13. Microstructure patterns regime significance (15m microstructure)
+            if EconomicSignificanceType.MICROSTRUCTURE_PATTERNS.value in self.significance_types:
+                microstructure_patterns_score = self._evaluate_microstructure_patterns_regime(regime_data)
+                significance_scores.append(microstructure_patterns_score)
+
+            # 14. Sector rotation regime significance
             if EconomicSignificanceType.SECTOR_ROTATION.value in self.significance_types:
                 sector_rotation_score = self._evaluate_sector_rotation_regime(regime_data)
                 significance_scores.append(sector_rotation_score)
@@ -610,80 +620,172 @@ class EconomicRegimeEvaluator:
             self.logger.warning(f"Market microstructure regime evaluation failed: {e}")
             return 0.5
 
-    def _evaluate_inter_market_analysis_regime(self, regime_data: pd.DataFrame) -> float:
-        """Evaluate inter-market analysis regime significance."""
+    def _evaluate_short_term_momentum_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate short-term momentum regime significance for 15m trading."""
         try:
-            # This would typically involve correlation with other markets
-            # For now, we'll use internal market relationships
+            prices = regime_data['close'].values
 
-            returns = regime_data['close'].pct_change().fillna(0).values
-
-            if len(returns) < 20:
+            if len(prices) < 10:  # Need at least 10 bars for 15m analysis
                 return 0.5
 
-            # Calculate lead-lag relationships (simplified)
-            # Look for autocorrelation patterns that suggest inter-market influence
-            autocorrelations = []
+            # Calculate short-term momentum (1-10 periods = 15m to 2.5h)
+            momentum_scores = []
 
-            for lag in [1, 2, 5, 10]:
-                if len(returns) > lag:
-                    autocorr = abs(pd.Series(returns).autocorr(lag=lag))
-                    autocorrelations.append(autocorr)
+            for period in self.config.get('momentum_periods', [1, 2, 5, 10]):
+                if len(prices) > period:
+                    # Very short-term momentum (15m to 2.5h)
+                    momentum = (prices[-1] - prices[0]) / (prices[0] + 1e-8)
+                    momentum_strength = abs(np.tanh(momentum))  # Normalize to [0, 1]
+                    momentum_scores.append(momentum_strength)
 
-            avg_autocorr = np.mean(autocorrelations) if autocorrelations else 0.5
+                    # Rate of change for the period
+                    if period > 1:
+                        roc = (prices[-1] - prices[-period]) / (prices[-period] + 1e-8)
+                        roc_strength = abs(np.tanh(roc))
+                        momentum_scores.append(roc_strength)
 
-            # Cross-correlation with other OHLC components
-            high_returns = regime_data['high'].pct_change().fillna(0).values
-            low_returns = regime_data['low'].pct_change().fillna(0).values
-            volume_returns = regime_data.get('volume', np.ones(len(regime_data))).pct_change().fillna(0).values
+            if not momentum_scores:
+                return 0.5
 
-            # Inter-component correlations
-            inter_correlations = []
-            for other_returns in [high_returns, low_returns, volume_returns]:
-                corr = abs(np.corrcoef(returns, other_returns)[0, 1])
-                inter_correlations.append(corr)
+            avg_momentum = np.mean(momentum_scores)
 
-            avg_inter_corr = np.mean(inter_correlations) if inter_correlations else 0.5
+            # Short-term momentum regimes are significant when momentum is strong and recent
+            momentum_threshold = self.config.get('momentum_threshold', 0.7)
 
-            # Inter-market significance score
-            inter_market_score = 0.5 * avg_autocorr + 0.5 * avg_inter_corr
+            if avg_momentum > momentum_threshold:
+                score = min(avg_momentum * 1.3, 1.0)  # Strong short-term momentum regime
+            elif avg_momentum > 0.5:
+                score = avg_momentum * 0.9  # Moderate short-term momentum regime
+            else:
+                score = avg_momentum * 0.6  # Weak momentum regime
 
-            return min(inter_market_score, 1.0)
+            return score
 
         except Exception as e:
-            self.logger.warning(f"Inter-market analysis regime evaluation failed: {e}")
+            self.logger.warning(f"Short-term momentum regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_intra_bar_patterns_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate intra-bar patterns regime significance for 15m bars."""
+        try:
+            if len(regime_data) < 5:
+                return 0.5
+
+            # Analyze price action within 15m bars
+            open_prices = regime_data['open'].values
+            high_prices = regime_data['high'].values
+            low_prices = regime_data['low'].values
+            close_prices = regime_data['close'].values
+
+            # Body size analysis (relative to total range)
+            body_sizes = abs(close_prices - open_prices) / (high_prices - low_prices + 1e-8)
+            avg_body_size = np.mean(body_sizes)
+
+            # Shadow analysis
+            upper_shadows = (high_prices - np.maximum(open_prices, close_prices)) / (high_prices - low_prices + 1e-8)
+            lower_shadows = (np.minimum(open_prices, close_prices) - low_prices) / (high_prices - low_prices + 1e-8)
+
+            avg_upper_shadow = np.mean(upper_shadows)
+            avg_lower_shadow = np.mean(lower_shadows)
+
+            # Price position within the bar (close relative to range)
+            price_positions = (close_prices - low_prices) / (high_prices - low_prices + 1e-8)
+            avg_price_position = np.mean(price_positions)
+
+            # Intra-bar pattern significance factors
+            body_factor = min(avg_body_size * 4, 1.0)  # Larger bodies = more decisive
+            shadow_factor = min((avg_upper_shadow + avg_lower_shadow) / 2 * 2, 1.0)  # More shadows = more indecision
+            position_factor = abs(avg_price_position - 0.5) * 2  # Extreme positions are more significant
+
+            # Intra-bar patterns are significant for short-term trading
+            intra_bar_score = 0.5 * body_factor + 0.3 * (1 - shadow_factor) + 0.2 * position_factor
+
+            return min(intra_bar_score, 1.0)
+
+        except Exception as e:
+            self.logger.warning(f"Intra-bar patterns regime evaluation failed: {e}")
+            return 0.5
+
+    def _evaluate_microstructure_patterns_regime(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate market microstructure patterns for 15m trading."""
+        try:
+            if len(regime_data) < 10:
+                return 0.5
+
+            # Analyze microstructure patterns within 15m bars
+            spreads = (regime_data['high'] - regime_data['low']) / regime_data['close']
+            avg_spread = np.mean(spreads)
+            spread_volatility = np.std(spreads)
+
+            # Volume-based microstructure (if available)
+            if 'volume' in regime_data.columns:
+                volume = regime_data['volume'].values
+                price_changes = np.diff(regime_data['close'].values, prepend=regime_data['close'].values[0])
+
+                # Volume-price impact correlation
+                volume_price_impact = np.corrcoef(volume[1:], np.abs(price_changes[1:]))[0, 1]
+
+                # Volume concentration (high volume periods)
+                volume_mean = np.mean(volume)
+                volume_std = np.std(volume)
+                volume_concentration = min(volume_std / volume_mean if volume_mean > 0 else 0, 2.0) / 2.0
+            else:
+                volume_price_impact = 0.5
+                volume_concentration = 0.5
+
+            # Microstructure significance factors
+            spread_factor = min(avg_spread * 20, 1.0)  # Normalize spread impact
+            impact_factor = abs(volume_price_impact) * 0.7  # Volume-price impact significance
+            concentration_factor = volume_concentration  # Volume concentration significance
+
+            # Microstructure patterns are crucial for short-term trading
+            microstructure_score = 0.4 * spread_factor + 0.4 * impact_factor + 0.2 * concentration_factor
+
+            return min(microstructure_score, 1.0)
+
+        except Exception as e:
+            self.logger.warning(f"Microstructure patterns regime evaluation failed: {e}")
             return 0.5
 
     def _evaluate_sector_rotation_regime(self, regime_data: pd.DataFrame) -> float:
-        """Evaluate sector rotation regime significance."""
+        """Evaluate sector rotation regime significance for 15m trading."""
         try:
-            # This would typically involve analysis of sector movements
-            # For now, we'll analyze price level transitions and rotations
-
             prices = regime_data['close'].values
             returns = np.diff(prices, prepend=prices[0])
 
-            if len(returns) < 50:
+            if len(returns) < 20:  # Need at least 20 bars for 15m analysis
                 return 0.5
 
-            # Detect rotation patterns
-            # Look for periods of high volatility followed by low volatility
-            volatility = pd.Series(np.abs(returns)).rolling(window=20, min_periods=10).std().fillna(0.01).values
+            # Detect short-term rotation patterns (15m to 5h timeframe)
+            # Look for rapid changes in price direction and volatility
 
-            # Find rotation points (significant changes in volatility)
-            volatility_changes = np.abs(np.diff(volatility, prepend=volatility[0]))
+            # Short-term volatility changes (5-10 bar windows)
+            short_volatility = pd.Series(np.abs(returns)).rolling(window=5, min_periods=3).std().fillna(0.01).values
+
+            # Detect rapid volatility regime changes
+            volatility_changes = np.abs(np.diff(short_volatility, prepend=short_volatility[0]))
 
             # Count significant rotation events
-            rotation_threshold = np.percentile(volatility_changes, 75)
+            rotation_threshold = np.percentile(volatility_changes, 70)  # Use 70th percentile for 15m data
             rotation_events = np.sum(volatility_changes > rotation_threshold)
 
             # Normalize by data length
-            rotation_frequency = rotation_events / len(volatility_changes)
+            rotation_frequency = rotation_events / len(volatility_changes) if len(volatility_changes) > 0 else 0
 
-            # Sector rotation significance
-            sector_rotation_score = min(rotation_frequency * 10, 1.0)  # Scale to reasonable range
+            # Price direction changes (rapid reversals)
+            price_direction = np.sign(returns)
+            direction_changes = np.sum(np.abs(np.diff(price_direction, prepend=price_direction[0])) > 0)
 
-            return sector_rotation_score
+            direction_change_rate = direction_changes / len(price_direction) if len(price_direction) > 0 else 0
+
+            # Short-term sector rotation significance
+            # More frequent rotations indicate active sector rotation
+            rotation_score = min(rotation_frequency * 15, 1.0)  # Scale for 15m trading
+            direction_score = min(direction_change_rate * 3, 1.0)  # Scale direction changes
+
+            sector_rotation_score = 0.6 * rotation_score + 0.4 * direction_score
+
+            return min(sector_rotation_score, 1.0)
 
         except Exception as e:
             self.logger.warning(f"Sector rotation regime evaluation failed: {e}")

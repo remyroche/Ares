@@ -39,8 +39,10 @@ class EconomicSignificanceType(Enum):
     VOLUME_MOMENTUM = "volume_momentum"
     PRICE_ACTION = "price_action"
     MARKET_MICROSTRUCTURE = "market_microstructure"
-    INTER_MARKET_ANALYSIS = "inter_market_analysis"
     SECTOR_ROTATION = "sector_rotation"
+    SHORT_TERM_MOMENTUM = "short_term_momentum"
+    INTRA_BAR_PATTERNS = "intra_bar_patterns"
+    MICROSTRUCTURE_PATTERNS = "microstructure_patterns"
 
 
 class ClusteringAlgorithm(Enum):
@@ -78,7 +80,7 @@ class HybridRegimeConfig:
     # Number of regimes to detect
     n_regimes: int = 8
 
-    # TAS (Tree Architecture Search) integration with adaptive weighting
+    # TAS (Tree Architecture Search) integration with adaptive weighting for short-term trading
     tas_config: Dict[str, Any] = field(default_factory=lambda: {
         "clustering_strategy": "auto",
         "tree_models": ["random_forest", "xgboost", "lightgbm", "extra_trees"],
@@ -87,13 +89,14 @@ class HybridRegimeConfig:
         "base_weight": 0.4,  # Base weight in hybrid combination
         "performance_weight": 0.3,  # Weight based on performance
         "adaptive_weighting": True,
-        "performance_metrics": ["accuracy", "stability", "economic_significance"],
-        "weight_update_frequency": 50,  # Update weights every N samples
+        "performance_metrics": ["accuracy", "stability", "economic_significance", "short_term_performance"],
+        "weight_update_frequency": 20,  # Update weights every N samples (shorter for 15m trading)
         "min_weight": 0.1,  # Minimum weight allowed
-        "max_weight": 0.9   # Maximum weight allowed
+        "max_weight": 0.9,   # Maximum weight allowed
+        "short_term_focus": True  # Optimize for short-term patterns
     })
 
-    # NAS (Neural Architecture Search) integration with adaptive weighting
+    # NAS (Neural Architecture Search) integration with adaptive weighting for short-term trading
     nas_config: Dict[str, Any] = field(default_factory=lambda: {
         "primary_architecture": "hybrid",
         "enable_neural_odes": True,
@@ -103,10 +106,12 @@ class HybridRegimeConfig:
         "base_weight": 0.6,  # Base weight in hybrid combination
         "performance_weight": 0.3,  # Weight based on performance
         "adaptive_weighting": True,
-        "performance_metrics": ["accuracy", "stability", "economic_significance"],
-        "weight_update_frequency": 50,  # Update weights every N samples
+        "performance_metrics": ["accuracy", "stability", "economic_significance", "short_term_performance"],
+        "weight_update_frequency": 20,  # Update weights every N samples (shorter for 15m trading)
         "min_weight": 0.1,  # Minimum weight allowed
-        "max_weight": 0.9   # Maximum weight allowed
+        "max_weight": 0.9,   # Maximum weight allowed
+        "short_term_focus": True,  # Optimize for short-term patterns
+        "intra_bar_analysis": True  # Enable intra-bar pattern detection
     })
 
     # Economic significance evaluation
@@ -126,8 +131,10 @@ class HybridRegimeConfig:
             EconomicSignificanceType.VOLUME_MOMENTUM.value,
             EconomicSignificanceType.PRICE_ACTION.value,
             EconomicSignificanceType.MARKET_MICROSTRUCTURE.value,
-            EconomicSignificanceType.INTER_MARKET_ANALYSIS.value,
-            EconomicSignificanceType.SECTOR_ROTATION.value
+            EconomicSignificanceType.SECTOR_ROTATION.value,
+            EconomicSignificanceType.SHORT_TERM_MOMENTUM.value,
+            EconomicSignificanceType.INTRA_BAR_PATTERNS.value,
+            EconomicSignificanceType.MICROSTRUCTURE_PATTERNS.value
         ],
         "min_significance_score": 0.7,
         "volatility_threshold": 0.3,
@@ -135,12 +142,14 @@ class HybridRegimeConfig:
         "efficiency_threshold": 0.6,
         "momentum_threshold": 0.7,
         "volume_threshold": 0.6,
-        "momentum_periods": [5, 10, 20, 50],
-        "volume_analysis_window": 20,
+        "momentum_periods": [1, 2, 5, 10],  # For 15m timeframe: 15m, 30m, 1.25h, 2.5h
+        "volume_analysis_window": 10,  # Shorter for 15m trading
         "price_action_sensitivity": 0.8,
         "market_microstructure_enabled": True,
-        "inter_market_correlation_threshold": 0.6,
-        "sector_rotation_detection": True
+        "sector_rotation_detection": True,
+        "intra_bar_patterns_enabled": True,
+        "microstructure_patterns_enabled": True,
+        "short_term_trading": True
     })
 
     # Financial relevance parameters

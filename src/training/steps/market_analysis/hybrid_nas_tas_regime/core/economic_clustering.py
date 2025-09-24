@@ -82,7 +82,7 @@ class EconomicClusterer:
         self.economic_significance_weight = config.get('economic_significance_weight', 0.3)
         self.momentum_weight = config.get('momentum_weight', 0.25)
         self.volume_weight = config.get('volume_weight', 0.25)
-        self.momentum_periods = config.get('momentum_periods', [5, 10, 20, 50])
+        self.momentum_periods = config.get('momentum_periods', [1, 2, 5, 10])  # 15m, 30m, 1.25h, 2.5h for 15m trading
 
         # Economic distance metric
         self.economic_distance_metric = config.get('economic_distance_metric', 'economic_euclidean')

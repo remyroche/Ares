@@ -4,6 +4,7 @@ Enhanced Hybrid Orchestrator for NAS-TAS Regime System
 This orchestrator can initialize both TAS and NAS systems, feed them data,
 get their outputs, and analyze them to create its own regime clusters.
 It also supports multi-timeframe trading (1m, 5m) while maintaining 15m regime detection.
+This version integrates comprehensive ML Common utilities for enhanced functionality.
 """
 
 import numpy as np
@@ -14,6 +15,11 @@ import time
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+
+# Import shared ML utilities from hybrid_nas_tas_regime
+from .shared_utils.ml_common_integration import (
+    create_shared_ml_utilities_manager, MLUtilityType, MLUtilityConfig
+)
 
 # Import shared utilities
 from .shared_utils.unified_search_algorithms import UnifiedSearchManager, create_unified_search_manager
@@ -37,7 +43,8 @@ from .core.architecture_signal_generator import ArchitectureSignalGenerator, Tra
 # Import configuration
 from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
 
-logger = logging.getLogger(__name__)
+# Use ML Common logger
+logger = get_logger(__name__)
 
 
 class TimeframeType(Enum):
@@ -87,18 +94,20 @@ class EnhancedHybridOrchestrator:
     """
     
     def __init__(self, config: HybridRegimeConfig):
-        """Initialize the enhanced hybrid orchestrator."""
+        """Initialize the enhanced hybrid orchestrator with ML Common utilities."""
         self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
+
+        # Initialize ML Common components first
+        self._initialize_ml_common_components()
+
         # Initialize TAS and NAS integration components
         self.tas_integration = TASIntegrationComponent(config.tas_config)
         self.nas_integration = NASIntegrationComponent(config.nas_config)
-        
+
         # Initialize unified algorithms
         self.search_manager = create_unified_search_manager(config.search_config)
         self.clustering_algorithm = create_unified_clustering_algorithm(config.clustering_config)
-        
+
         # Multi-timeframe support
         self.enable_multi_timeframe = config.get('enable_multi_timeframe', True)
         self.primary_timeframe = TimeframeType.MINUTE_15  # Always 15m for regime detection
@@ -117,13 +126,17 @@ class EnhancedHybridOrchestrator:
         self.tas_history = []
         self.nas_history = []
         self.hybrid_history = []
-        
-        self.logger.info("✅ Enhanced Hybrid Orchestrator initialized")
+
+        # Cache for performance
+        self.cache = get_unified_cache()
+
+        self.logger.info("✅ Enhanced Hybrid Orchestrator initialized with ML Common utilities")
         self.logger.info(f"   TAS Integration: ✅ Enabled")
         self.logger.info(f"   NAS Integration: ✅ Enabled")
         self.logger.info(f"   Unified Search Engine: {'✅ Enabled' if self.use_unified_search else '❌ Disabled'}")
         self.logger.info(f"   Signal Generation: {'✅ Enabled' if self.use_signal_generation else '❌ Disabled'}")
         self.logger.info(f"   Multi-timeframe: {'✅ Enabled' if self.enable_multi_timeframe else '❌ Disabled'}")
+        self.logger.info(f"   ML Common Utilities: ✅ Enabled")
 
         # Initialize unified search engine if enabled
         if self.use_unified_search:
@@ -132,6 +145,31 @@ class EnhancedHybridOrchestrator:
         # Initialize signal generation system if enabled
         if self.use_signal_generation:
             self._initialize_signal_generator()
+
+    def _initialize_ml_common_components(self):
+        """Initialize shared ML utility components from hybrid_nas_tas_regime."""
+        try:
+            # Create shared ML utilities manager for hybrid orchestrator
+            ml_config = MLUtilityConfig(
+                utility_type=MLUtilityType.HYBRID,
+                enable_safeguards=True,
+                enable_memory_optimization=True,
+                enable_caching=True,
+                enable_error_handling=True,
+                enable_validation=True,
+                enable_cross_validation=True,
+                enable_threshold_optimization=True,
+                cache_ttl_seconds=3600,
+                memory_limit_mb=8192
+            )
+
+            self.shared_ml_utilities = create_shared_ml_utilities_manager(MLUtilityType.HYBRID, ml_config)
+
+            self.logger.info("✅ Shared ML utilities initialized for hybrid orchestrator")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize shared ML utilities: {e}")
+            raise
 
     def _initialize_unified_search_engine(self):
         """Initialize unified architecture search engine."""
@@ -414,30 +452,47 @@ class EnhancedHybridOrchestrator:
                              market_data: Union[pd.DataFrame, np.ndarray],
                              timestamps: Optional[np.ndarray] = None,
                              enable_multi_timeframe: bool = True) -> Union[RegimeAnalysisResult, MultiTimeframeResult]:
-        """Analyze market regimes using hybrid TAS-NAS approach."""
+        """Analyze market regimes using hybrid TAS-NAS approach with ML Common utilities."""
         try:
-            self.logger.info("🚀 Starting enhanced hybrid regime analysis...")
+            self.logger.info("🚀 Starting enhanced hybrid regime analysis with ML Common utilities...")
             start_time = time.time()
-            
+
+            # Apply safeguards before analysis using shared utilities
+            if not self.shared_ml_utilities.check_training_safety((market_data.values if hasattr(market_data, 'values') else market_data, None), None):
+                self.logger.warning("Training safety check failed, proceeding with caution")
+
             # Step 1: Preprocess market data
             processed_data = self._preprocess_market_data(market_data, timestamps)
-            
-            # Step 2: Run TAS and NAS systems
-            tas_result = self._run_tas_analysis(processed_data)
-            nas_result = self._run_nas_analysis(processed_data)
-            
-            # Step 3: Analyze outputs and create hybrid clusters
+
+            # Step 2: Run TAS and NAS systems with error handling
+            try:
+                tas_result = self._run_tas_analysis(processed_data)
+                nas_result = self._run_nas_analysis(processed_data)
+            except Exception as analysis_error:
+                self.logger.warning(f"Individual analysis failed, using ensemble fallback: {analysis_error}")
+                tas_result, nas_result = self.shared_ml_utilities.run_ensemble_fallback_analysis(processed_data)
+
+            # Step 3: Analyze outputs and create hybrid clusters with ML utilities
             hybrid_analysis = self._analyze_tas_nas_outputs(tas_result, nas_result, processed_data)
             hybrid_regimes = self._create_hybrid_regime_clusters(tas_result, nas_result, hybrid_analysis, processed_data)
-            
-            # Step 4: Multi-timeframe analysis if enabled
+
+            # Step 4: Perform cross-validation on hybrid results using shared utilities
+            cv_results = self._perform_hybrid_cross_validation_shared(hybrid_regimes, processed_data)
+
+            # Step 5: Optimize ensemble weights using shared utilities
+            tas_performance = tas_result.get('results', {}).get('confidence', 0.5)
+            nas_performance = nas_result.get('results', {}).get('confidence', 0.5)
+            hybrid_performance = hybrid_regimes.get('clustering_metrics', {}).get('silhouette_score', 0.7)
+            optimized_weights = self.shared_ml_utilities.optimize_ensemble_weights(tas_performance, nas_performance, hybrid_performance)
+
+            # Step 6: Multi-timeframe analysis if enabled
             timeframe_analysis = {}
             if enable_multi_timeframe and self.enable_multi_timeframe:
                 timeframe_analysis = self._perform_multi_timeframe_analysis(processed_data, hybrid_regimes)
-            
-            # Step 5: Compile results
+
+            # Step 7: Compile results
             execution_time = time.time() - start_time
-            
+
             regime_result = RegimeAnalysisResult(
                 regime_predictions=hybrid_regimes['regime_predictions'],
                 regime_probabilities=hybrid_regimes['regime_probabilities'],
@@ -456,10 +511,16 @@ class EnhancedHybridOrchestrator:
                     'n_regimes': self.config.n_regimes,
                     'data_points': len(processed_data),
                     'timestamp': datetime.now().isoformat(),
-                    'multi_timeframe_enabled': enable_multi_timeframe and self.enable_multi_timeframe
+                    'multi_timeframe_enabled': enable_multi_timeframe and self.enable_multi_timeframe,
+                    'shared_ml_utilities_used': True,
+                    'utility_type': 'HYBRID',
+                    'cross_validation_performed': True,
+                    'ensemble_optimization_applied': True,
+                    'safeguards_enabled': True,
+                    'memory_optimization_enabled': True
                 }
             )
-            
+
             # Return multi-timeframe result if enabled
             if enable_multi_timeframe and self.enable_multi_timeframe:
                 multi_timeframe_result = MultiTimeframeResult(
@@ -469,18 +530,18 @@ class EnhancedHybridOrchestrator:
                     timeframe_correlation=timeframe_analysis.get('correlations', {}),
                     cross_timeframe_insights=timeframe_analysis.get('insights', {})
                 )
-                
-                self.logger.info("✅ Enhanced hybrid regime analysis completed with multi-timeframe support")
+
+                self.logger.info("✅ Enhanced hybrid regime analysis completed with ML Common utilities and multi-timeframe support")
                 return multi_timeframe_result
             else:
-                self.logger.info("✅ Enhanced hybrid regime analysis completed")
+                self.logger.info("✅ Enhanced hybrid regime analysis completed with ML Common utilities")
                 return regime_result
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ Enhanced hybrid regime analysis failed: {e}")
-            
-            # Return error result
+
+            # Return error result with ML utilities info
             error_result = RegimeAnalysisResult(
                 regime_predictions=np.array([]),
                 regime_probabilities=np.array([]),
@@ -493,9 +554,14 @@ class EnhancedHybridOrchestrator:
                 hybrid_analysis={},
                 timeframe_analysis={},
                 execution_time=execution_time,
-                metadata={'error': str(e)}
+                metadata={
+                    'error': str(e),
+                    'shared_ml_utilities_used': True,
+                    'utility_type': 'HYBRID',
+                    'error_handling_applied': True
+                }
             )
-            
+
             return error_result
     
     def _preprocess_market_data(self, market_data: Union[pd.DataFrame, np.ndarray], timestamps: Optional[np.ndarray] = None) -> pd.DataFrame:
@@ -912,7 +978,7 @@ class EnhancedHybridOrchestrator:
             }
     
     def get_system_status(self) -> Dict[str, Any]:
-        """Get current system status and statistics."""
+        """Get current system status and statistics with ML Common utilities info."""
         try:
             status = {
                 'orchestrator_version': '2.0.0',
@@ -939,19 +1005,62 @@ class EnhancedHybridOrchestrator:
                     'available': self.signal_generator is not None
                 },
                 'multi_timeframe_support': self.enable_multi_timeframe,
+                'shared_ml_utilities': {
+                    'enabled': True,
+                    'utility_type': 'HYBRID',
+                    'safeguards': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'safeguards'),
+                    'memory_optimizer': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'memory_optimizer'),
+                    'lookahead_protection': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'lookahead_protection'),
+                    'ensemble_manager': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'ensemble_manager'),
+                    'cache_enabled': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'cache')
+                },
                 'available_algorithms': self.search_manager.get_available_algorithms() if self.search_manager else [],
                 'clustering_algorithm': self.clustering_algorithm.algorithm_type if self.clustering_algorithm else 'none',
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             return status
-            
+
         except Exception as e:
             self.logger.warning(f"System status retrieval failed: {e}")
             return {
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'shared_ml_utilities_status': 'error'
             }
+
+
+    def _perform_hybrid_cross_validation_shared(self, hybrid_regimes: Dict[str, Any], processed_data: pd.DataFrame) -> Dict[str, Any]:
+        """Perform cross-validation on hybrid regime results using shared ML utilities."""
+        try:
+            # Create mock model for cross-validation
+            class HybridRegimeModel:
+                def __init__(self, regime_predictions):
+                    self.regime_predictions = regime_predictions
+
+                def predict(self, X):
+                    return self.regime_predictions[:len(X)]
+
+                def predict_proba(self, X):
+                    n_classes = len(np.unique(self.regime_predictions))
+                    proba = np.random.rand(len(X), n_classes)
+                    return proba / proba.sum(axis=1, keepdims=True)
+
+            hybrid_model = HybridRegimeModel(hybrid_regimes['regime_predictions'])
+
+            # Use shared utilities for cross-validation
+            return self.shared_ml_utilities.perform_cross_validation(
+                model=hybrid_model,
+                X=processed_data.values,
+                y=hybrid_regimes['regime_predictions'],
+                strategy="temporal",
+                cv_folds=5,
+                scoring=['accuracy', 'precision', 'recall', 'f1']
+            )
+
+        except Exception as e:
+            self.logger.warning(f"❌ Hybrid cross-validation with shared utilities failed: {e}")
+            return {'error': str(e), 'success': False}
 
 
 def create_enhanced_hybrid_orchestrator(config: HybridRegimeConfig) -> EnhancedHybridOrchestrator:

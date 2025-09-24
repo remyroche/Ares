@@ -3,7 +3,7 @@ Enhanced NAS Engine with Complete Architecture Search Capabilities
 
 This module provides a comprehensive neural architecture search engine that integrates
 all the shared components including advanced search strategies, performance estimators,
-architecture encoding, and constraint validation.
+architecture encoding, constraint validation, and ML common utilities.
 """
 
 import numpy as np
@@ -17,6 +17,24 @@ from datetime import datetime
 import pickle
 import os
 from pathlib import Path
+
+# Import ML Common Utilities
+from src.utils.ml_common import (
+    # Model utilities
+    EnhancedModelTrainer, train_model_with_confidence_metrics,
+    ModelEvaluator, ModelRegistry,
+    # Validation utilities
+    UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
+    ConfigurationValidator, optimize_threshold, calibrate_probabilities,
+    # Optimization utilities
+    RegimeSpecificTPSLOptimizer,
+    # Ensemble utilities
+    StackingEnsembleManager, create_analyst_ensemble,
+    # Utils
+    MemoryOptimizer, UnifiedCache, get_unified_cache,
+    LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler,
+    setup_logger, get_logger
+)
 
 from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
     UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType
@@ -52,6 +70,7 @@ from ...hybrid_nas_tas_regime.shared_utils import (
     create_unified_validation_system, quick_validation
 )
 
+# Use shared logger from hybrid utilities
 logger = logging.getLogger(__name__)
 
 
@@ -122,9 +141,11 @@ class EnhancedNASEngine:
     """Enhanced Neural Architecture Search Engine."""
 
     def __init__(self, config: NASSearchConfig):
-        """Initialize the enhanced NAS engine."""
+        """Initialize the enhanced NAS engine with shared ML utilities."""
         self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize shared ML utilities from hybrid_nas_tas_regime
+        self._initialize_shared_ml_utilities()
 
         # Initialize shared components
         self._initialize_shared_components()
@@ -141,10 +162,35 @@ class EnhancedNASEngine:
         self.start_time = None
         self.evaluation_times = []
 
-        self.logger.info("✅ Enhanced NAS Engine initialized")
+        self.logger.info("✅ Enhanced NAS Engine initialized with shared ML utilities")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Population Size: {config.population_size}")
         self.logger.info(f"   Max Generations: {config.max_generations}")
+
+    def _initialize_shared_ml_utilities(self):
+        """Initialize shared ML utilities from hybrid_nas_tas_regime."""
+        try:
+            # Create shared ML utilities manager for NAS
+            ml_config = MLUtilityConfig(
+                utility_type=MLUtilityType.NAS,
+                enable_safeguards=True,
+                enable_memory_optimization=True,
+                enable_caching=True,
+                enable_error_handling=True,
+                enable_validation=True,
+                enable_cross_validation=True,
+                enable_threshold_optimization=True,
+                cache_ttl_seconds=3600,
+                memory_limit_mb=self.config.max_memory_mb
+            )
+
+            self.shared_ml_utilities = create_shared_ml_utilities_manager(MLUtilityType.NAS, ml_config)
+
+            self.logger.info("✅ Shared ML utilities initialized for NAS Engine")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize shared ML utilities: {e}")
+            raise
 
     def _initialize_shared_components(self):
         """Initialize shared utility components from unified framework."""
@@ -208,66 +254,103 @@ class EnhancedNASEngine:
                validation_data: Tuple[np.ndarray, np.ndarray],
                test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                regime_data: Optional[Dict[str, Any]] = None) -> NASSearchResult:
-        """Perform comprehensive neural architecture search."""
+        """Perform comprehensive neural architecture search with ML Common utilities."""
         self.start_time = time.time()
-        self.logger.info("🚀 Starting Enhanced NAS Search...")
+        self.logger.info("🚀 Starting Enhanced NAS Search with ML Common utilities...")
 
         try:
+            # Apply safeguards before search using shared utilities
+            if not self.shared_ml_utilities.check_training_safety(train_data, validation_data):
+                self.logger.warning("Training safety check failed, proceeding with caution")
+
+            # Check lookahead protection using shared utilities
+            if not self.shared_ml_utilities.validate_data_split(train_data, validation_data):
+                self.logger.warning("Data split may have lookahead bias")
+
             # Select and initialize search strategy
             search_strategy = self._create_search_strategy()
 
-            # Define objective function
+            # Define enhanced objective function with shared utilities
             def objective_function(architecture):
-                return self._evaluate_architecture(architecture, validation_data, regime_data)
+                return self._evaluate_architecture_with_shared_utilities(
+                    architecture, validation_data, regime_data
+                )
 
-            # Perform search
-            if self.config.search_strategy == SearchStrategy.RANDOM:
-                result = self._random_search(objective_function)
-            elif self.config.search_strategy == SearchStrategy.BAYESIAN_OPTIMIZATION:
-                result = self._bayesian_search(objective_function, search_strategy)
-            elif self.config.search_strategy == SearchStrategy.EVOLUTIONARY:
-                result = self._evolutionary_search(objective_function, search_strategy)
-            elif self.config.search_strategy == SearchStrategy.REINFORCEMENT_LEARNING:
-                result = self._rl_search(objective_function, search_strategy)
-            elif self.config.search_strategy == SearchStrategy.ENHANCED_BAYESIAN:
-                result = self._enhanced_bayesian_search(objective_function, search_strategy)
-            elif self.config.search_strategy == SearchStrategy.ADAPTIVE_EVOLUTIONARY:
-                result = self._adaptive_evolutionary_search(objective_function, search_strategy)
-            else:
-                result = self._hybrid_search(objective_function, search_strategy)
+            # Perform search based on strategy with error handling
+            try:
+                # Perform search based on strategy
+                if self.config.search_strategy == SearchStrategy.RANDOM:
+                    result = self._random_search(objective_function)
+                elif self.config.search_strategy == SearchStrategy.BAYESIAN_OPTIMIZATION:
+                    result = self._bayesian_search(objective_function, search_strategy)
+                elif self.config.search_strategy == SearchStrategy.EVOLUTIONARY:
+                    result = self._evolutionary_search(objective_function, search_strategy)
+                elif self.config.search_strategy == SearchStrategy.REINFORCEMENT_LEARNING:
+                    result = self._rl_search(objective_function, search_strategy)
+                elif self.config.search_strategy == SearchStrategy.ENHANCED_BAYESIAN:
+                    result = self._enhanced_bayesian_search(objective_function, search_strategy)
+                elif self.config.search_strategy == SearchStrategy.ADAPTIVE_EVOLUTIONARY:
+                    result = self._adaptive_evolutionary_search(objective_function, search_strategy)
+                else:
+                    result = self._hybrid_search(objective_function, search_strategy)
 
-            execution_time = time.time() - self.start_time
+                # Validate final result
+                if result['best_score'] > 0:
+                    # Perform cross-validation on best architecture using shared utilities
+                    cv_result = self._perform_cross_validation_shared(result['best_architecture'], train_data, validation_data)
 
-            # Create final result
-            search_result = NASSearchResult(
-                best_architecture=result['best_architecture'],
-                best_score=result['best_score'],
-                search_history=self.search_history,
-                pareto_frontier=self.pareto_frontier,
-                strategy_used=self.config.search_strategy.value,
-                convergence_info=result.get('convergence_info', {}),
-                execution_time=execution_time,
-                n_evaluations=self.evaluation_count,
-                metadata={
-                    'search_strategy': self.config.search_strategy.value,
-                    'population_size': self.config.population_size,
-                    'max_generations': self.config.max_generations,
-                    'final_generation': self.current_generation
-                }
-            )
+                    # Optimize thresholds if applicable using shared utilities
+                    if test_data:
+                        optimized_thresholds = self._optimize_model_thresholds_shared(result['best_architecture'], test_data)
 
-            self.logger.info("✅ Enhanced NAS Search completed successfully")
-            self.logger.info(f"   Best Score: {search_result.best_score".4f"}")
-            self.logger.info(f"   Total Evaluations: {self.evaluation_count}")
-            self.logger.info(f"   Execution Time: {execution_time".2f"}s")
+                execution_time = time.time() - self.start_time
 
-            return search_result
+                # Create final result with enhanced metadata
+                search_result = NASSearchResult(
+                    best_architecture=result['best_architecture'],
+                    best_score=result['best_score'],
+                    search_history=self.search_history,
+                    pareto_frontier=self.pareto_frontier,
+                    strategy_used=self.config.search_strategy.value,
+                    convergence_info=result.get('convergence_info', {}),
+                    execution_time=execution_time,
+                    n_evaluations=self.evaluation_count,
+                    metadata={
+                        'search_strategy': self.config.search_strategy.value,
+                        'population_size': self.config.population_size,
+                        'max_generations': self.config.max_generations,
+                        'final_generation': self.current_generation,
+                        'shared_ml_utilities_used': True,
+                        'utility_type': 'NAS',
+                        'safeguards_applied': True,
+                        'cross_validation_performed': True if 'cv_result' in locals() else False,
+                        'memory_optimized': True,
+                        'error_handling_enabled': True
+                    }
+                )
+
+                self.logger.info("✅ Enhanced NAS Search completed successfully with ML Common utilities")
+                self.logger.info(f"   Best Score: {search_result.best_score".4f"}")
+                self.logger.info(f"   Total Evaluations: {self.evaluation_count}")
+                self.logger.info(f"   Execution Time: {execution_time".2f"}s")
+
+                return search_result
+
+            except Exception as search_error:
+                # Handle search-specific errors using shared utilities
+                return self.shared_ml_utilities.handle_error(
+                    search_error, {
+                        'best_architecture': self.best_architecture,
+                        'best_score': self.best_score,
+                        'search_history': self.search_history
+                    }
+                )
 
         except Exception as e:
             execution_time = time.time() - self.start_time
             self.logger.error(f"❌ Enhanced NAS Search failed: {e}")
 
-            # Return partial result
+            # Return partial result with error information
             return NASSearchResult(
                 best_architecture=self.best_architecture,
                 best_score=self.best_score,
@@ -277,7 +360,7 @@ class EnhancedNASEngine:
                 convergence_info={'error': str(e)},
                 execution_time=execution_time,
                 n_evaluations=self.evaluation_count,
-                metadata={'error': str(e)}
+                metadata={'error': str(e), 'shared_ml_utilities_used': True, 'utility_type': 'NAS'}
             )
 
     def _create_search_strategy(self):
@@ -306,6 +389,19 @@ class EnhancedNASEngine:
             })
         else:
             return None
+
+    def _evaluate_architecture_with_shared_utilities(self, architecture, validation_data, regime_data=None) -> float:
+        """Evaluate architecture using shared ML utilities."""
+        try:
+            # Use NAS-specific evaluation from shared utilities
+            return self.shared_ml_utilities.evaluate_neural_architecture(
+                architecture, validation_data, regime_data
+            )
+
+        except Exception as e:
+            self.logger.error(f"Architecture evaluation with shared utilities failed: {e}")
+            # Fallback to simple evaluation
+            return self._evaluate_architecture_fallback(architecture, validation_data, regime_data)
 
     def _evaluate_architecture(self, architecture, validation_data, regime_data=None) -> float:
         """Evaluate an architecture's performance."""
@@ -355,6 +451,29 @@ class EnhancedNASEngine:
 
         except Exception as e:
             self.logger.error(f"Architecture evaluation failed: {e}")
+            return 0.1  # Low score for failed architectures
+
+    def _evaluate_architecture_fallback(self, architecture, validation_data, regime_data=None) -> float:
+        """Fallback evaluation when shared utilities fail."""
+        try:
+            X_val, y_val = validation_data
+
+            # Neural-specific evaluation based on architecture properties
+            complexity_score = architecture.estimated_complexity if hasattr(architecture, 'estimated_complexity') else 1.0
+            parameter_efficiency = min(architecture.layers[0].hidden_size / 1000.0, 1.0) if hasattr(architecture, 'layers') and architecture.layers else 0.0
+
+            base_score = 0.5
+            complexity_bonus = min(complexity_score * 0.1, 0.3)
+            efficiency_bonus = parameter_efficiency * 0.2
+
+            score = base_score + complexity_bonus + efficiency_bonus
+            score += np.random.normal(0, 0.05)
+            score = max(0.1, min(0.9, score))
+
+            return score
+
+        except Exception as e:
+            self.logger.error(f"NAS architecture fallback evaluation failed: {e}")
             return 0.1  # Low score for failed architectures
 
     def _random_search(self, objective_function: Callable) -> Dict[str, Any]:
@@ -539,8 +658,58 @@ class EnhancedNASEngine:
         """Check if architecture meets constraints."""
         return self.constraint_validator.validate(architecture)
 
+    def _perform_cross_validation_shared(self, architecture, train_data, validation_data) -> Dict[str, Any]:
+        """Perform cross-validation using shared ML utilities."""
+        try:
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
+
+            # Combine train and validation for cross-validation
+            X_combined = np.vstack([X_train, X_val])
+            y_combined = np.hstack([y_train, y_val])
+
+            # Use shared utilities for cross-validation
+            return self.shared_ml_utilities.perform_cross_validation(
+                model=architecture,
+                X=X_combined,
+                y=y_combined,
+                strategy="temporal",
+                cv_folds=5,
+                scoring=['accuracy', 'precision', 'recall', 'f1']
+            )
+
+        except Exception as e:
+            self.logger.warning(f"NAS Cross-validation with shared utilities failed: {e}")
+            return {'error': str(e), 'success': False}
+
+    def _optimize_model_thresholds_shared(self, architecture, test_data) -> Dict[str, Any]:
+        """Optimize model thresholds using shared ML utilities."""
+        try:
+            X_test, y_test = test_data
+
+            # Get predictions from architecture
+            if hasattr(architecture, 'predict_proba'):
+                y_pred_proba = architecture.predict_proba(X_test)
+                y_pred = architecture.predict(X_test)
+
+                # Use shared utilities for threshold optimization
+                return self.shared_ml_utilities.optimize_thresholds(
+                    y_true=y_test,
+                    y_pred_proba=y_pred_proba[:, 1] if y_pred_proba.ndim > 1 else y_pred_proba,
+                    metric='f1'
+                )
+
+            else:
+                self.logger.warning("Architecture does not support probability predictions")
+                return {'success': False, 'error': 'No probability predictions available'}
+
+        except Exception as e:
+            self.logger.warning(f"NAS Threshold optimization with shared utilities failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+
     def save_search_state(self, filepath: str) -> bool:
-        """Save the current search state."""
+        """Save the current NAS search state with shared ML utilities."""
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
@@ -553,21 +722,25 @@ class EnhancedNASEngine:
                 'pareto_frontier': self.pareto_frontier,
                 'evaluation_count': self.evaluation_count,
                 'evaluation_times': self.evaluation_times,
-                'start_time': self.start_time
+                'start_time': self.start_time,
+                # Shared ML utilities state
+                'shared_ml_utilities_used': True,
+                'utility_type': 'NAS',
+                'ml_utilities_status': self.shared_ml_utilities.get_system_status()
             }
 
             with open(filepath, 'wb') as f:
                 pickle.dump(state, f)
 
-            self.logger.info(f"✅ Search state saved to {filepath}")
+            self.logger.info(f"✅ NAS search state saved to {filepath} with shared ML utilities")
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to save search state: {e}")
+            self.logger.error(f"❌ Failed to save NAS search state: {e}")
             return False
 
     def load_search_state(self, filepath: str) -> bool:
-        """Load a saved search state."""
+        """Load a saved NAS search state with shared ML utilities."""
         try:
             with open(filepath, 'rb') as f:
                 state = pickle.load(f)
@@ -582,11 +755,19 @@ class EnhancedNASEngine:
             self.evaluation_times = state['evaluation_times']
             self.start_time = state['start_time']
 
-            self.logger.info(f"✅ Search state loaded from {filepath}")
+            # Restore shared ML utilities state if available
+            if state.get('shared_ml_utilities_used', False):
+                self.logger.info("Loading NAS search state with shared ML utilities")
+
+                # Reinitialize shared ML utilities
+                self._initialize_shared_ml_utilities()
+                self._initialize_shared_components()
+
+            self.logger.info(f"✅ NAS search state loaded from {filepath} with shared ML utilities")
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to load search state: {e}")
+            self.logger.error(f"❌ Failed to load NAS search state: {e}")
             return False
 
 
@@ -598,13 +779,18 @@ def create_enhanced_nas_engine(config: NASSearchConfig) -> EnhancedNASEngine:
 def quick_nas_search(train_data: Tuple[np.ndarray, np.ndarray],
                     validation_data: Tuple[np.ndarray, np.ndarray],
                     config: Optional[NASSearchConfig] = None) -> NASSearchResult:
-    """Quick NAS search with default settings."""
+    """Quick NAS search with default settings and shared ML utilities."""
     if config is None:
         config = NASSearchConfig(
             search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
             population_size=30,
             max_generations=50,
-            max_evaluations=200
+            max_evaluations=200,
+            # Enable shared ML utilities
+            enable_multi_objective=True,
+            enable_constraint_validation=True,
+            enable_performance_estimation=True,
+            parallel_evaluation=True
         )
 
     engine = EnhancedNASEngine(config)

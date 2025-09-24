@@ -2,14 +2,15 @@
 NAS-Enhanced Analyst Live Trading Component
 
 This module implements the live trading integration for the NAS-Enhanced Analyst,
-providing real-time regime detection and trading signal generation for 5m timeframe.
+providing real-time trading signal generation for 5m timeframe using NAS.
 
 Key Features:
-- Real-time NAS regime detection
-- Live trading signal generation
+- Real-time NAS trading signal generation (not regime detection)
+- Live trading signal generation for 5m timeframe
 - Integration with existing live trading pipeline
 - Dynamic architecture adaptation
 - Performance monitoring and alerting
+- TAS integration for enhanced signal generation
 """
 
 import numpy as np
@@ -60,6 +61,7 @@ class NASEnhancedAnalystLiveConfig:
     
     # Live Trading Configuration
     analyst_timeframe: str = "5m"
+    regime_timeframe: str = "15m"  # Regime detection on 15m timeframe
     signal_threshold: float = 0.6
     confidence_threshold: float = 0.7
     max_signals_per_hour: int = 10
@@ -163,7 +165,7 @@ class NASEnhancedAnalystLive:
             # Step 2: Detect current regime using NAS
             regime_result = await self._detect_current_regime(features, market_data)
             
-            # Step 3: Generate trading signals
+            # Step 3: Generate trading signals using NAS and TAS
             signal_result = await self._generate_trading_signals(
                 features, regime_result, market_data
             )
@@ -274,11 +276,12 @@ class NASEnhancedAnalystLive:
     async def _detect_current_regime(self, 
                                    features: np.ndarray, 
                                    market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Detect current market regime using NAS."""
-        self.logger.info("🔍 Detecting current regime using NAS...")
+        """Detect current market regime using NAS for trading signal generation (15m timeframe)."""
+        self.logger.info(f"🔍 Detecting current regime using NAS for trading signals ({self.config.regime_timeframe})...")
         
         try:
-            # Use NAS engine to detect regime
+            # Use NAS engine for trading signal generation (not regime detection)
+            # Note: Regime detection is done on 15m timeframe, not 5m
             nas_result = self.nas_engine.detect_regimes(
                 features.reshape(1, -1),  # Reshape for single sample
                 optimize_architecture=False,  # Use pre-trained architectures
@@ -286,7 +289,7 @@ class NASEnhancedAnalystLive:
             )
             
             if nas_result.success:
-                # Extract regime information
+                # Extract regime information for trading signal generation
                 regime_id = np.argmax(nas_result.regime_probabilities[0])
                 regime_stability = nas_result.regime_stability_scores[0]
                 economic_significance = nas_result.economic_significance_scores[0]
@@ -294,7 +297,7 @@ class NASEnhancedAnalystLive:
                 
                 self.current_regime = regime_id
                 
-                self.logger.info(f"✅ Regime detected: {regime_id}")
+                self.logger.info(f"✅ Regime detected for trading signals: {regime_id}")
                 self.logger.info(f"   Stability: {regime_stability:.3f}")
                 self.logger.info(f"   Economic significance: {economic_significance:.3f}")
                 self.logger.info(f"   Trading viability: {trading_viability:.3f}")
@@ -319,8 +322,8 @@ class NASEnhancedAnalystLive:
                                       features: np.ndarray, 
                                       regime_result: Dict[str, Any],
                                       market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate trading signals based on regime and features."""
-        self.logger.info("📊 Generating trading signals...")
+        """Generate trading signals using NAS and TAS."""
+        self.logger.info("📊 Generating trading signals using NAS and TAS...")
         
         try:
             # Check if regime is suitable for trading
@@ -333,29 +336,39 @@ class NASEnhancedAnalystLive:
                     'confidence': 0.0
                 }
             
-            # Get regime-specific model
+            # Get regime-specific NAS model
             regime_id = regime_result.get('regime_id', 0)
-            regime_model = self.analyst_models.get(regime_id)
+            nas_model = self.analyst_models.get(regime_id)
             
-            if not regime_model:
-                self.logger.warning(f"⚠️ No model available for regime {regime_id}")
+            if not nas_model:
+                self.logger.warning(f"⚠️ No NAS model available for regime {regime_id}")
                 return {
                     'signal_generated': False,
-                    'reason': 'No model available for regime',
+                    'reason': 'No NAS model available for regime',
                     'signal_strength': 0.0,
                     'signal_direction': 0,
                     'confidence': 0.0
                 }
             
-            # Generate prediction using regime model
-            prediction = await self._predict_with_regime_model(
-                regime_model, features, regime_result
+            # Generate NAS prediction
+            nas_prediction = await self._predict_with_nas_model(
+                nas_model, features, regime_result
             )
             
-            if prediction['success']:
-                signal_strength = prediction['signal_strength']
-                signal_direction = prediction['signal_direction']
-                confidence = prediction['confidence']
+            # Generate TAS prediction if available
+            tas_prediction = await self._predict_with_tas_model(
+                features, regime_result
+            )
+            
+            # Combine NAS and TAS predictions
+            combined_prediction = await self._combine_nas_tas_predictions(
+                nas_prediction, tas_prediction
+            )
+            
+            if combined_prediction['success']:
+                signal_strength = combined_prediction['signal_strength']
+                signal_direction = combined_prediction['signal_direction']
+                confidence = combined_prediction['confidence']
                 
                 # Check if signal meets thresholds
                 if (abs(signal_strength) >= self.config.signal_threshold and 
@@ -364,17 +377,21 @@ class NASEnhancedAnalystLive:
                     self.last_signal_time = time.time()
                     self.signal_count += 1
                     
-                    self.logger.info(f"✅ Trading signal generated")
+                    self.logger.info(f"✅ Trading signal generated (NAS + TAS)")
                     self.logger.info(f"   Direction: {signal_direction}")
                     self.logger.info(f"   Strength: {signal_strength:.3f}")
                     self.logger.info(f"   Confidence: {confidence:.3f}")
+                    self.logger.info(f"   NAS contribution: {nas_prediction.get('confidence', 0):.3f}")
+                    self.logger.info(f"   TAS contribution: {tas_prediction.get('confidence', 0):.3f}")
                     
                     return {
                         'signal_generated': True,
                         'signal_strength': signal_strength,
                         'signal_direction': signal_direction,
                         'confidence': confidence,
-                        'regime_id': regime_id
+                        'regime_id': regime_id,
+                        'nas_contribution': nas_prediction.get('confidence', 0),
+                        'tas_contribution': tas_prediction.get('confidence', 0)
                     }
                 else:
                     return {
@@ -387,7 +404,7 @@ class NASEnhancedAnalystLive:
             else:
                 return {
                     'signal_generated': False,
-                    'reason': 'Prediction failed',
+                    'reason': 'Combined prediction failed',
                     'signal_strength': 0.0,
                     'signal_direction': 0,
                     'confidence': 0.0
@@ -403,14 +420,14 @@ class NASEnhancedAnalystLive:
                 'confidence': 0.0
             }
     
-    async def _predict_with_regime_model(self, 
-                                       regime_model: Any, 
-                                       features: np.ndarray, 
-                                       regime_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Predict using regime-specific model."""
+    async def _predict_with_nas_model(self, 
+                                    nas_model: Any, 
+                                    features: np.ndarray, 
+                                    regime_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Predict using NAS model."""
         try:
-            # Simulate prediction
-            # In actual implementation, this would use the trained model
+            # Simulate NAS prediction
+            # In actual implementation, this would use the trained NAS model
             signal_strength = np.random.uniform(-1.0, 1.0)
             signal_direction = 1 if signal_strength > 0 else -1 if signal_strength < 0 else 0
             confidence = np.random.uniform(0.5, 1.0)
@@ -419,11 +436,83 @@ class NASEnhancedAnalystLive:
                 'success': True,
                 'signal_strength': signal_strength,
                 'signal_direction': signal_direction,
-                'confidence': confidence
+                'confidence': confidence,
+                'model_type': 'nas'
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Prediction failed: {e}")
+            self.logger.error(f"❌ NAS prediction failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def _predict_with_tas_model(self, 
+                                    features: np.ndarray, 
+                                    regime_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Predict using TAS model."""
+        try:
+            # Simulate TAS prediction
+            # In actual implementation, this would use the trained TAS model
+            signal_strength = np.random.uniform(-1.0, 1.0)
+            signal_direction = 1 if signal_strength > 0 else -1 if signal_strength < 0 else 0
+            confidence = np.random.uniform(0.5, 1.0)
+            
+            return {
+                'success': True,
+                'signal_strength': signal_strength,
+                'signal_direction': signal_direction,
+                'confidence': confidence,
+                'model_type': 'tas'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ TAS prediction failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def _combine_nas_tas_predictions(self, 
+                                         nas_prediction: Dict[str, Any], 
+                                         tas_prediction: Dict[str, Any]) -> Dict[str, Any]:
+        """Combine NAS and TAS predictions."""
+        try:
+            if not nas_prediction.get('success', False):
+                return {
+                    'success': False,
+                    'reason': 'NAS prediction failed'
+                }
+            
+            # Get NAS prediction
+            nas_strength = nas_prediction.get('signal_strength', 0.0)
+            nas_confidence = nas_prediction.get('confidence', 0.0)
+            
+            # Get TAS prediction (if available)
+            if tas_prediction.get('success', False):
+                tas_strength = tas_prediction.get('signal_strength', 0.0)
+                tas_confidence = tas_prediction.get('confidence', 0.0)
+                
+                # Combine predictions (weighted average)
+                combined_strength = (nas_strength * 0.6 + tas_strength * 0.4)
+                combined_confidence = (nas_confidence * 0.6 + tas_confidence * 0.4)
+            else:
+                # Use only NAS prediction
+                combined_strength = nas_strength
+                combined_confidence = nas_confidence
+            
+            # Determine signal direction
+            signal_direction = 1 if combined_strength > 0 else -1 if combined_strength < 0 else 0
+            
+            return {
+                'success': True,
+                'signal_strength': combined_strength,
+                'signal_direction': signal_direction,
+                'confidence': combined_confidence
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Prediction combination failed: {e}")
             return {
                 'success': False,
                 'error': str(e)

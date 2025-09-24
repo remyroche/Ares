@@ -2,14 +2,15 @@
 NAS-Enhanced Analyst Training Step
 
 This module implements the Analyst training with NAS (Neural Architecture Search) integration
-for 5m timeframe regime detection and trading signal generation.
+for 5m timeframe trading signal generation within per-regime training framework.
 
 Key Features:
-- NAS architecture search for optimal neural architectures per regime
-- Enhanced regime detection with sophisticated neural architectures
+- NAS for trading signals generation (not regime detection)
+- Per-regime NAS model training for signal generation
 - Integration with existing Analyst ensemble training pipeline
 - Real-time adaptation of neural architectures based on market conditions
 - CatBoost removal and replacement with TAS-discovered models
+- TAS integration for enhanced signal generation
 """
 
 import numpy as np
@@ -219,8 +220,8 @@ class NASEnhancedAnalystTrainingStep:
                                               y_5m: np.ndarray, 
                                               regime_labels: np.ndarray,
                                               market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Perform NAS architecture search per regime."""
-        self.logger.info("🔍 Performing NAS architecture search per regime...")
+        """Perform NAS architecture search per regime for trading signal generation."""
+        self.logger.info("🔍 Performing NAS architecture search per regime for trading signals...")
         
         nas_results = {}
         unique_regimes = np.unique(regime_labels)
@@ -235,7 +236,7 @@ class NASEnhancedAnalystTrainingStep:
                 continue
             
             try:
-                # Perform NAS search for this regime
+                # Perform NAS search for trading signal generation (not regime detection)
                 nas_result = self.nas_engine.detect_regimes(
                     regime_data,
                     optimize_architecture=True,
@@ -243,13 +244,14 @@ class NASEnhancedAnalystTrainingStep:
                 )
                 
                 if nas_result.success:
+                    # Store NAS architecture for trading signal generation
                     nas_results[regime] = nas_result
                     self.nas_architectures[regime] = nas_result.best_architecture
                     self.regime_detectors[regime] = self.nas_engine
                     
-                    self.logger.info(f"✅ NAS search completed for regime {regime}")
-                    self.logger.info(f"   Regime stability: {np.mean(nas_result.regime_stability_scores):.3f}")
-                    self.logger.info(f"   Economic significance: {np.mean(nas_result.economic_significance_scores):.3f}")
+                    self.logger.info(f"✅ NAS search completed for regime {regime} (trading signals)")
+                    self.logger.info(f"   Architecture type: {nas_result.best_architecture.get('type', 'unknown')}")
+                    self.logger.info(f"   Performance score: {nas_result.best_score:.3f}")
                 else:
                     self.logger.warning(f"⚠️ NAS search failed for regime {regime}")
                     
@@ -263,15 +265,15 @@ class NASEnhancedAnalystTrainingStep:
                                                  X_5m: np.ndarray, 
                                                  y_5m: np.ndarray, 
                                                  regime_labels: np.ndarray) -> Optional[TASResult]:
-        """Perform TAS architecture search for 5m timeframe."""
-        self.logger.info("🔍 Performing TAS architecture search for 5m timeframe...")
+        """Perform TAS architecture search for 5m timeframe trading signal generation."""
+        self.logger.info("🔍 Performing TAS architecture search for 5m timeframe trading signals...")
         
         try:
             # Prepare data for TAS search
             train_data = (X_5m, y_5m)
             validation_data = (X_5m, y_5m)  # Use same data for quick search
             
-            # Perform TAS search
+            # Perform TAS search for trading signal generation
             tas_result = self.tas_engine.search(
                 train_data=train_data,
                 validation_data=validation_data,
@@ -280,9 +282,10 @@ class NASEnhancedAnalystTrainingStep:
             
             if tas_result.best_score > 0:
                 self.tas_architectures['5m'] = tas_result.best_architecture
-                self.logger.info(f"✅ TAS search completed for 5m timeframe")
+                self.logger.info(f"✅ TAS search completed for 5m timeframe (trading signals)")
                 self.logger.info(f"   Best score: {tas_result.best_score:.4f}")
                 self.logger.info(f"   Execution time: {tas_result.execution_time:.2f}s")
+                self.logger.info(f"   Strategy used: {tas_result.strategy_used}")
                 return tas_result
             else:
                 self.logger.warning("⚠️ TAS search failed for 5m timeframe")

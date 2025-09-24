@@ -2,13 +2,13 @@
 TAS-Enhanced Tactician Training Step
 
 This module implements the Tactician training with TAS (Tree Architecture Search) integration
-for 1m timeframe entry point optimization and trading signal generation.
+for 1m timeframe trading signal generation within per-regime training framework.
 
 Key Features:
-- TAS architecture search for optimal tree architectures
-- Enhanced entry point optimization with tree-based models
+- TAS for trading signals generation (not just architecture search)
+- Per-regime TAS model training for signal generation
 - Integration with existing Tactician training pipeline
-- Real-time adaptation of tree architectures
+- Real-time adaptation of tree architectures based on market conditions
 - XGBoost removal and replacement with TAS-discovered architectures
 """
 
@@ -299,8 +299,8 @@ class TASEnhancedTacticianTrainingStep:
                                              X_1m: np.ndarray, 
                                              y_1m: np.ndarray, 
                                              analyst_signals: np.ndarray) -> Dict[str, Any]:
-        """Perform TAS architecture search for 1m timeframe."""
-        self.logger.info("🔍 Performing TAS architecture search for 1m timeframe...")
+        """Perform TAS architecture search for 1m timeframe trading signal generation."""
+        self.logger.info("🔍 Performing TAS architecture search for 1m timeframe trading signals...")
         
         tas_results = {}
         
@@ -309,7 +309,7 @@ class TASEnhancedTacticianTrainingStep:
             train_data = (X_1m, y_1m)
             validation_data = (X_1m, y_1m)  # Use same data for quick search
             
-            # Perform TAS search
+            # Perform TAS search for trading signal generation
             tas_result = self.tas_engine.search(
                 train_data=train_data,
                 validation_data=validation_data,
@@ -320,7 +320,7 @@ class TASEnhancedTacticianTrainingStep:
                 tas_results['main'] = tas_result
                 self.tas_architectures['1m'] = tas_result.best_architecture
                 
-                self.logger.info(f"✅ TAS search completed for 1m timeframe")
+                self.logger.info(f"✅ TAS search completed for 1m timeframe (trading signals)")
                 self.logger.info(f"   Best score: {tas_result.best_score:.4f}")
                 self.logger.info(f"   Execution time: {tas_result.execution_time:.2f}s")
                 self.logger.info(f"   Strategy used: {tas_result.strategy_used}")

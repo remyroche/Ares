@@ -13,6 +13,7 @@ from utils.math_validation import safe_divide
 from utils.math_validation import safe_log
 from utils.math_validation import validate_positive
 from utils.math_validation import validate_range
+from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
 
 from ..utils.logger import system_logger
 Simplified Leverage Sizer for high leverage trading.
@@ -41,8 +42,8 @@ class LeverageSizer:
         self.leverage_config: dict[str, Any] = self.config.get('leverage_sizing', {})
         step17_config = self.config.get('step17_optimization', {})
         leverage_optimization = step17_config.get('leverage', {})
-        self.min_leverage: float = leverage_optimization.get('min_leverage', 10.0)
-        self.max_leverage: float = leverage_optimization.get('max_leverage', 100.0)
+        self.min_leverage: float = leverage_optimization.get('min_leverage', MIN_LEVERAGE)
+        self.max_leverage: float = leverage_optimization.get('max_leverage', MAX_LEVERAGE)
         self.leverage_combined_threshold: float = leverage_optimization.get('leverage_combined_threshold', 0.75)
         self.leverage_multiplier: float = leverage_optimization.get('leverage_multiplier', 1.0)
         self.linear_scaler = LinearConfidenceScaler(config)
@@ -127,7 +128,9 @@ class LeverageSizer:
             
             # Simplified leverage calculation: ML confidence * multiplier, capped between min/max
             base_leverage = combined_confidence * self.leverage_multiplier
-            final_leverage = max(self.min_leverage, min(self.max_leverage, base_leverage))
+            # Validate and clamp leverage to centralized limits
+            final_leverage = validate_leverage(base_leverage)
+            final_leverage = max(self.min_leverage, min(self.max_leverage, final_leverage))
             
             leverage_analysis = {
                 'timestamp': datetime.now(), 

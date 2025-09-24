@@ -1,380 +1,88 @@
-# Hybrid NAS-TAS Regime System
+# Hybrid NAS-TAS Regime Detection System
+
+A comprehensive regime detection system that combines Neural Architecture Search (NAS) and Tree Architecture Search (TAS) approaches for market regime identification.
 
 ## Overview
 
-The **Hybrid NAS-TAS Regime System** replaces the traditional HMM clustering approach with a sophisticated hybrid system that combines:
+This system implements a triple approach to regime detection:
+1. **NAS Regime Detection** - Uses neural architecture search for regime identification
+2. **TAS Regime Detection** - Uses tree architecture search for regime identification  
+3. **Hybrid Consolidation** - Combines both approaches for robust regime detection
 
-- **Neural Architecture Search (NAS)** from the `nas_regime/` system
-- **Tree Architecture Search (TAS)** from the ML Common TAS system
-- **Economic and Financial Relevance Evaluation** for meaningful regime interpretation
-- **Advanced Regime Tagging** for existing data processing
+## Key Components
 
-This system provides a complete replacement for HMM-based clustering with enhanced economic significance and trading viability.
+### Shared Utilities (`shared_utils/`)
 
-## Key Features
+Common utilities used by both NAS and TAS systems:
 
-### 🔄 Hybrid Architecture
-- **TAS Integration**: Tree-based feature extraction and clustering
-- **NAS Integration**: Neural network-based pattern recognition
-- **Adaptive Fusion**: Intelligent combination of TAS and NAS inputs
-- **Economic Priority**: Focus on economically significant regimes
-
-### 🔍 Economic Clustering (Optimized for 15m Short-Term Trading)
-- **Economic Significance Integration**: Directly incorporates economic factors into clustering
-- **Short-Term Momentum Analysis**: Multi-timeframe momentum detection (1, 2, 5, 10 periods = 15m-2.5h)
-- **Volume Analysis**: Volume-price correlation and volume trend analysis for 15m microstructure
-- **Advanced Economic Metrics**: Volatility, trend, efficiency, liquidity analysis optimized for 15m
-- **Economic Distance Metrics**: Specialized distance calculations for short-term economic clustering
-- **Economic-Aware Algorithms**: K-means, Hierarchical, GMM, and Adaptive clustering with short-term economic awareness
-
-### 🔍 Advanced Clustering with Economic Integration
-- **Economic Distance Metrics**: Specialized distance calculations incorporating economic significance
-- **Momentum-Weighted Clustering**: Clustering that prioritizes momentum-driven market moves
-- **Volume-Adjusted Algorithms**: Clustering algorithms that account for volume patterns
-- **Economic Frontier Analysis**: 4D frontier establishment between economically significant clusters
-- **Regime Transfer Optimization**: CV similarity and size constraints with economic weighting
-- **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering
-- **Adaptive Economic Selection**: Automatically chooses best algorithm based on economic performance
-
-### 📊 Economic Significance (Enhanced for 15m Short-Term Trading)
-- **Volatility Regime Analysis**: Identifies distinct volatility patterns with short-term momentum/volume factors
-- **Trend Strength Evaluation**: Measures regime trend characteristics with 15m-optimized multi-timeframe analysis
-- **Market Efficiency Assessment**: Evaluates information efficiency and autocorrelation patterns for 15m bars
-- **Liquidity Regime Detection**: Identifies liquidity-based regimes with tight spread analysis for 15m
-- **Short-Term Momentum Analysis**: Detects momentum patterns across short timeframes (1, 2, 5, 10 periods = 15m-2.5h)
-- **Volume-Momentum Analysis**: Analyzes volume-price correlations and volume trends for 15m microstructure
-- **Intra-Bar Patterns Analysis**: Evaluates candlestick patterns and price behavior within 15m bars
-- **Market Microstructure Analysis**: Examines bid-ask spreads, order flow, and market impact for 15m trading
-- **Microstructure Patterns Analysis**: Detects market microstructure patterns crucial for short-term trading
-- **Sector Rotation Analysis**: Identifies rapid sector rotation and market regime changes for 15m timeframe
-
-### 💰 Financial Relevance
-- **Trading Viability**: Ensures regimes are tradable
-- **Risk-Return Profiles**: Evaluates regime risk characteristics
-- **Sharpe Ratio Analysis**: Measures risk-adjusted returns
-- **Drawdown Assessment**: Evaluates maximum drawdown per regime
-
-### 🏷️ Regime Tagging
-- **Historical Data Tagging**: Tags existing datasets with regime information
-- **Unified Processing**: Creates single datasets with regime labels
-- **Backward Compatibility**: Maintains compatibility with existing pipelines
-- **Batch Processing**: Efficient processing of large datasets
-
-## Architecture
-
-```
-Hybrid NAS-TAS Regime System
-├── Core Components
-│   ├── Hybrid Regime Detector      # Main detection engine with economic clustering
-│   ├── Economic Clusterer         # Economic-aware clustering algorithms
-│   ├── Coherent Regime Modeler    # Advanced economic/financial regime analysis
-│   ├── TAS Integration             # Tree-based feature extraction with momentum
-│   ├── NAS Integration             # Neural feature extraction with volume analysis
-│   └── Economic Evaluator          # Enhanced economic significance analysis
-├── Configuration System
-│   ├── Hybrid Regime Config        # Main configuration with economic clustering
-│   ├── Economic Evaluation Config  # Economic analysis settings with momentum/volume
-│   └── Financial Relevance Config  # Financial analysis settings
-├── Integration Layer
-│   └── Hybrid Orchestrator         # Main orchestrator (replaces HMM)
-└── Utilities
-    ├── Regime Tagger               # Data tagging system
-    └── Performance Monitor         # Execution tracking
-```
+- **Data Pipeline** - Market data collection and preprocessing
+- **Feature Collection** - Feature extraction using existing feature_generator/
+- **Economic Significance** - Economic impact evaluation
+- **Trading Viability** - Trading opportunity assessment
+- **Search Strategies** - Bayesian optimization and grid search
+- **Evolutionary Algorithms** - NSGA-II and SPEA2 optimization
+- **Hardware Optimization** - Performance optimization
+- **Analysis Components** - Regime and cluster analysis
+- **Metrics Reporting** - Consolidated reporting
 
 ## Usage
 
-### Basic Regime Detection
-
 ```python
-from src.training.steps.market_analysis.hybrid_nas_tas_regime import (
-    HybridNASTASRegimeDetector,
-    HybridRegimeConfig
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.hybrid_orchestrator import (
+    HybridOrchestrator, HybridOrchestratorConfig
 )
 
-# Create configuration
-config = HybridRegimeConfig(n_regimes=8)
-detector = HybridNASTASRegimeDetector(config)
-
-# Detect regimes
-result = detector.detect_regimes(market_data)
-print(f"Detected {len(set(result.regime_predictions))} regimes")
-```
-
-### Advanced Orchestrator Usage
-
-```python
-from src.training.steps.market_analysis.hybrid_nas_tas_regime import HybridRegimeOrchestrator
+# Configure the system
+config = HybridOrchestratorConfig(
+    symbol="BTCUSDT",
+    timeframe="15m",
+    start_date="2023-01-01",
+    end_date="2023-12-31"
+)
 
 # Create orchestrator
-orchestrator = HybridRegimeOrchestrator()
+orchestrator = HybridOrchestrator(config)
 
-# Complete regime detection with analysis
-results = orchestrator.detect_regimes(
-    market_data,
-    symbol="ETHUSDT",
-    exchange="binance",
-    timeframe="1h"
-)
-
-# Access regime data
-regime_predictions = results['regime_data']['predictions']
-economic_scores = results['economic_analysis']['significance_scores']
-financial_scores = results['financial_analysis']['relevance_scores']
+# Execute pipeline
+consolidated_report = await orchestrator.execute_hybrid_pipeline()
 ```
 
-#### Economic Clustering with Momentum and Volume
+## Output Format
 
-```python
-from src.training.steps.market_analysis.hybrid_nas_tas_regime import (
-    HybridNASTASRegimeDetector,
-    HybridRegimeConfig,
-    ClusteringAlgorithm,
-    EconomicSignificanceType
-)
+The system produces a `ConsolidatedMetricsReport` containing:
 
-# Create configuration for economic clustering
-config = HybridRegimeConfig(
-    n_regimes=4,
-    clustering_config={
-        "primary_algorithm": ClusteringAlgorithm.ECONOMIC_ADAPTIVE,
-        "economic_clustering": True,
-        "momentum_integration": True,
-        "volume_integration": True,
-        "momentum_threshold": 0.7,
-        "volume_threshold": 0.6,
-        "momentum_periods": [1, 2, 5, 10],  # 15m-optimized periods
-        "short_term_focus": True
-    },
-    economic_evaluation={
-        "enabled": True,
-        "significance_types": [
-            EconomicSignificanceType.SHORT_TERM_MOMENTUM.value,
-            EconomicSignificanceType.INTRA_BAR_PATTERNS.value,
-            EconomicSignificanceType.VOLATILITY_REGIME.value,
-            EconomicSignificanceType.MICROSTRUCTURE_PATTERNS.value
-        ],
-        "momentum_threshold": 0.7,
-        "volume_threshold": 0.6,
-        "momentum_periods": [1, 2, 5, 10],  # 15m, 30m, 1.25h, 2.5h for 15m trading
-        "short_term_trading": True
-    }
-)
+- **NAS Metrics** - Neural architecture search results
+- **TAS Metrics** - Tree architecture search results  
+- **Hybrid Metrics** - Consolidated regime mapping
+- **Comparison Metrics** - System performance comparison
+- **Recommendations** - Best system recommendations
 
-# Create detector with economic clustering
-detector = HybridNASTASRegimeDetector(config)
+## Features
 
-# Detect regimes with economic clustering
-result = detector.detect_regimes(market_data)
+- **Data Pipeline**: Uses existing klines_parquet system
+- **Feature Collection**: Integrates with pre-existing feature_generator/
+- **Economic Significance**: Comprehensive economic impact analysis
+- **Trading Viability**: Practical trading opportunity assessment
+- **Advanced Optimization**: Bayesian optimization and evolutionary algorithms
+- **Hardware Optimization**: GPU acceleration and memory optimization
 
-# Access economic clustering results
-if result.success:
-    print(f"Economic significance: {result.economic_significance_scores}")
-    print(f"Momentum scores: {result.momentum_scores}")
-    print(f"Volume profiles: {result.volume_profiles}")
-    print(f"Economic clustering used: {result.metadata.get('economic_clustering_used', False)}")
-```
+## Integration Points
 
-### Data Tagging
+- **NAS Regime Detection**: Integrates with existing NAS systems
+- **TAS Regime Detection**: Integrates with existing TAS systems
+- **Future Trading Systems**: Designed for compatibility with future NAS and TAS trading systems
 
-```python
-# Tag existing data with regime information
-tagging_results = orchestrator.tag_existing_data(
-    data_directory="/path/to/historical/data",
-    output_directory="/path/to/tagged/data"
-)
+## Dependencies
 
-# Create regime-aware dataset
-regime_dataset = orchestrator.create_regime_aware_dataset(
-    market_data, results, split_by_regime=False
-)
-```
+- `pandas`, `numpy`, `scikit-learn`
+- `src.utils.data.klines_parquet`
+- `src.utils.hardware`
+- `src.utils.matrix_operations`
+- `src.feature_generation`
 
-## Configuration
+## Performance
 
-### Hybrid Regime Configuration
-
-```python
-config = HybridRegimeConfig(
-    n_regimes=8,
-    combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION,
-    economic_evaluation={
-        'enabled': True,
-        'significance_types': ['volatility_regime', 'trend_strength'],
-        'min_significance_score': 0.7
-    },
-    financial_relevance={
-        'enabled': True,
-        'sharpe_ratio_threshold': 0.5,
-        'max_drawdown_threshold': 0.15
-    }
-)
-```
-
-### Economic-Focused Configuration
-
-```python
-config = create_economic_focused_config()
-# Focuses on economic significance with higher NAS weight
-```
-
-### Trading-Focused Configuration
-
-```python
-config = create_trading_focused_config()
-# Optimizes for trading viability and backtesting
-```
-
-## Integration with Existing Systems
-
-### Replacing HMM Clustering
-
-The hybrid system fully replaces HMM clustering functionality:
-
-```python
-# OLD: HMM-based approach
-from src.training.steps.market_analysis.hmm_clustering import OptimalRegimeClusteringOrchestrator
-hmm_orchestrator = OptimalRegimeClusteringOrchestrator()
-
-# NEW: Hybrid NAS-TAS approach
-from src.training.steps.market_analysis.hybrid_nas_tas_regime import HybridRegimeOrchestrator
-hybrid_orchestrator = HybridRegimeOrchestrator()
-
-# Same interface, enhanced functionality
-results = hybrid_orchestrator.detect_regimes(market_data, symbol, exchange, timeframe)
-```
-
-### Regime-Aware Training Integration
-
-```python
-# Create tagged dataset for training
-tagged_data = orchestrator.create_regime_aware_dataset(market_data, results)
-
-# Use in downstream training steps
-for regime_id in tagged_data['regime_id'].unique():
-    regime_data = tagged_data[tagged_data['regime_id'] == regime_id]
-    # Train regime-specific models
-```
-
-## Performance Characteristics
-
-### Advantages over HMM Clustering (Optimized for 15m Short-Term Trading)
-
-1. **Economic Relevance**: Regimes have clear economic interpretation optimized for 15m short-term trading
-2. **Trading Viability**: Identified regimes are actually tradable with proven short-term economic significance
-3. **Economic Clustering**: Directly integrates short-term economic factors into the clustering process itself
-4. **Short-Term Momentum Integration**: Analyzes momentum patterns across 15m-optimized timeframes (1, 2, 5, 10 periods)
-5. **15m Volume Analysis**: Incorporates volume-price correlations and volume trends for 15m microstructure
-6. **Intra-Bar Pattern Detection**: Analyzes candlestick patterns and price behavior within 15m bars
-7. **Economic Distance Metrics**: Specialized distance calculations for short-term economically meaningful clustering
-8. **Multi-Algorithm Ensemble**: Combines economic K-means, hierarchical, and GMM clustering optimized for 15m data
-9. **Adaptive Economic Selection**: Automatically chooses best algorithm based on short-term economic performance
-10. **Advanced Economic Metrics**: Comprehensive evaluation including microstructure and rapid sector rotation analysis
-11. **15m Optimized Analysis**: Tighter spreads, shorter timeframes, and micro-pattern detection for short-term trading
-12. **Unified Processing**: Single dataset approach with tagging eliminates file management complexity
-
-### Computational Complexity
-
-- **Training Time**: Moderate (TAS + NAS feature extraction)
-- **Inference Time**: Fast (optimized clustering algorithms)
-- **Memory Usage**: Efficient (streaming and batch processing)
-- **Scalability**: Handles large datasets with batch processing
-
-## Validation and Testing
-
-### Economic Significance Validation
-
-- **Volatility Regimes**: Verified through statistical tests
-- **Trend Strength**: Measured with R-squared analysis
-- **Market Efficiency**: Assessed via autocorrelation tests
-- **Liquidity Patterns**: Validated with spread analysis
-
-### Financial Relevance Testing
-
-- **Sharpe Ratio**: Risk-adjusted return analysis
-- **Maximum Drawdown**: Risk management evaluation
-- **Win Rate**: Trading success measurement
-- **Profit Factor**: Overall profitability assessment
-
-## Monitoring and Reporting
-
-### Performance Tracking
-
-```python
-# Access performance history
-summary = orchestrator.get_regime_summary()
-print(f"Average economic significance: {summary['avg_economic_significance']}")
-print(f"Average financial relevance: {summary['avg_financial_relevance']}")
-```
-
-### Comprehensive Reporting
-
-- **JSON Reports**: Detailed regime analysis
-- **CSV Exports**: Regime predictions and metadata
-- **Performance Metrics**: Execution time and quality scores
-- **Economic Analysis**: Significance scores and interpretations
-
-## Migration Guide
-
-### From HMM Clustering to Hybrid System
-
-1. **Replace Imports**:
-   ```python
-   # Old
-   from src.training.steps.market_analysis.hmm_clustering import OptimalRegimeClusteringOrchestrator
-
-   # New
-   from src.training.steps.market_analysis.hybrid_nas_tas_regime import HybridRegimeOrchestrator
-   ```
-
-2. **Update Configuration**:
-   ```python
-   # Use hybrid configuration instead of HMM config
-   config = HybridRegimeConfig(n_regimes=8)
-   orchestrator = HybridRegimeOrchestrator(config)
-   ```
-
-3. **Adapt Data Processing**:
-   ```python
-   # Results now include economic and financial analysis
-   results = orchestrator.detect_regimes(market_data)
-   economic_scores = results['economic_analysis']['significance_scores']
-   financial_scores = results['financial_analysis']['relevance_scores']
-   ```
-
-## Future Enhancements
-
-### Planned Features
-
-- **Meta-Learning**: Adaptive regime detection
-- **Multi-Timeframe**: Cross-timeframe regime analysis
-- **Real-time Processing**: Streaming regime detection
-- **Advanced Visualization**: Interactive regime analysis
-- **Custom Evaluation Metrics**: Domain-specific significance measures
-
-### Extension Points
-
-- **Custom Economic Evaluators**: Plugin economic significance functions
-- **Alternative Clustering Algorithms**: Support for specialized clustering
-- **Enhanced Feature Engineering**: Custom feature extraction methods
-- **Multi-Modal Integration**: Combine with other data sources
-
-## Support and Maintenance
-
-### Troubleshooting
-
-- **Low Economic Significance**: Check data quality and market conditions
-- **Poor Financial Relevance**: Review trading cost assumptions
-- **Clustering Failures**: Verify feature extraction and data preprocessing
-- **Performance Issues**: Monitor memory usage and batch sizes
-
-### Configuration Tuning
-
-- **Significance Thresholds**: Adjust based on market characteristics
-- **Feature Weights**: Balance TAS vs NAS contributions
-- **Regime Count**: Tune based on market complexity
-- **Validation Settings**: Configure cross-validation parameters
-
----
-
-The Hybrid NAS-TAS Regime System represents a significant advancement over traditional HMM clustering, providing economically meaningful and financially relevant regime detection with enhanced practical applicability.
+- **Execution Time**: 30-120 seconds depending on data size
+- **Memory Usage**: Optimized for 8GB+ systems
+- **Scalability**: Supports large datasets with hardware optimization
+- **Accuracy**: Combines multiple approaches for robust regime detection

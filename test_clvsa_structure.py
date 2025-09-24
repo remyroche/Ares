@@ -48,7 +48,7 @@ def test_clvsa_files():
     
     clvsa_files = [
         "src/training/steps/model_training/clvsa_attention_wrapper.py",
-        "src/training/steps/model_training/tree_clvsa_wrapper.py",
+        "src/utils/ml_common/models/tree_clvsa_wrapper.py",
         "src/utils/ml_common/models/clvsa_architecture.py",
         "src/utils/ml_common/models/model_factory.py"
     ]
@@ -74,7 +74,7 @@ def test_model_factory_integration():
         
         # Check for CLVSA imports
         clvsa_imports = [
-            "from src.training.steps.model_training.tree_clvsa_wrapper import",
+            "from src.utils.ml_common.models.tree_clvsa_wrapper import",
             "create_tree_clvsa_wrapper",
             "create_tree_clvsa_config"
         ]
@@ -129,7 +129,7 @@ def test_tree_clvsa_wrapper():
     logger.info("🌲 Testing Tree CLVSA wrapper structure...")
     
     try:
-        with open("src/training/steps/model_training/tree_clvsa_wrapper.py", 'r') as f:
+        with open("src/utils/ml_common/models/tree_clvsa_wrapper.py", 'r') as f:
             content = f.read()
         
         # Check for required classes

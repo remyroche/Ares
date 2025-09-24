@@ -442,7 +442,7 @@ class EnhancedModelFactory:
         """Create Random Forest model with CLVSA wrapper by default."""
         
         from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters with overfitting prevention
         default_params = {
@@ -494,7 +494,7 @@ class EnhancedModelFactory:
         """Create LightGBM model with CLVSA wrapper by default."""
         
         import lightgbm as lgb
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters with overfitting prevention
         default_params = {
@@ -551,7 +551,7 @@ class EnhancedModelFactory:
         """Create CatBoost model with CLVSA wrapper by default."""
         
         from catboost import CatBoostRegressor, CatBoostClassifier
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters with overfitting prevention
         default_params = {
@@ -605,7 +605,7 @@ class EnhancedModelFactory:
         """Create XGBoost model with CLVSA wrapper by default."""
         
         import xgboost as xgb
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {
@@ -1847,7 +1847,7 @@ class EnhancedModelFactory:
         """Create HistGradientBoosting model with CLVSA wrapper by default."""
         
         from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {
@@ -1897,7 +1897,7 @@ class EnhancedModelFactory:
         """Create ExtraTrees model with CLVSA wrapper by default."""
         
         from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
-        from src.training.steps.model_training.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {

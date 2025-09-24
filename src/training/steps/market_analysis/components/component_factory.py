@@ -10,6 +10,9 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
+from .nas_regime_discovery import NASRegimeDiscoveryComponent
+from .tas_regime_discovery import TASRegimeDiscoveryComponent
+from .hybrid_nas_tas_regime_discovery import HybridNASTASRegimeDiscoveryComponent
 from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
@@ -618,6 +621,9 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
+        'nas_regime_discovery': NASRegimeDiscoveryComponent,
+        'tas_regime_discovery': TASRegimeDiscoveryComponent,
+        'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
         'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use consolidated HMM clustering
         'hmm_ensemble_training': HMMEnsembleTrainingComponent,
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module

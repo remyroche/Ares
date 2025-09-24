@@ -98,6 +98,13 @@ from .unified_validation_system import (
     create_unified_validation_system, quick_validation
 )
 
+# ML Common Integration - Shared utilities for TAS and NAS
+from .ml_common_integration import (
+    SharedMLUtilitiesManager, create_shared_ml_utilities_manager,
+    TASSharedMLUtilities, NASSharedMLUtilities, HybridSharedMLUtilities,
+    MLUtilityType, MLUtilityConfig
+)
+
 __all__ = [
     # Original utilities
     'DataPipelineManager', 'MarketDataProcessor',
@@ -162,5 +169,10 @@ __all__ = [
     'create_unified_hardware_optimizer', 'quick_hardware_optimization',
     'create_unified_regime_analyzer', 'quick_regime_analysis',
     'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
-    'create_unified_validation_system', 'quick_validation'
+    'create_unified_validation_system', 'quick_validation',
+
+    # ML Common Integration - Shared utilities for TAS and NAS
+    'SharedMLUtilitiesManager', 'create_shared_ml_utilities_manager',
+    'TASSharedMLUtilities', 'NASSharedMLUtilities', 'HybridSharedMLUtilities',
+    'MLUtilityType', 'MLUtilityConfig'
 ]

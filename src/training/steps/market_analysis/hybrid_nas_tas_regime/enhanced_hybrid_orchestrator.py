@@ -16,22 +16,9 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Import ML Common Utilities
-from src.utils.ml_common import (
-    # Model utilities
-    EnhancedModelTrainer, train_model_with_confidence_metrics,
-    ModelEvaluator, ModelRegistry,
-    # Validation utilities
-    UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
-    ConfigurationValidator, optimize_threshold, calibrate_probabilities,
-    # Optimization utilities
-    RegimeSpecificTPSLOptimizer,
-    # Ensemble utilities
-    StackingEnsembleManager, create_analyst_ensemble,
-    # Utils
-    MemoryOptimizer, UnifiedCache, get_unified_cache,
-    LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler,
-    setup_logger, get_logger
+# Import shared ML utilities from hybrid_nas_tas_regime
+from .shared_utils.ml_common_integration import (
+    create_shared_ml_utilities_manager, MLUtilityType, MLUtilityConfig
 )
 
 # Import shared utilities
@@ -160,38 +147,28 @@ class EnhancedHybridOrchestrator:
             self._initialize_signal_generator()
 
     def _initialize_ml_common_components(self):
-        """Initialize ML Common utility components."""
+        """Initialize shared ML utility components from hybrid_nas_tas_regime."""
         try:
-            # Initialize safeguards
-            self.safeguards = MLTrainingSafeguards()
-            self.error_handler = RobustErrorHandler()
+            # Create shared ML utilities manager for hybrid orchestrator
+            ml_config = MLUtilityConfig(
+                utility_type=MLUtilityType.HYBRID,
+                enable_safeguards=True,
+                enable_memory_optimization=True,
+                enable_caching=True,
+                enable_error_handling=True,
+                enable_validation=True,
+                enable_cross_validation=True,
+                enable_threshold_optimization=True,
+                cache_ttl_seconds=3600,
+                memory_limit_mb=8192
+            )
 
-            # Initialize memory optimizer
-            self.memory_optimizer = MemoryOptimizer()
+            self.shared_ml_utilities = create_shared_ml_utilities_manager(MLUtilityType.HYBRID, ml_config)
 
-            # Initialize lookahead protection
-            self.lookahead_protection = LookaheadProtection()
-
-            # Initialize model registry
-            self.model_registry = ModelRegistry()
-
-            # Initialize regime-specific optimizer
-            self.regime_optimizer = RegimeSpecificTPSLOptimizer()
-
-            # Initialize configuration validator
-            self.config_validator = ConfigurationValidator()
-
-            # Initialize ensemble manager
-            self.ensemble_manager = StackingEnsembleManager()
-
-            # Validate configuration
-            if not self.config_validator.validate_config(self.config.__dict__ if hasattr(self.config, '__dict__') else {}):
-                self.logger.warning("Configuration validation failed, using defaults")
-
-            self.logger.info("✅ ML Common components initialized for hybrid orchestrator")
+            self.logger.info("✅ Shared ML utilities initialized for hybrid orchestrator")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize ML Common components: {e}")
+            self.logger.error(f"❌ Failed to initialize shared ML utilities: {e}")
             raise
 
     def _initialize_unified_search_engine(self):
@@ -480,8 +457,8 @@ class EnhancedHybridOrchestrator:
             self.logger.info("🚀 Starting enhanced hybrid regime analysis with ML Common utilities...")
             start_time = time.time()
 
-            # Apply safeguards before analysis
-            if not self.safeguards.check_training_safety(market_data, None):
+            # Apply safeguards before analysis using shared utilities
+            if not self.shared_ml_utilities.check_training_safety((market_data.values if hasattr(market_data, 'values') else market_data, None), None):
                 self.logger.warning("Training safety check failed, proceeding with caution")
 
             # Step 1: Preprocess market data
@@ -493,17 +470,20 @@ class EnhancedHybridOrchestrator:
                 nas_result = self._run_nas_analysis(processed_data)
             except Exception as analysis_error:
                 self.logger.warning(f"Individual analysis failed, using ensemble fallback: {analysis_error}")
-                tas_result, nas_result = self._run_ensemble_fallback_analysis(processed_data)
+                tas_result, nas_result = self.shared_ml_utilities.run_ensemble_fallback_analysis(processed_data)
 
             # Step 3: Analyze outputs and create hybrid clusters with ML utilities
             hybrid_analysis = self._analyze_tas_nas_outputs(tas_result, nas_result, processed_data)
             hybrid_regimes = self._create_hybrid_regime_clusters(tas_result, nas_result, hybrid_analysis, processed_data)
 
-            # Step 4: Perform cross-validation on hybrid results
-            cv_results = self._perform_hybrid_cross_validation(hybrid_regimes, processed_data)
+            # Step 4: Perform cross-validation on hybrid results using shared utilities
+            cv_results = self._perform_hybrid_cross_validation_shared(hybrid_regimes, processed_data)
 
-            # Step 5: Optimize ensemble weights
-            optimized_weights = self._optimize_ensemble_weights(tas_result, nas_result, hybrid_regimes)
+            # Step 5: Optimize ensemble weights using shared utilities
+            tas_performance = tas_result.get('results', {}).get('confidence', 0.5)
+            nas_performance = nas_result.get('results', {}).get('confidence', 0.5)
+            hybrid_performance = hybrid_regimes.get('clustering_metrics', {}).get('silhouette_score', 0.7)
+            optimized_weights = self.shared_ml_utilities.optimize_ensemble_weights(tas_performance, nas_performance, hybrid_performance)
 
             # Step 6: Multi-timeframe analysis if enabled
             timeframe_analysis = {}
@@ -532,7 +512,8 @@ class EnhancedHybridOrchestrator:
                     'data_points': len(processed_data),
                     'timestamp': datetime.now().isoformat(),
                     'multi_timeframe_enabled': enable_multi_timeframe and self.enable_multi_timeframe,
-                    'ml_common_utilities_used': True,
+                    'shared_ml_utilities_used': True,
+                    'utility_type': 'HYBRID',
                     'cross_validation_performed': True,
                     'ensemble_optimization_applied': True,
                     'safeguards_enabled': True,
@@ -575,7 +556,8 @@ class EnhancedHybridOrchestrator:
                 execution_time=execution_time,
                 metadata={
                     'error': str(e),
-                    'ml_common_utilities_used': True,
+                    'shared_ml_utilities_used': True,
+                    'utility_type': 'HYBRID',
                     'error_handling_applied': True
                 }
             )
@@ -1023,13 +1005,14 @@ class EnhancedHybridOrchestrator:
                     'available': self.signal_generator is not None
                 },
                 'multi_timeframe_support': self.enable_multi_timeframe,
-                'ml_common_utilities': {
+                'shared_ml_utilities': {
                     'enabled': True,
-                    'safeguards': hasattr(self, 'safeguards'),
-                    'memory_optimizer': hasattr(self, 'memory_optimizer'),
-                    'lookahead_protection': hasattr(self, 'lookahead_protection'),
-                    'ensemble_manager': hasattr(self, 'ensemble_manager'),
-                    'cache_enabled': hasattr(self, 'cache')
+                    'utility_type': 'HYBRID',
+                    'safeguards': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'safeguards'),
+                    'memory_optimizer': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'memory_optimizer'),
+                    'lookahead_protection': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'lookahead_protection'),
+                    'ensemble_manager': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'ensemble_manager'),
+                    'cache_enabled': hasattr(self, 'shared_ml_utilities') and hasattr(self.shared_ml_utilities, 'cache')
                 },
                 'available_algorithms': self.search_manager.get_available_algorithms() if self.search_manager else [],
                 'clustering_algorithm': self.clustering_algorithm.algorithm_type if self.clustering_algorithm else 'none',
@@ -1043,61 +1026,12 @@ class EnhancedHybridOrchestrator:
             return {
                 'error': str(e),
                 'timestamp': datetime.now().isoformat(),
-                'ml_common_utilities_status': 'error'
+                'shared_ml_utilities_status': 'error'
             }
 
-    def _run_ensemble_fallback_analysis(self, processed_data: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Run ensemble fallback analysis when individual TAS/NAS analysis fails."""
-        try:
-            self.logger.info("Running ensemble fallback analysis...")
 
-            # Create ensemble-based analysis using ML common utilities
-            ensemble_result = self.ensemble_manager.create_ensemble_analysis(
-                data=processed_data,
-                ensemble_type='hybrid_fallback'
-            )
-
-            tas_fallback = {
-                'features': ensemble_result.get('tas_features', np.array([])),
-                'results': {
-                    'method': 'ensemble_fallback',
-                    'confidence': 0.7,
-                    'ensemble_used': True
-                },
-                'method': 'ensemble_fallback',
-                'success': True
-            }
-
-            nas_fallback = {
-                'features': ensemble_result.get('nas_features', np.array([])),
-                'results': {
-                    'method': 'ensemble_fallback',
-                    'confidence': 0.7,
-                    'ensemble_used': True
-                },
-                'method': 'ensemble_fallback',
-                'success': True
-            }
-
-            self.logger.info("✅ Ensemble fallback analysis completed")
-            return tas_fallback, nas_fallback
-
-        except Exception as e:
-            self.logger.error(f"❌ Ensemble fallback analysis failed: {e}")
-            return {
-                'features': np.array([]),
-                'results': {'method': 'error_fallback', 'error': str(e)},
-                'method': 'error_fallback',
-                'success': False
-            }, {
-                'features': np.array([]),
-                'results': {'method': 'error_fallback', 'error': str(e)},
-                'method': 'error_fallback',
-                'success': False
-            }
-
-    def _perform_hybrid_cross_validation(self, hybrid_regimes: Dict[str, Any], processed_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform cross-validation on hybrid regime results using ML Common utilities."""
+    def _perform_hybrid_cross_validation_shared(self, hybrid_regimes: Dict[str, Any], processed_data: pd.DataFrame) -> Dict[str, Any]:
+        """Perform cross-validation on hybrid regime results using shared ML utilities."""
         try:
             # Create mock model for cross-validation
             class HybridRegimeModel:
@@ -1114,8 +1048,8 @@ class EnhancedHybridOrchestrator:
 
             hybrid_model = HybridRegimeModel(hybrid_regimes['regime_predictions'])
 
-            # Perform cross-validation
-            cv_result = perform_cross_validation(
+            # Use shared utilities for cross-validation
+            return self.shared_ml_utilities.perform_cross_validation(
                 model=hybrid_model,
                 X=processed_data.values,
                 y=hybrid_regimes['regime_predictions'],
@@ -1124,29 +1058,9 @@ class EnhancedHybridOrchestrator:
                 scoring=['accuracy', 'precision', 'recall', 'f1']
             )
 
-            self.logger.info(f"✅ Hybrid cross-validation completed with mean score: {cv_result.mean_score".4f"}")
-            return cv_result.__dict__ if hasattr(cv_result, '__dict__') else {}
-
         except Exception as e:
-            self.logger.warning(f"❌ Hybrid cross-validation failed: {e}")
+            self.logger.warning(f"❌ Hybrid cross-validation with shared utilities failed: {e}")
             return {'error': str(e), 'success': False}
-
-    def _optimize_ensemble_weights(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], hybrid_regimes: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize ensemble weights using ML Common utilities."""
-        try:
-            # Use regime-specific optimizer
-            optimized_weights = self.regime_optimizer.optimize_weights(
-                tas_performance=tas_result.get('results', {}).get('confidence', 0.5),
-                nas_performance=nas_result.get('results', {}).get('confidence', 0.5),
-                hybrid_performance=hybrid_regimes.get('clustering_metrics', {}).get('silhouette_score', 0.7)
-            )
-
-            self.logger.info(f"✅ Ensemble weights optimized: TAS={optimized_weights.get('tas_weight', 0.5)".3f"}, NAS={optimized_weights.get('nas_weight', 0.5)".3f"}")
-            return optimized_weights
-
-        except Exception as e:
-            self.logger.warning(f"❌ Ensemble weight optimization failed: {e}")
-            return {'tas_weight': 0.5, 'nas_weight': 0.5, 'error': str(e)}
 
 
 def create_enhanced_hybrid_orchestrator(config: HybridRegimeConfig) -> EnhancedHybridOrchestrator:

@@ -2,6 +2,6 @@
 Evaluation components for Hybrid NAS-TAS Regime System
 """
 
-from .economic_evaluator import EconomicRegimeEvaluator
+from ..shared_utils import UnifiedEconomicSignificanceEvaluator
 
-__all__ = ['EconomicRegimeEvaluator']
+__all__ = ['UnifiedEconomicSignificanceEvaluator']

@@ -20,11 +20,11 @@ exchanges/base_exchange/
 
 ## 🚀 Key Features Implemented
 
-### 1. **Multi-Exchange Order Broadcasting**
-- ✅ Send orders to all configured exchanges simultaneously
-- ✅ Intelligent routing strategies (broadcast, primary, failover, best_price)
-- ✅ Automatic failover and load balancing
-- ✅ Response aggregation from all exchanges
+### 1. **ML Model-Specific Exchange Routing**
+- ✅ Send orders to the exchange associated with each ML model
+- ✅ ML model to exchange mapping and management
+- ✅ Default exchange fallback for unknown ML models
+- ✅ Intelligent routing strategies (ml_model, primary, failover, best_price)
 
 ### 2. **Enhanced Trading Receiver**
 - ✅ Integrated base exchange components
@@ -173,128 +173,175 @@ queue_status = await message_handler.get_queue_status()
 ### Complete Round-Trip Flow
 
 1. **Order Submission**
-   - System submits order to TradingReceiver
-   - Message routed to all configured exchanges
-   - Orders placed on each exchange
+   - System submits order to TradingReceiver with ML model ID
+   - System determines target exchange based on ML model association
+   - Order placed on the specific exchange
 
 2. **Response Collection**
-   - Each exchange returns execution results
-   - Responses collected and aggregated
-   - Success/failure tracked per exchange
+   - Exchange returns execution results
+   - Response collected and processed
+   - ML model information preserved in response
 
 3. **Response Routing**
-   - Aggregated responses routed back to system
-   - Callbacks triggered for each response
+   - Response routed back to system with ML model context
+   - Callbacks triggered for the specific ML model
    - System notified of completion
 
 ### Example Flow
 ```python
-# 1. Submit multi-exchange order
-responses = await receiver.send_order_to_all_exchanges(
+# 1. Submit ML model-specific order
+response = await receiver.send_order_for_ml_model(
     symbol="BTCUSDT",
     side="buy",
     order_type="market",
-    quantity=0.001
+    quantity=0.001,
+    ml_model_id="binance_prophet_model"
 )
 
-# 2. Track order status
-order_id = "multi_BTCUSDT_1234567890"
-status = await receiver.get_multi_exchange_order_status(order_id)
+# 2. Check which exchange was used
+target_exchange = response.metadata['target_exchange']  # "binance"
 
-# 3. Handle responses via callbacks
-async def order_callback(response):
-    print(f"Order executed on {response.exchange_name}: {response.status}")
+# 3. Handle responses via ML model callbacks
+async def ml_model_callback(response):
+    ml_model_id = response.metadata['ml_model_id']
+    print(f"Order executed for {ml_model_id} on {response.exchange_name}: {response.status}")
 
-# Response automatically routed back to system
+# Response automatically routed back to system with ML model context
 ```
 
 ## 🎯 Key Benefits
 
-### 1. **True Multi-Exchange Support**
-- Orders sent to ALL exchanges simultaneously
-- Responses collected from ALL exchanges
-- No single point of failure
+### 1. **ML Model-Specific Exchange Routing**
+- Orders sent ONLY to the exchange associated with each ML model
+- Each ML model uses data from its specific exchange
+- No unnecessary cross-exchange communication
 
-### 2. **Intelligent Routing**
-- Best price execution
-- Automatic failover
-- Load balancing
-- Custom routing strategies
+### 2. **Intelligent ML Model Management**
+- Dynamic ML model to exchange registration
+- Default exchange fallback for unknown models
+- Easy configuration and management
+- Real-time model mapping updates
 
 ### 3. **Robust Error Handling**
-- Exchange-specific error handling
+- ML model-specific error handling
 - Automatic retry with backoff
 - Graceful degradation
 - Comprehensive logging
 
 ### 4. **Real-Time Monitoring**
-- Queue status monitoring
-- Response time tracking
-- Success/failure rates
-- Exchange health monitoring
+- ML model registration tracking
+- Exchange-specific performance metrics
+- Success/failure rates per model
+- Model to exchange mapping monitoring
 
 ### 5. **Extensible Architecture**
-- Plugin-based exchange support
+- Plugin-based ML model support
 - Custom routing strategies
 - Extensible response handling
 - Modular design
 
 ## 📋 Usage Examples
 
-### Basic Multi-Exchange Order
+### ML Model-Specific Order Routing
 ```python
-# Send to all exchanges
-responses = await receiver.send_order_to_all_exchanges(
-    symbol="BTCUSDT",
-    side="buy",
-    order_type="market",
-    quantity=0.001
-)
-```
-
-### Smart Routing
-```python
-# Best price execution
-response = await receiver.send_order_with_routing(
-    symbol="BTCUSDT",
-    side="buy",
-    order_type="limit",
-    quantity=0.001,
-    routing_strategy="best_price"
-)
-```
-
-### Failover Support
-```python
-# Primary with automatic failover
-response = await receiver.send_order_with_routing(
+# Send to ML model-associated exchange
+response = await receiver.send_order_for_ml_model(
     symbol="BTCUSDT",
     side="buy",
     order_type="market",
     quantity=0.001,
-    routing_strategy="primary"
+    ml_model_id="binance_prophet_model"
+)
+# Automatically routes to Binance
+```
+
+### ML Model Management
+```python
+# Register ML model associations
+receiver.register_ml_model_exchange("my_model", "binance")
+receiver.register_ml_model_exchange("another_model", "okx")
+
+# Get exchange for ML model
+exchange = receiver.get_ml_model_exchange("my_model")  # Returns "binance"
+
+# Set default exchange for unknown models
+receiver.set_default_ml_exchange("binance")
+```
+
+### Intelligent Routing with ML Models
+```python
+# Route using ML model strategy
+response = await receiver.send_order_with_routing(
+    symbol="BTCUSDT",
+    side="buy",
+    order_type="market",
+    quantity=0.001,
+    routing_strategy="ml_model",  # DEFAULT strategy
+    ml_model_id="binance_prophet_model"
 )
 ```
 
 ## 🔧 Integration
 
-The base exchange module integrates seamlessly with the existing trading system:
+The base exchange module integrates seamlessly with ML model-based trading:
 
-- **Backward Compatible**: All existing functionality preserved
-- **Enhanced Features**: New multi-exchange capabilities added
-- **Unified Interface**: Same API, enhanced functionality
-- **Drop-in Replacement**: No changes needed to existing code
+### ML Model-Based Trading
+```python
+# Each ML model is associated with a specific exchange
+config = {
+    "ml_model_exchanges": {
+        "binance_prophet_model": "binance",
+        "okx_random_forest": "okx",
+        "gateio_neural_net": "gateio"
+    }
+}
+
+receiver = TradingReceiver(config)
+
+# Orders are sent to the exchange associated with each ML model
+response = await receiver.send_order_for_ml_model(
+    symbol="BTCUSDT",
+    side="buy",
+    order_type="market",
+    quantity=0.001,
+    ml_model_id="binance_prophet_model"
+)
+# This will automatically route to Binance
+```
+
+### ML Model Signal Processing
+```python
+# ML models send signals with their model ID
+signal = TradingSignal(
+    symbol="BTCUSDT",
+    action="buy",
+    quantity=0.001,
+    confidence=0.85,
+    strategy="binance_prophet_model",  # This determines target exchange
+    metadata={"ml_model_id": "binance_prophet_model"}
+)
+
+# The system automatically routes to the correct exchange
+response = await receiver.send_order_with_routing(
+    symbol=signal.symbol,
+    side=signal.action,
+    order_type="market",
+    quantity=signal.quantity,
+    routing_strategy="ml_model",
+    ml_model_id=signal.metadata["ml_model_id"]
+)
+```
 
 ## 🚀 Ready for Production
 
-This implementation provides a production-ready multi-exchange trading system with:
+This implementation provides a production-ready ML model-based trading system with:
 
-✅ **All orders can be sent to all exchanges**
-✅ **Responses routed back from all exchanges**
-✅ **Comprehensive error handling**
-✅ **Intelligent routing strategies**
-✅ **Real-time monitoring and statistics**
-✅ **Extensible architecture**
+✅ **Orders sent to ML model-associated exchanges**
+✅ **Responses routed back with ML model context**
+✅ **ML model to exchange mapping management**
+✅ **Intelligent routing strategies with ML model support**
+✅ **Real-time monitoring and statistics for ML models**
+✅ **Extensible architecture for ML model integration**
 ✅ **Production-ready code quality**
 
-The system is now capable of handling complex multi-exchange trading scenarios with robust error handling, intelligent routing, and comprehensive monitoring capabilities.
+The system is now capable of handling ML model-specific exchange routing where each ML model is associated with its specific exchange, ensuring orders are sent to the correct exchange for each model's data source.

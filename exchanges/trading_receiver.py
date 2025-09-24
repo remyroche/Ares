@@ -110,8 +110,12 @@ class TradingReceiver:
         # Multi-exchange configuration
         self.primary_exchange = self.config.get("primary_exchange", "binance")
         self.failover_exchanges = self.config.get("failover_exchanges", ["okx", "gateio"])
-        self.broadcast_enabled = self.config.get("broadcast_enabled", True)
+        self.broadcast_enabled = self.config.get("broadcast_enabled", False)  # Changed to False
         self.load_balancing_enabled = self.config.get("load_balancing_enabled", False)
+
+        # ML model to exchange mapping
+        self.ml_model_exchanges = self.config.get("ml_model_exchanges", {})
+        self.default_ml_exchange = self.config.get("default_ml_exchange", "binance")
         
     async def start(self) -> None:
         """Start the trading receiver"""
@@ -334,6 +338,90 @@ class TradingReceiver:
 
         return responses
 
+    async def send_order_for_ml_model(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        ml_model_id: Optional[str] = None,
+        **kwargs
+    ) -> TradingResponse:
+        """
+        Send order to the exchange associated with the ML model.
+
+        Args:
+            symbol: Trading symbol
+            side: Order side ("buy" or "sell")
+            order_type: Order type ("market", "limit", etc.)
+            quantity: Order quantity
+            price: Order price (optional)
+            ml_model_id: ID of the ML model to determine target exchange
+            **kwargs: Additional order parameters
+
+        Returns:
+            Response from the appropriate exchange
+        """
+        if not self._running:
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error="Trading receiver is not running"
+            )
+
+        # Determine target exchange based on ML model
+        target_exchange = self._get_exchange_for_ml_model(ml_model_id)
+
+        try:
+            response = await self.send_order(
+                exchange=target_exchange,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                **kwargs
+            )
+
+            # Add ML model information to response metadata
+            if hasattr(response, 'metadata'):
+                response.metadata["ml_model_id"] = ml_model_id
+                response.metadata["target_exchange"] = target_exchange
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Error sending order for ML model {ml_model_id} to {target_exchange}: {e}")
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error=str(e),
+                metadata={"ml_model_id": ml_model_id, "target_exchange": target_exchange}
+            )
+
+    def _get_exchange_for_ml_model(self, ml_model_id: Optional[str] = None) -> str:
+        """
+        Get the exchange associated with a specific ML model.
+
+        Args:
+            ml_model_id: ID of the ML model
+
+        Returns:
+            Name of the exchange associated with the ML model
+        """
+        if ml_model_id and ml_model_id in self.ml_model_exchanges:
+            return self.ml_model_exchanges[ml_model_id]
+
+        # Fallback to default ML exchange
+        return self.default_ml_exchange
+
     async def send_order_to_all_exchanges(
         self,
         symbol: str,
@@ -344,7 +432,7 @@ class TradingReceiver:
         **kwargs
     ) -> Dict[str, TradingResponse]:
         """
-        Send order to all configured exchanges.
+        Send order to all configured exchanges (legacy method for backward compatibility).
 
         Args:
             symbol: Trading symbol
@@ -401,9 +489,10 @@ class TradingReceiver:
         order_type: str,
         quantity: float,
         price: Optional[float] = None,
-        routing_strategy: str = "broadcast",
+        routing_strategy: str = "ml_model",
+        ml_model_id: Optional[str] = None,
         **kwargs
-    ) -> Dict[str, TradingResponse]:
+    ) -> Union[TradingResponse, Dict[str, TradingResponse]]:
         """
         Send order using intelligent routing strategy.
 
@@ -413,16 +502,29 @@ class TradingReceiver:
             order_type: Order type ("market", "limit", etc.)
             quantity: Order quantity
             price: Order price (optional)
-            routing_strategy: Routing strategy ("broadcast", "primary", "failover", "best_price")
+            routing_strategy: Routing strategy ("ml_model", "broadcast", "primary", "failover", "best_price")
+            ml_model_id: ID of the ML model for routing decisions
             **kwargs: Additional order parameters
 
         Returns:
-            Dictionary mapping exchange names to their responses
+            Response from the appropriate exchange(s)
         """
         if not self._running:
-            return {"error": "Trading receiver is not running"}
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error="Trading receiver is not running"
+            )
 
-        if routing_strategy == "broadcast":
+        if routing_strategy == "ml_model":
+            return await self.send_order_for_ml_model(
+                symbol, side, order_type, quantity, price, ml_model_id, **kwargs
+            )
+
+        elif routing_strategy == "broadcast":
             return await self.send_order_to_all_exchanges(symbol, side, order_type, quantity, price, **kwargs)
 
         elif routing_strategy == "primary":
@@ -442,10 +544,24 @@ class TradingReceiver:
                 )
                 return {best_exchange: response}
             else:
-                return {"error": "No suitable exchange found for best price execution"}
+                return TradingResponse(
+                    id=str(int(time.time() * 1000)),
+                    request_id=str(int(time.time() * 1000)),
+                    success=False,
+                    timestamp=datetime.now(),
+                    data={},
+                    error="No suitable exchange found for best price execution"
+                )
 
         else:
-            return {"error": f"Unknown routing strategy: {routing_strategy}"}
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error=f"Unknown routing strategy: {routing_strategy}"
+            )
 
     async def send_order_to_primary_with_failover(
         self,
@@ -642,6 +758,114 @@ class TradingReceiver:
             Dictionary of all multi-exchange orders
         """
         return dict(self.pending_multi_exchange_orders)
+
+    def register_ml_model_exchange(
+        self,
+        ml_model_id: str,
+        exchange_name: str
+    ) -> bool:
+        """
+        Register which exchange a specific ML model should use.
+
+        Args:
+            ml_model_id: ID of the ML model
+            exchange_name: Name of the exchange
+
+        Returns:
+            True if registered successfully, False otherwise
+        """
+        try:
+            if exchange_name not in [ex for ex in asyncio.run(self.exchange_registry.get_registered_exchanges())]:
+                self.logger.warning(f"Exchange {exchange_name} is not registered")
+                return False
+
+            self.ml_model_exchanges[ml_model_id] = exchange_name
+            self.logger.info(f"Registered ML model {ml_model_id} to exchange {exchange_name}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error registering ML model {ml_model_id}: {e}")
+            return False
+
+    def unregister_ml_model_exchange(self, ml_model_id: str) -> bool:
+        """
+        Unregister an ML model's exchange association.
+
+        Args:
+            ml_model_id: ID of the ML model
+
+        Returns:
+            True if unregistered successfully, False otherwise
+        """
+        try:
+            if ml_model_id in self.ml_model_exchanges:
+                del self.ml_model_exchanges[ml_model_id]
+                self.logger.info(f"Unregistered ML model {ml_model_id}")
+                return True
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Error unregistering ML model {ml_model_id}: {e}")
+            return False
+
+    def get_ml_model_exchange(self, ml_model_id: str) -> Optional[str]:
+        """
+        Get the exchange associated with a specific ML model.
+
+        Args:
+            ml_model_id: ID of the ML model
+
+        Returns:
+            Name of the exchange or None if not found
+        """
+        return self.ml_model_exchanges.get(ml_model_id)
+
+    def get_all_ml_model_exchanges(self) -> Dict[str, str]:
+        """
+        Get all ML model to exchange mappings.
+
+        Returns:
+            Dictionary mapping ML model IDs to exchange names
+        """
+        return dict(self.ml_model_exchanges)
+
+    def set_default_ml_exchange(self, exchange_name: str) -> bool:
+        """
+        Set the default exchange for ML models.
+
+        Args:
+            exchange_name: Name of the exchange
+
+        Returns:
+            True if set successfully, False otherwise
+        """
+        try:
+            if exchange_name not in [ex for ex in asyncio.run(self.exchange_registry.get_registered_exchanges())]:
+                self.logger.warning(f"Exchange {exchange_name} is not registered")
+                return False
+
+            self.default_ml_exchange = exchange_name
+            self.logger.info(f"Set default ML exchange to {exchange_name}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error setting default ML exchange: {e}")
+            return False
+
+    def _get_ml_models_by_exchange(self) -> Dict[str, List[str]]:
+        """
+        Get ML models grouped by exchange.
+
+        Returns:
+            Dictionary mapping exchange names to lists of ML model IDs
+        """
+        exchange_models = {}
+        for ml_model_id, exchange_name in self.ml_model_exchanges.items():
+            if exchange_name not in exchange_models:
+                exchange_models[exchange_name] = []
+            exchange_models[exchange_name].append(ml_model_id)
+
+        return exchange_models
 
     async def cancel_multi_exchange_order(self, multi_order_id: str) -> Dict[str, Any]:
         """
@@ -1085,6 +1309,14 @@ class TradingReceiver:
                 "total_exchanges_configured": len(await self.exchange_registry.get_registered_exchanges())
             }
 
+            # Get ML model statistics
+            ml_model_stats = {
+                "registered_ml_models": len(self.ml_model_exchanges),
+                "default_ml_exchange": self.default_ml_exchange,
+                "ml_model_exchanges": self.ml_model_exchanges,
+                "ml_models_by_exchange": self._get_ml_models_by_exchange()
+            }
+
             # Get message handler statistics
             message_handler_stats = {}
             if hasattr(self.message_handler, 'get_queue_status'):
@@ -1098,13 +1330,15 @@ class TradingReceiver:
             return {
                 **basic_stats,
                 "multi_exchange": multi_exchange_stats,
+                "ml_model": ml_model_stats,
                 "message_handler": message_handler_stats,
                 "response_handler": response_handler_stats,
                 "config": {
                     "primary_exchange": self.primary_exchange,
                     "failover_exchanges": self.failover_exchanges,
                     "broadcast_enabled": self.broadcast_enabled,
-                    "load_balancing_enabled": self.load_balancing_enabled
+                    "load_balancing_enabled": self.load_balancing_enabled,
+                    "default_ml_exchange": self.default_ml_exchange
                 }
             }
 

@@ -1,15 +1,15 @@
 # Base Exchange Module
 
-This directory contains the core base exchange functionality for the multi-exchange trading system.
+This directory contains the core base exchange functionality for the ML model-based trading system.
 
 ## Overview
 
-The `base_exchange/` module provides the foundational components for exchange-agnostic trading operations. It enables the system to:
+The `base_exchange/` module provides the foundational components for ML model-specific exchange operations. It enables the system to:
 
-1. **Send orders to all exchanges simultaneously**
-2. **Route responses back from all exchanges**
-3. **Handle multi-exchange message queuing and processing**
-4. **Aggregate and manage responses from multiple exchanges**
+1. **Send orders to the exchange associated with each ML model**
+2. **Route responses back from the appropriate exchange**
+3. **Handle ML model-based message routing and processing**
+4. **Manage ML model to exchange mappings**
 
 ## Architecture
 
@@ -41,27 +41,28 @@ The `base_exchange/` module provides the foundational components for exchange-ag
 
 ## Key Features
 
-### Multi-Exchange Order Broadcasting
+### ML Model-Based Exchange Routing
 ```python
-# Send order to all configured exchanges
-responses = await receiver.send_order_to_all_exchanges(
+# Send order to the exchange associated with the ML model
+response = await receiver.send_order_for_ml_model(
     symbol="BTCUSDT",
     side="buy",
     order_type="market",
-    quantity=0.001
+    quantity=0.001,
+    ml_model_id="binance_prophet_model"
 )
 ```
 
-### Intelligent Routing Strategies
+### ML Model Management
 ```python
-# Route with different strategies
-response = await receiver.send_order_with_routing(
-    symbol="BTCUSDT",
-    side="buy",
-    order_type="limit",
-    quantity=0.001,
-    routing_strategy="best_price"  # or "broadcast", "primary", "failover"
-)
+# Register ML model to exchange association
+receiver.register_ml_model_exchange("my_model", "binance")
+
+# Get exchange for ML model
+exchange = receiver.get_ml_model_exchange("my_model")
+
+# Set default exchange for unknown ML models
+receiver.set_default_ml_exchange("binance")
 ```
 
 ### Response Aggregation
@@ -78,47 +79,67 @@ await message_handler.send_message(message, target_exchanges)
 
 ## Usage Examples
 
-### Basic Multi-Exchange Order
+### ML Model-Based Order Routing
 ```python
 from exchanges import TradingReceiver
 
-# Initialize receiver
+# Initialize receiver with ML model mappings
+config = {
+    "ml_model_exchanges": {
+        "binance_prophet_model": "binance",
+        "okx_random_forest": "okx",
+        "gateio_neural_net": "gateio"
+    },
+    "default_ml_exchange": "binance"
+}
+
 receiver = TradingReceiver(config)
 await receiver.start()
 
-# Send to all exchanges
-responses = await receiver.send_order_to_all_exchanges(
+# Send order using ML model routing
+response = await receiver.send_order_for_ml_model(
     symbol="BTCUSDT",
     side="buy",
     order_type="market",
-    quantity=0.001
+    quantity=0.001,
+    ml_model_id="binance_prophet_model"
 )
 
-# Check responses
-for exchange, response in responses.items():
-    print(f"{exchange}: {response.success}")
+print(f"Order sent to: {response.metadata['target_exchange']}")
+print(f"Success: {response.success}")
 ```
 
-### Advanced Routing
+### ML Model Management
 ```python
-# Primary with failover
-response = await receiver.send_order_with_routing(
-    symbol="ETHUSDT",
-    side="sell",
-    order_type="limit",
-    quantity=0.01,
-    price=2000.0,
-    routing_strategy="primary"
-)
+# Register ML model associations
+receiver.register_ml_model_exchange("my_model", "binance")
+receiver.register_ml_model_exchange("another_model", "okx")
 
-# Best price execution
+# Get exchange for ML model
+exchange = receiver.get_ml_model_exchange("my_model")  # Returns "binance"
+
+# Set default exchange
+receiver.set_default_ml_exchange("binance")
+
+# Get all mappings
+mappings = receiver.get_all_ml_model_exchanges()
+print(f"ML Model Mappings: {mappings}")
+```
+
+### Intelligent Routing with ML Models
+```python
+# Route using ML model strategy
 response = await receiver.send_order_with_routing(
     symbol="BTCUSDT",
     side="buy",
     order_type="market",
     quantity=0.001,
-    routing_strategy="best_price"
+    routing_strategy="ml_model",
+    ml_model_id="binance_prophet_model"
 )
+
+# The order will be sent to Binance (associated with the ML model)
+print(f"Routed to: {response.metadata['target_exchange']}")
 ```
 
 ### Response Handling
@@ -177,7 +198,8 @@ config = {
 ```
 
 ### Routing Strategies
-- **broadcast**: Send to all exchanges
+- **ml_model**: Send to exchange associated with ML model (DEFAULT)
+- **broadcast**: Send to all exchanges (legacy compatibility)
 - **primary**: Send to primary with failover
 - **best_price**: Route to exchange with best price
 - **round_robin**: Distribute across exchanges
@@ -207,8 +229,9 @@ The system provides comprehensive error handling:
 ### System Statistics
 ```python
 stats = await receiver.get_statistics()
-print(f"Multi-exchange orders: {stats['multi_exchange']['multi_exchange_orders']}")
-print(f"Primary exchange: {stats['multi_exchange']['primary_exchange']}")
+print(f"ML models registered: {stats['ml_model']['registered_ml_models']}")
+print(f"Default ML exchange: {stats['ml_model']['default_ml_exchange']}")
+print(f"ML model mappings: {stats['ml_model']['ml_model_exchanges']}")
 ```
 
 ### Queue Monitoring
@@ -225,25 +248,52 @@ print(f"Active callbacks: {response_stats['registered_callbacks']}")
 
 ## Integration with Trading System
 
-The base exchange module integrates seamlessly with the existing trading system:
+The base exchange module integrates seamlessly with ML model-based trading:
 
-### With TradingOrchestrator
+### ML Model-Based Trading
 ```python
-# Enhanced orchestrator can use multi-exchange features
+# Each ML model is associated with a specific exchange
+config = {
+    "ml_model_exchanges": {
+        "binance_prophet_model": "binance",
+        "okx_random_forest": "okx",
+        "gateio_neural_net": "gateio"
+    }
+}
+
+receiver = TradingReceiver(config)
+
+# Orders are sent to the exchange associated with each ML model
+response = await receiver.send_order_for_ml_model(
+    symbol="BTCUSDT",
+    side="buy",
+    order_type="market",
+    quantity=0.001,
+    ml_model_id="binance_prophet_model"
+)
+# This will automatically route to Binance
+```
+
+### ML Model Signal Processing
+```python
+# ML models send signals with their model ID
 signal = TradingSignal(
     symbol="BTCUSDT",
     action="buy",
     quantity=0.001,
-    metadata={"routing_strategy": "best_price"}
+    confidence=0.85,
+    strategy="binance_prophet_model",  # This determines target exchange
+    metadata={"ml_model_id": "binance_prophet_model"}
 )
-```
 
-### With UnifiedTradingSystem
-```python
-# System automatically uses multi-exchange capabilities
-system = await create_trading_system(
-    exchanges=["binance", "okx", "gateio"],
-    enable_multi_exchange=True
+# The system automatically routes to the correct exchange
+response = await receiver.send_order_with_routing(
+    symbol=signal.symbol,
+    side=signal.action,
+    order_type="market",
+    quantity=signal.quantity,
+    routing_strategy="ml_model",
+    ml_model_id=signal.metadata["ml_model_id"]
 )
 ```
 
@@ -336,15 +386,21 @@ print(json.dumps(stats, indent=2))
 
 ## API Reference
 
-### TradingReceiver Enhanced Methods
-- `send_order_to_all_exchanges()` - Broadcast orders to all exchanges
-- `send_order_with_routing()` - Intelligent routing strategies
-- `get_multi_exchange_order_status()` - Track multi-exchange orders
-- `cancel_multi_exchange_order()` - Cancel across all exchanges
+### TradingReceiver ML Model Methods
+- `send_order_for_ml_model()` - Send order to ML model-associated exchange
+- `send_order_with_routing()` - Intelligent routing with ML model strategy
+- `register_ml_model_exchange()` - Register ML model to exchange mapping
+- `get_ml_model_exchange()` - Get exchange for specific ML model
+- `set_default_ml_exchange()` - Set default exchange for unknown ML models
+
+### ML Model Management Methods
+- `unregister_ml_model_exchange()` - Remove ML model association
+- `get_all_ml_model_exchanges()` - Get all ML model mappings
+- `_get_ml_models_by_exchange()` - Get ML models grouped by exchange
 
 ### BaseExchange Components
 - `ExchangeMessageHandler` - Message processing and routing
 - `ExchangeResponseHandler` - Response management and aggregation
-- `MultiExchangeBase` - Multi-exchange operation base class
+- `MultiExchangeBase` - ML model-based operation base class
 
-This base exchange module provides a solid foundation for building sophisticated multi-exchange trading applications with robust error handling, intelligent routing, and comprehensive monitoring capabilities.
+This base exchange module provides a solid foundation for building sophisticated ML model-based trading applications where each ML model is associated with a specific exchange, ensuring orders are sent to the correct exchange for each model's data source.

@@ -103,33 +103,26 @@ class PositionMonitor:
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
         
-        # Enhanced exit strategy configuration
-        self.max_position_age = 10800  # 3 hours
+        # Enhanced exit strategy configuration with optimization support
+        self.max_position_age = 10800  # 3 hours (will be optimized)
         
-        # Confidence-based exit thresholds
-        self.confidence_thresholds = self.monitor_config.get("confidence_thresholds", {
-            "very_low": 0.2,      # Exit immediately
-            "low": 0.4,           # Scale down or exit
-            "medium": 0.6,        # Hold position
-            "high": 0.8           # Consider profit taking
-        })
+        # Load optimized parameters if available
+        self.optimized_parameters = self._load_optimized_parameters()
         
-        # PnL-based exit thresholds
-        self.pnl_thresholds = self.monitor_config.get("pnl_thresholds", {
-            "stop_loss": -0.05,   # -5% stop loss
-            "profit_target": 0.04, # 4% profit target
-            "scaling_levels": [0.25, 0.5, 0.75]  # Profit scaling levels
-        })
+        # Confidence-based exit thresholds (optimized)
+        self.confidence_thresholds = self._get_optimized_confidence_thresholds()
         
-        # Profit-taking configuration
-        self.profit_taking_config = self.monitor_config.get("profit_taking", {
-            "confidence_scaling": True,    # Scale profit taking based on confidence
-            "min_confidence_for_profit": 0.6,  # Minimum confidence to take profit
-            "confidence_profit_multiplier": 0.5,  # How much confidence affects profit taking
-            "tiered_profit_taking": True,  # Enable tiered profit taking
-            "trailing_stop_enabled": True,  # Enable trailing stops
-            "trailing_stop_atr_multiplier": 1.5  # ATR multiplier for trailing stops
-        })
+        # PnL-based exit thresholds (optimized)
+        self.pnl_thresholds = self._get_optimized_pnl_thresholds()
+        
+        # Profit-taking configuration (optimized)
+        self.profit_taking_config = self._get_optimized_profit_taking_config()
+        
+        # Additional optimized parameters
+        self.stop_loss_config = self._get_optimized_stop_loss_config()
+        self.time_based_config = self._get_optimized_time_based_config()
+        self.trailing_stop_config = self._get_optimized_trailing_stop_config()
+        self.regime_aware_config = self._get_optimized_regime_aware_config()
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -550,6 +543,195 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(failed(f"❌ Error checking profit tier: {e}"))
             return False
+
+    def _load_optimized_parameters(self) -> Optional[Dict[str, Any]]:
+        """
+        Load optimized parameters from backtesting optimization results.
+        
+        Returns:
+            Dict: Optimized parameters or None if not available
+        """
+        try:
+            # Try to load from optimization results
+            optimization_paths = [
+                "results/exit_strategy_optimization.json",
+                "config/optimized_exit_strategy.json",
+                "src/training/steps/backtesting/results/exit_strategy_optimization.json"
+            ]
+            
+            for path in optimization_paths:
+                if Path(path).exists():
+                    with open(path, 'r') as f:
+                        optimization_results = json.load(f)
+                    
+                    if "best_parameters" in optimization_results:
+                        self.logger.info(f"✅ Loaded optimized parameters from: {path}")
+                        return optimization_results["best_parameters"]
+            
+            # Fallback to default parameters
+            self.logger.info("📝 Using default exit strategy parameters (no optimization found)")
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error loading optimized parameters: {e}"))
+            return None
+
+    def _get_optimized_confidence_thresholds(self) -> Dict[str, float]:
+        """Get optimized confidence thresholds."""
+        if self.optimized_parameters and "confidence_thresholds" in self.optimized_parameters:
+            return self.optimized_parameters["confidence_thresholds"]
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("confidence_thresholds", {
+            "very_low": 0.2,
+            "low": 0.4,
+            "medium": 0.6,
+            "high": 0.8
+        })
+
+    def _get_optimized_pnl_thresholds(self) -> Dict[str, Any]:
+        """Get optimized PnL thresholds."""
+        if self.optimized_parameters and "profit_taking" in self.optimized_parameters:
+            profit_config = self.optimized_parameters["profit_taking"]
+            stop_loss_config = self.optimized_parameters.get("stop_loss", {})
+            
+            return {
+                "stop_loss": stop_loss_config.get("base_stop_loss", -0.05),
+                "profit_target": profit_config.get("base_profit_target", 0.04),
+                "scaling_levels": profit_config.get("scaling_levels", [0.25, 0.5, 0.75])
+            }
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("pnl_thresholds", {
+            "stop_loss": -0.05,
+            "profit_target": 0.04,
+            "scaling_levels": [0.25, 0.5, 0.75]
+        })
+
+    def _get_optimized_profit_taking_config(self) -> Dict[str, Any]:
+        """Get optimized profit-taking configuration."""
+        if self.optimized_parameters and "profit_taking" in self.optimized_parameters:
+            return self.optimized_parameters["profit_taking"]
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("profit_taking", {
+            "confidence_scaling": True,
+            "min_confidence_for_profit": 0.6,
+            "confidence_profit_multiplier": 0.5,
+            "tiered_profit_taking": True,
+            "trailing_stop_enabled": True,
+            "trailing_stop_atr_multiplier": 1.5
+        })
+
+    def _get_optimized_stop_loss_config(self) -> Dict[str, Any]:
+        """Get optimized stop-loss configuration."""
+        if self.optimized_parameters and "stop_loss" in self.optimized_parameters:
+            return self.optimized_parameters["stop_loss"]
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("stop_loss", {
+            "base_stop_loss": -0.05,
+            "atr_multiplier": 1.5,
+            "volatility_adjustment": True,
+            "regime_adjustment": True
+        })
+
+    def _get_optimized_time_based_config(self) -> Dict[str, Any]:
+        """Get optimized time-based configuration."""
+        if self.optimized_parameters and "time_based" in self.optimized_parameters:
+            time_config = self.optimized_parameters["time_based"]
+            # Update max position age with optimized value
+            self.max_position_age = time_config.get("max_hold_time", 10800)
+            return time_config
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("time_based", {
+            "max_hold_time": 10800,
+            "min_hold_time": 300,
+            "confidence_time_scaling": True
+        })
+
+    def _get_optimized_trailing_stop_config(self) -> Dict[str, Any]:
+        """Get optimized trailing stop configuration."""
+        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
+            return self.optimized_parameters["trailing_stop"]
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("trailing_stop", {
+            "enabled": True,
+            "atr_multiplier": 1.5,
+            "min_distance": 0.01,
+            "confidence_activation": 0.7
+        })
+
+    def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:
+        """Get optimized regime-aware configuration."""
+        if self.optimized_parameters and "regime_aware" in self.optimized_parameters:
+            return self.optimized_parameters["regime_aware"]
+        
+        # Fallback to config or defaults
+        return self.monitor_config.get("regime_aware", {
+            "enabled": True,
+            "regime_specific_params": True,
+            "transition_penalty": 0.1
+        })
+
+    def refresh_optimized_parameters(self, optimization_results: Dict[str, Any]) -> None:
+        """
+        Refresh optimized parameters from new optimization results.
+        
+        Args:
+            optimization_results: New optimization results
+        """
+        try:
+            if "best_parameters" in optimization_results:
+                self.optimized_parameters = optimization_results["best_parameters"]
+                
+                # Update all configurations
+                self.confidence_thresholds = self._get_optimized_confidence_thresholds()
+                self.pnl_thresholds = self._get_optimized_pnl_thresholds()
+                self.profit_taking_config = self._get_optimized_profit_taking_config()
+                self.stop_loss_config = self._get_optimized_stop_loss_config()
+                self.time_based_config = self._get_optimized_time_based_config()
+                self.trailing_stop_config = self._get_optimized_trailing_stop_config()
+                self.regime_aware_config = self._get_optimized_regime_aware_config()
+                
+                self.logger.info("✅ Optimized parameters refreshed successfully")
+                self.logger.info(f"📊 New confidence thresholds: {self.confidence_thresholds}")
+                self.logger.info(f"💰 New profit targets: {self.pnl_thresholds['profit_target']:.1%}")
+                self.logger.info(f"🛡️ New stop loss: {self.pnl_thresholds['stop_loss']:.1%}")
+                
+            else:
+                self.logger.warning("⚠️ No 'best_parameters' found in optimization results")
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error refreshing optimized parameters: {e}"))
+
+    def get_optimization_status(self) -> Dict[str, Any]:
+        """
+        Get current optimization status and parameter information.
+        
+        Returns:
+            Dict: Optimization status information
+        """
+        try:
+            status = {
+                "optimization_loaded": self.optimized_parameters is not None,
+                "confidence_thresholds": self.confidence_thresholds,
+                "pnl_thresholds": self.pnl_thresholds,
+                "profit_taking_config": self.profit_taking_config,
+                "stop_loss_config": self.stop_loss_config,
+                "time_based_config": self.time_based_config,
+                "trailing_stop_config": self.trailing_stop_config,
+                "regime_aware_config": self.regime_aware_config,
+                "max_position_age": self.max_position_age
+            }
+            
+            return status
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting optimization status: {e}"))
+            return {"error": str(e)}
 
     def _calculate_unrealized_pnl(self, position_data: Dict[str, Any]) -> float:
         """

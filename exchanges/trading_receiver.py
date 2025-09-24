@@ -113,9 +113,12 @@ class TradingReceiver:
         self.broadcast_enabled = self.config.get("broadcast_enabled", False)  # Changed to False
         self.load_balancing_enabled = self.config.get("load_balancing_enabled", False)
 
-        # ML model to exchange mapping
+        # ML model to exchange and asset mapping
         self.ml_model_exchanges = self.config.get("ml_model_exchanges", {})
+        self.ml_model_assets = self.config.get("ml_model_assets", {})
+        self.ml_model_exchange_assets = self.config.get("ml_model_exchange_assets", {})
         self.default_ml_exchange = self.config.get("default_ml_exchange", "binance")
+        self.default_asset = self.config.get("default_asset", "BTCUSDT")
         
     async def start(self) -> None:
         """Start the trading receiver"""
@@ -349,10 +352,10 @@ class TradingReceiver:
         **kwargs
     ) -> TradingResponse:
         """
-        Send order to the exchange associated with the ML model.
+        Send order to the exchange associated with the ML model and asset.
 
         Args:
-            symbol: Trading symbol
+            symbol: Trading symbol/asset
             side: Order side ("buy" or "sell")
             order_type: Order type ("market", "limit", etc.)
             quantity: Order quantity
@@ -373,8 +376,20 @@ class TradingReceiver:
                 error="Trading receiver is not running"
             )
 
-        # Determine target exchange based on ML model
-        target_exchange = self._get_exchange_for_ml_model(ml_model_id)
+        # Validate ML model and asset compatibility
+        if ml_model_id and not self._validate_ml_model_asset_compatibility(ml_model_id, symbol):
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error=f"ML model {ml_model_id} is not compatible with asset {symbol}",
+                metadata={"ml_model_id": ml_model_id, "asset": symbol, "validation_failed": "asset_compatibility"}
+            )
+
+        # Determine target exchange based on ML model and asset
+        target_exchange = self._get_exchange_for_ml_model(ml_model_id, symbol)
 
         try:
             response = await self.send_order(
@@ -387,15 +402,17 @@ class TradingReceiver:
                 **kwargs
             )
 
-            # Add ML model information to response metadata
+            # Add ML model and asset information to response metadata
             if hasattr(response, 'metadata'):
                 response.metadata["ml_model_id"] = ml_model_id
                 response.metadata["target_exchange"] = target_exchange
+                response.metadata["asset"] = symbol
+                response.metadata["asset_compatible"] = True
 
             return response
 
         except Exception as e:
-            self.logger.error(f"Error sending order for ML model {ml_model_id} to {target_exchange}: {e}")
+            self.logger.error(f"Error sending order for ML model {ml_model_id} asset {symbol} to {target_exchange}: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=str(int(time.time() * 1000)),
@@ -403,24 +420,88 @@ class TradingReceiver:
                 timestamp=datetime.now(),
                 data={},
                 error=str(e),
-                metadata={"ml_model_id": ml_model_id, "target_exchange": target_exchange}
+                metadata={
+                    "ml_model_id": ml_model_id,
+                    "target_exchange": target_exchange,
+                    "asset": symbol,
+                    "asset_compatible": True
+                }
             )
 
-    def _get_exchange_for_ml_model(self, ml_model_id: Optional[str] = None) -> str:
+    def _get_exchange_for_ml_model(
+        self,
+        ml_model_id: Optional[str] = None,
+        asset: Optional[str] = None
+    ) -> str:
         """
-        Get the exchange associated with a specific ML model.
+        Get the exchange associated with a specific ML model and asset.
+
+        Args:
+            ml_model_id: ID of the ML model
+            asset: Trading symbol/asset
+
+        Returns:
+            Name of the exchange associated with the ML model and asset
+        """
+        if ml_model_id and asset:
+            # First check if there's a specific model-exchange-asset combination
+            model_exchange_asset_key = f"{ml_model_id}:{asset}"
+            if model_exchange_asset_key in self.ml_model_exchange_assets:
+                return self.ml_model_exchange_assets[model_exchange_asset_key]
+
+            # Then check model-specific exchange
+            if ml_model_id in self.ml_model_exchanges:
+                return self.ml_model_exchanges[ml_model_id]
+
+        # Fallback to default ML exchange
+        return self.default_ml_exchange
+
+    def _get_asset_for_ml_model(self, ml_model_id: Optional[str] = None) -> str:
+        """
+        Get the default asset associated with a specific ML model.
 
         Args:
             ml_model_id: ID of the ML model
 
         Returns:
-            Name of the exchange associated with the ML model
+            Default asset for the ML model
         """
-        if ml_model_id and ml_model_id in self.ml_model_exchanges:
-            return self.ml_model_exchanges[ml_model_id]
+        if ml_model_id and ml_model_id in self.ml_model_assets:
+            return self.ml_model_assets[ml_model_id]
 
-        # Fallback to default ML exchange
-        return self.default_ml_exchange
+        # Fallback to default asset
+        return self.default_asset
+
+    def _validate_ml_model_asset_compatibility(
+        self,
+        ml_model_id: str,
+        asset: str
+    ) -> bool:
+        """
+        Validate that the ML model is compatible with the given asset.
+
+        Args:
+            ml_model_id: ID of the ML model
+            asset: Trading symbol/asset
+
+        Returns:
+            True if compatible, False otherwise
+        """
+        # Check if there's a specific model-asset association
+        model_asset_key = f"{ml_model_id}:{asset}"
+        if model_asset_key in self.ml_model_exchange_assets:
+            return True
+
+        # Check if model has specific assets defined
+        if ml_model_id in self.ml_model_assets:
+            allowed_assets = self.ml_model_assets[ml_model_id]
+            if isinstance(allowed_assets, list):
+                return asset in allowed_assets
+            elif isinstance(allowed_assets, str):
+                return asset == allowed_assets
+
+        # If no specific asset restrictions, allow any asset
+        return True
 
     async def send_order_to_all_exchanges(
         self,
@@ -762,14 +843,16 @@ class TradingReceiver:
     def register_ml_model_exchange(
         self,
         ml_model_id: str,
-        exchange_name: str
+        exchange_name: str,
+        assets: Optional[Union[str, List[str]]] = None
     ) -> bool:
         """
-        Register which exchange a specific ML model should use.
+        Register which exchange a specific ML model should use for specific assets.
 
         Args:
             ml_model_id: ID of the ML model
             exchange_name: Name of the exchange
+            assets: Specific asset(s) the model should handle (None for all assets)
 
         Returns:
             True if registered successfully, False otherwise
@@ -780,11 +863,51 @@ class TradingReceiver:
                 return False
 
             self.ml_model_exchanges[ml_model_id] = exchange_name
-            self.logger.info(f"Registered ML model {ml_model_id} to exchange {exchange_name}")
+
+            # Register specific assets if provided
+            if assets:
+                if isinstance(assets, str):
+                    assets = [assets]
+                self.ml_model_assets[ml_model_id] = assets
+
+            self.logger.info(f"Registered ML model {ml_model_id} to exchange {exchange_name} for assets {assets}")
             return True
 
         except Exception as e:
             self.logger.error(f"Error registering ML model {ml_model_id}: {e}")
+            return False
+
+    def register_ml_model_exchange_asset(
+        self,
+        ml_model_id: str,
+        exchange_name: str,
+        asset: str
+    ) -> bool:
+        """
+        Register a specific ML model-exchange-asset combination.
+
+        Args:
+            ml_model_id: ID of the ML model
+            exchange_name: Name of the exchange
+            asset: Specific asset for this combination
+
+        Returns:
+            True if registered successfully, False otherwise
+        """
+        try:
+            if exchange_name not in [ex for ex in asyncio.run(self.exchange_registry.get_registered_exchanges())]:
+                self.logger.warning(f"Exchange {exchange_name} is not registered")
+                return False
+
+            # Register the specific combination
+            model_exchange_asset_key = f"{ml_model_id}:{asset}"
+            self.ml_model_exchange_assets[model_exchange_asset_key] = exchange_name
+
+            self.logger.info(f"Registered ML model {ml_model_id} to exchange {exchange_name} for asset {asset}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error registering ML model {ml_model_id} asset {asset}: {e}")
             return False
 
     def unregister_ml_model_exchange(self, ml_model_id: str) -> bool:
@@ -866,6 +989,38 @@ class TradingReceiver:
             exchange_models[exchange_name].append(ml_model_id)
 
         return exchange_models
+
+    def _get_assets_by_ml_model(self) -> Dict[str, Union[str, List[str]]]:
+        """
+        Get assets associated with each ML model.
+
+        Returns:
+            Dictionary mapping ML model IDs to their associated assets
+        """
+        model_assets = {}
+
+        # From specific model-asset associations
+        for model_asset_key, exchange in self.ml_model_exchange_assets.items():
+            if ":" in model_asset_key:
+                ml_model_id, asset = model_asset_key.split(":", 1)
+                if ml_model_id not in model_assets:
+                    model_assets[ml_model_id] = []
+                if isinstance(model_assets[ml_model_id], list):
+                    if asset not in model_assets[ml_model_id]:
+                        model_assets[ml_model_id].append(asset)
+
+        # From general model-asset associations
+        for ml_model_id, assets in self.ml_model_assets.items():
+            if ml_model_id not in model_assets:
+                model_assets[ml_model_id] = assets
+            else:
+                # Merge with existing
+                if isinstance(model_assets[ml_model_id], list) and isinstance(assets, list):
+                    for asset in assets:
+                        if asset not in model_assets[ml_model_id]:
+                            model_assets[ml_model_id].append(asset)
+
+        return model_assets
 
     async def cancel_multi_exchange_order(self, multi_order_id: str) -> Dict[str, Any]:
         """
@@ -1313,8 +1468,12 @@ class TradingReceiver:
             ml_model_stats = {
                 "registered_ml_models": len(self.ml_model_exchanges),
                 "default_ml_exchange": self.default_ml_exchange,
+                "default_asset": self.default_asset,
                 "ml_model_exchanges": self.ml_model_exchanges,
-                "ml_models_by_exchange": self._get_ml_models_by_exchange()
+                "ml_model_assets": self.ml_model_assets,
+                "ml_model_exchange_assets": self.ml_model_exchange_assets,
+                "ml_models_by_exchange": self._get_ml_models_by_exchange(),
+                "assets_by_ml_model": self._get_assets_by_ml_model()
             }
 
             # Get message handler statistics
@@ -1338,7 +1497,8 @@ class TradingReceiver:
                     "failover_exchanges": self.failover_exchanges,
                     "broadcast_enabled": self.broadcast_enabled,
                     "load_balancing_enabled": self.load_balancing_enabled,
-                    "default_ml_exchange": self.default_ml_exchange
+                    "default_ml_exchange": self.default_ml_exchange,
+                    "default_asset": self.default_asset
                 }
             }
 

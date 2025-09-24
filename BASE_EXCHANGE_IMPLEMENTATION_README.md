@@ -2,7 +2,7 @@
 
 ## ✅ Implementation Summary
 
-I have successfully implemented the base exchange sub-directory and enhanced the trading receiver to handle multi-exchange order routing and response handling as requested.
+I have successfully implemented the base exchange sub-directory and enhanced the trading receiver to handle ML model and asset-specific exchange routing, ensuring orders are sent to the correct exchange for each ML model's data source and asset compatibility is validated.
 
 ## 📁 New Directory Structure
 
@@ -11,7 +11,7 @@ I have successfully implemented the base exchange sub-directory and enhanced the
 ```
 exchanges/base_exchange/
 ├── __init__.py                 # Module initialization and exports
-├── base_exchange.py            # Enhanced base exchange with multi-exchange support
+├── base_exchange.py            # Enhanced base exchange with ML model and asset support
 ├── exchange_interface.py       # Core interfaces and type definitions
 ├── message_handler.py          # Message routing and queuing system
 ├── response_handler.py         # Response aggregation and handling
@@ -20,10 +20,11 @@ exchanges/base_exchange/
 
 ## 🚀 Key Features Implemented
 
-### 1. **ML Model-Specific Exchange Routing**
-- ✅ Send orders to the exchange associated with each ML model
-- ✅ ML model to exchange mapping and management
-- ✅ Default exchange fallback for unknown ML models
+### 1. **ML Model and Asset-Specific Exchange Routing**
+- ✅ Send orders to the exchange associated with each ML model AND asset
+- ✅ ML model to exchange and asset mapping and management
+- ✅ Asset compatibility validation before order execution
+- ✅ Default exchange and asset fallback for unknown combinations
 - ✅ Intelligent routing strategies (ml_model, primary, failover, best_price)
 
 ### 2. **Enhanced Trading Receiver**
@@ -211,137 +212,177 @@ async def ml_model_callback(response):
 
 ## 🎯 Key Benefits
 
-### 1. **ML Model-Specific Exchange Routing**
-- Orders sent ONLY to the exchange associated with each ML model
-- Each ML model uses data from its specific exchange
+### 1. **ML Model and Asset-Specific Exchange Routing**
+- Orders sent ONLY to the exchange associated with each ML model AND asset
+- Each ML model uses data from its specific exchange and compatible assets
+- Asset compatibility validation prevents invalid model-asset combinations
 - No unnecessary cross-exchange communication
 
-### 2. **Intelligent ML Model Management**
-- Dynamic ML model to exchange registration
-- Default exchange fallback for unknown models
-- Easy configuration and management
-- Real-time model mapping updates
+### 2. **Intelligent ML Model and Asset Management**
+- Dynamic ML model to exchange and asset registration
+- Specific model-exchange-asset combination mappings
+- Default exchange and asset fallback for unknown combinations
+- Easy configuration and management of model-asset associations
+- Real-time model and asset mapping updates
 
 ### 3. **Robust Error Handling**
-- ML model-specific error handling
+- ML model and asset-specific error handling
 - Automatic retry with backoff
+- Asset compatibility validation with clear error messages
 - Graceful degradation
-- Comprehensive logging
+- Comprehensive logging with asset context
 
 ### 4. **Real-Time Monitoring**
-- ML model registration tracking
-- Exchange-specific performance metrics
-- Success/failure rates per model
-- Model to exchange mapping monitoring
+- ML model registration and asset compatibility tracking
+- Exchange-specific performance metrics per asset
+- Success/failure rates per model-asset combination
+- Model to exchange and asset mapping monitoring
 
 ### 5. **Extensible Architecture**
-- Plugin-based ML model support
-- Custom routing strategies
-- Extensible response handling
-- Modular design
+- Plugin-based ML model and asset support
+- Custom routing strategies with asset awareness
+- Extensible response handling with asset context
+- Modular design supporting complex model-asset relationships
 
 ## 📋 Usage Examples
 
-### ML Model-Specific Order Routing
+### ML Model and Asset-Specific Order Routing
 ```python
-# Send to ML model-associated exchange
+# Send to ML model and asset-associated exchange
 response = await receiver.send_order_for_ml_model(
-    symbol="BTCUSDT",
+    symbol="BTCUSDT",  # Asset must be compatible with ML model
     side="buy",
     order_type="market",
     quantity=0.001,
     ml_model_id="binance_prophet_model"
 )
-# Automatically routes to Binance
+# Asset compatibility validated, routes to Binance
 ```
 
-### ML Model Management
+### ML Model and Asset Management
 ```python
-# Register ML model associations
-receiver.register_ml_model_exchange("my_model", "binance")
-receiver.register_ml_model_exchange("another_model", "okx")
+# Register ML model with specific assets
+receiver.register_ml_model_exchange("my_model", "binance", ["BTCUSDT", "ETHUSDT"])
 
-# Get exchange for ML model
-exchange = receiver.get_ml_model_exchange("my_model")  # Returns "binance"
+# Register specific model-exchange-asset combination
+receiver.register_ml_model_exchange_asset("my_model", "binance", "BTCUSDT")
 
-# Set default exchange for unknown models
+# Validate asset compatibility
+compatible = receiver._validate_ml_model_asset_compatibility("my_model", "BTCUSDT")
+print(f"Model compatible with asset: {compatible}")
+
+# Get exchange for ML model and asset
+exchange = receiver._get_exchange_for_ml_model("my_model", "BTCUSDT")  # "binance"
+
+# Set default exchange and asset for unknown combinations
 receiver.set_default_ml_exchange("binance")
+receiver.default_asset = "BTCUSDT"
 ```
 
-### Intelligent Routing with ML Models
+### Asset Compatibility Validation
 ```python
-# Route using ML model strategy
-response = await receiver.send_order_with_routing(
-    symbol="BTCUSDT",
+# Compatible asset (will succeed)
+response1 = await receiver.send_order_for_ml_model(
+    symbol="BTCUSDT",  # Compatible with binance_prophet_model
     side="buy",
     order_type="market",
     quantity=0.001,
-    routing_strategy="ml_model",  # DEFAULT strategy
     ml_model_id="binance_prophet_model"
 )
+
+# Incompatible asset (will fail with validation error)
+response2 = await receiver.send_order_for_ml_model(
+    symbol="ADAUSDT",  # NOT compatible with binance_prophet_model
+    side="buy",
+    order_type="market",
+    quantity=1.0,
+    ml_model_id="binance_prophet_model"
+)
+
+# Check compatibility in responses
+print(f"BTCUSDT compatible: {response1.metadata.get('asset_compatible', False)}")
+print(f"ADAUSDT compatible: {response2.metadata.get('asset_compatible', False)}")
 ```
 
 ## 🔧 Integration
 
-The base exchange module integrates seamlessly with ML model-based trading:
+The base exchange module integrates seamlessly with ML model and asset-based trading:
 
-### ML Model-Based Trading
+### ML Model and Asset-Based Trading
 ```python
-# Each ML model is associated with a specific exchange
+# Each ML model is associated with specific exchanges and assets
 config = {
     "ml_model_exchanges": {
         "binance_prophet_model": "binance",
         "okx_random_forest": "okx",
         "gateio_neural_net": "gateio"
-    }
+    },
+    "ml_model_assets": {
+        "binance_prophet_model": ["BTCUSDT", "ETHUSDT"],
+        "okx_random_forest": ["ETHUSDT", "ADAUSDT"],
+        "gateio_neural_net": ["ADAUSDT", "DOTUSDT"]
+    },
+    "ml_model_exchange_assets": {
+        "binance_prophet_model:BTCUSDT": "binance",
+        "binance_prophet_model:ETHUSDT": "binance",
+        "okx_random_forest:ETHUSDT": "okx",
+        "okx_random_forest:ADAUSDT": "okx"
+    },
+    "default_ml_exchange": "binance",
+    "default_asset": "BTCUSDT"
 }
 
 receiver = TradingReceiver(config)
 
-# Orders are sent to the exchange associated with each ML model
+# Orders are sent to the exchange associated with ML model and asset
 response = await receiver.send_order_for_ml_model(
-    symbol="BTCUSDT",
+    symbol="BTCUSDT",  # Must be compatible with ML model
     side="buy",
     order_type="market",
     quantity=0.001,
     ml_model_id="binance_prophet_model"
 )
-# This will automatically route to Binance
+# Asset compatibility validated, routes to Binance
 ```
 
-### ML Model Signal Processing
+### ML Model and Asset Signal Processing
 ```python
-# ML models send signals with their model ID
+# ML models send signals with their model ID and asset
 signal = TradingSignal(
     symbol="BTCUSDT",
     action="buy",
     quantity=0.001,
     confidence=0.85,
     strategy="binance_prophet_model",  # This determines target exchange
-    metadata={"ml_model_id": "binance_prophet_model"}
+    metadata={
+        "ml_model_id": "binance_prophet_model",
+        "asset": "BTCUSDT"
+    }
 )
 
-# The system automatically routes to the correct exchange
+# The system validates asset compatibility and routes to correct exchange
 response = await receiver.send_order_with_routing(
     symbol=signal.symbol,
     side=signal.action,
     order_type="market",
     quantity=signal.quantity,
-    routing_strategy="ml_model",
+    routing_strategy="ml_model",  # ML model + asset routing
     ml_model_id=signal.metadata["ml_model_id"]
 )
+# Asset compatibility automatically validated
 ```
 
 ## 🚀 Ready for Production
 
-This implementation provides a production-ready ML model-based trading system with:
+This implementation provides a production-ready ML model and asset-based trading system with:
 
-✅ **Orders sent to ML model-associated exchanges**
-✅ **Responses routed back with ML model context**
-✅ **ML model to exchange mapping management**
-✅ **Intelligent routing strategies with ML model support**
-✅ **Real-time monitoring and statistics for ML models**
-✅ **Extensible architecture for ML model integration**
+✅ **Orders sent to ML model and asset-associated exchanges**
+✅ **Asset compatibility validation before order execution**
+✅ **Responses routed back with ML model and asset context**
+✅ **ML model to exchange and asset mapping management**
+✅ **Intelligent routing strategies with ML model and asset support**
+✅ **Real-time monitoring and statistics for ML models and assets**
+✅ **Extensible architecture for ML model and asset integration**
 ✅ **Production-ready code quality**
 
-The system is now capable of handling ML model-specific exchange routing where each ML model is associated with its specific exchange, ensuring orders are sent to the correct exchange for each model's data source.
+The system is now capable of handling ML model and asset-specific exchange routing where each ML model is associated with specific exchanges and assets, ensuring orders are sent to the correct exchange for each model's data source and asset compatibility is validated.

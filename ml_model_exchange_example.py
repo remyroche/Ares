@@ -62,18 +62,45 @@ async def create_trading_receiver_with_ml_models() -> TradingReceiver:
             "gateio_neural_net": "gateio",
             "gateio_svm_model": "gateio"
         },
-        "default_ml_exchange": "binance"
+        # ML model to asset mappings
+        "ml_model_assets": {
+            "binance_prophet_model": ["BTCUSDT", "ETHUSDT"],
+            "binance_lstm_model": "BTCUSDT",
+            "okx_random_forest": ["ETHUSDT", "ADAUSDT"],
+            "okx_gradient_boost": "ETHUSDT",
+            "gateio_neural_net": ["ADAUSDT", "DOTUSDT"],
+            "gateio_svm_model": "ADAUSDT"
+        },
+        # Specific ML model-exchange-asset combinations
+        "ml_model_exchange_assets": {
+            "binance_prophet_model:BTCUSDT": "binance",
+            "binance_prophet_model:ETHUSDT": "binance",
+            "binance_lstm_model:BTCUSDT": "binance",
+            "okx_random_forest:ETHUSDT": "okx",
+            "okx_random_forest:ADAUSDT": "okx",
+            "okx_gradient_boost:ETHUSDT": "okx",
+            "gateio_neural_net:ADAUSDT": "gateio",
+            "gateio_neural_net:DOTUSDT": "gateio",
+            "gateio_svm_model:ADAUSDT": "gateio"
+        },
+        "default_ml_exchange": "binance",
+        "default_asset": "BTCUSDT"
     }
 
     receiver = TradingReceiver(config)
 
-    # Register ML model associations
-    receiver.register_ml_model_exchange("binance_prophet_model", "binance")
-    receiver.register_ml_model_exchange("binance_lstm_model", "binance")
-    receiver.register_ml_model_exchange("okx_random_forest", "okx")
-    receiver.register_ml_model_exchange("okx_gradient_boost", "okx")
-    receiver.register_ml_model_exchange("gateio_neural_net", "gateio")
-    receiver.register_ml_model_exchange("gateio_svm_model", "gateio")
+    # Register ML model associations with assets
+    receiver.register_ml_model_exchange("binance_prophet_model", "binance", ["BTCUSDT", "ETHUSDT"])
+    receiver.register_ml_model_exchange("binance_lstm_model", "binance", "BTCUSDT")
+    receiver.register_ml_model_exchange("okx_random_forest", "okx", ["ETHUSDT", "ADAUSDT"])
+    receiver.register_ml_model_exchange("okx_gradient_boost", "okx", "ETHUSDT")
+    receiver.register_ml_model_exchange("gateio_neural_net", "gateio", ["ADAUSDT", "DOTUSDT"])
+    receiver.register_ml_model_exchange("gateio_svm_model", "gateio", "ADAUSDT")
+
+    # Register specific model-exchange-asset combinations
+    receiver.register_ml_model_exchange_asset("binance_prophet_model", "binance", "BTCUSDT")
+    receiver.register_ml_model_exchange_asset("binance_prophet_model", "binance", "ETHUSDT")
+    receiver.register_ml_model_exchange_asset("binance_lstm_model", "binance", "BTCUSDT")
 
     await receiver.start()
 
@@ -180,11 +207,23 @@ async def demonstrate_ml_model_routing():
         for ml_model, exchange in mappings.items():
             print(f"   {ml_model} → {exchange}")
 
+        # Asset mappings
+        print("📊 ML Model Asset Associations:")
+        asset_mappings = receiver.ml_model_assets
+        for ml_model, assets in asset_mappings.items():
+            print(f"   {ml_model} → {assets}")
+
         # Models by exchange
         print("📊 Models Grouped by Exchange:")
         models_by_exchange = receiver._get_ml_models_by_exchange()
         for exchange, models in models_by_exchange.items():
             print(f"   {exchange}: {len(models)} models - {models}")
+
+        # Assets by model
+        print("📊 Assets Grouped by ML Model:")
+        assets_by_model = receiver._get_assets_by_ml_model()
+        for ml_model, assets in assets_by_model.items():
+            print(f"   {ml_model}: {assets}")
 
         # Set default ML exchange
         print("🔧 Setting default ML exchange to OKX...")
@@ -199,24 +238,58 @@ async def demonstrate_ml_model_routing():
         print("📊 ML Model Statistics:")
         print(f"   Registered ML models: {stats['ml_model']['registered_ml_models']}")
         print(f"   Default ML exchange: {stats['ml_model']['default_ml_exchange']}")
+        print(f"   Default asset: {stats['ml_model']['default_asset']}")
         print(f"   ML model to exchange mappings: {stats['ml_model']['ml_model_exchanges']}")
+        print(f"   ML model to asset mappings: {stats['ml_model']['ml_model_assets']}")
         print(f"   Models by exchange: {stats['ml_model']['ml_models_by_exchange']}")
+        print(f"   Assets by ML model: {stats['ml_model']['assets_by_ml_model']}")
 
-        # Test 6: Error handling for invalid ML models
-        print("\n⚠️ Test 6: Error Handling")
+        # Test 6: Asset compatibility validation
+        print("\n✅ Test 6: Asset Compatibility Validation")
         print("-" * 40)
 
-        print("📊 Invalid ML Model Test")
-        invalid_response = await receiver.send_order_for_ml_model(
+        print("📊 Compatible Asset Test (binance_prophet_model + BTCUSDT)")
+        compatible_response = await receiver.send_order_for_ml_model(
             symbol="BTCUSDT",
             side="buy",
             order_type="market",
             quantity=0.001,
-            ml_model_id="nonexistent_model"  # This will use default
+            ml_model_id="binance_prophet_model"
         )
-        print(f"   Response: {invalid_response.success}")
-        if hasattr(invalid_response, 'metadata') and invalid_response.metadata:
-            print(f"   Target Exchange: {invalid_response.metadata.get('target_exchange', 'unknown')}")
+        print(f"   Response: {compatible_response.success}")
+        if hasattr(compatible_response, 'metadata') and compatible_response.metadata:
+            print(f"   Asset Compatible: {compatible_response.metadata.get('asset_compatible', 'unknown')}")
+            print(f"   Target Exchange: {compatible_response.metadata.get('target_exchange', 'unknown')}")
+
+        print("\n📊 Incompatible Asset Test (binance_prophet_model + ADAUSDT)")
+        incompatible_response = await receiver.send_order_for_ml_model(
+            symbol="ADAUSDT",  # This model doesn't handle ADAUSDT
+            side="buy",
+            order_type="market",
+            quantity=1.0,
+            ml_model_id="binance_prophet_model"
+        )
+        print(f"   Response: {incompatible_response.success}")
+        if hasattr(incompatible_response, 'metadata') and incompatible_response.metadata:
+            print(f"   Asset Compatible: {incompatible_response.metadata.get('asset_compatible', 'unknown')}")
+            print(f"   Error: {incompatible_response.error}")
+
+        # Test 7: Default asset fallback
+        print("\n🔄 Test 7: Default Asset Fallback")
+        print("-" * 40)
+
+        print("📊 Unknown ML Model Test (uses default asset)")
+        default_response = await receiver.send_order_for_ml_model(
+            symbol="BTCUSDT",  # This will use default asset
+            side="buy",
+            order_type="market",
+            quantity=0.001,
+            ml_model_id="unknown_model"
+        )
+        print(f"   Response: {default_response.success}")
+        if hasattr(default_response, 'metadata') and default_response.metadata:
+            print(f"   Target Exchange: {default_response.metadata.get('target_exchange', 'unknown')}")
+            print(f"   Asset: {default_response.metadata.get('asset', 'unknown')}")
 
         await receiver.stop()
         print("✅ Trading receiver stopped successfully")
@@ -352,18 +425,20 @@ async def main():
         print("🎉 All demonstrations completed successfully!")
         print("\n📚 Key Features Demonstrated:")
         print("   ✅ ML model-specific exchange routing")
-        print("   ✅ Default exchange fallback for unknown models")
+        print("   ✅ Asset compatibility validation")
+        print("   ✅ Default exchange and asset fallback")
         print("   ✅ Dynamic ML model registration/unregistration")
-        print("   ✅ ML model configuration management")
-        print("   ✅ Statistics and monitoring for ML models")
-        print("   ✅ Error handling for invalid ML models")
+        print("   ✅ ML model to asset association management")
+        print("   ✅ Statistics and monitoring for ML models and assets")
+        print("   ✅ Error handling for invalid ML model-asset combinations")
 
         print("\n🔑 Key Benefits:")
         print("   🎯 Orders sent ONLY to ML model-associated exchanges")
+        print("   💰 Assets validated against ML model compatibility")
         print("   🔄 No unnecessary broadcasting to all exchanges")
-        print("   📊 Each ML model uses data from its specific exchange")
-        print("   ⚙️ Easy configuration and management of ML model mappings")
-        print("   📈 Comprehensive monitoring and statistics")
+        print("   📊 Each ML model uses data from its specific exchange and assets")
+        print("   ⚙️ Easy configuration and management of ML model-asset mappings")
+        print("   📈 Comprehensive monitoring and statistics for models and assets")
 
     except Exception as e:
         print(f"❌ Fatal error in demonstration: {e}")

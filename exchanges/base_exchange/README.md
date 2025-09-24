@@ -1,15 +1,16 @@
 # Base Exchange Module
 
-This directory contains the core base exchange functionality for the ML model-based trading system.
+This directory contains the core base exchange functionality for the ML model and asset-based trading system.
 
 ## Overview
 
-The `base_exchange/` module provides the foundational components for ML model-specific exchange operations. It enables the system to:
+The `base_exchange/` module provides the foundational components for ML model and asset-specific exchange operations. It enables the system to:
 
-1. **Send orders to the exchange associated with each ML model**
-2. **Route responses back from the appropriate exchange**
-3. **Handle ML model-based message routing and processing**
-4. **Manage ML model to exchange mappings**
+1. **Send orders to the exchange associated with each ML model and asset**
+2. **Validate ML model-asset compatibility before order execution**
+3. **Route responses back from the appropriate exchange with asset context**
+4. **Handle ML model to exchange and asset mappings**
+5. **Manage both exchange and asset associations for ML models**
 
 ## Architecture
 
@@ -41,28 +42,39 @@ The `base_exchange/` module provides the foundational components for ML model-sp
 
 ## Key Features
 
-### ML Model-Based Exchange Routing
+### ML Model and Asset-Based Exchange Routing
 ```python
-# Send order to the exchange associated with the ML model
+# Send order to the exchange associated with the ML model and asset
 response = await receiver.send_order_for_ml_model(
-    symbol="BTCUSDT",
+    symbol="BTCUSDT",  # Asset validation required
     side="buy",
     order_type="market",
     quantity=0.001,
     ml_model_id="binance_prophet_model"
 )
+
+# Asset compatibility is automatically validated
+if not response.success:
+    print(f"Asset {symbol} not compatible with ML model {ml_model_id}")
 ```
 
-### ML Model Management
+### ML Model and Asset Management
 ```python
-# Register ML model to exchange association
-receiver.register_ml_model_exchange("my_model", "binance")
+# Register ML model to exchange association with specific assets
+receiver.register_ml_model_exchange("my_model", "binance", ["BTCUSDT", "ETHUSDT"])
 
-# Get exchange for ML model
-exchange = receiver.get_ml_model_exchange("my_model")
+# Register specific model-exchange-asset combinations
+receiver.register_ml_model_exchange_asset("my_model", "binance", "BTCUSDT")
 
-# Set default exchange for unknown ML models
+# Get exchange for ML model and asset
+exchange = receiver.get_ml_model_exchange("my_model")  # "binance"
+
+# Validate asset compatibility
+compatible = receiver._validate_ml_model_asset_compatibility("my_model", "BTCUSDT")
+
+# Set default exchange and asset for unknown combinations
 receiver.set_default_ml_exchange("binance")
+receiver.default_asset = "BTCUSDT"
 ```
 
 ### Response Aggregation
@@ -79,26 +91,38 @@ await message_handler.send_message(message, target_exchanges)
 
 ## Usage Examples
 
-### ML Model-Based Order Routing
+### ML Model and Asset-Based Order Routing
 ```python
 from exchanges import TradingReceiver
 
-# Initialize receiver with ML model mappings
+# Initialize receiver with ML model and asset mappings
 config = {
     "ml_model_exchanges": {
         "binance_prophet_model": "binance",
         "okx_random_forest": "okx",
         "gateio_neural_net": "gateio"
     },
-    "default_ml_exchange": "binance"
+    "ml_model_assets": {
+        "binance_prophet_model": ["BTCUSDT", "ETHUSDT"],
+        "okx_random_forest": ["ETHUSDT", "ADAUSDT"],
+        "gateio_neural_net": ["ADAUSDT", "DOTUSDT"]
+    },
+    "ml_model_exchange_assets": {
+        "binance_prophet_model:BTCUSDT": "binance",
+        "binance_prophet_model:ETHUSDT": "binance",
+        "okx_random_forest:ETHUSDT": "okx",
+        "okx_random_forest:ADAUSDT": "okx"
+    },
+    "default_ml_exchange": "binance",
+    "default_asset": "BTCUSDT"
 }
 
 receiver = TradingReceiver(config)
 await receiver.start()
 
-# Send order using ML model routing
+# Send order with ML model and asset validation
 response = await receiver.send_order_for_ml_model(
-    symbol="BTCUSDT",
+    symbol="BTCUSDT",  # Asset must be compatible with ML model
     side="buy",
     order_type="market",
     quantity=0.001,
@@ -106,40 +130,58 @@ response = await receiver.send_order_for_ml_model(
 )
 
 print(f"Order sent to: {response.metadata['target_exchange']}")
+print(f"Asset compatible: {response.metadata.get('asset_compatible', False)}")
 print(f"Success: {response.success}")
 ```
 
-### ML Model Management
+### ML Model and Asset Management
 ```python
-# Register ML model associations
-receiver.register_ml_model_exchange("my_model", "binance")
-receiver.register_ml_model_exchange("another_model", "okx")
+# Register ML model with specific assets
+receiver.register_ml_model_exchange("my_model", "binance", ["BTCUSDT", "ETHUSDT"])
 
-# Get exchange for ML model
-exchange = receiver.get_ml_model_exchange("my_model")  # Returns "binance"
+# Register specific model-exchange-asset combination
+receiver.register_ml_model_exchange_asset("my_model", "binance", "BTCUSDT")
 
-# Set default exchange
-receiver.set_default_ml_exchange("binance")
+# Validate asset compatibility
+compatible = receiver._validate_ml_model_asset_compatibility("my_model", "BTCUSDT")
+print(f"Model compatible with asset: {compatible}")
+
+# Get exchange for ML model and asset
+exchange = receiver._get_exchange_for_ml_model("my_model", "BTCUSDT")
+
+# Get asset for ML model
+asset = receiver._get_asset_for_ml_model("my_model")
 
 # Get all mappings
 mappings = receiver.get_all_ml_model_exchanges()
+assets = receiver._get_assets_by_ml_model()
 print(f"ML Model Mappings: {mappings}")
+print(f"Asset Mappings: {assets}")
 ```
 
-### Intelligent Routing with ML Models
+### Asset Compatibility Validation
 ```python
-# Route using ML model strategy
-response = await receiver.send_order_with_routing(
-    symbol="BTCUSDT",
+# Compatible asset (will succeed)
+response1 = await receiver.send_order_for_ml_model(
+    symbol="BTCUSDT",  # Compatible with binance_prophet_model
     side="buy",
     order_type="market",
     quantity=0.001,
-    routing_strategy="ml_model",
     ml_model_id="binance_prophet_model"
 )
 
-# The order will be sent to Binance (associated with the ML model)
-print(f"Routed to: {response.metadata['target_exchange']}")
+# Incompatible asset (will fail with validation error)
+response2 = await receiver.send_order_for_ml_model(
+    symbol="ADAUSDT",  # NOT compatible with binance_prophet_model
+    side="buy",
+    order_type="market",
+    quantity=1.0,
+    ml_model_id="binance_prophet_model"
+)
+
+# Check compatibility in responses
+print(f"BTCUSDT compatible: {response1.metadata.get('asset_compatible', False)}")
+print(f"ADAUSDT compatible: {response2.metadata.get('asset_compatible', False)}")
 ```
 
 ### Response Handling
@@ -250,28 +292,41 @@ print(f"Active callbacks: {response_stats['registered_callbacks']}")
 
 The base exchange module integrates seamlessly with ML model-based trading:
 
-### ML Model-Based Trading
+### ML Model and Asset-Based Trading
 ```python
-# Each ML model is associated with a specific exchange
+# Each ML model is associated with specific exchanges and assets
 config = {
     "ml_model_exchanges": {
         "binance_prophet_model": "binance",
         "okx_random_forest": "okx",
         "gateio_neural_net": "gateio"
-    }
+    },
+    "ml_model_assets": {
+        "binance_prophet_model": ["BTCUSDT", "ETHUSDT"],
+        "okx_random_forest": ["ETHUSDT", "ADAUSDT"],
+        "gateio_neural_net": ["ADAUSDT", "DOTUSDT"]
+    },
+    "ml_model_exchange_assets": {
+        "binance_prophet_model:BTCUSDT": "binance",
+        "binance_prophet_model:ETHUSDT": "binance",
+        "okx_random_forest:ETHUSDT": "okx",
+        "okx_random_forest:ADAUSDT": "okx"
+    },
+    "default_ml_exchange": "binance",
+    "default_asset": "BTCUSDT"
 }
 
 receiver = TradingReceiver(config)
 
-# Orders are sent to the exchange associated with each ML model
+# Orders are sent to the exchange associated with ML model and asset
 response = await receiver.send_order_for_ml_model(
-    symbol="BTCUSDT",
+    symbol="BTCUSDT",  # Must be compatible with ML model
     side="buy",
     order_type="market",
     quantity=0.001,
     ml_model_id="binance_prophet_model"
 )
-# This will automatically route to Binance
+# Asset compatibility validated, routes to Binance
 ```
 
 ### ML Model Signal Processing
@@ -386,21 +441,26 @@ print(json.dumps(stats, indent=2))
 
 ## API Reference
 
-### TradingReceiver ML Model Methods
-- `send_order_for_ml_model()` - Send order to ML model-associated exchange
-- `send_order_with_routing()` - Intelligent routing with ML model strategy
-- `register_ml_model_exchange()` - Register ML model to exchange mapping
+### TradingReceiver ML Model and Asset Methods
+- `send_order_for_ml_model()` - Send order to ML model and asset-associated exchange
+- `send_order_with_routing()` - Intelligent routing with ML model and asset validation
+- `register_ml_model_exchange()` - Register ML model to exchange with asset support
+- `register_ml_model_exchange_asset()` - Register specific ML model-exchange-asset combinations
 - `get_ml_model_exchange()` - Get exchange for specific ML model
 - `set_default_ml_exchange()` - Set default exchange for unknown ML models
 
-### ML Model Management Methods
+### ML Model and Asset Management Methods
 - `unregister_ml_model_exchange()` - Remove ML model association
 - `get_all_ml_model_exchanges()` - Get all ML model mappings
 - `_get_ml_models_by_exchange()` - Get ML models grouped by exchange
+- `_get_assets_by_ml_model()` - Get assets associated with ML models
+- `_validate_ml_model_asset_compatibility()` - Validate ML model-asset compatibility
+- `_get_exchange_for_ml_model()` - Get exchange for ML model and asset
+- `_get_asset_for_ml_model()` - Get default asset for ML model
 
 ### BaseExchange Components
 - `ExchangeMessageHandler` - Message processing and routing
-- `ExchangeResponseHandler` - Response management and aggregation
-- `MultiExchangeBase` - ML model-based operation base class
+- `ExchangeResponseHandler` - Response management and aggregation with asset context
+- `MultiExchangeBase` - ML model and asset-based operation base class
 
-This base exchange module provides a solid foundation for building sophisticated ML model-based trading applications where each ML model is associated with a specific exchange, ensuring orders are sent to the correct exchange for each model's data source.
+This base exchange module provides a solid foundation for building sophisticated ML model and asset-based trading applications where each ML model is associated with specific exchanges and assets, ensuring orders are sent to the correct exchange for each model's data source and asset compatibility is validated.

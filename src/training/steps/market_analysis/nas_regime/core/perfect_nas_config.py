@@ -314,3 +314,54 @@ class PerfectNASConfig:
         config.log_level = "WARNING"
         config.enable_profiling = False
         return config
+
+    # Multi-timeframe settings
+    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m"])
+    regime_detection_timeframe: str = "15m"
+    enable_multi_timeframe_training: bool = True
+
+    # TAS integration settings
+    enable_tas_integration: bool = True
+    tas_base_weight: float = 0.4
+    tas_performance_weight: float = 0.3
+    tas_adaptive_weighting: bool = True
+
+    # Additional performance thresholds
+    regime_stability_threshold: float = 0.8
+    transition_accuracy_threshold: float = 0.85
+
+    # Min/max regime settings
+    min_regime_samples: int = 50
+    max_regime_samples: int = 10000
+
+    # Advanced features
+    enable_clvsa_enhancement: bool = True
+    enable_regime_adaptation: bool = True
+    enable_uncertainty_quantification: bool = True
+    enable_multi_scale_analysis: bool = True
+
+    # Meta-learning
+    enable_meta_learning: bool = True
+    adaptation_rate: float = 0.1
+    memory_size: int = 1000
+
+    # Regime discovery parameters
+    regime_discovery_method: str = "hybrid"
+    stability_threshold: float = 0.8
+    transition_detection_sensitivity: float = 0.7
+
+    # Feature importance and correlation
+    feature_importance_threshold: float = 0.1
+    correlation_threshold: float = 0.8
+    outlier_detection_enabled: bool = True
+
+    def get_tas_integration_config(self) -> Dict[str, Any]:
+        """Get TAS integration configuration."""
+        return {
+            'enabled': self.enable_tas_integration,
+            'base_weight': self.tas_base_weight,
+            'performance_weight': self.tas_performance_weight,
+            'adaptive_weighting': self.tas_adaptive_weighting,
+            'short_term_focus': True,
+            'intra_bar_analysis': True
+        }

@@ -390,6 +390,118 @@ class BinanceExchange(BaseExchange):
         }
         return await self._make_request("GET", "/api/v3/depth", params) or {}
 
+    # Additional methods for live trading
+    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
+        """Get ticker information."""
+        if symbol:
+            return await self.get_24hr_ticker(symbol)
+        else:
+            # Get all tickers
+            return await self._make_request("GET", "/api/v3/ticker/24hr") or {}
+    
+    async def get_recent_trades(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Get recent trades."""
+        params = {
+            "symbol": symbol.upper(),
+            "limit": min(limit, 1000)
+        }
+        data = await self._make_request("GET", "/api/v3/trades", params)
+        if data:
+            trades = []
+            for item in data:
+                trades.append({
+                    "timestamp": item["time"],
+                    "price": item["price"],
+                    "quantity": item["qty"],
+                    "side": "buy" if item["isBuyerMaker"] else "sell",
+                    "trade_id": item["id"]
+                })
+            return trades
+        return []
+    
+    async def get_funding_rate(self, symbol: str | None = None) -> dict[str, Any]:
+        """Get funding rate information."""
+        params = {"symbol": symbol.upper()} if symbol else {}
+        return await self._make_request("GET", "/fapi/v1/premiumIndex", params, futures=True) or {}
+    
+    async def get_open_interest(self, symbol: str | None = None) -> dict[str, Any]:
+        """Get open interest information."""
+        params = {"symbol": symbol.upper()} if symbol else {}
+        return await self._make_request("GET", "/fapi/v1/openInterest", params, futures=True) or {}
+    
+    async def get_server_time(self) -> dict[str, Any]:
+        """Get server time."""
+        return await self._make_request("GET", "/api/v3/time") or {}
+    
+    async def get_exchange_info(self) -> dict[str, Any]:
+        """Get exchange information."""
+        return await self._make_request("GET", "/api/v3/exchangeInfo") or {}
+    
+    async def get_symbol_info(self, symbol: str) -> dict[str, Any]:
+        """Get symbol information."""
+        exchange_info = await self.get_exchange_info()
+        if exchange_info and "symbols" in exchange_info:
+            for symbol_info in exchange_info["symbols"]:
+                if symbol_info.get("symbol") == symbol.upper():
+                    return symbol_info
+        return {}
+    
+    async def get_klines_stream(self, symbol: str, interval: str, callback) -> None:
+        """Stream klines data (WebSocket implementation would go here)."""
+        # This would implement WebSocket streaming
+        # For now, we'll use polling
+        while True:
+            try:
+                klines = await self.get_klines(symbol, interval, limit=1)
+                if klines:
+                    await callback(klines[0])
+                await asyncio.sleep(60)  # Poll every minute
+            except Exception as e:
+                self.logger.error(f"Error in klines stream: {e}")
+                await asyncio.sleep(60)
+    
+    async def get_ticker_stream(self, symbol: str, callback) -> None:
+        """Stream ticker data (WebSocket implementation would go here)."""
+        # This would implement WebSocket streaming
+        # For now, we'll use polling
+        while True:
+            try:
+                ticker = await self.get_ticker(symbol)
+                if ticker:
+                    await callback(ticker)
+                await asyncio.sleep(1)  # Poll every second
+            except Exception as e:
+                self.logger.error(f"Error in ticker stream: {e}")
+                await asyncio.sleep(1)
+    
+    async def get_trade_stream(self, symbol: str, callback) -> None:
+        """Stream trade data (WebSocket implementation would go here)."""
+        # This would implement WebSocket streaming
+        # For now, we'll use polling
+        while True:
+            try:
+                trades = await self.get_recent_trades(symbol, limit=10)
+                for trade in trades:
+                    await callback(trade)
+                await asyncio.sleep(1)  # Poll every second
+            except Exception as e:
+                self.logger.error(f"Error in trade stream: {e}")
+                await asyncio.sleep(1)
+    
+    async def get_orderbook_stream(self, symbol: str, callback) -> None:
+        """Stream orderbook data (WebSocket implementation would go here)."""
+        # This would implement WebSocket streaming
+        # For now, we'll use polling
+        while True:
+            try:
+                orderbook = await self.get_order_book(symbol, limit=20)
+                if orderbook:
+                    await callback(orderbook)
+                await asyncio.sleep(1)  # Poll every second
+            except Exception as e:
+                self.logger.error(f"Error in orderbook stream: {e}")
+                await asyncio.sleep(1)
+
     async def close(self) -> None:
         """Close the exchange connection."""
         if self.session:

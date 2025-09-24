@@ -261,5 +261,36 @@ __all__ = [
     # Unified Evaluation Framework
     'UnifiedEvaluationFramework', 'EvaluationType', 'EvaluationMetric',
     'EvaluationResult', 'EvaluationConfig',
-    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator'
+    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator',
+
+    # Enhanced utilities from common operations
+    'get_logger', 'setup_basic_logging', 'safe_log_metric', 'safe_log_params', 'safe_log_artifact',
+    'get_current_datetime', 'get_today', 'format_datetime', 'parse_datetime',
+    'ensure_directory', 'safe_file_exists', 'safe_json_dump', 'safe_json_load',
+    'create_empty_dataframe', 'validate_dataframe', 'validate_dataframe_columns',
+    'safe_dataframe_operation', 'safe_fillna', 'safe_convert_dtypes', 'safe_merge_dataframes',
+    'safe_drop_columns', 'safe_rename_columns', 'validate_timestamp_column', 'safe_timestamp_conversion',
+    'optimize_dataframe_dtypes', 'calculate_data_quality_metrics', 'get_dataframe_info',
+    'create_data_quality_report', 'safe_divide', 'safe_log', 'safe_sqrt', 'safe_power',
+    'safe_mean', 'safe_std', 'safe_float', 'safe_int', 'validate_finite', 'validate_positive',
+    'validate_range', 'safe_kelly_calculation', 'safe_weighted_average', 'safe_percentage_change',
+    'safe_lower', 'safe_upper', 'safe_join', 'safe_append', 'safe_extend', 'safe_dict_get',
+    'safe_dict_items', 'safe_sleep', 'safe_gather', 'create_async_task', 'timed_operation',
+    'format_bytes', 'chunked_iterable', 'parallel_map', 'validate_correlation_matrix',
+    'safe_matrix_inverse', 'math_safe', 'safe_rolling', 'safe_groupby_operation',
+    'safe_apply_function', 'safe_filter_dataframe', 'create_summary_statistics',
+    'safe_to_parquet', 'safe_read_parquet', 'list_parquet_files', 'get_latest_outcome_file',
+    'load_latest_optimal_regime_clustering_outcome', 'safe_copy', 'safe_deepcopy',
+    'safe_resample', 'align_dataframes', 'validate_dataframe_schema', 'guard_dataframe_nulls',
+    'sanitize_string', 'memory_checkpoint', 'gpu_context', 'optimize_memory', 'get_memory_usage',
+    'validate_file_path', 'get_file_size', 'check_disk_space', 'JSONSerializer', 'PickleSerializer',
+    'ParquetSerializer', 'UniversalSerializer', 'initialize_enhanced_utilities',
+
+    # M1 optimization utilities
+    'get_m1_gpu_manager', 'get_m1_memory_optimizer', 'get_m1_cpu_optimizer',
+    'cleanup_m1_optimizers', 'integrate_with_m1_optimizers',
+
+    # Data utilities integration
+    'get_unified_data_utils', 'get_feature_engineer', 'get_data_quality_framework',
+    'process_market_data'
 ]

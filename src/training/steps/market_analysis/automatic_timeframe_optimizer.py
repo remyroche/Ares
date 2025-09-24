@@ -112,28 +112,28 @@ class AutomaticTimeframeOptimizer:
     def _initialize_optimization_components(self):
         """Initialize optimization components."""
         try:
-            # Analyst-specific optimization config (15m base timeframe)
+            # Analyst-specific optimization config (15m base timeframe, 1-16 periods)
             self.analyst_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
                 min_horizon=1,  # 15 minutes (1 * 15m)
-                max_horizon=8,   # 120 minutes (8 * 15m)
-                horizon_step=1,
+                max_horizon=16,  # 240 minutes (16 * 15m)
+                horizon_step=1,  # Test every period from 1-16
                 optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
-                n_target_candidates=8,
+                n_target_candidates=8,  # Increased for 1-16 periods
                 target_range=(0.002, 0.010),  # 0.2% to 1.0%
-                bayesian_iterations=25
+                bayesian_iterations=25  # Analyst optimization
             )
             
-            # Tactician-specific optimization config (5m base timeframe)
+            # Tactician-specific optimization config (5m base timeframe, 1-16 periods)
             self.tactician_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
-                min_horizon=4,   # 20 minutes (4 * 5m)
+                min_horizon=1,   # 5 minutes (1 * 5m)
                 max_horizon=16,  # 80 minutes (16 * 5m)
-                horizon_step=2,
+                horizon_step=1,  # Test every period from 1-16
                 optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
-                n_target_candidates=6,
+                n_target_candidates=8,  # Increased for 1-16 periods
                 target_range=(0.005, 0.015),  # 0.5% to 1.5%
-                bayesian_iterations=30
+                bayesian_iterations=30  # Tactician optimization
             )
             
             # Initialize optimizers
@@ -377,19 +377,19 @@ class AutomaticTimeframeOptimizer:
         config = MultiHorizonConfig()
         
         if model_type == ModelType.ANALYST:
-            # Analyst: 15m base timeframe (2 periods = 30m, 4 periods = 60m)
-            config.time_horizons = {'immediate': 2, 'short': 4}  # 30m and 60m
+            # Analyst: 15m base timeframe (1-16 periods = 15m-240m)
+            config.time_horizons = {'immediate': 2, 'short': 8}  # 30m and 120m
             config.profit_targets = {
                 'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010
             }
         elif model_type == ModelType.TACTICIAN:
-            # Tactician: 5m base timeframe (4 periods = 20m, 8 periods = 40m)
-            config.time_horizons = {'immediate': 4, 'short': 8}  # 20m and 40m
+            # Tactician: 5m base timeframe (1-16 periods = 5m-80m)
+            config.time_horizons = {'immediate': 2, 'short': 8}  # 10m and 40m
             config.profit_targets = {
                 'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015
             }
         else:  # BOTH
-            config.time_horizons = {'immediate': 3, 'short': 6}
+            config.time_horizons = {'immediate': 2, 'short': 8}  # Balanced approach
             config.profit_targets = {
                 'micro': 0.004, 'small': 0.006, 'medium': 0.008, 'good': 0.012
             }

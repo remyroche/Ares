@@ -280,10 +280,10 @@ class EnhancedMultiHorizonPipeline:
         fallback_configs = {}
         
         if model_type.lower() in ["analyst", "both"]:
-            # Analyst fallback: 15m base timeframe (2 periods = 30m, 4 periods = 60m)
+            # Analyst fallback: 15m base timeframe (1-16 periods = 15m-240m)
             fallback_configs['analyst'] = {
                 'config': {
-                    'time_horizons': {'immediate': 2, 'short': 4},  # 30m and 60m
+                    'time_horizons': {'immediate': 2, 'short': 8},  # 30m and 120m
                     'profit_targets': {'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010}
                 },
                 'score': 0.5,
@@ -292,10 +292,10 @@ class EnhancedMultiHorizonPipeline:
             }
         
         if model_type.lower() in ["tactician", "both"]:
-            # Tactician fallback: 5m base timeframe (4 periods = 20m, 8 periods = 40m)
+            # Tactician fallback: 5m base timeframe (1-16 periods = 5m-80m)
             fallback_configs['tactician'] = {
                 'config': {
-                    'time_horizons': {'immediate': 4, 'short': 8},  # 20m and 40m
+                    'time_horizons': {'immediate': 2, 'short': 8},  # 10m and 40m
                     'profit_targets': {'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015}
                 },
                 'score': 0.5,

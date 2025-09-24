@@ -287,8 +287,41 @@ class PerfectNASRegimeDetector:
                     market_data_array = market_data
                     processed_data = None
                 
-                # Validate numeric data
+                # Validate numeric data using enhanced validation
                 validate_numeric_array(market_data_array, "market_data")
+                
+                # Additional validation using ML common integration if available
+                if self.ml_common_integration:
+                    ml_validation = self.ml_common_integration.validate_data(market_data_array, 'market_data')
+                    if not ml_validation['is_valid']:
+                        self.logger.warning(f"ML validation failed: {ml_validation.get('errors', [])}")
+                
+                # Pre-process data using enhanced matrix operations if available
+                if self.matrix_operations:
+                    with gpu_context("data_preprocessing"):
+                        # Normalize data for better regime detection
+                        normalized_data = self.matrix_operations.normalize_data(market_data_array, method='robust')
+                        
+                        # Calculate enhanced features for regime detection
+                        enhanced_features = self.matrix_operations.calculate_enhanced_features(normalized_data, window=20)
+                        
+                        # Combine original data with enhanced features
+                        if enhanced_features:
+                            feature_arrays = []
+                            for feature_name, feature_data in enhanced_features.items():
+                                if feature_data.ndim == 1:
+                                    feature_arrays.append(feature_data.reshape(-1, 1))
+                                else:
+                                    feature_arrays.append(feature_data)
+                            
+                            if feature_arrays:
+                                enhanced_features_array = np.concatenate(feature_arrays, axis=1)
+                                market_data_array = np.concatenate([market_data_array, enhanced_features_array], axis=1)
+                                self.logger.info(f"✅ Enhanced data with {len(enhanced_features)} feature types")
+                            else:
+                                self.logger.info("⚠️ No enhanced features generated, using original data")
+                else:
+                    self.logger.info("⚠️ Matrix operations not available, using original data")
                 
                 # Learn adaptive thresholds if enabled
                 if (self.using_adaptive_thresholds and 
@@ -330,6 +363,36 @@ class PerfectNASRegimeDetector:
                 error_message=str(e)
             )
 
+        # Post-process results using enhanced tools
+        if enhanced_result.success and self.matrix_operations:
+            try:
+                with gpu_context("result_postprocessing"):
+                    # Calculate regime stability using enhanced matrix operations
+                    if enhanced_result.regime_predictions is not None and len(enhanced_result.regime_predictions) > 0:
+                        enhanced_stability = self.matrix_operations.calculate_regime_stability(
+                            enhanced_result.regime_predictions, timestamps if timestamps is not None else np.arange(len(enhanced_result.regime_predictions))
+                        )
+                        
+                        # Update stability scores if calculated
+                        if enhanced_stability is not None:
+                            enhanced_result.regime_stability_scores = enhanced_stability
+                            self.logger.info("✅ Enhanced regime stability calculated")
+                    
+                    # Calculate transition probabilities using enhanced operations
+                    if enhanced_result.regime_predictions is not None:
+                        n_regimes = len(np.unique(enhanced_result.regime_predictions))
+                        enhanced_transitions = self.matrix_operations.calculate_transition_probabilities(
+                            enhanced_result.regime_predictions, n_regimes
+                        )
+                        
+                        # Update transition probabilities if calculated
+                        if enhanced_transitions is not None:
+                            enhanced_result.transition_probabilities = enhanced_transitions
+                            self.logger.info("✅ Enhanced transition probabilities calculated")
+                            
+            except Exception as e:
+                self.logger.warning(f"Enhanced post-processing failed: {e}")
+        
         # Convert enhanced result to standard result
         result = PerfectNASResult(
             success=enhanced_result.success,
@@ -426,3 +489,68 @@ class PerfectNASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Failed to load detector state: {e}")
             return False
+    
+    def load_market_data(self, symbol: str, interval: str, 
+                        start_date=None, end_date=None, data_type: str = "processed") -> Optional[pd.DataFrame]:
+        """Load market data using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.load_market_data(symbol, interval, start_date, end_date, data_type)
+            else:
+                self.logger.warning("Enhanced data operations not available")
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to load market data: {e}")
+            return None
+    
+    def get_data_quality_report(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Get data quality report using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.get_data_quality_report(data)
+            else:
+                return {'error': 'Enhanced data operations not available'}
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def save_processed_data(self, data: pd.DataFrame, symbol: str, interval: str) -> bool:
+        """Save processed data using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.save_processed_data(data, symbol, interval, "processed")
+            else:
+                self.logger.warning("Enhanced data operations not available")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to save processed data: {e}")
+            return False
+    
+    def get_enhanced_features(self, data: np.ndarray, window: int = 20) -> Dict[str, np.ndarray]:
+        """Get enhanced features using matrix operations."""
+        try:
+            if self.matrix_operations:
+                return self.matrix_operations.calculate_enhanced_features(data, window)
+            else:
+                return {}
+        except Exception as e:
+            self.logger.error(f"Failed to calculate enhanced features: {e}")
+            return {}
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics from all enhanced utilities."""
+        metrics = {
+            'enhanced_utilities_status': {
+                'data_operations': self.data_operations is not None,
+                'matrix_operations': self.matrix_operations is not None,
+                'ml_common_integration': self.ml_common_integration is not None,
+                'm1_integration': self.m1_integration is not None and self.m1_integration.get('success', False),
+                'serialization': self.serializer is not None
+            }
+        }
+        
+        # Add matrix operations metrics if available
+        if self.matrix_operations:
+            matrix_metrics = self.matrix_operations.get_performance_metrics()
+            metrics['matrix_operations_metrics'] = matrix_metrics
+        
+        return metrics

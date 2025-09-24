@@ -32,6 +32,7 @@ warnings.filterwarnings('ignore')
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
     from src.training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector, PerfectNASConfig
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
     REGIME_DETECTION_AVAILABLE = True
 except ImportError:
     REGIME_DETECTION_AVAILABLE = False
@@ -197,7 +198,7 @@ class RegimeAwareTrainer:
             return
         
         try:
-            if self.config.regime_detection_method in ["tas", "hybrid"]:
+            if self.config.regime_detection_method in ["tas", "hybrid", "hybrid_nas_tas"]:
                 tas_config = TASRegimeConfig(
                     n_regimes=8,
                     enable_economic_evaluation=True,
@@ -205,16 +206,28 @@ class RegimeAwareTrainer:
                 )
                 self.tas_detector = TASRegimeDetector(tas_config)
                 self.logger.info("✅ TAS regime detector initialized")
-            
-            if self.config.regime_detection_method in ["nas", "hybrid"]:
+
+            if self.config.regime_detection_method in ["nas", "hybrid", "hybrid_nas_tas"]:
                 nas_config = PerfectNASConfig.create_short_term_trading_config()
                 self.nas_detector = PerfectNASRegimeDetector(nas_config)
                 self.logger.info("✅ NAS regime detector initialized")
-                
+
+            if self.config.regime_detection_method == "hybrid_nas_tas":
+                hybrid_config = HybridRegimeConfig(
+                    combination_strategy="weighted",
+                    tas_weight=0.4,
+                    nas_weight=0.6,
+                    enable_economic_evaluation=True,
+                    enable_financial_relevance=True
+                )
+                self.hybrid_detector = HybridNASTASRegimeDetector(hybrid_config)
+                self.logger.info("✅ Hybrid NAS-TAS regime detector initialized")
+
         except Exception as e:
             self.logger.warning(f"Regime detection initialization failed: {e}")
             self.tas_detector = None
             self.nas_detector = None
+            self.hybrid_detector = None
     
     def _initialize_ml_common(self):
         """Initialize ML common utilities."""
@@ -371,7 +384,7 @@ class RegimeAwareTrainer:
                 # Use both detectors and combine results
                 tas_result = self.tas_detector.detect_regimes(market_data, timestamps) if self.tas_detector else None
                 nas_result = self.nas_detector.detect_regimes(market_data, timestamps) if self.nas_detector else None
-                
+
                 if tas_result and nas_result:
                     # Combine predictions (simple majority voting)
                     combined_predictions = self._combine_regime_predictions(
@@ -400,6 +413,17 @@ class RegimeAwareTrainer:
                         'n_regimes': len(np.unique(nas_result.regime_predictions)),
                         'regime_statistics': self._calculate_regime_statistics(nas_result.regime_predictions, market_data)
                     }
+
+            elif self.config.regime_detection_method == "hybrid_nas_tas" and self.hybrid_detector:
+                # Use the advanced hybrid NAS-TAS detector
+                result = self.hybrid_detector.detect_regimes(market_data, timestamps)
+                return {
+                    'success': result.success,
+                    'regime_predictions': result.regime_predictions,
+                    'regime_probabilities': result.regime_probabilities,
+                    'n_regimes': len(np.unique(result.regime_predictions)),
+                    'regime_statistics': self._calculate_enhanced_regime_statistics(result, market_data)
+                }
             
             # Fallback to simple clustering
             return self._fallback_regime_detection(market_data)
@@ -485,6 +509,54 @@ class RegimeAwareTrainer:
             
             regime_stats[int(regime_id)] = stats
         
+        return regime_stats
+
+    def _calculate_enhanced_regime_statistics(self, regime_result, market_data: pd.DataFrame) -> Dict[int, Dict[str, Any]]:
+        """Calculate enhanced statistics for hybrid regime detection results."""
+        regime_stats = {}
+
+        for regime_id in np.unique(regime_result.regime_predictions):
+            regime_mask = regime_result.regime_predictions == regime_id
+            regime_data = market_data[regime_mask]
+
+            # Basic statistics
+            stats = {
+                'n_samples': len(regime_data),
+                'percentage': len(regime_data) / len(market_data) * 100,
+                'start_index': np.where(regime_mask)[0][0] if len(np.where(regime_mask)[0]) > 0 else 0,
+                'end_index': np.where(regime_mask)[0][-1] if len(np.where(regime_mask)[0]) > 0 else 0,
+                'economic_significance': regime_result.economic_significance_scores[regime_id] if hasattr(regime_result, 'economic_significance_scores') else 0.0,
+                'financial_relevance': regime_result.financial_relevance_scores[regime_id] if hasattr(regime_result, 'financial_relevance_scores') else 0.0,
+                'regime_stability': regime_result.regime_stability_scores[regime_id] if hasattr(regime_result, 'regime_stability_scores') else 0.0
+            }
+
+            # Add price statistics if available
+            if 'close' in market_data.columns:
+                close_prices = regime_data['close']
+                stats.update({
+                    'mean_price': close_prices.mean(),
+                    'std_price': close_prices.std(),
+                    'min_price': close_prices.min(),
+                    'max_price': close_prices.max()
+                })
+
+            # Add volume statistics if available
+            if 'volume' in market_data.columns:
+                volumes = regime_data['volume']
+                stats.update({
+                    'mean_volume': volumes.mean(),
+                    'std_volume': volumes.std()
+                })
+
+            # Add momentum and volume profile statistics if available
+            if hasattr(regime_result, 'momentum_scores') and hasattr(regime_result, 'volume_profiles'):
+                stats.update({
+                    'mean_momentum': regime_result.momentum_scores[regime_mask].mean() if len(regime_result.momentum_scores[regime_mask]) > 0 else 0.0,
+                    'mean_volume_profile': regime_result.volume_profiles[regime_mask].mean() if len(regime_result.volume_profiles[regime_mask]) > 0 else 0.0
+                })
+
+            regime_stats[int(regime_id)] = stats
+
         return regime_stats
     
     def _prepare_regime_datasets(self, 

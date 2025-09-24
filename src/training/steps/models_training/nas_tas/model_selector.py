@@ -24,6 +24,7 @@ warnings.filterwarnings('ignore')
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
     from src.training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector, PerfectNASConfig
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
     REGIME_DETECTION_AVAILABLE = True
 except ImportError:
     REGIME_DETECTION_AVAILABLE = False
@@ -176,7 +177,7 @@ class ModelSelector:
             return
         
         try:
-            if self.config.regime_detection_method in ["tas", "hybrid"]:
+            if self.config.regime_detection_method in ["tas", "hybrid", "hybrid_nas_tas"]:
                 tas_config = TASRegimeConfig(
                     n_regimes=8,
                     enable_economic_evaluation=True,
@@ -184,16 +185,28 @@ class ModelSelector:
                 )
                 self.tas_detector = TASRegimeDetector(tas_config)
                 self.logger.info("✅ TAS regime detector initialized")
-            
-            if self.config.regime_detection_method in ["nas", "hybrid"]:
+
+            if self.config.regime_detection_method in ["nas", "hybrid", "hybrid_nas_tas"]:
                 nas_config = PerfectNASConfig.create_short_term_trading_config()
                 self.nas_detector = PerfectNASRegimeDetector(nas_config)
                 self.logger.info("✅ NAS regime detector initialized")
-                
+
+            if self.config.regime_detection_method == "hybrid_nas_tas":
+                hybrid_config = HybridRegimeConfig(
+                    combination_strategy="weighted",
+                    tas_weight=0.4,
+                    nas_weight=0.6,
+                    enable_economic_evaluation=True,
+                    enable_financial_relevance=True
+                )
+                self.hybrid_detector = HybridNASTASRegimeDetector(hybrid_config)
+                self.logger.info("✅ Hybrid NAS-TAS regime detector initialized")
+
         except Exception as e:
             self.logger.warning(f"Regime detection initialization failed: {e}")
             self.tas_detector = None
             self.nas_detector = None
+            self.hybrid_detector = None
     
     def _initialize_ml_common(self):
         """Initialize ML common utilities."""
@@ -398,7 +411,7 @@ class ModelSelector:
                 # Use both detectors and combine results
                 tas_result = self.tas_detector.detect_regimes(market_data) if self.tas_detector else None
                 nas_result = self.nas_detector.detect_regimes(market_data) if self.nas_detector else None
-                
+
                 if tas_result and nas_result:
                     # Combine predictions
                     combined_regime = tas_result.regime_predictions[-1]
@@ -419,6 +432,18 @@ class ModelSelector:
                         'regime_id': nas_result.regime_predictions[-1],
                         'probabilities': nas_result.regime_probabilities[-1],
                         'confidence': np.max(nas_result.regime_probabilities[-1])
+                    }
+
+            elif self.config.regime_detection_method == "hybrid_nas_tas" and self.hybrid_detector:
+                # Use the advanced hybrid NAS-TAS detector
+                result = self.hybrid_detector.detect_regimes(market_data)
+                if result.success:
+                    return {
+                        'regime_id': result.regime_predictions[-1],
+                        'probabilities': result.regime_probabilities[-1],
+                        'confidence': np.max(result.regime_probabilities[-1]),
+                        'economic_significance': result.economic_significance_scores[result.regime_predictions[-1]],
+                        'financial_relevance': result.financial_relevance_scores[result.regime_predictions[-1]]
                     }
             
             # Fallback to simple regime detection

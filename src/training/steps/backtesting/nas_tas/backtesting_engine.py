@@ -18,13 +18,26 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import ML common utilities
+# Import ML common utilities and optimization tools
 try:
     from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
+
+# Import general ML pipeline optimization tools
+try:
+    from src.utils.common_ml.backtesting.backtesting_engine import (
+        BacktestingEngine as CommonBacktestingEngine,
+        BacktestingConfig as CommonBacktestingConfig
+    )
+    from src.training.steps.backtesting.walk_forward_validation import WalkForwardValidation
+    from src.training.steps.backtesting.monte_carlo_simulation import MonteCarloSimulationStep
+    from src.training.steps.backtesting.consolidated_backtesting_step import ConsolidatedBacktestingStep
+    OPTIMIZED_TOOLS_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_TOOLS_AVAILABLE = False
 
 # Import regime detection systems
 try:
@@ -189,6 +202,7 @@ class BacktestingEngine:
         # Initialize components
         self._initialize_ml_common()
         self._initialize_regime_detection()
+        self._initialize_optimized_tools()
         
         # Backtesting state
         self.current_capital = config.initial_capital
@@ -251,6 +265,47 @@ class BacktestingEngine:
             self.logger.warning(f"Regime detection initialization failed: {e}")
             self.tas_detector = None
             self.nas_detector = None
+
+    def _initialize_optimized_tools(self):
+        """Initialize optimized ML pipeline tools."""
+        if not OPTIMIZED_TOOLS_AVAILABLE:
+            self.logger.warning("⚠️ Optimized ML pipeline tools not available")
+            self.common_backtesting_engine = None
+            self.walk_forward_validation = None
+            self.monte_carlo_simulation = None
+            self.consolidated_backtesting = None
+            return
+
+        try:
+            # Initialize common backtesting engine
+            common_config = CommonBacktestingConfig(
+                initial_capital=self.config.initial_capital,
+                commission_rate=self.config.commission_rate,
+                slippage_rate=self.config.slippage_rate,
+                enable_data_validation=self.config.enable_data_validation,
+                enable_risk_management=self.config.enable_risk_management
+            )
+            self.common_backtesting_engine = CommonBacktestingEngine(common_config)
+            self.logger.info("✅ Common backtesting engine initialized")
+
+            # Initialize walk-forward validation
+            self.walk_forward_validation = WalkForwardValidation()
+            self.logger.info("✅ Walk-forward validation initialized")
+
+            # Initialize Monte Carlo simulation
+            self.monte_carlo_simulation = MonteCarloSimulationStep()
+            self.logger.info("✅ Monte Carlo simulation initialized")
+
+            # Initialize consolidated backtesting
+            self.consolidated_backtesting = ConsolidatedBacktestingStep()
+            self.logger.info("✅ Consolidated backtesting initialized")
+
+        except Exception as e:
+            self.logger.warning(f"Optimized tools initialization failed: {e}")
+            self.common_backtesting_engine = None
+            self.walk_forward_validation = None
+            self.monte_carlo_simulation = None
+            self.consolidated_backtesting = None
     
     def register_models(self, 
                        regime_models: Dict[int, Dict[str, Any]],

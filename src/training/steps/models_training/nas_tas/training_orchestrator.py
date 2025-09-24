@@ -24,6 +24,13 @@ from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionR
 from .model_manager import ModelManager, ModelManagerConfig
 from .performance_tracker import PerformanceTracker, PerformanceConfig
 
+# Import market analysis modules for enhanced compatibility
+try:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
+    HYBRID_REGIME_AVAILABLE = True
+except ImportError:
+    HYBRID_REGIME_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +89,11 @@ class OrchestratorConfig:
     max_workers: int = 4
     enable_caching: bool = True
     cache_directory: str = "orchestrator_cache"
+
+    # Hybrid regime detection
+    enable_hybrid_regime_detection: bool = True
+    hybrid_regime_weight_tas: float = 0.4
+    hybrid_regime_weight_nas: float = 0.6
 
 
 @dataclass
@@ -148,6 +160,7 @@ class TrainingOrchestrator:
         self.logger.info(f"   Mode: {config.mode.value}")
         self.logger.info(f"   Components enabled:")
         self.logger.info(f"     - Regime detection: {config.enable_regime_detection}")
+        self.logger.info(f"     - Hybrid regime detection: {config.enable_hybrid_regime_detection}")
         self.logger.info(f"     - Model training: {config.enable_model_training}")
         self.logger.info(f"     - Model selection: {config.enable_model_selection}")
         self.logger.info(f"     - Model management: {config.enable_model_management}")
@@ -589,6 +602,9 @@ class TrainingOrchestrator:
             'selection_strategy': self.config.selection_config.selection_strategy.value,
             'routing_method': self.config.selection_config.routing_method.value,
             'enable_regime_detection': self.config.enable_regime_detection,
+            'enable_hybrid_regime_detection': self.config.enable_hybrid_regime_detection,
+            'hybrid_regime_weight_tas': self.config.hybrid_regime_weight_tas,
+            'hybrid_regime_weight_nas': self.config.hybrid_regime_weight_nas,
             'enable_model_training': self.config.enable_model_training,
             'enable_model_selection': self.config.enable_model_selection,
             'enable_model_management': self.config.enable_model_management,

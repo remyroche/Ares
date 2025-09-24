@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 import pickle
 import os
+import json
 from pathlib import Path
 
 from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
@@ -591,3 +592,333 @@ def quick_nas_search(train_data: Tuple[np.ndarray, np.ndarray],
 
     engine = EnhancedNASEngine(config)
     return engine.search(train_data, validation_data)
+
+
+@dataclass
+class AnalystNASIntegrationConfig:
+    """Configuration for Analyst NAS integration."""
+    # Analyst-specific settings
+    analyst_name: str = "analyst_nas_ensemble"
+    output_dir: str = "models/analyst_nas"
+    timeframe: str = "5m"  # Analyst uses 5m timeframe
+
+    # Regime integration
+    enable_regime_detection: bool = True
+    regime_types: List[str] = field(default_factory=lambda: [
+        "bull_trending", "bear_trending", "sideways", "volatile", "breakout"
+    ])
+    regime_confidence_threshold: float = 0.7
+
+    # Data pipeline settings
+    lookback_period: int = 100  # 5m candles
+    feature_window: int = 20
+    enable_feature_engineering: bool = True
+    enable_data_augmentation: bool = True
+
+    # NAS engine configuration
+    nas_config: NASSearchConfig = field(default_factory=lambda: NASSearchConfig(
+        search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
+        population_size=40,
+        max_generations=80,
+        max_evaluations=500,
+        enable_multi_objective=True,
+        objective_weights={
+            'performance': 1.0,
+            'complexity': 0.2,
+            'efficiency': 0.3,
+            'trading_viability': 0.8  # Higher weight for trading relevance
+        }
+    ))
+
+    # Live trading settings
+    enable_live_training: bool = True
+    live_update_interval: int = 300  # 5 minutes
+    enable_online_learning: bool = True
+    model_retraining_threshold: float = 0.05  # Retrain if performance drops by 5%
+
+    # Ensemble settings
+    max_base_models: int = 5
+    enable_model_diversity: bool = True
+    diversity_threshold: float = 0.3
+
+
+class AnalystNASIntegration:
+    """Integration of NAS into Analyst for regime-based neural architecture search."""
+
+    def __init__(self, config: AnalystNASIntegrationConfig):
+        """Initialize Analyst NAS integration."""
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize components
+        self.nas_engine = None
+        self.regime_detector = None
+        self.feature_engineer = None
+        self.data_pipeline = None
+        self.ensemble_manager = None
+
+        # State tracking
+        self.current_regime = None
+        self.regime_models = {}
+        self.regime_performance = {}
+        self.last_training_time = None
+
+        self.logger.info("✅ Analyst NAS Integration initialized")
+        self.logger.info(f"   Analyst: {config.analyst_name}")
+        self.logger.info(f"   Timeframe: {config.timeframe}")
+        self.logger.info(f"   Regime Types: {len(config.regime_types)}")
+        self.logger.info(f"   Max Base Models: {config.max_base_models}")
+
+    async def initialize(self) -> bool:
+        """Initialize all components."""
+        try:
+            self.logger.info("🚀 Initializing Analyst NAS Integration...")
+
+            # Initialize NAS engine
+            self.nas_engine = EnhancedNASEngine(self.config.nas_config)
+            self.logger.info("✅ NAS Engine initialized")
+
+            # Initialize regime detector (HMM-based)
+            from ...hybrid_nas_tas_regime.core.hmm_regime_detector import HMMRegimeDetector
+            self.regime_detector = HMMRegimeDetector({
+                'n_regimes': len(self.config.regime_types),
+                'confidence_threshold': self.config.regime_confidence_threshold
+            })
+            await self.regime_detector.initialize()
+            self.logger.info("✅ Regime Detector initialized")
+
+            # Initialize feature engineer for 5m data
+            from ...data_pipeline.feature_engineering import FeatureEngineeringPipeline
+            self.feature_engineer = FeatureEngineeringPipeline({
+                'timeframe': self.config.timeframe,
+                'lookback_period': self.config.lookback_period,
+                'feature_window': self.config.feature_window,
+                'enable_technical_indicators': True,
+                'enable_market_structure': True,
+                'enable_regime_features': True
+            })
+            self.logger.info("✅ Feature Engineer initialized")
+
+            # Initialize ensemble manager
+            from ...ensemble_management.ensemble_manager import EnsembleManager
+            ensemble_config = {
+                'ensemble_name': self.config.analyst_name,
+                'output_dir': self.config.output_dir,
+                'ensemble_type': 'stacking',
+                'max_models': self.config.max_base_models,
+                'enable_weight_optimization': True,
+                'enable_gpu_acceleration': True,
+                'enable_memory_optimization': True
+            }
+            self.ensemble_manager = EnsembleManager(ensemble_config)
+            self.logger.info("✅ Ensemble Manager initialized")
+
+            self.logger.info("✅ Analyst NAS Integration fully initialized")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize Analyst NAS Integration: {e}")
+            return False
+
+    async def train_regime_models(self,
+                                 market_data: pd.DataFrame,
+                                 target_data: pd.Series,
+                                 validation_data: Optional[Tuple[pd.DataFrame, pd.Series]] = None) -> Dict[str, Any]:
+        """Train NAS models for each detected regime."""
+
+        self.logger.info("🚀 Starting regime-based NAS training...")
+
+        try:
+            # Detect current regimes
+            regime_info = await self.regime_detector.detect_regimes(market_data)
+            detected_regimes = regime_info.get('regimes', {})
+
+            training_results = {
+                'total_regimes': len(detected_regimes),
+                'trained_models': {},
+                'ensemble_performance': {},
+                'training_time': 0.0
+            }
+
+            start_time = time.time()
+
+            # Train models for each regime
+            for regime, regime_data in detected_regimes.items():
+                if regime_data['confidence'] >= self.config.regime_confidence_threshold:
+                    self.logger.info(f"🔄 Training NAS model for regime: {regime}")
+
+                    # Filter data for this regime
+                    regime_mask = market_data['regime'] == regime
+                    X_regime = market_data[regime_mask]
+                    y_regime = target_data[regime_mask]
+
+                    if len(X_regime) < 50:  # Minimum data requirement
+                        self.logger.warning(f"⚠️ Insufficient data for regime {regime}, skipping")
+                        continue
+
+                    # Generate features for this regime
+                    features = await self.feature_engineer.generate_features(X_regime)
+
+                    # Search for optimal architecture
+                    nas_result = await self.nas_engine.search(
+                        train_data=(features, y_regime),
+                        validation_data=validation_data,
+                        regime_data={'regime': regime, 'regime_info': regime_data}
+                    )
+
+                    # Store regime model
+                    self.regime_models[regime] = {
+                        'architecture': nas_result.best_architecture,
+                        'performance': nas_result.best_score,
+                        'training_time': nas_result.execution_time,
+                        'regime_info': regime_data
+                    }
+
+                    # Add to ensemble
+                    await self.ensemble_manager.add_model(
+                        model_name=f"{regime}_nas_model",
+                        model=nas_result.best_architecture,
+                        performance_metrics={'accuracy': nas_result.best_score}
+                    )
+
+                    training_results['trained_models'][regime] = {
+                        'performance': nas_result.best_score,
+                        'execution_time': nas_result.execution_time,
+                        'architecture_complexity': len(nas_result.best_architecture.layers) if hasattr(nas_result.best_architecture, 'layers') else 0
+                    }
+
+                    self.logger.info(f"✅ Trained NAS model for regime {regime}: {nas_result.best_score:.4f}")
+
+            # Create ensemble from regime models
+            if len(self.regime_models) >= 2:
+                ensemble_result = await self.ensemble_manager.create_ensemble(
+                    X_train=market_data,
+                    y_train=target_data,
+                    X_val=validation_data[0] if validation_data else None,
+                    y_val=validation_data[1] if validation_data else None
+                )
+
+                training_results['ensemble_performance'] = {
+                    'ensemble_score': ensemble_result.ensemble_performance.get('accuracy', 0.0),
+                    'model_count': ensemble_result.model_count,
+                    'diversity_score': ensemble_result.diversity_score
+                }
+
+            training_results['training_time'] = time.time() - start_time
+            self.last_training_time = datetime.now()
+
+            self.logger.info("✅ Regime-based NAS training completed")
+            self.logger.info(f"   Trained Models: {len(training_results['trained_models'])}")
+            self.logger.info(f"   Ensemble Score: {training_results['ensemble_performance'].get('ensemble_score', 0.0):.4f}")
+            self.logger.info(f"   Total Time: {training_results['training_time']:.2f}s")
+
+            return training_results
+
+        except Exception as e:
+            self.logger.error(f"❌ Regime-based NAS training failed: {e}")
+            return {'error': str(e), 'training_time': time.time() - start_time}
+
+    async def predict_with_regime_ensemble(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Make predictions using regime-aware ensemble."""
+
+        try:
+            # Detect current regime
+            regime_info = await self.regime_detector.detect_regimes(market_data)
+            current_regime = regime_info.get('primary_regime', 'unknown')
+            regime_confidence = regime_info.get('confidence', 0.0)
+
+            # Generate features
+            features = await self.feature_engineer.generate_features(market_data)
+
+            # Get ensemble prediction
+            predictions, probabilities = await self.ensemble_manager.predict(features)
+
+            # Get regime-specific prediction if available
+            regime_prediction = None
+            if current_regime in self.regime_models:
+                regime_model = self.regime_models[current_regime]['architecture']
+                if hasattr(regime_model, 'predict'):
+                    regime_prediction = regime_model.predict(features)
+
+            return {
+                'ensemble_prediction': predictions,
+                'ensemble_probabilities': probabilities,
+                'current_regime': current_regime,
+                'regime_confidence': regime_confidence,
+                'regime_prediction': regime_prediction,
+                'timestamp': datetime.now().isoformat(),
+                'model_count': len(self.ensemble_manager.models),
+                'analyst_name': self.config.analyst_name
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Regime ensemble prediction failed: {e}")
+            return {'error': str(e), 'timestamp': datetime.now().isoformat()}
+
+    async def update_live_models(self, new_data: pd.DataFrame, target_data: pd.Series) -> bool:
+        """Update models with live trading data."""
+
+        try:
+            # Check if retraining is needed
+            if not self._should_retrain():
+                self.logger.debug("ℹ️ Retraining not needed yet")
+                return True
+
+            # Perform incremental training
+            self.logger.info("🔄 Updating models with live data...")
+
+            # Update regime models with new data
+            await self.train_regime_models(new_data, target_data)
+
+            # Update ensemble weights
+            await self.ensemble_manager._update_weights()
+
+            self.logger.info("✅ Live model update completed")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Live model update failed: {e}")
+            return False
+
+    def _should_retrain(self) -> bool:
+        """Determine if retraining is needed."""
+        if not self.config.enable_live_training:
+            return False
+
+        if self.last_training_time is None:
+            return True
+
+        time_since_training = datetime.now() - self.last_training_time
+        return time_since_training.total_seconds() >= self.config.live_update_interval
+
+    async def save_models(self, save_path: str) -> bool:
+        """Save trained models and state."""
+        try:
+            # Save NAS engine state
+            nas_state_path = f"{save_path}/nas_engine.pkl"
+            self.nas_engine.save_search_state(nas_state_path)
+
+            # Save regime models
+            regime_models_path = f"{save_path}/regime_models.pkl"
+            with open(regime_models_path, 'wb') as f:
+                pickle.dump(self.regime_models, f)
+
+            # Save ensemble manager
+            ensemble_path = f"{save_path}/ensemble_manager.pkl"
+            await self.ensemble_manager.save_ensemble(ensemble_path)
+
+            # Save configuration
+            config_path = f"{save_path}/config.json"
+            with open(config_path, 'w') as f:
+                json.dump({
+                    'analyst_config': self.config.__dict__,
+                    'last_training_time': self.last_training_time.isoformat() if self.last_training_time else None,
+                    'regime_performance': self.regime_performance
+                }, f, indent=2)
+
+            self.logger.info(f"✅ All models saved to {save_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save models: {e}")
+            return False

@@ -595,3 +595,427 @@ def quick_tas_search(train_data: Tuple[np.ndarray, np.ndarray],
 
     engine = EnhancedTASEngine(config)
     return engine.search(train_data, validation_data)
+
+
+@dataclass
+class TacticianTASIntegrationConfig:
+    """Configuration for Tactician TAS integration."""
+    # Tactician-specific settings
+    tactician_name: str = "tactician_tas_ensemble"
+    output_dir: str = "models/tactician_tas"
+    timeframe: str = "1m"  # Tactician uses 1m timeframe
+
+    # Signal type integration
+    enable_signal_detection: bool = True
+    signal_types: List[str] = field(default_factory=lambda: [
+        "bullish_continuation", "bearish_continuation", "bullish_reversal",
+        "bearish_reversal", "neutral", "breakout_up", "breakout_down"
+    ])
+    signal_confidence_threshold: float = 0.7
+
+    # Analyst integration
+    analyst_signal_required: bool = True
+    analyst_confidence_threshold: float = 0.6
+    max_signal_delay_seconds: int = 60  # Max delay between Analyst and Tactician signals
+
+    # Data pipeline settings
+    lookback_period: int = 50  # 1m candles
+    feature_window: int = 10
+    enable_micro_features: bool = True  # 1m specific features
+    enable_timing_features: bool = True  # Entry timing features
+
+    # TAS engine configuration
+    tas_config: TASConfig = field(default_factory=lambda: TASConfig(
+        search_strategy=TreeSearchStrategy.ENHANCED_BAYESIAN,
+        population_size=40,
+        max_generations=80,
+        max_evaluations=500,
+        enable_multi_objective=True,
+        objective_weights={
+            'performance': 1.0,
+            'complexity': 0.2,
+            'efficiency': 0.3,
+            'timing_precision': 0.8  # Higher weight for timing accuracy
+        },
+        max_trees=30,  # More trees for complex 1m patterns
+        max_tree_depth=20  # Deeper trees for timing precision
+    ))
+
+    # Live trading settings
+    enable_live_training: bool = True
+    live_update_interval: int = 60  # 1 minute updates
+    enable_online_learning: bool = True
+    model_retraining_threshold: float = 0.03  # Retrain if performance drops by 3%
+
+    # Ensemble settings
+    max_base_models: int = 7  # More models for timing diversity
+    enable_model_diversity: bool = True
+    diversity_threshold: float = 0.4  # Higher diversity for timing
+
+
+class TacticianTASIntegration:
+    """Integration of TAS into Tactician for signal-based tree architecture search."""
+
+    def __init__(self, config: TacticianTASIntegrationConfig):
+        """Initialize Tactician TAS integration."""
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize components
+        self.tas_engine = None
+        self.signal_detector = None
+        self.feature_engineer = None
+        self.timing_optimizer = None
+        self.ensemble_manager = None
+
+        # State tracking
+        self.current_signal = None
+        self.signal_models = {}
+        self.signal_performance = {}
+        self.last_training_time = None
+        self.analyst_signals_cache = {}  # Cache recent Analyst signals
+
+        self.logger.info("✅ Tactician TAS Integration initialized")
+        self.logger.info(f"   Tactician: {config.tactician_name}")
+        self.logger.info(f"   Timeframe: {config.timeframe}")
+        self.logger.info(f"   Signal Types: {len(config.signal_types)}")
+        self.logger.info(f"   Max Base Models: {config.max_base_models}")
+
+    async def initialize(self) -> bool:
+        """Initialize all components."""
+        try:
+            self.logger.info("🚀 Initializing Tactician TAS Integration...")
+
+            # Initialize TAS engine
+            self.tas_engine = EnhancedTASEngine(self.config.tas_config)
+            self.logger.info("✅ TAS Engine initialized")
+
+            # Initialize signal detector (pattern-based)
+            from ...hybrid_nas_tas_regime.core.pattern_signal_detector import PatternSignalDetector
+            self.signal_detector = PatternSignalDetector({
+                'signal_types': self.config.signal_types,
+                'confidence_threshold': self.config.signal_confidence_threshold,
+                'enable_micro_patterns': self.config.enable_micro_features,
+                'enable_timing_features': self.config.enable_timing_features
+            })
+            await self.signal_detector.initialize()
+            self.logger.info("✅ Signal Detector initialized")
+
+            # Initialize feature engineer for 1m data
+            from ...data_pipeline.feature_engineering import FeatureEngineeringPipeline
+            self.feature_engineer = FeatureEngineeringPipeline({
+                'timeframe': self.config.timeframe,
+                'lookback_period': self.config.lookback_period,
+                'feature_window': self.config.feature_window,
+                'enable_technical_indicators': True,
+                'enable_micro_structure': True,
+                'enable_timing_features': True,
+                'enable_entry_signals': True
+            })
+            self.logger.info("✅ Feature Engineer initialized")
+
+            # Initialize ensemble manager
+            from ...ensemble_management.ensemble_manager import EnsembleManager
+            ensemble_config = {
+                'ensemble_name': self.config.tactician_name,
+                'output_dir': self.config.output_dir,
+                'ensemble_type': 'stacking',
+                'max_models': self.config.max_base_models,
+                'enable_weight_optimization': True,
+                'enable_gpu_acceleration': True,
+                'enable_memory_optimization': True
+            }
+            self.ensemble_manager = EnsembleManager(ensemble_config)
+            self.logger.info("✅ Ensemble Manager initialized")
+
+            self.logger.info("✅ Tactician TAS Integration fully initialized")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize Tactician TAS Integration: {e}")
+            return False
+
+    async def train_signal_models(self,
+                                 market_data: pd.DataFrame,
+                                 target_data: pd.Series,
+                                 analyst_signals: Optional[Dict[str, Any]] = None,
+                                 validation_data: Optional[Tuple[pd.DataFrame, pd.Series]] = None) -> Dict[str, Any]:
+        """Train TAS models for each detected signal type."""
+
+        self.logger.info("🚀 Starting signal-based TAS training...")
+
+        try:
+            # Detect current signals
+            signal_info = await self.signal_detector.detect_signals(market_data)
+            detected_signals = signal_info.get('signals', {})
+
+            # Cache analyst signals if provided
+            if analyst_signals:
+                self.analyst_signals_cache = analyst_signals
+                self.logger.info(f"📊 Cached {len(analyst_signals)} analyst signals")
+
+            training_results = {
+                'total_signals': len(detected_signals),
+                'trained_models': {},
+                'ensemble_performance': {},
+                'training_time': 0.0,
+                'analyst_signals_used': len(analyst_signals) if analyst_signals else 0
+            }
+
+            start_time = time.time()
+
+            # Train models for each signal type
+            for signal, signal_data in detected_signals.items():
+                if signal_data['confidence'] >= self.config.signal_confidence_threshold:
+                    self.logger.info(f"🔄 Training TAS model for signal: {signal}")
+
+                    # Filter data for this signal
+                    signal_mask = market_data['signal'] == signal
+                    X_signal = market_data[signal_mask]
+                    y_signal = target_data[signal_mask]
+
+                    if len(X_signal) < 30:  # Minimum data requirement for 1m
+                        self.logger.warning(f"⚠️ Insufficient data for signal {signal}, skipping")
+                        continue
+
+                    # Generate features for this signal
+                    features = await self.feature_engineer.generate_features(X_signal)
+
+                    # Search for optimal tree architecture
+                    tas_result = await self.tas_engine.search(
+                        train_data=(features, y_signal),
+                        validation_data=validation_data,
+                        regime_data={'signal': signal, 'signal_info': signal_data}
+                    )
+
+                    # Store signal model
+                    self.signal_models[signal] = {
+                        'architecture': tas_result.best_architecture,
+                        'performance': tas_result.best_score,
+                        'training_time': tas_result.execution_time,
+                        'signal_info': signal_data
+                    }
+
+                    # Add to ensemble
+                    await self.ensemble_manager.add_model(
+                        model_name=f"{signal}_tas_model",
+                        model=tas_result.best_architecture,
+                        performance_metrics={'accuracy': tas_result.best_score}
+                    )
+
+                    training_results['trained_models'][signal] = {
+                        'performance': tas_result.best_score,
+                        'execution_time': tas_result.execution_time,
+                        'architecture_complexity': tas_result.best_architecture.n_trees if hasattr(tas_result.best_architecture, 'n_trees') else 0
+                    }
+
+                    self.logger.info(f"✅ Trained TAS model for signal {signal}: {tas_result.best_score:.4f}")
+
+            # Create ensemble from signal models
+            if len(self.signal_models) >= 2:
+                ensemble_result = await self.ensemble_manager.create_ensemble(
+                    X_train=market_data,
+                    y_train=target_data,
+                    X_val=validation_data[0] if validation_data else None,
+                    y_val=validation_data[1] if validation_data else None
+                )
+
+                training_results['ensemble_performance'] = {
+                    'ensemble_score': ensemble_result.ensemble_performance.get('accuracy', 0.0),
+                    'model_count': ensemble_result.model_count,
+                    'diversity_score': ensemble_result.diversity_score
+                }
+
+            training_results['training_time'] = time.time() - start_time
+            self.last_training_time = datetime.now()
+
+            self.logger.info("✅ Signal-based TAS training completed")
+            self.logger.info(f"   Trained Models: {len(training_results['trained_models'])}")
+            self.logger.info(f"   Ensemble Score: {training_results['ensemble_performance'].get('ensemble_score', 0.0):.4f}")
+            self.logger.info(f"   Analyst Signals Used: {training_results['analyst_signals_used']}")
+            self.logger.info(f"   Total Time: {training_results['training_time']:.2f}s")
+
+            return training_results
+
+        except Exception as e:
+            self.logger.error(f"❌ Signal-based TAS training failed: {e}")
+            return {'error': str(e), 'training_time': time.time() - start_time}
+
+    async def predict_with_signal_ensemble(self,
+                                         market_data: pd.DataFrame,
+                                         analyst_decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Make predictions using signal-aware ensemble with Analyst coordination."""
+
+        try:
+            # Detect current signals
+            signal_info = await self.signal_detector.detect_signals(market_data)
+            current_signal = signal_info.get('primary_signal', 'neutral')
+            signal_confidence = signal_info.get('confidence', 0.0)
+
+            # Check Analyst signal compatibility
+            analyst_compatible = self._check_analyst_compatibility(analyst_decision, current_signal)
+
+            # Generate features
+            features = await self.feature_engineer.generate_features(market_data)
+
+            # Get ensemble prediction
+            predictions, probabilities = await self.ensemble_manager.predict(features)
+
+            # Get signal-specific prediction if available
+            signal_prediction = None
+            if current_signal in self.signal_models:
+                signal_model = self.signal_models[current_signal]['architecture']
+                if hasattr(signal_model, 'predict'):
+                    signal_prediction = signal_model.predict(features)
+
+            # Calculate timing confidence
+            timing_confidence = self._calculate_timing_confidence(
+                signal_confidence, analyst_compatible, signal_info
+            )
+
+            return {
+                'ensemble_prediction': predictions,
+                'ensemble_probabilities': probabilities,
+                'current_signal': current_signal,
+                'signal_confidence': signal_confidence,
+                'signal_prediction': signal_prediction,
+                'analyst_compatible': analyst_compatible,
+                'timing_confidence': timing_confidence,
+                'analyst_decision': analyst_decision,
+                'timestamp': datetime.now().isoformat(),
+                'model_count': len(self.ensemble_manager.models),
+                'tactician_name': self.config.tactician_name
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Signal ensemble prediction failed: {e}")
+            return {'error': str(e), 'timestamp': datetime.now().isoformat()}
+
+    def _check_analyst_compatibility(self, analyst_decision: Dict[str, Any], current_signal: str) -> bool:
+        """Check if current signal is compatible with Analyst decision."""
+
+        if not self.config.analyst_signal_required or not analyst_decision:
+            return True
+
+        analyst_direction = analyst_decision.get('direction', 'neutral')
+        analyst_confidence = analyst_decision.get('confidence', 0.0)
+
+        if analyst_confidence < self.config.analyst_confidence_threshold:
+            return False
+
+        # Map signal types to analyst directions
+        signal_direction_map = {
+            'bullish_continuation': 'long',
+            'bullish_reversal': 'long',
+            'breakout_up': 'long',
+            'bearish_continuation': 'short',
+            'bearish_reversal': 'short',
+            'breakout_down': 'short',
+            'neutral': 'neutral'
+        }
+
+        signal_direction = signal_direction_map.get(current_signal, 'neutral')
+
+        # Check if signal direction matches analyst direction
+        if analyst_direction == 'neutral' or signal_direction == 'neutral':
+            return analyst_direction == signal_direction
+
+        return analyst_direction == signal_direction
+
+    def _calculate_timing_confidence(self,
+                                   signal_confidence: float,
+                                   analyst_compatible: bool,
+                                   signal_info: Dict[str, Any]) -> float:
+        """Calculate timing confidence combining signal and analyst compatibility."""
+
+        base_confidence = signal_confidence
+
+        # Boost confidence if analyst compatible
+        analyst_boost = 0.2 if analyst_compatible else -0.1
+
+        # Add signal strength factor
+        signal_strength = signal_info.get('signal_strength', 0.5)
+        strength_boost = (signal_strength - 0.5) * 0.2
+
+        # Add timing precision factor
+        timing_precision = signal_info.get('timing_precision', 0.5)
+        precision_boost = (timing_precision - 0.5) * 0.1
+
+        final_confidence = base_confidence + analyst_boost + strength_boost + precision_boost
+        return max(0.1, min(1.0, final_confidence))
+
+    async def update_live_models(self,
+                                new_data: pd.DataFrame,
+                                target_data: pd.Series,
+                                analyst_signals: Optional[Dict[str, Any]] = None) -> bool:
+        """Update models with live trading data."""
+
+        try:
+            # Check if retraining is needed
+            if not self._should_retrain():
+                self.logger.debug("ℹ️ Retraining not needed yet")
+                return True
+
+            # Perform incremental training
+            self.logger.info("🔄 Updating models with live data...")
+
+            # Update signal models with new data
+            await self.train_signal_models(new_data, target_data, analyst_signals)
+
+            # Update ensemble weights
+            await self.ensemble_manager._update_weights()
+
+            self.logger.info("✅ Live model update completed")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Live model update failed: {e}")
+            return False
+
+    def _should_retrain(self) -> bool:
+        """Determine if retraining is needed."""
+        if not self.config.enable_live_training:
+            return False
+
+        if self.last_training_time is None:
+            return True
+
+        time_since_training = datetime.now() - self.last_training_time
+        return time_since_training.total_seconds() >= self.config.live_update_interval
+
+    async def save_models(self, save_path: str) -> bool:
+        """Save trained models and state."""
+        try:
+            # Save TAS engine state
+            tas_state_path = f"{save_path}/tas_engine.pkl"
+            self.tas_engine.save_search_state(tas_state_path)
+
+            # Save signal models
+            signal_models_path = f"{save_path}/signal_models.pkl"
+            with open(signal_models_path, 'wb') as f:
+                pickle.dump(self.signal_models, f)
+
+            # Save analyst signals cache
+            analyst_cache_path = f"{save_path}/analyst_signals_cache.pkl"
+            with open(analyst_cache_path, 'wb') as f:
+                pickle.dump(self.analyst_signals_cache, f)
+
+            # Save ensemble manager
+            ensemble_path = f"{save_path}/ensemble_manager.pkl"
+            await self.ensemble_manager.save_ensemble(ensemble_path)
+
+            # Save configuration
+            config_path = f"{save_path}/config.json"
+            with open(config_path, 'w') as f:
+                json.dump({
+                    'tactician_config': self.config.__dict__,
+                    'last_training_time': self.last_training_time.isoformat() if self.last_training_time else None,
+                    'signal_performance': self.signal_performance
+                }, f, indent=2)
+
+            self.logger.info(f"✅ All models saved to {save_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save models: {e}")
+            return False

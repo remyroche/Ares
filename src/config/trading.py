@@ -2,6 +2,7 @@
 from typing import Any
 
 from .environment import get_environment_settings
+from ..utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, DEFAULT_LEVERAGE
 
 # src/config/trading.py
 
@@ -126,7 +127,7 @@ def get_trading_config() -> dict[str, Any]:
                     "max_total_exposure": 0.3,  # Maximum total exposure (30%)
                     "max_correlation_exposure": 0.2,  # Maximum exposure to correlated assets
                     "min_position_size": 0.01,  # Minimum position size (1%)
-                    "max_leverage": 10.0,  # Maximum leverage allowed
+                    "max_leverage": MAX_LEVERAGE,  # Maximum leverage allowed
                 },
             },
             "dynamic_risk_management": {
@@ -275,9 +276,9 @@ def get_leverage_sizing_config() -> dict[str, Any]:
     """
     return _get_config_section("leverage_sizing", {
         "enabled": True,
-        "max_leverage": 10,
-        "min_leverage": 1,
-        "default_leverage": 3
+        "max_leverage": MAX_LEVERAGE,
+        "min_leverage": MIN_LEVERAGE,
+        "default_leverage": DEFAULT_LEVERAGE
     })
 
 

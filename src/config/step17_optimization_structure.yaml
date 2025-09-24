@@ -5,7 +5,7 @@
 step17_optimization:
   # Leverage Sizing Optimization
   leverage:
-    min_leverage: 10.0
+    min_leverage: 5.0
     max_leverage: 100.0
     confidence_threshold: 0.6
     liquidation_buffer: 0.05

@@ -7,6 +7,8 @@ from ..utils.logger import system_logger
 from ..utils.warning_symbols import invalid, warning, failed
 from typing import Dict, List, Optional, Union, Any, Tuple
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 import numpy as np
 from ..core.decorators import handles_errors
 from ..core.decorators.validate import validates
@@ -596,7 +598,7 @@ class MLTacticsManager:
             base_leverage = 1.0
             leverage_multiplier = leverage_decisions.get('leverage_multiplier', 1.0)
             calculated_leverage = base_leverage * leverage_multiplier
-            max_leverage = 10.0
+            MAX_LEVERAGE
             calculated_leverage = min(calculated_leverage, max_leverage)
             return {'base_leverage': base_leverage, 'leverage_multiplier': leverage_multiplier, 'calculated_leverage': calculated_leverage, 'max_leverage': max_leverage, 'confidence': leverage_decisions.get('confidence', 0), 'decision': leverage_decisions.get('decision', 'MAINTAIN_LEVERAGE')}
         except Exception as e:

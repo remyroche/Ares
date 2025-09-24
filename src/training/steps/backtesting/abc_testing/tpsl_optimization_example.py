@@ -22,6 +22,8 @@ import json
 from pathlib import Path
 import time
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 # Import enhanced framework components
 from .enhanced_abc_testing_framework import (
     EnhancedABCTestingFramework, TPSLConfig, TPSLStrategy, TPSLMode,
@@ -73,7 +75,7 @@ class TPSLOptimizationExample:
                 max_position_risk=0.035,
                 max_correlation=0.65,
                 max_drawdown=0.10,
-                max_leverage=1.0,
+                MAX_LEVERAGE,
                 max_concurrent_positions=8,
                 max_daily_loss=0.05,
                 enable_circuit_breakers=True,

@@ -10,6 +10,9 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.utils.leverage_constants import (MIN_LEVERAGE, MAX_LEVERAGE, ensure_valid_leverage,
+                                       ensure_valid_leverage_range, validate_leverage_range)
+
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.trading_config import TradingConfig
@@ -41,9 +44,9 @@ class LeverageManager:
         self.config = config
         self.logger = logger.getChild('LeverageManager')
         
-        # Leverage configuration
-        self.min_leverage: float = 10.0  # Minimum leverage (10x)
-        self.max_leverage: float = 100.0  # Maximum leverage (100x)
+        # Leverage configuration with validation
+        self.min_leverage: float = MIN_LEVERAGE  # Minimum leverage
+        self.max_leverage: float = MAX_LEVERAGE  # Maximum leverage
         self.leverage_multiplier: float = 1.0  # Leverage multiplier
         self.leverage_combined_threshold: float = 0.75  # Minimum confidence threshold
         
@@ -72,7 +75,7 @@ class LeverageManager:
     def _validate_configuration(self) -> bool:
         """Validate leverage manager configuration."""
         try:
-            if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
+            if not validate_leverage_range(self.min_leverage, self.max_leverage):
                 self.logger.error("Invalid leverage range configuration")
                 return False
             if self.leverage_multiplier <= 0:

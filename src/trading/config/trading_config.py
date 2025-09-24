@@ -8,6 +8,7 @@ risk limits, and system-wide settings.
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
 from enum import Enum
+from ...utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, DEFAULT_LEVERAGE
 
 class TradingMode(Enum):
     """Trading execution modes."""
@@ -33,7 +34,7 @@ class TradingConfig:
     risk_level: RiskLevel = RiskLevel.MODERATE
     max_portfolio_risk: float = 0.02  # 2% max portfolio risk per trade
     max_drawdown: float = 0.15  # 15% max drawdown
-    max_leverage: float = 3.0  # Maximum leverage allowed
+    max_leverage: float = MAX_LEVERAGE  # Maximum leverage allowed
     
     # Position sizing
     base_position_size: float = 0.1  # 10% base position size

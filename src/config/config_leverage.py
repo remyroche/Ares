@@ -1,12 +1,13 @@
 '\nConfiguration file for optimizable leverage parameters.\nThese parameters can be optimized in step12.\n'
 from dataclasses import dataclass
 from typing import Any
+from ..utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, LEVERAGE_RISK_THRESHOLDS
 
 @dataclass
 class LeverageConfig:
     """Optimizable leverage parameters."""
-    max_leverage: int = 100
-    min_leverage: int = 1
+    max_leverage: float = MAX_LEVERAGE
+    min_leverage: float = MIN_LEVERAGE
     leverage_risk_levels: dict[int, float] = None
     enable_dynamic_leverage: bool = True
     volatility_based_leverage: bool = True
@@ -25,7 +26,7 @@ class LeverageConfig:
 
     def __post_init__(self) -> None:
         if self.leverage_risk_levels is None:
-            self.leverage_risk_levels = {10: 0.1, 15: 0.08, 20: 0.07, 25: 0.06, 30: 0.05, 40: 0.04, 50: 0.035, 60: 0.03, 75: 0.025, 100: 0.02}
+            self.leverage_risk_levels = LEVERAGE_RISK_THRESHOLDS
         if self.confidence_leverage_thresholds is None:
             self.confidence_leverage_thresholds = {'low_confidence': 0.6, 'medium_confidence': 0.75, 'high_confidence': 0.85, 'very_high_confidence': 0.95}
         if self.confidence_leverage_multipliers is None:

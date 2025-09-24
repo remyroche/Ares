@@ -7,6 +7,7 @@ Configuration management for live trading operations.
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
+from src.utils.leverage_constants import MAX_LEVERAGE
 
 
 class TradingMode(Enum):
@@ -44,7 +45,7 @@ class TradingConfig:
     # Risk Management
     max_position_size: float = 1000.0
     max_daily_loss: float = 100.0
-    max_leverage: float = 10.0
+    max_leverage: float = MAX_LEVERAGE
     stop_loss_percentage: float = 2.0
     take_profit_percentage: float = 4.0
     

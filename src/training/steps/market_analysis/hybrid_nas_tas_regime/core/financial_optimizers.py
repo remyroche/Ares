@@ -20,6 +20,8 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 import warnings
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 from .financial_architecture_primitives import RegimeType, FinancialActivationType
 
 logger = logging.getLogger(__name__)
@@ -97,7 +99,7 @@ class FinancialOptimizerConfig:
     # Optimization constraints
     max_position_size: float = 1.0
     min_position_size: float = 0.0
-    max_leverage: float = 2.0
+    MAX_LEVERAGE
     
     # Learning rate scheduling
     enable_lr_scheduling: bool = True

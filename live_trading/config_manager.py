@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 
 from .config import TradingConfig, TradingMode, OrderType, OrderSide
 from .error_handler import ErrorHandler, ErrorCategory, ErrorSeverity
+from src.utils.leverage_constants import MAX_LEVERAGE
 
 
 class ConfigSource(Enum):
@@ -184,7 +185,7 @@ class ConfigurationManager:
             "symbols": os.getenv("TRADING_SYMBOLS", "BTCUSDT").split(","),
             "max_position_size": float(os.getenv("MAX_POSITION_SIZE", "1000.0")),
             "max_daily_loss": float(os.getenv("MAX_DAILY_LOSS", "100.0")),
-            "max_leverage": float(os.getenv("MAX_LEVERAGE", "10.0")),
+            "max_leverage": float(os.getenv("MAX_LEVERAGE", str(MAX_LEVERAGE))),
         }
         config["trading_config"] = trading_env
 
@@ -253,7 +254,7 @@ class ConfigurationManager:
                 "symbols": ["BTCUSDT"],
                 "max_position_size": 1000.0,
                 "max_daily_loss": 100.0,
-                "max_leverage": 10.0,
+                "max_leverage": MAX_LEVERAGE,
                 "stop_loss_percentage": 2.0,
                 "take_profit_percentage": 4.0,
                 "order_timeout": 30,

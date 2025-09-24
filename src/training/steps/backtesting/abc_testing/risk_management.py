@@ -31,6 +31,8 @@ from collections import defaultdict, deque
 import scipy.stats as stats
 from scipy.optimize import minimize
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 # Common utilities
 from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
@@ -93,7 +95,7 @@ class RiskLimits:
     max_position_risk: float = 0.05  # 5% max position risk
     max_correlation: float = 0.70  # 70% max correlation
     max_drawdown: float = 0.15  # 15% max drawdown
-    max_leverage: float = 1.0  # No leverage
+    MAX_LEVERAGE  # No leverage
     max_concurrent_positions: int = 10
     max_daily_loss: float = 0.05  # 5% max daily loss
     var_confidence_level: float = 0.95  # 95% VaR

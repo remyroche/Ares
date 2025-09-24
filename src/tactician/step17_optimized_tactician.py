@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import pandas as pd
 from .core.decorators import handles_errors
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 '\nStep17 Optimized Tactician\n\nThis module implements a complete step17-optimized Tactician where ALL decision logic,\nposition sizing, leverage, and confidence calculations are configurable by step17.\n'
 import logging
 from datetime import datetime

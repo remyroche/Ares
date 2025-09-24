@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 import pandas as pd
 import numpy as np
 
@@ -100,7 +102,7 @@ class TacticianSignalGenerator:
         self.confidence_threshold = config.get('confidence_threshold', 0.6)
         self.tas_confidence_threshold = config.get('tas_confidence_threshold', 0.7)
         self.risk_per_trade = config.get('risk_per_trade', 0.02)  # 2% risk per trade
-        self.max_leverage = config.get('max_leverage', 3.0)
+        self.MAX_LEVERAGE)
         self.kelly_fraction = config.get('kelly_fraction', 0.25)  # Conservative Kelly
         
         # Confidence thresholds

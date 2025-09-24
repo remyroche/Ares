@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 import json
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 # Import all the framework components
 from src.training.steps.backtesting.abc_testing_framework import (
     ABCTestingFramework, ABCTestingConfig, ABCTestingResults
@@ -90,7 +92,7 @@ class ABCTestingIntegrationExample:
                 max_position_risk=0.03,
                 max_correlation=0.60,
                 max_drawdown=0.10,
-                max_leverage=1.0,
+                MAX_LEVERAGE,
                 max_concurrent_positions=8,
                 max_daily_loss=0.05,
                 enable_circuit_breakers=True,

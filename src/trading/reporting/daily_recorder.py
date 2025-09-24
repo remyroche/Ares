@@ -15,6 +15,8 @@ import numpy as np
 import csv
 import json
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics, TradingSessionMetrics

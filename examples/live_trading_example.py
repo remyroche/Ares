@@ -11,6 +11,8 @@ import asyncio
 import logging
 from datetime import datetime
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 # Import trading system components
 from live_trading import TradingEngine, TradingConfig, TradingMode
 from exchanges import TradingReceiver
@@ -35,7 +37,7 @@ async def main():
         symbols=["BTCUSDT", "ETHUSDT"],
         max_position_size=1000.0,
         max_daily_loss=100.0,
-        max_leverage=5.0,
+        MAX_LEVERAGE,
         data_update_interval=2.0,
         trade_log_enabled=True,
         metrics_enabled=True
@@ -196,7 +198,7 @@ async def demonstrate_risk_management():
         symbols=["BTCUSDT"],
         max_position_size=100.0,
         max_daily_loss=50.0,
-        max_leverage=2.0
+        MAX_LEVERAGE
     )
     
     exchange_client = ExchangeFactory.get_exchange(config.exchange_name)

@@ -22,6 +22,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE
+
 logger = logging.getLogger(__name__)
 
 # Import our enhanced feature generators and cross-timeframe analysis
@@ -80,7 +82,7 @@ class TALibCrossTimeframeConfig:
 
     # High-leverage risk management
     enable_volatility_scaling: bool = True
-    max_leverage_multiplier: float = 10.0
+    MAX_LEVERAGE
     risk_adjustment_factor: float = 0.02  # 2% risk per trade
 
     # Performance optimization
@@ -552,7 +554,7 @@ class TALibCrossTimeframeIntegration:
 def create_crypto_trading_integration(
     enable_gpu: bool = True,
     enable_parallel: bool = True,
-    max_leverage: float = 10.0
+    MAX_LEVERAGE
 ) -> TALibCrossTimeframeIntegration:
     """
     Create a pre-configured integration optimized for crypto trading.

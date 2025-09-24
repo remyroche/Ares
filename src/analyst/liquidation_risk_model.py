@@ -11,12 +11,13 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
+from src.utils.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, LEVERAGE_RISK_THRESHOLDS
 
 class LiquidationRiskModel:
     """
     Simplified Liquidation Risk Model that takes ML confidence predictions
     and determines safe leverage levels based on adverse price change risk.
-    Optimized for 10x-100x leverage trading.
+    Optimized for high leverage trading with configurable limits.
     """
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -42,28 +43,17 @@ class LiquidationRiskModel:
             "safe_leverage_multiplier",
             0.8
         )
-        self.max_leverage: int = self.risk_config.get(
+        self.max_leverage: float = self.risk_config.get(
             "max_leverage",
-            100,
-        )  # Increased for high leverage
-        self.min_leverage: int = self.risk_config.get(
+            MAX_LEVERAGE,
+        )
+        self.min_leverage: float = self.risk_config.get(
             "min_leverage",
-            10,
-        )  # Increased minimum
+            MIN_LEVERAGE,
+        )
 
-        # Adverse movement thresholds for different leverage levels (10x-100x)
-        self.leverage_risk_levels: dict[int, float] = {
-            10: 0.1,  # 10x leverage: can handle 10% adverse movement
-            15: 0.08,  # 15x leverage: can handle 8% adverse movement
-            20: 0.07,  # 20x leverage: can handle 7% adverse movement
-            25: 0.06,  # 25x leverage: can handle 6% adverse movement
-            30: 0.05,  # 30x leverage: can handle 5% adverse movement
-            40: 0.04,  # 40x leverage: can handle 4% adverse movement
-            50: 0.035,  # 50x leverage: can handle 3.5% adverse movement
-            60: 0.03,  # 60x leverage: can handle 3% adverse movement
-            75: 0.025,  # 75x leverage: can handle 2.5% adverse movement
-            100: 0.02,  # 100x leverage: can handle 2% adverse movement
-        }
+        # Adverse movement thresholds for different leverage levels
+        self.leverage_risk_levels: dict[float, float] = LEVERAGE_RISK_THRESHOLDS
 
     @handles_errors(
         error_handlers={

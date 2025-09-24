@@ -16,9 +16,18 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Import shared ML utilities from hybrid_nas_tas_regime
-from .shared_utils.ml_common_integration import (
-    create_shared_ml_utilities_manager, MLUtilityType, MLUtilityConfig
+# Import enhanced utility integrations
+from .shared_utils.enhanced_utility_integration import (
+    EnhancedUtilityIntegration, UtilityIntegrationConfig,
+    create_enhanced_utility_integration
+)
+from .shared_utils.enhanced_data_integration import (
+    EnhancedDataIntegration, DataIntegrationConfig,
+    create_enhanced_data_integration
+)
+from .shared_utils.enhanced_ml_integration import (
+    EnhancedMLIntegration, MLIntegrationConfig,
+    create_enhanced_ml_integration
 )
 
 # Import shared utilities
@@ -43,8 +52,8 @@ from .core.architecture_signal_generator import ArchitectureSignalGenerator, Tra
 # Import configuration
 from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
 
-# Use ML Common logger
-logger = get_logger(__name__)
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
 class TimeframeType(Enum):
@@ -94,11 +103,11 @@ class EnhancedHybridOrchestrator:
     """
     
     def __init__(self, config: HybridRegimeConfig):
-        """Initialize the enhanced hybrid orchestrator with ML Common utilities."""
+        """Initialize the enhanced hybrid orchestrator with comprehensive utility integrations."""
         self.config = config
 
-        # Initialize ML Common components first
-        self._initialize_ml_common_components()
+        # Initialize enhanced utility integrations
+        self._initialize_enhanced_utilities()
 
         # Initialize TAS and NAS integration components
         self.tas_integration = TASIntegrationComponent(config.tas_config)
@@ -127,16 +136,15 @@ class EnhancedHybridOrchestrator:
         self.nas_history = []
         self.hybrid_history = []
 
-        # Cache for performance
-        self.cache = get_unified_cache()
-
-        self.logger.info("✅ Enhanced Hybrid Orchestrator initialized with ML Common utilities")
+        self.logger.info("✅ Enhanced Hybrid Orchestrator initialized with comprehensive utility integrations")
         self.logger.info(f"   TAS Integration: ✅ Enabled")
         self.logger.info(f"   NAS Integration: ✅ Enabled")
         self.logger.info(f"   Unified Search Engine: {'✅ Enabled' if self.use_unified_search else '❌ Disabled'}")
         self.logger.info(f"   Signal Generation: {'✅ Enabled' if self.use_signal_generation else '❌ Disabled'}")
         self.logger.info(f"   Multi-timeframe: {'✅ Enabled' if self.enable_multi_timeframe else '❌ Disabled'}")
-        self.logger.info(f"   ML Common Utilities: ✅ Enabled")
+        self.logger.info(f"   Enhanced Utilities: ✅ Enabled")
+        self.logger.info(f"   Data Integration: ✅ Enabled")
+        self.logger.info(f"   ML Integration: ✅ Enabled")
 
         # Initialize unified search engine if enabled
         if self.use_unified_search:
@@ -146,29 +154,82 @@ class EnhancedHybridOrchestrator:
         if self.use_signal_generation:
             self._initialize_signal_generator()
 
-    def _initialize_ml_common_components(self):
-        """Initialize shared ML utility components from hybrid_nas_tas_regime."""
+    def _initialize_enhanced_utilities(self):
+        """Initialize enhanced utility integrations."""
         try:
-            # Create shared ML utilities manager for hybrid orchestrator
-            ml_config = MLUtilityConfig(
-                utility_type=MLUtilityType.HYBRID,
-                enable_safeguards=True,
+            # Initialize utility integration
+            utility_config = UtilityIntegrationConfig(
+                enable_data_validation=True,
+                enable_data_quality_checks=True,
+                enable_safe_operations=True,
+                enable_math_validation=True,
+                enable_safe_math=True,
+                enable_serialization=True,
+                enable_m1_optimizations=True,
+                enable_gpu_acceleration=True,
                 enable_memory_optimization=True,
-                enable_caching=True,
-                enable_error_handling=True,
-                enable_validation=True,
+                enable_cpu_optimization=True,
+                enable_ml_common=True,
+                enable_feature_selection=True,
                 enable_cross_validation=True,
-                enable_threshold_optimization=True,
-                cache_ttl_seconds=3600,
-                memory_limit_mb=8192
+                enable_confidence_metrics=True,
+                enable_matrix_operations=True,
+                enable_vectorized_operations=True,
+                enable_performance_monitoring=True,
+                enable_memory_monitoring=True
             )
+            self.utility_integration = create_enhanced_utility_integration(utility_config)
 
-            self.shared_ml_utilities = create_shared_ml_utilities_manager(MLUtilityType.HYBRID, ml_config)
+            # Initialize data integration
+            data_config = DataIntegrationConfig(
+                enable_klines_parquet=True,
+                enable_unified_data_utils=True,
+                enable_historical_downloader=True,
+                enable_feature_engineering=True,
+                enable_returns_engineering=True,
+                enable_gap_detection=True,
+                enable_data_quality=True,
+                enable_advanced_quality_metrics=True,
+                enable_comprehensive_quality_scoring=True,
+                enable_optimized_storage=True,
+                enable_parquet_optimization=True,
+                enable_parallel_processing=True,
+                enable_memory_optimization=True,
+                enable_schema_validation=True,
+                enable_data_consistency_checks=True
+            )
+            self.data_integration = create_enhanced_data_integration(data_config, utility_config)
 
-            self.logger.info("✅ Shared ML utilities initialized for hybrid orchestrator")
+            # Initialize ML integration
+            ml_config = MLIntegrationConfig(
+                enable_ml_common=True,
+                enable_feature_selection=True,
+                enable_cross_validation=True,
+                enable_confidence_metrics=True,
+                enable_hmm_regime_detection=True,
+                enable_regime_analysis=True,
+                enable_grid_search=True,
+                enable_bayesian_optimization=True,
+                enable_tpe_optimization=True,
+                enable_ensemble_management=True,
+                enable_model_ensembles=True,
+                enable_model_evaluation=True,
+                enable_performance_metrics=True,
+                enable_parallel_processing=True,
+                enable_vectorization=True,
+                enable_lookahead_bias_detection=True,
+                enable_overfitting_detection=True,
+                enable_data_leakage_detection=True
+            )
+            self.ml_integration = create_enhanced_ml_integration(ml_config, utility_config)
+
+            self.logger.info("✅ Enhanced utility integrations initialized")
+            self.logger.info(f"   Utility Integration: {len(self.utility_integration.get_available_utilities())} utilities available")
+            self.logger.info(f"   Data Integration: {len(self.data_integration.get_available_data_utilities())} utilities available")
+            self.logger.info(f"   ML Integration: {len(self.ml_integration.get_available_ml_utilities())} utilities available")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize shared ML utilities: {e}")
+            self.logger.error(f"❌ Failed to initialize enhanced utilities: {e}")
             raise
 
     def _initialize_unified_search_engine(self):

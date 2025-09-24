@@ -11,15 +11,15 @@ import torch
 import torch.nn as nn
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
+import time
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 
 # Import existing components
-from .enhanced_cvlsa_architecture import (
+from .cvlsa_architecture import (
     EnhancedCVLSAConfig, EnhancedCVLSATrainer, create_enhanced_cvlsa_model
 )
-from .tree_clvsa_wrapper import TreeCLVSAWrapper, TreeCLVSAConfig
 from src.utils.matrix_operations.enhanced_operations import get_enhanced_matrix_operations
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
@@ -37,7 +37,6 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
     
     def __init__(self, 
                  cvlsa_config: Optional[EnhancedCVLSAConfig] = None,
-                 tree_config: Optional[TreeCLVSAConfig] = None,
                  tree_model_type: str = 'random_forest',
                  fusion_method: str = 'weighted_average',
                  cvlsa_weight: float = 0.6,
@@ -47,14 +46,12 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
         
         Args:
             cvlsa_config: CVLSA configuration
-            tree_config: Tree model configuration
             tree_model_type: Type of tree model ('random_forest', 'extra_trees', 'xgboost', 'lightgbm', 'catboost')
             fusion_method: Method to fuse CVLSA and tree predictions ('weighted_average', 'stacking', 'attention')
             cvlsa_weight: Weight for CVLSA predictions in fusion
             tree_weight: Weight for tree predictions in fusion
         """
         self.cvlsa_config = cvlsa_config or EnhancedCVLSAConfig()
-        self.tree_config = tree_config or TreeCLVSAConfig()
         self.tree_model_type = tree_model_type
         self.fusion_method = fusion_method
         self.cvlsa_weight = cvlsa_weight
@@ -146,11 +143,7 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
         else:
             raise ValueError(f"Unsupported tree model type: {self.tree_model_type}")
         
-        # Wrap with TreeCLVSA if configured
-        if self.tree_config:
-            return TreeCLVSAWrapper(base_model, self.tree_config)
-        else:
-            return base_model
+        return base_model
     
     def _create_fusion_model(self) -> BaseEstimator:
         """Create fusion model for combining CVLSA and tree predictions."""
@@ -249,7 +242,8 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
             self.tree_model = self._create_tree_model()
             
             if regimes is not None:
-                self.tree_model.fit(enhanced_features_scaled, y, regimes=regimes)
+                # For now, just fit with enhanced features (regime-aware training can be added later)
+                self.tree_model.fit(enhanced_features_scaled, y)
             else:
                 self.tree_model.fit(enhanced_features_scaled, y)
             
@@ -421,10 +415,8 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
             importance['cvlsa_attention'] = self.cvlsa_model.get_attention_weights()
         
         # Tree feature importance
-        if hasattr(self.tree_model, 'get_feature_importance'):
-            importance['tree_importance'] = self.tree_model.get_feature_importance()
-        elif hasattr(self.tree_model, 'base_model') and hasattr(self.tree_model.base_model, 'feature_importances_'):
-            importance['tree_importance'] = self.tree_model.base_model.feature_importances_
+        if hasattr(self.tree_model, 'feature_importances_'):
+            importance['tree_importance'] = self.tree_model.feature_importances_
         
         return importance
     
@@ -433,7 +425,6 @@ class HybridCVLSATreeModel(BaseEstimator, RegressorMixin):
         return {
             'model_type': 'HybridCVLSATree',
             'cvlsa_config': self.cvlsa_config.__dict__,
-            'tree_config': self.tree_config.__dict__,
             'tree_model_type': self.tree_model_type,
             'fusion_method': self.fusion_method,
             'is_fitted': self.is_fitted,
@@ -540,13 +531,11 @@ class CVLSAFeatureExtractor:
 
 # Factory functions
 def create_hybrid_cvlsa_tree_model(cvlsa_config: Optional[EnhancedCVLSAConfig] = None,
-                                 tree_config: Optional[TreeCLVSAConfig] = None,
                                  tree_model_type: str = 'random_forest',
                                  fusion_method: str = 'weighted_average') -> HybridCVLSATreeModel:
     """Create hybrid CVLSA-tree model."""
     return HybridCVLSATreeModel(
         cvlsa_config=cvlsa_config,
-        tree_config=tree_config,
         tree_model_type=tree_model_type,
         fusion_method=fusion_method
     )

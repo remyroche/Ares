@@ -98,7 +98,7 @@ def test_enhanced_cvlsa_architecture():
     logger.info("🧪 Testing Enhanced CVLSA Architecture...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import (
+        from src.utils.ml_common.models.cvlsa_architecture import (
             EnhancedCVLSAConfig, EnhancedCVLSATrainer, create_enhanced_cvlsa_model
         )
         
@@ -167,11 +167,10 @@ def test_hybrid_cvlsa_tree_model():
     logger.info("🌳 Testing Hybrid CVLSA-Tree Model...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_integration import (
+        from src.utils.ml_common.models.cvlsa_integration import (
             HybridCVLSATreeModel, create_hybrid_cvlsa_tree_model
         )
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import EnhancedCVLSAConfig
-        from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAConfig
+        from src.utils.ml_common.models.cvlsa_architecture import EnhancedCVLSAConfig
         
         # Create sample data
         market_data, X, y, regimes = create_sample_market_data(300, 10)
@@ -185,17 +184,9 @@ def test_hybrid_cvlsa_tree_model():
             enable_hyperparameter_optimization=False
         )
         
-        tree_config = TreeCLVSAConfig(
-            attention_dim=32,
-            use_temporal_attention=True,
-            regime_aware=True,
-            memory_efficient=True
-        )
-        
         # Create hybrid model
         hybrid_model = create_hybrid_cvlsa_tree_model(
             cvlsa_config=cvlsa_config,
-            tree_config=tree_config,
             tree_model_type='random_forest',
             fusion_method='weighted_average'
         )
@@ -241,10 +232,10 @@ def test_cvlsa_feature_extractor():
     logger.info("🔧 Testing CVLSA Feature Extractor...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_integration import (
+        from src.utils.ml_common.models.cvlsa_integration import (
             CVLSAFeatureExtractor, create_cvlsa_feature_extractor
         )
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import EnhancedCVLSAConfig
+        from src.utils.ml_common.models.cvlsa_architecture import EnhancedCVLSAConfig
         
         # Create sample data
         market_data, X, y, regimes = create_sample_market_data(200, 8)
@@ -338,7 +329,7 @@ def test_cross_view_attention():
     logger.info("👁️ Testing Cross-View Attention...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import (
+        from src.utils.ml_common.models.cvlsa_architecture import (
             CrossViewAttention, EnhancedCVLSAConfig
         )
         
@@ -390,7 +381,7 @@ def test_multi_scale_temporal_attention():
     logger.info("⏰ Testing Multi-Scale Temporal Attention...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import (
+        from src.utils.ml_common.models.cvlsa_architecture import (
             MultiScaleTemporalAttention, EnhancedCVLSAConfig
         )
         
@@ -440,7 +431,7 @@ def test_bayesian_optimization():
     logger.info("🔍 Testing Bayesian Hyperparameter Optimization...")
     
     try:
-        from src.utils.ml_common.models.enhanced_cvlsa_architecture import (
+        from src.utils.ml_common.models.cvlsa_architecture import (
             BayesianHyperparameterOptimizer, EnhancedCVLSAConfig
         )
         

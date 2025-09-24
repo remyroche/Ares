@@ -20,24 +20,10 @@ from src.interfaces.base_interfaces import (
     AnalysisResult,
     StrategyResult
 )
-from ..exchange.factory import ExchangeFactory
-from .order_manager import OrderManager
+from exchange.factory import ExchangeFactory
+from .order_manager import OrderManager, TradingConfig
 from .data_receiver import DataReceiver
 from .trade_executor import TradeExecutor
-
-
-@dataclass
-class TradingConfig:
-    """Configuration for live trading operations"""
-    exchange_name: str
-    symbols: List[str]
-    max_position_size: float
-    max_daily_trades: int
-    risk_per_trade: float
-    enable_data_streaming: bool = True
-    enable_order_execution: bool = True
-    api_key: str = ""
-    api_secret: str = ""
 
 
 class TradingManager:

@@ -12,7 +12,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from src.interfaces.base_interfaces import MarketData
-from ..exchange.base_exchange import BaseExchange
+from exchange.base_exchange import BaseExchange
 
 
 @dataclass

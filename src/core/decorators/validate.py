@@ -14,6 +14,13 @@ from .compose import P, R, uniform_wrapper
 
 # Try to import optional validation libraries
 try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    np = None
+    NUMPY_AVAILABLE = False
+
+try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
@@ -899,11 +906,15 @@ def validate_pipeline_step(
 
 # Helper functions for data quality validation
 
-def _validate_dataframe_quality(df: pd.DataFrame, param_name: str,
+def _validate_dataframe_quality(df, param_name: str,
                                check_duplicates: bool, check_missing: bool,
                                check_outliers: bool, max_missing_pct: float,
                                outlier_std_threshold: float) -> None:
     """Validate DataFrame data quality."""
+    if pd is None or np is None:
+        # Skip validation if pandas or numpy is not available
+        return
+
     if check_duplicates and df.duplicated().any():
         msg = f"DataFrame contains duplicate rows"
         raise ValidationError(message=msg, field=param_name)

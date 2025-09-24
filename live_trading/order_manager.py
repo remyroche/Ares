@@ -12,8 +12,23 @@ from datetime import datetime
 from enum import Enum
 
 from src.interfaces.base_interfaces import TradeDecision
-from ..exchange.base_exchange import BaseExchange
-from .trading_manager import TradingConfig
+from exchange.base_exchange import BaseExchange
+from dataclasses import dataclass
+from typing import List
+
+
+@dataclass
+class TradingConfig:
+    """Configuration for live trading operations"""
+    exchange_name: str
+    symbols: List[str]
+    max_position_size: float
+    max_daily_trades: int
+    risk_per_trade: float
+    enable_data_streaming: bool = True
+    enable_order_execution: bool = True
+    api_key: str = ""
+    api_secret: str = ""
 
 
 class OrderStatus(Enum):

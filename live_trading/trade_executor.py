@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 
 from src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult
-from ..exchange.base_exchange import BaseExchange
-from .trading_manager import TradingConfig
+from exchange.base_exchange import BaseExchange
+from .order_manager import TradingConfig
 
 
 @dataclass
@@ -309,7 +309,7 @@ class TradeExecutor:
             if trade_decision.price > 0:
                 slippage = abs(current_price - trade_decision.price) / trade_decision.price
                 if slippage > self.max_slippage:
-                    self.logger.warning(f"High slippage detected: {slippage".2%"}")
+                    self.logger.warning(f"High slippage detected: {slippage:.2%}")
 
             # Adjust price for market orders
             if trade_decision.price <= 0:  # Market order
@@ -360,7 +360,7 @@ class TradeExecutor:
             execution_time = (datetime.now() - start_time).total_seconds()
 
             if execution_time > self.max_execution_time:
-                self.logger.warning(f"Order execution took {execution_time".2f"}s")
+                    self.logger.warning(f"Order execution took {execution_time:.2f}s")
 
             if order_result:
                 return ExecutionResult(

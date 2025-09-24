@@ -1,0 +1,806 @@
+"""
+Real Reporting Engine
+
+This module provides comprehensive reporting for backtesting results using
+existing utilities from src/utils/ for data visualization and analysis.
+"""
+
+import asyncio
+import logging
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from dataclasses import dataclass, field
+from enum import Enum
+import time
+import gc
+from pathlib import Path
+import json
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Import existing utilities
+from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
+from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
+from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+from src.utils.ml_common.evaluation import ModelEvaluator
+from src.core.decorators import handles_errors, traced, log_execution_time
+
+# Visualization imports
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    go = None
+    px = None
+
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+    sns = None
+
+logger = logging.getLogger(__name__)
+
+class ReportType(Enum):
+    """Report types."""
+    SUMMARY = "summary"
+    DETAILED = "detailed"
+    COMPREHENSIVE = "comprehensive"
+    CUSTOM = "custom"
+
+@dataclass
+class RealReportingConfig:
+    """Configuration for real reporting."""
+    # Basic configuration
+    report_type: ReportType = ReportType.COMPREHENSIVE
+    output_dir: str = "reports"
+    output_format: str = "html"  # "html", "pdf", "json", "csv"
+    
+    # Visualization settings
+    enable_plots: bool = True
+    plot_style: str = "seaborn"  # "seaborn", "plotly", "matplotlib"
+    figure_size: Tuple[int, int] = (12, 8)
+    dpi: int = 300
+    
+    # Report sections
+    include_performance_metrics: bool = True
+    include_risk_analysis: bool = True
+    include_trade_analysis: bool = True
+    include_portfolio_analysis: bool = True
+    include_visualizations: bool = True
+    
+    # Custom parameters
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+
+class RealReportingEngine:
+    """
+    Real reporting engine using existing utilities.
+    
+    This engine provides comprehensive reporting with:
+    - Performance metrics calculation and visualization
+    - Risk analysis and reporting
+    - Trade analysis and statistics
+    - Portfolio analysis and attribution
+    - Interactive visualizations
+    """
+    
+    def __init__(self, config: RealReportingConfig):
+        """Initialize the real reporting engine."""
+        self.config = config
+        self.logger = logger.getChild('RealReportingEngine')
+        
+        # Initialize utilities
+        self.matrix_ops = get_unified_matrix_operations()
+        self.model_evaluator = ModelEvaluator()
+        
+        # Create output directory
+        ensure_directory(config.output_dir)
+        
+        # Report storage
+        self.reports = []
+        self.visualizations = {}
+        
+    async def generate_report(self, backtest_results: Dict[str, Any], 
+                            test_name: str = "backtest_report") -> Dict[str, Any]:
+        """Generate comprehensive backtest report."""
+        self.logger.info(f"📊 Generating {self.config.report_type.value} report: {test_name}")
+        
+        try:
+            # Initialize report
+            report = {
+                'test_name': test_name,
+                'timestamp': datetime.now().isoformat(),
+                'config': self.config.__dict__,
+                'sections': {}
+            }
+            
+            # Generate report sections
+            if self.config.include_performance_metrics:
+                report['sections']['performance_metrics'] = await self._generate_performance_metrics(backtest_results)
+            
+            if self.config.include_risk_analysis:
+                report['sections']['risk_analysis'] = await self._generate_risk_analysis(backtest_results)
+            
+            if self.config.include_trade_analysis:
+                report['sections']['trade_analysis'] = await self._generate_trade_analysis(backtest_results)
+            
+            if self.config.include_portfolio_analysis:
+                report['sections']['portfolio_analysis'] = await self._generate_portfolio_analysis(backtest_results)
+            
+            if self.config.include_visualizations:
+                report['sections']['visualizations'] = await self._generate_visualizations(backtest_results)
+            
+            # Generate summary
+            report['summary'] = self._generate_summary(report['sections'])
+            
+            # Save report
+            await self._save_report(report, test_name)
+            
+            # Store report
+            self.reports.append(report)
+            
+            self.logger.info(f"✅ Report generated successfully: {test_name}")
+            
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"❌ Report generation failed: {e}")
+            raise
+    
+    async def _generate_performance_metrics(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate performance metrics section."""
+        self.logger.info("📈 Generating performance metrics")
+        
+        try:
+            metrics = {}
+            
+            # Extract basic metrics
+            if 'performance_metrics' in backtest_results:
+                basic_metrics = backtest_results['performance_metrics']
+                metrics.update(basic_metrics)
+            
+            # Calculate additional metrics
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                # Calculate returns
+                returns = np.diff(equity_curve) / equity_curve[:-1]
+                
+                # Performance metrics
+                metrics['total_return'] = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
+                metrics['annualized_return'] = (1 + metrics['total_return']) ** (252 / len(equity_curve)) - 1
+                metrics['volatility'] = np.std(returns) * np.sqrt(252)
+                metrics['sharpe_ratio'] = metrics['annualized_return'] / metrics['volatility'] if metrics['volatility'] > 0 else 0
+                
+                # Drawdown analysis
+                peak = np.maximum.accumulate(equity_curve)
+                drawdown = (equity_curve - peak) / peak
+                metrics['max_drawdown'] = np.min(drawdown)
+                metrics['avg_drawdown'] = np.mean(drawdown[drawdown < 0])
+                
+                # Calmar ratio
+                metrics['calmar_ratio'] = metrics['annualized_return'] / abs(metrics['max_drawdown']) if metrics['max_drawdown'] != 0 else 0
+                
+                # Sortino ratio
+                downside_returns = returns[returns < 0]
+                downside_std = np.std(downside_returns) if len(downside_returns) > 0 else 0
+                metrics['sortino_ratio'] = metrics['annualized_return'] / (downside_std * np.sqrt(252)) if downside_std > 0 else 0
+                
+                # Information ratio (assuming risk-free rate of 2%)
+                risk_free_rate = 0.02
+                excess_returns = returns - risk_free_rate / 252
+                metrics['information_ratio'] = np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) > 0 else 0
+            
+            # Trade-based metrics
+            if 'trade_log' in backtest_results:
+                trade_log = backtest_results['trade_log']
+                if trade_log:
+                    profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
+                    if profits:
+                        metrics['win_rate'] = len([p for p in profits if p > 0]) / len(profits)
+                        metrics['profit_factor'] = abs(sum([p for p in profits if p > 0]) / sum([p for p in profits if p < 0])) if any(p < 0 for p in profits) else 0
+                        metrics['avg_win'] = np.mean([p for p in profits if p > 0]) if any(p > 0 for p in profits) else 0
+                        metrics['avg_loss'] = np.mean([p for p in profits if p < 0]) if any(p < 0 for p in profits) else 0
+                        metrics['total_trades'] = len(profits)
+            
+            return {
+                'metrics': metrics,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Performance metrics generation failed: {e}")
+            return {'error': str(e)}
+    
+    async def _generate_risk_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate risk analysis section."""
+        self.logger.info("⚠️ Generating risk analysis")
+        
+        try:
+            risk_analysis = {}
+            
+            # Extract returns
+            returns = None
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                returns = np.diff(equity_curve) / equity_curve[:-1]
+            
+            if returns is not None:
+                # Value at Risk (VaR)
+                risk_analysis['var_95'] = np.percentile(returns, 5)
+                risk_analysis['var_99'] = np.percentile(returns, 1)
+                
+                # Expected Shortfall (Conditional VaR)
+                risk_analysis['expected_shortfall_95'] = np.mean(returns[returns <= risk_analysis['var_95']])
+                risk_analysis['expected_shortfall_99'] = np.mean(returns[returns <= risk_analysis['var_99']])
+                
+                # Tail risk metrics
+                risk_analysis['tail_ratio'] = risk_analysis['expected_shortfall_95'] / risk_analysis['var_95'] if risk_analysis['var_95'] != 0 else 0
+                
+                # Skewness and Kurtosis
+                risk_analysis['skewness'] = self._calculate_skewness(returns)
+                risk_analysis['kurtosis'] = self._calculate_kurtosis(returns)
+                
+                # Maximum consecutive losses
+                risk_analysis['max_consecutive_losses'] = self._calculate_max_consecutive_losses(returns)
+                
+                # Risk-adjusted returns
+                risk_analysis['treynor_ratio'] = risk_analysis.get('annualized_return', 0) / risk_analysis.get('beta', 1) if risk_analysis.get('beta', 1) != 0 else 0
+                
+                # Beta calculation (if benchmark available)
+                if 'benchmark_returns' in backtest_results:
+                    benchmark_returns = backtest_results['benchmark_returns']
+                    if len(benchmark_returns) == len(returns):
+                        covariance = np.cov(returns, benchmark_returns)[0, 1]
+                        benchmark_variance = np.var(benchmark_returns)
+                        risk_analysis['beta'] = covariance / benchmark_variance if benchmark_variance > 0 else 0
+                        risk_analysis['alpha'] = risk_analysis.get('annualized_return', 0) - risk_analysis['beta'] * np.mean(benchmark_returns) * 252
+            
+            return {
+                'risk_metrics': risk_analysis,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk analysis generation failed: {e}")
+            return {'error': str(e)}
+    
+    async def _generate_trade_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate trade analysis section."""
+        self.logger.info("📊 Generating trade analysis")
+        
+        try:
+            trade_analysis = {}
+            
+            if 'trade_log' in backtest_results:
+                trade_log = backtest_results['trade_log']
+                
+                if trade_log:
+                    # Basic trade statistics
+                    trade_analysis['total_trades'] = len(trade_log)
+                    
+                    # Extract profits
+                    profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
+                    if profits:
+                        trade_analysis['winning_trades'] = len([p for p in profits if p > 0])
+                        trade_analysis['losing_trades'] = len([p for p in profits if p < 0])
+                        trade_analysis['win_rate'] = trade_analysis['winning_trades'] / trade_analysis['total_trades']
+                        
+                        # Profit analysis
+                        winning_profits = [p for p in profits if p > 0]
+                        losing_profits = [p for p in profits if p < 0]
+                        
+                        trade_analysis['avg_win'] = np.mean(winning_profits) if winning_profits else 0
+                        trade_analysis['avg_loss'] = np.mean(losing_profits) if losing_profits else 0
+                        trade_analysis['largest_win'] = max(winning_profits) if winning_profits else 0
+                        trade_analysis['largest_loss'] = min(losing_profits) if losing_profits else 0
+                        
+                        # Profit factor
+                        total_wins = sum(winning_profits)
+                        total_losses = abs(sum(losing_profits))
+                        trade_analysis['profit_factor'] = total_wins / total_losses if total_losses > 0 else 0
+                        
+                        # Consecutive wins/losses
+                        trade_analysis['max_consecutive_wins'] = self._calculate_max_consecutive_wins(profits)
+                        trade_analysis['max_consecutive_losses'] = self._calculate_max_consecutive_losses(profits)
+                        
+                        # Trade duration analysis
+                        if 'timestamp' in trade_log[0]:
+                            durations = []
+                            for i in range(1, len(trade_log)):
+                                if 'timestamp' in trade_log[i]:
+                                    duration = (pd.to_datetime(trade_log[i]['timestamp']) - 
+                                              pd.to_datetime(trade_log[i-1]['timestamp'])).total_seconds() / 3600
+                                    durations.append(duration)
+                            
+                            if durations:
+                                trade_analysis['avg_trade_duration_hours'] = np.mean(durations)
+                                trade_analysis['median_trade_duration_hours'] = np.median(durations)
+                    
+                    # Trade distribution analysis
+                    if profits:
+                        trade_analysis['profit_distribution'] = {
+                            'mean': np.mean(profits),
+                            'std': np.std(profits),
+                            'min': np.min(profits),
+                            'max': np.max(profits),
+                            'percentile_25': np.percentile(profits, 25),
+                            'percentile_75': np.percentile(profits, 75)
+                        }
+            
+            return {
+                'trade_statistics': trade_analysis,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Trade analysis generation failed: {e}")
+            return {'error': str(e)}
+    
+    async def _generate_portfolio_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate portfolio analysis section."""
+        self.logger.info("💼 Generating portfolio analysis")
+        
+        try:
+            portfolio_analysis = {}
+            
+            # Portfolio value analysis
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                portfolio_analysis['initial_value'] = equity_curve[0]
+                portfolio_analysis['final_value'] = equity_curve[-1]
+                portfolio_analysis['peak_value'] = np.max(equity_curve)
+                portfolio_analysis['trough_value'] = np.min(equity_curve)
+                
+                # Portfolio growth analysis
+                portfolio_analysis['total_growth'] = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
+                portfolio_analysis['peak_growth'] = (np.max(equity_curve) - equity_curve[0]) / equity_curve[0]
+                
+                # Volatility analysis
+                returns = np.diff(equity_curve) / equity_curve[:-1]
+                portfolio_analysis['daily_volatility'] = np.std(returns)
+                portfolio_analysis['annualized_volatility'] = portfolio_analysis['daily_volatility'] * np.sqrt(252)
+                
+                # Risk-adjusted metrics
+                if portfolio_analysis['annualized_volatility'] > 0:
+                    portfolio_analysis['sharpe_ratio'] = (portfolio_analysis.get('annualized_return', 0) - 0.02) / portfolio_analysis['annualized_volatility']
+                
+                # Drawdown analysis
+                peak = np.maximum.accumulate(equity_curve)
+                drawdown = (equity_curve - peak) / peak
+                portfolio_analysis['max_drawdown'] = np.min(drawdown)
+                portfolio_analysis['avg_drawdown'] = np.mean(drawdown[drawdown < 0])
+                portfolio_analysis['drawdown_duration'] = self._calculate_drawdown_duration(drawdown)
+                
+                # Recovery analysis
+                portfolio_analysis['recovery_time'] = self._calculate_recovery_time(equity_curve)
+            
+            # Position analysis
+            if 'trade_log' in backtest_results:
+                trade_log = backtest_results['trade_log']
+                if trade_log:
+                    # Position size analysis
+                    position_sizes = [t.get('position_size', 0) for t in trade_log if 'position_size' in t]
+                    if position_sizes:
+                        portfolio_analysis['avg_position_size'] = np.mean(position_sizes)
+                        portfolio_analysis['max_position_size'] = np.max(position_sizes)
+                        portfolio_analysis['min_position_size'] = np.min(position_sizes)
+            
+            return {
+                'portfolio_metrics': portfolio_analysis,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Portfolio analysis generation failed: {e}")
+            return {'error': str(e)}
+    
+    async def _generate_visualizations(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate visualizations section."""
+        self.logger.info("📊 Generating visualizations")
+        
+        try:
+            visualizations = {}
+            
+            if not self.config.enable_plots:
+                return {'message': 'Visualizations disabled'}
+            
+            # Equity curve plot
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                # Create equity curve plot
+                if PLOTLY_AVAILABLE and self.config.plot_style == "plotly":
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        y=equity_curve,
+                        mode='lines',
+                        name='Portfolio Value',
+                        line=dict(color='blue', width=2)
+                    ))
+                    fig.update_layout(
+                        title='Portfolio Equity Curve',
+                        xaxis_title='Time',
+                        yaxis_title='Portfolio Value',
+                        template='plotly_white'
+                    )
+                    visualizations['equity_curve'] = fig.to_html()
+                
+                elif MATPLOTLIB_AVAILABLE:
+                    plt.figure(figsize=self.config.figure_size)
+                    plt.plot(equity_curve, linewidth=2, color='blue')
+                    plt.title('Portfolio Equity Curve')
+                    plt.xlabel('Time')
+                    plt.ylabel('Portfolio Value')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Save plot
+                    plot_path = Path(self.config.output_dir) / 'equity_curve.png'
+                    plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+                    plt.close()
+                    
+                    visualizations['equity_curve'] = str(plot_path)
+            
+            # Drawdown plot
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                peak = np.maximum.accumulate(equity_curve)
+                drawdown = (equity_curve - peak) / peak
+                
+                if PLOTLY_AVAILABLE and self.config.plot_style == "plotly":
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        y=drawdown * 100,
+                        mode='lines',
+                        name='Drawdown %',
+                        line=dict(color='red', width=2),
+                        fill='tonexty'
+                    ))
+                    fig.update_layout(
+                        title='Portfolio Drawdown',
+                        xaxis_title='Time',
+                        yaxis_title='Drawdown %',
+                        template='plotly_white'
+                    )
+                    visualizations['drawdown'] = fig.to_html()
+                
+                elif MATPLOTLIB_AVAILABLE:
+                    plt.figure(figsize=self.config.figure_size)
+                    plt.fill_between(range(len(drawdown)), drawdown * 100, 0, 
+                                   color='red', alpha=0.3, label='Drawdown %')
+                    plt.plot(drawdown * 100, color='red', linewidth=2)
+                    plt.title('Portfolio Drawdown')
+                    plt.xlabel('Time')
+                    plt.ylabel('Drawdown %')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Save plot
+                    plot_path = Path(self.config.output_dir) / 'drawdown.png'
+                    plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+                    plt.close()
+                    
+                    visualizations['drawdown'] = str(plot_path)
+            
+            # Returns distribution
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                returns = np.diff(equity_curve) / equity_curve[:-1]
+                
+                if PLOTLY_AVAILABLE and self.config.plot_style == "plotly":
+                    fig = go.Figure()
+                    fig.add_trace(go.Histogram(
+                        x=returns,
+                        nbinsx=50,
+                        name='Returns Distribution',
+                        marker_color='lightblue'
+                    ))
+                    fig.update_layout(
+                        title='Returns Distribution',
+                        xaxis_title='Returns',
+                        yaxis_title='Frequency',
+                        template='plotly_white'
+                    )
+                    visualizations['returns_distribution'] = fig.to_html()
+                
+                elif MATPLOTLIB_AVAILABLE:
+                    plt.figure(figsize=self.config.figure_size)
+                    plt.hist(returns, bins=50, alpha=0.7, color='lightblue', edgecolor='black')
+                    plt.title('Returns Distribution')
+                    plt.xlabel('Returns')
+                    plt.ylabel('Frequency')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Save plot
+                    plot_path = Path(self.config.output_dir) / 'returns_distribution.png'
+                    plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+                    plt.close()
+                    
+                    visualizations['returns_distribution'] = str(plot_path)
+            
+            return {
+                'plots': visualizations,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Visualization generation failed: {e}")
+            return {'error': str(e)}
+    
+    def _generate_summary(self, sections: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate report summary."""
+        try:
+            summary = {
+                'report_generated': datetime.now().isoformat(),
+                'sections_included': list(sections.keys()),
+                'key_metrics': {}
+            }
+            
+            # Extract key metrics from sections
+            if 'performance_metrics' in sections and 'metrics' in sections['performance_metrics']:
+                metrics = sections['performance_metrics']['metrics']
+                summary['key_metrics'].update({
+                    'total_return': metrics.get('total_return', 0),
+                    'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                    'max_drawdown': metrics.get('max_drawdown', 0),
+                    'volatility': metrics.get('volatility', 0)
+                })
+            
+            if 'trade_analysis' in sections and 'trade_statistics' in sections['trade_analysis']:
+                trade_stats = sections['trade_analysis']['trade_statistics']
+                summary['key_metrics'].update({
+                    'total_trades': trade_stats.get('total_trades', 0),
+                    'win_rate': trade_stats.get('win_rate', 0),
+                    'profit_factor': trade_stats.get('profit_factor', 0)
+                })
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"❌ Summary generation failed: {e}")
+            return {'error': str(e)}
+    
+    async def _save_report(self, report: Dict[str, Any], test_name: str):
+        """Save report to file."""
+        try:
+            if self.config.output_format == "json":
+                # Save as JSON
+                report_path = Path(self.config.output_dir) / f"{test_name}.json"
+                safe_json_dump(report, str(report_path))
+                self.logger.info(f"📄 Report saved as JSON: {report_path}")
+            
+            elif self.config.output_format == "html":
+                # Generate HTML report
+                html_content = self._generate_html_report(report)
+                report_path = Path(self.config.output_dir) / f"{test_name}.html"
+                with open(report_path, 'w') as f:
+                    f.write(html_content)
+                self.logger.info(f"📄 Report saved as HTML: {report_path}")
+            
+            else:
+                self.logger.warning(f"⚠️ Unknown output format: {self.config.output_format}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save report: {e}")
+            raise
+    
+    def _generate_html_report(self, report: Dict[str, Any]) -> str:
+        """Generate HTML report."""
+        try:
+            html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>{report.get('test_name', 'Backtest Report')}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                    h1 {{ color: #333; }}
+                    h2 {{ color: #666; }}
+                    .metric {{ margin: 10px 0; }}
+                    .metric-label {{ font-weight: bold; }}
+                    .metric-value {{ color: #0066cc; }}
+                    .section {{ margin: 30px 0; padding: 20px; border: 1px solid #ddd; }}
+                </style>
+            </head>
+            <body>
+                <h1>{report.get('test_name', 'Backtest Report')}</h1>
+                <p>Generated: {report.get('timestamp', 'Unknown')}</p>
+                
+                <div class="section">
+                    <h2>Summary</h2>
+                    <div class="metric">
+                        <span class="metric-label">Total Return:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('total_return', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Sharpe Ratio:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('sharpe_ratio', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Max Drawdown:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('max_drawdown', 'N/A')}</span>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>Performance Metrics</h2>
+                    <pre>{json.dumps(report.get('sections', {}).get('performance_metrics', {}), indent=2)}</pre>
+                </div>
+                
+                <div class="section">
+                    <h2>Risk Analysis</h2>
+                    <pre>{json.dumps(report.get('sections', {}).get('risk_analysis', {}), indent=2)}</pre>
+                </div>
+                
+                <div class="section">
+                    <h2>Trade Analysis</h2>
+                    <pre>{json.dumps(report.get('sections', {}).get('trade_analysis', {}), indent=2)}</pre>
+                </div>
+                
+                <div class="section">
+                    <h2>Portfolio Analysis</h2>
+                    <pre>{json.dumps(report.get('sections', {}).get('portfolio_analysis', {}), indent=2)}</pre>
+                </div>
+            </body>
+            </html>
+            """
+            
+            return html
+            
+        except Exception as e:
+            self.logger.error(f"❌ HTML report generation failed: {e}")
+            return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>"
+    
+    def _calculate_skewness(self, returns: np.ndarray) -> float:
+        """Calculate skewness of returns."""
+        try:
+            if len(returns) < 3:
+                return 0.0
+            mean = np.mean(returns)
+            std = np.std(returns)
+            if std == 0:
+                return 0.0
+            return np.mean(((returns - mean) / std) ** 3)
+        except Exception:
+            return 0.0
+    
+    def _calculate_kurtosis(self, returns: np.ndarray) -> float:
+        """Calculate kurtosis of returns."""
+        try:
+            if len(returns) < 4:
+                return 0.0
+            mean = np.mean(returns)
+            std = np.std(returns)
+            if std == 0:
+                return 0.0
+            return np.mean(((returns - mean) / std) ** 4) - 3
+        except Exception:
+            return 0.0
+    
+    def _calculate_max_consecutive_losses(self, returns: np.ndarray) -> int:
+        """Calculate maximum consecutive losses."""
+        try:
+            if len(returns) == 0:
+                return 0
+            
+            max_consecutive = 0
+            current_consecutive = 0
+            
+            for ret in returns:
+                if ret < 0:
+                    current_consecutive += 1
+                    max_consecutive = max(max_consecutive, current_consecutive)
+                else:
+                    current_consecutive = 0
+            
+            return max_consecutive
+        except Exception:
+            return 0
+    
+    def _calculate_max_consecutive_wins(self, profits: List[float]) -> int:
+        """Calculate maximum consecutive wins."""
+        try:
+            if len(profits) == 0:
+                return 0
+            
+            max_consecutive = 0
+            current_consecutive = 0
+            
+            for profit in profits:
+                if profit > 0:
+                    current_consecutive += 1
+                    max_consecutive = max(max_consecutive, current_consecutive)
+                else:
+                    current_consecutive = 0
+            
+            return max_consecutive
+        except Exception:
+            return 0
+    
+    def _calculate_drawdown_duration(self, drawdown: np.ndarray) -> int:
+        """Calculate maximum drawdown duration."""
+        try:
+            if len(drawdown) == 0:
+                return 0
+            
+            max_duration = 0
+            current_duration = 0
+            
+            for dd in drawdown:
+                if dd < 0:
+                    current_duration += 1
+                    max_duration = max(max_duration, current_duration)
+                else:
+                    current_duration = 0
+            
+            return max_duration
+        except Exception:
+            return 0
+    
+    def _calculate_recovery_time(self, equity_curve: np.ndarray) -> int:
+        """Calculate average recovery time from drawdowns."""
+        try:
+            if len(equity_curve) < 2:
+                return 0
+            
+            peak = np.maximum.accumulate(equity_curve)
+            drawdown = (equity_curve - peak) / peak
+            
+            recovery_times = []
+            in_drawdown = False
+            drawdown_start = 0
+            
+            for i, dd in enumerate(drawdown):
+                if dd < 0 and not in_drawdown:
+                    in_drawdown = True
+                    drawdown_start = i
+                elif dd >= 0 and in_drawdown:
+                    in_drawdown = False
+                    recovery_times.append(i - drawdown_start)
+            
+            return int(np.mean(recovery_times)) if recovery_times else 0
+        except Exception:
+            return 0
+
+# Convenience functions
+async def generate_backtest_report(
+    backtest_results: Dict[str, Any],
+    report_type: ReportType = ReportType.COMPREHENSIVE,
+    output_dir: str = "reports",
+    output_format: str = "html",
+    **kwargs
+) -> Dict[str, Any]:
+    """Generate backtest report with the given parameters."""
+    config = RealReportingConfig(
+        report_type=report_type,
+        output_dir=output_dir,
+        output_format=output_format,
+        **kwargs
+    )
+    
+    engine = RealReportingEngine(config)
+    report = await engine.generate_report(backtest_results)
+    
+    return report

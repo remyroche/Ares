@@ -71,7 +71,7 @@ class DataIngestionConfig:
     data_directory: str = "historical_data"
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
-    timeframe: str = "1h"
+    timeframe: str = "1h"  # 1h base timeframe for regime detection
     
     # Date range
     start_date: Optional[datetime] = None

@@ -112,11 +112,11 @@ class AutomaticTimeframeOptimizer:
     def _initialize_optimization_components(self):
         """Initialize optimization components."""
         try:
-            # Analyst-specific optimization config (quick decision-making)
+            # Analyst-specific optimization config (15m base timeframe)
             self.analyst_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
-                min_horizon=1,  # 5 minutes
-                max_horizon=8,   # 40 minutes
+                min_horizon=1,  # 15 minutes (1 * 15m)
+                max_horizon=8,   # 120 minutes (8 * 15m)
                 horizon_step=1,
                 optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
                 n_target_candidates=8,
@@ -124,11 +124,11 @@ class AutomaticTimeframeOptimizer:
                 bayesian_iterations=25
             )
             
-            # Tactician-specific optimization config (position management)
+            # Tactician-specific optimization config (5m base timeframe)
             self.tactician_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
-                min_horizon=4,   # 20 minutes
-                max_horizon=16,  # 80 minutes
+                min_horizon=4,   # 20 minutes (4 * 5m)
+                max_horizon=16,  # 80 minutes (16 * 5m)
                 horizon_step=2,
                 optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
                 n_target_candidates=6,
@@ -377,14 +377,14 @@ class AutomaticTimeframeOptimizer:
         config = MultiHorizonConfig()
         
         if model_type == ModelType.ANALYST:
-            # Analyst: quick decision-making
-            config.time_horizons = {'immediate': 2, 'short': 4}
+            # Analyst: 15m base timeframe (2 periods = 30m, 4 periods = 60m)
+            config.time_horizons = {'immediate': 2, 'short': 4}  # 30m and 60m
             config.profit_targets = {
                 'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010
             }
         elif model_type == ModelType.TACTICIAN:
-            # Tactician: position management
-            config.time_horizons = {'immediate': 4, 'short': 8}
+            # Tactician: 5m base timeframe (4 periods = 20m, 8 periods = 40m)
+            config.time_horizons = {'immediate': 4, 'short': 8}  # 20m and 40m
             config.profit_targets = {
                 'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015
             }

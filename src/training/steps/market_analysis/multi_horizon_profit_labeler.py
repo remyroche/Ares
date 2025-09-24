@@ -77,10 +77,10 @@ class MultiHorizonConfig:
         'good': 0.010      # 1.0% (net: 0.92% after fees)
     })
     
-    # Time horizons (SHORT-TERM ONLY for regular reassessment)
+    # Time horizons (UPDATED for new base timeframes)
     time_horizons: Dict[str, int] = field(default_factory=lambda: {
-        'immediate': 2,    # 10 minutes (2 * 5m) - capture quick moves
-        'short': 4         # 20 minutes (4 * 5m) - capture short-term moves
+        'immediate': 2,    # 10 minutes (2 * 5m) - for Tactician 5m base
+        'short': 4         # 20 minutes (4 * 5m) - for Tactician 5m base
     })
     
     # Fee consideration

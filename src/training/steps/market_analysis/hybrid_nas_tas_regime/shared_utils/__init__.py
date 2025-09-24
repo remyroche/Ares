@@ -24,6 +24,10 @@ from .data_pipeline import DataPipelineManager, MarketDataProcessor
 from .feature_collection import FeatureCollectionManager, StandardizedFeatureCalculator
 from .economic_significance import EconomicSignificanceEvaluator, EconomicSignificanceResult
 from .trading_viability import TradingViabilityEvaluator, TradingViabilityResult
+from .position_aware_trading import (
+    PositionAwareTradingAnalyzer, PositionAwareConfig, PositionAwareResult,
+    create_position_aware_analyzer, quick_position_aware_analysis
+)
 from .search_strategies import AdvancedSearchStrategy, BayesianOptimizer, GridOptimizer
 from .evolutionary_algorithms import NSGA2Optimizer, SPEA2Optimizer, EvolutionaryAlgorithm
 from .hardware_optimization import HardwareOptimizer, PerformanceMonitor
@@ -70,6 +74,12 @@ __all__ = [
     'FeatureCollectionManager', 'StandardizedFeatureCalculator',
     'EconomicSignificanceEvaluator', 'EconomicSignificanceResult',
     'TradingViabilityEvaluator', 'TradingViabilityResult',
+
+    # Position-Aware Trading
+    'PositionAwareTradingAnalyzer', 'PositionAwareConfig', 'PositionAwareResult',
+    'create_position_aware_analyzer', 'quick_position_aware_analysis',
+
+    # Search Strategies
     'AdvancedSearchStrategy', 'BayesianOptimizer', 'GridOptimizer',
     'NSGA2Optimizer', 'SPEA2Optimizer', 'EvolutionaryAlgorithm',
     'HardwareOptimizer', 'PerformanceMonitor',

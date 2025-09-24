@@ -202,7 +202,7 @@ class StepOrchestratorWrapper:
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
-            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE = 1 for step-based training (730 days)")
+            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE = 1 for step-based training (1460 days)")
     
     def _clear_checkpoint_files(self, symbol: str, exchange: str, timeframe: str = "1m") -> None:
         """Remove enhanced training checkpoints to guarantee a fresh start."""

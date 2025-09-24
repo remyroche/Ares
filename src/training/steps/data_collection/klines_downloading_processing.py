@@ -211,7 +211,7 @@ class KlinesDataProcessingPipeline:
     async def run_complete_pipeline(
         self,
         symbol: str = "ETHUSDT",
-        years: int = 2,
+        years: int = None,
         interval: str = "1m",
         api_key: str = "",
         api_secret: str = "",
@@ -222,7 +222,7 @@ class KlinesDataProcessingPipeline:
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT", default: "ETHUSDT")
-            years: Number of years of data to download (default: 2)
+            years: Number of years of data to download (default: from centralized config)
             interval: Kline interval (e.g., "1m")
             api_key: Binance API key
             api_secret: Binance API secret
@@ -233,6 +233,12 @@ class KlinesDataProcessingPipeline:
             Dictionary with pipeline results
         """
         try:
+            # Use centralized configuration if years not specified
+            if years is None:
+                from src.config.pipeline_modes import get_full_mode_config
+                mode_config = get_full_mode_config()
+                years = mode_config.lookback_years
+            
             self.logger.info(f"🚀 Starting complete klines processing pipeline for {symbol}")
 
             results = {
@@ -1378,7 +1384,7 @@ def resolve_duplicates_in_files(input_files: List[str],
 # Convenience functions for the complete pipeline
 async def run_ethusdt_3year_pipeline(
     symbol: str = "ETHUSDT",
-    years: int = 2,
+    years: int = None,
     data_dir: str = "historical_data",
     api_key: str = "",
     api_secret: str = "",
@@ -1398,7 +1404,7 @@ async def run_ethusdt_3year_pipeline(
 
     Args:
         symbol: Trading symbol (default: "ETHUSDT")
-        years: Number of years of data to download (default: 2)
+        years: Number of years of data to download (default: from centralized config)
         data_dir: Base directory for data storage
         api_key: Binance API key
         api_secret: Binance API secret
@@ -1409,6 +1415,12 @@ async def run_ethusdt_3year_pipeline(
     Returns:
         Dictionary with complete pipeline results
     """
+    # Use centralized configuration if years not specified
+    if years is None:
+        from src.config.pipeline_modes import get_full_mode_config
+        mode_config = get_full_mode_config()
+        years = mode_config.lookback_years
+    
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
     print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
@@ -1466,7 +1478,7 @@ async def run_ethusdt_3year_pipeline(
 
 async def run_custom_symbol_pipeline(
     symbol: str,
-    years: int = 2,
+    years: int = None,
     interval: str = "1m",
     data_dir: str = "historical_data",
     api_key: str = "",
@@ -1478,7 +1490,7 @@ async def run_custom_symbol_pipeline(
 
     Args:
         symbol: Trading symbol (e.g., "BTCUSDT")
-        years: Number of years of data to download (default: 2)
+        years: Number of years of data to download (default: from centralized config)
         interval: Kline interval (e.g., "1m")
         data_dir: Base directory for data storage
         api_key: Binance API key
@@ -1489,6 +1501,12 @@ async def run_custom_symbol_pipeline(
     Returns:
         Dictionary with complete pipeline results
     """
+    # Use centralized configuration if years not specified
+    if years is None:
+        from src.config.pipeline_modes import get_full_mode_config
+        mode_config = get_full_mode_config()
+        years = mode_config.lookback_years
+    
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
     print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
@@ -1575,8 +1593,8 @@ if __name__ == "__main__":
             print("  python klines_downloading_processing.py test_columns")
             print("")
             print("Examples:")
-            print("  python klines_downloading_processing.py                    # ETHUSDT, 2 years (default)")
-            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 2 years")
+            print("  python klines_downloading_processing.py                    # ETHUSDT, 4 years (default)")
+            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 4 years")
             print("  python klines_downloading_processing.py ETHUSDT 3         # ETHUSDT, 3 years")
             print("  python klines_downloading_processing.py BTCUSDT 1         # BTCUSDT, 1 year")
     else:
@@ -1584,7 +1602,7 @@ if __name__ == "__main__":
         async def main():
             # Parse command line arguments for symbol and years
             symbol = "ETHUSDT"  # default
-            years = 2  # default
+            years = None  # Will use centralized config
             
             # Check for additional command line arguments
             if len(sys.argv) > 1:

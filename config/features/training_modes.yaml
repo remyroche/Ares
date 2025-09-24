@@ -5,9 +5,9 @@
 
 training_modes:
   # Full Production Mode - Complete training with all data
+  # Note: Lookback period is now centralized in src/config/pipeline_modes.py
   full:
     description: "Production mode - Complete training with full dataset"
-    lookback_days: 730  # 2 years
     training_mode: "full"
     enable_blank_training_mode: false
     enable_light_training_mode: false

@@ -612,8 +612,8 @@ async def get_training_modes():
                         "recommendation": "Use for standard model training and validation"
                     },
                     "full": {
-                        "description": "Full training mode for production (730 days)",
-                        "lookback_days": 730,
+                        "description": "Full training mode for production (1460 days)",
+                        "lookback_days": 1460,
                         "max_trials": 200,
                         "n_trials": 100,
                         "computational_intensity": "high",

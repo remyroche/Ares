@@ -24,6 +24,22 @@ import torch
 
 from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
 
+# Import unified utilities
+from ...hybrid_nas_tas_regime.shared_utils import (
+    UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
+    UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
+    UnifiedMultiObjectiveOptimizer, OptimizationConfig,
+    UnifiedHardwareOptimizer, HardwareConfig,
+    UnifiedRegimeAnalyzer, RegimeAnalysisConfig,
+    UnifiedValidationSystem, ValidationConfig,
+    create_unified_economic_evaluator, quick_economic_evaluation,
+    create_unified_trading_viability_evaluator, quick_trading_viability_evaluation,
+    create_unified_multi_objective_optimizer, quick_multi_objective_optimization,
+    create_unified_hardware_optimizer, quick_hardware_optimization,
+    create_unified_regime_analyzer, quick_regime_analysis,
+    create_unified_validation_system, quick_validation
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,6 +128,90 @@ class TASEvaluator:
         self.economic_significance_threshold = config.economic_significance_threshold
         self.trading_viability_threshold = config.trading_viability_threshold
         self.max_drawdown_threshold = config.max_drawdown_threshold
+
+        # Initialize unified utilities
+        self._initialize_unified_utilities()
+
+    def _initialize_unified_utilities(self):
+        """Initialize unified utilities for TAS evaluation."""
+        try:
+            # Initialize unified economic significance evaluator
+            economic_config = EconomicEvaluationConfig(
+                significance_threshold=self.economic_significance_threshold,
+                price_impact_threshold=0.5,
+                volume_threshold=0.4,
+                volatility_threshold=0.5,
+                trend_threshold=0.6,
+                efficiency_threshold=0.5
+            )
+            self.unified_economic_evaluator = create_unified_economic_evaluator(economic_config)
+            
+            # Initialize unified trading viability evaluator
+            trading_config = TradingViabilityConfig(
+                viability_threshold=self.trading_viability_threshold,
+                min_trading_frequency=0.1,
+                max_trading_frequency=10.0,
+                min_position_duration=5.0,
+                max_position_duration=1440.0,
+                min_model_confidence=0.6,
+                min_risk_adjusted_return=0.1
+            )
+            self.unified_trading_evaluator = create_unified_trading_viability_evaluator(trading_config)
+            
+            # Initialize unified multi-objective optimizer
+            optimization_config = OptimizationConfig(
+                objectives=['regime_accuracy', 'economic_significance', 'trading_viability', 'computational_efficiency'],
+                objective_weights={
+                    'regime_accuracy': 0.3,
+                    'economic_significance': 0.25,
+                    'trading_viability': 0.25,
+                    'computational_efficiency': 0.2
+                },
+                max_iterations=100,
+                population_size=50
+            )
+            self.unified_optimizer = create_unified_multi_objective_optimizer(optimization_config)
+            
+            # Initialize unified hardware optimizer
+            hardware_config = HardwareConfig(
+                enable_hardware_optimization=True,
+                max_memory_usage_gb=8.0,
+                enable_gpu_acceleration=True,
+                enable_performance_monitoring=True
+            )
+            self.unified_hardware_optimizer = create_unified_hardware_optimizer(hardware_config)
+            
+            # Initialize unified regime analyzer
+            regime_config = RegimeAnalysisConfig(
+                analysis_types=['stability', 'transitions', 'uncertainty'],
+                stability_window=20,
+                transition_window=10,
+                uncertainty_method='entropy'
+            )
+            self.unified_regime_analyzer = create_unified_regime_analyzer(regime_config)
+            
+            # Initialize unified validation system
+            validation_config = ValidationConfig(
+                validation_type='time_series_validation',
+                n_folds=5,
+                test_size=0.2,
+                metrics=['accuracy', 'precision', 'recall', 'f1_score'],
+                enable_trading_metrics=True,
+                enable_regime_metrics=True
+            )
+            self.unified_validator = create_unified_validation_system(validation_config)
+            
+            self.logger.info("✅ Unified utilities initialized for TAS evaluation")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize unified utilities: {e}")
+            # Set fallback evaluators
+            self.unified_economic_evaluator = None
+            self.unified_trading_evaluator = None
+            self.unified_optimizer = None
+            self.unified_hardware_optimizer = None
+            self.unified_regime_analyzer = None
+            self.unified_validator = None
 
     def evaluate_model(self, model: Any, X_test: np.ndarray, y_test: np.ndarray,
                       market_data: pd.DataFrame, regime_labels: Optional[pd.Series] = None,

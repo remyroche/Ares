@@ -26,7 +26,7 @@ def get_trading_config() -> dict[str, Any]:
         "taker_fee": 0.0004,
         "maker_fee": 0.0002,
         "state_file": "ares_state.json",
-        "lookback_years": 2,  # 2 years of historical data
+        "lookback_years": 4,  # 2 years of historical data
         
         # --- NAS/TAS Enhancement Configuration ---
         "nas_tas_enabled": True,

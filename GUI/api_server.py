@@ -1779,8 +1779,8 @@ async def get_training_modes():
                         "recommendation": "Use for standard model training and validation"
                     },
                     "full": {
-                        "description": "Full training mode for production (730 days)",
-                        "lookback_days": 730,
+                        "description": "Full training mode for production (1460 days)",
+                        "lookback_days": 1460,
                         "max_trials": 200,
                         "n_trials": 100,
                         "computational_intensity": "high",
@@ -1795,7 +1795,7 @@ async def get_training_modes():
                 "comparison": {
                     "light": {"intensity_percentage": 0.1, "max_trials": 10, "n_trials": 5, "estimated_duration_minutes": 15, "lookback_days": 10},
                     "blank": {"intensity_percentage": 0.5, "max_trials": 50, "n_trials": 25, "estimated_duration_minutes": 60, "lookback_days": 180},
-                    "full": {"intensity_percentage": 1.0, "max_trials": 200, "n_trials": 100, "estimated_duration_minutes": 240, "lookback_days": 730}
+                    "full": {"intensity_percentage": 1.0, "max_trials": 200, "n_trials": 100, "estimated_duration_minutes": 240, "lookback_days": 1460}
                 },
                 "recommendations": {
                     "light": "Use for quick testing and development",

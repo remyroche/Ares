@@ -68,6 +68,43 @@ from .unified_clustering_algorithms import (
     UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
 )
 
+# New Unified Utilities
+from .unified_economic_evaluator import (
+    UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig, EconomicSignificanceResult,
+    create_unified_economic_evaluator, quick_economic_evaluation
+)
+from .unified_trading_viability_evaluator import (
+    UnifiedTradingViabilityEvaluator, TradingViabilityConfig, TradingViabilityResult,
+    create_unified_trading_viability_evaluator, quick_trading_viability_evaluation
+)
+from .unified_multi_objective_optimizer import (
+    UnifiedMultiObjectiveOptimizer, OptimizationConfig, OptimizationResult,
+    create_unified_multi_objective_optimizer, quick_multi_objective_optimization
+)
+from .unified_hardware_optimizer import (
+    UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics,
+    create_unified_hardware_optimizer, quick_hardware_optimization
+)
+from .unified_regime_analyzer import (
+    UnifiedRegimeAnalyzer, RegimeAnalysisConfig, RegimeAnalysisResult,
+    create_unified_regime_analyzer, quick_regime_analysis
+)
+from .unified_config_manager import (
+    UnifiedConfigManager, UnifiedRegimeConfig,
+    create_unified_config_manager, load_config_from_file, create_environment_config
+)
+from .unified_validation_system import (
+    UnifiedValidationSystem, ValidationConfig, ValidationResult,
+    create_unified_validation_system, quick_validation
+)
+
+# ML Common Integration - Shared utilities for TAS and NAS
+from .ml_common_integration import (
+    SharedMLUtilitiesManager, create_shared_ml_utilities_manager,
+    TASSharedMLUtilities, NASSharedMLUtilities, HybridSharedMLUtilities,
+    MLUtilityType, MLUtilityConfig
+)
+
 __all__ = [
     # Original utilities
     'DataPipelineManager', 'MarketDataProcessor',
@@ -114,5 +151,28 @@ __all__ = [
     # Unified Search and Clustering
     'UnifiedSearchManager', 'BayesianOptimizationSearch', 'EvolutionaryAlgorithmSearch',
     'create_unified_search_manager', 'create_search_algorithm',
-    'UnifiedClusteringAlgorithm', 'create_unified_clustering_algorithm'
+    'UnifiedClusteringAlgorithm', 'create_unified_clustering_algorithm',
+
+    # New Unified Utilities
+    'UnifiedEconomicSignificanceEvaluator', 'EconomicEvaluationConfig', 'EconomicSignificanceResult',
+    'UnifiedTradingViabilityEvaluator', 'TradingViabilityConfig', 'TradingViabilityResult',
+    'UnifiedMultiObjectiveOptimizer', 'OptimizationConfig', 'OptimizationResult',
+    'UnifiedHardwareOptimizer', 'HardwareConfig', 'PerformanceMetrics',
+    'UnifiedRegimeAnalyzer', 'RegimeAnalysisConfig', 'RegimeAnalysisResult',
+    'UnifiedConfigManager', 'UnifiedRegimeConfig',
+    'UnifiedValidationSystem', 'ValidationConfig', 'ValidationResult',
+
+    # Convenience functions for new utilities
+    'create_unified_economic_evaluator', 'quick_economic_evaluation',
+    'create_unified_trading_viability_evaluator', 'quick_trading_viability_evaluation',
+    'create_unified_multi_objective_optimizer', 'quick_multi_objective_optimization',
+    'create_unified_hardware_optimizer', 'quick_hardware_optimization',
+    'create_unified_regime_analyzer', 'quick_regime_analysis',
+    'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
+    'create_unified_validation_system', 'quick_validation',
+
+    # ML Common Integration - Shared utilities for TAS and NAS
+    'SharedMLUtilitiesManager', 'create_shared_ml_utilities_manager',
+    'TASSharedMLUtilities', 'NASSharedMLUtilities', 'HybridSharedMLUtilities',
+    'MLUtilityType', 'MLUtilityConfig'
 ]

@@ -122,7 +122,7 @@ class TradingConfig:
     taker_fee: float = 0.0004
     maker_fee: float = 0.0002
     state_file: str = "ares_state.json"
-    lookback_years: int = 2
+    lookback_years: int = 4
 
     # Time-based exit configuration (simplified)
     max_holding_time_hours: int = 3  # Maximum holding time in hours

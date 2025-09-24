@@ -510,19 +510,29 @@ class BacktestingSubPipeline:
         
         # Import and use final parameters optimization
         try:
-            from .final_parameters_optimization import FinalParametersOptimizer
+            from .final_parameters_optimization import optimize_final_parameters
             
-            optimizer = FinalParametersOptimizer(config.custom_params.get('optimization_config', {}))
-            optimization_result = await optimizer.optimize_parameters(
+            # Create mock calibration results for testing
+            calibration_results = {
+                'confidence_scores': [0.7, 0.8, 0.9],
+                'calibration_metrics': {'accuracy': 0.85, 'precision': 0.82, 'recall': 0.88},
+                'regime_data': {'bull_market': {}, 'bear_market': {}, 'sideways': {}}
+            }
+            
+            optimization_result = await optimize_final_parameters(
+                calibration_results=calibration_results,
+                config=config.custom_params.get('optimization_config', {}),
                 symbol=config.symbol,
                 exchange=config.exchange,
-                timeframe=config.timeframe,
                 data_dir=config.data_dir
             )
             
-            artifacts['optimization_results'] = optimization_result.get('results', {})
-            artifacts['optimized_parameters'] = optimization_result.get('parameters', {})
-            artifacts['optimization_metrics'] = optimization_result.get('metrics', {})
+            artifacts['optimization_results'] = optimization_result.get('final_parameters', {})
+            artifacts['optimized_parameters'] = optimization_result.get('final_parameters', {})
+            artifacts['optimization_metrics'] = {
+                'optimization_report': optimization_result.get('optimization_report', {}),
+                'validation_passed': optimization_result.get('validation_passed', False)
+            }
             
         except ImportError:
             self.logger.warning("⚠️ Final parameters optimization not available, using mock optimization")

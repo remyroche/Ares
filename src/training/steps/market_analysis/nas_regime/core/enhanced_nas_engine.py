@@ -52,6 +52,28 @@ from ...hybrid_nas_tas_regime.shared_utils import (
     create_unified_validation_system, quick_validation
 )
 
+# Import comprehensive ML common utilities
+try:
+    from src.utils.ml_common import (
+        # Overfitting prevention
+        OverfittingPrevention, OverfittingPreventionConfig,
+        # Hyperparameter optimization
+        HyperparameterOptimization, optimize_hyperparameters, create_search_space,
+        # Validation
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
+        PurgedKFold, TemporalCrossValidator, StabilityAnalyzer,
+        # Models and ensembles
+        EnhancedModelFactory, MultiOutputModel, EnsembleManager,
+        # Feature engineering
+        FeatureImportanceAnalyzer, DataDriftDetector,
+        # Monitoring and safeguards
+        LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ML common utilities not available: {e}")
+    ML_COMMON_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,6 +148,9 @@ class EnhancedNASEngine:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        # Initialize ML common utilities
+        self._initialize_ml_common_utilities()
+
         # Initialize shared components
         self._initialize_shared_components()
 
@@ -145,6 +170,74 @@ class EnhancedNASEngine:
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Population Size: {config.population_size}")
         self.logger.info(f"   Max Generations: {config.max_generations}")
+        self.logger.info(f"   ML Common utilities: {'✅ Available' if ML_COMMON_AVAILABLE else '❌ Not available'}")
+
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML common utilities for comprehensive ML support."""
+        try:
+            if not ML_COMMON_AVAILABLE:
+                self.logger.warning("⚠️ ML common utilities not available - using fallback implementations")
+                self._initialize_fallback_utilities()
+                return
+            
+            # Initialize overfitting prevention
+            self.overfitting_prevention = OverfittingPrevention(
+                OverfittingPreventionConfig(
+                    enable_early_stopping=True,
+                    enable_cross_validation=True,
+                    enable_regularization=True,
+                    enable_ensemble_diversity=True,
+                    early_stopping_patience=20,
+                    cv_folds=5
+                )
+            )
+            
+            # Initialize hyperparameter optimization
+            self.hpo_optimizer = HyperparameterOptimization({
+                'enable_parallel': True,
+                'max_workers': 4,
+                'enable_monitoring': True,
+                'use_nonlinear_optimization': True
+            })
+            
+            # Initialize validation framework
+            self.validation_framework = UnifiedCrossValidator()
+            
+            # Initialize model factory
+            self.model_factory = EnhancedModelFactory()
+            
+            # Initialize ensemble manager
+            self.ensemble_manager = EnsembleManager()
+            
+            # Initialize feature importance analyzer
+            self.feature_analyzer = FeatureImportanceAnalyzer()
+            
+            # Initialize data drift detector
+            self.drift_detector = DataDriftDetector()
+            
+            # Initialize safeguards
+            self.lookahead_protection = LookaheadProtection()
+            self.training_safeguards = MLTrainingSafeguards()
+            self.error_handler = RobustErrorHandler()
+            
+            self.logger.info("✅ ML common utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ ML common utilities initialization failed: {e}")
+            self._initialize_fallback_utilities()
+    
+    def _initialize_fallback_utilities(self):
+        """Initialize fallback utilities when ML common is not available."""
+        self.overfitting_prevention = None
+        self.hpo_optimizer = None
+        self.validation_framework = None
+        self.model_factory = None
+        self.ensemble_manager = None
+        self.feature_analyzer = None
+        self.drift_detector = None
+        self.lookahead_protection = None
+        self.training_safeguards = None
+        self.error_handler = None
 
     def _initialize_shared_components(self):
         """Initialize shared utility components from unified framework."""

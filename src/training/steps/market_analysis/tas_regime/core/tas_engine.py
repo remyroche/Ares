@@ -40,6 +40,28 @@ from ...hybrid_nas_tas_regime.shared_utils import (
     create_unified_validation_system, quick_validation
 )
 
+# Import comprehensive ML common utilities
+try:
+    from src.utils.ml_common import (
+        # Overfitting prevention
+        OverfittingPrevention, OverfittingPreventionConfig,
+        # Hyperparameter optimization
+        HyperparameterOptimization, optimize_hyperparameters, create_search_space,
+        # Validation
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
+        PurgedKFold, TemporalCrossValidator, StabilityAnalyzer,
+        # Models and ensembles
+        EnhancedModelFactory, MultiOutputModel, EnsembleManager,
+        # Feature engineering
+        FeatureImportanceAnalyzer, DataDriftDetector,
+        # Monitoring and safeguards
+        LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ML common utilities not available: {e}")
+    ML_COMMON_AVAILABLE = False
+
 # Import advanced components
 from ..meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML
 from ..search.evolutionary_search import EvolutionaryTreeSearch
@@ -129,6 +151,9 @@ class TreeArchitectureSearchEngine:
         self.search_space = TreeSearchSpace(config.base_config)
         self.evaluator = TreeEvaluator(config.base_config)
         
+        # Initialize ML common utilities
+        self._initialize_ml_common_utilities()
+        
         # Initialize advanced components
         self._initialize_advanced_components()
         
@@ -146,6 +171,74 @@ class TreeArchitectureSearchEngine:
         self.logger.info(f"🎯 Uncertainty estimation: {config.enable_uncertainty_estimation}")
         self.logger.info(f"📊 Regime analysis: {config.enable_regime_analysis}")
         self.logger.info(f"⚡ Real-time adaptation: {config.enable_real_time_adaptation}")
+        self.logger.info(f"🛡️ ML Common utilities: {'✅ Available' if ML_COMMON_AVAILABLE else '❌ Not available'}")
+    
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML common utilities for comprehensive ML support."""
+        try:
+            if not ML_COMMON_AVAILABLE:
+                self.logger.warning("⚠️ ML common utilities not available - using fallback implementations")
+                self._initialize_fallback_utilities()
+                return
+            
+            # Initialize overfitting prevention
+            self.overfitting_prevention = OverfittingPrevention(
+                OverfittingPreventionConfig(
+                    enable_early_stopping=True,
+                    enable_cross_validation=True,
+                    enable_regularization=True,
+                    enable_ensemble_diversity=True,
+                    early_stopping_patience=15,
+                    cv_folds=5
+                )
+            )
+            
+            # Initialize hyperparameter optimization
+            self.hpo_optimizer = HyperparameterOptimization({
+                'enable_parallel': True,
+                'max_workers': 4,
+                'enable_monitoring': True,
+                'use_nonlinear_optimization': True
+            })
+            
+            # Initialize validation framework
+            self.validation_framework = UnifiedCrossValidator()
+            
+            # Initialize model factory
+            self.model_factory = EnhancedModelFactory()
+            
+            # Initialize ensemble manager
+            self.ensemble_manager = EnsembleManager()
+            
+            # Initialize feature importance analyzer
+            self.feature_analyzer = FeatureImportanceAnalyzer()
+            
+            # Initialize data drift detector
+            self.drift_detector = DataDriftDetector()
+            
+            # Initialize safeguards
+            self.lookahead_protection = LookaheadProtection()
+            self.training_safeguards = MLTrainingSafeguards()
+            self.error_handler = RobustErrorHandler()
+            
+            self.logger.info("✅ ML common utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ ML common utilities initialization failed: {e}")
+            self._initialize_fallback_utilities()
+    
+    def _initialize_fallback_utilities(self):
+        """Initialize fallback utilities when ML common is not available."""
+        self.overfitting_prevention = None
+        self.hpo_optimizer = None
+        self.validation_framework = None
+        self.model_factory = None
+        self.ensemble_manager = None
+        self.feature_analyzer = None
+        self.drift_detector = None
+        self.lookahead_protection = None
+        self.training_safeguards = None
+        self.error_handler = None
     
     def _initialize_advanced_components(self):
         """Initialize advanced TAS components."""
@@ -242,6 +335,19 @@ class TreeArchitectureSearchEngine:
         self.logger.info(f"⚙️ Using optimization mode: {mode.value}")
         
         try:
+            # Apply ML common safeguards and protection
+            if self.lookahead_protection:
+                self.lookahead_protection.protect_data(train_data, validation_data)
+            
+            if self.training_safeguards:
+                self.training_safeguards.validate_training_setup(train_data, validation_data)
+            
+            # Check for data drift if drift detector is available
+            if self.drift_detector and len(self.search_history) > 0:
+                drift_result = self.drift_detector.detect_drift(train_data[0])
+                if drift_result.severity > 0.5:
+                    self.logger.warning(f"⚠️ Data drift detected: {drift_result.severity}")
+            
             # Prepare search environment
             search_env = self._prepare_search_environment(
                 train_data, validation_data, test_data, regime_data

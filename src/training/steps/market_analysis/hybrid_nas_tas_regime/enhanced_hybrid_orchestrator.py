@@ -19,6 +19,28 @@ from enum import Enum
 from .shared_utils.unified_search_algorithms import UnifiedSearchManager, create_unified_search_manager
 from .shared_utils.unified_clustering_algorithms import UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
 
+# Import comprehensive ML common utilities
+try:
+    from src.utils.ml_common import (
+        # Overfitting prevention
+        OverfittingPrevention, OverfittingPreventionConfig,
+        # Hyperparameter optimization
+        HyperparameterOptimization, optimize_hyperparameters, create_search_space,
+        # Validation
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
+        PurgedKFold, TemporalCrossValidator, StabilityAnalyzer,
+        # Models and ensembles
+        EnhancedModelFactory, MultiOutputModel, EnsembleManager,
+        # Feature engineering
+        FeatureImportanceAnalyzer, DataDriftDetector,
+        # Monitoring and safeguards
+        LookaheadProtection, MLTrainingSafeguards, RobustErrorHandler
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ML common utilities not available: {e}")
+    ML_COMMON_AVAILABLE = False
+
 # Import TAS and NAS components
 from .components.tas_integration import TASIntegrationComponent
 from .components.nas_integration import NASIntegrationComponent
@@ -91,6 +113,9 @@ class EnhancedHybridOrchestrator:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize ML common utilities
+        self._initialize_ml_common_utilities()
+        
         # Initialize TAS and NAS integration components
         self.tas_integration = TASIntegrationComponent(config.tas_config)
         self.nas_integration = NASIntegrationComponent(config.nas_config)
@@ -124,6 +149,7 @@ class EnhancedHybridOrchestrator:
         self.logger.info(f"   Unified Search Engine: {'✅ Enabled' if self.use_unified_search else '❌ Disabled'}")
         self.logger.info(f"   Signal Generation: {'✅ Enabled' if self.use_signal_generation else '❌ Disabled'}")
         self.logger.info(f"   Multi-timeframe: {'✅ Enabled' if self.enable_multi_timeframe else '❌ Disabled'}")
+        self.logger.info(f"   ML Common utilities: {'✅ Available' if ML_COMMON_AVAILABLE else '❌ Not available'}")
 
         # Initialize unified search engine if enabled
         if self.use_unified_search:
@@ -132,6 +158,73 @@ class EnhancedHybridOrchestrator:
         # Initialize signal generation system if enabled
         if self.use_signal_generation:
             self._initialize_signal_generator()
+
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML common utilities for comprehensive ML support."""
+        try:
+            if not ML_COMMON_AVAILABLE:
+                self.logger.warning("⚠️ ML common utilities not available - using fallback implementations")
+                self._initialize_fallback_utilities()
+                return
+            
+            # Initialize overfitting prevention
+            self.overfitting_prevention = OverfittingPrevention(
+                OverfittingPreventionConfig(
+                    enable_early_stopping=True,
+                    enable_cross_validation=True,
+                    enable_regularization=True,
+                    enable_ensemble_diversity=True,
+                    early_stopping_patience=25,
+                    cv_folds=5
+                )
+            )
+            
+            # Initialize hyperparameter optimization
+            self.hpo_optimizer = HyperparameterOptimization({
+                'enable_parallel': True,
+                'max_workers': 4,
+                'enable_monitoring': True,
+                'use_nonlinear_optimization': True
+            })
+            
+            # Initialize validation framework
+            self.validation_framework = UnifiedCrossValidator()
+            
+            # Initialize model factory
+            self.model_factory = EnhancedModelFactory()
+            
+            # Initialize ensemble manager
+            self.ensemble_manager = EnsembleManager()
+            
+            # Initialize feature importance analyzer
+            self.feature_analyzer = FeatureImportanceAnalyzer()
+            
+            # Initialize data drift detector
+            self.drift_detector = DataDriftDetector()
+            
+            # Initialize safeguards
+            self.lookahead_protection = LookaheadProtection()
+            self.training_safeguards = MLTrainingSafeguards()
+            self.error_handler = RobustErrorHandler()
+            
+            self.logger.info("✅ ML common utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ ML common utilities initialization failed: {e}")
+            self._initialize_fallback_utilities()
+    
+    def _initialize_fallback_utilities(self):
+        """Initialize fallback utilities when ML common is not available."""
+        self.overfitting_prevention = None
+        self.hpo_optimizer = None
+        self.validation_framework = None
+        self.model_factory = None
+        self.ensemble_manager = None
+        self.feature_analyzer = None
+        self.drift_detector = None
+        self.lookahead_protection = None
+        self.training_safeguards = None
+        self.error_handler = None
 
     def _initialize_unified_search_engine(self):
         """Initialize unified architecture search engine."""

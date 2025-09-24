@@ -3,6 +3,10 @@ Example usage of the Hybrid NAS-TAS Regime Detection system.
 
 This script demonstrates how to use the hybrid orchestrator to perform
 comprehensive regime detection using both NAS and TAS approaches.
+
+The system uses the same data source as hmm_regime_discovery.py (klines_parquet)
+but operates independently, and delivers similar outputs to hmm_clustering
+but with enhanced hybrid metrics.
 """
 
 import asyncio

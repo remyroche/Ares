@@ -2,6 +2,8 @@
 Metrics Reporting Utilities for Hybrid NAS-TAS Regime Detection.
 
 Provides common metrics reporting utilities for consolidated output.
+Delivers similar outputs to hmm_clustering but with enhanced hybrid metrics
+including NAS, TAS, and consolidated regime analysis.
 """
 
 import numpy as np

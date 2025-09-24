@@ -59,7 +59,7 @@ The system produces a `ConsolidatedMetricsReport` containing:
 
 ## Features
 
-- **Data Pipeline**: Uses existing klines_parquet system
+- **Data Pipeline**: Uses the same data source as hmm_regime_discovery.py (klines_parquet) but operates independently
 - **Feature Collection**: Integrates with pre-existing feature_generator/
 - **Economic Significance**: Comprehensive economic impact analysis
 - **Trading Viability**: Practical trading opportunity assessment
@@ -68,6 +68,8 @@ The system produces a `ConsolidatedMetricsReport` containing:
 
 ## Integration Points
 
+- **Data Source**: Uses the same klines_parquet system as hmm_regime_discovery.py but without direct dependency
+- **Output Format**: Delivers similar outputs to hmm_clustering but with enhanced hybrid metrics
 - **NAS Regime Detection**: Integrates with existing NAS systems
 - **TAS Regime Detection**: Integrates with existing TAS systems
 - **Future Trading Systems**: Designed for compatibility with future NAS and TAS trading systems

@@ -2,6 +2,8 @@
 Data Pipeline Utilities for Hybrid NAS-TAS Regime Detection.
 
 Provides common data processing utilities used by both NAS and TAS regime detection systems.
+Uses the same data source as hmm_regime_discovery.py (klines_parquet) but operates independently
+without direct dependency on hmm_regime_discovery.py.
 """
 
 import numpy as np

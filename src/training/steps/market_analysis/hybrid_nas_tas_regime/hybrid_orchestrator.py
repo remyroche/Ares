@@ -73,7 +73,13 @@ class HybridOrchestratorConfig:
 
 
 class HybridOrchestrator:
-    """Main orchestrator for hybrid NAS-TAS regime detection."""
+    """
+    Main orchestrator for hybrid NAS-TAS regime detection.
+    
+    This orchestrator coordinates the entire pipeline from data collection to consolidated output.
+    It uses the same data source as hmm_regime_discovery.py (klines_parquet) but operates independently,
+    and delivers similar outputs to hmm_clustering but with enhanced hybrid metrics.
+    """
     
     def __init__(self, config: HybridOrchestratorConfig):
         """Initialize the hybrid orchestrator.

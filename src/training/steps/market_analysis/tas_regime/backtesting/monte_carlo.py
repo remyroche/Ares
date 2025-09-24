@@ -15,7 +15,23 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
-logger = logging.getLogger(__name__)
+# Import M1 optimization utilities
+from src.utils.hardware.m1_gpu_utils import (
+    get_m1_gpu_manager, is_m1_available, is_mps_available, optimize_dataframe_for_m1,
+    create_m1_optimized_array, m1_monte_carlo_simulate
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+# Import common utilities for enhanced functionality
+from src.utils.common_operations import (
+    get_logger, safe_log_metric, safe_log_params, get_current_datetime, format_datetime,
+    safe_divide, safe_mean, safe_std, safe_float, safe_int, validate_finite,
+    safe_percentage_change, parallel_map, timed_operation, format_bytes, get_memory_usage,
+    memory_checkpoint, gpu_context, optimize_memory
+)
+
+logger = get_logger(__name__)
 
 
 class MonteCarloMethod(Enum):
@@ -48,6 +64,13 @@ class MonteCarloConfig:
     # Advanced parameters
     enable_copula_simulation: bool = False
     enable_garch_simulation: bool = False
+
+    # M1 optimization parameters
+    enable_m1_optimization: bool = True
+    m1_gpu_acceleration: bool = True
+    m1_memory_optimization: bool = True
+    parallel_simulations: bool = True
+    n_workers: int = 4
     enable_jump_diffusion: bool = False
     
     # Output parameters

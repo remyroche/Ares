@@ -22,7 +22,18 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, Gradi
 import warnings
 warnings.filterwarnings('ignore')
 
-logger = logging.getLogger(__name__)
+# Import matrix operations utilities
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+from src.utils.matrix_operations.batch_operations import BatchMatrixOperations
+from src.utils.matrix_operations.vectorized_core import VectorizedMatrixCore
+
+# Import common utilities for enhanced functionality
+from src.utils.common_operations import (
+    get_logger, safe_log_metric, safe_log_params, safe_mean, safe_std, safe_float,
+    validate_finite, safe_divide, parallel_map, timed_operation
+)
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -67,18 +78,23 @@ class TreeBasedClusteringRegimeDetector:
     """Tree-based clustering regime detector with advanced data-driven strategies."""
 
     def __init__(self, config: ClusteringRegimeConfig):
-        """Initialize tree-based clustering detector."""
+        """Initialize tree-based clustering detector with matrix operations."""
         self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__)
 
-        # Available tree models
+        # Initialize matrix operations utilities
+        self.unified_matrix_ops = UnifiedMatrixOperations()
+        self.batch_matrix_ops = BatchMatrixOperations()
+        self.vectorized_matrix_core = VectorizedMatrixCore()
+
+        # Available tree models with enhanced configuration
         self.tree_models = {
             "random_forest": RandomForestClassifier(n_estimators=100, random_state=42),
             "extra_trees": ExtraTreesClassifier(n_estimators=100, random_state=42),
             "gradient_boosting": GradientBoostingClassifier(n_estimators=100, random_state=42)
         }
 
-        # Clustering algorithms
+        # Clustering algorithms with optimized parameters
         self.clustering_algorithms = {
             "kmeans": KMeans(n_clusters=config.n_regimes, random_state=42),
             "dbscan": DBSCAN(eps=0.5, min_samples=5),
@@ -86,8 +102,37 @@ class TreeBasedClusteringRegimeDetector:
             "agglomerative": AgglomerativeClustering(n_clusters=config.n_regimes)
         }
 
-        self.logger.info("✅ Tree-Based Clustering Regime Detector initialized")
+        safe_log_params({
+            'n_regimes': config.n_regimes,
+            'clustering_strategy': config.clustering_strategy,
+            'n_tree_models': len(self.tree_models),
+            'n_clustering_algorithms': len(self.clustering_algorithms)
+        })
 
+        self.logger.info("✅ Tree-Based Clustering Regime Detector initialized with matrix operations")
+
+    def _compute_matrix_operations(self, data_matrix: np.ndarray, operation: str = 'normalize') -> np.ndarray:
+        """Compute matrix operations using unified matrix operations utilities."""
+        try:
+            if operation == 'normalize':
+                # Use vectorized matrix core for normalization
+                return self.vectorized_matrix_core.normalize_matrix(data_matrix)
+            elif operation == 'correlation':
+                # Use unified matrix operations for correlation matrix
+                return self.unified_matrix_ops.compute_correlation_matrix(data_matrix)
+            elif operation == 'covariance':
+                # Use batch matrix operations for covariance
+                return self.batch_matrix_ops.compute_covariance_matrix(data_matrix)
+            elif operation == 'distance':
+                # Use unified matrix operations for distance matrix
+                return self.unified_matrix_ops.compute_distance_matrix(data_matrix)
+            else:
+                return data_matrix
+        except Exception as e:
+            self.logger.warning(f"⚠️ Matrix operation failed: {e}")
+            return data_matrix
+
+    @timed_operation
     def detect_regimes(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """
         Detect market regimes using tree-based clustering.

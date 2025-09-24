@@ -40,7 +40,25 @@ from ...hybrid_nas_tas_regime.shared_utils import (
     create_unified_validation_system, quick_validation
 )
 
-logger = logging.getLogger(__name__)
+# Import ML common utilities for enhanced validation and evaluation
+from src.utils.ml_common.validation.cross_validation import CrossValidator
+from src.utils.ml_common.validation.overfitting_detection import OverfittingDetector
+from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.utils.ml_common.optimization.grid_search import GridSearch
+from src.utils.ml_common.optimization.bayesian_optimization import BayesianOptimizer
+from src.utils.ml_common.data_leakage_detection import DataLeakageDetector
+from src.utils.ml_common.validation.lookahead_bias import LookaheadBiasDetector
+from src.utils.ml_common.validation.model_drift import ModelDriftDetector
+from src.utils.ml_common.validation.data_drift_detector import DataDriftDetector
+
+# Import common utilities for enhanced functionality
+from src.utils.common_operations import (
+    get_logger, safe_log_metric, safe_log_params, get_current_datetime, format_datetime,
+    safe_mean, safe_std, safe_float, safe_int, validate_finite, safe_divide,
+    parallel_map, timed_operation
+)
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -111,18 +129,21 @@ class TASEvaluator:
     """Advanced evaluator for Trading Architecture Search."""
 
     def __init__(self, config: TASConfig):
-        """Initialize TAS evaluator.
+        """Initialize TAS evaluator with ML common utilities.
 
         Args:
             config: TAS configuration
         """
         self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__)
+
+        # Initialize ML common utilities
+        self._initialize_ml_common_utilities()
 
         # Evaluation parameters
         self.min_trades_for_evaluation = 50
         self.confidence_level = 0.95
-        self.risk_free_rate = 0.02  # 2% annual risk-free rate
+        self.risk_free_rate = safe_float(0.02)  # 2% annual risk-free rate
 
         # Validation thresholds
         self.economic_significance_threshold = config.economic_significance_threshold
@@ -131,6 +152,50 @@ class TASEvaluator:
 
         # Initialize unified utilities
         self._initialize_unified_utilities()
+
+        safe_log_params({
+            'min_trades_for_evaluation': self.min_trades_for_evaluation,
+            'confidence_level': self.confidence_level,
+            'risk_free_rate': self.risk_free_rate,
+            'economic_significance_threshold': self.economic_significance_threshold,
+            'trading_viability_threshold': self.trading_viability_threshold,
+            'max_drawdown_threshold': self.max_drawdown_threshold
+        })
+
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML common utilities for enhanced validation and evaluation."""
+        try:
+            # Initialize cross-validation utility
+            self.cross_validator = CrossValidator()
+
+            # Initialize overfitting detection
+            self.overfitting_detector = OverfittingDetector()
+
+            # Initialize hyperparameter optimization
+            self.hyperparameter_optimizer = HyperparameterOptimizer()
+
+            # Initialize grid search
+            self.grid_search = GridSearch()
+
+            # Initialize Bayesian optimization
+            self.bayesian_optimizer = BayesianOptimizer()
+
+            # Initialize data leakage detection
+            self.data_leakage_detector = DataLeakageDetector()
+
+            # Initialize lookahead bias detection
+            self.lookahead_bias_detector = LookaheadBiasDetector()
+
+            # Initialize model drift detection
+            self.model_drift_detector = ModelDriftDetector()
+
+            # Initialize data drift detection
+            self.data_drift_detector = DataDriftDetector()
+
+            self.logger.info("✅ ML common utilities initialized for TAS evaluation")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Some ML common utilities failed to initialize: {e}")
 
     def _initialize_unified_utilities(self):
         """Initialize unified utilities for TAS evaluation."""

@@ -18,6 +18,68 @@ import pickle
 import os
 from pathlib import Path
 
+# Import common utilities
+from src.utils.common_operations import (
+    get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact,
+    get_current_datetime, format_datetime, safe_json_dump, safe_json_load, ensure_directory,
+    validate_dataframe, validate_dataframe_columns, safe_fillna, safe_convert_dtypes,
+    optimize_dataframe_dtypes, calculate_data_quality_metrics, get_dataframe_info,
+    create_data_quality_report, safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    safe_float, safe_int, validate_finite, validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, safe_lower, safe_upper, safe_join,
+    safe_dict_get, safe_dict_items, timed_operation, format_bytes, parallel_map,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe, MathValidationError,
+    safe_rolling, safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
+    create_summary_statistics, safe_to_parquet, safe_read_parquet, list_parquet_files,
+    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
+    safe_copy, safe_deepcopy, safe_resample, align_dataframes, validate_dataframe_schema,
+    validate_file_size, guard_dataframe_nulls, secure_file_path, with_tracing_span,
+    sanitize_string, memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+    validate_file_path, get_file_size, check_disk_space
+)
+
+# Import math validation utilities
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log as math_safe_log, safe_sqrt as math_safe_sqrt,
+    safe_power as math_safe_power, validate_finite as math_validate_finite,
+    validate_positive as math_validate_positive, validate_range as math_validate_range,
+    validate_numeric_array, safe_kelly_calculation as math_safe_kelly_calculation,
+    safe_weighted_average as math_safe_weighted_average, safe_percentage_change as math_safe_percentage_change,
+    safe_correlation, safe_covariance, safe_mean as math_safe_mean, safe_std as math_safe_std,
+    safe_percentile, validate_correlation_matrix as math_validate_correlation_matrix,
+    safe_matrix_inverse as math_safe_matrix_inverse, math_safe, MathValidation as MathValidationClass,
+    MathValidationError as MathValidationErrorClass
+)
+
+# Import serialization utilities
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+
+# Import ML common utilities
+from src.utils.ml_common.validation.cross_validation import CrossValidator
+from src.utils.ml_common.validation.overfitting_detection import OverfittingDetector
+from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.utils.ml_common.optimization.grid_search import GridSearch
+from src.utils.ml_common.optimization.bayesian_optimization import BayesianOptimizer
+from src.utils.ml_common.data_leakage_detection import DataLeakageDetector
+
+# Import data utilities
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+from src.utils.data.feature_engineer import FeatureEngineer
+from src.utils.data.quality.data_quality import DataQualityChecker
+
+# Import matrix operations
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+from src.utils.matrix_operations.batch_operations import BatchMatrixOperations
+from src.utils.matrix_operations.vectorized_core import VectorizedMatrixCore
+
+# Import M1 optimization utilities
+from src.utils.hardware.m1_gpu_utils import (
+    get_m1_gpu_manager, is_m1_available, is_mps_available, optimize_dataframe_for_m1,
+    create_m1_optimized_array, m1_backtesting_simulate, m1_monte_carlo_simulate
+)
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
 # Import shared ML utilities from hybrid_nas_tas_regime
 from ...hybrid_nas_tas_regime.shared_utils.ml_common_integration import (
     create_shared_ml_utilities_manager, MLUtilityType, MLUtilityConfig
@@ -143,8 +205,12 @@ class EnhancedTASEngine:
     """Enhanced Tree Architecture Search Engine."""
 
     def __init__(self, config: TASConfig):
-        """Initialize the enhanced TAS engine with shared ML utilities."""
+        """Initialize the enhanced TAS engine with common utilities integration."""
         self.config = config
+        self.logger = get_logger(self.__class__.__name__)
+
+        # Initialize common utility managers
+        self._initialize_common_utilities()
 
         # Initialize shared ML utilities from hybrid_nas_tas_regime
         self._initialize_shared_ml_utilities()
@@ -155,7 +221,7 @@ class EnhancedTASEngine:
         # Search state
         self.current_generation = 0
         self.best_architecture = None
-        self.best_score = -np.inf
+        self.best_score = safe_float(-np.inf)
         self.search_history = []
         self.pareto_frontier = []
         self.evaluation_count = 0
@@ -167,10 +233,65 @@ class EnhancedTASEngine:
         # Initialize hardware optimization
         self._initialize_hardware_optimization()
 
-        self.logger.info("✅ Enhanced TAS Engine initialized with shared ML utilities")
-        self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
-        self.logger.info(f"   Population Size: {config.population_size}")
-        self.logger.info(f"   Max Generations: {config.max_generations}")
+        # Initialize utility instances
+        self.math_validator = MathValidationClass()
+        self.unified_matrix_ops = UnifiedMatrixOperations()
+        self.batch_matrix_ops = BatchMatrixOperations()
+        self.vectorized_matrix_core = VectorizedMatrixCore()
+        self.unified_data_utils = UnifiedDataUtils()
+        self.feature_engineer = FeatureEngineer()
+        self.data_quality_checker = DataQualityChecker()
+
+        # Initialize M1 optimization
+        self.m1_gpu_manager = get_m1_gpu_manager()
+        self.m1_memory_optimizer = get_m1_memory_optimizer()
+        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+
+        # Setup logging
+        setup_basic_logging()
+        safe_log_params({
+            'search_strategy': config.search_strategy.value,
+            'population_size': config.population_size,
+            'max_generations': config.max_generations,
+            'max_evaluations': config.max_evaluations,
+            'max_search_time': config.max_search_time
+        })
+
+        self.logger.info("✅ Enhanced TAS Engine initialized with common utilities")
+        safe_log_metric('enhanced_engine_initialization_time', time.time())
+
+    def _initialize_common_utilities(self):
+        """Initialize common utility managers for enhanced functionality."""
+        try:
+            # Initialize cross-validation utility
+            self.cross_validator = CrossValidator()
+
+            # Initialize overfitting detection
+            self.overfitting_detector = OverfittingDetector()
+
+            # Initialize hyperparameter optimization
+            self.hyperparameter_optimizer = HyperparameterOptimizer()
+
+            # Initialize grid search
+            self.grid_search = GridSearch()
+
+            # Initialize Bayesian optimization
+            self.bayesian_optimizer = BayesianOptimizer()
+
+            # Initialize data leakage detection
+            self.data_leakage_detector = DataLeakageDetector()
+
+            # Initialize universal serializer
+            self.universal_serializer = UniversalSerializer()
+
+            # Initialize memory optimization context manager
+            self.memory_checkpoint_context = memory_checkpoint
+            self.gpu_context_manager = gpu_context
+
+            self.logger.info("✅ Common utilities initialized successfully for Enhanced TAS Engine")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Some common utilities failed to initialize: {e}")
 
     def _initialize_shared_ml_utilities(self):
         """Initialize shared ML utilities from hybrid_nas_tas_regime."""
@@ -360,16 +481,33 @@ class EnhancedTASEngine:
             max_complexity_score=3.0  # Trees are generally less complex
         )
 
+    @timed_operation
     def search(self,
                train_data: Tuple[np.ndarray, np.ndarray],
                validation_data: Tuple[np.ndarray, np.ndarray],
                test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                regime_data: Optional[Dict[str, Any]] = None) -> TASResult:
-        """Perform comprehensive tree architecture search with ML Common utilities."""
-        self.start_time = time.time()
-        self.logger.info("🚀 Starting Enhanced TAS Search with ML Common utilities...")
+        """Perform comprehensive tree architecture search with common utilities integration."""
+        self.start_time = get_current_datetime()
+        self.logger.info("🚀 Starting Enhanced TAS Search with common utilities integration...")
 
         try:
+            # Validate input data using common utilities
+            self._validate_search_data(train_data, validation_data, test_data)
+
+            # Check for data leakage using common utilities
+            if not self.data_leakage_detector.detect_data_leakage(
+                train_data[0], validation_data[0], test_data[0] if test_data else None
+            ):
+                self.logger.warning("⚠️ Potential data leakage detected")
+
+            # Optimize data for M1 if available
+            if is_m1_available():
+                train_data = self._optimize_data_for_m1(train_data)
+                validation_data = self._optimize_data_for_m1(validation_data)
+                if test_data:
+                    test_data = self._optimize_data_for_m1(test_data)
+
             # Apply safeguards before search using shared utilities
             if not self.shared_ml_utilities.check_training_safety(train_data, validation_data):
                 self.logger.warning("Training safety check failed, proceeding with caution")
@@ -766,6 +904,59 @@ class EnhancedTASEngine:
             })
         else:
             return create_enhanced_bayesian_search({})
+
+    def _validate_search_data(self,
+                             train_data: Tuple[np.ndarray, np.ndarray],
+                             validation_data: Tuple[np.ndarray, np.ndarray],
+                             test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> bool:
+        """Validate search data using common utilities."""
+        try:
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
+
+            # Validate data quality using common utilities
+            train_df = pd.DataFrame(X_train)
+            val_df = pd.DataFrame(X_val)
+
+            # Check for missing values and data quality issues
+            train_quality = calculate_data_quality_metrics(train_df)
+            val_quality = calculate_data_quality_metrics(val_df)
+
+            if train_quality.get('missing_percentage', 0) > 50:
+                self.logger.warning(f"⚠️ High missing values in training data: {train_quality['missing_percentage']".2f"}%")
+            if val_quality.get('missing_percentage', 0) > 50:
+                self.logger.warning(f"⚠️ High missing values in validation data: {val_quality['missing_percentage']".2f"}%")
+
+            # Check for class imbalance if classification using safe operations
+            if len(np.unique(y_train)) < 10:  # Likely classification
+                train_class_dist = pd.Series(y_train).value_counts(normalize=True)
+                val_class_dist = pd.Series(y_val).value_counts(normalize=True)
+
+                if safe_float(train_class_dist.min()) < 0.01:
+                    self.logger.warning("⚠️ Potential class imbalance in training data")
+                if safe_float(val_class_dist.min()) < 0.01:
+                    self.logger.warning("⚠️ Potential class imbalance in validation data")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Data validation failed: {e}")
+            return False
+
+    def _optimize_data_for_m1(self, data: Tuple[np.ndarray, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+        """Optimize data for M1 hardware using common utilities."""
+        try:
+            X, y = data
+
+            # Create optimized arrays for M1 using common utilities
+            X_optimized = create_m1_optimized_array(X, dtype=np.float32)
+            y_optimized = create_m1_optimized_array(y, dtype=np.float32)
+
+            return (X_optimized, y_optimized)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ M1 optimization failed: {e}")
+            return data
 
     def _architecture_generator(self) -> Any:
         """Generate a random tree architecture from search space."""

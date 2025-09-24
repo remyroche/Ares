@@ -13,19 +13,53 @@ import time
 from datetime import datetime
 import asyncio
 
-# Import shared utilities
+# Import enhanced utilities - fully wired integration
 from .shared_utils import (
-    DataPipelineManager, DataPipelineConfig,
-    FeatureCollectionManager, FeatureCollectionConfig,
-    EconomicSignificanceEvaluator, EconomicSignificanceConfig,
-    TradingViabilityEvaluator, TradingViabilityConfig,
-    SearchStrategyManager, SearchStrategyConfig,
-    EvolutionaryAlgorithmManager, EvolutionaryAlgorithmConfig,
-    HardwareOptimizer, HardwareOptimizationConfig,
-    MetricsReporter, MetricsReportingConfig, ConsolidatedMetricsReport
+    # Enhanced logging and utilities
+    get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact,
+    get_current_datetime, get_today, format_datetime, parse_datetime,
+
+    # Data processing utilities
+    ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+    create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
+    safe_drop_columns, safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    optimize_dataframe_dtypes, calculate_data_quality_metrics, get_dataframe_info,
+    create_data_quality_report, safe_to_parquet, safe_read_parquet, list_parquet_files,
+
+    # Math and validation utilities
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std, safe_float, safe_int,
+    validate_finite, validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, safe_correlation, safe_covariance,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse,
+
+    # Performance utilities
+    timed_operation, format_bytes, chunked_iterable, parallel_map, memory_checkpoint,
+    gpu_context, optimize_memory, get_memory_usage, validate_file_path, get_file_size,
+    check_disk_space,
+
+    # Serialization utilities
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
+
+    # Data utilities integration
+    get_unified_data_utils, get_feature_engineer, get_data_quality_framework,
+    process_market_data, compute_correlation_matrix, compute_covariance_matrix,
+    batch_compute_correlation_matrices, parallel_matrix_computation,
+    initialize_enhanced_utilities,
+
+    # ML common integration
+    get_cross_validator, get_overfitting_detector, get_data_leakage_detector,
+    get_hyperparameter_optimizer, get_lookahead_detector, perform_cross_validation_analysis,
+    detect_model_issues,
+
+    # M1 hardware optimization
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, integrate_with_m1_optimizers
 )
 
-logger = logging.getLogger(__name__)
+# Setup enhanced logging
+setup_basic_logging()
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -82,24 +116,98 @@ class HybridOrchestrator:
     """
     
     def __init__(self, config: HybridOrchestratorConfig):
-        """Initialize the hybrid orchestrator.
-        
+        """Initialize the hybrid orchestrator with enhanced utilities.
+
         Args:
             config: Hybrid orchestrator configuration
         """
         self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Initialize component managers
-        self._initialize_managers()
-        
-        self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized")
+        self.logger = get_logger(self.__class__.__name__)
 
-        # Initialize TAS and NAS systems
+        # Initialize enhanced utilities and hardware optimization
+        self._initialize_enhanced_utilities()
+        self._initialize_hardware_optimization()
+
+        # Initialize component managers with enhanced utilities
+        self._initialize_managers()
+
+        safe_log_metric("hybrid_orchestrator_initialized", 1)
+        safe_log_params({
+            "symbol": config.symbol,
+            "timeframe": config.timeframe,
+            "use_gpu_acceleration": config.use_gpu_acceleration,
+            "memory_limit_gb": config.memory_limit_gb
+        })
+
+        self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized with enhanced utilities")
+
+        # Initialize TAS and NAS systems with enhanced capabilities
         self.tas_system = None
         self.nas_system = None
         self._initialize_tas_system()
         self._initialize_nas_system()
+
+    @timed_operation
+    def _initialize_enhanced_utilities(self):
+        """Initialize enhanced utilities from integrated modules."""
+        try:
+            # Initialize enhanced utilities status
+            self.utilities_status = initialize_enhanced_utilities()
+            self.logger.info(f"✅ Enhanced utilities initialized: {self.utilities_status['overall_status']}")
+
+            # Initialize data processing utilities
+            self.data_utils = get_unified_data_utils()
+            self.feature_engineer = get_feature_engineer()
+            self.data_quality_framework = get_data_quality_framework()
+
+            # Initialize ML common utilities
+            self.cross_validator = get_cross_validator()
+            self.overfitting_detector = get_overfitting_detector()
+            self.data_leakage_detector = get_data_leakage_detector()
+            self.hyperparameter_optimizer = get_hyperparameter_optimizer()
+            self.lookahead_detector = get_lookahead_detector()
+
+            # Initialize matrix operations
+            self.matrix_ops = get_unified_matrix_operations()
+            self.batch_matrix_ops = get_batch_matrix_operations()
+            self.hardware_accelerated_ops = get_hardware_accelerated_matrix_ops()
+
+            # Initialize serialization
+            self.serializer = UniversalSerializer()
+
+            self.logger.info("✅ All enhanced utilities initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing enhanced utilities: {e}")
+            # Continue with basic initialization - don't fail completely
+            pass
+
+    @memory_checkpoint("hardware_initialization")
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization and M1 integration."""
+        try:
+            if self.config.use_gpu_acceleration:
+                # Initialize M1 hardware optimization
+                self.m1_status = integrate_with_m1_optimizers()
+
+                # Initialize GPU manager if available
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+
+                # Start memory monitoring
+                if self.memory_optimizer:
+                    self.memory_optimizer.start_monitoring()
+
+                self.logger.info(f"✅ Hardware optimization initialized: {self.m1_status['integration_status']}")
+                safe_log_metric("m1_hardware_available", 1 if self.m1_status['success'] else 0)
+            else:
+                self.logger.info("⚠️ Hardware optimization disabled in configuration")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization failed to initialize: {e}")
+            # Continue without hardware optimization
+            self.m1_status = {'integration_status': 'failed', 'success': False}
 
     def _initialize_tas_system(self):
         """Initialize TAS system."""

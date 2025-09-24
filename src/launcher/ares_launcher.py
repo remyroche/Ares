@@ -444,7 +444,7 @@ class AresLauncher:
         # Use the provided timeframe for all stages
         tprint(f"📊 [STAGE_CONFIG] Using timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
 
-        # Get configuration based on execution mode
+        # Get configuration based on execution mode using centralized configuration
         tprint("🎭 [STAGE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
             tprint("🎭 [STAGE_CONFIG] Using FULL execution mode configuration")

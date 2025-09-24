@@ -40,64 +40,67 @@ def _load_training_modes_config() -> Dict[str, Any]:
 
 def _get_default_training_modes_config() -> Dict[str, Any]:
     """Get default training modes configuration."""
+    # Import centralized configuration
+    from .pipeline_modes import get_full_mode_config, get_light_mode_config, get_blank_mode_config
+    
+    full_config = get_full_mode_config()
+    light_config = get_light_mode_config()
+    blank_config = get_blank_mode_config()
+    
     return {
         "training_modes": {
             "full": {
-                "description": "Production mode - Complete training with full dataset",
-                "lookback_days": 1460,
+                "description": full_config.description,
+                "lookback_days": full_config.lookback_days,
                 "training_mode": "full",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": False,
                 "enable_full_training_mode": True,
-                "computational_intensity": "high",
-                "estimated_duration_minutes": 240,
+                "computational_intensity": full_config.computational_intensity,
+                "estimated_duration_minutes": full_config.estimated_duration_minutes,
                 "data_collection": {"enable_all_exchanges": True},
                 "feature_engineering": {"enable_all_features": True},
-                "model_training": {"max_trials": 200, "n_trials": 100},
-                "validation": {"monte_carlo_samples": 10000, "ab_test_rounds": 10},
-                "optimization": {"optuna_trials": 200, "optuna_timeout": 3600}
+                "model_training": {"max_trials": full_config.max_trials, "n_trials": full_config.n_trials},
+                "validation": {"monte_carlo_samples": full_config.monte_carlo_samples, "ab_test_rounds": full_config.ab_test_rounds},
+                "optimization": {"optuna_trials": full_config.optuna_trials, "optuna_timeout": full_config.optuna_timeout}
             },
             "blank": {
-                "description": "Quick testing mode - All features/models with shorter lookback",
-                "lookback_days": 180,
+                "description": blank_config.description,
+                "lookback_days": blank_config.lookback_days,
                 "training_mode": "blank",
                 "enable_blank_training_mode": True,
                 "enable_light_training_mode": False,
                 "enable_full_training_mode": False,
-                "computational_intensity": "medium",
-                "estimated_duration_minutes": 60,
+                "computational_intensity": blank_config.computational_intensity,
+                "estimated_duration_minutes": blank_config.estimated_duration_minutes,
                 "data_collection": {"enable_all_exchanges": False},
                 "feature_engineering": {"enable_all_features": True},
-                "model_training": {"max_trials": 50, "n_trials": 25},
-                "validation": {"monte_carlo_samples": 1000, "ab_test_rounds": 3},
-                "optimization": {"optuna_trials": 50, "optuna_timeout": 900}
+                "model_training": {"max_trials": blank_config.max_trials, "n_trials": blank_config.n_trials},
+                "validation": {"monte_carlo_samples": blank_config.monte_carlo_samples, "ab_test_rounds": blank_config.ab_test_rounds},
+                "optimization": {"optuna_trials": blank_config.optuna_trials, "optuna_timeout": blank_config.optuna_timeout}
             },
             "light": {
-                "description": "Ultra-light development mode - Minimal data for code testing only",
-                "lookback_days": 1460,  # Override: HMM regime discovery needs 4 years of data
+                "description": light_config.description,
+                "lookback_days": light_config.lookback_days,
                 "training_mode": "light",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": True,
                 "enable_full_training_mode": False,
-                "computational_intensity": "minimal",
-                "estimated_duration_minutes": 5,
+                "computational_intensity": light_config.computational_intensity,
+                "estimated_duration_minutes": light_config.estimated_duration_minutes,
                 "data_collection": {"enable_all_exchanges": False},
                 "feature_engineering": {"enable_all_features": True},
-                "model_training": {"max_trials": 5, "n_trials": 3},
-                "validation": {"monte_carlo_samples": 50, "ab_test_rounds": 1},
-                "optimization": {"optuna_trials": 5, "optuna_timeout": 120}
+                "model_training": {"max_trials": light_config.max_trials, "n_trials": light_config.n_trials},
+                "validation": {"monte_carlo_samples": light_config.monte_carlo_samples, "ab_test_rounds": light_config.ab_test_rounds},
+                "optimization": {"optuna_trials": light_config.optuna_trials, "optuna_timeout": light_config.optuna_timeout}
             }
         }
     }
 
 def get_intensity_percentage(training_mode: str) -> float:
     """Get intensity percentage for a training mode."""
-    intensity_map = {
-        "full": 1.0,    # 100% intensity
-        "blank": 0.1,   # 10% intensity
-        "light": 0.025  # 2.5% intensity (ultra-light for code testing)
-    }
-    return intensity_map.get(training_mode, 1.0)
+    from .pipeline_modes import get_mode_intensity_percentage
+    return get_mode_intensity_percentage(training_mode)
 
 def get_training_mode_config(training_mode: str, sub_pipeline_name: Optional[str] = None) -> TrainingModeConfig:
     """Get training mode configuration."""

@@ -784,11 +784,10 @@ def get_full_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
     from datetime import datetime, timedelta
-    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    from src.config.pipeline_modes import get_full_mode_config
     
-    # Get training mode configuration
-    mode_config = get_training_mode_config("full")
-    intensity_pct = get_intensity_percentage("full")
+    # Get centralized full mode configuration
+    mode_config = get_full_mode_config()
     
     # Full mode: 1460 days of data
     end_date = datetime.now()
@@ -841,11 +840,10 @@ def get_light_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
     from datetime import datetime, timedelta
-    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    from src.config.pipeline_modes import get_light_mode_config
     
-    # Get training mode configuration
-    mode_config = get_training_mode_config("light")
-    intensity_pct = get_intensity_percentage("light")
+    # Get centralized light mode configuration
+    mode_config = get_light_mode_config()
     
     # Light mode: 10 days of data
     end_date = datetime.now()
@@ -894,11 +892,10 @@ def get_blank_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
     from datetime import datetime, timedelta
-    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    from src.config.pipeline_modes import get_blank_mode_config
     
-    # Get training mode configuration
-    mode_config = get_training_mode_config("blank")
-    intensity_pct = get_intensity_percentage("blank")
+    # Get centralized blank mode configuration
+    mode_config = get_blank_mode_config()
     
     # Blank mode: 180 days of data
     end_date = datetime.now()

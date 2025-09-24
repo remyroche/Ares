@@ -28,6 +28,22 @@ from src.utils.matrix_operations.enhanced_operations import get_enhanced_matrix_
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 
+# Import existing feature generation modules
+try:
+    from src.feature_generation import (
+        FeatureBank,
+        get_feature_generator,
+        generate_features_by_category,
+        FeatureGenerationOptimizer,
+        EnhancedFeatureEngineering
+    )
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError as e:
+    FEATURE_GENERATION_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Feature generation modules not available: {e}")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -275,11 +291,54 @@ class ImprovedFeatureEngineer:
         return durations
     
     def engineer_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Engineer technical indicators using TA-Lib."""
+        """Engineer technical indicators using existing feature_generation/ modules."""
         if not self.config.enable_technical_indicators:
             return data
         
-        logger.info("📊 Engineering technical indicators...")
+        logger.info("📊 Engineering technical indicators using feature_generation/ modules...")
+        
+        enhanced_data = data.copy()
+        
+        if not FEATURE_GENERATION_AVAILABLE:
+            logger.warning("Feature generation modules not available, falling back to basic indicators")
+            return self._fallback_technical_indicators(data)
+        
+        try:
+            # Use existing FeatureBank for comprehensive feature generation
+            feature_bank = FeatureBank()
+            
+            # Generate features by category using existing modules
+            categories = ['momentum', 'volatility', 'volume', 'trend', 'oscillator']
+            
+            # Generate features using the existing system
+            generated_features = feature_bank.generate_features(
+                data=data,
+                categories=categories,
+                lookback_optimization=self.config.enable_lookback_optimization
+            )
+            
+            # Merge with original data
+            if generated_features is not None and not generated_features.empty:
+                # Ensure we don't duplicate existing columns
+                new_columns = [col for col in generated_features.columns if col not in data.columns]
+                if new_columns:
+                    enhanced_data = pd.concat([enhanced_data, generated_features[new_columns]], axis=1)
+                    logger.info(f"✅ Generated {len(new_columns)} technical indicators using feature_generation/")
+                else:
+                    logger.info("✅ No new technical indicators generated (all already present)")
+            else:
+                logger.warning("Feature generation returned empty results, falling back to basic indicators")
+                return self._fallback_technical_indicators(data)
+                
+        except Exception as e:
+            logger.warning(f"Feature generation failed: {e}, falling back to basic indicators")
+            return self._fallback_technical_indicators(data)
+        
+        return enhanced_data
+    
+    def _fallback_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback technical indicators when feature_generation/ is not available."""
+        logger.info("📊 Using fallback technical indicators...")
         
         enhanced_data = data.copy()
         
@@ -293,56 +352,24 @@ class ImprovedFeatureEngineer:
             low_prices = data['low'].values if 'low' in data.columns else close_prices
             volume = data['volume'].values if 'volume' in data.columns else None
             
-            # Trend indicators
+            # Basic trend indicators
             for period in self.config.technical_periods:
                 if len(close_prices) > period:
-                    # Moving averages
+                    # Simple moving averages
                     enhanced_data[f'sma_{period}'] = talib.SMA(close_prices, timeperiod=period)
                     enhanced_data[f'ema_{period}'] = talib.EMA(close_prices, timeperiod=period)
-                    
-                    # MACD
-                    if period >= 12:
-                        macd, macd_signal, macd_hist = talib.MACD(close_prices, fastperiod=12, slowperiod=26, signalperiod=9)
-                        enhanced_data[f'macd_{period}'] = macd
-                        enhanced_data[f'macd_signal_{period}'] = macd_signal
-                        enhanced_data[f'macd_hist_{period}'] = macd_hist
                     
                     # RSI
                     if period >= 14:
                         enhanced_data[f'rsi_{period}'] = talib.RSI(close_prices, timeperiod=period)
-                    
-                    # Bollinger Bands
-                    if period >= 20:
-                        bb_upper, bb_middle, bb_lower = talib.BBANDS(close_prices, timeperiod=period)
-                        enhanced_data[f'bb_upper_{period}'] = bb_upper
-                        enhanced_data[f'bb_middle_{period}'] = bb_middle
-                        enhanced_data[f'bb_lower_{period}'] = bb_lower
-                        enhanced_data[f'bb_width_{period}'] = (bb_upper - bb_lower) / bb_middle
-                        enhanced_data[f'bb_position_{period}'] = (close_prices - bb_lower) / (bb_upper - bb_lower)
             
-            # Momentum indicators
+            # Basic momentum and volatility
             enhanced_data['momentum_10'] = talib.MOM(close_prices, timeperiod=10)
-            enhanced_data['roc_10'] = talib.ROC(close_prices, timeperiod=10)
-            
-            # Volatility indicators
             enhanced_data['atr_14'] = talib.ATR(high_prices, low_prices, close_prices, timeperiod=14)
-            enhanced_data['natr_14'] = talib.NATR(high_prices, low_prices, close_prices, timeperiod=14)
-            
-            # Volume indicators
-            if volume is not None:
-                enhanced_data['obv'] = talib.OBV(close_prices, volume)
-                enhanced_data['ad'] = talib.AD(high_prices, low_prices, close_prices, volume)
-                enhanced_data['adosc'] = talib.ADOSC(high_prices, low_prices, close_prices, volume)
-            
-            # Pattern recognition
-            enhanced_data['doji'] = talib.CDLDOJI(enhanced_data['open'], high_prices, low_prices, close_prices)
-            enhanced_data['hammer'] = talib.CDLHAMMER(enhanced_data['open'], high_prices, low_prices, close_prices)
-            enhanced_data['engulfing'] = talib.CDLENGULFING(enhanced_data['open'], high_prices, low_prices, close_prices)
             
         except Exception as e:
-            logger.warning(f"Technical indicators calculation failed: {e}")
+            logger.warning(f"Fallback technical indicators failed: {e}")
         
-        logger.info(f"✅ Technical indicators engineered: {len(enhanced_data.columns) - len(data.columns)} new features")
         return enhanced_data
     
     def engineer_interaction_terms(self, data: pd.DataFrame, target: Optional[np.ndarray] = None) -> pd.DataFrame:

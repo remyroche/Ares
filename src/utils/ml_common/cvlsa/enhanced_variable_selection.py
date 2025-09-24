@@ -30,6 +30,25 @@ from src.utils.matrix_operations.enhanced_operations import get_enhanced_matrix_
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 
+# Import existing feature selection modules
+try:
+    from src.utils.feature_selection import (
+        get_feature_selection_framework,
+        select_features,
+        run_comprehensive_feature_selection,
+        MRMRSelector,
+        ElasticNetStabilitySelector,
+        RecursiveFeatureEliminator,
+        FeatureImportanceRanker,
+        StabilityAnalyzer
+    )
+    FEATURE_SELECTION_AVAILABLE = True
+except ImportError as e:
+    FEATURE_SELECTION_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Feature selection modules not available: {e}")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -507,7 +526,44 @@ class EnhancedVariableSelector:
     
     def _select_features_standard(self, X: np.ndarray, y: np.ndarray,
                                 feature_names: Optional[List[str]] = None) -> List[int]:
-        """Standard feature selection without incremental approach."""
+        """Standard feature selection using existing feature_selection/ modules."""
+        if not FEATURE_SELECTION_AVAILABLE:
+            logger.warning("Feature selection modules not available, using fallback methods")
+            return self._fallback_feature_selection(X, y, feature_names)
+        
+        try:
+            # Use existing comprehensive feature selection framework
+            logger.info("🔍 Using existing feature_selection/ framework...")
+            
+            # Get the feature selection framework
+            fs_framework = get_feature_selection_framework()
+            
+            # Run comprehensive feature selection
+            selection_result = run_comprehensive_feature_selection(
+                X=X,
+                y=y,
+                feature_names=feature_names,
+                max_features=self.config.max_features,
+                methods=['mrmr', 'elastic_net', 'recursive_elimination', 'feature_importance']
+            )
+            
+            if selection_result and 'selected_features' in selection_result:
+                selected_features = selection_result['selected_features']
+                logger.info(f"✅ Selected {len(selected_features)} features using existing framework")
+                return selected_features
+            else:
+                logger.warning("Feature selection framework returned empty results, using fallback")
+                return self._fallback_feature_selection(X, y, feature_names)
+                
+        except Exception as e:
+            logger.warning(f"Feature selection framework failed: {e}, using fallback")
+            return self._fallback_feature_selection(X, y, feature_names)
+    
+    def _fallback_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                                  feature_names: Optional[List[str]] = None) -> List[int]:
+        """Fallback feature selection when existing modules are not available."""
+        logger.info("🔍 Using fallback feature selection methods...")
+        
         # Analyze data characteristics
         characteristics = self.analyze_data_characteristics(X, y)
         

@@ -1,15 +1,15 @@
 """
-Enhanced Utility Integration Example for Hybrid NAS-TAS Regime System
+Enhanced Utility Integration Example
 
-This example demonstrates how to use the enhanced utility integrations
-for comprehensive data processing, ML operations, and regime detection.
+This example demonstrates how to use the upgraded hybrid NAS-TAS regime system
+with comprehensive utility integrations from src/utils/.
 """
 
 import numpy as np
 import pandas as pd
 import logging
-from typing import Dict, List, Any, Optional
 from pathlib import Path
+from datetime import datetime, timedelta
 import time
 
 # Import enhanced utility integrations
@@ -26,421 +26,342 @@ from ..shared_utils.enhanced_ml_integration import (
     create_enhanced_ml_integration
 )
 
+# Import the enhanced orchestrator
+from ..enhanced_hybrid_orchestrator import EnhancedHybridOrchestrator
+from ..config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class EnhancedUtilityIntegrationExample:
-    """
-    Example class demonstrating enhanced utility integration usage.
-    """
+def create_sample_market_data(n_samples: int = 1000) -> pd.DataFrame:
+    """Create sample market data for demonstration."""
+    np.random.seed(42)
     
-    def __init__(self):
-        """Initialize the example with enhanced utility integrations."""
-        self.logger = logger.getChild('EnhancedUtilityIntegrationExample')
-        
-        # Initialize utility integrations
-        self._initialize_integrations()
-        
-        self.logger.info("🚀 Enhanced Utility Integration Example initialized")
+    # Generate realistic market data
+    dates = pd.date_range(start='2023-01-01', periods=n_samples, freq='15min')
     
-    def _initialize_integrations(self):
-        """Initialize all enhanced utility integrations."""
-        # Utility integration configuration
-        utility_config = UtilityIntegrationConfig(
-            enable_data_validation=True,
-            enable_data_quality_checks=True,
-            enable_safe_operations=True,
-            enable_math_validation=True,
-            enable_safe_math=True,
-            enable_serialization=True,
-            enable_m1_optimizations=True,
-            enable_gpu_acceleration=True,
-            enable_memory_optimization=True,
-            enable_cpu_optimization=True,
-            enable_ml_common=True,
-            enable_feature_selection=True,
-            enable_cross_validation=True,
-            enable_confidence_metrics=True,
-            enable_matrix_operations=True,
-            enable_vectorized_operations=True,
-            enable_performance_monitoring=True,
-            enable_memory_monitoring=True
-        )
-        self.utility_integration = create_enhanced_utility_integration(utility_config)
-        
-        # Data integration configuration
-        data_config = DataIntegrationConfig(
-            enable_klines_parquet=True,
-            enable_unified_data_utils=True,
-            enable_historical_downloader=True,
-            enable_feature_engineering=True,
-            enable_returns_engineering=True,
-            enable_gap_detection=True,
-            enable_data_quality=True,
-            enable_advanced_quality_metrics=True,
-            enable_comprehensive_quality_scoring=True,
-            enable_optimized_storage=True,
-            enable_parquet_optimization=True,
-            enable_parallel_processing=True,
-            enable_memory_optimization=True,
-            enable_schema_validation=True,
-            enable_data_consistency_checks=True
-        )
-        self.data_integration = create_enhanced_data_integration(data_config, utility_config)
-        
-        # ML integration configuration
-        ml_config = MLIntegrationConfig(
-            enable_ml_common=True,
-            enable_feature_selection=True,
-            enable_cross_validation=True,
-            enable_confidence_metrics=True,
-            enable_hmm_regime_detection=True,
-            enable_regime_analysis=True,
-            enable_grid_search=True,
-            enable_bayesian_optimization=True,
-            enable_tpe_optimization=True,
-            enable_ensemble_management=True,
-            enable_model_ensembles=True,
-            enable_model_evaluation=True,
-            enable_performance_metrics=True,
-            enable_parallel_processing=True,
-            enable_vectorization=True,
-            enable_lookahead_bias_detection=True,
-            enable_overfitting_detection=True,
-            enable_data_leakage_detection=True
-        )
-        self.ml_integration = create_enhanced_ml_integration(ml_config, utility_config)
-        
-        self.logger.info("✅ All enhanced utility integrations initialized")
+    # Generate price data with trends and volatility
+    base_price = 50000
+    returns = np.random.normal(0, 0.02, n_samples)
+    prices = [base_price]
     
-    def demonstrate_data_operations(self):
-        """Demonstrate enhanced data operations."""
-        self.logger.info("📊 Demonstrating enhanced data operations...")
-        
-        # Create sample market data
-        dates = pd.date_range('2023-01-01', periods=1000, freq='15T')
-        np.random.seed(42)
-        
-        data = pd.DataFrame({
-            'timestamp': dates,
-            'open': 100 + np.cumsum(np.random.randn(1000) * 0.01),
-            'high': 100 + np.cumsum(np.random.randn(1000) * 0.01) + np.random.rand(1000) * 2,
-            'low': 100 + np.cumsum(np.random.randn(1000) * 0.01) - np.random.rand(1000) * 2,
-            'close': 100 + np.cumsum(np.random.randn(1000) * 0.01),
-            'volume': np.random.randint(1000, 10000, 1000)
-        })
-        
-        # Ensure high >= low
-        data['high'] = np.maximum(data['high'], data['low'])
-        data['low'] = np.minimum(data['high'], data['low'])
-        
-        self.logger.info(f"📈 Created sample data with {len(data)} rows")
-        
-        # Demonstrate data validation
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        is_valid = self.utility_integration.validate_dataframe_columns(data, required_columns)
-        self.logger.info(f"✅ Data validation: {'PASSED' if is_valid else 'FAILED'}")
-        
-        # Demonstrate data quality metrics
-        quality_metrics = self.utility_integration.calculate_data_quality_metrics(data)
-        self.logger.info(f"📊 Data quality metrics: {quality_metrics}")
-        
-        # Demonstrate data optimization
-        optimized_data = self.utility_integration.optimize_dataframe_dtypes(data)
-        self.logger.info(f"🔧 Data optimization completed")
-        
-        # Demonstrate data processing
-        processed_data = self.data_integration.process_market_data(optimized_data, "BTCUSDT", "15m")
-        self.logger.info(f"⚙️ Data processing completed")
-        
-        return processed_data
+    for ret in returns[1:]:
+        prices.append(prices[-1] * (1 + ret))
     
-    def demonstrate_feature_engineering(self, data: pd.DataFrame):
-        """Demonstrate enhanced feature engineering."""
-        self.logger.info("🔧 Demonstrating enhanced feature engineering...")
-        
-        # Engineer features
-        features = self.data_integration.engineer_features(data, ['momentum', 'volatility', 'volume'])
-        self.logger.info(f"✅ Engineered {len(features.columns)} features")
-        
-        # Engineer returns
-        returns = self.data_integration.engineer_returns(data, ['simple', 'log'])
-        self.logger.info(f"📈 Engineered {len(returns.columns)} return features")
-        
-        # Detect gaps
-        gaps = self.data_integration.detect_gaps(data)
-        self.logger.info(f"🔍 Detected {len(gaps)} gaps in data")
-        
-        return features, returns
+    # Create OHLC data
+    data = pd.DataFrame({
+        'timestamp': dates,
+        'open': prices,
+        'high': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
+        'low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
+        'close': prices,
+        'volume': np.random.uniform(1000, 10000, n_samples)
+    })
     
-    def demonstrate_ml_operations(self, X: np.ndarray, y: np.ndarray):
-        """Demonstrate enhanced ML operations."""
-        self.logger.info("🤖 Demonstrating enhanced ML operations...")
-        
-        # Feature selection
-        X_selected, selected_features = self.ml_integration.select_features(
-            X, y, method="mutual_info", n_features=10
-        )
-        self.logger.info(f"🎯 Selected {len(selected_features)} features")
-        
-        # Cross-validation
-        from sklearn.ensemble import RandomForestClassifier
-        estimator = RandomForestClassifier(n_estimators=100, random_state=42)
-        
-        cv_results = self.ml_integration.cross_validate_model(
-            estimator, X_selected, y, cv=5, scoring="accuracy"
-        )
-        self.logger.info(f"📊 Cross-validation results: {cv_results}")
-        
-        # Hyperparameter optimization
-        param_grid = {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5, 10]
+    # Ensure high >= low
+    data['high'] = np.maximum(data['high'], data['low'])
+    data['high'] = np.maximum(data['high'], data['open'])
+    data['high'] = np.maximum(data['high'], data['close'])
+    data['low'] = np.minimum(data['low'], data['open'])
+    data['low'] = np.minimum(data['low'], data['close'])
+    
+    return data
+
+
+def demonstrate_utility_integration():
+    """Demonstrate enhanced utility integration capabilities."""
+    logger.info("🚀 Starting Enhanced Utility Integration Demonstration")
+    
+    # Create sample data
+    market_data = create_sample_market_data(1000)
+    logger.info(f"📊 Created sample market data: {market_data.shape}")
+    
+    # Initialize utility integrations
+    utility_config = UtilityIntegrationConfig(
+        enable_data_validation=True,
+        enable_math_validation=True,
+        enable_serialization=True,
+        enable_m1_optimizations=True,
+        enable_ml_common=True,
+        enable_matrix_operations=True
+    )
+    
+    data_config = DataIntegrationConfig(
+        enable_klines_parquet=True,
+        enable_feature_engineering=True,
+        enable_returns_engineering=True,
+        enable_data_quality=True,
+        enable_optimized_storage=True
+    )
+    
+    ml_config = MLIntegrationConfig(
+        enable_feature_selection=True,
+        enable_cross_validation=True,
+        enable_confidence_metrics=True,
+        enable_hmm_regime_detection=True,
+        enable_lookahead_bias_detection=True,
+        enable_overfitting_detection=True,
+        enable_data_leakage_detection=True
+    )
+    
+    # Create integrations
+    utility_integration = create_enhanced_utility_integration(utility_config)
+    data_integration = create_enhanced_data_integration(data_config, utility_integration)
+    ml_integration = create_enhanced_ml_integration(ml_config, utility_integration)
+    
+    logger.info("✅ Utility integrations initialized")
+    
+    # Demonstrate data processing
+    logger.info("🔄 Demonstrating enhanced data processing...")
+    
+    # Process market data
+    processed_data = data_integration.process_market_data(market_data, "BTCUSDT", "15m")
+    logger.info(f"✅ Market data processed: {processed_data.shape}")
+    
+    # Engineer features
+    features = data_integration.engineer_features(processed_data, ['momentum', 'volatility', 'volume'])
+    logger.info(f"✅ Features engineered: {features.shape}")
+    
+    # Engineer returns
+    returns = data_integration.engineer_returns(processed_data, ['simple', 'log'])
+    logger.info(f"✅ Returns engineered: {returns.shape}")
+    
+    # Calculate data quality metrics
+    quality_metrics = data_integration.calculate_data_quality_metrics(processed_data)
+    logger.info(f"✅ Data quality score: {quality_metrics.get('quality_score', 0):.3f}")
+    
+    # Demonstrate ML capabilities
+    logger.info("🔄 Demonstrating enhanced ML capabilities...")
+    
+    # Prepare data for ML
+    X = processed_data.select_dtypes(include=[np.number]).values
+    y = np.random.randint(0, 3, len(X))  # Mock target for demonstration
+    
+    # Feature selection
+    X_selected, selected_features = ml_integration.select_features(X, y, method="mutual_info", n_features=10)
+    logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected")
+    
+    # Cross-validation
+    from sklearn.ensemble import RandomForestClassifier
+    estimator = RandomForestClassifier(n_estimators=100, random_state=42)
+    cv_results = ml_integration.cross_validate_model(estimator, X_selected, y, cv=5, scoring="accuracy")
+    logger.info(f"✅ Cross-validation completed: score={cv_results.get('mean', 0):.3f}")
+    
+    # Bias detection
+    bias_results = ml_integration.detect_lookahead_bias(X_selected, y)
+    logger.info(f"✅ Lookahead bias detection: {bias_results.get('bias_detected', False)}")
+    
+    # Overfitting detection
+    from sklearn.model_selection import train_test_split
+    X_train, X_val, y_train, y_val = train_test_split(X_selected, y, test_size=0.2, random_state=42)
+    estimator.fit(X_train, y_train)
+    overfitting_results = ml_integration.detect_overfitting(estimator, X_train, y_train, X_val, y_val)
+    logger.info(f"✅ Overfitting detection: {overfitting_results.get('overfitting_detected', False)}")
+    
+    # Data leakage detection
+    leakage_results = ml_integration.detect_data_leakage(X_selected, y)
+    logger.info(f"✅ Data leakage detection: {leakage_results.get('leakage_detected', False)}")
+    
+    # Regime detection
+    regime_results = ml_integration.detect_regimes_hmm(processed_data, n_regimes=3)
+    logger.info(f"✅ HMM regime detection: {regime_results.get('n_regimes', 0)} regimes detected")
+    
+    # Feature importance analysis
+    importance_results = ml_integration.analyze_feature_importance(estimator, X_selected, y)
+    logger.info(f"✅ Feature importance analysis: {len(importance_results.get('importances', []))} features analyzed")
+    
+    # Demonstrate mathematical utilities
+    logger.info("🔄 Demonstrating mathematical utilities...")
+    
+    # Safe mathematical operations
+    safe_divide_result = utility_integration.safe_divide(10, 2, default=0)
+    safe_log_result = utility_integration.safe_log(10, default=0)
+    safe_sqrt_result = utility_integration.safe_sqrt(16, default=0)
+    
+    logger.info(f"✅ Safe math operations: divide={safe_divide_result}, log={safe_log_result:.3f}, sqrt={safe_sqrt_result}")
+    
+    # Correlation analysis
+    x_array = np.random.randn(100)
+    y_array = np.random.randn(100)
+    correlation = utility_integration.safe_correlation(x_array, y_array)
+    logger.info(f"✅ Correlation analysis: {correlation:.3f}")
+    
+    # Demonstrate serialization
+    logger.info("🔄 Demonstrating serialization capabilities...")
+    
+    # Save data
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+    
+    # JSON serialization
+    json_success = utility_integration.save_json(quality_metrics, "output/quality_metrics.json")
+    logger.info(f"✅ JSON serialization: {json_success}")
+    
+    # Parquet serialization
+    parquet_success = utility_integration.safe_to_parquet(processed_data, "output/processed_data.parquet")
+    logger.info(f"✅ Parquet serialization: {parquet_success}")
+    
+    # Demonstrate M1 optimizations
+    logger.info("🔄 Demonstrating M1 optimizations...")
+    
+    # Memory optimization
+    memory_result = utility_integration.optimize_memory()
+    logger.info(f"✅ Memory optimization: {memory_result.get('method', 'unknown')}")
+    
+    # GPU context
+    with utility_integration.gpu_context("demo_operation"):
+        # Simulate GPU operation
+        gpu_result = np.random.rand(1000, 1000)
+        logger.info(f"✅ GPU context operation completed: {gpu_result.shape}")
+    
+    # Memory checkpoint
+    with utility_integration.memory_checkpoint("demo_checkpoint"):
+        # Simulate memory-intensive operation
+        large_array = np.random.rand(10000, 1000)
+        logger.info(f"✅ Memory checkpoint operation completed: {large_array.shape}")
+    
+    # Get system status
+    logger.info("🔄 Getting system status...")
+    
+    utility_status = utility_integration.get_system_status()
+    data_status = data_integration.get_system_status()
+    ml_status = ml_integration.get_system_status()
+    
+    logger.info(f"✅ Utility integration status: {len(utility_status.get('available_utilities', []))} utilities available")
+    logger.info(f"✅ Data integration status: {len(data_status.get('available_utilities', []))} utilities available")
+    logger.info(f"✅ ML integration status: {len(ml_status.get('available_utilities', []))} utilities available")
+    
+    # Performance metrics
+    data_performance = data_integration.get_performance_metrics()
+    ml_performance = ml_integration.get_performance_metrics()
+    
+    logger.info(f"✅ Data processing performance: {data_performance.get('processing_times', {}).get('mean', 0):.3f}s average")
+    logger.info(f"✅ ML processing performance: {ml_performance.get('training_times', {}).get('mean', 0):.3f}s average")
+    
+    logger.info("🎉 Enhanced Utility Integration Demonstration Completed Successfully!")
+    
+    return {
+        'utility_integration': utility_integration,
+        'data_integration': data_integration,
+        'ml_integration': ml_integration,
+        'processed_data': processed_data,
+        'quality_metrics': quality_metrics,
+        'performance_metrics': {
+            'data': data_performance,
+            'ml': ml_performance
         }
-        
-        optimization_results = self.ml_integration.optimize_hyperparameters(
-            estimator, X_selected, y, param_grid, method="grid_search"
-        )
-        self.logger.info(f"🔍 Hyperparameter optimization completed")
-        
-        return X_selected, cv_results, optimization_results
+    }
+
+
+def demonstrate_enhanced_orchestrator():
+    """Demonstrate the enhanced hybrid orchestrator with utility integrations."""
+    logger.info("🚀 Starting Enhanced Hybrid Orchestrator Demonstration")
     
-    def demonstrate_regime_detection(self, data: pd.DataFrame):
-        """Demonstrate enhanced regime detection."""
-        self.logger.info("🎯 Demonstrating enhanced regime detection...")
-        
-        # HMM regime detection
-        regime_results = self.ml_integration.detect_regimes_hmm(
-            data, n_regimes=3, features=['open', 'high', 'low', 'close', 'volume']
-        )
-        self.logger.info(f"🔍 HMM regime detection completed")
-        
-        # Regime transition analysis
-        if 'regime_sequence' in regime_results:
-            transition_analysis = self.ml_integration.analyze_regime_transitions(
-                regime_results['regime_sequence']
-            )
-            self.logger.info(f"📊 Regime transition analysis completed")
-        
-        return regime_results
+    # Create sample data
+    market_data = create_sample_market_data(1000)
+    logger.info(f"📊 Created sample market data: {market_data.shape}")
     
-    def demonstrate_ensemble_methods(self, X: np.ndarray, y: np.ndarray):
-        """Demonstrate enhanced ensemble methods."""
-        self.logger.info("🎭 Demonstrating enhanced ensemble methods...")
-        
-        # Create multiple models
-        from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-        from sklearn.svm import SVC
-        from sklearn.linear_model import LogisticRegression
-        
-        models = [
-            ('rf', RandomForestClassifier(n_estimators=100, random_state=42)),
-            ('gb', GradientBoostingClassifier(n_estimators=100, random_state=42)),
-            ('svm', SVC(probability=True, random_state=42)),
-            ('lr', LogisticRegression(random_state=42))
-        ]
-        
-        # Create ensemble
-        ensemble = self.ml_integration.create_ensemble(models, method="voting")
-        self.logger.info(f"🎭 Created ensemble with {len(models)} models")
-        
-        # Train ensemble
-        ensemble.fit(X, y)
-        
-        # Evaluate ensemble
-        y_pred = ensemble.predict(X)
-        y_proba = ensemble.predict_proba(X)
-        
-        evaluation_results = self.ml_integration.evaluate_model(
-            ensemble, X, y, y_pred, y_proba
-        )
-        self.logger.info(f"📊 Ensemble evaluation completed")
-        
-        return ensemble, evaluation_results
+    # Create hybrid regime config
+    config = HybridRegimeConfig(
+        symbol="BTCUSDT",
+        timeframe="15m",
+        n_regimes=3,
+        combination_strategy=RegimeCombinationStrategy.WEIGHTED_AVERAGE,
+        enable_multi_timeframe=True,
+        use_unified_search=True,
+        use_signal_generation=True
+    )
     
-    def demonstrate_bias_detection(self, X: np.ndarray, y: np.ndarray):
-        """Demonstrate enhanced bias detection."""
-        self.logger.info("🔍 Demonstrating enhanced bias detection...")
-        
-        # Lookahead bias detection
-        lookahead_results = self.ml_integration.detect_lookahead_bias(X, y)
-        self.logger.info(f"👁️ Lookahead bias detection completed")
-        
-        # Overfitting detection
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        from sklearn.ensemble import RandomForestClassifier
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        
-        overfitting_results = self.ml_integration.detect_overfitting(
-            model, X_train, y_train, X_val, y_val
-        )
-        self.logger.info(f"📈 Overfitting detection completed")
-        
-        # Data leakage detection
-        leakage_results = self.ml_integration.detect_data_leakage(X, y)
-        self.logger.info(f"🔒 Data leakage detection completed")
-        
-        return lookahead_results, overfitting_results, leakage_results
+    # Create enhanced orchestrator
+    orchestrator = EnhancedHybridOrchestrator(config)
+    logger.info("✅ Enhanced hybrid orchestrator initialized")
     
-    def demonstrate_hardware_optimization(self):
-        """Demonstrate enhanced hardware optimization."""
-        self.logger.info("⚡ Demonstrating enhanced hardware optimization...")
-        
-        # M1 optimization
-        m1_results = self.utility_integration.optimize_for_m1()
-        self.logger.info(f"🍎 M1 optimization: {m1_results}")
-        
-        # Memory optimization
-        memory_results = self.utility_integration.optimize_memory()
-        self.logger.info(f"🧠 Memory optimization: {memory_results}")
-        
-        # Memory usage
-        memory_usage = self.utility_integration.get_memory_usage()
-        self.logger.info(f"📊 Current memory usage: {memory_usage / (1024**3):.2f} GB")
-        
-        return m1_results, memory_results
+    # Get system status
+    status = orchestrator.get_system_status()
+    logger.info(f"✅ System status: {status.get('orchestrator_version', 'unknown')}")
     
-    def demonstrate_serialization(self, data: pd.DataFrame):
-        """Demonstrate enhanced serialization."""
-        self.logger.info("💾 Demonstrating enhanced serialization...")
-        
-        # Save data
-        filepath = "sample_data.parquet"
-        success = self.utility_integration.save_parquet(data, filepath)
-        self.logger.info(f"💾 Data saved: {'SUCCESS' if success else 'FAILED'}")
-        
-        # Load data
-        loaded_data = self.utility_integration.load_parquet(filepath)
-        self.logger.info(f"📂 Data loaded: {'SUCCESS' if loaded_data is not None else 'FAILED'}")
-        
-        # Clean up
-        if Path(filepath).exists():
-            Path(filepath).unlink()
-        
-        return success, loaded_data
+    # Analyze market regimes
+    logger.info("🔄 Analyzing market regimes with enhanced utilities...")
     
-    def demonstrate_performance_monitoring(self):
-        """Demonstrate enhanced performance monitoring."""
-        self.logger.info("⏱️ Demonstrating enhanced performance monitoring...")
-        
-        # Timed operation
-        @self.utility_integration.timed_operation
-        def sample_operation():
-            time.sleep(0.1)
-            return "Operation completed"
-        
-        result = sample_operation()
-        self.logger.info(f"⏱️ Timed operation: {result}")
-        
-        # Memory checkpoint
-        with self.utility_integration.memory_checkpoint("sample_checkpoint"):
-            # Simulate some work
-            data = np.random.randn(1000, 100)
-            result = np.sum(data)
-        
-        self.logger.info(f"🧠 Memory checkpoint completed")
-        
-        return result
+    start_time = time.time()
+    regime_result = orchestrator.analyze_market_regimes(market_data, enable_multi_timeframe=True)
+    analysis_time = time.time() - start_time
     
-    def run_comprehensive_example(self):
-        """Run comprehensive example demonstrating all enhanced utilities."""
-        self.logger.info("🚀 Running comprehensive enhanced utility integration example...")
-        
-        try:
-            # 1. Data operations
-            data = self.demonstrate_data_operations()
-            
-            # 2. Feature engineering
-            features, returns = self.demonstrate_feature_engineering(data)
-            
-            # 3. Prepare ML data
-            X = features.select_dtypes(include=[np.number]).values
-            y = np.random.randint(0, 3, len(X))  # Random labels for demonstration
-            
-            # 4. ML operations
-            X_selected, cv_results, optimization_results = self.demonstrate_ml_operations(X, y)
-            
-            # 5. Regime detection
-            regime_results = self.demonstrate_regime_detection(data)
-            
-            # 6. Ensemble methods
-            ensemble, evaluation_results = self.demonstrate_ensemble_methods(X_selected, y)
-            
-            # 7. Bias detection
-            bias_results = self.demonstrate_bias_detection(X_selected, y)
-            
-            # 8. Hardware optimization
-            hardware_results = self.demonstrate_hardware_optimization()
-            
-            # 9. Serialization
-            serialization_results = self.demonstrate_serialization(data)
-            
-            # 10. Performance monitoring
-            performance_results = self.demonstrate_performance_monitoring()
-            
-            self.logger.info("✅ Comprehensive example completed successfully!")
-            
-            # Summary
-            summary = {
-                'data_shape': data.shape,
-                'features_shape': features.shape,
-                'returns_shape': returns.shape,
-                'selected_features': len(X_selected[0]) if len(X_selected) > 0 else 0,
-                'cv_mean_score': cv_results.get('mean', 0),
-                'regime_detection': 'completed' if regime_results else 'failed',
-                'ensemble_accuracy': evaluation_results.get('accuracy', 0),
-                'hardware_optimization': hardware_results[0].get('integration_status', 'unknown'),
-                'serialization': serialization_results[0],
-                'performance_monitoring': 'completed'
-            }
-            
-            self.logger.info(f"📊 Example Summary: {summary}")
-            
-            return summary
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in comprehensive example: {e}")
-            raise
+    logger.info(f"✅ Market regime analysis completed in {analysis_time:.2f}s")
     
-    def cleanup(self):
-        """Clean up resources."""
-        try:
-            self.utility_integration.cleanup_resources()
-            self.data_integration.cleanup_data_resources()
-            self.ml_integration.cleanup_ml_resources()
-            self.logger.info("🧹 Resources cleaned up successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Error during cleanup: {e}")
+    # Display results
+    if hasattr(regime_result, 'regime_predictions'):
+        logger.info(f"✅ Regime predictions: {len(regime_result.regime_predictions)} samples")
+        logger.info(f"✅ Regime probabilities: {regime_result.regime_probabilities.shape}")
+        logger.info(f"✅ Economic significance scores: {len(regime_result.economic_significance_scores)}")
+        logger.info(f"✅ Trading viability scores: {len(regime_result.trading_viability_scores)}")
+        logger.info(f"✅ Regime stability scores: {len(regime_result.regime_stability_scores)}")
+        logger.info(f"✅ Execution time: {regime_result.execution_time:.2f}s")
+        
+        # Display metadata
+        metadata = regime_result.metadata
+        logger.info(f"✅ Enhanced utilities used: {metadata.get('enhanced_utilities_used', False)}")
+        logger.info(f"✅ Utility integration used: {metadata.get('utility_integration_used', False)}")
+        logger.info(f"✅ Data integration used: {metadata.get('data_integration_used', False)}")
+        logger.info(f"✅ ML integration used: {metadata.get('ml_integration_used', False)}")
+        logger.info(f"✅ Cross-validation performed: {metadata.get('cross_validation_performed', False)}")
+        logger.info(f"✅ Bias detection performed: {metadata.get('bias_detection_performed', False)}")
+        logger.info(f"✅ Overfitting detection performed: {metadata.get('overfitting_detection_performed', False)}")
+        logger.info(f"✅ Data leakage detection performed: {metadata.get('data_leakage_detection_performed', False)}")
+        logger.info(f"✅ Feature selection performed: {metadata.get('feature_selection_performed', False)}")
+        logger.info(f"✅ Hyperparameter optimization performed: {metadata.get('hyperparameter_optimization_performed', False)}")
+        logger.info(f"✅ M1 optimizations enabled: {metadata.get('m1_optimizations_enabled', False)}")
+        logger.info(f"✅ Memory optimization enabled: {metadata.get('memory_optimization_enabled', False)}")
+        logger.info(f"✅ GPU acceleration enabled: {metadata.get('gpu_acceleration_enabled', False)}")
+    
+    # Generate architecture signals if available
+    if hasattr(orchestrator, 'generate_architecture_signals'):
+        logger.info("🔄 Generating architecture signals...")
+        signals = orchestrator.generate_architecture_signals(market_data, regime_result.__dict__)
+        logger.info(f"✅ Generated {len(signals)} architecture signals")
+    
+    # Get signal quality metrics if available
+    if hasattr(orchestrator, 'get_signal_quality_metrics'):
+        logger.info("🔄 Getting signal quality metrics...")
+        quality_metrics = orchestrator.get_signal_quality_metrics(market_data)
+        logger.info(f"✅ Signal quality metrics: {quality_metrics}")
+    
+    logger.info("🎉 Enhanced Hybrid Orchestrator Demonstration Completed Successfully!")
+    
+    return {
+        'orchestrator': orchestrator,
+        'regime_result': regime_result,
+        'analysis_time': analysis_time,
+        'system_status': status
+    }
 
 
 def main():
-    """Main function to run the enhanced utility integration example."""
-    example = EnhancedUtilityIntegrationExample()
+    """Main demonstration function."""
+    logger.info("🚀 Starting Comprehensive Enhanced Utility Integration Demonstration")
     
     try:
-        # Run comprehensive example
-        results = example.run_comprehensive_example()
+        # Demonstrate utility integration
+        utility_results = demonstrate_utility_integration()
         
-        print("\n" + "="*80)
-        print("🎉 ENHANCED UTILITY INTEGRATION EXAMPLE COMPLETED SUCCESSFULLY!")
-        print("="*80)
-        print(f"📊 Results Summary:")
-        for key, value in results.items():
-            print(f"   {key}: {value}")
-        print("="*80)
+        # Demonstrate enhanced orchestrator
+        orchestrator_results = demonstrate_enhanced_orchestrator()
+        
+        # Summary
+        logger.info("📊 Demonstration Summary:")
+        logger.info(f"   - Utility integration: ✅ {len(utility_results['utility_integration'].get_available_utilities())} utilities")
+        logger.info(f"   - Data integration: ✅ {len(utility_results['data_integration'].get_available_data_utilities())} utilities")
+        logger.info(f"   - ML integration: ✅ {len(utility_results['ml_integration'].get_available_ml_utilities())} utilities")
+        logger.info(f"   - Regime analysis: ✅ {orchestrator_results['analysis_time']:.2f}s")
+        logger.info(f"   - Enhanced utilities: ✅ All integrations working")
+        
+        logger.info("🎉 All demonstrations completed successfully!")
         
     except Exception as e:
-        print(f"\n❌ Error running example: {e}")
+        logger.error(f"❌ Demonstration failed: {e}")
         raise
-    finally:
-        # Cleanup
-        example.cleanup()
 
 
 if __name__ == "__main__":

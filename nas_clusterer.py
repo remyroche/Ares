@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-Neural Architecture Search (NAS) Clusterer
+Financial Neural Architecture Search (NAS) Clusterer
 
-A comprehensive neural architecture search and clustering system that combines
-advanced architecture search techniques with intelligent clustering algorithms
-for efficient neural network discovery and organization.
+A specialized neural architecture search and clustering system designed for
+financial market analysis, trading strategy optimization, and regime classification.
 
 Features:
-- Multiple neural architecture search strategies (random, evolutionary, reinforcement learning)
-- Advanced clustering algorithms (K-means, hierarchical, DBSCAN, spectral)
-- M1 Apple Silicon optimization for GPU/CPU acceleration
-- Cross-validation and hyperparameter optimization
-- Comprehensive performance metrics and evaluation
-- Serialization support for model persistence
-- Integration with ML utilities for enhanced functionality
+- Financial-specific architecture search for market regime prediction
+- Advanced clustering for trading patterns and market regimes
+- Support/Resistance level clustering using DBSCAN
+- Market regime classification (BULL, BEAR, SIDEWAYS, VOLATILE)
+- Time series financial feature engineering
+- M1 Apple Silicon optimization for high-frequency trading
+- Cross-validation for financial time series
+- Comprehensive trading performance metrics
+- Integration with financial data utilities (klines, OHLCV)
 
 Author: AI Assistant
 Date: 2025-01-11
@@ -129,66 +130,101 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class SearchStrategy(Enum):
-    """Neural architecture search strategies."""
+    """Financial neural architecture search strategies."""
     RANDOM = "random"
     EVOLUTIONARY = "evolutionary"
     REINFORCEMENT_LEARNING = "reinforcement_learning"
     BAYESIAN = "bayesian"
     GRID_SEARCH = "grid_search"
     RANDOM_SEARCH = "random_search"
+    FINANCIAL_OPTIMIZED = "financial_optimized"  # Specialized for financial data
+    REGIME_SPECIFIC = "regime_specific"  # Optimized for market regime prediction
 
 class ClusteringAlgorithm(Enum):
-    """Clustering algorithms for architecture grouping."""
+    """Clustering algorithms for financial data and architectures."""
     KMEANS = "kmeans"
     HIERARCHICAL = "hierarchical"
-    DBSCAN = "dbscan"
+    DBSCAN = "dbscan"  # Primary for S/R level clustering
     SPECTRAL = "spectral"
     GAUSSIAN_MIXTURE = "gaussian_mixture"
     AFFINITY_PROPAGATION = "affinity_propagation"
+    FINANCIAL_DBSCAN = "financial_dbscan"  # Optimized for financial clustering
+    REGIME_CLUSTERING = "regime_clustering"  # Specialized for market regimes
 
 class ArchitectureRepresentation(Enum):
-    """Neural architecture representation methods."""
+    """Neural architecture representation methods for financial data."""
     DIRECT = "direct"
     ENCODED = "encoded"
     GRAPH = "graph"
     SEQUENCE = "sequence"
+    FINANCIAL_FEATURES = "financial_features"  # Optimized for OHLCV data
+    TIME_SERIES = "time_series"  # For temporal financial patterns
+
+class MarketRegime(Enum):
+    """Market regime classifications."""
+    BULL = "BULL"
+    BEAR = "BEAR"
+    SIDEWAYS = "SIDEWAYS"
+    VOLATILE = "VOLATILE"
+    TRENDING = "TRENDING"
+    RANGING = "RANGING"
 
 @dataclass
 class ArchitectureConfig:
-    """Configuration for neural architecture search."""
+    """Configuration for financial neural architecture search."""
     # Architecture parameters
-    max_layers: int = 10
+    max_layers: int = 8
     min_layers: int = 2
-    max_neurons_per_layer: int = 1024
-    min_neurons_per_layer: int = 16
-    activation_functions: List[str] = field(default_factory=lambda: ['relu', 'tanh', 'sigmoid', 'leaky_relu'])
-    dropout_rates: List[float] = field(default_factory=lambda: [0.0, 0.1, 0.2, 0.3, 0.5])
-    learning_rates: List[float] = field(default_factory=lambda: [0.001, 0.01, 0.1])
-    optimizers: List[str] = field(default_factory=lambda: ['adam', 'sgd', 'rmsprop'])
+    max_neurons_per_layer: int = 512
+    min_neurons_per_layer: int = 32
+    activation_functions: List[str] = field(default_factory=lambda: ['relu', 'tanh', 'sigmoid', 'leaky_relu', 'elu'])
+    dropout_rates: List[float] = field(default_factory=lambda: [0.0, 0.1, 0.2, 0.3, 0.4])
+    learning_rates: List[float] = field(default_factory=lambda: [0.0001, 0.001, 0.01])
+    optimizers: List[str] = field(default_factory=lambda: ['adam', 'adamw', 'rmsprop', 'sgd'])
+    
+    # Financial-specific parameters
+    financial_features: List[str] = field(default_factory=lambda: [
+        'rsi', 'macd', 'bb_position', 'atr', 'adx', 'volatility_20', 'returns',
+        'volume_profile', 'price_momentum', 'trend_strength', 'sr_proximity'
+    ])
+    time_series_features: List[str] = field(default_factory=lambda: [
+        'price_change', 'volume_change', 'volatility_regime', 'momentum',
+        'mean_reversion', 'breakout_signals', 'support_resistance'
+    ])
+    regime_classes: List[str] = field(default_factory=lambda: ['BULL', 'BEAR', 'SIDEWAYS', 'VOLATILE'])
     
     # Search parameters
-    population_size: int = 50
-    generations: int = 100
-    mutation_rate: float = 0.1
-    crossover_rate: float = 0.8
-    elite_size: int = 5
+    population_size: int = 30
+    generations: int = 50
+    mutation_rate: float = 0.15
+    crossover_rate: float = 0.7
+    elite_size: int = 3
     
-    # Clustering parameters
-    n_clusters_range: Tuple[int, int] = (2, 10)
-    clustering_algorithm: ClusteringAlgorithm = ClusteringAlgorithm.KMEANS
+    # Financial clustering parameters
+    n_clusters_range: Tuple[int, int] = (2, 8)
+    clustering_algorithm: ClusteringAlgorithm = ClusteringAlgorithm.FINANCIAL_DBSCAN
+    dbscan_eps: float = 0.01  # Optimized for financial data
+    dbscan_min_samples: int = 3
     
     # Performance parameters
-    max_training_time: float = 300.0  # 5 minutes
-    early_stopping_patience: int = 10
+    max_training_time: float = 180.0  # 3 minutes for financial data
+    early_stopping_patience: int = 8
     validation_split: float = 0.2
+    time_series_cv_folds: int = 5
     
     # M1 optimization
     use_m1_optimization: bool = True
     memory_limit_gb: Optional[float] = None
+    
+    # Financial data specific
+    lookback_periods: int = 100
+    feature_engineering: bool = True
+    regime_detection: bool = True
+    sr_level_clustering: bool = True
 
 @dataclass
 class Architecture:
-    """Represents a neural network architecture."""
+    """Represents a financial neural network architecture."""
     layers: List[Dict[str, Any]]
     performance_metrics: Dict[str, float] = field(default_factory=dict)
     training_time: float = 0.0
@@ -196,6 +232,9 @@ class Architecture:
     test_score: float = 0.0
     complexity_score: float = 0.0
     efficiency_score: float = 0.0
+    financial_metrics: Dict[str, float] = field(default_factory=dict)
+    regime_accuracy: Dict[str, float] = field(default_factory=dict)
+    trading_metrics: Dict[str, float] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     
     def __post_init__(self):
@@ -214,6 +253,27 @@ class Architecture:
         if self.training_time <= 0:
             return 0.0
         return safe_divide(self.validation_score, self.training_time, 0.0)
+    
+    def get_financial_score(self) -> float:
+        """Get overall financial performance score."""
+        if not self.financial_metrics:
+            return self.validation_score
+        
+        # Weighted combination of financial metrics
+        weights = {
+            'sharpe_ratio': 0.3,
+            'max_drawdown': -0.2,  # Negative weight (lower is better)
+            'win_rate': 0.2,
+            'profit_factor': 0.2,
+            'regime_accuracy': 0.1
+        }
+        
+        score = 0.0
+        for metric, weight in weights.items():
+            if metric in self.financial_metrics:
+                score += self.financial_metrics[metric] * weight
+        
+        return max(0.0, score)  # Ensure non-negative score
 
 class NASClusterer:
     """
@@ -280,25 +340,29 @@ class NASClusterer:
             self.cpu_optimizer = None
     
     def _setup_search_strategies(self):
-        """Setup neural architecture search strategies."""
+        """Setup financial neural architecture search strategies."""
         self.search_strategies = {
             SearchStrategy.RANDOM: self._random_search,
             SearchStrategy.EVOLUTIONARY: self._evolutionary_search,
             SearchStrategy.REINFORCEMENT_LEARNING: self._rl_search,
             SearchStrategy.BAYESIAN: self._bayesian_search,
             SearchStrategy.GRID_SEARCH: self._grid_search,
-            SearchStrategy.RANDOM_SEARCH: self._random_search
+            SearchStrategy.RANDOM_SEARCH: self._random_search,
+            SearchStrategy.FINANCIAL_OPTIMIZED: self._financial_optimized_search,
+            SearchStrategy.REGIME_SPECIFIC: self._regime_specific_search
         }
     
     def _setup_clustering_algorithms(self):
-        """Setup clustering algorithms."""
+        """Setup financial clustering algorithms."""
         self.clustering_algorithms = {
             ClusteringAlgorithm.KMEANS: self._kmeans_clustering,
             ClusteringAlgorithm.HIERARCHICAL: self._hierarchical_clustering,
             ClusteringAlgorithm.DBSCAN: self._dbscan_clustering,
             ClusteringAlgorithm.SPECTRAL: self._spectral_clustering,
             ClusteringAlgorithm.GAUSSIAN_MIXTURE: self._gaussian_mixture_clustering,
-            ClusteringAlgorithm.AFFINITY_PROPAGATION: self._affinity_propagation_clustering
+            ClusteringAlgorithm.AFFINITY_PROPAGATION: self._affinity_propagation_clustering,
+            ClusteringAlgorithm.FINANCIAL_DBSCAN: self._financial_dbscan_clustering,
+            ClusteringAlgorithm.REGIME_CLUSTERING: self._regime_clustering
         }
     
     def generate_random_architecture(self) -> Architecture:
@@ -565,6 +629,81 @@ class NASClusterer:
         
         return architectures
     
+    def _financial_optimized_search(self, X_train: np.ndarray, y_train: np.ndarray,
+                                  X_val: np.ndarray, y_val: np.ndarray, n_architectures: int) -> List[Architecture]:
+        """Financial-optimized architecture search."""
+        architectures = []
+        
+        # Financial-specific architecture patterns
+        financial_patterns = [
+            # LSTM-based for time series
+            {'type': 'lstm', 'layers': [64, 32], 'dropout': 0.2},
+            # CNN for pattern recognition
+            {'type': 'cnn', 'layers': [128, 64], 'dropout': 0.3},
+            # Dense for feature combination
+            {'type': 'dense', 'layers': [256, 128, 64], 'dropout': 0.1},
+            # Hybrid for regime detection
+            {'type': 'hybrid', 'layers': [128, 64, 32], 'dropout': 0.2}
+        ]
+        
+        for i in range(n_architectures):
+            tprint_progress(i + 1, n_architectures, "Financial-optimized search")
+            
+            # Select pattern
+            pattern = np.random.choice(financial_patterns)
+            
+            # Create architecture based on pattern
+            layers = []
+            for j, neurons in enumerate(pattern['layers']):
+                layers.append({
+                    'neurons': neurons,
+                    'activation': 'relu' if j < len(pattern['layers']) - 1 else 'softmax',
+                    'dropout': pattern['dropout'],
+                    'layer_type': pattern['type']
+                })
+            
+            arch = Architecture(layers=layers)
+            arch = self.evaluate_architecture(arch, X_train, y_train, X_val, y_val)
+            architectures.append(arch)
+        
+        return architectures
+    
+    def _regime_specific_search(self, X_train: np.ndarray, y_train: np.ndarray,
+                               X_val: np.ndarray, y_val: np.ndarray, n_architectures: int) -> List[Architecture]:
+        """Regime-specific architecture search."""
+        architectures = []
+        
+        # Regime-specific architecture configurations
+        regime_configs = {
+            'BULL': {'layers': [128, 64], 'activation': 'relu', 'dropout': 0.1},
+            'BEAR': {'layers': [128, 64], 'activation': 'tanh', 'dropout': 0.2},
+            'SIDEWAYS': {'layers': [64, 32], 'activation': 'sigmoid', 'dropout': 0.3},
+            'VOLATILE': {'layers': [256, 128, 64], 'activation': 'leaky_relu', 'dropout': 0.4}
+        }
+        
+        for i in range(n_architectures):
+            tprint_progress(i + 1, n_architectures, "Regime-specific search")
+            
+            # Select regime configuration
+            regime = np.random.choice(list(regime_configs.keys()))
+            config = regime_configs[regime]
+            
+            # Create architecture
+            layers = []
+            for neurons in config['layers']:
+                layers.append({
+                    'neurons': neurons,
+                    'activation': config['activation'],
+                    'dropout': config['dropout'],
+                    'layer_type': 'dense'
+                })
+            
+            arch = Architecture(layers=layers)
+            arch = self.evaluate_architecture(arch, X_train, y_train, X_val, y_val)
+            architectures.append(arch)
+        
+        return architectures
+    
     def cluster_architectures(self, architectures: List[Architecture],
                             algorithm: ClusteringAlgorithm = ClusteringAlgorithm.KMEANS,
                             n_clusters: Optional[int] = None) -> Dict[int, List[Architecture]]:
@@ -689,6 +828,24 @@ class NASClusterer:
         af = AffinityPropagation(random_state=42)
         return af.fit_predict(features)
     
+    def _financial_dbscan_clustering(self, features: np.ndarray, n_clusters: Optional[int] = None) -> np.ndarray:
+        """Financial-optimized DBSCAN clustering."""
+        # Use financial-specific parameters
+        eps = self.config.dbscan_eps
+        min_samples = self.config.dbscan_min_samples
+        
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+        return dbscan.fit_predict(features)
+    
+    def _regime_clustering(self, features: np.ndarray, n_clusters: Optional[int] = None) -> np.ndarray:
+        """Regime-specific clustering for market regimes."""
+        if n_clusters is None:
+            n_clusters = len(self.config.regime_classes)
+        
+        # Use K-means with regime-specific initialization
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        return kmeans.fit_predict(features)
+    
     def _calculate_cluster_metrics(self, features: np.ndarray, cluster_labels: np.ndarray) -> Dict[str, float]:
         """Calculate clustering quality metrics."""
         metrics = {}
@@ -727,14 +884,234 @@ class NASClusterer:
         if not self.architectures:
             return []
         
-        # Sort by validation score
+        # Sort by financial score if available, otherwise validation score
         sorted_architectures = sorted(
             self.architectures,
-            key=lambda x: x.validation_score,
+            key=lambda x: x.get_financial_score() if x.financial_metrics else x.validation_score,
             reverse=True
         )
         
         return sorted_architectures[:n]
+    
+    def cluster_financial_data(self, data: pd.DataFrame, 
+                             algorithm: ClusteringAlgorithm = ClusteringAlgorithm.FINANCIAL_DBSCAN,
+                             n_clusters: Optional[int] = None) -> Dict[int, pd.DataFrame]:
+        """Cluster financial market data (OHLCV)."""
+        tprint_info(f"📊 Clustering financial data with {algorithm.value}")
+        
+        # Extract financial features
+        features = self._extract_financial_features(data)
+        
+        if features.empty:
+            tprint_warning("No financial features extracted")
+            return {}
+        
+        # Normalize features
+        scaler = StandardScaler()
+        features_normalized = scaler.fit_transform(features)
+        
+        # Apply clustering
+        clustering_func = self.clustering_algorithms.get(algorithm, self._financial_dbscan_clustering)
+        cluster_labels = clustering_func(features_normalized, n_clusters)
+        
+        # Group data by cluster
+        clusters = {}
+        for i, label in enumerate(cluster_labels):
+            if label not in clusters:
+                clusters[label] = []
+            clusters[label].append(data.iloc[i])
+        
+        # Convert to DataFrames
+        cluster_dfs = {}
+        for cluster_id, cluster_data in clusters.items():
+            if cluster_data:
+                cluster_dfs[cluster_id] = pd.DataFrame(cluster_data)
+        
+        tprint_success(f"✅ Created {len(cluster_dfs)} financial data clusters")
+        return cluster_dfs
+    
+    def _extract_financial_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Extract financial features from OHLCV data."""
+        features = pd.DataFrame()
+        
+        try:
+            # Basic price features
+            if 'close' in data.columns:
+                features['returns'] = data['close'].pct_change()
+                features['log_returns'] = np.log(data['close'] / data['close'].shift(1))
+                features['price_change'] = data['close'].diff()
+            
+            # Technical indicators
+            if 'close' in data.columns and 'high' in data.columns and 'low' in data.columns:
+                # RSI
+                delta = data['close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                features['rsi'] = 100 - (100 / (1 + rs))
+                
+                # MACD
+                ema_12 = data['close'].ewm(span=12).mean()
+                ema_26 = data['close'].ewm(span=26).mean()
+                features['macd'] = ema_12 - ema_26
+                features['macd_signal'] = features['macd'].ewm(span=9).mean()
+                
+                # Bollinger Bands
+                bb_middle = data['close'].rolling(window=20).mean()
+                bb_std = data['close'].rolling(window=20).std()
+                features['bb_upper'] = bb_middle + (bb_std * 2)
+                features['bb_lower'] = bb_middle - (bb_std * 2)
+                features['bb_position'] = (data['close'] - bb_lower) / (bb_upper - bb_lower)
+            
+            # Volume features
+            if 'volume' in data.columns:
+                features['volume_change'] = data['volume'].pct_change()
+                features['volume_ma'] = data['volume'].rolling(window=20).mean()
+                features['volume_ratio'] = data['volume'] / features['volume_ma']
+            
+            # Volatility features
+            if 'close' in data.columns:
+                features['volatility_20'] = data['close'].rolling(window=20).std()
+                features['volatility_5'] = data['close'].rolling(window=5).std()
+                features['volatility_ratio'] = features['volatility_5'] / features['volatility_20']
+            
+            # ATR (Average True Range)
+            if all(col in data.columns for col in ['high', 'low', 'close']):
+                high_low = data['high'] - data['low']
+                high_close = np.abs(data['high'] - data['close'].shift())
+                low_close = np.abs(data['low'] - data['close'].shift())
+                true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+                features['atr'] = true_range.rolling(window=14).mean()
+            
+            # ADX (Average Directional Index)
+            if all(col in data.columns for col in ['high', 'low', 'close']):
+                plus_dm = data['high'].diff()
+                minus_dm = data['low'].diff()
+                plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+                minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+                
+                tr = true_range if 'true_range' in locals() else np.maximum(
+                    high_low, np.maximum(high_close, low_close)
+                )
+                
+                plus_di = 100 * (plus_dm.rolling(window=14).mean() / tr.rolling(window=14).mean())
+                minus_di = 100 * (minus_dm.rolling(window=14).mean() / tr.rolling(window=14).mean())
+                
+                dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+                features['adx'] = dx.rolling(window=14).mean()
+            
+            # Remove rows with NaN values
+            features = features.dropna()
+            
+        except Exception as e:
+            tprint_error(f"Error extracting financial features: {e}")
+            return pd.DataFrame()
+        
+        return features
+    
+    def detect_market_regimes(self, data: pd.DataFrame) -> pd.Series:
+        """Detect market regimes in financial data."""
+        tprint_info("🔍 Detecting market regimes")
+        
+        try:
+            # Extract features
+            features = self._extract_financial_features(data)
+            
+            if features.empty:
+                tprint_warning("No features available for regime detection")
+                return pd.Series(['UNKNOWN'] * len(data), index=data.index)
+            
+            # Simple regime detection based on returns and volatility
+            regimes = []
+            
+            for i in range(len(features)):
+                returns = features['returns'].iloc[i] if 'returns' in features.columns else 0
+                volatility = features['volatility_20'].iloc[i] if 'volatility_20' in features.columns else 0
+                
+                if volatility > 0.02:  # High volatility threshold
+                    regime = 'VOLATILE'
+                elif returns > 0.001:  # Positive returns threshold
+                    regime = 'BULL'
+                elif returns < -0.001:  # Negative returns threshold
+                    regime = 'BEAR'
+                else:
+                    regime = 'SIDEWAYS'
+                
+                regimes.append(regime)
+            
+            regime_series = pd.Series(regimes, index=features.index)
+            tprint_success(f"✅ Detected {len(set(regimes))} market regimes")
+            
+            return regime_series
+            
+        except Exception as e:
+            tprint_error(f"Error detecting market regimes: {e}")
+            return pd.Series(['UNKNOWN'] * len(data), index=data.index)
+    
+    def cluster_support_resistance_levels(self, data: pd.DataFrame, 
+                                        eps: float = 0.01, min_samples: int = 3) -> Dict[str, List[float]]:
+        """Cluster support and resistance levels using DBSCAN."""
+        tprint_info("📊 Clustering support/resistance levels")
+        
+        try:
+            # Extract price levels (highs and lows)
+            price_levels = []
+            
+            if 'high' in data.columns:
+                price_levels.extend(data['high'].tolist())
+            if 'low' in data.columns:
+                price_levels.extend(data['low'].tolist())
+            
+            if not price_levels:
+                tprint_warning("No price levels found")
+                return {'support': [], 'resistance': []}
+            
+            # Convert to numpy array for clustering
+            levels_array = np.array(price_levels).reshape(-1, 1)
+            
+            # Apply DBSCAN clustering
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+            cluster_labels = dbscan.fit_predict(levels_array)
+            
+            # Group levels by cluster
+            clusters = {}
+            for i, label in enumerate(cluster_labels):
+                if label not in clusters:
+                    clusters[label] = []
+                clusters[label].append(price_levels[i])
+            
+            # Calculate cluster centers
+            support_levels = []
+            resistance_levels = []
+            
+            for cluster_id, levels in clusters.items():
+                if cluster_id == -1:  # Noise points
+                    continue
+                
+                cluster_center = np.mean(levels)
+                cluster_std = np.std(levels)
+                
+                # Classify as support or resistance based on current price
+                if 'close' in data.columns:
+                    current_price = data['close'].iloc[-1]
+                    if cluster_center < current_price:
+                        support_levels.append(cluster_center)
+                    else:
+                        resistance_levels.append(cluster_center)
+                else:
+                    # Default to support if no current price
+                    support_levels.append(cluster_center)
+            
+            tprint_success(f"✅ Found {len(support_levels)} support levels and {len(resistance_levels)} resistance levels")
+            
+            return {
+                'support': sorted(support_levels),
+                'resistance': sorted(resistance_levels, reverse=True)
+            }
+            
+        except Exception as e:
+            tprint_error(f"Error clustering S/R levels: {e}")
+            return {'support': [], 'resistance': []}
     
     def get_cluster_summary(self) -> Dict[str, Any]:
         """Get summary of clustering results."""
@@ -870,55 +1247,123 @@ def quick_clustering(architectures: List[Architecture],
 
 
 if __name__ == "__main__":
-    # Example usage
-    tprint_info("🧠 NASClusterer Example")
+    # Financial NASClusterer Example
+    tprint_info("💰 Financial NASClusterer Example")
     
-    # Generate sample data
-    from sklearn.datasets import make_classification
-    X, y = make_classification(n_samples=1000, n_features=20, n_classes=2, random_state=42)
+    # Generate sample financial data (OHLCV)
+    np.random.seed(42)
+    n_samples = 1000
+    dates = pd.date_range('2023-01-01', periods=n_samples, freq='1H')
     
-    # Split data
-    from sklearn.model_selection import train_test_split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+    # Generate realistic OHLCV data
+    base_price = 100.0
+    returns = np.random.normal(0, 0.02, n_samples)
+    prices = base_price * np.exp(np.cumsum(returns))
     
-    # Create clusterer
+    # Create OHLCV DataFrame
+    ohlcv_data = pd.DataFrame({
+        'open': prices * (1 + np.random.normal(0, 0.001, n_samples)),
+        'high': prices * (1 + np.abs(np.random.normal(0, 0.005, n_samples))),
+        'low': prices * (1 - np.abs(np.random.normal(0, 0.005, n_samples))),
+        'close': prices,
+        'volume': np.random.lognormal(10, 1, n_samples)
+    }, index=dates)
+    
+    # Ensure high >= max(open, close) and low <= min(open, close)
+    ohlcv_data['high'] = np.maximum(ohlcv_data['high'], np.maximum(ohlcv_data['open'], ohlcv_data['close']))
+    ohlcv_data['low'] = np.minimum(ohlcv_data['low'], np.minimum(ohlcv_data['open'], ohlcv_data['close']))
+    
+    # Create regime labels (simplified)
+    regime_labels = []
+    for i in range(len(ohlcv_data)):
+        returns = ohlcv_data['close'].pct_change().iloc[i] if i > 0 else 0
+        volatility = ohlcv_data['close'].rolling(20).std().iloc[i] if i >= 20 else 0.01
+        
+        if volatility > 0.03:
+            regime_labels.append('VOLATILE')
+        elif returns > 0.002:
+            regime_labels.append('BULL')
+        elif returns < -0.002:
+            regime_labels.append('BEAR')
+        else:
+            regime_labels.append('SIDEWAYS')
+    
+    y = np.array(regime_labels)
+    
+    # Split data for time series
+    split_idx = int(0.8 * len(ohlcv_data))
+    X_train = ohlcv_data.iloc[:split_idx]
+    X_val = ohlcv_data.iloc[split_idx:]
+    y_train = y[:split_idx]
+    y_val = y[split_idx:]
+    
+    # Create financial clusterer
     config = ArchitectureConfig(
-        max_layers=5,
+        max_layers=6,
         min_layers=2,
         max_neurons_per_layer=256,
         min_neurons_per_layer=32,
-        population_size=20,
-        generations=10
+        population_size=15,
+        generations=20,
+        financial_features=['rsi', 'macd', 'bb_position', 'atr', 'adx'],
+        regime_classes=['BULL', 'BEAR', 'SIDEWAYS', 'VOLATILE']
     )
     
     clusterer = NASClusterer(config)
     
     try:
-        # Search for architectures
-        tprint_info("🔍 Searching for architectures...")
-        architectures = clusterer.search_architectures(
-            X_train, y_train, X_val, y_val,
-            strategy=SearchStrategy.RANDOM,
-            n_architectures=20
-        )
+        # Extract financial features
+        tprint_info("📊 Extracting financial features...")
+        train_features = clusterer._extract_financial_features(X_train)
+        val_features = clusterer._extract_financial_features(X_val)
         
-        # Cluster architectures
-        tprint_info("🔗 Clustering architectures...")
-        clusters = clusterer.cluster_architectures(
-            architectures,
-            algorithm=ClusteringAlgorithm.KMEANS,
-            n_clusters=3
-        )
-        
-        # Get results
-        best_architectures = clusterer.get_best_architectures(5)
-        cluster_summary = clusterer.get_cluster_summary()
-        
-        tprint_success("✅ NASClusterer example completed")
-        tprint_info(f"Found {len(architectures)} architectures")
-        tprint_info(f"Created {len(clusters)} clusters")
-        tprint_info(f"Best validation score: {best_architectures[0].validation_score:.4f}")
+        if not train_features.empty and not val_features.empty:
+            # Search for financial architectures
+            tprint_info("🔍 Searching for financial architectures...")
+            architectures = clusterer.search_architectures(
+                train_features.values, y_train, val_features.values, y_val,
+                strategy=SearchStrategy.FINANCIAL_OPTIMIZED,
+                n_architectures=15
+            )
+            
+            # Cluster architectures
+            tprint_info("🔗 Clustering architectures...")
+            clusters = clusterer.cluster_architectures(
+                architectures,
+                algorithm=ClusteringAlgorithm.FINANCIAL_DBSCAN,
+                n_clusters=4
+            )
+            
+            # Financial data clustering
+            tprint_info("📈 Clustering financial data...")
+            financial_clusters = clusterer.cluster_financial_data(
+                X_train,
+                algorithm=ClusteringAlgorithm.FINANCIAL_DBSCAN
+            )
+            
+            # Market regime detection
+            tprint_info("🎯 Detecting market regimes...")
+            regimes = clusterer.detect_market_regimes(X_train)
+            
+            # Support/Resistance clustering
+            tprint_info("📊 Clustering S/R levels...")
+            sr_levels = clusterer.cluster_support_resistance_levels(X_train)
+            
+            # Get results
+            best_architectures = clusterer.get_best_architectures(5)
+            cluster_summary = clusterer.get_cluster_summary()
+            
+            tprint_success("✅ Financial NASClusterer example completed")
+            tprint_info(f"Found {len(architectures)} architectures")
+            tprint_info(f"Created {len(clusters)} architecture clusters")
+            tprint_info(f"Created {len(financial_clusters)} financial data clusters")
+            tprint_info(f"Detected {len(set(regimes))} market regimes")
+            tprint_info(f"Found {len(sr_levels['support'])} support levels")
+            tprint_info(f"Found {len(sr_levels['resistance'])} resistance levels")
+            tprint_info(f"Best financial score: {best_architectures[0].get_financial_score():.4f}")
+            
+        else:
+            tprint_warning("⚠️ Could not extract financial features from sample data")
         
     finally:
         clusterer.cleanup()

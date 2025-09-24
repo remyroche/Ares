@@ -184,7 +184,7 @@ const LauncherControl = () => {
       case 'backtest': return 'Historical backtesting';
       case 'blank': return 'Standard training mode (180 days)';
       case 'light': return 'Quick training mode (10 days)';
-      case 'full': return 'Full training mode (730 days)';
+      case 'full': return 'Full training mode (1460 days)';
       case 'load': return 'Load and process market data';
       case 'precompute': return 'Precompute wavelet features';
       default: return 'Unknown mode';

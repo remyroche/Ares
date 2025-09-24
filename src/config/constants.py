@@ -16,7 +16,7 @@ DEFAULT_COMPUTATION_TIME_THRESHOLD: Final[float] = 0.1  # 100ms
 # Data Configuration Constants
 # Centralized lookback windows to ensure a single source of truth across the project
 # Note: Keep this consistent with usages in config and training steps
-DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
+from .pipeline_modes import DEFAULT_LOOKBACK_DAYS, DEFAULT_LOOKBACK_YEARS, DEFAULT_INTENSITY_PERCENTAGE
 
 # Import training mode constants from centralized configuration
 

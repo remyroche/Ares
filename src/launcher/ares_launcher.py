@@ -444,7 +444,7 @@ class AresLauncher:
         # Use the provided timeframe for all stages
         tprint(f"📊 [STAGE_CONFIG] Using timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
 
-        # Get configuration based on execution mode
+        # Get configuration based on execution mode using centralized configuration
         tprint("🎭 [STAGE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
             tprint("🎭 [STAGE_CONFIG] Using FULL execution mode configuration")
@@ -1117,13 +1117,13 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline execution (730 days, 100% intensity)
+  # Full pipeline execution (1460 days, 100% intensity)
   python ares_launcher.py --mode full --symbol ETHUSDT --exchange binance
 
   # Light pipeline execution (10 days, 5% intensity)
   python ares_launcher.py --mode light --symbol ETHUSDT
 
-  # Execute specific stage with full execution mode (730 days, 100% intensity)
+  # Execute specific stage with full execution mode (1460 days, 100% intensity)
   python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol ETHUSDT
 
   # Execute specific stage with light execution mode (10 days, 5% intensity)
@@ -1132,7 +1132,7 @@ Examples:
   # Execute specific sub-pipeline with blank execution mode (180 days, 10% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with full execution mode (730 days, 100% intensity)
+  # Execute specific sub-pipeline with full execution mode (1460 days, 100% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_regime_discovery --execution-mode full --symbol ETHUSDT
 
   # Execute basic backtesting (pre-optimization baseline)

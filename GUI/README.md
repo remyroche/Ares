@@ -97,7 +97,7 @@ The Launcher Control page allows you to:
 2. **Start Training:**
    - **Light Training**: Quick testing (10 days, ~15 minutes)
    - **Blank Training**: Standard training (180 days, ~60 minutes)
-   - **Full Training**: Production training (730 days, ~240 minutes)
+   - **Full Training**: Production training (1460 days, ~240 minutes)
 
 3. **Monitor Processes:**
    - View running processes

@@ -72,6 +72,15 @@ class AdvancedTreeConfig:
     enable_ensemble: bool = True
     ensemble_models: List[str] = field(default_factory=lambda: ["xgboost", "lightgbm", "catboost"])
     
+    # CLVSA integration
+    enable_clvsa_enhancement: bool = True
+    clvsa_input_dim: int = 100
+    clvsa_output_dim: int = 10
+    clvsa_seq_length: int = 200
+    clvsa_regime_aware: bool = True
+    clvsa_uncertainty_quantification: bool = True
+    clvsa_multi_scale: bool = True
+    
     # Meta-learning parameters
     enable_meta_learning: bool = True
     meta_learning_rate: float = 0.01
@@ -371,9 +380,115 @@ class ContinualLearningTreeModel:
             raise
 
 
+class CLVSAEnhancedTreeModel:
+    """
+    CLVSA-enhanced tree model that combines tree-based learning with CLVSA architecture.
+    """
+    
+    def __init__(self, base_model, clvsa_model, config: AdvancedTreeConfig):
+        """Initialize CLVSA-enhanced tree model."""
+        self.base_model = base_model
+        self.clvsa_model = clvsa_model
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # CLVSA enhancement state
+        self.clvsa_features = None
+        self.enhancement_history = []
+        
+        self.logger.info("✅ CLVSA-enhanced tree model initialized")
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """Fit the CLVSA-enhanced tree model."""
+        try:
+            # Extract CLVSA features if available
+            if self.clvsa_model and self.config.enable_clvsa_enhancement:
+                self.logger.info("🧠 Extracting CLVSA features...")
+                self.clvsa_features = self.clvsa_model.transform(X)
+                
+                # Combine original features with CLVSA features
+                if self.clvsa_features is not None:
+                    X_enhanced = np.concatenate([X, self.clvsa_features], axis=1)
+                    self.logger.info(f"Enhanced features shape: {X_enhanced.shape}")
+                else:
+                    X_enhanced = X
+                    self.logger.warning("CLVSA feature extraction failed, using original features")
+            else:
+                X_enhanced = X
+            
+            # Train the base model on enhanced features
+            self.base_model.fit(X_enhanced, y)
+            
+            # Record enhancement
+            self.enhancement_history.append({
+                'timestamp': datetime.now(),
+                'original_features': X.shape[1],
+                'enhanced_features': X_enhanced.shape[1],
+                'clvsa_features': self.clvsa_features.shape[1] if self.clvsa_features is not None else 0
+            })
+            
+            self.logger.info(f"CLVSA-enhanced model trained on {X_enhanced.shape[1]} features")
+            
+        except Exception as e:
+            self.logger.error(f"CLVSA-enhanced model training failed: {e}")
+            # Fallback to base model
+            self.base_model.fit(X, y)
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions using CLVSA-enhanced features."""
+        try:
+            # Extract CLVSA features for prediction
+            if self.clvsa_model and self.config.enable_clvsa_enhancement and self.clvsa_features is not None:
+                clvsa_features = self.clvsa_model.transform(X)
+                X_enhanced = np.concatenate([X, clvsa_features], axis=1)
+            else:
+                X_enhanced = X
+            
+            return self.base_model.predict(X_enhanced)
+            
+        except Exception as e:
+            self.logger.error(f"CLVSA-enhanced prediction failed: {e}")
+            # Fallback to base model
+            return self.base_model.predict(X)
+    
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Make probability predictions using CLVSA-enhanced features."""
+        try:
+            # Extract CLVSA features for prediction
+            if self.clvsa_model and self.config.enable_clvsa_enhancement and self.clvsa_features is not None:
+                clvsa_features = self.clvsa_model.transform(X)
+                X_enhanced = np.concatenate([X, clvsa_features], axis=1)
+            else:
+                X_enhanced = X
+            
+            if hasattr(self.base_model, 'predict_proba'):
+                return self.base_model.predict_proba(X_enhanced)
+            else:
+                # Convert predictions to probabilities
+                predictions = self.base_model.predict(X_enhanced)
+                n_classes = len(np.unique(predictions))
+                probabilities = np.zeros((len(X), n_classes))
+                for i, pred in enumerate(predictions):
+                    probabilities[i, pred] = 1.0
+                return probabilities
+                
+        except Exception as e:
+            self.logger.error(f"CLVSA-enhanced probability prediction failed: {e}")
+            # Fallback to base model
+            if hasattr(self.base_model, 'predict_proba'):
+                return self.base_model.predict_proba(X)
+            else:
+                predictions = self.base_model.predict(X)
+                n_classes = len(np.unique(predictions))
+                probabilities = np.zeros((len(X), n_classes))
+                for i, pred in enumerate(predictions):
+                    probabilities[i, pred] = 1.0
+                return probabilities
+
+
 class AdvancedTreeModelFactory:
     """
-    Factory for creating advanced tree models with meta-learning capabilities.
+    Factory for creating advanced tree models with meta-learning capabilities and CLVSA enhancement.
     """
     
     def __init__(self, config: AdvancedTreeConfig):
@@ -381,17 +496,36 @@ class AdvancedTreeModelFactory:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize CLVSA model if enabled
+        self.clvsa_model = None
+        if self.config.enable_clvsa_enhancement and CLVSA_AVAILABLE:
+            try:
+                clvsa_config = CLVSAConfig(
+                    input_dim=self.config.clvsa_input_dim,
+                    output_dim=self.config.clvsa_output_dim,
+                    seq_length=self.config.clvsa_seq_length,
+                    regime_aware=self.config.clvsa_regime_aware,
+                    uncertainty_quantification=self.config.clvsa_uncertainty_quantification,
+                    multi_scale=self.config.clvsa_multi_scale
+                )
+                self.clvsa_model = create_clvsa_model({'clvsa_params': clvsa_config.__dict__})
+                self.logger.info("✅ CLVSA model initialized for tree enhancement")
+            except Exception as e:
+                self.logger.warning(f"CLVSA model initialization failed: {e}")
+                self.clvsa_model = None
+        
         self.logger.info("✅ Advanced Tree Model Factory initialized")
     
     def create_model(self, model_type: str, enable_meta_learning: bool = True, 
-                    enable_continual_learning: bool = True) -> Union[MetaLearningTreeModel, ContinualLearningTreeModel]:
+                    enable_continual_learning: bool = True, enable_clvsa_enhancement: bool = True) -> Union[MetaLearningTreeModel, ContinualLearningTreeModel, CLVSAEnhancedTreeModel]:
         """
-        Create an advanced tree model.
+        Create an advanced tree model with optional CLVSA enhancement.
         
         Args:
             model_type: Type of model to create
             enable_meta_learning: Whether to enable meta-learning
             enable_continual_learning: Whether to enable continual learning
+            enable_clvsa_enhancement: Whether to enable CLVSA enhancement
             
         Returns:
             Advanced tree model instance
@@ -399,6 +533,12 @@ class AdvancedTreeModelFactory:
         try:
             base_model = self._create_base_model(model_type)
             
+            # Apply CLVSA enhancement if enabled
+            if enable_clvsa_enhancement and self.clvsa_model:
+                base_model = CLVSAEnhancedTreeModel(base_model, self.clvsa_model, self.config)
+                self.logger.info(f"Created CLVSA-enhanced {model_type} model")
+            
+            # Apply meta-learning or continual learning
             if enable_meta_learning:
                 return MetaLearningTreeModel(base_model, self.config)
             elif enable_continual_learning:

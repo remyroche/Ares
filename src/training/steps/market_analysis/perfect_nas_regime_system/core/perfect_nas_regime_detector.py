@@ -43,6 +43,9 @@ from .enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommo
 from .enhanced_nas_clustering_integration import EnhancedNASClusteringIntegration, NASClusteringConfig
 from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
 
+# Import standalone implementation
+from .standalone_perfect_nas_regime_detector import StandalonePerfectNASRegimeDetector
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -71,18 +74,24 @@ class PerfectNASRegimeDetector:
     Now includes full integration with existing tools infrastructure.
     """
     
-    def __init__(self, config: PerfectNASConfig, use_enhanced: bool = True):
+    def __init__(self, config: PerfectNASConfig, use_enhanced: bool = True, use_standalone: bool = False):
         """Initialize Perfect NAS Regime Detector.
         
         Args:
             config: Perfect NAS configuration
             use_enhanced: Whether to use enhanced integrations
+            use_standalone: Whether to use standalone implementation (no external dependencies)
         """
         self.config = config
         self.use_enhanced = use_enhanced
+        self.use_standalone = use_standalone
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        if use_enhanced:
+        if use_standalone:
+            # Use standalone detector with no external dependencies
+            self.standalone_detector = StandalonePerfectNASRegimeDetector(config)
+            self.logger.info(f"✅ Standalone Perfect NAS Regime Detector initialized (no external dependencies)")
+        elif use_enhanced:
             # Use enhanced detector with full tool integration
             self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
             self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
@@ -101,6 +110,7 @@ class PerfectNASRegimeDetector:
         self.logger.info(f"   Meta-learning: {config.enable_meta_learning}")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Enhanced Integration: {use_enhanced}")
+        self.logger.info(f"   Standalone Mode: {use_standalone}")
     
     def _initialize_neural_architectures(self):
         """Initialize neural architecture components."""
@@ -244,7 +254,29 @@ class PerfectNASRegimeDetector:
         Returns:
             PerfectNASResult with regime detection results
         """
-        if self.use_enhanced:
+        if self.use_standalone:
+            # Use standalone detector with no external dependencies
+            standalone_result = self.standalone_detector.detect_regimes(
+                market_data, timestamps, optimize_architecture, enable_meta_learning
+            )
+            
+            # Convert standalone result to standard result
+            return PerfectNASResult(
+                success=standalone_result.success,
+                regime_predictions=standalone_result.regime_predictions,
+                regime_probabilities=standalone_result.regime_probabilities,
+                economic_significance_scores=standalone_result.economic_significance_scores,
+                trading_viability_scores=standalone_result.trading_viability_scores,
+                regime_stability_scores=standalone_result.regime_stability_scores,
+                transition_probabilities=standalone_result.transition_probabilities,
+                micro_regimes=standalone_result.micro_regimes,
+                architecture_performance=standalone_result.architecture_performance,
+                uncertainty_estimates=standalone_result.uncertainty_estimates,
+                execution_time=standalone_result.execution_time,
+                metadata=standalone_result.metadata,
+                error_message=standalone_result.error_message
+            )
+        elif self.use_enhanced:
             # Use enhanced detector with full tool integration
             enhanced_result = self.enhanced_detector.detect_regimes(
                 market_data, timestamps, optimize_architecture, enable_meta_learning

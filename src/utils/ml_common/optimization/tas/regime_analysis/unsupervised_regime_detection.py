@@ -2,11 +2,12 @@
 Unsupervised Regime Detection for Trading
 
 Production-ready unsupervised regime detection algorithms for financial markets.
+Includes real-time detection, regime transitions, stability analysis, and multi-timeframe detection.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
@@ -15,10 +16,17 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.decomposition import PCA, FastICA
 from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import talib
 from scipy import stats
 from scipy.signal import find_peaks
+from scipy.stats import jarque_bera, kstest, anderson
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.tsa.regime_switching import MarkovRegression
 import warnings
+import threading
+import queue
+from collections import deque
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -58,14 +66,34 @@ class RegimeDetectionConfig:
     update_frequency: int = 100  # Update every N samples
     lookback_window: int = 1000  # Lookback for regime detection
     confidence_threshold: float = 0.8
+    
+    # Multi-timeframe detection
+    enable_multitimeframe: bool = True
+    timeframes: List[str] = field(default_factory=lambda: ['1m', '5m', '15m', '1h', '4h', '1d'])
+    timeframe_weights: List[float] = field(default_factory=lambda: [0.1, 0.15, 0.2, 0.25, 0.2, 0.1])
+    
+    # Regime transition detection
+    enable_transition_detection: bool = True
+    transition_threshold: float = 0.3
+    transition_lookback: int = 20
+    
+    # Regime stability analysis
+    enable_stability_analysis: bool = True
+    stability_window: int = 50
+    stability_threshold: float = 0.7
+    
+    # Streaming parameters
+    enable_streaming: bool = True
+    stream_buffer_size: int = 1000
+    stream_processing_delay: float = 0.1  # seconds
 
 
 class UnsupervisedRegimeDetector:
     """
     Production-ready unsupervised regime detector for financial markets.
     
-    Implements multiple clustering algorithms and regime validation
-    for real-time trading applications.
+    Implements multiple clustering algorithms, regime validation, real-time detection,
+    regime transitions, stability analysis, and multi-timeframe detection for trading applications.
     """
     
     def __init__(self, config: RegimeDetectionConfig):
@@ -90,6 +118,25 @@ class UnsupervisedRegimeDetector:
         # Models
         self.clustering_models = {}
         self.regime_validators = {}
+        
+        # Real-time streaming
+        self.stream_buffer = deque(maxlen=config.stream_buffer_size)
+        self.streaming_thread = None
+        self.streaming_active = False
+        self.data_queue = queue.Queue()
+        
+        # Multi-timeframe detection
+        self.timeframe_detectors = {}
+        self.timeframe_weights = dict(zip(config.timeframes, config.timeframe_weights))
+        
+        # Regime transition tracking
+        self.transition_history = deque(maxlen=100)
+        self.current_regime_id = None
+        self.regime_duration = 0
+        
+        # Stability analysis
+        self.stability_metrics = {}
+        self.regime_persistence = {}
         
         self.logger.info("✅ Unsupervised Regime Detector initialized")
     
@@ -608,6 +655,377 @@ class UnsupervisedRegimeDetector:
                 continue
         
         return best_method
+    
+    def start_streaming_detection(self):
+        """Start real-time streaming regime detection."""
+        if self.streaming_active:
+            self.logger.warning("⚠️ Streaming already active")
+            return
+        
+        self.streaming_active = True
+        self.streaming_thread = threading.Thread(target=self._streaming_loop, daemon=True)
+        self.streaming_thread.start()
+        
+        self.logger.info("🚀 Real-time streaming regime detection started")
+    
+    def stop_streaming_detection(self):
+        """Stop real-time streaming regime detection."""
+        self.streaming_active = False
+        if self.streaming_thread:
+            self.streaming_thread.join(timeout=5)
+        
+        self.logger.info("🛑 Real-time streaming regime detection stopped")
+    
+    def add_streaming_data(self, data: pd.DataFrame):
+        """Add new data to streaming buffer."""
+        if not self.streaming_active:
+            self.logger.warning("⚠️ Streaming not active")
+            return
+        
+        self.data_queue.put(data)
+    
+    def _streaming_loop(self):
+        """Main streaming processing loop."""
+        while self.streaming_active:
+            try:
+                # Get new data from queue
+                if not self.data_queue.empty():
+                    new_data = self.data_queue.get(timeout=1)
+                    
+                    # Add to buffer
+                    self.stream_buffer.append(new_data)
+                    
+                    # Process if buffer has enough data
+                    if len(self.stream_buffer) >= self.config.update_frequency:
+                        self._process_streaming_data()
+                
+                # Sleep to prevent excessive CPU usage
+                threading.Event().wait(self.config.stream_processing_delay)
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self.logger.error(f"❌ Streaming loop error: {e}")
+                threading.Event().wait(1)
+    
+    def _process_streaming_data(self):
+        """Process streaming data for regime detection."""
+        # Convert buffer to DataFrame
+        combined_data = pd.concat(list(self.stream_buffer))
+        
+        # Detect regimes
+        results = self.detect_regimes(combined_data, real_time=True)
+        
+        # Update current regime
+        if results.get('regimes'):
+            self._update_current_regime(results)
+        
+        # Detect transitions
+        if self.config.enable_transition_detection:
+            self._detect_regime_transitions_streaming(results)
+        
+        # Analyze stability
+        if self.config.enable_stability_analysis:
+            self._analyze_regime_stability_streaming(results)
+    
+    def detect_regimes_multitimeframe(self, 
+                                    market_data: Dict[str, pd.DataFrame],
+                                    timestamps: Optional[Dict[str, pd.Series]] = None) -> Dict[str, Any]:
+        """
+        Detect regimes across multiple timeframes.
+        
+        Args:
+            market_data: Dictionary of market data by timeframe
+            timestamps: Optional timestamps for each timeframe
+            
+        Returns:
+            Multi-timeframe regime detection results
+        """
+        self.logger.info("🔄 Starting multi-timeframe regime detection")
+        
+        timeframe_results = {}
+        combined_regimes = {}
+        
+        for timeframe, data in market_data.items():
+            if timeframe not in self.timeframe_weights:
+                continue
+            
+            self.logger.info(f"📊 Processing timeframe: {timeframe}")
+            
+            # Detect regimes for this timeframe
+            results = self.detect_regimes(data, timestamps.get(timeframe) if timestamps else None)
+            timeframe_results[timeframe] = results
+            
+            # Store regimes with timeframe weighting
+            weight = self.timeframe_weights[timeframe]
+            for regime_name, regime_info in results.get('regimes', {}).items():
+                weighted_regime = regime_info.copy()
+                weighted_regime['timeframe'] = timeframe
+                weighted_regime['weight'] = weight
+                weighted_regime['confidence'] = regime_info.get('confidence', 0.5) * weight
+                
+                combined_regimes[f"{timeframe}_{regime_name}"] = weighted_regime
+        
+        # Combine regimes across timeframes
+        combined_results = self._combine_multitimeframe_regimes(timeframe_results)
+        
+        # Calculate consensus regimes
+        consensus_regimes = self._calculate_consensus_regimes(combined_regimes)
+        
+        return {
+            'timeframe_results': timeframe_results,
+            'combined_regimes': combined_regimes,
+            'consensus_regimes': consensus_regimes,
+            'detection_quality': self._assess_multitimeframe_quality(timeframe_results),
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    def _combine_multitimeframe_regimes(self, timeframe_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Combine regimes across timeframes."""
+        combined = {
+            'regimes': {},
+            'regime_labels': {},
+            'regime_centers': {},
+            'detection_quality': {}
+        }
+        
+        for timeframe, results in timeframe_results.items():
+            weight = self.timeframe_weights[timeframe]
+            
+            # Weight regime characteristics
+            for regime_name, regime_info in results.get('regimes', {}).items():
+                weighted_info = regime_info.copy()
+                weighted_info['timeframe_weight'] = weight
+                weighted_info['confidence'] = regime_info.get('confidence', 0.5) * weight
+                
+                combined['regimes'][f"{timeframe}_{regime_name}"] = weighted_info
+        
+        return combined
+    
+    def _calculate_consensus_regimes(self, combined_regimes: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate consensus regimes across timeframes."""
+        consensus = {}
+        
+        # Group regimes by similarity
+        regime_groups = self._group_similar_regimes(combined_regimes)
+        
+        for group_id, regime_group in regime_groups.items():
+            # Calculate consensus characteristics
+            consensus_regime = self._calculate_regime_consensus(regime_group)
+            consensus[f"consensus_{group_id}"] = consensus_regime
+        
+        return consensus
+    
+    def _group_similar_regimes(self, regimes: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+        """Group similar regimes across timeframes."""
+        groups = {}
+        group_id = 0
+        
+        for regime_name, regime_info in regimes.items():
+            # Find similar existing group
+            assigned = False
+            for existing_group_id, group in groups.items():
+                if self._regimes_are_similar(regime_info, group[0]):
+                    groups[existing_group_id].append(regime_info)
+                    assigned = True
+                    break
+            
+            if not assigned:
+                groups[f"group_{group_id}"] = [regime_info]
+                group_id += 1
+        
+        return groups
+    
+    def _regimes_are_similar(self, regime1: Dict[str, Any], regime2: Dict[str, Any]) -> bool:
+        """Check if two regimes are similar."""
+        # Compare key characteristics
+        vol1 = regime1.get('price_volatility', 0)
+        vol2 = regime2.get('price_volatility', 0)
+        trend1 = regime1.get('price_trend', 0)
+        trend2 = regime2.get('price_trend', 0)
+        
+        # Similarity thresholds
+        vol_similar = abs(vol1 - vol2) < 0.1
+        trend_similar = abs(trend1 - trend2) < 0.05
+        
+        return vol_similar and trend_similar
+    
+    def _calculate_regime_consensus(self, regime_group: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate consensus regime from a group of similar regimes."""
+        if not regime_group:
+            return {}
+        
+        # Weighted average of characteristics
+        total_weight = sum(regime.get('weight', 1.0) for regime in regime_group)
+        
+        consensus = {
+            'regime_id': f"consensus_{len(regime_group)}",
+            'timeframes': [regime.get('timeframe') for regime in regime_group],
+            'confidence': 0.0,
+            'duration': 0,
+            'price_volatility': 0.0,
+            'price_trend': 0.0,
+            'mean_price': 0.0,
+            'sharpe_ratio': 0.0
+        }
+        
+        for regime in regime_group:
+            weight = regime.get('weight', 1.0) / total_weight
+            
+            consensus['confidence'] += regime.get('confidence', 0.5) * weight
+            consensus['duration'] += regime.get('duration', 0) * weight
+            consensus['price_volatility'] += regime.get('price_volatility', 0) * weight
+            consensus['price_trend'] += regime.get('price_trend', 0) * weight
+            consensus['mean_price'] += regime.get('mean_price', 0) * weight
+            consensus['sharpe_ratio'] += regime.get('sharpe_ratio', 0) * weight
+        
+        return consensus
+    
+    def _assess_multitimeframe_quality(self, timeframe_results: Dict[str, Any]) -> Dict[str, float]:
+        """Assess quality of multi-timeframe detection."""
+        quality_metrics = {}
+        
+        for timeframe, results in timeframe_results.items():
+            detection_quality = results.get('detection_quality', {})
+            quality_metrics[timeframe] = {
+                'quality_score': detection_quality.get('quality_score', 0.0),
+                'stability': detection_quality.get('stability', 0.0),
+                'separation': detection_quality.get('separation', 0.0)
+            }
+        
+        # Overall quality
+        overall_quality = np.mean([
+            metrics['quality_score'] for metrics in quality_metrics.values()
+        ])
+        
+        quality_metrics['overall'] = {
+            'quality_score': overall_quality,
+            'consistency': 1.0 - np.std([
+                metrics['quality_score'] for metrics in quality_metrics.values()
+            ])
+        }
+        
+        return quality_metrics
+    
+    def _update_current_regime(self, results: Dict[str, Any]):
+        """Update current regime information."""
+        if not results.get('regimes'):
+            return
+        
+        # Find most recent regime
+        latest_regime = max(results['regimes'].items(), 
+                           key=lambda x: x[1].get('confidence', 0))
+        
+        regime_id, regime_info = latest_regime
+        
+        if regime_id != self.current_regime_id:
+            # Regime change detected
+            if self.current_regime_id is not None:
+                self.transition_history.append({
+                    'from_regime': self.current_regime_id,
+                    'to_regime': regime_id,
+                    'timestamp': datetime.now(),
+                    'duration': self.regime_duration
+                })
+            
+            self.current_regime_id = regime_id
+            self.regime_duration = 0
+        else:
+            self.regime_duration += 1
+    
+    def _detect_regime_transitions_streaming(self, results: Dict[str, Any]):
+        """Detect regime transitions in streaming mode."""
+        if not self.config.enable_transition_detection:
+            return
+        
+        # Check for regime changes
+        if len(self.transition_history) > 0:
+            latest_transition = self.transition_history[-1]
+            
+            # Check if transition is significant
+            if self._is_transition_significant(latest_transition):
+                self.logger.info(f"🔄 Significant regime transition detected: {latest_transition}")
+                
+                # Update transition tracking
+                self.regime_transitions.append(latest_transition)
+    
+    def _is_transition_significant(self, transition: Dict[str, Any]) -> bool:
+        """Check if a regime transition is significant."""
+        # Check transition probability
+        transition_prob = self._calculate_transition_probability(transition)
+        
+        # Check regime stability
+        stability = self._calculate_regime_stability(transition)
+        
+        # Significant if both probability and stability exceed thresholds
+        return (transition_prob > self.config.transition_threshold and 
+                stability > self.config.stability_threshold)
+    
+    def _calculate_transition_probability(self, transition: Dict[str, Any]) -> float:
+        """Calculate probability of regime transition."""
+        # Simplified transition probability calculation
+        # In production, this would use more sophisticated methods
+        
+        from_regime = transition.get('from_regime')
+        to_regime = transition.get('to_regime')
+        
+        if not from_regime or not to_regime:
+            return 0.0
+        
+        # Calculate based on regime characteristics
+        # This is a simplified implementation
+        return 0.5  # Placeholder
+    
+    def _calculate_regime_stability(self, transition: Dict[str, Any]) -> float:
+        """Calculate regime stability."""
+        # Simplified stability calculation
+        # In production, this would use more sophisticated methods
+        
+        duration = transition.get('duration', 0)
+        min_duration = self.config.min_regime_duration
+        
+        return min(duration / min_duration, 1.0)
+    
+    def _analyze_regime_stability_streaming(self, results: Dict[str, Any]):
+        """Analyze regime stability in streaming mode."""
+        if not self.config.enable_stability_analysis:
+            return
+        
+        # Calculate stability metrics
+        stability_metrics = self._calculate_stability_metrics(results)
+        
+        # Update stability tracking
+        self.stability_metrics.update(stability_metrics)
+        
+        # Check for stability alerts
+        if stability_metrics.get('stability_score', 0) < self.config.stability_threshold:
+            self.logger.warning(f"⚠️ Low regime stability detected: {stability_metrics}")
+    
+    def _calculate_stability_metrics(self, results: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate regime stability metrics."""
+        if not results.get('regimes'):
+            return {}
+        
+        regimes = results['regimes']
+        
+        # Calculate stability based on regime characteristics
+        volatility_stability = 1.0 - np.std([
+            regime.get('price_volatility', 0) for regime in regimes.values()
+        ])
+        
+        trend_stability = 1.0 - np.std([
+            regime.get('price_trend', 0) for regime in regimes.values()
+        ])
+        
+        # Overall stability score
+        stability_score = (volatility_stability + trend_stability) / 2.0
+        
+        return {
+            'stability_score': stability_score,
+            'volatility_stability': volatility_stability,
+            'trend_stability': trend_stability,
+            'n_regimes': len(regimes)
+        }
     
     def update_regimes_real_time(self, new_data: pd.DataFrame) -> Dict[str, Any]:
         """Update regime detection in real-time."""

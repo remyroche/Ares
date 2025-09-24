@@ -21,10 +21,6 @@ from .position_division_strategy import PositionDivisionStrategy
 from ...utils.confidence import normalize_dual_confidence
 from ...utils.logger import system_logger
 from ...core.exceptions import (
-import json
-import logging
-import time
-
     error,
     failed,
     initialization_error,
@@ -32,18 +28,23 @@ import time
     missing,
     warning,
 )
+import json
+import logging
+import time
 
 class PositionAction(Enum):
     """Enum for position actions."""
 
     STAY = "stay"
     EXIT = "exit"
-    # SCALE_UP = "scale_up"  # Commented out per exit strategy update
-    # SCALE_DOWN = "scale_down"  # Commented out per exit strategy update
+    SCALE_UP = "scale_up"  # Restored for enhanced exit strategy
+    SCALE_DOWN = "scale_down"  # Restored for enhanced exit strategy
     HEDGE = "hedge"
-    # TAKE_PROFIT = "take_profit"  # Commented out per exit strategy update
-    # STOP_LOSS = "stop_loss"  # Commented out per exit strategy update
+    TAKE_PROFIT = "take_profit"  # Restored for enhanced exit strategy
+    STOP_LOSS = "stop_loss"  # Restored for enhanced exit strategy
     FULL_CLOSE = "full_close"
+    PARTIAL_PROFIT = "partial_profit"  # New: Take partial profit
+    TRAILING_STOP = "trailing_stop"  # New: Update trailing stop
 
 @dataclass
 class PositionAssessment:
@@ -102,10 +103,33 @@ class PositionMonitor:
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
         
-        # Note: Confidence thresholds removed as per exit strategy update
-        # Note: PnL threshold removed as per exit strategy update
-        # Keep only max position age (3 hours = 10800 seconds)
+        # Enhanced exit strategy configuration
         self.max_position_age = 10800  # 3 hours
+        
+        # Confidence-based exit thresholds
+        self.confidence_thresholds = self.monitor_config.get("confidence_thresholds", {
+            "very_low": 0.2,      # Exit immediately
+            "low": 0.4,           # Scale down or exit
+            "medium": 0.6,        # Hold position
+            "high": 0.8           # Consider profit taking
+        })
+        
+        # PnL-based exit thresholds
+        self.pnl_thresholds = self.monitor_config.get("pnl_thresholds", {
+            "stop_loss": -0.05,   # -5% stop loss
+            "profit_target": 0.04, # 4% profit target
+            "scaling_levels": [0.25, 0.5, 0.75]  # Profit scaling levels
+        })
+        
+        # Profit-taking configuration
+        self.profit_taking_config = self.monitor_config.get("profit_taking", {
+            "confidence_scaling": True,    # Scale profit taking based on confidence
+            "min_confidence_for_profit": 0.6,  # Minimum confidence to take profit
+            "confidence_profit_multiplier": 0.5,  # How much confidence affects profit taking
+            "tiered_profit_taking": True,  # Enable tiered profit taking
+            "trailing_stop_enabled": True,  # Enable trailing stops
+            "trailing_stop_atr_multiplier": 1.5  # ATR multiplier for trailing stops
+        })
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -167,6 +191,30 @@ class PositionMonitor:
 
             if self.max_position_age <= 0:
                 self.logger.error(invalid("Max position age must be positive"))
+                return False
+
+            # Validate confidence thresholds
+            for threshold_name, threshold_value in self.confidence_thresholds.items():
+                if not 0 <= threshold_value <= 1:
+                    self.logger.error(invalid(f"Confidence threshold '{threshold_name}' must be between 0 and 1"))
+                    return False
+
+            # Validate PnL thresholds
+            if self.pnl_thresholds["stop_loss"] >= 0:
+                self.logger.error(invalid("Stop loss threshold must be negative"))
+                return False
+
+            if self.pnl_thresholds["profit_target"] <= 0:
+                self.logger.error(invalid("Profit target must be positive"))
+                return False
+
+            # Validate profit taking configuration
+            if not 0 <= self.profit_taking_config["min_confidence_for_profit"] <= 1:
+                self.logger.error(invalid("Minimum confidence for profit must be between 0 and 1"))
+                return False
+
+            if not 0 <= self.profit_taking_config["confidence_profit_multiplier"] <= 1:
+                self.logger.error(invalid("Confidence profit multiplier must be between 0 and 1"))
                 return False
 
             return True
@@ -339,7 +387,7 @@ class PositionMonitor:
         combined_confidence: float
     ) -> tuple[PositionAction, str]:
         """
-        Determine recommended position action based on current conditions.
+        Determine recommended position action based on enhanced exit strategy.
 
         Args:
             position_data: Position data
@@ -352,37 +400,156 @@ class PositionMonitor:
             unrealized_pnl = position_data["unrealized_pnl"]
             entry_time = position_data.get("entry_time")
             current_time = datetime.now()
+            position_id = position_data.get("position_id", "unknown")
 
-            # Check for critical conditions first
-            if unrealized_pnl <= self.pnl_threshold:
-                return PositionAction.STOP_LOSS, f"PnL below threshold: {unrealized_pnl:.4f}"
+            # 1. CRITICAL CONDITIONS - Check first (highest priority)
+            if unrealized_pnl <= self.pnl_thresholds["stop_loss"]:
+                return PositionAction.STOP_LOSS, f"Critical stop loss: {unrealized_pnl:.4f} <= {self.pnl_thresholds['stop_loss']:.4f}"
 
-            # Check position age
+            # 2. TIME-BASED EXITS
             if entry_time:
                 if isinstance(entry_time, str):
                     entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
                 position_age = (current_time - entry_time).total_seconds()
                 if position_age > self.max_position_age:
-                    return PositionAction.FULL_CLOSE, f"Position age exceeded: {position_age:.0f}s"
+                    return PositionAction.FULL_CLOSE, f"Maximum hold time exceeded: {position_age:.0f}s > {self.max_position_age}s"
 
-            # Check confidence-based actions using step12 optimized thresholds
-            if combined_confidence < self.very_low_confidence_threshold:
-                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.very_low_confidence_threshold}"
-            elif combined_confidence < self.low_confidence_threshold:
-                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.low_confidence_threshold}"
-            elif combined_confidence >= self.high_confidence_threshold:
-                # Check for take profit (high confidence and positive PnL)
-                if unrealized_pnl > 0.02:  # 2% profit
-                    return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
-                else:
-                    return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.high_confidence_threshold}"
+            # 3. CONFIDENCE-BASED EXITS
+            if combined_confidence < self.confidence_thresholds["very_low"]:
+                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['very_low']:.3f}"
+            elif combined_confidence < self.confidence_thresholds["low"]:
+                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['low']:.3f}"
 
-            # Default action for medium confidence
-            return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within thresholds)"
+            # 4. PROFIT-TAKING LOGIC (confidence-based scaling)
+            if unrealized_pnl > 0:
+                profit_action, profit_reason = self._evaluate_profit_taking(
+                    unrealized_pnl, combined_confidence, position_data
+                )
+                if profit_action != PositionAction.STAY:
+                    return profit_action, profit_reason
+
+            # 5. TRAILING STOP LOGIC
+            if self.profit_taking_config["trailing_stop_enabled"]:
+                trailing_action, trailing_reason = self._evaluate_trailing_stop(
+                    position_data, combined_confidence
+                )
+                if trailing_action != PositionAction.STAY:
+                    return trailing_action, trailing_reason
+
+            # 6. CONFIDENCE-BASED POSITION MANAGEMENT
+            if combined_confidence >= self.confidence_thresholds["high"]:
+                return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.confidence_thresholds['high']:.3f}"
+            elif combined_confidence >= self.confidence_thresholds["medium"]:
+                return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within acceptable range)"
+
+            # 7. DEFAULT ACTION
+            return PositionAction.STAY, f"Position maintained: confidence={combined_confidence:.3f}, pnl={unrealized_pnl:.4f}"
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error determining position action: {e}"))
-            return PositionAction.STAY, f"Error: {e}"
+            return PositionAction.STAY, f"Error in position assessment: {e}"
+
+    def _evaluate_profit_taking(
+        self, 
+        unrealized_pnl: float, 
+        combined_confidence: float, 
+        position_data: Dict[str, Any]
+    ) -> tuple[PositionAction, str]:
+        """
+        Evaluate profit-taking opportunities with confidence-based scaling.
+
+        Args:
+            unrealized_pnl: Current unrealized PnL
+            combined_confidence: Combined confidence score
+            position_data: Position data
+
+        Returns:
+            tuple: (PositionAction, reason)
+        """
+        try:
+            # Check if confidence is high enough for profit taking
+            if combined_confidence < self.profit_taking_config["min_confidence_for_profit"]:
+                return PositionAction.STAY, f"Confidence too low for profit taking: {combined_confidence:.3f} < {self.profit_taking_config['min_confidence_for_profit']:.3f}"
+
+            # Calculate confidence-scaled profit targets
+            base_profit_target = self.pnl_thresholds["profit_target"]
+            
+            if self.profit_taking_config["confidence_scaling"]:
+                # Higher confidence = lower profit taking (hold longer for bigger gains)
+                confidence_factor = 1.0 - (combined_confidence - 0.5) * self.profit_taking_config["confidence_profit_multiplier"]
+                scaled_profit_target = base_profit_target * confidence_factor
+            else:
+                scaled_profit_target = base_profit_target
+
+            # Check for full profit target
+            if unrealized_pnl >= scaled_profit_target:
+                return PositionAction.TAKE_PROFIT, f"Profit target reached: {unrealized_pnl:.4f} >= {scaled_profit_target:.4f} (confidence-scaled)"
+
+            # Check for tiered profit taking
+            if self.profit_taking_config["tiered_profit_taking"]:
+                for i, level in enumerate(self.pnl_thresholds["scaling_levels"]):
+                    tier_profit = scaled_profit_target * level
+                    if unrealized_pnl >= tier_profit:
+                        # Check if we haven't already taken profit at this tier
+                        position_id = position_data.get("position_id", "unknown")
+                        if not self._has_taken_profit_at_tier(position_id, i):
+                            return PositionAction.PARTIAL_PROFIT, f"Tier {i+1} profit: {unrealized_pnl:.4f} >= {tier_profit:.4f} (confidence-scaled)"
+
+            return PositionAction.STAY, f"Profit taking not triggered: {unrealized_pnl:.4f} < {scaled_profit_target:.4f}"
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error evaluating profit taking: {e}"))
+            return PositionAction.STAY, f"Error in profit evaluation: {e}"
+
+    def _evaluate_trailing_stop(
+        self, 
+        position_data: Dict[str, Any], 
+        combined_confidence: float
+    ) -> tuple[PositionAction, str]:
+        """
+        Evaluate trailing stop conditions.
+
+        Args:
+            position_data: Position data
+            combined_confidence: Combined confidence score
+
+        Returns:
+            tuple: (PositionAction, reason)
+        """
+        try:
+            # This is a placeholder for trailing stop logic
+            # In a full implementation, you would:
+            # 1. Calculate ATR-based trailing stop distance
+            # 2. Check if current price has moved against the position
+            # 3. Update trailing stop level if price moves favorably
+            # 4. Trigger exit if trailing stop is hit
+            
+            # For now, return STAY to indicate no trailing stop action needed
+            return PositionAction.STAY, "Trailing stop evaluation (placeholder)"
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
+            return PositionAction.STAY, f"Error in trailing stop evaluation: {e}"
+
+    def _has_taken_profit_at_tier(self, position_id: str, tier: int) -> bool:
+        """
+        Check if profit has already been taken at a specific tier.
+
+        Args:
+            position_id: Position ID
+            tier: Tier level (0-based)
+
+        Returns:
+            bool: True if profit already taken at this tier
+        """
+        try:
+            # This would check position history for previous profit taking at this tier
+            # For now, return False (no previous profit taking)
+            return False
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error checking profit tier: {e}"))
+            return False
 
     def _calculate_unrealized_pnl(self, position_data: Dict[str, Any]) -> float:
         """

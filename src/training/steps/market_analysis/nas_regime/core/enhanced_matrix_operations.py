@@ -2,6 +2,7 @@
 Enhanced Matrix Operations for Perfect NAS Regime System
 
 Integrates with utils/matrix_operations/ for optimized computations.
+Now includes full integration with common utilities and hardware optimization.
 """
 
 import numpy as np
@@ -10,10 +11,27 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from contextlib import contextmanager
 
+# Import enhanced utilities
+from src.utils.common_operations import (
+    safe_divide, safe_log, safe_sqrt, safe_power, 
+    validate_finite, validate_positive, validate_range,
+    safe_mean, safe_std, safe_percentage_change,
+    math_safe, timed_operation, format_bytes,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context
+)
+from src.utils.math_validation import (
+    safe_correlation, safe_covariance, safe_percentile,
+    validate_numeric_array, MathValidationError
+)
+from src.utils.serialization_utils import UniversalSerializer
+
 # Import matrix operations with fallback
 try:
     from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
     from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+    from src.utils.matrix_operations.batch_operations import BatchMatrixOperations
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedOperations
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
@@ -26,22 +44,49 @@ class EnhancedMatrixOperations:
     Enhanced matrix operations for Perfect NAS Regime System.
     
     Integrates with existing matrix operations infrastructure for:
-    - Optimized computations
-    - Hardware acceleration
-    - Memory management
-    - Vectorized operations
+    - Optimized computations with common utilities
+    - Hardware acceleration (M1 GPU/CPU)
+    - Memory management and validation
+    - Vectorized operations with safe math
+    - Serialization and persistence
     """
     
-    def __init__(self, enable_gpu: bool = True, enable_optimization: bool = True):
+    def __init__(self, enable_gpu: bool = True, enable_optimization: bool = True, 
+                 enable_m1_optimization: bool = True):
         """Initialize enhanced matrix operations.
         
         Args:
             enable_gpu: Enable GPU acceleration
             enable_optimization: Enable optimization features
+            enable_m1_optimization: Enable M1-specific optimizations
         """
         self.enable_gpu = enable_gpu
         self.enable_optimization = enable_optimization
+        self.enable_m1_optimization = enable_m1_optimization
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize serialization
+        self.serializer = UniversalSerializer()
+        
+        # Initialize M1 optimizations
+        if enable_m1_optimization:
+            try:
+                self.m1_integration = integrate_with_m1_optimizers()
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.logger.info("✅ M1 optimizations initialized")
+            except Exception as e:
+                self.logger.warning(f"M1 optimization initialization failed: {e}")
+                self.m1_integration = None
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        else:
+            self.m1_integration = None
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
         
         # Initialize unified matrix operations if available
         if MATRIX_OPS_AVAILABLE:
@@ -53,41 +98,84 @@ class EnhancedMatrixOperations:
                     optimization_level='aggressive'
                 )
                 self.vectorized_core = get_vectorized_processing_core()
+                self.batch_ops = BatchMatrixOperations()
+                self.hardware_ops = HardwareOptimizedOperations()
                 self.logger.info("✅ Enhanced matrix operations initialized with full integration")
             except Exception as e:
                 self.logger.warning(f"Matrix operations initialization failed: {e}")
                 self.matrix_ops = None
                 self.vectorized_core = None
+                self.batch_ops = None
+                self.hardware_ops = None
         else:
             self.matrix_ops = None
             self.vectorized_core = None
+            self.batch_ops = None
+            self.hardware_ops = None
             self.logger.warning("Matrix operations not available - using fallback implementations")
     
+    @timed_operation
     def normalize_data(self, data: np.ndarray, method: str = 'z_score') -> np.ndarray:
-        """Normalize data using optimized operations."""
+        """Normalize data using optimized operations with safe math validation."""
         try:
-            if self.matrix_ops:
-                return self.matrix_ops.normalize_data(data, method=method)
-            else:
-                # Fallback normalization
-                if method == 'z_score':
-                    return (data - np.mean(data, axis=0)) / (np.std(data, axis=0) + 1e-8)
-                elif method == 'min_max':
-                    return (data - np.min(data, axis=0)) / (np.max(data, axis=0) - np.min(data, axis=0) + 1e-8)
+            # Validate input data
+            validate_numeric_array(data, "input_data")
+            
+            # Use memory checkpoint for large operations
+            with memory_checkpoint(f"normalize_data_{method}"):
+                if self.matrix_ops:
+                    return self.matrix_ops.normalize_data(data, method=method)
                 else:
-                    return data
+                    # Enhanced fallback normalization with safe math
+                    if method == 'z_score':
+                        mean_vals = safe_mean(data)
+                        std_vals = safe_std(data)
+                        return safe_divide(data - mean_vals, std_vals + 1e-8)
+                    elif method == 'min_max':
+                        min_vals = np.min(data, axis=0)
+                        max_vals = np.max(data, axis=0)
+                        range_vals = max_vals - min_vals + 1e-8
+                        return safe_divide(data - min_vals, range_vals)
+                    elif method == 'robust':
+                        # Robust normalization using median and IQR
+                        median_vals = np.median(data, axis=0)
+                        q75 = np.percentile(data, 75, axis=0)
+                        q25 = np.percentile(data, 25, axis=0)
+                        iqr = q75 - q25 + 1e-8
+                        return safe_divide(data - median_vals, iqr)
+                    else:
+                        return data
         except Exception as e:
             self.logger.warning(f"Data normalization failed: {e}")
             return data
     
+    @timed_operation
     def calculate_correlation_matrix(self, data: np.ndarray) -> np.ndarray:
-        """Calculate correlation matrix with optimizations."""
+        """Calculate correlation matrix with optimizations and safe math."""
         try:
-            if self.matrix_ops:
-                return self.matrix_ops.calculate_correlation_matrix(data)
-            else:
-                # Fallback correlation calculation
-                return np.corrcoef(data.T)
+            # Validate input data
+            validate_numeric_array(data, "correlation_data")
+            
+            # Use GPU context if available
+            with gpu_context("correlation_calculation"):
+                if self.matrix_ops:
+                    return self.matrix_ops.calculate_correlation_matrix(data)
+                else:
+                    # Enhanced fallback correlation calculation with safe math
+                    if data.shape[1] == 1:
+                        return np.array([[1.0]])
+                    
+                    # Calculate pairwise correlations safely
+                    n_features = data.shape[1]
+                    corr_matrix = np.eye(n_features)
+                    
+                    for i in range(n_features):
+                        for j in range(i + 1, n_features):
+                            corr = safe_correlation(data[:, i], data[:, j])
+                            corr_matrix[i, j] = corr
+                            corr_matrix[j, i] = corr
+                    
+                    return corr_matrix
         except Exception as e:
             self.logger.warning(f"Correlation matrix calculation failed: {e}")
             return np.eye(data.shape[1])
@@ -281,3 +369,122 @@ class EnhancedMatrixOperations:
         finally:
             # Cleanup if needed
             pass
+    
+    def calculate_enhanced_features(self, data: np.ndarray, window: int = 20) -> Dict[str, np.ndarray]:
+        """Calculate enhanced features using safe math operations."""
+        try:
+            validate_numeric_array(data, "feature_data")
+            
+            features = {}
+            
+            # Volatility features
+            features['volatility'] = self.calculate_volatility_features(data, window)
+            
+            # Momentum features
+            features['momentum'] = self.calculate_momentum_features(data, window)
+            
+            # Technical indicators
+            technical_indicators = self.calculate_technical_indicators(data, window)
+            features.update(technical_indicators)
+            
+            # Statistical features
+            features['skewness'] = self._calculate_rolling_skewness(data, window)
+            features['kurtosis'] = self._calculate_rolling_kurtosis(data, window)
+            
+            # Regime-specific features
+            features['regime_strength'] = self._calculate_regime_strength(data, window)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced feature calculation failed: {e}")
+            return {}
+    
+    def _calculate_rolling_skewness(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling skewness with safe math."""
+        try:
+            skewness = np.zeros_like(data)
+            for i in range(window, len(data)):
+                window_data = data[i-window:i]
+                mean_val = safe_mean(window_data)
+                std_val = safe_std(window_data)
+                if std_val > 0:
+                    normalized = safe_divide(window_data - mean_val, std_val)
+                    skewness[i] = safe_mean(normalized ** 3)
+            return skewness
+        except Exception as e:
+            self.logger.warning(f"Rolling skewness calculation failed: {e}")
+            return np.zeros_like(data)
+    
+    def _calculate_rolling_kurtosis(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling kurtosis with safe math."""
+        try:
+            kurtosis = np.zeros_like(data)
+            for i in range(window, len(data)):
+                window_data = data[i-window:i]
+                mean_val = safe_mean(window_data)
+                std_val = safe_std(window_data)
+                if std_val > 0:
+                    normalized = safe_divide(window_data - mean_val, std_val)
+                    kurtosis[i] = safe_mean(normalized ** 4) - 3  # Excess kurtosis
+            return kurtosis
+        except Exception as e:
+            self.logger.warning(f"Rolling kurtosis calculation failed: {e}")
+            return np.zeros_like(data)
+    
+    def _calculate_regime_strength(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate regime strength indicator."""
+        try:
+            strength = np.zeros_like(data)
+            for i in range(window, len(data)):
+                window_data = data[i-window:i]
+                # Calculate consistency within window
+                mean_val = safe_mean(window_data)
+                deviations = np.abs(window_data - mean_val)
+                consistency = 1.0 / (1.0 + safe_mean(deviations))
+                strength[i] = consistency
+            return strength
+        except Exception as e:
+            self.logger.warning(f"Regime strength calculation failed: {e}")
+            return np.ones_like(data)
+    
+    def save_operations_state(self, filepath: str) -> bool:
+        """Save current operations state using serialization utils."""
+        try:
+            state = {
+                'matrix_ops_available': MATRIX_OPS_AVAILABLE,
+                'm1_integration': self.m1_integration,
+                'performance_metrics': self.get_performance_metrics(),
+                'optimization_settings': {
+                    'enable_gpu': self.enable_gpu,
+                    'enable_optimization': self.enable_optimization,
+                    'enable_m1_optimization': self.enable_m1_optimization
+                }
+            }
+            
+            return self.serializer.save(state, filepath)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save operations state: {e}")
+            return False
+    
+    def load_operations_state(self, filepath: str) -> bool:
+        """Load operations state using serialization utils."""
+        try:
+            state = self.serializer.load(filepath)
+            if state is None:
+                return False
+            
+            # Restore settings if available
+            if 'optimization_settings' in state:
+                settings = state['optimization_settings']
+                self.enable_gpu = settings.get('enable_gpu', True)
+                self.enable_optimization = settings.get('enable_optimization', True)
+                self.enable_m1_optimization = settings.get('enable_m1_optimization', True)
+            
+            self.logger.info("✅ Operations state loaded successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load operations state: {e}")
+            return False

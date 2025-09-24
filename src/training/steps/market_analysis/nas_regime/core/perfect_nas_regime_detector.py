@@ -33,6 +33,21 @@ from .enhanced_matrix_operations import EnhancedMatrixOperations
 from .enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommonConfig
 from .enhanced_nas_clustering_integration import EnhancedNASClusteringIntegration, NASClusteringConfig
 from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
+from .enhanced_data_operations import EnhancedDataOperations
+
+# Import enhanced utilities
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, ensure_directory,
+    safe_file_exists, timed_operation, format_bytes,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_finite,
+    validate_positive, validate_range, safe_correlation,
+    validate_numeric_array, MathValidationError
+)
+from src.utils.serialization_utils import UniversalSerializer
 
 # Enhanced-only implementation with full tool integration
 
@@ -88,6 +103,9 @@ class PerfectNASRegimeDetector:
         # Check if using enhanced configuration with adaptive thresholds
         self.using_adaptive_thresholds = isinstance(config, EnhancedPerfectNASConfig)
         
+        # Initialize enhanced utilities
+        self._initialize_enhanced_utilities()
+        
         # Initialize enhanced detector with full tool integration
         self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
 
@@ -109,6 +127,65 @@ class PerfectNASRegimeDetector:
             self.logger.info(f"   Economic Learning: {config.adaptive_thresholds.enable_economic_learning}")
             self.logger.info(f"   Trading Learning: {config.adaptive_thresholds.enable_trading_learning}")
             self.logger.info(f"   Stability Learning: {config.adaptive_thresholds.enable_stability_learning}")
+    
+    def _initialize_enhanced_utilities(self):
+        """Initialize enhanced utility components."""
+        try:
+            # Initialize serialization
+            self.serializer = UniversalSerializer()
+            
+            # Initialize M1 optimizations
+            self.m1_integration = integrate_with_m1_optimizers()
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Initialize enhanced data operations
+            self.data_operations = EnhancedDataOperations(
+                data_dir="nas_regime_data",
+                enable_validation=True
+            )
+            
+            # Initialize enhanced matrix operations
+            self.matrix_operations = EnhancedMatrixOperations(
+                enable_gpu=True,
+                enable_optimization=True,
+                enable_m1_optimization=True
+            )
+            
+            # Initialize enhanced ML common integration
+            ml_config = MLCommonConfig(
+                enable_validation=True,
+                enable_feature_selection=True,
+                enable_ensemble_methods=True,
+                enable_evaluation=True,
+                enable_optimization=True,
+                enable_hardware_optimization=True,
+                enable_m1_optimization=True,
+                enable_serialization=True,
+                math_validation_level='standard',
+                enable_safe_math=True,
+                enable_performance_monitoring=True
+            )
+            self.ml_common_integration = EnhancedMLCommonIntegration(ml_config)
+            
+            self.logger.info("✅ Enhanced utilities initialized successfully")
+            self.logger.info(f"   M1 Integration: {'✅ Available' if self.m1_integration.get('success', False) else '❌ Not available'}")
+            self.logger.info(f"   Data Operations: ✅ Initialized")
+            self.logger.info(f"   Matrix Operations: ✅ Initialized")
+            self.logger.info(f"   ML Common Integration: ✅ Initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced utilities initialization failed: {e}")
+            # Initialize fallback components
+            self.serializer = None
+            self.m1_integration = None
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.data_operations = None
+            self.matrix_operations = None
+            self.ml_common_integration = None
 
     def _initialize_shared_utilities(self):
         """Initialize shared utilities from hybrid regime system."""
@@ -167,6 +244,7 @@ class PerfectNASRegimeDetector:
             self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
             self.position_analyzer = None
 
+    @timed_operation
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
                       timestamps: Optional[np.ndarray] = None,
@@ -187,30 +265,134 @@ class PerfectNASRegimeDetector:
         Returns:
             PerfectNASResult with regime detection results
         """
-        # Learn adaptive thresholds if enabled
-        if (self.using_adaptive_thresholds and 
-            learn_thresholds and 
-            self.config.should_learn_thresholds(len(market_data))):
-            
-            self.logger.info("🧠 Learning adaptive thresholds from data...")
-            threshold_learning_success = self.config.learn_thresholds(
-                market_data, np.array([]), timestamps
+        try:
+            # Use memory checkpoint for large datasets
+            with memory_checkpoint("regime_detection"):
+                # Pre-process market data using enhanced data operations
+                if isinstance(market_data, pd.DataFrame):
+                    # Validate market data
+                    if self.data_operations:
+                        validation_result = self.data_operations.validate_market_data(market_data)
+                        if not validation_result['is_valid']:
+                            self.logger.warning(f"Market data validation failed: {validation_result.get('errors', [])}")
+                        
+                        # Process market data for enhanced features
+                        processed_data = self.data_operations.process_market_data(market_data)
+                    else:
+                        processed_data = market_data
+                    
+                    # Convert to numpy array for processing
+                    market_data_array = processed_data.values
+                else:
+                    market_data_array = market_data
+                    processed_data = None
+                
+                # Validate numeric data using enhanced validation
+                validate_numeric_array(market_data_array, "market_data")
+                
+                # Additional validation using ML common integration if available
+                if self.ml_common_integration:
+                    ml_validation = self.ml_common_integration.validate_data(market_data_array, 'market_data')
+                    if not ml_validation['is_valid']:
+                        self.logger.warning(f"ML validation failed: {ml_validation.get('errors', [])}")
+                
+                # Pre-process data using enhanced matrix operations if available
+                if self.matrix_operations:
+                    with gpu_context("data_preprocessing"):
+                        # Normalize data for better regime detection
+                        normalized_data = self.matrix_operations.normalize_data(market_data_array, method='robust')
+                        
+                        # Calculate enhanced features for regime detection
+                        enhanced_features = self.matrix_operations.calculate_enhanced_features(normalized_data, window=20)
+                        
+                        # Combine original data with enhanced features
+                        if enhanced_features:
+                            feature_arrays = []
+                            for feature_name, feature_data in enhanced_features.items():
+                                if feature_data.ndim == 1:
+                                    feature_arrays.append(feature_data.reshape(-1, 1))
+                                else:
+                                    feature_arrays.append(feature_data)
+                            
+                            if feature_arrays:
+                                enhanced_features_array = np.concatenate(feature_arrays, axis=1)
+                                market_data_array = np.concatenate([market_data_array, enhanced_features_array], axis=1)
+                                self.logger.info(f"✅ Enhanced data with {len(enhanced_features)} feature types")
+                            else:
+                                self.logger.info("⚠️ No enhanced features generated, using original data")
+                else:
+                    self.logger.info("⚠️ Matrix operations not available, using original data")
+                
+                # Learn adaptive thresholds if enabled
+                if (self.using_adaptive_thresholds and 
+                    learn_thresholds and 
+                    self.config.should_learn_thresholds(len(market_data_array))):
+                    
+                    self.logger.info("🧠 Learning adaptive thresholds from data...")
+                    threshold_learning_success = self.config.learn_thresholds(
+                        market_data_array, np.array([]), timestamps
+                    )
+                    
+                    if threshold_learning_success:
+                        self.logger.info("✅ Adaptive thresholds learned successfully")
+                        # Get threshold explanations
+                        explanations = self.config.get_threshold_explanations()
+                        for metric, explanation in explanations.items():
+                            self.logger.info(f"   {metric}: {explanation}")
+                    else:
+                        self.logger.warning("⚠️ Adaptive threshold learning failed, using fallback thresholds")
+                
+                # Use enhanced detector with full tool integration (only mode available)
+                enhanced_result = self.enhanced_detector.detect_regimes(
+                    market_data_array, timestamps, optimize_architecture, enable_meta_learning
+                )
+                
+        except Exception as e:
+            self.logger.error(f"Enhanced regime detection failed: {e}")
+            # Return error result
+            return PerfectNASResult(
+                success=False,
+                regime_predictions=np.array([]),
+                regime_probabilities=np.array([]),
+                economic_significance_scores=np.array([]),
+                trading_viability_scores=np.array([]),
+                regime_stability_scores=np.array([]),
+                transition_probabilities=np.array([]),
+                execution_time=0.0,
+                metadata={'error': str(e)},
+                error_message=str(e)
             )
-            
-            if threshold_learning_success:
-                self.logger.info("✅ Adaptive thresholds learned successfully")
-                # Get threshold explanations
-                explanations = self.config.get_threshold_explanations()
-                for metric, explanation in explanations.items():
-                    self.logger.info(f"   {metric}: {explanation}")
-            else:
-                self.logger.warning("⚠️ Adaptive threshold learning failed, using fallback thresholds")
-        
-        # Use enhanced detector with full tool integration (only mode available)
-        enhanced_result = self.enhanced_detector.detect_regimes(
-            market_data, timestamps, optimize_architecture, enable_meta_learning
-        )
 
+        # Post-process results using enhanced tools
+        if enhanced_result.success and self.matrix_operations:
+            try:
+                with gpu_context("result_postprocessing"):
+                    # Calculate regime stability using enhanced matrix operations
+                    if enhanced_result.regime_predictions is not None and len(enhanced_result.regime_predictions) > 0:
+                        enhanced_stability = self.matrix_operations.calculate_regime_stability(
+                            enhanced_result.regime_predictions, timestamps if timestamps is not None else np.arange(len(enhanced_result.regime_predictions))
+                        )
+                        
+                        # Update stability scores if calculated
+                        if enhanced_stability is not None:
+                            enhanced_result.regime_stability_scores = enhanced_stability
+                            self.logger.info("✅ Enhanced regime stability calculated")
+                    
+                    # Calculate transition probabilities using enhanced operations
+                    if enhanced_result.regime_predictions is not None:
+                        n_regimes = len(np.unique(enhanced_result.regime_predictions))
+                        enhanced_transitions = self.matrix_operations.calculate_transition_probabilities(
+                            enhanced_result.regime_predictions, n_regimes
+                        )
+                        
+                        # Update transition probabilities if calculated
+                        if enhanced_transitions is not None:
+                            enhanced_result.transition_probabilities = enhanced_transitions
+                            self.logger.info("✅ Enhanced transition probabilities calculated")
+                            
+            except Exception as e:
+                self.logger.warning(f"Enhanced post-processing failed: {e}")
+        
         # Convert enhanced result to standard result
         result = PerfectNASResult(
             success=enhanced_result.success,
@@ -238,4 +420,137 @@ class PerfectNASRegimeDetector:
                 'threshold_explanations': self.config.get_threshold_explanations()
             }
         
+        # Add enhanced utilities information to metadata
+        if result.metadata:
+            result.metadata['enhanced_utilities'] = {
+                'data_operations_available': self.data_operations is not None,
+                'matrix_operations_available': self.matrix_operations is not None,
+                'ml_common_integration_available': self.ml_common_integration is not None,
+                'm1_integration_available': self.m1_integration is not None and self.m1_integration.get('success', False),
+                'serialization_available': self.serializer is not None
+            }
+        
         return result
+    
+    def save_detector_state(self, filepath: str) -> bool:
+        """Save detector state using enhanced serialization."""
+        try:
+            if not self.serializer:
+                self.logger.warning("Serialization not available")
+                return False
+            
+            state = {
+                'config': self.config,
+                'using_adaptive_thresholds': self.using_adaptive_thresholds,
+                'enhanced_utilities_status': {
+                    'data_operations': self.data_operations is not None,
+                    'matrix_operations': self.matrix_operations is not None,
+                    'ml_common_integration': self.ml_common_integration is not None,
+                    'm1_integration': self.m1_integration is not None,
+                    'serialization': self.serializer is not None
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # Save state
+            success = self.serializer.save(state, filepath)
+            
+            if success:
+                self.logger.info(f"✅ Detector state saved to {filepath}")
+            else:
+                self.logger.error(f"Failed to save detector state to {filepath}")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save detector state: {e}")
+            return False
+    
+    def load_detector_state(self, filepath: str) -> bool:
+        """Load detector state using enhanced serialization."""
+        try:
+            if not self.serializer:
+                self.logger.warning("Serialization not available")
+                return False
+            
+            state = self.serializer.load(filepath)
+            if state is None:
+                self.logger.error(f"Failed to load state from {filepath}")
+                return False
+            
+            # Restore configuration
+            if 'config' in state:
+                self.config = state['config']
+                self.using_adaptive_thresholds = state.get('using_adaptive_thresholds', False)
+            
+            self.logger.info(f"✅ Detector state loaded from {filepath}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load detector state: {e}")
+            return False
+    
+    def load_market_data(self, symbol: str, interval: str, 
+                        start_date=None, end_date=None, data_type: str = "processed") -> Optional[pd.DataFrame]:
+        """Load market data using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.load_market_data(symbol, interval, start_date, end_date, data_type)
+            else:
+                self.logger.warning("Enhanced data operations not available")
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to load market data: {e}")
+            return None
+    
+    def get_data_quality_report(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Get data quality report using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.get_data_quality_report(data)
+            else:
+                return {'error': 'Enhanced data operations not available'}
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def save_processed_data(self, data: pd.DataFrame, symbol: str, interval: str) -> bool:
+        """Save processed data using enhanced data operations."""
+        try:
+            if self.data_operations:
+                return self.data_operations.save_processed_data(data, symbol, interval, "processed")
+            else:
+                self.logger.warning("Enhanced data operations not available")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to save processed data: {e}")
+            return False
+    
+    def get_enhanced_features(self, data: np.ndarray, window: int = 20) -> Dict[str, np.ndarray]:
+        """Get enhanced features using matrix operations."""
+        try:
+            if self.matrix_operations:
+                return self.matrix_operations.calculate_enhanced_features(data, window)
+            else:
+                return {}
+        except Exception as e:
+            self.logger.error(f"Failed to calculate enhanced features: {e}")
+            return {}
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics from all enhanced utilities."""
+        metrics = {
+            'enhanced_utilities_status': {
+                'data_operations': self.data_operations is not None,
+                'matrix_operations': self.matrix_operations is not None,
+                'ml_common_integration': self.ml_common_integration is not None,
+                'm1_integration': self.m1_integration is not None and self.m1_integration.get('success', False),
+                'serialization': self.serializer is not None
+            }
+        }
+        
+        # Add matrix operations metrics if available
+        if self.matrix_operations:
+            matrix_metrics = self.matrix_operations.get_performance_metrics()
+            metrics['matrix_operations_metrics'] = matrix_metrics
+        
+        return metrics

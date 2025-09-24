@@ -84,7 +84,13 @@ class TreeSearchSpace:
         TreeModelType.RANDOM_FOREST,
         TreeModelType.XGBOOST,
         TreeModelType.LIGHTGBM,
-        TreeModelType.EXTRA_TREES
+        TreeModelType.EXTRA_TREES,
+        TreeModelType.GRADIENT_BOOSTING,
+        TreeModelType.NGBOOST,
+        TreeModelType.QUANTILE_GBDT,
+        TreeModelType.DART,
+        TreeModelType.DEEPGBM,
+        TreeModelType.NODE
     ])
     
     # Parameter ranges
@@ -167,6 +173,60 @@ class TreeSearchSpace:
                     min_value=0.0,
                     max_value=10.0,
                     log_scale=True
+                ),
+                # NGBoost specific parameters
+                'base_learner': ParameterRange(
+                    name='base_learner',
+                    param_type=SearchSpaceType.CATEGORICAL,
+                    choices=['decision_tree', 'extra_tree']
+                ),
+                'natural_gradient': ParameterRange(
+                    name='natural_gradient',
+                    param_type=SearchSpaceType.CATEGORICAL,
+                    choices=[True, False]
+                ),
+                'expected_information': ParameterRange(
+                    name='expected_information',
+                    param_type=SearchSpaceType.CATEGORICAL,
+                    choices=[True, False]
+                ),
+                # DART specific parameters
+                'dart_drop_rate': ParameterRange(
+                    name='dart_drop_rate',
+                    param_type=SearchSpaceType.CONTINUOUS,
+                    min_value=0.0,
+                    max_value=0.5
+                ),
+                'dart_skip_drop': ParameterRange(
+                    name='dart_skip_drop',
+                    param_type=SearchSpaceType.CONTINUOUS,
+                    min_value=0.0,
+                    max_value=1.0
+                ),
+                # DeepGBM specific parameters
+                'num_layers': ParameterRange(
+                    name='num_layers',
+                    param_type=SearchSpaceType.DISCRETE,
+                    min_value=2,
+                    max_value=10
+                ),
+                'layer_size': ParameterRange(
+                    name='layer_size',
+                    param_type=SearchSpaceType.DISCRETE,
+                    min_value=10,
+                    max_value=100
+                ),
+                # Quantile GBDT specific parameters
+                'quantile_alpha': ParameterRange(
+                    name='quantile_alpha',
+                    param_type=SearchSpaceType.CONTINUOUS,
+                    min_value=0.1,
+                    max_value=0.9
+                ),
+                'quantile_loss': ParameterRange(
+                    name='quantile_loss',
+                    param_type=SearchSpaceType.CATEGORICAL,
+                    choices=['pinball', 'huber']
                 )
             }
     

@@ -30,6 +30,12 @@ class TreeModelType(Enum):
     DECISION_TREE = "decision_tree"
     ADABOOST = "adaboost"
     BAGGING = "bagging"
+    # New advanced tree models
+    NGBOOST = "ngboost"
+    QUANTILE_GBDT = "quantile_gbdt"
+    DART = "dart"
+    DEEPGBM = "deepgbm"
+    NODE = "node"
 
 
 class SearchMethod(Enum):
@@ -124,6 +130,25 @@ class MarketRegime(Enum):
     DECELERATION_MICRO = "deceleration_micro"
 
 
+class ClusteringStrategy(Enum):
+    """Clustering strategies for tree-based regime detection."""
+    COMPLEMENTARY = "complementary"  # Feature selection + ensemble
+    ENSEMBLE = "ensemble"  # Multiple tree models combined
+    SEQUENTIAL = "sequential"  # Tree-first approach with refinement
+    SINGLE = "single"  # Single best tree model
+    AUTO = "auto"  # Data-driven strategy selection
+
+
+class ClusteringMetric(Enum):
+    """Clustering quality metrics."""
+    SILHOUETTE = "silhouette_score"
+    CALINSKI_HARABASZ = "calinski_harabasz_score"
+    DAVIES_BOULDIN = "davies_bouldin_score"
+    DUNN_INDEX = "dunn_index"
+    ADJUSTED_RAND = "adjusted_rand_score"
+    MUTUAL_INFO = "mutual_info_score"
+
+
 @dataclass
 class TASConfig:
     """Advanced configuration for Tree Architecture Search with trading optimizations."""
@@ -139,7 +164,14 @@ class TASConfig:
     model_types: List[TreeModelType] = field(default_factory=lambda: [
         TreeModelType.RANDOM_FOREST,
         TreeModelType.XGBOOST,
-        TreeModelType.LIGHTGBM
+        TreeModelType.LIGHTGBM,
+        TreeModelType.EXTRA_TREES,
+        TreeModelType.GRADIENT_BOOSTING,
+        TreeModelType.NGBOOST,
+        TreeModelType.QUANTILE_GBDT,
+        TreeModelType.DART,
+        TreeModelType.DEEPGBM,
+        TreeModelType.NODE
     ])
     
     # Tree architecture constraints
@@ -208,6 +240,23 @@ class TASConfig:
     max_regime_duration: int = 180  # Maximum 3 hours
     data_driven_regimes: bool = True
     regime_stability_threshold: float = 0.7
+
+    # Clustering-specific configuration
+    clustering_strategy: ClusteringStrategy = ClusteringStrategy.AUTO
+    clustering_metrics: List[ClusteringMetric] = field(default_factory=lambda: [
+        ClusteringMetric.SILHOUETTE,
+        ClusteringMetric.CALINSKI_HARABASZ,
+        ClusteringMetric.DAVIES_BOULDIN
+    ])
+    enable_unsupervised_regime_detection: bool = True
+    enable_data_driven_strategy_selection: bool = True
+
+    # Data analysis thresholds for strategy selection
+    tabular_threshold: float = 0.7
+    sequential_threshold: float = 0.5
+    complexity_threshold: float = 0.8
+    volatility_threshold: float = 0.3
+    volume_ratio_threshold: float = 2.0
     
     # Micro-regime configuration
     micro_regime_types: List[MicroRegimeType] = field(default_factory=lambda: [
@@ -350,6 +399,15 @@ class TASConfig:
             'max_regime_duration': self.max_regime_duration,
             'data_driven_regimes': self.data_driven_regimes,
             'regime_stability_threshold': self.regime_stability_threshold,
+            'clustering_strategy': self.clustering_strategy.value,
+            'clustering_metrics': [m.value for m in self.clustering_metrics],
+            'enable_unsupervised_regime_detection': self.enable_unsupervised_regime_detection,
+            'enable_data_driven_strategy_selection': self.enable_data_driven_strategy_selection,
+            'tabular_threshold': self.tabular_threshold,
+            'sequential_threshold': self.sequential_threshold,
+            'complexity_threshold': self.complexity_threshold,
+            'volatility_threshold': self.volatility_threshold,
+            'volume_ratio_threshold': self.volume_ratio_threshold,
             'micro_regime_types': [t.value for t in self.micro_regime_types],
             'micro_regime_sensitivity': self.micro_regime_sensitivity,
             'micro_regime_detection_threshold': self.micro_regime_detection_threshold,
@@ -417,7 +475,11 @@ class TASConfig:
             config_dict['micro_regime_types'] = [MicroRegimeType(t) for t in config_dict['micro_regime_types']]
         if 'trading_objectives' in config_dict:
             config_dict['trading_objectives'] = [TradingObjective(o) for o in config_dict['trading_objectives']]
-        
+        if 'clustering_strategy' in config_dict:
+            config_dict['clustering_strategy'] = ClusteringStrategy(config_dict['clustering_strategy'])
+        if 'clustering_metrics' in config_dict:
+            config_dict['clustering_metrics'] = [ClusteringMetric(m) for m in config_dict['clustering_metrics']]
+
         return cls(**config_dict)
 
 

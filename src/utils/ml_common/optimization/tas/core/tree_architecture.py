@@ -41,6 +41,23 @@ class TreeArchitectureCandidate:
     colsample_bytree: Optional[float] = None
     reg_alpha: Optional[float] = None
     reg_lambda: Optional[float] = None
+
+    # NGBoost specific parameters
+    base_learner: Optional[str] = None
+    natural_gradient: Optional[bool] = None
+    expected_information: Optional[bool] = None
+
+    # DART specific parameters
+    dart_drop_rate: Optional[float] = None
+    dart_skip_drop: Optional[float] = None
+
+    # DeepGBM specific parameters
+    num_layers: Optional[int] = None
+    layer_size: Optional[int] = None
+
+    # Quantile GBDT specific parameters
+    quantile_alpha: Optional[float] = None
+    quantile_loss: Optional[str] = None
     
     # Performance metrics
     scores: Dict[str, float] = field(default_factory=dict)
@@ -69,6 +86,16 @@ class TreeArchitectureCandidate:
             self.subsample = self._get_default_subsample()
         if self.colsample_bytree is None:
             self.colsample_bytree = self._get_default_colsample_bytree()
+        if self.base_learner is None:
+            self.base_learner = self._get_default_base_learner()
+        if self.natural_gradient is None:
+            self.natural_gradient = self._get_default_natural_gradient()
+        if self.dart_drop_rate is None:
+            self.dart_drop_rate = self._get_default_dart_drop_rate()
+        if self.num_layers is None:
+            self.num_layers = self._get_default_num_layers()
+        if self.quantile_alpha is None:
+            self.quantile_alpha = self._get_default_quantile_alpha()
     
     def _get_default_learning_rate(self) -> float:
         """Get default learning rate based on model type."""
@@ -97,9 +124,31 @@ class TreeArchitectureCandidate:
         defaults = {
             TreeModelType.XGBOOST: 1.0,
             TreeModelType.LIGHTGBM: 1.0,
-            TreeModelType.GRADIENT_BOOSTING: 1.0
+            TreeModelType.GRADIENT_BOOSTING: 1.0,
+            TreeModelType.DART: 1.0,
+            TreeModelType.DEEPGBM: 1.0
         }
         return defaults.get(self.model_type, 1.0)
+
+    def _get_default_base_learner(self) -> str:
+        """Get default base learner for NGBoost."""
+        return "decision_tree"
+
+    def _get_default_natural_gradient(self) -> bool:
+        """Get default natural gradient setting."""
+        return True
+
+    def _get_default_dart_drop_rate(self) -> float:
+        """Get default DART drop rate."""
+        return 0.1
+
+    def _get_default_num_layers(self) -> int:
+        """Get default number of layers for DeepGBM."""
+        return 3
+
+    def _get_default_quantile_alpha(self) -> float:
+        """Get default quantile alpha."""
+        return 0.5
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert architecture to dictionary."""
@@ -115,6 +164,15 @@ class TreeArchitectureCandidate:
             'colsample_bytree': self.colsample_bytree,
             'reg_alpha': self.reg_alpha,
             'reg_lambda': self.reg_lambda,
+            'base_learner': self.base_learner,
+            'natural_gradient': self.natural_gradient,
+            'expected_information': self.expected_information,
+            'dart_drop_rate': self.dart_drop_rate,
+            'dart_skip_drop': self.dart_skip_drop,
+            'num_layers': self.num_layers,
+            'layer_size': self.layer_size,
+            'quantile_alpha': self.quantile_alpha,
+            'quantile_loss': self.quantile_loss,
             'scores': self.scores,
             'overall_score': self.overall_score,
             'status': self.status.value,
@@ -164,7 +222,25 @@ class TreeArchitectureCandidate:
             hyperparams['reg_alpha'] = self.reg_alpha
         if self.reg_lambda is not None:
             hyperparams['reg_lambda'] = self.reg_lambda
-        
+        if self.base_learner is not None:
+            hyperparams['base_learner'] = self.base_learner
+        if self.natural_gradient is not None:
+            hyperparams['natural_gradient'] = self.natural_gradient
+        if self.expected_information is not None:
+            hyperparams['expected_information'] = self.expected_information
+        if self.dart_drop_rate is not None:
+            hyperparams['dart_drop_rate'] = self.dart_drop_rate
+        if self.dart_skip_drop is not None:
+            hyperparams['dart_skip_drop'] = self.dart_skip_drop
+        if self.num_layers is not None:
+            hyperparams['num_layers'] = self.num_layers
+        if self.layer_size is not None:
+            hyperparams['layer_size'] = self.layer_size
+        if self.quantile_alpha is not None:
+            hyperparams['quantile_alpha'] = self.quantile_alpha
+        if self.quantile_loss is not None:
+            hyperparams['quantile_loss'] = self.quantile_loss
+
         return hyperparams
     
     def get_complexity_score(self) -> float:

@@ -140,6 +140,54 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Error making trading decision for {symbol}: {e}")
 
+    async def demonstrate_position_management(self):
+        """Demonstrate position management features."""
+        try:
+            symbol = "BTCUSDT"
+            logger.info(f"📊 Demonstrating position management for {symbol}")
+
+            # Get asset data (formatted as klines)
+            asset_data = await self.trading_manager.get_asset_data(symbol, "1m", 10)
+            if asset_data:
+                logger.info(f"✅ Retrieved {len(asset_data)} data points for {symbol}")
+                logger.info(f"Latest price: {asset_data[-1].close}")
+
+            # Open a position with leverage
+            logger.info("🔓 Opening position with leverage...")
+            position_result = await self.trading_manager.open_position(
+                symbol=symbol,
+                side="BUY",
+                quantity=0.001,
+                leverage=5.0,  # 5x leverage
+                order_type="MARKET"
+            )
+
+            if position_result and position_result.get("success"):
+                trade_id = position_result.get("trade_id")
+                logger.info(f"✅ Position opened with trade ID: {trade_id}")
+
+                # Get trade information
+                trade_info = await self.trading_manager.get_trade_info(symbol, trade_id)
+                if trade_info:
+                    logger.info(f"📋 Trade info: {trade_info}")
+
+                # Wait a bit and then close the position
+                await asyncio.sleep(5)  # Wait 5 seconds
+
+                logger.info("🔒 Closing position...")
+                close_result = await self.trading_manager.close_position(symbol, trade_id)
+
+                if close_result and close_result.get("success"):
+                    logger.info(f"✅ Position closed successfully. PnL: {close_result.get('pnl', 0)}")
+                else:
+                    logger.error("❌ Failed to close position")
+
+            else:
+                logger.error("❌ Failed to open position")
+
+        except Exception as e:
+            logger.error(f"Error in position management demo: {e}")
+
     async def _place_buy_order(self, symbol: str, price: float):
         """Place a buy order."""
         try:
@@ -278,6 +326,9 @@ async def main():
 
         # Start trading
         await bot.start()
+
+        # Demonstrate position management features
+        await bot.demonstrate_position_management()
 
     except KeyboardInterrupt:
         logger.info("Shutting down trading bot...")

@@ -346,6 +346,62 @@ class MexcExchange(BaseExchange):
         }
         return await self._make_request("GET", "/order", params, signed=True) or {}
 
+    async def _open_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None
+    ) -> dict[str, Any]:
+        """Open raw position on MEXC."""
+        order_params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": order_type.upper(),
+            "quantity": quantity
+        }
+
+        if price is not None:
+            order_params["price"] = price
+
+        return await self._make_request("POST", "/order", order_params, signed=True) or {}
+
+    async def _close_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        trade_id: Any
+    ) -> dict[str, Any]:
+        """Close raw position on MEXC."""
+        order_params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": quantity
+        }
+
+        # Close position by creating opposite order
+        result = await self._make_request("POST", "/order", order_params, signed=True)
+
+        if result:
+            return {
+                "success": True,
+                "pnl": 0,  # Would need to calculate based on position
+                "close_order_id": result.get("orderId")
+            }
+        return {}
+
+    async def _get_trade_info_raw(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """Get raw trade information from MEXC."""
+        params = {
+            "symbol": symbol.upper(),
+            "orderId": str(trade_id)
+        }
+
+        return await self._make_request("GET", "/order", params, signed=True) or {}
+
     # Additional MEXC-specific methods for data collection
 
     async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:

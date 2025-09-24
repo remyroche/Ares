@@ -343,6 +343,58 @@ class GateioExchange(BaseExchange):
         endpoint = f"/spot/orders/{order_id}"
         return await self._make_request("GET", endpoint, signed=True) or {}
 
+    async def _open_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None
+    ) -> dict[str, Any]:
+        """Open raw position on GateIO."""
+        order_params = {
+            "currency_pair": symbol.upper(),
+            "side": side.lower(),
+            "type": order_type.lower(),
+            "amount": str(quantity)
+        }
+
+        if price is not None:
+            order_params["price"] = str(price)
+
+        return await self._make_request("POST", "/spot/orders", order_params, signed=True) or {}
+
+    async def _close_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        trade_id: Any
+    ) -> dict[str, Any]:
+        """Close raw position on GateIO."""
+        order_params = {
+            "currency_pair": symbol.upper(),
+            "side": side.lower(),
+            "type": "market",
+            "amount": str(quantity)
+        }
+
+        # Close position by creating opposite order
+        result = await self._make_request("POST", "/spot/orders", order_params, signed=True)
+
+        if result:
+            return {
+                "success": True,
+                "pnl": 0,  # Would need to calculate based on position
+                "close_order_id": result.get("id")
+            }
+        return {}
+
+    async def _get_trade_info_raw(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """Get raw trade information from GateIO."""
+        endpoint = f"/spot/orders/{trade_id}"
+        return await self._make_request("GET", endpoint, signed=True) or {}
+
     # Additional GateIO-specific methods for data collection
 
     async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:

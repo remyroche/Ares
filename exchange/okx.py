@@ -376,6 +376,64 @@ class OkxExchange(BaseExchange):
         }
         return await self._make_request("GET", "/trade/order", params, signed=True) or {}
 
+    async def _open_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None
+    ) -> dict[str, Any]:
+        """Open raw position on OKX."""
+        order_params = {
+            "instId": symbol.upper(),
+            "tdMode": "cross",  # Cross margin mode for futures
+            "side": side.lower(),
+            "ordType": order_type.lower(),
+            "sz": str(quantity)
+        }
+
+        if price is not None:
+            order_params["px"] = str(price)
+
+        return await self._make_request("POST", "/trade/order", order_params, signed=True) or {}
+
+    async def _close_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        trade_id: Any
+    ) -> dict[str, Any]:
+        """Close raw position on OKX."""
+        order_params = {
+            "instId": symbol.upper(),
+            "tdMode": "cross",
+            "side": side.lower(),
+            "ordType": "market",
+            "sz": str(quantity)
+        }
+
+        # Close position by creating opposite order
+        result = await self._make_request("POST", "/trade/order", order_params, signed=True)
+
+        if result and result.get("code") == "0":
+            return {
+                "success": True,
+                "pnl": 0,  # Would need to calculate based on position
+                "close_order_id": result.get("data", [{}])[0].get("ordId")
+            }
+        return {}
+
+    async def _get_trade_info_raw(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """Get raw trade information from OKX."""
+        params = {
+            "instId": symbol.upper(),
+            "ordId": str(trade_id)
+        }
+
+        return await self._make_request("GET", "/trade/order", params, signed=True) or {}
+
     # Additional OKX-specific methods for data collection
 
     async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:

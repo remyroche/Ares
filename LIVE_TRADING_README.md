@@ -60,6 +60,13 @@ The live trading system follows a modular, exchange-agnostic architecture with t
 - Connection pooling and rate limiting
 - Backtesting compatibility
 
+### ✅ Advanced Position Management
+- Open positions with size & leverage, receive trade ID
+- Close positions using trade ID
+- Get detailed trade information by trade ID
+- Get asset data formatted as klines
+- Real-time position tracking and P&L calculation
+
 ## Directory Structure
 
 ```
@@ -135,6 +142,71 @@ trade_decision = TradeDecision(
 
 # Place order
 result = await trading_manager.place_order(trade_decision)
+```
+
+### Position Management
+
+#### Opening Positions with Leverage
+
+```python
+# Open a position with leverage
+position_result = await trading_manager.open_position(
+    symbol="BTCUSDT",
+    side="BUY",                    # "BUY" or "SELL"
+    quantity=0.001,               # Position size
+    leverage=5.0,                 # 5x leverage
+    order_type="MARKET",          # "MARKET" or "LIMIT"
+    price=None                    # Price for limit orders
+)
+
+if position_result and position_result.get("success"):
+    trade_id = position_result.get("trade_id")
+    print(f"Position opened with trade ID: {trade_id}")
+```
+
+#### Closing Positions
+
+```python
+# Close position using trade ID
+close_result = await trading_manager.close_position("BTCUSDT", trade_id)
+
+if close_result and close_result.get("success"):
+    pnl = close_result.get("pnl", 0)
+    print(f"Position closed. P&L: {pnl}")
+```
+
+#### Getting Trade Information
+
+```python
+# Get detailed trade information
+trade_info = await trading_manager.get_trade_info("BTCUSDT", trade_id)
+
+if trade_info:
+    print(f"Trade details: {trade_info}")
+```
+
+#### Getting Asset Data (Klines)
+
+```python
+# Get recent market data
+recent_data = await trading_manager.get_asset_data("BTCUSDT", "1m", 100)
+
+# Get historical data with time range
+from datetime import datetime, timedelta
+end_time = datetime.now()
+start_time = end_time - timedelta(hours=24)
+
+historical_data = await trading_manager.get_asset_data(
+    "BTCUSDT",
+    "5m",
+    100,
+    start_time,
+    end_time
+)
+
+# Access kline data
+for data_point in recent_data[-5:]:  # Last 5 data points
+    print(f"Time: {data_point.timestamp}, Price: {data_point.close}, Volume: {data_point.volume}")
 ```
 
 ### Data Streaming

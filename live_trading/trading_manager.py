@@ -299,6 +299,135 @@ class TradingManager:
             self.logger.error(f"❌ Error getting open orders: {e}")
             return []
 
+    async def open_position(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        leverage: float = 1.0,
+        order_type: str = "MARKET",
+        price: float | None = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Open a position with specified size and leverage.
+
+        Args:
+            symbol: Trading symbol
+            side: Position side ("BUY" or "SELL")
+            quantity: Position quantity
+            leverage: Leverage multiplier
+            order_type: Order type ("MARKET" or "LIMIT")
+            price: Price for limit orders
+
+        Returns:
+            Dictionary containing trade information including trade ID
+        """
+        try:
+            if not self.exchange:
+                return None
+
+            result = await self.exchange.open_position(
+                symbol, side, quantity, leverage, order_type, price
+            )
+
+            if result and result.get("success"):
+                self.logger.info(f"✅ Position opened: {symbol} {side} {quantity} @ {leverage}x leverage")
+                return result
+            else:
+                self.logger.error(f"❌ Failed to open position: {result}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error opening position: {e}")
+            return None
+
+    async def close_position(self, symbol: str, trade_id: Any) -> Optional[Dict[str, Any]]:
+        """
+        Close a position using trade ID.
+
+        Args:
+            symbol: Trading symbol
+            trade_id: Trade ID to close
+
+        Returns:
+            Dictionary containing close result
+        """
+        try:
+            if not self.exchange:
+                return None
+
+            result = await self.exchange.close_position(symbol, trade_id)
+
+            if result and result.get("success"):
+                self.logger.info(f"✅ Position closed: {symbol} with trade ID {trade_id}")
+                return result
+            else:
+                self.logger.error(f"❌ Failed to close position: {result}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error closing position: {e}")
+            return None
+
+    async def get_trade_info(self, symbol: str, trade_id: Any) -> Optional[Dict[str, Any]]:
+        """
+        Get information about a trade using trade ID.
+
+        Args:
+            symbol: Trading symbol
+            trade_id: Trade ID to query
+
+        Returns:
+            Dictionary containing trade information
+        """
+        try:
+            if not self.exchange:
+                return None
+
+            result = await self.exchange.get_trade_info(symbol, trade_id)
+
+            if result and result.get("success", True):
+                self.logger.info(f"✅ Retrieved trade info: {symbol} {trade_id}")
+                return result
+            else:
+                self.logger.error(f"❌ Failed to get trade info: {result}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error getting trade info: {e}")
+            return None
+
+    async def get_asset_data(
+        self,
+        symbol: str,
+        interval: str = "1m",
+        limit: int = 100,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[MarketData]:
+        """
+        Get asset data formatted as klines.
+
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            limit: Number of data points
+            start_time: Start time for historical data
+            end_time: End time for historical data
+
+        Returns:
+            List of MarketData objects
+        """
+        try:
+            if not self.exchange:
+                return []
+
+            return await self.exchange.get_asset_data(symbol, interval, limit, start_time, end_time)
+
+        except Exception as e:
+            self.logger.error(f"❌ Error getting asset data: {e}")
+            return []
+
     def _check_trade_limits(self) -> bool:
         """Check if daily trade limits are exceeded."""
         if self.daily_trade_count >= self.config.max_daily_trades:

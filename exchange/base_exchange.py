@@ -253,6 +253,225 @@ class BaseExchange(IExchangeClient, ABC):
         if self.exchange and hasattr(self.exchange, "close"):
             await self.exchange.close()
 
+    # --- Position and Trade Management ---
+
+    async def open_position(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        leverage: float = 1.0,
+        order_type: str = "MARKET",
+        price: float | None = None
+    ) -> dict[str, Any]:
+        """
+        Open a position with specified size and leverage.
+
+        Args:
+            symbol: Trading symbol
+            side: Position side ("BUY" or "SELL")
+            quantity: Position quantity
+            leverage: Leverage multiplier
+            order_type: Order type ("MARKET" or "LIMIT")
+            price: Price for limit orders
+
+        Returns:
+            Dictionary containing trade information including trade ID
+        """
+        try:
+            # Set leverage first if different from current
+            current_leverage = await self._get_current_leverage(symbol)
+            if current_leverage != leverage:
+                await self.set_leverage(symbol, leverage)
+
+            # Create the position opening order
+            result = await self._open_position_raw(symbol, side, order_type, quantity, price)
+
+            if result and result.get("orderId"):
+                return {
+                    "success": True,
+                    "trade_id": result["orderId"],
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": quantity,
+                    "leverage": leverage,
+                    "order_type": order_type,
+                    "price": price or result.get("avgPrice", 0),
+                    "timestamp": datetime.now()
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to open position",
+                    "symbol": symbol
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error opening position: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "symbol": symbol
+            }
+
+    @abstractmethod
+    async def _open_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None
+    ) -> dict[str, Any]:
+        """Open raw position on exchange. Must be implemented by subclasses."""
+
+    async def close_position(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """
+        Close a position using trade ID.
+
+        Args:
+            symbol: Trading symbol
+            trade_id: Trade ID to close
+
+        Returns:
+            Dictionary containing close result
+        """
+        try:
+            # Get position information
+            position_info = await self.get_position_risk(symbol)
+            if not position_info:
+                return {
+                    "success": False,
+                    "error": "Position not found",
+                    "symbol": symbol
+                }
+
+            # Determine close side and quantity
+            position_qty = float(position_info.get("positionAmt", 0))
+            if position_qty == 0:
+                return {
+                    "success": False,
+                    "error": "No position to close",
+                    "symbol": symbol
+                }
+
+            close_side = "SELL" if position_qty > 0 else "BUY"
+            close_quantity = abs(position_qty)
+
+            # Close the position
+            result = await self._close_position_raw(symbol, close_side, close_quantity, trade_id)
+
+            if result:
+                return {
+                    "success": True,
+                    "trade_id": trade_id,
+                    "symbol": symbol,
+                    "close_side": close_side,
+                    "close_quantity": close_quantity,
+                    "pnl": result.get("pnl", 0),
+                    "timestamp": datetime.now()
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to close position",
+                    "symbol": symbol,
+                    "trade_id": trade_id
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error closing position: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "symbol": symbol,
+                "trade_id": trade_id
+            }
+
+    @abstractmethod
+    async def _close_position_raw(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        trade_id: Any
+    ) -> dict[str, Any]:
+        """Close raw position on exchange. Must be implemented by subclasses."""
+
+    async def get_trade_info(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """
+        Get information about a trade using trade ID.
+
+        Args:
+            symbol: Trading symbol
+            trade_id: Trade ID to query
+
+        Returns:
+            Dictionary containing trade information
+        """
+        try:
+            return await self._get_trade_info_raw(symbol, trade_id)
+        except Exception as e:
+            self.logger.error(f"Error getting trade info: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "symbol": symbol,
+                "trade_id": trade_id
+            }
+
+    @abstractmethod
+    async def _get_trade_info_raw(self, symbol: str, trade_id: Any) -> dict[str, Any]:
+        """Get raw trade information from exchange. Must be implemented by subclasses."""
+
+    async def get_asset_data(
+        self,
+        symbol: str,
+        interval: str = "1m",
+        limit: int = 100,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None
+    ) -> list[MarketData]:
+        """
+        Get asset data formatted as klines.
+
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            limit: Number of data points
+            start_time: Start time for historical data
+            end_time: End time for historical data
+
+        Returns:
+            List of MarketData objects
+        """
+        try:
+            if start_time and end_time:
+                return await self.get_historical_klines(symbol, interval, start_time, end_time, limit)
+            else:
+                return await self.get_klines(symbol, interval, limit)
+        except Exception as e:
+            self.logger.error(f"Error getting asset data: {e}")
+            return []
+
+    async def _get_current_leverage(self, symbol: str) -> float:
+        """
+        Get current leverage for a symbol.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            Current leverage or 1.0 if not available
+        """
+        try:
+            position_risk = await self.get_position_risk(symbol)
+            if position_risk:
+                return float(position_risk.get("leverage", 1))
+            return 1.0
+        except Exception:
+            return 1.0
+
     def _convert_timestamp(self, timestamp: Any) -> datetime:
         """Convert exchange timestamp to datetime."""
         if isinstance(timestamp, int | float):

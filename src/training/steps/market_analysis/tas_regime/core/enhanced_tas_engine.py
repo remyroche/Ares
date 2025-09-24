@@ -79,11 +79,15 @@ class TASConfig:
     enable_performance_estimation: bool = True
     enable_architecture_encoding: bool = True
 
-    # Hardware constraints
+    # Hardware constraints and optimization
     max_memory_mb: int = 8192
     max_training_time_per_arch: int = 600  # 10 minutes
     parallel_evaluation: bool = True
     n_workers: int = 4
+
+    # Hardware optimization
+    enable_hardware_optimization: bool = True
+    hardware_optimizer = None
 
     # Tree-specific constraints
     max_trees: int = 50
@@ -132,6 +136,9 @@ class EnhancedTASEngine:
         # Performance tracking
         self.start_time = None
         self.evaluation_times = []
+
+        # Initialize hardware optimization
+        self._initialize_hardware_optimization()
 
         self.logger.info("✅ Enhanced TAS Engine initialized with shared ML utilities")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
@@ -206,6 +213,56 @@ class EnhancedTASEngine:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize shared components: {e}")
             raise
+
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization for TAS search."""
+        try:
+            if self.config.enable_hardware_optimization:
+                # Import unified hardware manager
+                from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+
+                # Create hardware configuration optimized for TAS
+                hardware_config = HardwareConfig(
+                    cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                    gpu_optimization_level=OptimizationLevel.BALANCED,  # Tree models are less GPU-intensive
+                    memory_optimization_level=OptimizationLevel.BALANCED,
+                    memory_limit_gb=self.config.max_memory_mb / 1024,  # Convert MB to GB
+                    enable_mps_acceleration=False,  # Trees don't need GPU acceleration
+                    enable_gpu_memory_pooling=False,
+                    enable_batch_operations=True,
+                    enable_adaptive_optimization=True,
+                    learning_enabled=True,
+                    auto_tuning_enabled=True,
+                    performance_monitoring_enabled=True,
+                    monitoring_interval=5.0
+                )
+
+                # Create unified hardware manager
+                self.hardware_optimizer = UnifiedHardwareManager(hardware_config)
+
+                # Optimize for TAS workload
+                self.hardware_optimizer.optimize_for_workload(
+                    WorkloadType.ML_TRAINING,
+                    parameters={
+                        'tree_based_training': True,
+                        'parallel_evaluations': self.config.parallel_evaluation,
+                        'n_workers': self.config.n_workers,
+                        'memory_per_model_mb': self.config.max_memory_mb // self.config.population_size,
+                        'ensemble_training': self.config.allow_ensemble_methods
+                    }
+                )
+
+                self.logger.info("✅ Hardware optimization initialized for TAS")
+                self.logger.info(f"   CPU Optimization: {hardware_config.cpu_optimization_level.value}")
+                self.logger.info(f"   GPU Optimization: {hardware_config.gpu_optimization_level.value}")
+                self.logger.info(f"   Memory Limit: {hardware_config.memory_limit_gb} GB")
+            else:
+                self.hardware_optimizer = None
+                self.logger.info("⚠️ Hardware optimization disabled")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_optimizer = None
 
     def _create_tree_constraints(self):
         """Create tree architecture constraints from config."""

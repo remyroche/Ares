@@ -162,6 +162,9 @@ class EnhancedNASEngine:
         self.start_time = None
         self.evaluation_times = []
 
+        # Initialize hardware optimization
+        self._initialize_hardware_optimization()
+
         self.logger.info("✅ Enhanced NAS Engine initialized with shared ML utilities")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Population Size: {config.population_size}")
@@ -235,6 +238,55 @@ class EnhancedNASEngine:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize shared components: {e}")
             raise
+
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization for NAS search."""
+        try:
+            if self.config.enable_hardware_optimization:
+                # Import unified hardware manager
+                from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
+
+                # Create hardware configuration optimized for NAS
+                hardware_config = HardwareConfig(
+                    cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                    gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+                    memory_optimization_level=OptimizationLevel.BALANCED,
+                    memory_limit_gb=self.config.max_memory_mb / 1024,  # Convert MB to GB
+                    enable_mps_acceleration=True,
+                    enable_gpu_memory_pooling=True,
+                    enable_batch_operations=True,
+                    enable_adaptive_optimization=True,
+                    learning_enabled=True,
+                    auto_tuning_enabled=True,
+                    performance_monitoring_enabled=True,
+                    monitoring_interval=5.0
+                )
+
+                # Create unified hardware manager
+                self.hardware_optimizer = UnifiedHardwareManager(hardware_config)
+
+                # Optimize for NAS workload
+                self.hardware_optimizer.optimize_for_workload(
+                    WorkloadType.ML_TRAINING,
+                    parameters={
+                        'neural_network_training': True,
+                        'parallel_evaluations': self.config.parallel_evaluation,
+                        'n_workers': self.config.n_workers,
+                        'memory_per_model_mb': self.config.max_memory_mb // self.config.population_size
+                    }
+                )
+
+                self.logger.info("✅ Hardware optimization initialized for NAS")
+                self.logger.info(f"   CPU Optimization: {hardware_config.cpu_optimization_level.value}")
+                self.logger.info(f"   GPU Optimization: {hardware_config.gpu_optimization_level.value}")
+                self.logger.info(f"   Memory Limit: {hardware_config.memory_limit_gb} GB")
+            else:
+                self.hardware_optimizer = None
+                self.logger.info("⚠️ Hardware optimization disabled")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_optimizer = None
 
     def _create_architecture_constraints(self):
         """Create architecture constraints from config."""

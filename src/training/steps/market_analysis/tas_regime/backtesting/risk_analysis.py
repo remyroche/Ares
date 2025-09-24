@@ -15,6 +15,12 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -161,13 +167,20 @@ class RiskAnalyzer:
         Args:
             config: Risk analysis configuration
         """
+        tprint_info("🚀 Initializing Risk Analyzer")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Risk analysis state
+        tprint_debug("📊 Initializing risk analysis state...")
         self.results = None
         self.risk_data = None
         
+        tprint_success("✅ Risk Analyzer initialized")
+        tprint_info(f"📊 VaR confidence levels: {config.var_confidence_levels}")
+        tprint_info(f"📊 CVaR confidence levels: {config.cvar_confidence_levels}")
         self.logger.info("✅ Risk Analyzer initialized")
         self.logger.info(f"📊 VaR confidence levels: {config.var_confidence_levels}")
         self.logger.info(f"📊 CVaR confidence levels: {config.cvar_confidence_levels}")
@@ -189,57 +202,88 @@ class RiskAnalyzer:
         Returns:
             Risk analysis result
         """
+        tprint_info("🚀 Starting comprehensive risk analysis")
+        tprint_debug(f"Returns series shape: {returns_series.shape}")
+        tprint_debug(f"Benchmark returns: {'Yes' if benchmark_returns is not None else 'No'}")
+        tprint_debug(f"Regime data: {'Yes' if regime_data is not None else 'No'}")
+        tprint_debug(f"Factor data: {'Yes' if factor_data is not None else 'No'}")
+        
         self.logger.info("🚀 Starting comprehensive risk analysis")
         start_time = datetime.now()
         
         try:
             # Validate data
+            tprint_debug("🔍 Validating data...")
             self._validate_data(returns_series, benchmark_returns, regime_data, factor_data)
+            tprint_success("✅ Data validation passed")
             
             # Prepare risk data
+            tprint_debug("📊 Preparing risk data...")
             risk_data = self._prepare_risk_data(returns_series, benchmark_returns, regime_data, factor_data)
+            tprint_success("✅ Risk data prepared")
             
             # Calculate VaR metrics
+            tprint_info("📊 Calculating VaR metrics...")
             self.logger.info("📊 Calculating VaR metrics...")
             var_metrics = self._calculate_var_metrics(risk_data)
+            tprint_success("✅ VaR metrics calculated")
             
             # Calculate CVaR metrics
+            tprint_info("📊 Calculating CVaR metrics...")
             self.logger.info("📊 Calculating CVaR metrics...")
             cvar_metrics = self._calculate_cvar_metrics(risk_data)
+            tprint_success("✅ CVaR metrics calculated")
             
             # Calculate drawdown metrics
+            tprint_info("📉 Calculating drawdown metrics...")
             self.logger.info("📉 Calculating drawdown metrics...")
             drawdown_metrics = self._calculate_drawdown_metrics(risk_data)
+            tprint_success("✅ Drawdown metrics calculated")
             
             # Calculate risk ratios
+            tprint_info("📈 Calculating risk ratios...")
             self.logger.info("📈 Calculating risk ratios...")
             risk_ratios = self._calculate_risk_ratios(risk_data)
+            tprint_success("✅ Risk ratios calculated")
             
             # Calculate beta and alpha
+            tprint_info("🔍 Calculating beta and alpha...")
             self.logger.info("🔍 Calculating beta and alpha...")
             beta_alpha_metrics = self._calculate_beta_alpha_metrics(risk_data)
+            tprint_success("✅ Beta and alpha calculated")
             
             # Calculate higher moments
+            tprint_info("📊 Calculating higher moments...")
             self.logger.info("📊 Calculating higher moments...")
             higher_moments = self._calculate_higher_moments(risk_data)
+            tprint_success("✅ Higher moments calculated")
             
             # Run stress testing
+            tprint_info("⚠️ Running stress testing...")
             self.logger.info("⚠️ Running stress testing...")
             stress_test_results = self._run_stress_testing(risk_data)
+            tprint_success("✅ Stress testing completed")
             
             # Run scenario analysis
+            tprint_info("🎯 Running scenario analysis...")
             self.logger.info("🎯 Running scenario analysis...")
             scenario_analysis = self._run_scenario_analysis(risk_data)
+            tprint_success("✅ Scenario analysis completed")
             
             # Run risk attribution
+            tprint_info("🔍 Running risk attribution...")
             self.logger.info("🔍 Running risk attribution...")
             risk_attribution = self._run_risk_attribution(risk_data)
+            tprint_success("✅ Risk attribution completed")
             
             # Analyze regime risk
+            tprint_info("🎯 Analyzing regime risk...")
             self.logger.info("🎯 Analyzing regime risk...")
             regime_risk_analysis = self._analyze_regime_risk(risk_data)
+            tprint_success("✅ Regime risk analysis completed")
             
             # Create comprehensive result
+            tprint_info("📋 Creating comprehensive risk analysis result...")
             result = RiskResult(
                 # VaR metrics
                 var_95=var_metrics['var_95'],
@@ -312,9 +356,16 @@ class RiskAnalyzer:
             
             # Save results if configured
             if self.config.save_risk_analysis:
+                tprint_debug("💾 Saving risk analysis results...")
                 self._save_results(result)
+                tprint_success("✅ Risk analysis results saved")
             
             self.results = result
+            tprint_success(f"✅ Risk analysis completed in {result.execution_time:.2f}s")
+            tprint_info(f"📊 VaR 95%: {result.var_95:.2%}")
+            tprint_info(f"📊 CVaR 95%: {result.cvar_95:.2%}")
+            tprint_info(f"📉 Max drawdown: {result.max_drawdown:.2%}")
+            tprint_info(f"📈 Sharpe ratio: {result.sharpe_ratio:.3f}")
             self.logger.info(f"✅ Risk analysis completed in {result.execution_time:.2f}s")
             self.logger.info(f"📊 VaR 95%: {result.var_95:.2%}")
             self.logger.info(f"📊 CVaR 95%: {result.cvar_95:.2%}")
@@ -324,6 +375,7 @@ class RiskAnalyzer:
             return result
             
         except Exception as e:
+            tprint_error(f"❌ Risk analysis failed: {e}")
             self.logger.error(f"❌ Risk analysis failed: {e}")
             raise
     
@@ -636,7 +688,7 @@ class RiskAnalyzer:
         
         # Calculate expected return and volatility
         expected_return = sum(p * r for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns))
-        expected_volatility = np.sqrt(sum(p * (r - expected_return)**2) for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns)))
+        expected_volatility = np.sqrt(sum(p * (r - expected_return)**2 for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns)))
         
         return {
             'scenario_analysis': scenario_analysis,

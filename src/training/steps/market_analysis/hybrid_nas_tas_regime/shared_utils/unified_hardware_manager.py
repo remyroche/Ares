@@ -33,6 +33,10 @@ from src.utils.hardware.enhanced_gpu_manager import EnhancedM1GPUManager
 from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer
 
 from .unified_architecture_config import ArchitectureType, OptimizationObjective
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,35 +142,50 @@ class UnifiedHardwareManager:
             architecture_type: Type of architecture (TAS/NAS/Hybrid)
             config: Hardware optimization configuration
         """
+        tprint_info("🚀 Initializing Unified Hardware Manager")
+        tprint_debug(f"Architecture type: {architecture_type}")
+        tprint_debug(f"Configuration: {config}")
+        
         self.architecture_type = architecture_type
         self.config = config or HardwareConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize existing hardware utilities
+        tprint_info("🔧 Initializing hardware utilities...")
         self._initialize_hardware_utilities()
         
         # Hardware state
+        tprint_debug("💻 Initializing hardware state...")
         self.device = self._initialize_device()
         self.optimization_history: List[OptimizationResult] = []
         self.performance_metrics: List[HardwareMetrics] = []
         
         # Monitoring
+        tprint_debug("📊 Initializing monitoring...")
         self.monitoring_active = False
         self.monitoring_thread: Optional[threading.Thread] = None
         self.last_optimization_time = time.time()
         
         # Adaptive optimization
+        tprint_debug("🧠 Initializing adaptive optimization...")
         self.performance_baseline = {}
         self.optimization_learnings: Dict[str, Any] = {}
         
         # Batch processing
+        tprint_debug("📦 Initializing batch processing...")
         self.current_batch_size = self.config.min_batch_size
         self.batch_performance_history = deque(maxlen=100)
         
         # Memory management
+        tprint_debug("💾 Initializing memory management...")
         self.memory_pool = {}
         self.gc_counter = 0
         
+        tprint_success(f"✅ Unified Hardware Manager initialized for {architecture_type.value}")
+        tprint_info(f"   Using existing hardware utilities from utils/hardware/")
+        tprint_info(f"   Device: {self.device}")
+        tprint_info(f"   GPU Acceleration: {self.config.enable_gpu_acceleration}")
+        tprint_info(f"   Memory Limit: {self.config.max_memory_usage_gb}GB")
         self.logger.info(f"✅ Unified Hardware Manager initialized for {architecture_type.value}")
         self.logger.info(f"   Using existing hardware utilities from utils/hardware/")
         self.logger.info(f"   Device: {self.device}")
@@ -175,24 +194,33 @@ class UnifiedHardwareManager:
     
     def _initialize_hardware_utilities(self):
         """Initialize existing hardware utilities."""
+        tprint_debug("🔧 Initializing existing hardware utilities...")
         try:
             # Initialize canonical hardware manager
+            tprint_debug("📋 Converting to canonical config...")
             canonical_config = self._convert_to_canonical_config()
             self.canonical_hardware_manager = CanonicalHardwareManager(canonical_config)
+            tprint_success("✅ Canonical hardware manager initialized")
             
             # Initialize adaptive optimization engine
+            tprint_debug("🧠 Initializing adaptive optimization engine...")
             self.adaptive_engine = AdaptiveOptimizationEngine(
                 hardware_manager=self.canonical_hardware_manager
             )
+            tprint_success("✅ Adaptive optimization engine initialized")
             
             # Initialize specialized optimizers
+            tprint_debug("⚡ Initializing specialized optimizers...")
             self.cpu_optimizer = AdvancedM1CPUOptimizer()
             self.gpu_manager = EnhancedM1GPUManager()
             self.memory_optimizer = AdvancedM1MemoryOptimizer()
+            tprint_success("✅ Specialized optimizers initialized")
             
+            tprint_success("✅ Existing hardware utilities initialized successfully")
             self.logger.info("✅ Existing hardware utilities initialized successfully")
             
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize hardware utilities: {e}")
             self.logger.error(f"❌ Failed to initialize hardware utilities: {e}")
             raise
     

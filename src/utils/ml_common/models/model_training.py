@@ -155,7 +155,8 @@ class EnhancedModelTrainer:
                     sample_weight_train = compute_sample_weight(class_weight_config, y_train)
                     _LOGGER.info(f'✅ Class weights computed for {len(sample_weight_train)} samples')
                 except Exception as e:
-                    _LOGGER.warning(f'⚠️ Class weight computation failed: {e}')
+                    _LOGGER.error(f'❌ Class weight computation failed: {e}')
+                    _LOGGER.warning('⚠️ Class weight computation failed - using uniform weights')
             
             # Train the model
             _LOGGER.info(f'🔄 Training {model_name}...')
@@ -227,7 +228,8 @@ class EnhancedModelTrainer:
                     model_explanations = explanation_result.to_dict()
                     _LOGGER.info('✅ Model explanations generated successfully')
                 except Exception as e:
-                    _LOGGER.warning(f'⚠️ Model explanations failed for {model_name}: {e}')
+                    _LOGGER.error(f'❌ Model explanations failed for {model_name}: {e}')
+                    _LOGGER.warning('⚠️ Model explanations failed - continuing without explanations')
                     model_explanations = {'error': str(e)}
             
             # Perform cross-validation if enabled
@@ -262,7 +264,8 @@ class EnhancedModelTrainer:
                         model, model_name, X_train, y_train, X_test, y_test, feature_names
                     )
                 except Exception as e:
-                    _LOGGER.warning(f'⚠️ Post-training HPO failed for {model_name}: {e}')
+                    _LOGGER.error(f'❌ Post-training HPO failed for {model_name}: {e}')
+                    _LOGGER.warning('⚠️ Post-training HPO failed - using original hyperparameters')
                     post_training_hpo_results = {'error': str(e)}
             
             # Compile comprehensive results
@@ -332,7 +335,8 @@ class EnhancedModelTrainer:
                         roc_auc = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='macro')
                         log_loss_score = log_loss(y_true, y_pred_proba)
                 except Exception as e:
-                    logger.warning(f"Could not calculate ROC-AUC/log loss: {e}")
+                    logger.error(f"❌ Could not calculate ROC-AUC/log loss: {e}")
+                    logger.warning("⚠️ ROC-AUC/log loss calculation failed - using available metrics only")
                     roc_auc = None
                     log_loss_score = None
             
@@ -350,7 +354,8 @@ class EnhancedModelTrainer:
             }
             
         except Exception as e:
-            self.logger.warning(f'Basic metrics calculation failed: {e}')
+            self.logger.error(f'❌ Basic metrics calculation failed: {e}')
+            self.logger.warning('⚠️ Basic metrics calculation failed - returning error result')
             return {'error': str(e)}
     
     def _extract_feature_importance(self, model: Any, feature_names: Optional[List[str]]) -> Optional[Dict[str, Any]]:
@@ -385,7 +390,8 @@ class EnhancedModelTrainer:
             }
             
         except Exception as e:
-            self.logger.warning(f'Feature importance extraction failed: {e}')
+            self.logger.error(f'❌ Feature importance extraction failed: {e}')
+            self.logger.warning('⚠️ Feature importance extraction failed - returning None')
             return None
     
     def _perform_cross_validation(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
@@ -417,7 +423,8 @@ class EnhancedModelTrainer:
             }
             
         except Exception as e:
-            self.logger.warning(f'Cross-validation failed: {e}')
+            self.logger.error(f'❌ Cross-validation failed: {e}')
+            self.logger.warning('⚠️ Cross-validation failed - returning error result')
             return {'error': str(e)}
     
     def _perform_post_training_hpo(self, model: Any, model_name: str,
@@ -477,7 +484,8 @@ class EnhancedModelTrainer:
                 return {'error': 'No best model found in HPO results'}
                 
         except Exception as e:
-            self.logger.warning(f'Post-training HPO failed: {e}')
+            self.logger.error(f'❌ Post-training HPO failed: {e}')
+            self.logger.warning('⚠️ Post-training HPO failed - returning error result')
             return {'error': str(e)}
     
     def _get_post_training_search_space(self, model_name: str, current_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -511,7 +519,8 @@ class EnhancedModelTrainer:
                 }
                 
         except Exception as e:
-            self.logger.warning(f'Failed to create search space for {model_name}: {e}')
+            self.logger.error(f'❌ Failed to create search space for {model_name}: {e}')
+            self.logger.warning('⚠️ Search space creation failed - using empty search space')
             return {}
     
     def _log_training_results(self, results: Dict[str, Any], model_name: str) -> None:
@@ -567,7 +576,8 @@ class EnhancedModelTrainer:
                                f'Improvement: {post_hpo.get("improvement", 0):.4f}')
                 
         except Exception as e:
-            self.logger.warning(f'Failed to log training results for {model_name}: {e}')
+            self.logger.error(f'❌ Failed to log training results for {model_name}: {e}')
+            self.logger.warning('⚠️ Training results logging failed - results may not be persisted')
     
     def _evaluate_multi_output_model(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                    y_pred_proba: Optional[np.ndarray], 
@@ -626,6 +636,7 @@ class EnhancedModelTrainer:
             
         except Exception as e:
             _LOGGER.error(f"❌ Multi-output evaluation failed: {e}")
+            _LOGGER.warning("⚠️ Multi-output evaluation failed - returning error result")
             return {'error': str(e)}
     
     def compare_models(self, model_results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -697,7 +708,8 @@ class EnhancedModelTrainer:
             return comparison_results
             
         except Exception as e:
-            self.logger.error(f'Model comparison failed: {e}')
+            self.logger.error(f'❌ Model comparison failed: {e}')
+            self.logger.warning('⚠️ Model comparison failed - returning error result')
             return {'error': str(e)}
 
 

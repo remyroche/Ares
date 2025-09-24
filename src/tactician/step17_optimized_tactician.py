@@ -5,7 +5,6 @@ from .core.decorators import handles_errors
 '\nStep17 Optimized Tactician\n\nThis module implements a complete step17-optimized Tactician where ALL decision logic,\nposition sizing, leverage, and confidence calculations are configurable by step17.\n'
 import logging
 from datetime import datetime
-from typing import Any
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
 import numpy as np
 import time

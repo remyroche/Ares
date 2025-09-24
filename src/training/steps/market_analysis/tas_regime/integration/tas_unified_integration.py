@@ -13,6 +13,35 @@ from dataclasses import dataclass, field
 import time
 from datetime import datetime
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[TAS_INTEGRATION] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 # Import TAS components
 from ..core.tas_engine import TASEngine, TASEngineConfig
 from ..core.tas_result import TASResult
@@ -66,28 +95,36 @@ class TASUnifiedIntegration:
     
     def __init__(self, config: TASUnifiedConfig):
         """Initialize TAS unified integration."""
+        tprint("🔗 Initializing TAS Unified Integration", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"📊 Config: economic_eval={config.enable_economic_evaluation}, trading_viability={config.enable_trading_viability}", color="cyan")
         
         # Initialize TAS engine
+        tprint("🌳 Initializing TAS engine", color="yellow")
         self.tas_engine = TASEngine(config.tas_config)
         
         # Initialize unified utilities
+        tprint("🔧 Initializing unified utilities", color="yellow")
         self.economic_evaluator = None
         self.trading_evaluator = None
         self.optimizer = None
         self.regime_analyzer = None
         
         if config.enable_economic_evaluation:
+            tprint("💰 Creating economic evaluator", color="yellow")
             self.economic_evaluator = create_unified_economic_evaluator(config.economic_config)
         
         if config.enable_trading_viability:
+            tprint("📈 Creating trading viability evaluator", color="yellow")
             self.trading_evaluator = create_unified_trading_viability_evaluator(config.trading_config)
         
         if config.enable_multi_objective_optimization:
+            tprint("🎯 Creating multi-objective optimizer", color="yellow")
             self.optimizer = create_unified_multi_objective_optimizer(config.optimization_config)
         
         if config.enable_regime_analysis:
+            tprint("📊 Creating regime analyzer", color="yellow")
             self.regime_analyzer = create_unified_regime_analyzer(config.regime_config)
         
         self.logger.info("✅ TAS Unified Integration initialized")
@@ -95,6 +132,9 @@ class TASUnifiedIntegration:
         self.logger.info(f"   Trading viability: {config.enable_trading_viability}")
         self.logger.info(f"   Multi-objective optimization: {config.enable_multi_objective_optimization}")
         self.logger.info(f"   Regime analysis: {config.enable_regime_analysis}")
+        
+        tprint("✅ TAS Unified Integration initialization complete", color="green")
+        tprint(f"🔧 Components: TAS Engine ✅, Economic: {'✅' if self.economic_evaluator else '❌'}, Trading: {'✅' if self.trading_evaluator else '❌'}, Optimizer: {'✅' if self.optimizer else '❌'}, Regime: {'✅' if self.regime_analyzer else '❌'}", color="cyan")
     
     def search_and_evaluate(self, 
                            market_data: Union[pd.DataFrame, np.ndarray],
@@ -110,39 +150,52 @@ class TASUnifiedIntegration:
             Comprehensive evaluation results
         """
         try:
+            tprint("🚀 Starting TAS search and evaluation...", color="blue")
             self.logger.info("🚀 Starting TAS search and evaluation...")
             start_time = time.time()
+            tprint(f"📊 Input data shape: {market_data.shape if hasattr(market_data, 'shape') else 'unknown'}", color="cyan")
             
             # Perform TAS search
+            tprint("🌳 Performing TAS architecture search...", color="yellow")
             tas_result = self.tas_engine.search(market_data, search_config)
             
             if not tas_result.success:
+                tprint("❌ TAS search failed", color="red")
                 self.logger.error("❌ TAS search failed")
                 return {'success': False, 'error': 'TAS search failed'}
             
+            tprint("✅ TAS architecture search completed successfully", color="green")
+            
             # Extract regime predictions and metadata
+            tprint("📊 Extracting regime predictions and metadata...", color="yellow")
             regime_predictions = tas_result.regime_predictions
             regime_probabilities = tas_result.regime_probabilities
             model_metadata = self._extract_tas_metadata(tas_result)
+            tprint(f"✅ Extracted {len(regime_predictions)} regime predictions", color="green")
             
             # Comprehensive evaluation
+            tprint("🔍 Starting comprehensive evaluation...", color="yellow")
             evaluation_results = {}
             
             # Economic significance evaluation
             if self.economic_evaluator:
+                tprint("💰 Performing economic significance evaluation...", color="yellow")
                 economic_result = self.economic_evaluator.evaluate(
                     market_data, regime_predictions, regime_probabilities,
                     architecture_type="TAS", model_metadata=model_metadata
                 )
                 evaluation_results['economic_significance'] = economic_result
+                tprint("✅ Economic significance evaluation completed", color="green")
             
             # Trading viability evaluation
             if self.trading_evaluator:
+                tprint("📈 Performing trading viability evaluation...", color="yellow")
                 trading_result = self.trading_evaluator.evaluate(
                     market_data, regime_predictions, regime_probabilities,
                     architecture_type="TAS", model_metadata=model_metadata
                 )
                 evaluation_results['trading_viability'] = trading_result
+                tprint("✅ Trading viability evaluation completed", color="green")
             
             # Multi-objective optimization
             if self.optimizer:

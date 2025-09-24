@@ -24,6 +24,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Standard tree models
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -67,7 +68,6 @@ except ImportError:
     optim = None
 
 # Oblivious Decision Trees
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 logger = logging.getLogger(__name__)
 
@@ -408,11 +408,16 @@ class PureTreeNAS:
     
     def __init__(self, config: PureTreeNASConfig):
         """Initialize pure tree-based NAS."""
+        tprint("🚀 [PURE_TREE_NAS] Initializing Pure Tree-Based NAS", color="cyan", bold=True)
+        tprint(f"📊 [PURE_TREE_NAS] Trials: {config.n_trials}", color="blue")
+        tprint(f"📊 [PURE_TREE_NAS] Timeout: {config.timeout_seconds}s", color="blue")
+        tprint(f"📊 [PURE_TREE_NAS] Early stopping patience: {config.early_stopping_patience}", color="blue")
         self.config = config
         self.logger = logger.getChild('PureTreeNAS')
         self.candidates = []
         self.best_candidate = None
         
+        tprint("✅ [PURE_TREE_NAS] Pure Tree-Based NAS initialized successfully", color="green")
         self.logger.info(f"✅ Pure Tree-Based NAS initialized with {config.n_trials} trials")
     
     def search(self, 
@@ -432,21 +437,28 @@ class PureTreeNAS:
         Returns:
             Best tree architecture candidate
         """
+        tprint("🚀 [PURE_TREE_NAS] Starting Pure Tree-Based NAS Search", color="cyan", bold=True)
+        tprint(f"📊 [PURE_TREE_NAS] Training data shape: {X_train.shape}, labels: {y_train.shape}", color="blue")
         self.logger.info("🚀 Starting Pure Tree-Based NAS Search...")
         start_time = time.time()
         
         try:
             # Prepare validation data
             if X_val is None or y_val is None:
+                tprint("🔧 [PURE_TREE_NAS] Splitting training data for validation", color="yellow")
                 from sklearn.model_selection import train_test_split
                 X_train, X_val, y_train, y_val = train_test_split(
                     X_train, y_train, test_size=self.config.test_size, random_state=42
                 )
+                tprint(f"📊 [PURE_TREE_NAS] Validation data shape: {X_val.shape}, labels: {y_val.shape}", color="blue")
             
             # Search for tree architectures
+            tprint("🔍 [PURE_TREE_NAS] Starting tree architecture search", color="yellow")
             best_candidate = self._search_tree_architectures(X_train, y_train, X_val, y_val)
             
             search_time = time.time() - start_time
+            tprint(f"✅ [PURE_TREE_NAS] Pure Tree NAS completed in {search_time:.2f}s", color="green", bold=True)
+            tprint(f"📊 [PURE_TREE_NAS] Best architecture: {best_candidate.primary_model}, score: {best_candidate.overall_score:.4f}", color="cyan")
             self.logger.info(f"✅ Pure Tree NAS completed in {search_time:.2f}s")
             self.logger.info(f"📊 Best architecture: {best_candidate.primary_model}, score: {best_candidate.overall_score:.4f}")
             

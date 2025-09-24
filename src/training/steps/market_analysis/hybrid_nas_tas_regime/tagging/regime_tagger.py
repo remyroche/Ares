@@ -111,59 +111,58 @@ class RegimeTagger:
             regime_result = self.hybrid_detector.detect_regimes(market_data)
 
             if not regime_result.success:
-                self.logger.warning("Regime detection failed, using fallback tagging")
-                return self._add_empty_tags(market_data)
+                raise ValueError("Regime detection failed - no fallback mechanism available")
 
             # Create tagged data
             tagged_data = market_data.copy() if self.preserve_original else market_data
 
-        # Add comprehensive regime tags
-        n_samples = len(tagged_data)
-        n_regimes = len(regime_result.economic_significance_scores)
+            # Add comprehensive regime tags
+            n_samples = len(tagged_data)
+            n_regimes = len(regime_result.economic_significance_scores)
 
-        # Regime ID
-        regime_ids = regime_result.regime_predictions
-        if len(regime_ids) != n_samples:
-            regime_ids = self._fallback_regime_assignment(market_data, n_regimes)
-        tagged_data['regime_id'] = regime_ids
+            # Regime ID
+            regime_ids = regime_result.regime_predictions
+            if len(regime_ids) != n_samples:
+                raise ValueError(f"Regime predictions length ({len(regime_ids)}) does not match data length ({n_samples})")
+            tagged_data['regime_id'] = regime_ids
 
-        # Enhanced regime confidence with validation
-        confidence_scores = self._calculate_confidence_scores(
-            regime_result, market_data, regime_ids
-        )
-        tagged_data['regime_confidence'] = confidence_scores
+            # Enhanced regime confidence with validation
+            confidence_scores = self._calculate_confidence_scores(
+                regime_result, market_data, regime_ids
+            )
+            tagged_data['regime_confidence'] = confidence_scores
 
-        # Economic significance with validation
-        economic_scores = self._calculate_economic_scores(
-            regime_result, market_data, regime_ids
-        )
-        tagged_data['economic_significance'] = economic_scores
+            # Economic significance with validation
+            economic_scores = self._calculate_economic_scores(
+                regime_result, market_data, regime_ids
+            )
+            tagged_data['economic_significance'] = economic_scores
 
-        # Financial relevance with validation
-        financial_scores = self._calculate_financial_scores(
-            regime_result, market_data, regime_ids
-        )
-        tagged_data['financial_relevance'] = financial_scores
+            # Financial relevance with validation
+            financial_scores = self._calculate_financial_scores(
+                regime_result, market_data, regime_ids
+            )
+            tagged_data['financial_relevance'] = financial_scores
 
-        # Micro-regime detection
-        micro_regime_ids = self._detect_micro_regimes(market_data, regime_ids)
-        tagged_data['micro_regime_id'] = micro_regime_ids
+            # Micro-regime detection
+            micro_regime_ids = self._detect_micro_regimes(market_data, regime_ids)
+            tagged_data['micro_regime_id'] = micro_regime_ids
 
-        # Regime stability and transition analysis
-        stability_scores = self._calculate_regime_stability(market_data, regime_ids)
-        transition_scores = self._calculate_transition_scores(market_data, regime_ids)
-        tagged_data['regime_stability'] = stability_scores
-        tagged_data['transition_probability'] = transition_scores
+            # Regime stability and transition analysis
+            stability_scores = self._calculate_regime_stability(market_data, regime_ids)
+            transition_scores = self._calculate_transition_scores(market_data, regime_ids)
+            tagged_data['regime_stability'] = stability_scores
+            tagged_data['transition_probability'] = transition_scores
 
-        # Tag validation score
-        validation_scores = self._validate_regime_tags(
-            market_data, regime_ids, confidence_scores, economic_scores, financial_scores
-        )
-        tagged_data['tag_validation_score'] = validation_scores
+            # Tag validation score
+            validation_scores = self._validate_regime_tags(
+                market_data, regime_ids, confidence_scores, economic_scores, financial_scores
+            )
+            tagged_data['tag_validation_score'] = validation_scores
 
-        # Regime duration tracking
-        duration_scores = self._calculate_regime_duration(market_data, regime_ids)
-        tagged_data['regime_duration'] = duration_scores
+            # Regime duration tracking
+            duration_scores = self._calculate_regime_duration(market_data, regime_ids)
+            tagged_data['regime_duration'] = duration_scores
 
             # Add additional metadata
             tagged_data['regime_detection_method'] = 'hybrid_nas_tas'

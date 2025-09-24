@@ -1,6 +1,5 @@
 
 from .logger import system_logger
-from .logger import system_logger
 from .core.decorators import handles_errors
 '\nComprehensive Security Framework\n\nThis module provides centralized security controls including:\n- Credential management and encryption\n- API key security\n- Data encryption/decryption\n- Access control and authentication\n- Audit logging and monitoring\n- Security validation and compliance\n'
 import base64
@@ -18,7 +17,6 @@ from typing import Any
 from cryptography.fernet import Fernet
 
 
-from .logger import system_logger
 from .pipeline_standards import pipeline_standards
 
 

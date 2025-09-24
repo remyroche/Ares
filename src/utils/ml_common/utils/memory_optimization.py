@@ -117,7 +117,6 @@ class MemoryEfficientTraining:
 
     def memory_checkpoint(self, checkpoint_name: str):
         """Create a memory checkpoint context manager for compatibility with M1 memory optimizer."""
-        from contextlib import contextmanager
 
         @contextmanager
         def checkpoint_context():
@@ -680,7 +679,6 @@ class GPUMemoryPool:
 
             # Allocate tensor on best available device (cuda > mps > cpu)
             try:
-                import torch as _torch
                 device = 'cuda' if _torch.cuda.is_available() else ('mps' if _torch.backends.mps.is_available() else 'cpu')
                 used_dtype = dtype if dtype is not None else _torch.float32
                 tensor = _torch.zeros(shape, dtype=used_dtype, device=device)
@@ -697,7 +695,6 @@ class GPUMemoryPool:
         except Exception as e:
             logger.warning(f"GPU tensor allocation failed: {e}")
             try:
-                import torch as _torch
                 used_dtype = dtype if dtype is not None else _torch.float32
                 return _torch.zeros(shape, dtype=used_dtype)
             except Exception:
@@ -714,7 +711,6 @@ class GPUMemoryPool:
 
             # Force GPU memory cleanup
             try:
-                import torch as _torch
                 if _torch.cuda.is_available():
                     _torch.cuda.empty_cache()
                 elif _torch.backends.mps.is_available():
@@ -731,7 +727,6 @@ class GPUMemoryPool:
         """Calculate tensor size in MB."""
         try:
             try:
-                import torch as _torch
                 element_size = _torch.tensor([], dtype=(dtype or _torch.float32)).element_size()
             except Exception:
                 # Fallback to numpy dtype size

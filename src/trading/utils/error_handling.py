@@ -411,7 +411,6 @@ def require_no_fallback(message: str = "Operation failed with no fallback availa
                     original_exception=e
                 )
         
-        import asyncio
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
@@ -454,7 +453,6 @@ def warn_on_failure(message: str = "Operation completed with warnings"):
                 logger.warning(f"{message}: {str(e)}")
                 return None
         
-        import asyncio
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:

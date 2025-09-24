@@ -12,8 +12,10 @@ import logging
 import asyncio
 import time
 import functools
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
+from contextlib import contextmanager
 import pandas as pd
 import numpy as np
 from datetime import datetime, date
@@ -21,6 +23,18 @@ import concurrent.futures
 
 # Import core utilities
 from .core.common import create_fallback_logger, create_fallback_decorator
+
+# Import M1 utilities
+try:
+    from .hardware.m1_gpu_utils import is_m1_available, is_mps_available
+except ImportError:
+    def is_m1_available():
+        return False
+    def is_mps_available():
+        return False
+
+# Setup logging early to avoid undefined logger errors
+logger = logging.getLogger(__name__)
 
 def get_m1_gpu_manager():
     """Get the M1 GPU manager instance."""
@@ -90,9 +104,6 @@ def integrate_with_m1_optimizers() -> dict:
     """
     try:
         # Import M1 utilities
-        from .hardware.m1_gpu_utils import get_m1_gpu_manager, is_m1_available, is_mps_available
-        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer, start_m1_memory_monitoring
-        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
         # Initialize components
         gpu_manager = get_m1_gpu_manager()
@@ -146,8 +157,7 @@ def integrate_with_m1_optimizers() -> dict:
             'success': False
         }
 
-# Setup logging
-logger = logging.getLogger(__name__)
+# Logging setup moved to top of file to avoid undefined logger errors
 
 # =============================================================================
 # LOGGING UTILITIES
@@ -363,11 +373,12 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                 # Try to convert to numeric
                 try:
                     df[col] = pd.to_numeric(df[col], downcast='integer')
-                except:
+                except Exception as e:
+                    logger.debug(f"⚠️ Could not convert column '{col}' to integer: {e}")
                     try:
                         df[col] = pd.to_numeric(df[col], downcast='float')
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not convert column '{col}' to float: {e}")
             elif df[col].dtype == 'int64':
                 df[col] = pd.to_numeric(df[col], downcast='integer')
             elif df[col].dtype == 'float64':
@@ -1138,7 +1149,6 @@ def gpu_context(name: str):
     Returns:
         Context manager for GPU operations
     """
-    from contextlib import contextmanager
 
     @contextmanager
     def _gpu_context():
@@ -1246,7 +1256,6 @@ def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[s
         Dictionary with disk space information and availability status
     """
     try:
-        import shutil
         path_obj = Path(path)
         if not path_obj.exists():
             path_obj = path_obj.parent if path_obj.parent.exists() else Path.home()
@@ -1276,4 +1285,38 @@ def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[s
             'used_gb': 0.0,
             'required_gb': required_gb,
             'available_percentage': 0.0
+        }
+
+
+class CommonUtilities:
+    """Common utilities class for unified operations."""
+    
+    def __init__(self):
+        """Initialize common utilities."""
+        self.logger = logging.getLogger(__name__)
+        self.m1_available = is_m1_available()
+        self.mps_available = is_mps_available()
+    
+    def get_m1_status(self):
+        """Get M1 status information."""
+        return {
+            'm1_available': self.m1_available,
+            'mps_available': self.mps_available
+        }
+    
+    def optimize_for_m1(self, data):
+        """Optimize data processing for M1."""
+        if self.m1_available:
+            # M1-specific optimizations
+            if hasattr(data, 'values'):
+                return data.values
+        return data
+    
+    def get_system_info(self):
+        """Get system information."""
+        return {
+            'm1_available': self.m1_available,
+            'mps_available': self.mps_available,
+            'platform': os.name,
+            'python_version': f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
         }

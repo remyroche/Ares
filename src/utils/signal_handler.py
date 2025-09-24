@@ -7,7 +7,6 @@ from src.core.decorators import handles_errors
 '\nSignal handling utilities for graceful shutdown.\n\nThis module provides centralized signal handling for graceful shutdown\nof the application, including both synchronous and asynchronous cleanup.\n'
 import asyncio
 import signal
-from .logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing, warning
 import logging
 
@@ -346,7 +345,6 @@ def setup_signal_handlers() -> SignalHandler:
     """
     config = {'signal_handler': {'enable_signal_handling': True, 'graceful_shutdown_timeout': 30, 'handle_sigterm': True, 'handle_sigint': True, 'handle_sighup': False}}
     signal_handler = SignalHandler(config)
-    import asyncio
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

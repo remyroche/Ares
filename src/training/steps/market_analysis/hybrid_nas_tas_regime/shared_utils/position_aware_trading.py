@@ -11,6 +11,10 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +95,16 @@ class PositionAwareTradingAnalyzer:
         Args:
             config: Position-aware configuration
         """
+        tprint_info("🚀 Initializing Position-Aware Trading Analyzer")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config or PositionAwareConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        tprint_success("✅ Position-Aware Trading Analyzer initialized")
+        tprint_info(f"   Minimum profit threshold: {self.config.minimum_profit_threshold}")
+        tprint_info(f"   Transaction cost: {self.config.transaction_cost}")
+        tprint_info(f"   Position holding periods: {self.config.position_holding_periods}")
         self.logger.info("✅ Position-Aware Trading Analyzer initialized")
         self.logger.info(f"   Minimum profit threshold: {self.config.minimum_profit_threshold}")
         self.logger.info(f"   Transaction cost: {self.config.transaction_cost}")
@@ -116,6 +127,10 @@ class PositionAwareTradingAnalyzer:
             Dict with win rates for longs, shorts, and overall
         """
         try:
+            tprint_debug("📊 Calculating position-aware win rates...")
+            tprint_debug(f"Returns shape: {returns.shape}")
+            tprint_debug(f"Position directions shape: {position_directions.shape}")
+            
             results = {
                 'overall_win_rate': 0.0,
                 'long_win_rate': 0.0,
@@ -126,6 +141,7 @@ class PositionAwareTradingAnalyzer:
             }
 
             if len(returns) == 0:
+                tprint_warning("⚠️ No returns data provided")
                 return results
 
             # Overall win rate (any directional movement after costs)

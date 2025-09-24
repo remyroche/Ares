@@ -2,8 +2,6 @@ from functools import wraps
 from datetime import datetime
 from typing import Any, Callable
 import mlflow
-from typing import Dict, List, Optional, Union, Any, Tuple
-from .logger import system_logger
 from .logger import system_logger
 ARES_VERSION = '1.0.0'
 
@@ -14,7 +12,6 @@ def format_datetime(dt: Any = None) -> str:
 
 def get_current_datetime() -> Any:
     return datetime.now()
-from .logger import system_logger
 import logging
 import time
 

@@ -135,7 +135,6 @@ class SHAPAnalyzer:
             if not self.shap_available:
                 return None
             
-            import shap
             
             # Create explainer based on model type
             if request.model_type.lower() in ['tree', 'random_forest', 'xgboost', 'lightgbm']:
@@ -325,7 +324,6 @@ class LIMEAnalyzer:
             if not self.lime_available or request.training_data is None:
                 return None
             
-            import lime.lime_tabular
             
             # Create LIME explainer
             explainer = lime.lime_tabular.LimeTabularExplainer(

@@ -21,6 +21,7 @@ from sklearn.feature_selection import mutual_info_regression, SelectKBest, f_reg
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 logger = logging.getLogger(__name__)
 
@@ -108,21 +109,28 @@ class NASFinancialFeatureEngineer:
 
     def __init__(self, config: NASFeatureConfig):
         """Initialize the NAS financial feature engineer."""
+        tprint("🚀 [NAS_FEATURES] Initializing NAS Financial Feature Engineer", color="cyan", bold=True)
+        tprint(f"📊 [NAS_FEATURES] Feature types enabled: {config.__dict__}", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Feature scalers
+        tprint("🔧 [NAS_FEATURES] Initializing feature scalers", color="yellow")
         self.scalers = {}
 
         # Feature importance tracking
+        tprint("📊 [NAS_FEATURES] Setting up feature importance tracking", color="blue")
         self.feature_importance_history = []
 
         # Market data cache
+        tprint("💾 [NAS_FEATURES] Initializing market data cache", color="yellow")
         self.market_data_cache = {}
 
         # Feature type mappings
+        tprint("🗺️ [NAS_FEATURES] Setting up feature type mappings", color="yellow")
         self.feature_type_map = {}
 
+        tprint("✅ [NAS_FEATURES] NAS Financial Feature Engineer initialized successfully", color="green", bold=True)
         self.logger.info("✅ NAS Financial Feature Engineer initialized")
         self.logger.info(f"   Feature Types: {[ft.value for ft in config.__dict__.keys() if isinstance(getattr(config, ft.split('_')[0] if '_' in ft else ft, None), bool) and getattr(config, ft.split('_')[0] if '_' in ft else ft)]}")
 

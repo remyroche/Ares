@@ -34,8 +34,8 @@ except ImportError as e:
 # Import matrix operations optimization
 try:
     from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
-    from src.utils.matrix_operations.vectorized_core import VectorizedCore
-    from src.utils.matrix_operations.gpu_acceleration import GPUAccelerator
+    from src.utils.matrix_operations.vectorized_core import VectorizedProcessingCore
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
@@ -105,7 +105,7 @@ class EnhancedTASHardwareOptimizer:
         self.gpu_manager = None
         self.matrix_ops = None
         self.vectorized_core = None
-        self.gpu_accelerator = None
+        self.hardware_processor = None
         
         # Performance tracking
         self.performance_metrics = {}
@@ -164,8 +164,8 @@ class EnhancedTASHardwareOptimizer:
             )
             
             # Initialize specialized components
-            self.vectorized_core = VectorizedCore()
-            self.gpu_accelerator = GPUAccelerator()
+            self.vectorized_core = VectorizedProcessingCore()
+            self.hardware_processor = HardwareOptimizedMatrixProcessor()
             
             self.logger.info("✅ Matrix operations optimization initialized")
             
@@ -182,7 +182,7 @@ class EnhancedTASHardwareOptimizer:
         self.logger.info(f"   GPU Manager: {'✅' if self.gpu_manager else '❌'}")
         self.logger.info(f"   Matrix Operations: {'✅' if self.matrix_ops else '❌'}")
         self.logger.info(f"   Vectorized Core: {'✅' if self.vectorized_core else '❌'}")
-        self.logger.info(f"   GPU Accelerator: {'✅' if self.gpu_accelerator else '❌'}")
+        self.logger.info(f"   Hardware Processor: {'✅' if self.hardware_processor else '❌'}")
     
     @contextmanager
     def optimization_context(self, workload_type: WorkloadType = WorkloadType.ML_TRAINING):
@@ -223,9 +223,9 @@ class EnhancedTASHardwareOptimizer:
                     data = self.matrix_ops.normalize_data(data)
                     data = self.matrix_ops.optimize_memory_layout(data)
                 
-                # GPU acceleration if available
-                if self.gpu_accelerator and self.config.enable_gpu_acceleration:
-                    data = self.gpu_accelerator.accelerate_operations(data)
+                # Hardware acceleration if available
+                if self.hardware_processor and self.config.enable_gpu_acceleration:
+                    data = self.hardware_processor.process_matrix(data)
                 
                 # Perform tree operations (simplified)
                 result = self._perform_optimized_tree_operations(data, tree_config)
@@ -271,9 +271,9 @@ class EnhancedTASHardwareOptimizer:
                     data = self.matrix_ops.optimize_distance_calculations(data)
                     data = self.matrix_ops.optimize_clustering_operations(data)
                 
-                # GPU acceleration for clustering
-                if self.gpu_accelerator and self.config.enable_gpu_acceleration:
-                    data = self.gpu_accelerator.accelerate_clustering(data)
+                # Hardware acceleration for clustering
+                if self.hardware_processor and self.config.enable_gpu_acceleration:
+                    data = self.hardware_processor.process_matrix(data)
                 
                 # Perform clustering operations (simplified)
                 result = self._perform_optimized_clustering(data, clustering_config)
@@ -319,9 +319,9 @@ class EnhancedTASHardwareOptimizer:
                     data = self.matrix_ops.optimize_statistical_operations(data)
                     data = self.matrix_ops.optimize_correlation_calculations(data)
                 
-                # GPU acceleration for statistical operations
-                if self.gpu_accelerator and self.config.enable_gpu_acceleration:
-                    data = self.gpu_accelerator.accelerate_statistical_operations(data)
+                # Hardware acceleration for statistical operations
+                if self.hardware_processor and self.config.enable_gpu_acceleration:
+                    data = self.hardware_processor.process_matrix(data)
                 
                 # Perform statistical operations (simplified)
                 result = self._perform_optimized_statistical_analysis(data, statistical_config)
@@ -367,9 +367,9 @@ class EnhancedTASHardwareOptimizer:
                     data = self.matrix_ops.optimize_regime_detection_operations(data)
                     data = self.matrix_ops.optimize_transition_calculations(data)
                 
-                # GPU acceleration for regime detection
-                if self.gpu_accelerator and self.config.enable_gpu_acceleration:
-                    data = self.gpu_accelerator.accelerate_regime_detection(data)
+                # Hardware acceleration for regime detection
+                if self.hardware_processor and self.config.enable_gpu_acceleration:
+                    data = self.hardware_processor.process_matrix(data)
                 
                 # Perform regime detection operations (simplified)
                 result = self._perform_optimized_regime_detection(data, regime_config)
@@ -572,3 +572,9 @@ class EnhancedTASHardwareOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to optimize for workload {workload_type}: {e}")
             return {'error': str(e)}
+
+
+# Alias classes for backward compatibility
+TreeHardwareOptimizer = EnhancedTASHardwareOptimizer
+TreeMatrixOperations = UnifiedMatrixOperations
+TreeM1Optimizer = EnhancedTASHardwareOptimizer

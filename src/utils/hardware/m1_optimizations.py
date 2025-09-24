@@ -71,7 +71,6 @@ class M1MemoryOptimizer:
 
     def _optimize_gc_settings(self):
         """Optimize garbage collection settings for M1."""
-        import gc
 
         # Set GC thresholds optimized for M1 unified memory
         gc.set_threshold(700, 10, 10)  # More aggressive collection
@@ -291,7 +290,6 @@ class M1MemoryOptimizer:
         try:
             # Force garbage collection
             if self.enable_gc_tuning:
-                import gc
                 results['gc_collected'] = gc.collect()
 
             # Aggressive PyTorch/MPS cache clearing

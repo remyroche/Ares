@@ -244,10 +244,10 @@ class AdaptiveHPOStrategy:
         adaptive_space = self.get_adaptive_search_space(regime_char)
 
         logger.info(f"🔬 Optimizing HPO for regime {regime_id}")
-        logger.info(f"   - Volatility: {regime_char.volatility_level".3f"}")
-        logger.info(f"   - Trend Strength: {regime_char.trend_strength".3f"}")
-        logger.info(f"   - Noise Level: {regime_char.noise_level".3f"}")
-        logger.info(f"   - Persistence: {regime_char.persistence".3f"}")
+        logger.info(f"   - Volatility: {regime_char.volatility_level:.3f}")
+        logger.info(f"   - Trend Strength: {regime_char.trend_strength:.3f}")
+        logger.info(f"   - Noise Level: {regime_char.noise_level:.3f}")
+        logger.info(f"   - Persistence: {regime_char.persistence:.3f}")
         logger.info(f"   - Data Size: {regime_char.data_size}")
 
         # Create regime-specific cross-validation

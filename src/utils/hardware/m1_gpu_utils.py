@@ -25,6 +25,13 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
 logger = logging.getLogger(__name__)
 
 class M1GPUManager:
@@ -76,7 +83,6 @@ class M1GPUManager:
 
         if self.mps_available:
             try:
-                import torch
                 if torch.backends.mps.is_available():
                     # Get MPS device info
                     device = torch.device('mps')
@@ -99,7 +105,6 @@ class M1GPUManager:
             return data
 
         try:
-            import torch
 
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(data).to('mps')
@@ -123,7 +128,6 @@ class M1GPUManager:
             return model_class(*args, **kwargs)
 
         try:
-            import torch
             model = model_class(*args, **kwargs)
 
             # Move model to MPS if it has parameters
@@ -148,7 +152,6 @@ class M1GPUManager:
             return np.linalg.norm(array, axis=axis, keepdims=keepdims)
 
         try:
-            import torch
             
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
@@ -176,7 +179,6 @@ class M1GPUManager:
             return np.abs(array)
 
         try:
-            import torch
             
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
@@ -204,7 +206,6 @@ class M1GPUManager:
             return np.divide(array1, array2)
 
         try:
-            import torch
             
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
@@ -233,7 +234,6 @@ class M1GPUManager:
             return np.subtract(array1, array2)
 
         try:
-            import torch
             
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
@@ -262,7 +262,6 @@ class M1GPUManager:
             return np.matmul(array1, array2)
 
         try:
-            import torch
             
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
@@ -391,7 +390,6 @@ async def m1_backtesting_simulate(
         return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
 
     try:
-        import torch
         from typing import Callable
 
         logger.info("🚀 Executing M1 GPU-accelerated backtesting simulation")
@@ -548,9 +546,6 @@ async def m1_monte_carlo_simulate(
         return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
 
     try:
-        import torch
-        import numpy as np
-        from typing import Callable
 
         logger.info(f"🎲 Executing M1 GPU-accelerated Monte Carlo simulation ({n_simulations} simulations)")
 
@@ -639,7 +634,6 @@ async def _cpu_monte_carlo_fallback(
     logger.info(f"💻 Executing CPU Monte Carlo simulation ({n_simulations} simulations)")
 
     try:
-        import numpy as np
 
         # Basic CPU-based Monte Carlo simulation
         results = {

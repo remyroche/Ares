@@ -13,6 +13,10 @@ import logging
 from datetime import datetime
 
 from ..config.hybrid_regime_config import HybridRegimeConfig, EconomicSignificanceType
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +32,14 @@ class EconomicRegimeEvaluator:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize economic regime evaluator."""
+        tprint_info("🚀 Initializing Economic Regime Evaluator")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize significance types
+        tprint_debug("📊 Initializing significance types...")
         self.significance_types = config.get('significance_types', [
             EconomicSignificanceType.VOLATILITY_REGIME.value,
             EconomicSignificanceType.TREND_STRENGTH.value,
@@ -40,12 +48,17 @@ class EconomicRegimeEvaluator:
             EconomicSignificanceType.MARKET_EFFICIENCY.value,
             EconomicSignificanceType.LIQUIDITY_REGIME.value
         ])
+        tprint_success(f"✅ Significance types initialized: {len(self.significance_types)}")
 
+        tprint_debug("⚙️ Setting thresholds...")
         self.min_significance_score = config.get('min_significance_score', 0.7)
         self.volatility_threshold = config.get('volatility_threshold', 0.3)
         self.trend_threshold = config.get('trend_threshold', 0.5)
         self.efficiency_threshold = config.get('efficiency_threshold', 0.6)
+        tprint_success("✅ Thresholds configured")
 
+        tprint_success("✅ Economic Regime Evaluator initialized")
+        tprint_info(f"   Significance types: {len(self.significance_types)}")
         self.logger.info("✅ Economic Regime Evaluator initialized")
         self.logger.info(f"   Significance types: {len(self.significance_types)}")
         self.logger.info(f"   Min significance score: {self.min_significance_score}")

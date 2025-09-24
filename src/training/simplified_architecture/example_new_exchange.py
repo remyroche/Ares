@@ -8,7 +8,6 @@ This example shows how easy it is to add support for a new exchange
 using the abstract architecture.
 """
 from datetime import datetime
-from typing import List
 import numpy as np
 import pandas as pd
 from .modular_components import BaseExchangeDataSource, ExchangeDataSourceFactory, ModelTrainerFactory
@@ -59,7 +58,6 @@ class DeribitDataSource(BaseExchangeDataSource):
         hours = int((end - start).total_seconds() / 3600)
         data = pd.DataFrame({'timestamp': pd.date_range(start, end, freq='1H')[:hours], 'open': np.random.randn(hours) * 20 + 45000, 'high': np.random.randn(hours) * 20 + 45500, 'low': np.random.randn(hours) * 20 + 44500, 'close': np.random.randn(hours) * 20 + 45000, 'volume': np.random.randint(1000, 10000, hours)})
         return data.set_index('timestamp')
-from typing import Optional
 from .modular_components import BaseModelTrainer, IModel
 
 from catboost import CatBoostClassifier

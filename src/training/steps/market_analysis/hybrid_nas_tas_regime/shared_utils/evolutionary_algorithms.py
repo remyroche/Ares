@@ -155,7 +155,7 @@ class EvolutionaryAlgorithm(ABC):
             
         except Exception as e:
             self.logger.warning(f"⚠️ Objective evaluation failed: {e}")
-            return [0.0] * len(objective_functions)]
+            return [0.0] * len(objective_functions)
     
     def _crossover(self, parent1: Individual, parent2: Individual, parameter_space: Dict[str, Any]) -> Tuple[Individual, Individual]:
         """Perform crossover between two parents."""

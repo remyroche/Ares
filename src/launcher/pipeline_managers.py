@@ -216,7 +216,6 @@ class ModelTrainingPipelineManager(BasePipelineManager):
         self.logger.info("🔍 Validating model training prerequisites...")
         
         try:
-            from src.utils.common_operations import safe_file_exists, ensure_directory
             
             # Check required directories
             required_dirs = ["data_cache", "models", "checkpoints", "log"]
@@ -301,7 +300,6 @@ class OptimisationPipelineManager(BasePipelineManager):
         self.logger.info("🔍 Validating optimisation prerequisites...")
         
         try:
-            from src.utils.common_operations import safe_file_exists, ensure_directory
             
             # Check required directories
             required_dirs = ["data_cache", "models", "checkpoints", "log"]
@@ -356,7 +354,6 @@ class BacktestingPipelineManager(BasePipelineManager):
         try:
             # Import enhanced backtesting components
             from src.training.steps.backtesting.enhanced_logging import get_backtesting_logger
-            from src.utils.common_operations import safe_file_exists
 
             # Initialize enhanced logger
             launcher_logger = get_backtesting_logger(

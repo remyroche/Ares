@@ -542,7 +542,6 @@ class DimensionEconomicRelevanceAnalyzer:
             try:
                 # Method 2: Lasso-based weighting (fallback)
                 from sklearn.linear_model import LassoCV
-                from sklearn.preprocessing import StandardScaler
                 
                 if 'close' in market_data.columns:
                     # Use future returns as target for feature selection

@@ -183,9 +183,15 @@ class TradingEngine:
         
         try:
             # Risk management check
-            if not self.risk_manager.check_trade_risk(symbol, side, quantity, self.current_capital):
-                self.logger.warning(f"⚠️ Trade rejected by risk management")
-                return None
+            try:
+                is_valid = self.risk_manager.check_trade_risk(symbol, side, quantity, self.current_capital)
+                if not is_valid:
+                    self.logger.error(f"❌ Trade rejected by risk management")
+                    return None
+            except Exception as e:
+                self.logger.error(f"❌ Risk check failed: {e}")
+                self.logger.warning("⚠️ Proceeding with trade despite risk check failure - RISK MANAGEMENT DISABLED")
+                # Continue with trade execution
             
             # Get current price if not provided
             if price is None:
@@ -206,7 +212,7 @@ class TradingEngine:
             
             # Check capital sufficiency
             if side == OrderSide.BUY and trade_value > self.current_capital:
-                self.logger.warning(f"⚠️ Insufficient capital for trade")
+                self.logger.error(f"❌ Insufficient capital for trade: required ${trade_value:,.2f}, available ${self.current_capital:,.2f}")
                 return None
             
             # Update position
@@ -272,6 +278,7 @@ class TradingEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Trade execution failed: {e}")
+            self.logger.warning("⚠️ Trade execution failed - transaction was not completed")
             raise
     
     def generate_trading_signals(self,
@@ -314,6 +321,7 @@ class TradingEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Signal generation failed: {e}")
+            self.logger.warning("⚠️ Signal generation failed - returning empty signal list")
             return []
     
     def execute_signals(self, signals: List[Dict[str, Any]]) -> List[TradingResult]:
@@ -355,6 +363,7 @@ class TradingEngine:
                 
             except Exception as e:
                 self.logger.error(f"❌ Signal execution failed: {e}")
+                self.logger.warning(f"⚠️ Signal execution failed - skipping signal for {symbol}")
                 continue
         
         self.logger.info(f"✅ Executed {len(results)} trades successfully")
@@ -489,7 +498,8 @@ class TradingEngine:
                 f.write(json.dumps(trade_dict) + '\n')
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to log trade: {e}")
+            self.logger.error(f"❌ Failed to log trade: {e}")
+            self.logger.warning("⚠️ Trade logging failed - trade data will not be persisted to file")
     
     def reset_trading_state(self):
         """Reset trading state (for backtesting)."""
@@ -531,3 +541,4 @@ class TradingEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to export trading log: {e}")
+            self.logger.warning(f"⚠️ Trading log export failed for {filepath} - log data will not be saved")

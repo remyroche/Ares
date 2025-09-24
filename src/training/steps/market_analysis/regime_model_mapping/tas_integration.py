@@ -186,7 +186,7 @@ class TASModelSelector:
             self.logger.error(f"Failed to update TAS model performance: {e}")
             raise
     
-    def get_regime_insights(self, regime_id: int) -> Dict[str, attrib]:
+    def get_regime_insights(self, regime_id: int) -> Dict[str, Any]:
         """Get insights about model performance in a specific regime."""
         return self.model_selector.get_regime_insights(regime_id)
     

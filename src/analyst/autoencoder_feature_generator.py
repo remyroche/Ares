@@ -8,7 +8,6 @@ from typing import Any
 import yaml
 from ...utils.logger import system_logger
 from ...utils.data.cli import setup_logging
-import time
 import numpy as np
 import pandas as pd
 
@@ -27,7 +26,6 @@ except ImportError as e:
     tprint(f' Missing dependency: {MISSING_DEPENDENCY}')
     tprint('📦 Please install required packages:')
     tprint('   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml')
-from ...utils.logger import system_logger
 setup_logging()
 logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -924,7 +922,6 @@ class AutoencoderFeatureAnalyzer:
                 gb_importance = None
             try:
                 from sklearn.inspection import permutation_importance
-                from sklearn.model_selection import train_test_split
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42, stratify = y if len(np.unique(y)) <= 10 else None)
                 from sklearn.linear_model import LogisticRegression
 

@@ -262,7 +262,10 @@ class DataQualificationImportManager:
             
             # M1 Memory Optimizer
             try:
-                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+                from src.utils.hardware.m1_memory_optimizer import (
+                    get_m1_memory_optimizer,
+                    M1MemoryOptimizer
+                )
                 optimizers['memory_optimizer'] = get_m1_memory_optimizer
                 optimizers['memory_optimizer_class'] = M1MemoryOptimizer
                 self.logger.debug("✅ M1 Memory optimizer imported")
@@ -454,20 +457,61 @@ class DataQualificationImportManager:
     def _get_fallback_data_quality(self) -> Any:
         """Get fallback data quality utility."""
         class FallbackDataQuality:
+            """Fallback data quality utility when ML common utilities are not available."""
+
             def __init__(self, *args, **kwargs):
+                """Initialize fallback data quality utility.
+
+                Args:
+                    *args: Positional arguments
+                    **kwargs: Keyword arguments
+                """
                 self.logger = logger.getChild('FallbackDataQuality')
                 self.logger.warning("⚠️ Using fallback data quality utility")
             
             def missing_value_analysis(self, data):
+                """Perform missing value analysis.
+
+                Args:
+                    data: Input data to analyze
+
+                Returns:
+                    Dict containing severity assessment and recommendations
+                """
                 return {'severity_assessment': {'severity_level': 'low'}, 'recommendations': []}
             
             def automated_outlier_detection(self, data):
+                """Perform automated outlier detection.
+
+                Args:
+                    data: Input data to analyze
+
+                Returns:
+                    Dict containing outliers detected and recommendations
+                """
                 return {'outliers_detected': 0, 'recommendations': []}
-            
+
             def feature_correlation_analysis(self, data):
+                """Perform feature correlation analysis.
+
+                Args:
+                    data: Input data to analyze
+
+                Returns:
+                    Dict containing correlations and recommendations
+                """
                 return {'correlations': {}, 'recommendations': []}
-            
+
             def automated_data_cleaning(self, data, config):
+                """Perform automated data cleaning.
+
+                Args:
+                    data: Input data to clean
+                    config: Cleaning configuration
+
+                Returns:
+                    Tuple of (cleaned_data, cleaning_metadata)
+                """
                 return data, {'total_removed_samples': 0}
         
         return FallbackDataQuality
@@ -766,7 +810,6 @@ class DataQualificationImportManager:
                 json.dump(data, f)
         
         def safe_json_load(file_path):
-            import json
             with open(file_path, 'r') as f:
                 return json.load(f)
         
@@ -832,7 +875,10 @@ class DataQualificationImportManager:
             'successful_imports': sum(1 for r in self.import_cache.values() if r.success),
             'failed_imports': sum(1 for r in self.import_cache.values() if not r.success),
             'fallbacks_used': sum(1 for r in self.import_cache.values() if r.fallback_used),
-            'average_import_time': np.mean([r.import_time for r in self.import_cache.values()]) if self.import_cache else 0
+            'average_import_time': (
+                np.mean([r.import_time for r in self.import_cache.values()])
+                if self.import_cache else 0
+            )
         }
 
 # Global instance for easy access

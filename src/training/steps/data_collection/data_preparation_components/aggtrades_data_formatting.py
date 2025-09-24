@@ -326,4 +326,3 @@ class CSVNormalizer:
                 continue
 if __name__ == '__main__':
     auto_reformat_aggtrades_files()
-import csv

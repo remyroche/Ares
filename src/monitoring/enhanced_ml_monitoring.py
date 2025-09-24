@@ -12,7 +12,6 @@ import json
 from enum import Enum
 from pathlib import Path
 
-from src.utils.logger import system_logger
 
 # SHAP and LIME analyzers will be imported from shap_lime_integration
 # from .shap_lime_integration import SHAPAnalyzer, LIMEAnalyzer

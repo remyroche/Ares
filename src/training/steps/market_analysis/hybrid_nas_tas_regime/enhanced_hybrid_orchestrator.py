@@ -16,6 +16,16 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint
+    TPRINT_AVAILABLE = True
+except ImportError:
+    def tprint(message: str, **kwargs) -> None:
+        """Fallback tprint function if not available."""
+        print(f"[HYBRID_NAS_TAS] {message}")
+    TPRINT_AVAILABLE = False
+
 # Import enhanced utility integrations
 from .shared_utils.enhanced_utility_integration import (
     EnhancedUtilityIntegration, UtilityIntegrationConfig,
@@ -104,31 +114,41 @@ class EnhancedHybridOrchestrator:
     
     def __init__(self, config: HybridRegimeConfig):
         """Initialize the enhanced hybrid orchestrator with comprehensive utility integrations."""
+        tprint("🎯 Initializing EnhancedHybridOrchestrator", color="blue")
         self.config = config
+        tprint(f"📊 Config: {config.n_regimes} regimes, strategy: {config.combination_strategy.value}", color="cyan")
 
         # Initialize enhanced utility integrations
+        tprint("🔧 Initializing enhanced utility integrations", color="yellow")
         self._initialize_enhanced_utilities()
 
         # Initialize TAS and NAS integration components
+        tprint("🌳 Initializing TAS integration component", color="yellow")
         self.tas_integration = TASIntegrationComponent(config.tas_config)
+        tprint("🧠 Initializing NAS integration component", color="yellow")
         self.nas_integration = NASIntegrationComponent(config.nas_config)
 
         # Initialize unified algorithms
+        tprint("🔍 Initializing unified search manager", color="yellow")
         self.search_manager = create_unified_search_manager(config.search_config)
+        tprint("📊 Initializing unified clustering algorithm", color="yellow")
         self.clustering_algorithm = create_unified_clustering_algorithm(config.clustering_config)
 
         # Multi-timeframe support
         self.enable_multi_timeframe = config.get('enable_multi_timeframe', True)
         self.primary_timeframe = TimeframeType.MINUTE_15  # Always 15m for regime detection
         self.trading_timeframes = [TimeframeType.MINUTE_1, TimeframeType.MINUTE_5]
+        tprint(f"⏰ Multi-timeframe: {'enabled' if self.enable_multi_timeframe else 'disabled'}, trading timeframes: {[tf.value for tf in self.trading_timeframes]}", color="cyan")
 
         # Unified architecture search engine
         self.use_unified_search = config.get('use_unified_search', True)
         self.unified_search_engine = None
+        tprint(f"🔍 Unified search engine: {'enabled' if self.use_unified_search else 'disabled'}", color="cyan")
 
         # Signal generation system
         self.use_signal_generation = config.get('use_signal_generation', True)
         self.signal_generator = None
+        tprint(f"📡 Signal generation: {'enabled' if self.use_signal_generation else 'disabled'}", color="cyan")
 
         # Results tracking
         self.regime_history = []
@@ -148,15 +168,20 @@ class EnhancedHybridOrchestrator:
 
         # Initialize unified search engine if enabled
         if self.use_unified_search:
+            tprint("🔍 Initializing unified search engine", color="yellow")
             self._initialize_unified_search_engine()
 
         # Initialize signal generation system if enabled
         if self.use_signal_generation:
+            tprint("📡 Initializing signal generation system", color="yellow")
             self._initialize_signal_generator()
+        
+        tprint("✅ EnhancedHybridOrchestrator initialization complete", color="green")
 
     def _initialize_enhanced_utilities(self):
         """Initialize enhanced utility integrations."""
         try:
+            tprint("🔧 Setting up utility integration configuration", color="cyan")
             # Initialize utility integration
             utility_config = UtilityIntegrationConfig(
                 enable_data_validation=True,
@@ -178,9 +203,11 @@ class EnhancedHybridOrchestrator:
                 enable_performance_monitoring=True,
                 enable_memory_monitoring=True
             )
+            tprint("🏭 Creating enhanced utility integration", color="cyan")
             self.utility_integration = create_enhanced_utility_integration(utility_config)
 
             # Initialize data integration
+            tprint("📊 Setting up data integration configuration", color="cyan")
             data_config = DataIntegrationConfig(
                 enable_klines_parquet=True,
                 enable_unified_data_utils=True,
@@ -198,9 +225,11 @@ class EnhancedHybridOrchestrator:
                 enable_schema_validation=True,
                 enable_data_consistency_checks=True
             )
+            tprint("🏭 Creating enhanced data integration", color="cyan")
             self.data_integration = create_enhanced_data_integration(data_config, utility_config)
 
             # Initialize ML integration
+            tprint("🤖 Setting up ML integration configuration", color="cyan")
             ml_config = MLIntegrationConfig(
                 enable_ml_common=True,
                 enable_feature_selection=True,
@@ -221,15 +250,20 @@ class EnhancedHybridOrchestrator:
                 enable_overfitting_detection=True,
                 enable_data_leakage_detection=True
             )
+            tprint("🏭 Creating enhanced ML integration", color="cyan")
             self.ml_integration = create_enhanced_ml_integration(ml_config, utility_config)
 
             self.logger.info("✅ Enhanced utility integrations initialized")
             self.logger.info(f"   Utility Integration: {len(self.utility_integration.get_available_utilities())} utilities available")
             self.logger.info(f"   Data Integration: {len(self.data_integration.get_available_data_utilities())} utilities available")
             self.logger.info(f"   ML Integration: {len(self.ml_integration.get_available_ml_utilities())} utilities available")
+            
+            tprint("✅ Enhanced utility integrations initialized successfully", color="green")
+            tprint(f"📊 Utility: {len(self.utility_integration.get_available_utilities())} available, Data: {len(self.data_integration.get_available_data_utilities())} available, ML: {len(self.ml_integration.get_available_ml_utilities())} available", color="cyan")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize enhanced utilities: {e}")
+            tprint(f"❌ Enhanced utilities initialization failed: {e}", color="red")
             raise
 
     def _initialize_unified_search_engine(self):
@@ -515,28 +549,39 @@ class EnhancedHybridOrchestrator:
                              enable_multi_timeframe: bool = True) -> Union[RegimeAnalysisResult, MultiTimeframeResult]:
         """Analyze market regimes using hybrid TAS-NAS approach with enhanced utility integrations."""
         try:
+            tprint("🚀 Starting enhanced hybrid regime analysis", color="blue")
             self.logger.info("🚀 Starting enhanced hybrid regime analysis with comprehensive utility integrations...")
             start_time = time.time()
+            tprint(f"📊 Input data: {market_data.shape if hasattr(market_data, 'shape') else len(market_data)} points, multi-timeframe: {'enabled' if enable_multi_timeframe else 'disabled'}", color="cyan")
 
             # Step 1: Preprocess market data using enhanced data integration
+            tprint("📊 Step 1: Preprocessing market data with enhanced utilities", color="cyan")
             processed_data = self._preprocess_market_data_enhanced(market_data, timestamps)
 
             # Step 2: Run TAS and NAS systems with enhanced error handling
+            tprint("🔧 Step 2: Running TAS and NAS analysis with enhanced utilities", color="cyan")
             try:
+                tprint("🌳 Running enhanced TAS analysis", color="yellow")
                 tas_result = self._run_tas_analysis_enhanced(processed_data)
+                tprint("🧠 Running enhanced NAS analysis", color="yellow")
                 nas_result = self._run_nas_analysis_enhanced(processed_data)
+                tprint("✅ TAS and NAS analysis completed successfully", color="green")
             except Exception as analysis_error:
                 self.logger.warning(f"Individual analysis failed, using enhanced fallback: {analysis_error}")
+                tprint(f"⚠️ Individual analysis failed, using enhanced fallback: {analysis_error}", color="yellow")
                 tas_result, nas_result = self._run_enhanced_fallback_analysis(processed_data)
 
             # Step 3: Analyze outputs and create hybrid clusters with enhanced ML utilities
+            tprint("🔄 Step 3: Analyzing outputs and creating hybrid clusters", color="cyan")
             hybrid_analysis = self._analyze_tas_nas_outputs_enhanced(tas_result, nas_result, processed_data)
             hybrid_regimes = self._create_hybrid_regime_clusters_enhanced(tas_result, nas_result, hybrid_analysis, processed_data)
 
             # Step 4: Perform cross-validation on hybrid results using enhanced ML integration
+            tprint("✅ Step 4: Performing cross-validation with enhanced ML integration", color="cyan")
             cv_results = self._perform_hybrid_cross_validation_enhanced(hybrid_regimes, processed_data)
 
             # Step 5: Optimize ensemble weights using enhanced utilities
+            tprint("⚖️ Step 5: Optimizing ensemble weights", color="cyan")
             tas_performance = tas_result.get('results', {}).get('confidence', 0.5)
             nas_performance = nas_result.get('results', {}).get('confidence', 0.5)
             hybrid_performance = hybrid_regimes.get('clustering_metrics', {}).get('silhouette_score', 0.7)
@@ -545,9 +590,13 @@ class EnhancedHybridOrchestrator:
             # Step 6: Multi-timeframe analysis if enabled
             timeframe_analysis = {}
             if enable_multi_timeframe and self.enable_multi_timeframe:
+                tprint("⏰ Step 6: Performing multi-timeframe analysis", color="cyan")
                 timeframe_analysis = self._perform_multi_timeframe_analysis(processed_data, hybrid_regimes)
+            else:
+                tprint("⏰ Step 6: Multi-timeframe analysis skipped", color="yellow")
 
             # Step 7: Compile results
+            tprint("📋 Step 7: Compiling final results", color="cyan")
             execution_time = time.time() - start_time
 
             regime_result = RegimeAnalysisResult(
@@ -597,14 +646,17 @@ class EnhancedHybridOrchestrator:
                 )
 
                 self.logger.info("✅ Enhanced hybrid regime analysis completed with ML Common utilities and multi-timeframe support")
+                tprint("✅ Enhanced hybrid regime analysis completed with multi-timeframe support", color="green")
                 return multi_timeframe_result
             else:
                 self.logger.info("✅ Enhanced hybrid regime analysis completed with ML Common utilities")
+                tprint("✅ Enhanced hybrid regime analysis completed successfully", color="green")
                 return regime_result
 
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ Enhanced hybrid regime analysis failed: {e}")
+            tprint(f"❌ Enhanced hybrid regime analysis failed: {e}", color="red")
 
             # Return error result with ML utilities info
             error_result = RegimeAnalysisResult(
@@ -1273,7 +1325,6 @@ class EnhancedHybridOrchestrator:
             y = np.random.randint(0, 3, len(X))
             
             # Basic ensemble analysis
-            from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
             models = [
                 ('rf', RandomForestClassifier(n_estimators=50, random_state=42)),
                 ('gb', GradientBoostingClassifier(n_estimators=50, random_state=42))
@@ -1437,7 +1488,6 @@ class EnhancedHybridOrchestrator:
             )
             
             # Cross-validation
-            from sklearn.ensemble import RandomForestClassifier
             estimator = RandomForestClassifier(n_estimators=100, random_state=42)
             cv_results = self.ml_integration.cross_validate_model(
                 estimator, X_selected, y, cv=5, scoring="accuracy"
@@ -1515,4 +1565,7 @@ class EnhancedHybridOrchestrator:
 
 def create_enhanced_hybrid_orchestrator(config: HybridRegimeConfig) -> EnhancedHybridOrchestrator:
     """Create an enhanced hybrid orchestrator instance."""
-    return EnhancedHybridOrchestrator(config)
+    tprint("🏭 Creating EnhancedHybridOrchestrator instance", color="blue")
+    orchestrator = EnhancedHybridOrchestrator(config)
+    tprint("✅ EnhancedHybridOrchestrator created successfully", color="green")
+    return orchestrator

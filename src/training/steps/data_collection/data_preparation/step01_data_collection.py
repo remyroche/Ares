@@ -190,8 +190,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
     Returns:
         bool: True if successful, False otherwise
     """
-    import time
-    from datetime import datetime
 
     tprint('\n' + '=' * 80)
     tprint('🚀 STEP 1: DATA COLLECTION - STARTING EXECUTION')

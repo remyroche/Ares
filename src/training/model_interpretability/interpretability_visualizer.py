@@ -38,8 +38,8 @@ class InterpretabilityVisualizer:
             import matplotlib
             matplotlib.use('Agg')  # Use non-interactive backend
             import matplotlib.pyplot as plt
-import logging
-import typing
+            import logging
+            import typing
 
             self.plt = plt
             self.matplotlib = matplotlib

@@ -12,6 +12,10 @@ from pathlib import Path
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
+from ..logging_standards import (
+    get_logger, log_info, log_warning, log_error, log_success, log_debug,
+    LoggingContext, log_step_progress, log_data_info, log_validation_result
+)
 
 
 class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
@@ -24,41 +28,17 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the final feature selection component."""
         super().__init__(config)
-        self.logger = system_logger.getChild('FinalFeatureSelectionComponent')
+        # Use standardized logging
+        self.logger = get_logger('FinalFeatureSelectionComponent')
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['final_feature_selection_result']
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
-        """
-        Execute final feature selection.
-
-        Args:
-            data: Market data for feature selection
-            pipeline_state: Current pipeline state
-
-        Returns:
-            ComponentResult with feature selection results
-        """
-        self.logger.info('🎯 Starting Final Feature Selection')
-
-        try:
-            # Import the final feature selection step
-            from ..final_feature_selection_step import run_final_feature_selection_step
-
-            # Resolve symbol from config or pipeline state
-            symbol = getattr(self.config, 'symbol', None)
-            if symbol is None and 'symbol' in pipeline_state:
-                symbol = pipeline_state['symbol']
-            if symbol is None:
-                raise ValueError("Symbol must be provided in config or pipeline state")
-
     def _load_model_specific_config(self, model_type: str) -> Dict[str, Any]:
         """Load model-specific configuration from YAML file."""
         try:
             import yaml
-            from pathlib import Path
 
             # Try to load from the feature selection config file
             config_path = Path("/workspace/src/config/feature_selection_config.yaml")
@@ -99,7 +79,7 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                         }
 
             # Fallback to hardcoded defaults if YAML loading fails
-            self.logger.warning(f"⚠️ Could not load model-specific config for {model_type}, using defaults")
+            log_warning(f"Could not load model-specific config for {model_type}, using defaults")
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -109,7 +89,7 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading model-specific config for {model_type}: {e}")
+            log_error(f"Error loading model-specific config for {model_type}: {e}")
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -117,6 +97,35 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                 'stage_targets': [95, 75, 65],
                 'priority_categories': ['momentum', 'volatility', 'microstructure']
             }
+
+    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+        """
+        Execute final feature selection.
+
+        Args:
+            data: Market data for feature selection
+            pipeline_state: Current pipeline state
+
+        Returns:
+            ComponentResult with feature selection results
+        """
+        log_info('🎯 Starting Final Feature Selection')
+
+        try:
+            # Import the final feature selection step
+            from ..final_feature_selection_step import run_final_feature_selection_step
+
+            # Resolve symbol from config or pipeline state
+            symbol = getattr(self.config, 'symbol', None)
+            if symbol is None and 'symbol' in pipeline_state:
+                symbol = pipeline_state['symbol']
+            if symbol is None:
+                raise ValueError("Symbol must be provided in config or pipeline state")
+
+            # Resolve exchange from config or pipeline state
+            exchange = getattr(self.config, 'exchange', None)
+            if exchange is None and 'exchange' in pipeline_state:
+                exchange = pipeline_state['exchange']
             if exchange is None:
                 exchange = 'binance'  # Default exchange
 
@@ -133,6 +142,9 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                 data_dir = pipeline_state['data_dir']
             if data_dir is None:
                 data_dir = 'historical_data'  # Default data directory
+
+            # Load model-specific configuration
+            final_feature_selection_config = self._load_model_specific_config('default')
 
             # Execute final feature selection
             success = await run_final_feature_selection_step(
@@ -163,7 +175,7 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                     }
                 }
 
-                self.logger.info('✅ Final feature selection completed successfully')
+                log_success('Final feature selection completed successfully')
                 return ComponentResult(
                     success=True,
                     artifacts=artifacts,
@@ -177,7 +189,7 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                     }
                 )
             else:
-                self.logger.error('❌ Final feature selection failed')
+                log_error('Final feature selection failed')
                 return ComponentResult(
                     success=False,
                     artifacts={},
@@ -192,7 +204,7 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                 )
 
         except Exception as e:
-            self.logger.exception(f'❌ Final feature selection failed with exception: {e}')
+            log_error(f'Final feature selection failed with exception: {e}')
             return ComponentResult(
                 success=False,
                 artifacts={},

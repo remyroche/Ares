@@ -716,7 +716,6 @@ class DataValidator:
     def export_validation_results(self, result: ValidationResult, filepath: str):
         """Export validation results to file."""
         try:
-            import json
             validation_data = {
                 'validation_passed': result.validation_passed,
                 'validation_score': result.validation_score,

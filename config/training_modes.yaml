@@ -27,7 +27,7 @@ training_modes:
       enable_autoencoder_features: true
       enable_microstructure_features: true
       enable_multi_timeframe: true
-      timeframes: ["15m"]  # 15m timeframe for better granularity
+      timeframes: ["1h"]  # 1h timeframe for regime discovery
       max_interactions: 100
       correlation_threshold: 0.8
       max_features: null  # Use all features
@@ -106,7 +106,7 @@ training_modes:
       enable_autoencoder_features: true
       enable_microstructure_features: true
       enable_multi_timeframe: true
-      timeframes: ["15m"]  # 15m timeframe for better granularity
+      timeframes: ["1h"]  # 1h timeframe for regime discovery
       max_interactions: 50  # Reduced for speed
       correlation_threshold: 0.8
       max_features: null  # Use all features
@@ -185,7 +185,7 @@ training_modes:
       enable_autoencoder_features: true  # Keep but minimal computation
       enable_microstructure_features: true  # Keep but minimal computation
       enable_multi_timeframe: true  # Keep but minimal computation
-      timeframes: ["15m"]  # 15m timeframe for better granularity
+      timeframes: ["1h"]  # 1h timeframe for regime discovery
       max_interactions: 10  # Minimal interactions for speed
       correlation_threshold: 0.8
       max_features: null  # Use all features

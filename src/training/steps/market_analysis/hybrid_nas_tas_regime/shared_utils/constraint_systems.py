@@ -387,7 +387,7 @@ class NeuralConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.MEMORY_USAGE,
                 severity=ConstraintSeverity.ERROR,
-                message=f"Estimated memory usage too high: {estimated_memory".1f"}MB > {self.constraints.max_memory_usage_mb}MB",
+                message=f"Estimated memory usage too high: {estimated_memory:.1f}MB > {self.constraints.max_memory_usage_mb}MB",
                 value=estimated_memory,
                 threshold=self.constraints.max_memory_usage_mb
             )
@@ -402,7 +402,7 @@ class NeuralConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.TRAINING_TIME,
                 severity=ConstraintSeverity.WARNING,
-                message=f"Estimated training time too long: {estimated_time".1f"}s > {self.constraints.max_training_time_seconds}s",
+                message=f"Estimated training time too long: {estimated_time:.1f}s > {self.constraints.max_training_time_seconds}s",
                 value=estimated_time,
                 threshold=self.constraints.max_training_time_seconds
             )
@@ -417,7 +417,7 @@ class NeuralConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.NUMERICAL_STABILITY,
                 severity=ConstraintSeverity.WARNING,
-                message=f"Dropout rate too high: {max_dropout".2f"} > {self.constraints.max_dropout_rate}",
+                message=f"Dropout rate too high: {max_dropout:.2f} > {self.constraints.max_dropout_rate}",
                 value=max_dropout,
                 threshold=self.constraints.max_dropout_rate
             )
@@ -432,7 +432,7 @@ class NeuralConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.PRACTICALITY,
                 severity=ConstraintSeverity.INFO,
-                message=f"Architecture complexity high: {complexity".2f"} > {self.constraints.max_complexity_score}",
+                message=f"Architecture complexity high: {complexity:.2f} > {self.constraints.max_complexity_score}",
                 value=complexity,
                 threshold=self.constraints.max_complexity_score
             )
@@ -451,7 +451,6 @@ class TreeConstraintValidator(BaseConstraintValidator):
 
     def validate(self, architecture: Any) -> ConstraintValidationResult:
         """Validate a tree architecture against all constraints."""
-        from ..search_spaces import TreeArchitecture, LayerType
 
         if not isinstance(architecture, TreeArchitecture):
             raise ValueError("Architecture must be a TreeArchitecture instance")
@@ -580,7 +579,7 @@ class TreeConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.MEMORY_USAGE,
                 severity=ConstraintSeverity.ERROR,
-                message=f"Estimated memory usage too high: {estimated_memory".1f"}MB > {self.constraints.max_memory_usage_mb}MB",
+                message=f"Estimated memory usage too high: {estimated_memory:.1f}MB > {self.constraints.max_memory_usage_mb}MB",
                 value=estimated_memory,
                 threshold=self.constraints.max_memory_usage_mb
             )
@@ -595,7 +594,7 @@ class TreeConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.TRAINING_TIME,
                 severity=ConstraintSeverity.WARNING,
-                message=f"Estimated training time too long: {estimated_time".1f"}s > {self.constraints.max_training_time_seconds}s",
+                message=f"Estimated training time too long: {estimated_time:.1f}s > {self.constraints.max_training_time_seconds}s",
                 value=estimated_time,
                 threshold=self.constraints.max_training_time_seconds
             )
@@ -610,7 +609,7 @@ class TreeConstraintValidator(BaseConstraintValidator):
             return ConstraintViolation(
                 constraint_type=ConstraintType.ARCHITECTURE_COMPLEXITY,
                 severity=ConstraintSeverity.WARNING,
-                message=f"Architecture complexity high: {complexity".2f"} > {self.constraints.max_complexity_score}",
+                message=f"Architecture complexity high: {complexity:.2f} > {self.constraints.max_complexity_score}",
                 value=complexity,
                 threshold=self.constraints.max_complexity_score
             )
@@ -651,7 +650,6 @@ class UnifiedConstraintValidator:
 
     def validate(self, architecture: Any) -> ConstraintValidationResult:
         """Validate any architecture type."""
-        from ..search_spaces import NeuralArchitecture, TreeArchitecture
 
         if isinstance(architecture, NeuralArchitecture):
             return self.neural_validator.validate(architecture)
@@ -662,7 +660,6 @@ class UnifiedConstraintValidator:
 
     def check_single_constraint(self, architecture: Any, constraint_type: ConstraintType) -> Optional[ConstraintViolation]:
         """Check a single constraint type for any architecture."""
-        from ..search_spaces import NeuralArchitecture, TreeArchitecture
 
         if isinstance(architecture, NeuralArchitecture):
             return self.neural_validator.check_single_constraint(architecture, constraint_type)

@@ -680,7 +680,6 @@ def monitor_step_execution(
             return df.transform(...)
     """
     import time
-    import logging
 
     logger = logging.getLogger(__name__)
 

@@ -158,8 +158,8 @@ def demonstrate_economic_clustering():
         logger.info("✅ Economic Adaptive Clustering Results:")
         logger.info(f"   Regimes detected: {len(set(result1.regime_predictions))}")
         logger.info(f"   Economic significance scores: {result1.economic_significance_scores}")
-        logger.info(f"   Average momentum score: {np.mean(result1.momentum_scores):.3".3f"
-        logger.info(f"   Average volume profile: {np.mean(result1.volume_profiles):.3".3f"
+        logger.info(f"   Average momentum score: {np.mean(result1.momentum_scores):.3f}")
+        logger.info(f"   Average volume profile: {np.mean(result1.volume_profiles):.3f}")
         logger.info(f"   Economic clustering used: {result1.metadata.get('economic_clustering_used', False)}")
         logger.info(f"   Momentum integration: {result1.metadata.get('momentum_integration', False)}")
         logger.info(f"   Volume integration: {result1.metadata.get('volume_integration', False)}")
@@ -200,8 +200,8 @@ def demonstrate_economic_clustering():
         logger.info("✅ Economic Hierarchical Clustering Results:")
         logger.info(f"   Regimes detected: {len(set(result2.regime_predictions))}")
         logger.info(f"   Economic significance scores: {result2.economic_significance_scores}")
-        logger.info(f"   Average momentum score: {np.mean(result2.momentum_scores):.3".3f"
-        logger.info(f"   Average volume profile: {np.mean(result2.volume_profiles):.3".3f"
+        logger.info(f"   Average momentum score: {np.mean(result2.momentum_scores):.3f}")
+        logger.info(f"   Average volume profile: {np.mean(result2.volume_profiles):.3f}")
 
     # Configuration 3: Economic K-Means with Enhanced Features
     logger.info("\n📊 Configuration 3: Economic K-Means with Enhanced Features")
@@ -243,8 +243,8 @@ def demonstrate_economic_clustering():
         logger.info("✅ Economic K-Means Clustering Results:")
         logger.info(f"   Regimes detected: {len(set(result3.regime_predictions))}")
         logger.info(f"   Economic significance scores: {result3.economic_significance_scores}")
-        logger.info(f"   Average momentum score: {np.mean(result3.momentum_scores):.3".3f"
-        logger.info(f"   Average volume profile: {np.mean(result3.volume_profiles):.3".3f"
+        logger.info(f"   Average momentum score: {np.mean(result3.momentum_scores):.3f}")
+        logger.info(f"   Average volume profile: {np.mean(result3.volume_profiles):.3f}")
 
     # Comparison Analysis
     logger.info("\n📈 Comparison Analysis")
@@ -256,11 +256,11 @@ def demonstrate_economic_clustering():
 
         for i, (result, config_name) in enumerate(zip(results, configs)):
             logger.info(f"\n{config_name}:")
-            logger.info(f"   Economic significance: {np.mean(result.economic_significance_scores):.3".3f")
-            logger.info(f"   Financial relevance: {np.mean(result.financial_relevance_scores):.3".3f")
-            logger.info(f"   Average momentum: {np.mean(result.momentum_scores):.3".3f")
-            logger.info(f"   Average volume profile: {np.mean(result.volume_profiles):.3".3f")
-            logger.info(f"   Execution time: {result.execution_time:.3".3f"
+            logger.info(f"   Economic significance: {np.mean(result.economic_significance_scores):.3f}")
+            logger.info(f"   Financial relevance: {np.mean(result.financial_relevance_scores):.3f}")
+            logger.info(f"   Average momentum: {np.mean(result.momentum_scores):.3f}")
+            logger.info(f"   Average volume profile: {np.mean(result.volume_profiles):.3f}")
+            logger.info(f"   Execution time: {result.execution_time:.3f}")
 
     logger.info("\n🎯 Key Insights:")
     logger.info("-" * 20)
@@ -374,16 +374,16 @@ def demonstrate_momentum_volume_analysis():
         logger.info("-" * 40)
         logger.info(f"   Regimes detected: {len(set(result.regime_predictions))}")
         logger.info(f"   Economic significance scores: {result.economic_significance_scores}")
-        logger.info(f"   Average momentum score: {np.mean(result.momentum_scores):.3".3f")
-        logger.info(f"   Average volume profile: {np.mean(result.volume_profiles):.3".3f")
+        logger.info(f"   Average momentum score: {np.mean(result.momentum_scores):.3f}")
+        logger.info(f"   Average volume profile: {np.mean(result.volume_profiles):.3f}")
 
         # Analyze regime characteristics
         logger.info("\n🏗️ Regime Characteristics:")
         for i in range(len(result.economic_significance_scores)):
             logger.info(f"   Regime {i}:")
-            logger.info(f"      Economic significance: {result.economic_significance_scores[i]:.".3f")
-            logger.info(f"      Momentum score: {result.momentum_scores[i]:.".3f")
-            logger.info(f"      Volume profile: {result.volume_profiles[i]:.".3f")
+            logger.info(f"      Economic significance: {result.economic_significance_scores[i]:.3f}")
+            logger.info(f"      Momentum score: {result.momentum_scores[i]:.3f}")
+            logger.info(f"      Volume profile: {result.volume_profiles[i]:.3f}")
 
     logger.info("\n🎯 Momentum-Volume Analysis Complete!")
 

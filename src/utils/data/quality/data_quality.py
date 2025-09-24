@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
+import psutil
 
 # Import our custom utilities
 from src.utils.logger import system_logger
@@ -1133,7 +1134,6 @@ class UnifiedMemoryManager:
     def get_memory_threshold(self, component_name: str) -> float:
         """Get memory threshold for a specific component."""
         try:
-            import psutil
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             threshold = self.config.get_effective_threshold(component_name, available_memory_gb)
             
@@ -1146,7 +1146,6 @@ class UnifiedMemoryManager:
     def check_memory_usage(self, component_name: str) -> Dict[str, Any]:
         """Check current memory usage and return status."""
         try:
-            import psutil
             memory = psutil.virtual_memory()
             threshold = self.get_memory_threshold(component_name)
             
@@ -1302,6 +1301,9 @@ class SimpleSchemaValidator:
 data_quality_framework = DataQualityFramework()
 unified_memory_manager = UnifiedMemoryManager()
 schema_validator = SimpleSchemaValidator()
+
+# Alias for backwards compatibility
+DataQualityAnalyzer = DataQualityFramework
 
 
 # Convenience functions for duplicate analysis

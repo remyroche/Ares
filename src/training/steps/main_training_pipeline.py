@@ -19,7 +19,7 @@ import asyncio
 import logging
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
@@ -51,6 +51,16 @@ class PipelineStage(Enum):
 def get_system_logger():
     from src.utils.logger import system_logger
     return system_logger
+
+# Import standardized logging
+try:
+    from src.training.steps.market_analysis.logging_standards import (
+        get_logger, log_info, log_warning, log_error, log_success, log_debug,
+        LoggingContext, log_step_progress, log_data_info, log_validation_result
+    )
+    STANDARDIZED_LOGGING_AVAILABLE = True
+except ImportError:
+    STANDARDIZED_LOGGING_AVAILABLE = False
 
 from src.core.decorators import handles_errors, traced, log_execution_time
 
@@ -217,7 +227,11 @@ class MainTrainingPipeline:
     def __init__(self, config: Optional[MainPipelineConfig] = None):
         """Initialize the main training pipeline."""
         self.config = config or MainPipelineConfig()
-        self.logger = logger.getChild('MainTrainingPipeline')
+        # Use standardized logging if available
+        if STANDARDIZED_LOGGING_AVAILABLE:
+            self.logger = get_logger('MainTrainingPipeline')
+        else:
+            self.logger = logger.getChild('MainTrainingPipeline')
         
         # Initialize sub-pipeline managers (only if available)
         self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
@@ -245,7 +259,10 @@ class MainTrainingPipeline:
         config = config or self.config
         pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        self.logger.info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
+        if STANDARDIZED_LOGGING_AVAILABLE:
+            log_info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
+        else:
+            self.logger.info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
         
         start_time = datetime.now()
         result = MainPipelineResult(
@@ -257,7 +274,10 @@ class MainTrainingPipeline:
         try:
             # Execute each enabled stage
             for stage in config.enabled_stages:
-                self.logger.info(f"📋 Executing stage: {stage.value}")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_info(f"📋 Executing stage: {stage.value}")
+                else:
+                    self.logger.info(f"📋 Executing stage: {stage.value}")
                 self.current_stage = stage
                 
                 stage_result = await self._execute_stage(stage, config)
@@ -266,7 +286,10 @@ class MainTrainingPipeline:
                 # Check if stage failed and handle accordingly
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
                 if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
-                    self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                    if STANDARDIZED_LOGGING_AVAILABLE:
+                        log_warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                    else:
+                        self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
                     result.failed_stages.append(stage)
             
             # Calculate overall metrics
@@ -279,11 +302,17 @@ class MainTrainingPipeline:
             
             if result.failed_sub_pipelines == 0:
                 result.status = SubPipelineStatus.COMPLETED
-                self.logger.info(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_success(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                else:
+                    self.logger.info(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
             else:
                 result.status = SubPipelineStatus.FAILED
                 result.error_message = f"Pipeline failed with {result.failed_sub_pipelines} failed sub-pipelines"
-                self.logger.error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
+                else:
+                    self.logger.error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
             
         except Exception as e:
             end_time = datetime.now()
@@ -292,7 +321,10 @@ class MainTrainingPipeline:
             result.duration_seconds = (end_time - start_time).total_seconds()
             result.error_message = str(e)
             
-            self.logger.error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+            if STANDARDIZED_LOGGING_AVAILABLE:
+                log_error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+            else:
+                self.logger.error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
         
         self.pipeline_results.append(result)
         return result
@@ -315,7 +347,10 @@ class MainTrainingPipeline:
             SubPipelineResult of the starting sub-pipeline (which will have triggered the chain)
         """
         config = config or self.config
-        self.logger.info(f"🚀 Starting sub-pipeline chain: {stage.value} -> {starting_sub_pipeline}")
+        if STANDARDIZED_LOGGING_AVAILABLE:
+            log_info(f"🚀 Starting sub-pipeline chain: {stage.value} -> {starting_sub_pipeline}")
+        else:
+            self.logger.info(f"🚀 Starting sub-pipeline chain: {stage.value} -> {starting_sub_pipeline}")
         
         # Create stage-specific configuration
         stage_config = self._create_stage_config(stage, config)
@@ -323,12 +358,18 @@ class MainTrainingPipeline:
         # Execute the sub-pipeline with automatic next triggering
         if stage == PipelineStage.MARKET_ANALYSIS:
             if not MARKET_ANALYSIS_AVAILABLE:
-                self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Market analysis sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return None
             return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
             if not MODEL_TRAINING_AVAILABLE:
-                self.logger.warning("⚠️ Model training sub-pipeline not available")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Model training sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Model training sub-pipeline not available")
                 return None
             return await self.model_training_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
         elif stage == PipelineStage.BACKTESTING:
@@ -374,12 +415,18 @@ class MainTrainingPipeline:
             return await self._execute_data_collection_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MARKET_ANALYSIS:
             if not MARKET_ANALYSIS_AVAILABLE:
-                self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Market analysis sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return []
             return await self._execute_market_analysis_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
             if not MODEL_TRAINING_AVAILABLE:
-                self.logger.warning("⚠️ Model training sub-pipeline not available")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Model training sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Model training sub-pipeline not available")
                 return []
             return await self._execute_model_training_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.BACKTESTING:
@@ -491,13 +538,19 @@ class MainTrainingPipeline:
                     result = await self.data_collection_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
                 elif stage == PipelineStage.MARKET_ANALYSIS:
                     if not MARKET_ANALYSIS_AVAILABLE:
-                        self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                        if STANDARDIZED_LOGGING_AVAILABLE:
+                            log_warning("⚠️ Market analysis sub-pipeline not available")
+                        else:
+                            self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                         continue
                     # Use execute_sub_pipeline_with_next for automatic sequential execution
                     result = await self.market_analysis_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
                 elif stage == PipelineStage.MODEL_TRAINING:
                     if not MODEL_TRAINING_AVAILABLE:
-                        self.logger.warning("⚠️ Model training sub-pipeline not available")
+                        if STANDARDIZED_LOGGING_AVAILABLE:
+                            log_warning("⚠️ Model training sub-pipeline not available")
+                        else:
+                            self.logger.warning("⚠️ Model training sub-pipeline not available")
                         continue
                     # Use execute_sub_pipeline_with_next for automatic sequential execution
                     result = await self.model_training_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
@@ -522,7 +575,6 @@ class MainTrainingPipeline:
             except Exception as e:
                 self.logger.error(f"❌ Error executing sub-pipeline {sub_pipeline_name}: {e}")
                 # Create a failed result
-                from datetime import datetime
                 failed_result = type(results[0] if results else SubPipelineResult)(
                     sub_pipeline_name=sub_pipeline_name,
                     status=SubPipelineStatus.FAILED,
@@ -546,7 +598,6 @@ class MainTrainingPipeline:
 
         # Load market data for analysis using existing klines parquet utility
         from src.utils.data.klines_parquet import get_klines_manager
-        from datetime import datetime
         
         self.logger.info("📂 Loading market data for analysis...")
         klines_manager = get_klines_manager(data_dir=config.data_dir)
@@ -690,7 +741,10 @@ class MainTrainingPipeline:
         result.failed_sub_pipelines = failed_sub_pipelines
         result.success_rate = completed_sub_pipelines / total_sub_pipelines if total_sub_pipelines > 0 else 0
 
-        self.logger.info(f"📈 Final metrics: Total={total_sub_pipelines}, Completed={completed_sub_pipelines}, Failed={failed_sub_pipelines}, Rate={result.success_rate:.1%}")
+        if STANDARDIZED_LOGGING_AVAILABLE:
+            log_info(f"📈 Final metrics: Total={total_sub_pipelines}, Completed={completed_sub_pipelines}, Failed={failed_sub_pipelines}, Rate={result.success_rate:.1%}")
+        else:
+            self.logger.info(f"📈 Final metrics: Total={total_sub_pipelines}, Completed={completed_sub_pipelines}, Failed={failed_sub_pipelines}, Rate={result.success_rate:.1%}")
         
         # Calculate performance metrics
         result.performance_metrics = {
@@ -783,7 +837,6 @@ def get_full_pipeline_config(
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
-    from datetime import datetime, timedelta
     from src.config.pipeline_modes import get_full_mode_config
     
     # Get centralized full mode configuration
@@ -792,6 +845,9 @@ def get_full_pipeline_config(
     # Full mode: 1460 days of data
     end_date = datetime.now()
     start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
+    # Set intensity percentage for full mode
+    intensity_pct = 1.0  # 100% intensity for full mode
     
     return MainPipelineConfig(
         mode=ExecutionMode.FULL,
@@ -839,7 +895,6 @@ def get_light_pipeline_config(
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
-    from datetime import datetime, timedelta
     from src.config.pipeline_modes import get_light_mode_config
     
     # Get centralized light mode configuration
@@ -848,6 +903,9 @@ def get_light_pipeline_config(
     # Light mode: 10 days of data
     end_date = datetime.now()
     start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
+    # Set intensity percentage for light mode
+    intensity_pct = 0.5  # 50% intensity for light mode
     
     return MainPipelineConfig(
         mode=ExecutionMode.LIGHT,
@@ -891,7 +949,6 @@ def get_blank_pipeline_config(
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
-    from datetime import datetime, timedelta
     from src.config.pipeline_modes import get_blank_mode_config
     
     # Get centralized blank mode configuration
@@ -900,6 +957,9 @@ def get_blank_pipeline_config(
     # Blank mode: 180 days of data
     end_date = datetime.now()
     start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
+    # Set intensity percentage for blank mode
+    intensity_pct = 0.1  # 10% intensity for blank mode
     
     return MainPipelineConfig(
         mode=ExecutionMode.BLANK,

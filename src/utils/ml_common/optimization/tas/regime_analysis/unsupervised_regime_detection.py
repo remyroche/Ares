@@ -434,7 +434,6 @@ class UnsupervisedRegimeDetector:
     
     def _find_optimal_clusters(self, features: np.ndarray) -> int:
         """Find optimal number of clusters using elbow method."""
-        from sklearn.metrics import silhouette_score
         
         max_clusters = min(self.config.max_regimes, len(features) // 10)
         if max_clusters < 2:
@@ -645,13 +644,13 @@ class UnsupervisedRegimeDetector:
             
             # Calculate silhouette score
             try:
-                from sklearn.metrics import silhouette_score
                 score = silhouette_score(features, labels)
                 
                 if score > best_score:
                     best_score = score
                     best_method = method
-            except:
+            except Exception as e:
+                self.logger.debug(f"⚠️ Method {method} evaluation failed: {e}, skipping")
                 continue
         
         return best_method

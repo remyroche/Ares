@@ -636,7 +636,7 @@ class RiskAnalyzer:
         
         # Calculate expected return and volatility
         expected_return = sum(p * r for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns))
-        expected_volatility = np.sqrt(sum(p * (r - expected_return)**2) for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns)))
+        expected_volatility = np.sqrt(sum(p * (r - expected_return)**2 for p, r in zip(self.config.scenario_probabilities, self.config.scenario_returns)))
         
         return {
             'scenario_analysis': scenario_analysis,

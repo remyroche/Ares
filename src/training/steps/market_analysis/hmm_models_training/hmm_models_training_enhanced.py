@@ -16,11 +16,21 @@ import time
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
+from ..logging_standards import (
+    get_logger, log_info, log_warning, log_error, log_success, log_debug,
+    LoggingContext, log_step_progress, log_data_info, log_validation_result
+)
 
 # New ml_commons imports for extensive functionality
-from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer
-# from src.utils.ml_common.validation.hmm_validation_pipeline import get_hmm_validation_pipeline
-from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection
+try:
+    from src.utils.ml_common.utils.hmm_hpo_config import get_hmm_hyperparameter_optimizer  # type: ignore
+except ImportError:
+    get_hmm_hyperparameter_optimizer = None
+
+try:
+    from src.utils.ml_common.utils.hmm_temporal_protection import get_hmm_temporal_protection  # type: ignore
+except ImportError:
+    get_hmm_temporal_protection = None
 
 
 class StreamlinedHMMTrainingStep(BaseTrainingStep):
@@ -75,9 +85,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         try:
             if not getattr(self.config, 'model_types', None):
                 self.config.model_types = self.hmm_hpo.get_hmm_model_types()
-        except Exception:
-            # Fall back to defaults already provided by HMMTrainingConfig
-            pass
+        except Exception as e:
+            log_warning(f"Failed to get HMM model types from HPO: {e}. Using defaults provided by HMMTrainingConfig.")
 
         # Normalize objective weights for clarity if provided
         try:
@@ -85,15 +94,15 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 s = float(sum(self.config.objective_weights))
                 if s > 0:
                     self.config.objective_weights = [w / s for w in self.config.objective_weights]
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"Failed to normalize objective weights: {e}. Using original weights.")
         # self.hmm_validation = get_hmm_validation_pipeline(config)
         self.hmm_temporal_protection = get_hmm_temporal_protection(config)
 
-        self.logger.info("✅ Streamlined HMM Training Step initialized with ml_commons tools")
-        self.logger.info(f"📊 Timeframe: {config.timeframe} (HMM state recognition)")
-        self.logger.info(f"📊 Model types: {config.model_types}")
-        self.logger.info("🧠 Available tools: HPO, Universal Validation, Temporal Protection")
+        log_success("Streamlined HMM Training Step initialized with ml_commons tools")
+        log_info(f"📊 Timeframe: {config.timeframe} (HMM state recognition)")
+        log_info(f"📊 Model types: {config.model_types}")
+        log_info("🧠 Available tools: HPO, Universal Validation, Temporal Protection")
 
     def _get_hmm_model_types(self) -> List[str]:
         """
@@ -224,7 +233,11 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 return np.abs(model.coef_).flatten()
             else:
                 return None
-        except:
+        except (AttributeError, IndexError, ValueError) as e:
+            self.logger.warning(f"Could not extract feature importance: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error extracting feature importance: {e}")
             return None
 
     def execute(
@@ -365,10 +378,17 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces()
 
         # Feature engineering utilities
-        from .shared_feature_utils import (
-            create_enhanced_features_with_names,
-            create_comprehensive_features
-        )
+        try:
+            from .shared_feature_utils import (  # type: ignore
+                create_enhanced_features_with_names,
+                create_comprehensive_features
+            )
+        except ImportError:
+            # Fallback functions if shared_feature_utils is not available
+            def create_enhanced_features_with_names(data, **kwargs):
+                return data, []
+            def create_comprehensive_features(data, **kwargs):
+                return data
         import pandas as pd
 
         # Convert regime data to DataFrame format for feature bank

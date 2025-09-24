@@ -149,7 +149,8 @@ class RiskManager:
             return True, "Trade decision validated"
             
         except Exception as e:
-            self.logger.error(f"Error validating trade decision: {e}")
+            self.logger.error(f"❌ Error validating trade decision: {e}")
+            self.logger.warning("⚠️ Trade validation failed - rejecting trade to ensure safety")
             return False, f"Validation error: {str(e)}"
     
     async def update_position(self, symbol: str, quantity: float, price: float) -> None:
@@ -233,7 +234,8 @@ class RiskManager:
             return metrics
             
         except Exception as e:
-            self.logger.error(f"Error calculating risk metrics for {symbol}: {e}")
+            self.logger.error(f"❌ Error calculating risk metrics for {symbol}: {e}")
+            self.logger.warning(f"⚠️ Using default risk metrics for {symbol} - risk assessment may be inaccurate")
             # Return default metrics
             return RiskMetrics(
                 timestamp=datetime.now(),
@@ -292,7 +294,8 @@ class RiskManager:
                 self.logger.warning(f"Risk violations for {symbol}: {violations}")
             
         except Exception as e:
-            self.logger.error(f"Error checking risk limits for {symbol}: {e}")
+            self.logger.error(f"❌ Error checking risk limits for {symbol}: {e}")
+            self.logger.warning("⚠️ Risk limits check failed - assuming no violations to allow trading")
             violations.append(f"Error checking risk limits: {str(e)}")
         
         return violations
@@ -369,7 +372,8 @@ class RiskManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error in risk monitoring: {e}")
+                self.logger.error(f"❌ Error in risk monitoring: {e}")
+                self.logger.warning("⚠️ Risk monitoring loop failed - continuing after retry delay")
                 await asyncio.sleep(30)
     
     def _calculate_risk_score(self, symbol: str, position: float, price: float, leverage: float) -> float:
@@ -430,7 +434,8 @@ class RiskManager:
             return volatility
             
         except Exception as e:
-            self.logger.error(f"Error calculating volatility for {symbol}: {e}")
+            self.logger.error(f"❌ Error calculating volatility for {symbol}: {e}")
+            self.logger.warning(f"⚠️ Using zero volatility for {symbol} - risk calculations may be inaccurate")
             return 0.0
     
     async def _calculate_sharpe_ratio(self, symbol: str) -> float:
@@ -464,7 +469,8 @@ class RiskManager:
             return sharpe_ratio
             
         except Exception as e:
-            self.logger.error(f"Error calculating Sharpe ratio for {symbol}: {e}")
+            self.logger.error(f"❌ Error calculating Sharpe ratio for {symbol}: {e}")
+            self.logger.warning(f"⚠️ Using zero Sharpe ratio for {symbol} - risk calculations may be inaccurate")
             return 0.0
     
     def _get_current_price(self, symbol: str) -> float:

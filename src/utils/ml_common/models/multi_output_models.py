@@ -536,7 +536,6 @@ class MultiOutputModel(ABC):
     def load_model(self, file_path: str) -> None:
         """Load the model from disk."""
         try:
-            import pickle
             
             with open(file_path, 'rb') as f:
                 model_data = pickle.load(f)
@@ -603,8 +602,6 @@ class MultiOutputStackingModel(MultiOutputModel):
         
         if len(self.base_models[output_name]) == 0:
             try:
-                from sklearn.ensemble import RandomForestRegressor
-                from sklearn.linear_model import LinearRegression
                 from sklearn.ensemble import GradientBoostingRegressor
                 
                 # Create simple base models
@@ -626,7 +623,6 @@ class MultiOutputStackingModel(MultiOutputModel):
         """Create default meta model for an output if none exist."""
         if output_name not in self.meta_models:
             try:
-                from sklearn.linear_model import LinearRegression
                 
                 # Create simple meta model
                 self.meta_models[output_name] = LinearRegression()

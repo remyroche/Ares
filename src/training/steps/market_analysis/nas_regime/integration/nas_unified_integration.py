@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass, field
 import time
 from datetime import datetime
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Import NAS components
 from ..core.enhanced_nas_engine import EnhancedNASEngine, NASEngineConfig
@@ -66,30 +67,42 @@ class NASUnifiedIntegration:
     
     def __init__(self, config: NASUnifiedConfig):
         """Initialize NAS unified integration."""
+        tprint("🚀 [NAS_UNIFIED_INTEGRATION] Initializing NAS Unified Integration", color="cyan", bold=True)
+        tprint(f"📊 [NAS_UNIFIED_INTEGRATION] Economic evaluation: {config.enable_economic_evaluation}", color="blue")
+        tprint(f"📊 [NAS_UNIFIED_INTEGRATION] Trading viability: {config.enable_trading_viability}", color="blue")
+        tprint(f"📊 [NAS_UNIFIED_INTEGRATION] Multi-objective optimization: {config.enable_multi_objective_optimization}", color="blue")
+        tprint(f"📊 [NAS_UNIFIED_INTEGRATION] Regime analysis: {config.enable_regime_analysis}", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize NAS engine
+        tprint("🧠 [NAS_UNIFIED_INTEGRATION] Initializing NAS engine", color="yellow")
         self.nas_engine = EnhancedNASEngine(config.nas_config)
         
         # Initialize unified utilities
+        tprint("🔧 [NAS_UNIFIED_INTEGRATION] Initializing unified utilities", color="yellow")
         self.economic_evaluator = None
         self.trading_evaluator = None
         self.optimizer = None
         self.regime_analyzer = None
         
         if config.enable_economic_evaluation:
+            tprint("💰 [NAS_UNIFIED_INTEGRATION] Creating economic evaluator", color="yellow")
             self.economic_evaluator = create_unified_economic_evaluator(config.economic_config)
         
         if config.enable_trading_viability:
+            tprint("📈 [NAS_UNIFIED_INTEGRATION] Creating trading viability evaluator", color="yellow")
             self.trading_evaluator = create_unified_trading_viability_evaluator(config.trading_config)
         
         if config.enable_multi_objective_optimization:
+            tprint("🎯 [NAS_UNIFIED_INTEGRATION] Creating multi-objective optimizer", color="yellow")
             self.optimizer = create_unified_multi_objective_optimizer(config.optimization_config)
         
         if config.enable_regime_analysis:
+            tprint("🔍 [NAS_UNIFIED_INTEGRATION] Creating regime analyzer", color="yellow")
             self.regime_analyzer = create_unified_regime_analyzer(config.regime_config)
         
+        tprint("✅ [NAS_UNIFIED_INTEGRATION] NAS Unified Integration initialized successfully", color="green")
         self.logger.info("✅ NAS Unified Integration initialized")
         self.logger.info(f"   Economic evaluation: {config.enable_economic_evaluation}")
         self.logger.info(f"   Trading viability: {config.enable_trading_viability}")

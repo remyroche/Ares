@@ -20,6 +20,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 import time
 from datetime import datetime
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +124,15 @@ class UnifiedRegimeAnalyzer:
     
     def __init__(self, config: RegimeAnalysisConfig):
         """Initialize unified regime analyzer."""
+        tprint_info("🚀 Initializing Unified Regime Analyzer")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint_success("✅ Unified Regime Analyzer initialized")
+        tprint_info(f"   Analysis types: {[t.value for t in config.analysis_types]}")
+        tprint_info(f"   Meta-learning: {config.enable_meta_learning}")
         self.logger.info("✅ Unified Regime Analyzer initialized")
         self.logger.info(f"   Analysis types: {[t.value for t in config.analysis_types]}")
         self.logger.info(f"   Meta-learning: {config.enable_meta_learning}")
@@ -149,17 +159,23 @@ class UnifiedRegimeAnalyzer:
         start_time = time.time()
         
         try:
+            tprint_info("🔍 Starting unified regime analysis...")
+            tprint_debug(f"Predictions: {len(regime_predictions)}")
+            tprint_debug(f"Regimes: {len(np.unique(regime_predictions))}")
             self.logger.info("🔍 Starting unified regime analysis...")
             self.logger.info(f"   Predictions: {len(regime_predictions)}")
             self.logger.info(f"   Regimes: {len(np.unique(regime_predictions))}")
             
             # Initialize result arrays
+            tprint_debug("📊 Initializing result arrays...")
             stability_scores = np.zeros(len(regime_predictions))
             transition_probs = np.zeros((len(regime_predictions), len(regime_predictions)))
             uncertainty_estimates = np.zeros(len(regime_predictions))
             adaptation_scores = np.zeros(len(regime_predictions))
+            tprint_success("✅ Result arrays initialized")
             
             # Perform analysis based on configuration
+            tprint_info("🔍 Performing analysis based on configuration...")
             stability_analysis = {}
             transition_analysis = {}
             uncertainty_analysis = {}

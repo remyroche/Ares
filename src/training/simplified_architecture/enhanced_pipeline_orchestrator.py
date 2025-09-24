@@ -87,7 +87,6 @@ class EnhancedPipelineOrchestrator:
         if config:
             self.config = config
         elif config_path:
-            import asyncio
             self.config = asyncio.run(self.config_manager.load_config(config_path))
         else:
             raise ValueError('Either config_path or config must be provided')

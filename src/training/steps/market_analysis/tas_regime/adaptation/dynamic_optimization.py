@@ -640,6 +640,213 @@ class TreeOnlineOptimizer:
             return {'error': str(e)}
 
 
+class TreeAdaptiveSearch:
+    """
+    Adaptive Search System for Tree Architecture Search.
+    
+    Performs adaptive search with dynamic strategy selection and parameter tuning.
+    """
+    
+    def __init__(self, config: TASConfig):
+        """Initialize adaptive search.
+        
+        Args:
+            config: TAS configuration
+        """
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Adaptive search state
+        self.search_strategies = ['random', 'grid', 'bayesian', 'evolutionary']
+        self.current_strategy = 'random'
+        self.strategy_performance = defaultdict(list)
+        self.adaptation_count = 0
+        
+        # Search parameters
+        self.strategy_switch_threshold = 0.1
+        self.performance_window = 10
+        self.exploration_rate = 0.3
+        
+        self.logger.info("✅ Tree Adaptive Search initialized")
+        self.logger.info(f"🎯 Available strategies: {self.search_strategies}")
+    
+    def adaptive_search(self,
+                       search_space: Dict[str, Any],
+                       objective_function: Callable,
+                       max_iterations: int = 100) -> Dict[str, Any]:
+        """Perform adaptive search with strategy selection.
+        
+        Args:
+            search_space: Search space definition
+            objective_function: Objective function to optimize
+            max_iterations: Maximum search iterations
+            
+        Returns:
+            Best search result
+        """
+        self.logger.info("🚀 Starting adaptive search")
+        
+        try:
+            best_result = None
+            best_score = -np.inf
+            
+            # Search loop
+            for iteration in range(max_iterations):
+                # Select strategy based on performance
+                strategy = self._select_strategy()
+                
+                # Generate candidate using selected strategy
+                candidate = self._generate_candidate(strategy, search_space)
+                
+                # Evaluate candidate
+                score = objective_function(candidate)
+                
+                # Update best result
+                if score > best_score:
+                    best_score = score
+                    best_result = candidate.copy()
+                
+                # Record strategy performance
+                self._record_strategy_performance(strategy, score)
+                
+                # Adapt strategy if needed
+                if iteration % self.performance_window == 0:
+                    self._adapt_strategy()
+                
+                # Log progress
+                if iteration % 20 == 0:
+                    self.logger.info(f"📈 Iteration {iteration}: Score = {score:.4f}, "
+                                   f"Best = {best_score:.4f}, Strategy = {strategy}")
+            
+            self.logger.info(f"✅ Adaptive search completed with best score: {best_score:.4f}")
+            return {
+                'best_result': best_result,
+                'best_score': best_score,
+                'strategy_usage': dict(self.strategy_performance),
+                'adaptation_count': self.adaptation_count
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Adaptive search failed: {e}")
+            return {'error': str(e)}
+    
+    def _select_strategy(self) -> str:
+        """Select search strategy based on performance."""
+        try:
+            # If no performance data, use random
+            if not any(self.strategy_performance.values()):
+                return 'random'
+            
+            # Calculate average performance for each strategy
+            strategy_scores = {}
+            for strategy, scores in self.strategy_performance.items():
+                if scores:
+                    strategy_scores[strategy] = np.mean(scores[-self.performance_window:])
+            
+            # Select best performing strategy with exploration
+            if np.random.random() < self.exploration_rate:
+                return np.random.choice(self.search_strategies)
+            else:
+                return max(strategy_scores.items(), key=lambda x: x[1])[0]
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Strategy selection failed: {e}")
+            return 'random'
+    
+    def _generate_candidate(self, strategy: str, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate candidate using specified strategy."""
+        try:
+            if strategy == 'random':
+                return self._random_search(search_space)
+            elif strategy == 'grid':
+                return self._grid_search(search_space)
+            elif strategy == 'bayesian':
+                return self._bayesian_search(search_space)
+            elif strategy == 'evolutionary':
+                return self._evolutionary_search(search_space)
+            else:
+                return self._random_search(search_space)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Candidate generation failed: {e}")
+            return self._random_search(search_space)
+    
+    def _random_search(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate random candidate."""
+        candidate = {}
+        for param, values in search_space.items():
+            if isinstance(values, list):
+                candidate[param] = np.random.choice(values)
+            elif isinstance(values, tuple) and len(values) == 2:
+                candidate[param] = np.random.uniform(values[0], values[1])
+            else:
+                candidate[param] = values
+        return candidate
+    
+    def _grid_search(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate grid search candidate."""
+        # Simplified grid search - in practice would maintain grid state
+        return self._random_search(search_space)
+    
+    def _bayesian_search(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate Bayesian search candidate."""
+        # Simplified Bayesian search - in practice would use acquisition function
+        return self._random_search(search_space)
+    
+    def _evolutionary_search(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate evolutionary search candidate."""
+        # Simplified evolutionary search - in practice would maintain population
+        return self._random_search(search_space)
+    
+    def _record_strategy_performance(self, strategy: str, score: float):
+        """Record strategy performance."""
+        try:
+            self.strategy_performance[strategy].append(score)
+            
+            # Keep only recent performance data
+            if len(self.strategy_performance[strategy]) > self.performance_window * 2:
+                self.strategy_performance[strategy] = self.strategy_performance[strategy][-self.performance_window:]
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Performance recording failed: {e}")
+    
+    def _adapt_strategy(self):
+        """Adapt search strategy based on performance."""
+        try:
+            # Check if strategy switching is needed
+            if len(self.strategy_performance) < 2:
+                return
+            
+            # Calculate performance differences
+            strategy_means = {}
+            for strategy, scores in self.strategy_performance.items():
+                if scores:
+                    strategy_means[strategy] = np.mean(scores[-self.performance_window:])
+            
+            if len(strategy_means) >= 2:
+                best_strategy = max(strategy_means.items(), key=lambda x: x[1])[0]
+                worst_strategy = min(strategy_means.items(), key=lambda x: x[1])[0]
+                
+                # Switch if performance difference is significant
+                if (strategy_means[best_strategy] - strategy_means[worst_strategy] > 
+                    self.strategy_switch_threshold):
+                    self.current_strategy = best_strategy
+                    self.adaptation_count += 1
+                    self.logger.info(f"🔄 Strategy adapted to: {best_strategy}")
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Strategy adaptation failed: {e}")
+    
+    def get_adaptation_summary(self) -> Dict[str, Any]:
+        """Get adaptation summary."""
+        return {
+            'current_strategy': self.current_strategy,
+            'adaptation_count': self.adaptation_count,
+            'strategy_performance': dict(self.strategy_performance),
+            'available_strategies': self.search_strategies
+        }
+
+
 # Convenience functions
 def create_dynamic_optimizer(config: TASConfig) -> TreeDynamicOptimizer:
     """Create a dynamic optimizer with default configuration."""
@@ -654,3 +861,8 @@ def create_incremental_learner(config: TASConfig) -> TreeIncrementalLearner:
 def create_online_optimizer(config: TASConfig) -> TreeOnlineOptimizer:
     """Create an online optimizer with default configuration."""
     return TreeOnlineOptimizer(config)
+
+
+def create_adaptive_search(config: TASConfig) -> TreeAdaptiveSearch:
+    """Create an adaptive search with default configuration."""
+    return TreeAdaptiveSearch(config)

@@ -5,7 +5,6 @@ from ...utils.logger import system_logger
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
-from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 

@@ -463,7 +463,6 @@ class EnhancedFeatureEngineeringStep(BaseStep):
 
         try:
             # Import numpy for mathematical operations
-            import numpy as np
 
             # === TAKER DATA FEATURES (HIGH ACCURACY) ===
             # Check if we have real taker data from Binance API

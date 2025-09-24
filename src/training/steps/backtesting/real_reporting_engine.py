@@ -39,8 +39,6 @@ except ImportError:
     px = None
 
 try:
-    import matplotlib.pyplot as plt
-    import seaborn as sns
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False

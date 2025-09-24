@@ -242,7 +242,6 @@ class SignalGenerationPipeline:
             
             # Load trained tactician base models from training steps
             # These are the models trained in src/training/steps/model_training/tactician_models_training_refactored.py
-            from src.utils.standardized_model_manager import standardized_model_manager
             
             # Load tactician base models
             self.tactician_base_models = []

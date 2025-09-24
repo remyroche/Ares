@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import time
+from typing import Dict, Any
 
 # Import all enhanced utility tools
 from src.utils.common_operations import (
@@ -113,7 +114,7 @@ class UtilityIntegrationExample:
         self.matrix_ops = UnifiedMatrixOperations(
             enable_gpu=True,
             enable_memory_optimization=True,
-            enable_parallel_processing=True,
+            enable_parallel=True,
             optimization_level='aggressive'
         )
 
@@ -177,8 +178,8 @@ class UtilityIntegrationExample:
         logger.info(f"📊 Data Quality Metrics:")
         logger.info(f"   Total rows: {quality['total_rows']}")
         logger.info(f"   Total columns: {quality['total_columns']}")
-        logger.info(f"   Missing values: {quality['missing_values']} ({quality['missing_percentage']".2f"}%)")
-        logger.info(f"   Duplicate rows: {quality['duplicate_rows']} ({quality['duplicate_percentage']".2f"}%)")
+        logger.info(f"   Missing values: {quality['missing_values']} ({quality['missing_percentage']:.2f}%)")
+        logger.info(f"   Duplicate rows: {quality['duplicate_rows']} ({quality['duplicate_percentage']:.2f}%)")
 
         if report['issues']:
             logger.warning(f"⚠️ Data quality issues found: {report['issues']}")
@@ -321,9 +322,9 @@ class UtilityIntegrationExample:
         # Run NAS search
         result = nas_engine.search(train_data, val_data)
 
-        logger.info(f"✅ NAS search completed - Best score: {result.best_score".4f"}")
+        logger.info(f"✅ NAS search completed - Best score: {result.best_score:.4f}")
         logger.info(f"   Architecture evaluations: {result.n_evaluations}")
-        logger.info(f"   Execution time: {result.execution_time".2f"}s")
+        logger.info(f"   Execution time: {result.execution_time:.2f}s")
 
         return {
             'best_score': result.best_score,
@@ -355,8 +356,8 @@ class UtilityIntegrationExample:
 
         logger.info("✅ Perfect NAS regime detection completed")
         logger.info(f"   Detected regimes: {len(result.regime_labels) if result.regime_labels else 0}")
-        logger.info(f"   Confidence: {result.confidence_score".4f"}")
-        logger.info(f"   Execution time: {result.execution_time".2f"}s")
+        logger.info(f"   Confidence: {result.confidence_score:.4f}")
+        logger.info(f"   Execution time: {result.execution_time:.2f}s")
 
         return {
             'n_regimes': len(result.regime_labels) if result.regime_labels else 0,
@@ -461,7 +462,7 @@ class UtilityIntegrationExample:
             logger.info("📊 Final Integration Summary:")
             logger.info(f"   Memory usage: {format_bytes(summary['memory_usage'])}")
             if summary['disk_status']:
-                logger.info(f"   Disk available: {summary['disk_status']['available_percentage']".1f"}%")
+                logger.info(f"   Disk available: {summary['disk_status']['available_percentage']:.1f}%")
             logger.info(f"   NAS best score: {summary['nas_results'].get('best_score', 'N/A')}")
             logger.info(f"   Regime detection confidence: {summary['regime_detection'].get('confidence', 'N/A')}")
 

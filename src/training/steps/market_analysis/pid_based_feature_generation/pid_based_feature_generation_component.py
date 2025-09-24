@@ -44,6 +44,7 @@ from ...market_analysis.components.base_component import BaseMarketAnalysisCompo
 # Import PID-based feature generation components
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult
 from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 # Import logger
 try:
@@ -439,7 +440,6 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         """Load the latest multi-horizon profit labeler outcome from file."""
         try:
             import json
-            from pathlib import Path
             
             # Look for the latest multi-horizon outcome file
             outcome_dir = Path('outcomes')
@@ -504,7 +504,6 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     self.logger.info("📊 Multi-horizon labeled data found as JSON string - attempting to parse")
                     try:
                         # Try to parse as JSON first (new format)
-                        import json
                         json_data = json.loads(labeled_data)
                         labeled_data = pd.DataFrame(json_data)
                         self.logger.info(f"✅ Successfully parsed JSON labeled data: {labeled_data.shape}")
@@ -619,8 +618,6 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
     async def _load_multi_horizon_from_outcomes(self) -> Optional[np.ndarray]:
         """Load multi-horizon labeling results from recent outcome files."""
         try:
-            from pathlib import Path
-            import json
             
             outcomes_dir = Path("outcomes")
             if not outcomes_dir.exists():

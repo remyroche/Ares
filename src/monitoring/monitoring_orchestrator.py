@@ -15,7 +15,6 @@ from .utils.common import (
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from ...utils.logger import system_logger
 
 # Import all monitoring components
 from .monitoring.enhanced_ml_monitor import (

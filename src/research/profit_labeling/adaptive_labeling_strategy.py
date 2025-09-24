@@ -22,7 +22,8 @@ import logging
 from pathlib import Path
 import json
 from datetime import datetime, timedelta
-from sklearn.cluster import KMeans, GaussianMixture
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 from scipy import stats

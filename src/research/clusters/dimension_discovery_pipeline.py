@@ -91,7 +91,6 @@ class DimensionDiscoveryPipeline:
         try:
             import shap  # type: ignore
             import xgboost as xgb  # type: ignore
-            from sklearn.preprocessing import LabelEncoder
             Xv = X.fillna(0).values
             is_cls = len(np.unique(y)) < min(len(y) * 0.1, 50)
             if is_cls:

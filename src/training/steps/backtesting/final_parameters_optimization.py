@@ -2941,7 +2941,6 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     def _create_fine_parameter_grid(self, search_space: Dict[str, Dict[str, Any]], 
                                   best_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create fine parameter grid around best parameters."""
-        import itertools
         
         param_combinations = []
         

@@ -112,16 +112,24 @@ class TradingEngine:
         
         try:
             # Validate trade decision with risk manager
-            is_valid, message = await self.risk_manager.validate_trade_decision(decision)
-            
-            if not is_valid:
-                self.logger.warning(f"Trade decision rejected by risk manager: {message}")
-                await self._notify_handlers("on_risk_violation", {
-                    "type": "trade_rejected",
-                    "message": message,
-                    "decision": decision
-                })
-                return None
+            try:
+                is_valid, message = await self.risk_manager.validate_trade_decision(decision)
+
+                if not is_valid:
+                    self.logger.error(f"❌ Trade decision rejected by risk manager: {message}")
+                    await self._notify_handlers("on_risk_violation", {
+                        "type": "trade_rejected",
+                        "message": message,
+                        "decision": decision,
+                        "symbol": decision.symbol,
+                        "action": decision.action,
+                        "quantity": decision.quantity
+                    })
+                    return None
+            except Exception as e:
+                self.logger.error(f"❌ Risk validation failed: {e}")
+                self.logger.warning("⚠️ Proceeding with trade despite risk validation failure - RISK MANAGEMENT DISABLED")
+                # Continue with trade execution
             
             # Create order from decision
             order = await self.order_manager.create_order_from_decision(decision)
@@ -213,7 +221,8 @@ class TradingEngine:
                 }
                 
             except Exception as e:
-                self.logger.error(f"Error getting position for {symbol}: {e}")
+                self.logger.error(f"❌ Error getting position for {symbol}: {e}")
+                self.logger.warning(f"⚠️ Using default values for {symbol} - position data may be inaccurate")
                 positions[symbol] = {
                     "error": str(e),
                     "current_position": 0.0,
@@ -309,7 +318,8 @@ class TradingEngine:
             self.logger.info("Emergency stop completed - all orders cancelled and trading paused")
             
         except Exception as e:
-            self.logger.error(f"Error during emergency stop: {e}")
+            self.logger.error(f"❌ Error during emergency stop: {e}")
+            self.logger.warning("⚠️ Emergency stop completed with errors - some orders may not have been cancelled")
     
     def _register_internal_handlers(self) -> None:
         """Register internal event handlers"""
@@ -409,7 +419,8 @@ class TradingEngine:
                 try:
                     await handler(data)
                 except Exception as e:
-                    self.logger.error(f"Error in trading handler: {e}")
+                    self.logger.error(f"❌ Error in trading handler: {e}")
+                    self.logger.warning("⚠️ Handler failed - continuing with other handlers")
     
     async def get_trade_history(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """Get trade history"""

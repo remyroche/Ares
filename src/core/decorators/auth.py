@@ -280,7 +280,6 @@ def owner_only(owner_field: str='user_id', param_name: str = None) -> Callable[[
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
-        import inspect
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
         if param_name:
@@ -352,7 +351,6 @@ def rate_limit(*, calls: int = 10, period: float = 60.0, key_func: Callable[[], 
         if len(call_times[key]) >= calls:
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
-            from .core.errors.base import RateLimitError
 
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after = retry_after, details={'limit': calls, 'period': period, 'key': key})

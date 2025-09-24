@@ -133,8 +133,8 @@ class TASRegimeConfig:
         )
 
     # Multi-timeframe settings
-    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m"])
-    regime_detection_timeframe: str = "15m"
+    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m", "1h"])
+    regime_detection_timeframe: str = "1h"
     enable_multi_timeframe_training: bool = True
 
     # NAS integration settings

@@ -474,7 +474,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         Returns:
             Dictionary containing training results for all regimes
         """
-        import time
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         start_time = time.time()
@@ -529,7 +528,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         feature_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """VECTORIZED: Train large regimes with parallel processing."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         results = {'models': {}, 'metadata': {}}
 
@@ -610,7 +608,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         feature_names: Optional[List[str]] = None
     ) -> Dict[int, Dict[str, Any]]:
         """VECTORIZED: Perform HPO across multiple regimes simultaneously."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         results = {}
 
@@ -643,7 +640,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         feature_names: Optional[List[str]] = None
     ) -> Dict[int, Dict[str, Any]]:
         """VECTORIZED: Train models across multiple regimes simultaneously."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         results = {}
 
@@ -812,7 +808,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         Returns:
             Dictionary containing training results and metadata
         """
-        import time
         start_time = time.time()
 
         self.logger.info("🚀 VECTORIZED: Starting ultra-fast per-regime training...")
@@ -883,7 +878,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         Returns:
             Dictionary containing saved model paths for each regime
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         saved_paths = {}
 
@@ -975,7 +969,6 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         Returns:
             Dictionary containing evaluation results for each regime
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         evaluation_results = {}
 

@@ -574,7 +574,6 @@ class MLConfidencePredictor:
     async def _initialize_meta_labeling_system(self) -> None:
         """Initialize meta-labeling system integration."""
         try:
-            from .meta_labeling_system import MetaLabelingSystem
             meta_config = self.config.get('meta_labeling', {'enable_analyst_labels': True, 'enable_tactician_labels': True, 'pattern_detection': {'volatility_threshold': 0.02, 'momentum_threshold': 0.01, 'volume_threshold': 1.5}, 'entry_prediction': {'prediction_horizon': 5, 'max_adverse_excursion': 0.02}})
             self.meta_labeling_system = MetaLabelingSystem(meta_config)
             await self.meta_labeling_system.initialize()
@@ -1376,7 +1375,6 @@ class MLConfidencePredictor:
         try:
             if not self.async_order_executor:
                 return {'success': False, 'error': 'Async order executor not available', 'execution_id': None}
-            from src.tactician.enhanced_order_manager import ExecutionRequest, ExecutionStrategy, OrderSide, OrderType
             
             order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
             order_type = OrderType.LIMIT if price else OrderType.MARKET

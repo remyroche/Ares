@@ -8,7 +8,6 @@ and live trading systems to capture comprehensive trade decision data.
 """
 import time
 import uuid
-from src.utils.logger import system_logger
 from src.monitoring.enhanced_ml_monitoring import EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradeDecision, TradingMode, ModelType
 from .shap_lime_integration import ExplainabilityIntegrator
 import numpy as np

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple, Union
 from enum import Enum
 import logging
+import numpy as np
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 from .perfect_nas_config import (
     PerfectNASConfig, NeuralArchitectureType, SearchStrategy, OptimizationObjective,
@@ -85,13 +87,17 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
     
     def __post_init__(self):
         """Initialize enhanced configuration."""
+        tprint("🚀 [ENHANCED_NAS_CONFIG] Initializing Enhanced Perfect NAS Configuration", color="cyan", bold=True)
         super().__post_init__()
+        tprint("🔧 [ENHANCED_NAS_CONFIG] Initializing adaptive thresholds", color="yellow")
         self._initialize_adaptive_thresholds()
+        tprint("✅ [ENHANCED_NAS_CONFIG] Enhanced Perfect NAS Configuration initialized successfully", color="green")
     
     def _initialize_adaptive_thresholds(self):
         """Initialize adaptive threshold learning."""
         try:
             if self.adaptive_thresholds.learning_mode != ThresholdLearningMode.DISABLED:
+                tprint(f"📊 [ENHANCED_NAS_CONFIG] Learning mode: {self.adaptive_thresholds.learning_mode.value}", color="blue")
                 # Create threshold learning configuration
                 learning_config = ThresholdLearningConfig(
                     lookback_periods=self.adaptive_thresholds.lookback_periods,
@@ -101,17 +107,23 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
                     trading_viability_bounds=self.adaptive_thresholds.trading_bounds,
                     regime_stability_bounds=self.adaptive_thresholds.stability_bounds
                 )
+                tprint(f"📊 [ENHANCED_NAS_CONFIG] Lookback periods: {self.adaptive_thresholds.lookback_periods}", color="blue")
+                tprint(f"📊 [ENHANCED_NAS_CONFIG] Learning frequency: {self.adaptive_thresholds.learning_frequency}", color="blue")
                 
                 # Initialize threshold learner
+                tprint("🧠 [ENHANCED_NAS_CONFIG] Creating threshold learner", color="yellow")
                 self._threshold_learner = AdaptiveThresholdLearner(learning_config)
                 self._threshold_learning_enabled = True
                 
+                tprint("✅ [ENHANCED_NAS_CONFIG] Adaptive threshold learning initialized successfully", color="green")
                 self.logger.info("✅ Adaptive threshold learning initialized")
             else:
                 self._threshold_learning_enabled = False
+                tprint("⚠️ [ENHANCED_NAS_CONFIG] Adaptive threshold learning disabled", color="yellow")
                 self.logger.info("⚠️ Adaptive threshold learning disabled")
                 
         except Exception as e:
+            tprint(f"❌ [ENHANCED_NAS_CONFIG] Adaptive threshold initialization failed: {e}", color="red")
             self.logger.error(f"❌ Adaptive threshold initialization failed: {e}")
             self._threshold_learning_enabled = False
     

@@ -277,8 +277,8 @@ class ReinforcementLearningSearch(BaseAdvancedSearchStrategy):
 
             # Log progress
             if iteration % 10 == 0:
-                self.logger.info(f"RL Search - Iteration {iteration}: Best Score = {self.best_score".4f"}, "
-                               f"Exploration Rate = {self.exploration_rate".3f"}")
+                self.logger.info(f"RL Search - Iteration {iteration}: Best Score = {self.best_score:.4f}, "
+                               f"Exploration Rate = {self.exploration_rate:.3f}")
 
         execution_time = time.time() - start_time
 
@@ -638,7 +638,7 @@ class EnhancedBayesianOptimization(BaseAdvancedSearchStrategy):
 
             # Log progress
             if iteration % 10 == 0:
-                self.logger.info(f"Bayesian Optimization - Iteration {iteration}: Best Score = {self.best_score".4f"}")
+                self.logger.info(f"Bayesian Optimization - Iteration {iteration}: Best Score = {self.best_score:.4f}")
 
         execution_time = time.time() - start_time
 
@@ -865,8 +865,8 @@ class AdaptiveEvolutionarySearch(BaseAdvancedSearchStrategy):
 
             # Log progress
             if generation % 10 == 0:
-                self.logger.info(f"Evolutionary Search - Generation {generation}: Best Score = {current_best".4f"}, "
-                               f"Mutation Rate = {self.mutation_rate".3f"}")
+                self.logger.info(f"Evolutionary Search - Generation {generation}: Best Score = {current_best:.4f}, "
+                               f"Mutation Rate = {self.mutation_rate:.3f}")
 
         execution_time = time.time() - start_time
 

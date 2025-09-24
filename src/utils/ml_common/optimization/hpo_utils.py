@@ -26,6 +26,8 @@ Built on existing utilities:
 
 import numpy as np
 import pandas as pd
+import inspect
+import random
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 import logging
@@ -33,6 +35,9 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from src.utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+from sklearn.metrics import get_scorer
+from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 from ...nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space
@@ -163,7 +168,8 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to start study monitoring: {e}")
-            raise
+            _LOGGER.warning("⚠️ Study monitoring failed - returning error status")
+            return {'error': str(e), 'study_id': study_id, 'status': 'failed'}
 
     def record_trial_with_monitoring(self, 
                                    study_id: str,
@@ -219,6 +225,7 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to record trial: {e}")
+            _LOGGER.warning("⚠️ Trial recording failed - trial data will be lost")
             raise
 
     def _check_convergence(self, study_id: str) -> Optional[Dict[str, Any]]:
@@ -296,7 +303,8 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Convergence check failed: {e}")
-            return None
+            _LOGGER.warning("⚠️ Convergence check failed - assuming not converged")
+            return {'converged': False, 'reason': 'check_failed'}
 
     def _check_failure_conditions(self, study_id: str) -> bool:
         """Check if failure conditions are met."""
@@ -332,6 +340,7 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Failure condition check failed: {e}")
+            _LOGGER.warning("⚠️ Failure condition check failed - assuming no failure conditions")
             return False
 
     def _update_error_summary(self, study_info: Dict[str, Any], error_info: Dict[str, Any]):
@@ -341,7 +350,8 @@ class HyperparameterOptimization:
             study_info['error_summary'][error_type] = study_info['error_summary'].get(error_type, 0) + 1
             
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Failed to update error summary: {e}")
+            _LOGGER.error(f"❌ Failed to update error summary: {e}")
+            _LOGGER.warning("⚠️ Error summary update failed - error tracking may be incomplete")
 
     def get_study_status(self, study_id: str) -> Optional[Dict[str, Any]]:
         """Get current status of a study."""
@@ -368,7 +378,8 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to get study status: {e}")
-            return None
+            _LOGGER.warning(f"⚠️ Study status check failed for {study_id} - returning error status")
+            return {'error': str(e), 'study_id': study_id, 'status': 'unknown'}
 
     def get_monitoring_summary(self) -> Dict[str, Any]:
         """Get comprehensive monitoring summary."""
@@ -426,7 +437,8 @@ class HyperparameterOptimization:
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to get monitoring summary: {e}")
-            return {'error': str(e)}
+            _LOGGER.warning("⚠️ Monitoring summary failed - returning error summary")
+            return {'error': str(e), 'active_studies': 0, 'total_studies': 0, 'failed_studies': 1}
 
     def automated_search_space_generation(self, model_type: str,
                                        data_characteristics: Dict[str, Any]) -> Dict[str, Any]:
@@ -483,7 +495,8 @@ class HyperparameterOptimization:
         except Exception as e:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Automated search space generation failed after {execution_time:.3f}s: {e}")
-            return {}
+            _LOGGER.warning("⚠️ Search space generation failed - using default search space")
+            return self._get_default_search_space(model_type)
 
     def multi_objective_optimization(self, model_factory: Callable,
                                   X: np.ndarray, y: np.ndarray,
@@ -576,7 +589,8 @@ class HyperparameterOptimization:
         except Exception as e:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Multi-objective optimization failed after {execution_time:.3f}s: {e}")
-            return {'error': str(e)}
+            _LOGGER.warning("⚠️ Multi-objective optimization failed - returning error result")
+            return {'error': str(e), 'best_params': {}, 'best_scores': {}}
 
     def early_stopping_optimization(self, model_factory: Callable,
                                   X: np.ndarray, y: np.ndarray,
@@ -661,7 +675,8 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Early stopping optimization failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Early stopping optimization failed - returning error result")
+            return {'error': str(e), 'best_params': {}, 'best_score': 0.0}
 
     def bayesian_optimization(self, model_factory: Callable,
                             X: np.ndarray, y: np.ndarray,
@@ -795,7 +810,8 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Bayesian optimization failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Bayesian optimization failed - returning error result")
+            return {'error': str(e), 'best_params': {}, 'best_score': 0.0}
 
     def staged_hpo(self, model_factory: Callable,
                    X: np.ndarray, y: np.ndarray,
@@ -939,7 +955,8 @@ class HyperparameterOptimization:
             }
         except Exception as e:
             self.logger.error(f"❌ Enhanced staged HPO failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Enhanced staged HPO failed - returning error result")
+            return {'error': str(e), 'best_params': {}, 'best_score': 0.0}
 
     def hyperparameter_importance_analysis(self, study_results: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -984,7 +1001,8 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Hyperparameter importance analysis failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Hyperparameter importance analysis failed - returning empty analysis")
+            return {'error': str(e), 'importance_scores': {}, 'ranked_parameters': []}
 
     def transfer_learning_hpo(self, base_study_results: Dict[str, Any],
                             new_data: Tuple[np.ndarray, np.ndarray],
@@ -1026,7 +1044,8 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Transfer learning HPO failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Transfer learning HPO failed - returning error result")
+            return {'error': str(e), 'best_params': {}, 'best_score': 0.0}
 
     def parallel_optimization_coordinator(self, optimization_tasks: List[Dict[str, Any]],
                                        max_workers: Optional[int] = None) -> Dict[str, Any]:
@@ -1083,7 +1102,8 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Parallel optimization coordination failed: {e}")
-            return {'error': str(e)}
+            self.logger.warning("⚠️ Parallel optimization coordination failed - returning error summary")
+            return {'error': str(e), 'completed_tasks': 0, 'failed_tasks': len(optimization_tasks)}
 
     def _initialize_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Initialize default search spaces for common models."""
@@ -1328,7 +1348,6 @@ class HyperparameterOptimization:
 
             if 'f1' in objectives:
                 try:
-                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                     cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='f1_macro')
                     scores['f1'] = float(cv_res.get('mean', 0.0))
                 except Exception:
@@ -1336,7 +1355,6 @@ class HyperparameterOptimization:
 
             if 'auc' in objectives and len(np.unique(y)) == 2:
                 try:
-                    from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                     cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='roc_auc')
                     scores['auc'] = float(cv_res.get('mean', 0.0))
                 except Exception:
@@ -1351,7 +1369,6 @@ class HyperparameterOptimization:
     def _evaluate_speed_objective(self, model: Any, X: np.ndarray) -> float:
         """Evaluate model training speed."""
         try:
-            import time
             start_time = time.time()
 
             # Quick training on subset
@@ -1403,7 +1420,6 @@ class HyperparameterOptimization:
                 return 0.5
 
             try:
-                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                 cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='accuracy')
                 return float(cv_res.get('mean', 0.0))
             except Exception:
@@ -1446,7 +1462,6 @@ class HyperparameterOptimization:
                     y_tr, y_te = y[train_idx], y[test_idx]
                     mdl = model
                     try:
-                        import inspect
                         if 'sample_weight' in inspect.signature(mdl.fit).parameters and 'sample_weight' in fit_params:
                             mdl.fit(X_tr, y_tr, sample_weight=fit_params['sample_weight'][train_idx])
                         else:
@@ -1454,7 +1469,6 @@ class HyperparameterOptimization:
                     except Exception:
                         mdl.fit(X_tr, y_tr)
                     try:
-                        from sklearn.metrics import get_scorer
                         scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
                         score = scorer(mdl, X_te, y_te)
                     except Exception:
@@ -1465,35 +1479,18 @@ class HyperparameterOptimization:
             except Exception as e:
                 self.logger.warning(f"CV loop failed: {e}, returning default score")
                 return 0.5  # Return default score
-        except Exception as e:
-            self.logger.warning(f"CV evaluation failed: {e}")
-            return 0.5
 
-    def _coarse_grid_from_search_space(self, search_space: Dict[str, Any], grid_points: int) -> Dict[str, List[Any]]:
-        grid = {}
+    def _coarse_grid_from_search_space(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
+        """
+        Create a coarse parameter grid from search space using grid_utils.
+
+        Returns a list of parameter dictionaries (Cartesian product of all parameters).
+        """
         try:
-            for name, cfg in search_space.items():
-                if isinstance(cfg, dict):
-                    typ = cfg.get('type', 'float')
-                    if typ == 'float':
-                        low, high = cfg['low'], cfg['high']
-                        grid[name] = np.linspace(low, high, num=max(2, grid_points)).tolist()
-                    elif typ == 'int':
-                        low, high = cfg['low'], cfg['high']
-                        if high == low:
-                            grid[name] = [low]
-                        else:
-                            pts = np.linspace(low, high, num=max(2, grid_points))
-                            grid[name] = sorted({int(round(v)) for v in pts})
-                    elif typ == 'categorical':
-                        grid[name] = cfg.get('choices', [])
-                else:
-                    # Legacy tuple(low, high)
-                    if isinstance(cfg, tuple) and len(cfg) == 2:
-                        grid[name] = np.linspace(cfg[0], cfg[1], num=max(2, grid_points)).tolist()
-            return grid
-        except Exception:
-            return {}
+            return build_coarse_grid_from_search_space(search_space, grid_points)
+        except Exception as e:
+            self.logger.warning(f"Failed to build coarse grid: {e}")
+            return []
 
     def _generate_random_param_combinations(self, grid: Dict[str, List[Any]], n_samples: int) -> List[Dict[str, Any]]:
         try:
@@ -1536,7 +1533,6 @@ class HyperparameterOptimization:
                        best_params: Dict[str, Any], scoring: Union[str, Callable], cv_obj: Any,
                        n_trials: int = 15, jitter: float = 0.1) -> Tuple[Dict[str, Any], float]:
         try:
-            import random
             best_p = dict(best_params)
             best_s = -np.inf
             # Evaluate baseline
@@ -1648,23 +1644,16 @@ class HyperparameterOptimization:
         try:
             self.logger.info(f"🔍 Creating coarse grid with {grid_points} points per parameter")
 
-            # Create coarse parameter grid (dict of name -> list of values)
-            coarse_grid = self._coarse_grid_from_search_space(search_space, grid_points)
-
-            # Build Cartesian product of parameter combinations safely
-            import itertools
-            param_names = list(coarse_grid.keys())
-            param_values_lists = [coarse_grid[name] for name in param_names]
-            combinations_iter = itertools.product(*param_values_lists) if param_values_lists else []
+            # Create coarse parameter grid (list of parameter dictionaries)
+            parameter_combinations = self._coarse_grid_from_search_space(search_space, grid_points)
 
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
 
             # Evaluate each parameter combination
-            for i, combo in enumerate(combinations_iter):
+            for i, params in enumerate(parameter_combinations):
                 try:
-                    params = {name: value for name, value in zip(param_names, combo)}
                     model = model_factory(**params)
                     score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
                     parameter_scores.append((params, score))

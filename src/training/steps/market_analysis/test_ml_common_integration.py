@@ -186,7 +186,7 @@ def test_functionality_with_mock_data():
         })
 
         # Test TAS engine with mock data
-        from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine import (
+        from src.training.steps.market_analysis.tas_regime import (
             quick_tas_search, TASConfig, TreeSearchStrategy
         )
 

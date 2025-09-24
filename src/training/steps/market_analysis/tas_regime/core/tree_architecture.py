@@ -8,8 +8,15 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
 import json
+import random
 from datetime import datetime
 from enum import Enum
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 from ..core.tas_config import TreeModelType, OptimizationObjective
 
@@ -307,9 +314,11 @@ class TreeArchitectureCandidate:
     
     def mutate(self, mutation_rate: float = 0.1) -> 'TreeArchitectureCandidate':
         """Create a mutated version of the architecture."""
+        tprint_debug(f"🧬 Mutating architecture with rate: {mutation_rate}")
         import random
         
         # Create a copy
+        tprint_debug("📋 Creating base copy of architecture...")
         mutated = TreeArchitectureCandidate(
             model_type=self.model_type,
             n_trees=self.n_trees,
@@ -326,34 +335,56 @@ class TreeArchitectureCandidate:
         )
         
         # Mutate parameters with given probability
+        mutations_applied = []
+        
         if random.random() < mutation_rate:
+            old_value = mutated.n_trees
             mutated.n_trees = max(1, int(self.n_trees * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"n_trees: {old_value} -> {mutated.n_trees}")
         
         if random.random() < mutation_rate:
+            old_value = mutated.max_depth
             mutated.max_depth = max(1, int(self.max_depth * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"max_depth: {old_value} -> {mutated.max_depth}")
         
         if random.random() < mutation_rate:
+            old_value = mutated.min_samples_split
             mutated.min_samples_split = max(2, int(self.min_samples_split * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"min_samples_split: {old_value} -> {mutated.min_samples_split}")
         
         if random.random() < mutation_rate:
+            old_value = mutated.min_samples_leaf
             mutated.min_samples_leaf = max(1, int(self.min_samples_leaf * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"min_samples_leaf: {old_value} -> {mutated.min_samples_leaf}")
         
         if random.random() < mutation_rate and self.learning_rate is not None:
+            old_value = mutated.learning_rate
             mutated.learning_rate = max(0.01, min(1.0, self.learning_rate * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"learning_rate: {old_value} -> {mutated.learning_rate}")
         
         if random.random() < mutation_rate and self.subsample is not None:
+            old_value = mutated.subsample
             mutated.subsample = max(0.1, min(1.0, self.subsample * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"subsample: {old_value} -> {mutated.subsample}")
         
         if random.random() < mutation_rate and self.colsample_bytree is not None:
+            old_value = mutated.colsample_bytree
             mutated.colsample_bytree = max(0.1, min(1.0, self.colsample_bytree * random.uniform(0.8, 1.2)))
+            mutations_applied.append(f"colsample_bytree: {old_value} -> {mutated.colsample_bytree}")
+        
+        if mutations_applied:
+            tprint_debug(f"✅ Applied {len(mutations_applied)} mutations: {', '.join(mutations_applied)}")
+        else:
+            tprint_debug("🚫 No mutations applied")
         
         return mutated
     
     def crossover(self, other: 'TreeArchitectureCandidate') -> 'TreeArchitectureCandidate':
         """Create a crossover between two architectures."""
-        import random
+        tprint_debug("🔀 Performing crossover between two architectures")
         
         # Create offspring
+        tprint_debug("🧬 Creating offspring from parent architectures...")
         offspring = TreeArchitectureCandidate(
             model_type=random.choice([self.model_type, other.model_type]),
             n_trees=random.choice([self.n_trees, other.n_trees]),
@@ -369,6 +400,7 @@ class TreeArchitectureCandidate:
             parent_architectures=[id(self), id(other)]
         )
         
+        tprint_debug(f"✅ Offspring created with model_type: {offspring.model_type.value}, n_trees: {offspring.n_trees}")
         return offspring
     
     def __str__(self) -> str:
@@ -403,7 +435,8 @@ class TreeArchitecture:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert architecture to dictionary."""
-        return {
+        tprint_debug("🔄 Converting TreeArchitecture to dictionary")
+        result = {
             'candidate': self.candidate.to_dict(),
             'creation_time': self.creation_time,
             'optimization_history': self.optimization_history,
@@ -414,19 +447,26 @@ class TreeArchitecture:
             'tree_analysis': self.tree_analysis,
             'complexity_analysis': self.complexity_analysis
         }
+        tprint_debug(f"✅ TreeArchitecture converted to dictionary with {len(result)} keys")
+        return result
     
     @classmethod
     def from_dict(cls, arch_dict: Dict[str, Any]) -> 'TreeArchitecture':
         """Create architecture from dictionary."""
+        tprint_debug("🔄 Creating TreeArchitecture from dictionary")
+        
         # Reconstruct candidate
+        tprint_debug("🧩 Reconstructing TreeArchitectureCandidate")
         candidate = TreeArchitectureCandidate.from_dict(arch_dict['candidate'])
         
         # Convert feature importance back to numpy array
+        tprint_debug("🔢 Converting feature importance to numpy array")
         feature_importance = None
         if arch_dict.get('feature_importance') is not None:
             feature_importance = np.array(arch_dict['feature_importance'])
         
-        return cls(
+        tprint_debug("🏗️ Building TreeArchitecture instance")
+        result = cls(
             candidate=candidate,
             creation_time=arch_dict.get('creation_time', datetime.now().isoformat()),
             optimization_history=arch_dict.get('optimization_history', []),
@@ -437,10 +477,13 @@ class TreeArchitecture:
             tree_analysis=arch_dict.get('tree_analysis'),
             complexity_analysis=arch_dict.get('complexity_analysis')
         )
+        tprint_debug(f"✅ TreeArchitecture created from dictionary with model_type: {result.candidate.model_type.value}")
+        return result
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary of the architecture."""
-        return {
+        tprint_debug("📊 Generating TreeArchitecture performance summary")
+        summary = {
             'overall_score': self.candidate.overall_score,
             'training_scores': self.training_scores,
             'validation_scores': self.validation_scores,
@@ -449,26 +492,37 @@ class TreeArchitecture:
             'efficiency_score': self.candidate.get_efficiency_score(),
             'is_valid': self.candidate.is_valid()
         }
+        tprint_debug(f"✅ Performance summary generated with overall_score: {self.candidate.overall_score}")
+        return summary
     
     def update_scores(self, scores: Dict[str, float], dataset_type: str = "validation"):
         """Update scores for the architecture."""
+        tprint_debug(f"📊 Updating scores for {dataset_type} dataset: {scores}")
+        
         if dataset_type == "training":
             self.training_scores.update(scores)
+            tprint_debug(f"✅ Updated training scores: {self.training_scores}")
         elif dataset_type == "validation":
             self.validation_scores.update(scores)
+            tprint_debug(f"✅ Updated validation scores: {self.validation_scores}")
         elif dataset_type == "test":
             if self.test_scores is None:
                 self.test_scores = {}
             self.test_scores.update(scores)
+            tprint_debug(f"✅ Updated test scores: {self.test_scores}")
         
         # Update overall score
         if "overall_score" in scores:
+            old_score = self.candidate.overall_score
             self.candidate.overall_score = scores["overall_score"]
+            tprint_debug(f"📈 Overall score updated: {old_score} -> {self.candidate.overall_score}")
     
     def add_optimization_step(self, step_info: Dict[str, Any]):
         """Add optimization step to history."""
+        tprint_debug(f"📝 Adding optimization step: {step_info}")
         step_info['timestamp'] = datetime.now().isoformat()
         self.optimization_history.append(step_info)
+        tprint_debug(f"✅ Optimization history now has {len(self.optimization_history)} steps")
     
     def get_optimization_summary(self) -> Dict[str, Any]:
         """Get optimization summary."""

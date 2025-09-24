@@ -497,7 +497,6 @@ async def demonstrate_enhanced_integration():
 
 if __name__ == "__main__":
     # Run the demonstration
-    import asyncio
     
     print("🚀 Enhanced Markov Integration Demonstration")
     print("=" * 60)

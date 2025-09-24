@@ -95,7 +95,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
             if analysis_result:
                 await self._store_analysis_result(analysis_result)
                 if self.event_bus:
-                    from .interfaces.event_bus import EventType
                     await self.event_bus.publish(EventType.ANALYSIS_COMPLETED.value, analysis_result)
             return analysis_result
         except Exception:

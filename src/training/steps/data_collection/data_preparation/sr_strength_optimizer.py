@@ -9,7 +9,6 @@ import warnings
 
 import os
 
-import warnings
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -23,7 +22,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
 
 try:
     import numba

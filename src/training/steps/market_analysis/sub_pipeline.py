@@ -26,6 +26,10 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
+from .logging_standards import (
+    get_logger, log_info, log_warning, log_error, log_success, log_debug,
+    LoggingContext, log_step_progress, log_data_info, log_validation_result
+)
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
@@ -163,7 +167,8 @@ class MarketAnalysisSubPipeline:
             self.config = config or SubPipelineConfig()
             self.original_config = {}
         
-        self.logger = logger
+        # Use standardized logging
+        self.logger = get_logger('MarketAnalysisSubPipeline')
         self.results: List[SubPipelineResult] = []
         
         # Apply logging configuration
@@ -199,8 +204,8 @@ class MarketAnalysisSubPipeline:
                     formatter = _logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
                     fh.setFormatter(formatter)
                     self.logger.addHandler(fh)
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"Failed to apply logging configuration: {e}. Continuing with default logging settings.")
     
     def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
@@ -210,10 +215,10 @@ class MarketAnalysisSubPipeline:
             Tuple of (is_success, error_dict_or_none)
         """
         if result.is_complete:
-            self.logger.info(f"✅ {stage_name} completed with complete report")
+            log_success(f"{stage_name} completed with complete report")
             return True, None
         elif result.success:
-            self.logger.warning(f"⚠️ {stage_name} completed but report is incomplete")
+            log_warning(f"{stage_name} completed but report is incomplete")
             return False, {
                 'success': False,
                 'error': f"{stage_name} produced incomplete report - missing required artifacts",
@@ -221,7 +226,7 @@ class MarketAnalysisSubPipeline:
                 'incomplete_artifacts': result.artifacts
             }
         else:
-            self.logger.error(f"❌ {stage_name} failed: {result.error_message}")
+            log_error(f"{stage_name} failed: {result.error_message}")
             return False, {
                 'success': False,
                 'error': f"{stage_name} failed: {result.error_message}",
@@ -301,22 +306,22 @@ class MarketAnalysisSubPipeline:
         # Reset results for a fresh run
         self.results = []
             
-        self.logger.info('🚀 Starting automatic execution of all 13 market analysis steps')
-        self.logger.info('=' * 80)
-        self.logger.info('📋 Steps to be executed automatically:')
-        self.logger.info('   1. sr_parameter_optimization - Optimize SR detection levels')
-        self.logger.info('   2. sr_detection - Detect Support/Resistance levels')
-        self.logger.info('   3. sr_clustering - Generate SR clusters')
-        self.logger.info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
-        self.logger.info('   5. nas_clustering - NAS-based regime clustering')
-        self.logger.info('   6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics')
-        self.logger.info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
-        self.logger.info('   8. regime_data_splitting - Tag data by regimes')
-        self.logger.info('   9. feature_lookback_optimization - Optimize feature lookback periods')
-        self.logger.info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
-        self.logger.info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
-        self.logger.info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
-        self.logger.info('=' * 80)
+        log_info('🚀 Starting automatic execution of all 13 market analysis steps')
+        log_info('=' * 80)
+        log_info('📋 Steps to be executed automatically:')
+        log_info('   1. sr_parameter_optimization - Optimize SR detection levels')
+        log_info('   2. sr_detection - Detect Support/Resistance levels')
+        log_info('   3. sr_clustering - Generate SR clusters')
+        log_info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
+        log_info('   5. nas_clustering - NAS-based regime clustering')
+        log_info('   6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics')
+        log_info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
+        log_info('   8. regime_data_splitting - Tag data by regimes')
+        log_info('   9. feature_lookback_optimization - Optimize feature lookback periods')
+        log_info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
+        log_info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
+        log_info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
+        log_info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
         result = await self.execute_sub_pipeline_with_next('sr_parameter_optimization', config)
@@ -358,7 +363,7 @@ class MarketAnalysisSubPipeline:
         11. PID-based feature generation
         12. Final feature selection (120→100→80→60)
         """
-        self.logger.info('🎯 Starting Market Analysis Sub-Pipeline execution')
+        log_info('🎯 Starting Market Analysis Sub-Pipeline execution')
         # Reset results for a fresh run
         self.results = []
         
@@ -376,10 +381,10 @@ class MarketAnalysisSubPipeline:
             results = {}
             
             # ===== SR STEPS GROUP =====
-            self.logger.info('🎯 ===== STARTING SR STEPS GROUP =====')
+            log_info('🎯 ===== STARTING SR STEPS GROUP =====')
             
             # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
-            self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
+            log_info('🎯 Executing Stage 1: SR Parameter Optimization')
             param_optimization_result = await self.execute_sub_pipeline('sr_parameter_optimization', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(param_optimization_result, "SR Parameter Optimization")
             if not is_success:
@@ -1060,11 +1065,9 @@ class MarketAnalysisSubPipeline:
             start_date = None
             end_date = None
             if hasattr(config, 'start_date') and config.start_date:
-                from datetime import datetime
                 start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
                 self.logger.info(f'📅 Using start_date filter: {start_date} (mode: {config.mode.value})')
             if hasattr(config, 'end_date') and config.end_date:
-                from datetime import datetime
                 end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
                 self.logger.info(f'📅 Using end_date filter: {end_date} (mode: {config.mode.value})')
             

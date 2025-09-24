@@ -480,7 +480,6 @@ class GridOptimizer(AdvancedSearchStrategy):
                         param_grid_dict[param_name] = [param_config]
             
             # Generate all combinations
-            from sklearn.model_selection import ParameterGrid
             param_grid = list(ParameterGrid(param_grid_dict))
             
             # Limit grid size if too large

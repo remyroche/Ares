@@ -163,9 +163,9 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     import psutil
     memory = psutil.virtual_memory()
     import os as _os
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager
+    from src.utils.enhanced_artifact_manager import get_artifact_manager
+    from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+    from src.utils.version_manager import get_version_manager
     blank_mode = _os.getenv('BLANK_TRAINING_MODE', '0') == '1'
     if blank_mode:
         min_memory_gb = 2

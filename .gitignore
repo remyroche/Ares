@@ -253,3 +253,4 @@ _site/
 # Memory dumps
 *.dmp
 *.hprof
+outcomes/market_analysis_hybrid_nas_tas_regime_discovery_outcome_*.json

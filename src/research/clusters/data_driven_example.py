@@ -438,7 +438,8 @@ def compare_old_vs_new_approach():
     
     # Test traditional approach (if available)
     try:
-        from sklearn.cluster import KMeans, GaussianMixture
+        from sklearn.cluster import KMeans
+        from sklearn.mixture import GaussianMixture
         from sklearn.preprocessing import StandardScaler
         from sklearn.metrics import silhouette_score
         

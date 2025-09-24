@@ -10,7 +10,6 @@ Provides scaffolding for comprehensive tracking.
 from enum import Enum
 from typing import Any
 
-from ...utils.logger import system_logger
 import logging
 
 class TrackingType(Enum):

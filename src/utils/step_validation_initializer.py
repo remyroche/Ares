@@ -8,7 +8,6 @@ import traceback
 from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 
-from .logger import system_logger
 import collections
 import logging
 import numpy as np

@@ -4,19 +4,25 @@ Component Factory for Market Analysis Pipeline Components.
 This factory manages the creation and registration of all pipeline components.
 """
 
+import numpy as np
+import pandas as pd
+import glob
+import pickle
 from typing import Dict, Type, Any, Optional
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
-from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
+# from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
 from .nas_regime_discovery import NASRegimeDiscoveryComponent
 from .tas_regime_discovery import TASRegimeDiscoveryComponent
 from .hybrid_nas_tas_regime_discovery import HybridNASTASRegimeDiscoveryComponent
-from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent
+from .nas_tas_clustering import NASTASClusteringComponent
+# from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
-from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
+# from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent  # DEPRECATED
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
@@ -86,7 +92,6 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
             )
             
             # Convert to ComponentResult
-            from .base_component import ComponentResult
             
             # Handle case where result is None
             if result is None:
@@ -113,7 +118,6 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 )
                 
         except Exception as e:
-            from .base_component import ComponentResult
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -377,7 +381,6 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
     def _convert_to_numpy_array(self, data):
         """Convert list data to numpy array if needed."""
         if data is not None:
-            import numpy as np
             if isinstance(data, list):
                 return np.array(data)
         return data
@@ -420,8 +423,6 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             # Load cluster assignments directly from HMM training input file
             if cluster_assignments is None:
                 try:
-                    import glob
-                    import pickle
 
                     # Find the latest HMM training input file
                     hmm_input_pattern = "optimal_clusters/binance/ETHUSDT/15m/market_analysis_hmm_training_input_ETHUSDT_BINANCE_15m_*.pkl"
@@ -454,8 +455,6 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
                 if dataframe is not None:
-                    import pandas as pd
-                    import numpy as np
                     
                     # Create basic features and targets from OHLCV data
                     if 'close' in dataframe.columns:
@@ -620,12 +619,10 @@ class ComponentFactory:
         'sr_parameter_optimization': SRParameterOptimizationComponent,
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
-        'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
         'nas_regime_discovery': NASRegimeDiscoveryComponent,
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
         'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
-        'hmm_clustering': OptimalRegimeClusteringComponent,  # Updated to use consolidated HMM clustering
-        'hmm_ensemble_training': HMMEnsembleTrainingComponent,
+        'nas_tas_clustering': NASTASClusteringComponent,  # NAS-TAS combined clustering
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
@@ -655,46 +652,53 @@ class ComponentFactory:
         Raises:
             ValueError: If component name is not registered
         """
+        tprint(f"🏭 [COMPONENT_FACTORY] Creating component: {component_name}", color="cyan")
         # Handle lazy imports for components that might cause circular imports
         if component_name == 'regime_data_splitting':
             try:
+                tprint("🔧 [COMPONENT_FACTORY] Loading RegimeDataSplittingComponent", color="yellow")
                 from .regime_data_splitting import RegimeDataSplittingComponent
-                return RegimeDataSplittingComponent(config)
+                component = RegimeDataSplittingComponent(config)
+                tprint(f"✅ [COMPONENT_FACTORY] Created RegimeDataSplittingComponent", color="green")
+                return component
             except ImportError as e:
                 raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
         
         # Handle multi-horizon profit labeler
         if component_name == 'multi_horizon_profit_labeler':
             try:
+                tprint("🔧 [COMPONENT_FACTORY] Loading MultiHorizonSubPipelineAdapter", color="yellow")
                 from ..multi_horizon_sub_pipeline_adapter import MultiHorizonSubPipelineAdapter
-                return MultiHorizonComponentWrapper(MultiHorizonSubPipelineAdapter, config)
+                component = MultiHorizonComponentWrapper(MultiHorizonSubPipelineAdapter, config)
+                tprint(f"✅ [COMPONENT_FACTORY] Created MultiHorizonComponentWrapper", color="green")
+                return component
             except ImportError as e:
+                tprint(f"❌ [COMPONENT_FACTORY] Failed to import MultiHorizonSubPipelineAdapter: {e}", color="red")
                 raise ValueError(f"Failed to import MultiHorizonSubPipelineAdapter: {e}")
         
-        # Handle HMM training components (moved to hmm_models_training module)
+        # Handle HMM training components (DEPRECATED - removed)
         if component_name == 'hmm_models_training':
-            try:
-                from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced
-                return HMMModelsTrainingComponentWrapper(HMMModelsTrainingEnhanced, config)
-            except ImportError as e:
-                raise ValueError(f"Failed to import HMMModelsTrainingEnhanced: {e}")
+            tprint("⚠️ [COMPONENT_FACTORY] HMM models training is deprecated", color="yellow")
+            raise ValueError("HMM models training is deprecated and no longer available")
         
         if component_name == 'hmm_ensemble_training':
-            try:
-                from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent
-                return HMMEnsembleTrainingComponentWrapper(HMMEnsembleTrainingComponent, config)
-            except ImportError as e:
-                raise ValueError(f"Failed to import HMMEnsembleTrainingComponent: {e}")
+            tprint("⚠️ [COMPONENT_FACTORY] HMM ensemble training is deprecated", color="yellow")
+            raise ValueError("HMM ensemble training is deprecated and no longer available")
         
         if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+            available_components = list(self._components.keys()) + ['regime_data_splitting']
+            tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
+            tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
             raise ValueError(
                 f"Unknown component: {component_name}. "
                 f"Available components: {available_components}"
             )
         
+        tprint(f"🔧 [COMPONENT_FACTORY] Creating {component_name} from registered components", color="yellow")
         component_class = self._components[component_name]
-        return component_class(config)
+        component = component_class(config)
+        tprint(f"✅ [COMPONENT_FACTORY] Successfully created {component_name}", color="green")
+        return component
     
     @classmethod
     def register_component(
@@ -725,7 +729,7 @@ class ComponentFactory:
             List of component names
         """
         # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler']
         return list(self._components.keys()) + lazy_components
     
     @classmethod
@@ -740,5 +744,5 @@ class ComponentFactory:
             True if component is available
         """
         # Check both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'hmm_models_training', 'hmm_ensemble_training']
+        lazy_components = ['regime_data_splitting']
         return component_name in self._components or component_name in lazy_components

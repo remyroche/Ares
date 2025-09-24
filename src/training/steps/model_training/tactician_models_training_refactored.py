@@ -375,7 +375,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 )
             elif model_type == "FINANCIAL_RESNET":
                 # FinancialResNet implementation would go here
-                from sklearn.ensemble import RandomForestRegressor
                 return RandomForestRegressor(
                     n_estimators=200,
                     max_depth=10,
@@ -385,7 +384,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 return self._create_random_survival_forest_model()
             else:
                 # Default fallback
-                from sklearn.ensemble import RandomForestRegressor
                 return RandomForestRegressor(
                     n_estimators=100,
                     max_depth=5,
@@ -394,7 +392,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             self.logger.error(f"❌ Failed to create model instance for {model_type}: {e}")
             # Fallback to RandomForest
-            from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=100, random_state=42)
     
     def _create_random_survival_forest_model(self):
@@ -427,12 +424,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except ImportError as e:
             self.logger.error(f"❌ Random Survival Forest not available: {e}")
             # Fallback to RandomForest
-            from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
         except Exception as e:
             self.logger.error(f"❌ Failed to create Random Survival Forest: {e}")
             # Fallback to RandomForest
-            from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
     
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
@@ -2246,7 +2241,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Create meta model (LightGBM as meta-learner)
             meta_model_type = getattr(self.config, 'meta_model', 'LightGBM')
             if meta_model_type == 'LightGBM':
-                from lightgbm import LGBMRegressor
                 meta_model = LGBMRegressor(
                     n_estimators=1000,
                     learning_rate=0.05,
@@ -2416,7 +2410,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             # Create meta-model (ElasticNetCV for better performance)
             if meta_model_type == 'ElasticNetCV':
-                from sklearn.linear_model import ElasticNetCV
                 meta_model = ElasticNetCV(
                     cv=5,
                     random_state=42,
@@ -2445,7 +2438,6 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Stacking ensemble training failed: {e}")
             # Fallback to simple meta-model with ElasticNetCV
             if meta_model_type == 'ElasticNetCV':
-                from sklearn.linear_model import ElasticNetCV
                 from sklearn.model_selection import cross_val_score
                 
                 # Create and train ElasticNetCV directly

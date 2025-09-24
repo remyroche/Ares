@@ -27,7 +27,6 @@ from src.training.steps.market_analysis.step1 import (
     MissingDataDownloaderAndGapFiller,
     Step1Orchestrator,
 )
-from src.utils.logger import system_logger
 import collections
 import logging
 import time

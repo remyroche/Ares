@@ -638,11 +638,20 @@ class ModelSelector:
             if hasattr(model, 'predict_proba'):
                 try:
                     proba = model.predict_proba(market_data.iloc[-1:].values)
-                    confidence = np.max(proba[0])
-                except:
+                    if len(proba[0]) > 0:
+                        confidence = np.max(proba[0])
+                    else:
+                        confidence = 0.5
+                        self.logger.warning(f"Model {model_type} returned empty probability array")
+                except (ValueError, IndexError, TypeError) as e:
                     confidence = 0.5
+                    self.logger.warning(f"Could not calculate confidence for {model_type}: {e}")
+                except Exception as e:
+                    confidence = 0.0
+                    self.logger.error(f"Unexpected error calculating confidence for {model_type}: {e}")
             else:
                 confidence = 0.5
+                self.logger.debug(f"Model {model_type} doesn't support predict_proba")
             
             # Combine with historical performance
             base_performance = model_info['performance'].get(self.config.performance_metric, 0.0)
@@ -689,8 +698,17 @@ class ModelSelector:
             else:
                 meta_features['time_of_day'] = 0.5
             
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             self.logger.warning(f"Meta-feature extraction failed: {e}")
+            # Default meta-features
+            meta_features = {
+                'market_volatility': 0.02,
+                'trend_strength': 0.0,
+                'volume_ratio': 1.0,
+                'time_of_day': 0.5
+            }
+        except Exception as e:
+            self.logger.error(f"Unexpected error during meta-feature extraction: {e}")
             # Default meta-features
             meta_features = {
                 'market_volatility': 0.02,
@@ -832,11 +850,15 @@ class ModelSelector:
             try:
                 history_path = Path(self.config.selection_history_path)
                 history_path.parent.mkdir(parents=True, exist_ok=True)
-                
+
                 with open(history_path, 'w') as f:
                     json.dump(self.selection_history, f, indent=2)
+
+                self.logger.debug(f"Selection history saved to {history_path}")
+            except (IOError, OSError, json.JSONEncodeError) as e:
+                self.logger.warning(f"Could not save selection history: {e}")
             except Exception as e:
-                self.logger.warning(f"Failed to save selection history: {e}")
+                self.logger.error(f"Unexpected error saving selection history: {e}")
     
     def _update_adaptive_learning(self, result: ModelSelectionResult, market_data: pd.DataFrame):
         """Update adaptive learning weights."""

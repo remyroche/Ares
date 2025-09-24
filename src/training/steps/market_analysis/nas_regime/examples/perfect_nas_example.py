@@ -16,8 +16,8 @@ import seaborn as sns
 # Import Perfect NAS components
 from ..core.perfect_nas_config import PerfectNASConfig, NeuralArchitectureType
 from ..core.perfect_nas_regime_detector import PerfectNASRegimeDetector
-from ..evaluation.economic_evaluator import EconomicSignificanceEvaluator
-from ..evaluation.trading_viability_evaluator import TradingViabilityEvaluator
+from ...hybrid_nas_tas_regime.shared_utils.unified_economic_evaluator import UnifiedEconomicSignificanceEvaluator as EconomicSignificanceEvaluator
+from ...hybrid_nas_tas_regime.shared_utils.unified_trading_viability_evaluator import UnifiedTradingViabilityEvaluator as TradingViabilityEvaluator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -198,22 +198,22 @@ def demonstrate_individual_components(market_data: np.ndarray, timestamps: np.nd
         
         # Create dummy regime predictions for testing
         dummy_predictions = np.random.randint(0, config.n_regimes, len(market_data))
-    economic_scores = economic_evaluator.evaluate(market_data, dummy_predictions, timestamps)
-    logger.info(f"Economic significance scores: {np.mean(economic_scores):.3f} ± {np.std(economic_scores):.3f}")
-    
-    # Trading Viability Evaluator
-    logger.info("📈 Testing Trading Viability Evaluator...")
-    trading_evaluator = TradingViabilityEvaluator(config.trading_config)
-    trading_scores = trading_evaluator.evaluate(market_data, dummy_predictions, timestamps)
-    logger.info(f"Trading viability scores: {np.mean(trading_scores):.3f} ± {np.std(trading_scores):.3f}")
-    
-    # Get detailed analysis
-    economic_analysis = economic_evaluator.get_detailed_economic_analysis(market_data, dummy_predictions, timestamps)
-    trading_analysis = trading_evaluator.get_detailed_trading_analysis(market_data, dummy_predictions, timestamps)
-    
-    logger.info(f"Economic analysis: {len(economic_analysis.get('regime_economic_profiles', {}))} regime profiles")
-    logger.info(f"Trading analysis: {len(trading_analysis.get('regime_trading_profiles', {}))} regime profiles")
-    
+        economic_scores = economic_evaluator.evaluate(market_data, dummy_predictions, timestamps)
+        logger.info(f"Economic significance scores: {np.mean(economic_scores):.3f} ± {np.std(economic_scores):.3f}")
+        
+        # Trading Viability Evaluator
+        logger.info("📈 Testing Trading Viability Evaluator...")
+        trading_evaluator = TradingViabilityEvaluator(config.trading_config)
+        trading_scores = trading_evaluator.evaluate(market_data, dummy_predictions, timestamps)
+        logger.info(f"Trading viability scores: {np.mean(trading_scores):.3f} ± {np.std(trading_scores):.3f}")
+        
+        # Get detailed analysis
+        economic_analysis = economic_evaluator.get_detailed_economic_analysis(market_data, dummy_predictions, timestamps)
+        trading_analysis = trading_evaluator.get_detailed_trading_analysis(market_data, dummy_predictions, timestamps)
+        
+        logger.info(f"Economic analysis: {len(economic_analysis.get('regime_economic_profiles', {}))} regime profiles")
+        logger.info(f"Trading analysis: {len(trading_analysis.get('regime_trading_profiles', {}))} regime profiles")
+        
     except Exception as e:
         logger.warning(f"Individual component demonstration failed: {e}")
 

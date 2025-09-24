@@ -26,7 +26,7 @@ class FeatureCategory(Enum):
     OSCILLATOR = "oscillator"
     SUPPORT_RESISTANCE = "support_resistance"
     CANDLESTICK_PATTERN = "candlestick_pattern"
-    HMM_REGIME = "hmm_regime"
+    # HMM_REGIME = "hmm_regime"  # DEPRECATED
     CROSS_TIMEFRAME = "cross_timeframe"
     MICROSTRUCTURE = "microstructure"
     ENTROPY = "entropy"

@@ -768,7 +768,6 @@ class CryptoPriceAnalyzer:
 
         # Create output directory if it doesn't exist
         if save_to_file:
-            from pathlib import Path
             Path(output_dir).mkdir(exist_ok=True)
             Path(f"{output_dir}/reports").mkdir(exist_ok=True)
 
@@ -1521,7 +1520,6 @@ def main():
 
     # Save detailed results as JSON
     import json
-    import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Create a comprehensive results dictionary

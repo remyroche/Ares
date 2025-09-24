@@ -340,7 +340,6 @@ class ModelPersistence:
             elif self.config.serialization_format == "pickle":
                 with open(model_path, 'rb') as f:
                     if self.config.compression:
-                        import gzip
                         with gzip.GzipFile(fileobj=f) as gz:
                             model = pickle.load(gz)
                     else:
@@ -540,7 +539,6 @@ class ModelPersistence:
             elif self.config.serialization_format == "pickle":
                 with open(model_path, 'rb') as f:
                     if self.config.compression:
-                        import gzip
                         with gzip.GzipFile(fileobj=f) as gz:
                             model = pickle.load(gz)
                     else:
@@ -616,7 +614,6 @@ class ModelPersistence:
             
             # Remove old versions
             for old_version in versions[self.config.max_versions:]:
-                import shutil
                 shutil.rmtree(old_version)
                 self.logger.info(f"🗑️ Removed old version: {old_version}")
             

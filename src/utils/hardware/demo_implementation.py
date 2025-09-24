@@ -204,7 +204,7 @@ def demo_adaptive_optimization_engine():
     logger.info("=" * 50)
     
     try:
-        from utils.hardware import (
+        from src.utils.hardware.adaptive_optimization_engine import (
             get_adaptive_optimization_engine,
             WorkloadType,
             OptimizationTarget
@@ -251,7 +251,7 @@ def demo_feature_availability():
     logger.info("=" * 50)
     
     try:
-        from utils.hardware import (
+        from src.utils.hardware import (
             get_feature_status,
             get_available_features,
             is_feature_available
@@ -286,7 +286,7 @@ def demo_integration_workflow():
     logger.info("=" * 50)
     
     try:
-        from utils.hardware import (
+        from src.utils.hardware import (
             get_unified_hardware_manager,
             get_adaptive_optimization_engine,
             WorkloadType,

@@ -425,7 +425,6 @@ def benchmark_cross_validation():
     """Benchmark traditional vs matrix-based cross-validation."""
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.model_selection import cross_val_score
-    import time
 
     # Generate sample data
     np.random.seed(42)

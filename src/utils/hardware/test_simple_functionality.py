@@ -161,7 +161,6 @@ class TestConfigurationAndEnums(unittest.TestCase):
     def test_hardware_config(self):
         """Test hardware configuration."""
         try:
-            from utils.hardware.unified_hardware_manager import HardwareConfig, OptimizationLevel
             config = HardwareConfig(
                 memory_limit_gb=8.0,
                 cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
@@ -213,7 +212,6 @@ class TestBasicOperations(unittest.TestCase):
     def test_cpu_optimizer_basic_operations(self):
         """Test basic CPU optimizer operations."""
         try:
-            from utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
             optimizer = M1CPUOptimizer()
             
             # Test basic operations
@@ -232,7 +230,6 @@ class TestBasicOperations(unittest.TestCase):
     def test_gpu_manager_basic_operations(self):
         """Test basic GPU manager operations."""
         try:
-            from utils.hardware.m1_gpu_utils import M1GPUManager
             manager = M1GPUManager()
             
             # Test basic operations
@@ -246,7 +243,6 @@ class TestBasicOperations(unittest.TestCase):
     def test_memory_optimizer_basic_operations(self):
         """Test basic memory optimizer operations."""
         try:
-            from utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
             optimizer = M1MemoryOptimizer()
             
             # Test basic operations

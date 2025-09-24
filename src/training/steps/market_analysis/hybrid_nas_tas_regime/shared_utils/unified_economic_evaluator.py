@@ -24,6 +24,10 @@ from datetime import datetime
 
 # Import position-aware trading analyzer
 from .position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,19 +153,32 @@ class UnifiedEconomicSignificanceEvaluator:
         Args:
             config: Economic evaluation configuration
         """
+        tprint_info("🚀 Initializing Unified Economic Significance Evaluator")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize position-aware analyzer if enabled
+        tprint_debug("🔍 Initializing position-aware analyzer...")
         self.position_analyzer = None
         if config.enable_position_aware_analysis:
             if config.position_aware_config is None:
                 config.position_aware_config = PositionAwareConfig()
             self.position_analyzer = PositionAwareTradingAnalyzer(config.position_aware_config)
+            tprint_success("✅ Position-aware analyzer initialized")
+        else:
+            tprint_debug("🚫 Position-aware analysis disabled")
         
         # Economic indicators (placeholder - would be loaded from external data)
+        tprint_debug("📊 Loading economic indicators...")
         self.economic_indicators = self._load_economic_indicators()
+        tprint_success("✅ Economic indicators loaded")
         
+        tprint_success("✅ Unified Economic Significance Evaluator initialized")
+        tprint_info(f"   Position-aware analysis: {config.enable_position_aware_analysis}")
+        tprint_info(f"   Economic indicators: {config.enable_economic_indicators}")
+        tprint_info(f"   Bootstrap analysis: {config.enable_bootstrap_analysis}")
         self.logger.info("✅ Unified Economic Significance Evaluator initialized")
         self.logger.info(f"   Position-aware analysis: {config.enable_position_aware_analysis}")
         self.logger.info(f"   Economic indicators: {config.enable_economic_indicators}")
@@ -207,11 +224,15 @@ class UnifiedEconomicSignificanceEvaluator:
         start_time = time.time()
         
         try:
+            tprint_info("💰 Starting unified economic significance evaluation...")
+            tprint_debug(f"Data shape: {market_data.shape}")
+            tprint_debug(f"Regimes: {len(np.unique(regime_predictions))}")
             self.logger.info("💰 Starting unified economic significance evaluation...")
             self.logger.info(f"   Data shape: {market_data.shape}")
             self.logger.info(f"   Regimes: {len(np.unique(regime_predictions))}")
             
             # Convert data to numpy array if needed
+            tprint_debug("📊 Converting data to numpy array...")
             if isinstance(market_data, pd.DataFrame):
                 data_array = market_data.values
                 if timestamps is None and 'timestamp' in market_data.columns:
@@ -220,16 +241,27 @@ class UnifiedEconomicSignificanceEvaluator:
                 data_array = market_data
                 if timestamps is None:
                     timestamps = np.arange(len(data_array))
+            tprint_success("✅ Data converted to numpy array")
             
             # Calculate individual economic metrics
+            tprint_info("📈 Calculating individual economic metrics...")
+            tprint_debug("💰 Calculating price impact significance...")
             price_impact_scores = self._calculate_price_impact_significance(data_array, regime_predictions)
+            tprint_debug("📊 Calculating volume significance...")
             volume_scores = self._calculate_volume_significance(data_array, regime_predictions)
+            tprint_debug("📉 Calculating volatility impact...")
             volatility_scores = self._calculate_volatility_impact(data_array, regime_predictions)
+            tprint_debug("📈 Calculating trend consistency...")
             trend_scores = self._calculate_trend_consistency(data_array, regime_predictions)
+            tprint_debug("⚡ Calculating market efficiency...")
             efficiency_scores = self._calculate_market_efficiency(data_array, regime_predictions)
+            tprint_debug("📊 Calculating economic indicator correlation...")
             indicator_scores = self._calculate_economic_indicator_correlation(data_array, regime_predictions, timestamps)
+            tprint_debug("💼 Calculating trading opportunity significance...")
             trading_scores = self._calculate_trading_opportunity_significance(data_array, regime_predictions)
+            tprint_debug("⚠️ Calculating risk adjustment significance...")
             risk_scores = self._calculate_risk_adjustment_significance(data_array, regime_predictions)
+            tprint_success("✅ Individual economic metrics calculated")
             
             # Architecture-specific enhancements
             if architecture_type == "TAS" and self.config.enable_tree_based_analysis:

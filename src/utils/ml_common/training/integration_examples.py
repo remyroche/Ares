@@ -486,9 +486,6 @@ def example_analyst_integration():
 
 def example_tactician_integration():
     """Example of how to integrate enhanced training into Tactician models."""
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.linear_model import ElasticNet
-    from sklearn.ensemble import GradientBoostingRegressor
     
     # Create sample data
     np.random.seed(42)
@@ -524,8 +521,6 @@ def example_tactician_integration():
 
 def example_ensemble_integration():
     """Example of how to integrate enhanced training into ensemble training."""
-    from sklearn.ensemble import RandomForestRegressor, VotingRegressor
-    from sklearn.linear_model import ElasticNet, Ridge
     
     # Create sample data
     np.random.seed(42)

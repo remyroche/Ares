@@ -12,6 +12,10 @@ import logging
 from datetime import datetime
 
 from ..config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +30,20 @@ class NASIntegrationComponent:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize NAS integration component."""
+        tprint_info("🚀 Initializing NAS Integration Component")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize NAS components
+        tprint_info("🔧 Initializing NAS components...")
         self._initialize_nas_components()
 
+        tprint_success("✅ NAS Integration Component initialized")
+        tprint_info(f"   Architecture: {self.config.get('primary_architecture', 'hybrid')}")
+        tprint_info(f"   Neural ODEs: {self.config.get('enable_neural_odes', True)}")
+        tprint_info(f"   Vision Transformers: {self.config.get('enable_vision_transformers', True)}")
         self.logger.info("✅ NAS Integration Component initialized")
         self.logger.info(f"   Architecture: {self.config.get('primary_architecture', 'hybrid')}")
         self.logger.info(f"   Neural ODEs: {self.config.get('enable_neural_odes', True)}")
@@ -39,15 +51,19 @@ class NASIntegrationComponent:
 
     def _initialize_nas_components(self):
         """Initialize NAS-specific components."""
+        tprint_debug("🔧 Initializing NAS-specific components...")
         try:
             # Import NAS components dynamically
+            tprint_debug("📦 Importing NAS components...")
             from src.training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import (
                 PerfectNASRegimeDetector,
                 PerfectNASConfig,
                 PerfectNASResult
             )
+            tprint_success("✅ NAS components imported")
 
             # Create NAS regime detector
+            tprint_debug("🔍 Creating NAS regime detector...")
             nas_config = PerfectNASConfig(
                 primary_architecture=self.config.get('primary_architecture', 'hybrid'),
                 enable_neural_odes=self.config.get('enable_neural_odes', True),

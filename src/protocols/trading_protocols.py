@@ -8,11 +8,11 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from .custom_types.base_types import Symbol, Timestamp
-    from .custom_types.ml_types import PredictionResult
-    from src.custom_types.trading_types import (
-import logging
+    from src.custom_types.base_types import Symbol, Timestamp
+    from src.custom_types.ml_types import PredictionResult, ModelInput
+    import logging
 
+    from src.custom_types.trading_types import (
         PositionInfo,
         RegimeClassification,
         RiskParameters,

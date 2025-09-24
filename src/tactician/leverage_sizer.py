@@ -1,25 +1,26 @@
 """
-import contextlib
-from datetime import datetime
-import math
-import math
-from typing import Any
-
-from core.decorators import handles_errors
-from utils.linear_confidence_scaling import LinearConfidenceScaler
-from utils.logger import system_logger
-from utils.math_validation import MathValidationError
-from utils.math_validation import safe_divide
-from utils.math_validation import safe_log
-from utils.math_validation import validate_positive
-from utils.math_validation import validate_range
-from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
-
-from ..utils.logger import system_logger
 Simplified Leverage Sizer for high leverage trading.
 Uses ML confidence scores, liquidation risk model, and market health analysis.
 """
-    safe_divide, safe_log, validate_positive, validate_range, MathValidationError
+
+import contextlib
+from datetime import datetime
+import math
+from typing import Any
+
+from src.core.decorators import handles_errors
+from src.utils.linear_confidence_scaling import LinearConfidenceScaler
+from src.utils.logger import system_logger
+from src.utils.math_validation import MathValidationError
+from src.utils.math_validation import safe_divide
+from src.utils.math_validation import safe_log
+from src.utils.math_validation import validate_positive
+from src.utils.math_validation import validate_range
+from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
+from src.utils.validation.unified_framework import (
+    safe_divide as unified_safe_divide, safe_log as unified_safe_log, 
+    validate_positive as unified_validate_positive, validate_range as unified_validate_range, 
+    MathValidationError as unified_MathValidationError
 )
 
 # Use the imported handles_errors decorator directly
@@ -50,7 +51,15 @@ class LeverageSizer:
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid leverage sizer configuration'), AttributeError: (False, 'Missing required leverage parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='leverage sizer initialization')
+    @handles_errors(
+        error_handlers={
+            ValueError: (False, 'Invalid leverage sizer configuration'), 
+            AttributeError: (False, 'Missing required leverage parameters'), 
+            KeyError: (False, 'Missing configuration keys')
+        }, 
+        default_return=False, 
+        context='leverage sizer initialization'
+    )
     async def initialize(self) -> bool:
         """Initialize the leverage sizer."""
         self.logger.info('Initializing leverage sizer...')
@@ -98,7 +107,14 @@ class LeverageSizer:
         except Exception as e:
             self.logger.exception(f'Error refreshing step17 configuration: {e}')
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid input data for leverage sizing'), AttributeError: (None, 'Sizer not properly initialized')}, default_return={}, context='leverage sizing calculation')
+    @handles_errors(
+        error_handlers={
+            ValueError: (None, 'Invalid input data for leverage sizing'), 
+            AttributeError: (None, 'Sizer not properly initialized')
+        }, 
+        default_return={}, 
+        context='leverage sizing calculation'
+    )
     async def calculate_leverage(self, ml_predictions: dict[str, Any], current_price: float = 0.0, account_balance: float = 1000.0, analyst_confidence: float = 0.5, tactician_confidence: float = 0.5, market_health_analysis: dict[str, Any] | None = None, strategist_risk_parameters: dict[str, Any] | None = None) -> dict[str, Any]:
         """
         Calculate leverage using ML confidence scores with simplified approach.
@@ -184,7 +200,7 @@ class LeverageSizer:
             return self.leverage_sizing_history[-limit:]
         return self.leverage_sizing_history.copy()
 
-    @handles_errors(fallback = None)
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the leverage sizer."""
         try:
@@ -194,7 +210,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.exception(f'❌ Failed to stop leverage sizer: {e}')
 
-    @handles_errors(fallback = None)
+    @handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup leverage sizer resources."""
         try:
@@ -205,7 +221,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.exception(f'Error cleaning up leverage sizer: {e}')
 
-@handles_errors(fallback = None)
+@handles_errors(fallback=None)
 async def setup_leverage_sizer(config: dict[str, Any] | None = None) -> LeverageSizer | None:
     """
     Setup and return a configured LeverageSizer instance.

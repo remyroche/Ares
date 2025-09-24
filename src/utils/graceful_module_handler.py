@@ -4,7 +4,6 @@ import sys
 
 from typing import Any, Optional, Dict
 from .logger import system_logger
-from .logger import system_logger
 import logging
 
 class GracefulModuleHandler:

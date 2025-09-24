@@ -474,7 +474,6 @@ class TradingMLIntegration:
             
         except Exception as e:
             self.logger.error(f"❌ Trading model training failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'failed', 'error': str(e)}
     
@@ -547,7 +546,6 @@ class TradingMLIntegration:
             
         except Exception as e:
             self.logger.error(f"❌ Classification model training failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -608,7 +606,6 @@ class TradingMLIntegration:
             
         except Exception as e:
             self.logger.error(f"❌ Regression model training failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -782,7 +779,6 @@ class TradingMLIntegration:
             
         except Exception as e:
             self.logger.error(f"❌ Trading signal generation failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     

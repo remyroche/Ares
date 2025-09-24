@@ -371,7 +371,6 @@ class TacticianNASIntegration:
         try:
             # Try PyTorch training
             if hasattr(model, 'parameters'):
-                import torch
                 import torch.optim as optim
                 from torch.utils.data import DataLoader, TensorDataset
                 

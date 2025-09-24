@@ -90,7 +90,7 @@ def demonstrate_batch_operations():
     logger.info("🔄 Demonstrating Batch Matrix Operations")
     
     try:
-        from matrix_operations_improved import (
+        from src.utils.matrix_operations.unified_operations import (
             get_unified_matrix_operations,
             m1_parallel_operations
         )
@@ -137,7 +137,7 @@ def demonstrate_memory_optimization():
     logger.info("🧠 Demonstrating Memory Optimization")
     
     try:
-        from matrix_operations_improved import (
+        from src.utils.matrix_operations.unified_operations import (
             get_unified_matrix_operations,
             m1_optimize_memory,
             get_m1_performance_stats

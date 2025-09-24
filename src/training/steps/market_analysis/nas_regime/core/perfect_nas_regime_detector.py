@@ -19,6 +19,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 import time
 from dataclasses import dataclass
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Enhanced-only implementation imports
 
@@ -97,22 +98,34 @@ class PerfectNASRegimeDetector:
         Args:
             config: Perfect NAS configuration with full tool integration and adaptive thresholds
         """
+        tprint("🚀 [PERFECT_NAS_REGIME_DETECTOR] Initializing Perfect NAS Regime Detector", color="cyan", bold=True)
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Architecture: {config.primary_architecture.value}", color="blue")
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Neural ODEs: {config.enable_neural_odes}", color="blue")
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Vision Transformers: {config.enable_vision_transformers}", color="blue")
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Meta-learning: {config.enable_meta_learning}", color="blue")
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Search Strategy: {config.search_strategy.value}", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Check if using enhanced configuration with adaptive thresholds
         self.using_adaptive_thresholds = isinstance(config, EnhancedPerfectNASConfig)
+        tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Using adaptive thresholds: {self.using_adaptive_thresholds}", color="blue")
         
         # Initialize enhanced utilities
+        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced utilities", color="yellow")
         self._initialize_enhanced_utilities()
         
         # Initialize enhanced detector with full tool integration
+        tprint("🧠 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced detector", color="yellow")
         self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
 
         # Initialize shared utilities
+        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing shared utilities", color="yellow")
         self._initialize_shared_utilities()
+        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing position-aware analyzer", color="yellow")
         self._initialize_position_aware_analyzer()
 
+        tprint("✅ [PERFECT_NAS_REGIME_DETECTOR] Perfect NAS Regime Detector initialized successfully", color="green")
         self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
 
         self.logger.info(f"   Architecture: {config.primary_architecture.value}")
@@ -123,6 +136,10 @@ class PerfectNASRegimeDetector:
         self.logger.info(f"   Maximum Advancement: Enabled")
         
         if self.using_adaptive_thresholds:
+            tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Adaptive Thresholds: {config.adaptive_thresholds.learning_mode.value}", color="blue")
+            tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Economic Learning: {config.adaptive_thresholds.enable_economic_learning}", color="blue")
+            tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Trading Learning: {config.adaptive_thresholds.enable_trading_learning}", color="blue")
+            tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Stability Learning: {config.adaptive_thresholds.enable_stability_learning}", color="blue")
             self.logger.info(f"   Adaptive Thresholds: {config.adaptive_thresholds.learning_mode.value}")
             self.logger.info(f"   Economic Learning: {config.adaptive_thresholds.enable_economic_learning}")
             self.logger.info(f"   Trading Learning: {config.adaptive_thresholds.enable_trading_learning}")

@@ -27,10 +27,10 @@ from src.core.domain.decorators import (
 )
 import pandas as pd
 
-from src.utils.common_operations import (
 import datetime
 import typing
 
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )

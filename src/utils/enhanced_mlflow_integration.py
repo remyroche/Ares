@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 from .logger import system_logger
-from .logger import system_logger
 from src.core.decorators import handles_errors
 """
 Enhanced MLflow Integration for Enhanced Training Manager
@@ -20,10 +19,8 @@ import sys
 import tempfile
 from datetime import datetime
 from functools import wraps
-from typing import Any
 import mlflow
 import pandas as pd
-from .logger import system_logger
 from ..core.decorators.errors import handles_errors
 from src.utils.mlflow_utils import extract_training_metadata, log_artifacts_with_metadata, log_enhanced_training_metadata, log_metrics_with_metadata, log_model_with_metadata, log_params_with_metadata, validate_run_metadata
 import collections
@@ -490,7 +487,6 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         try:
-            import json
             with tempfile.NamedTemporaryFile(suffix='.json', delete = False, mode='w') as tmp_file:
                 json.dump(summary, tmp_file, indent = 2, default = str)
                 tmp_path = tmp_file.name

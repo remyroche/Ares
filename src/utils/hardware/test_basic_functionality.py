@@ -86,7 +86,6 @@ class TestBasicFunctionality(unittest.TestCase):
     def test_m1_cpu_optimizer_creation(self):
         """Test M1 CPU optimizer creation."""
         try:
-            from utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
             optimizer = M1CPUOptimizer()
             self.assertIsNotNone(optimizer)
             self.assertTrue(hasattr(optimizer, 'cpu_count'))
@@ -98,7 +97,6 @@ class TestBasicFunctionality(unittest.TestCase):
     def test_m1_gpu_manager_creation(self):
         """Test M1 GPU manager creation."""
         try:
-            from utils.hardware.m1_gpu_utils import M1GPUManager
             manager = M1GPUManager()
             self.assertIsNotNone(manager)
             self.assertTrue(hasattr(manager, 'is_m1'))
@@ -110,7 +108,6 @@ class TestBasicFunctionality(unittest.TestCase):
     def test_m1_memory_optimizer_creation(self):
         """Test M1 memory optimizer creation."""
         try:
-            from utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
             optimizer = M1MemoryOptimizer()
             self.assertIsNotNone(optimizer)
             self.assertTrue(hasattr(optimizer, 'memory_limit_gb'))
@@ -168,7 +165,6 @@ class TestAdvancedFunctionality(unittest.TestCase):
     def test_unified_hardware_manager_creation(self):
         """Test unified hardware manager creation."""
         try:
-            from utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
             config = HardwareConfig(memory_limit_gb=4.0)
             manager = UnifiedHardwareManager(config)
             self.assertIsNotNone(manager)
@@ -182,7 +178,6 @@ class TestAdvancedFunctionality(unittest.TestCase):
     def test_advanced_cpu_optimizer_creation(self):
         """Test advanced CPU optimizer creation."""
         try:
-            from utils.hardware.advanced_cpu_optimizer import AdvancedM1CPUOptimizer
             optimizer = AdvancedM1CPUOptimizer()
             self.assertIsNotNone(optimizer)
             self.assertIsNotNone(optimizer.core_affinity_manager)
@@ -195,7 +190,6 @@ class TestAdvancedFunctionality(unittest.TestCase):
     def test_enhanced_gpu_manager_creation(self):
         """Test enhanced GPU manager creation."""
         try:
-            from utils.hardware.enhanced_gpu_manager import EnhancedM1GPUManager
             manager = EnhancedM1GPUManager()
             self.assertIsNotNone(manager)
             self.assertIsNotNone(manager.memory_pool_manager)
@@ -208,7 +202,6 @@ class TestAdvancedFunctionality(unittest.TestCase):
     def test_advanced_memory_optimizer_creation(self):
         """Test advanced memory optimizer creation."""
         try:
-            from utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer, MemoryStrategy
             optimizer = AdvancedM1MemoryOptimizer(memory_limit_gb=4.0, strategy=MemoryStrategy.ADAPTIVE)
             self.assertIsNotNone(optimizer)
             self.assertIsNotNone(optimizer.memory_pools)
@@ -221,7 +214,6 @@ class TestAdvancedFunctionality(unittest.TestCase):
     def test_adaptive_optimization_engine_creation(self):
         """Test adaptive optimization engine creation."""
         try:
-            from utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
             engine = AdaptiveOptimizationEngine()
             self.assertIsNotNone(engine)
             self.assertIsNotNone(engine.database)
@@ -269,7 +261,6 @@ class TestConfigurationAndEnums(unittest.TestCase):
     def test_hardware_config(self):
         """Test hardware configuration."""
         try:
-            from utils.hardware.unified_hardware_manager import HardwareConfig, OptimizationLevel
             config = HardwareConfig(
                 memory_limit_gb=8.0,
                 cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
@@ -310,7 +301,7 @@ class TestGlobalFunctions(unittest.TestCase):
     def test_global_function_imports(self):
         """Test that global functions can be imported."""
         try:
-            from utils.hardware import (
+            from src.utils.hardware import (
                 get_unified_hardware_manager,
                 get_advanced_cpu_optimizer,
                 get_enhanced_gpu_manager,

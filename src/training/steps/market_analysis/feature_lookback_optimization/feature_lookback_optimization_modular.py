@@ -33,6 +33,10 @@ pd, _ = get_dependency('pandas')
 # Import logger
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
+from ..logging_standards import (
+    get_logger, log_info, log_warning, log_error, log_success, log_debug,
+    LoggingContext, log_step_progress, log_data_info, log_validation_result
+)
 
 
 @dataclass
@@ -67,8 +71,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Initialize the feature lookback optimization component."""
         super().__init__(config)
 
-        # Setup logger
-        self.logger = system_logger.getChild('FeatureLookbackOptimization')
+        # Use standardized logging
+        self.logger = get_logger('FeatureLookbackOptimization')
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
 
@@ -121,7 +125,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         start_time = self.performance_monitor.start_operation("execute")
 
         try:
-            tprint("🚀 Starting feature lookback optimization...")
+            log_info("🚀 Starting feature lookback optimization...")
 
             # Validate inputs
             is_valid, validation_summary, cleaned_data = self.validator.validate_data(
@@ -154,12 +158,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             )
 
             if market_data is None:
+                log_error("Market data loading failed - no data available for feature lookback optimization")
                 return self._create_failed_result()
 
             # Prepare data for optimization
             optimization_data = self._prepare_data_for_optimization(market_data, labeling_data)
 
             if optimization_data is None or optimization_data.empty:
+                log_error(f"Data preparation failed - optimization data is {'None' if optimization_data is None else 'empty'}")
                 return self._create_failed_result()
 
             # Perform feature optimization
@@ -186,7 +192,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 artifacts=artifacts
             )
 
-            tprint("✅ Feature lookback optimization completed successfully")
+            log_success("Feature lookback optimization completed successfully")
             return result
 
         except Exception as e:

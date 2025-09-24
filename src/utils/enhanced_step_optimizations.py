@@ -902,7 +902,6 @@ def get_intelligent_optimization_stats() -> Dict[str, Any]:
 
 # Import psutil for memory monitoring
 try:
-    import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False

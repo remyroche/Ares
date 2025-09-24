@@ -3,7 +3,6 @@ from .core.decorators import handles_errors
 '\nEnhanced Scenario-Based Predictor for Tactician\n\nImplements advanced probabilistic scenario analysis with:\n- All step07 technical indicators\n- 15-minute look-ahead period\n- Fractal scenario definitions (linear progression)\n- Full step17 optimization for all parameters\n- Complete migration from existing system\n'
 import logging
 from datetime import datetime
-from typing import Any
 import lightgbm as lgb
 import numpy as np
 import pandas as pd

@@ -28,11 +28,11 @@ from datetime import datetime
 import contextlib
 
 # Import the triple barrier components
-from .triple_barrier_labeling import (
-    UnifiedTripleBarrierLabeler,
-    TripleBarrierConfig,
-    create_triple_barrier_labeler,
-    apply_triple_barrier_labeling
+from .multi_horizon_profit_labeler import (
+    MultiHorizonProfitLabeler,
+    MultiHorizonConfig,
+    create_multi_horizon_labeler,
+    apply_multi_horizon_labeling
 )
 from .regime_aware_triple_barrier_optimizer import (
     RegimeAwareTripleBarrierOptimizer,
@@ -136,7 +136,7 @@ class EnhancedMarketAnalysisWithTripleBarrier:
                 enable_validation=self.config.enable_validation
             )
             
-            self.triple_barrier_labeler = UnifiedTripleBarrierLabeler(triple_barrier_config)
+            self.triple_barrier_labeler = MultiHorizonProfitLabeler(triple_barrier_config)
             
             # Initialize regime optimizer if regime-aware
             if self.config.regime_aware and self.config.optimize_regime_parameters:

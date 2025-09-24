@@ -232,10 +232,9 @@ def test_cvlsa_feature_extractor():
     logger.info("🔧 Testing CVLSA Feature Extractor...")
     
     try:
-        from src.utils.ml_common.models.cvlsa_integration import (
+        from src.utils.ml_common.cvlsa import (
             CVLSAFeatureExtractor, create_cvlsa_feature_extractor
         )
-        from src.utils.ml_common.models.cvlsa_architecture import EnhancedCVLSAConfig
         
         # Create sample data
         market_data, X, y, regimes = create_sample_market_data(200, 8)
@@ -329,7 +328,7 @@ def test_cross_view_attention():
     logger.info("👁️ Testing Cross-View Attention...")
     
     try:
-        from src.utils.ml_common.models.cvlsa_architecture import (
+        from src.utils.ml_common.cvlsa import (
             CrossViewAttention, EnhancedCVLSAConfig
         )
         
@@ -381,7 +380,7 @@ def test_multi_scale_temporal_attention():
     logger.info("⏰ Testing Multi-Scale Temporal Attention...")
     
     try:
-        from src.utils.ml_common.models.cvlsa_architecture import (
+        from src.utils.ml_common.cvlsa import (
             MultiScaleTemporalAttention, EnhancedCVLSAConfig
         )
         
@@ -431,7 +430,7 @@ def test_bayesian_optimization():
     logger.info("🔍 Testing Bayesian Hyperparameter Optimization...")
     
     try:
-        from src.utils.ml_common.models.cvlsa_architecture import (
+        from src.utils.ml_common.cvlsa import (
             BayesianHyperparameterOptimizer, EnhancedCVLSAConfig
         )
         

@@ -417,7 +417,6 @@ class TrainingStepEnhancer:
                 if regime_labels is not None and len(np.unique(regime_labels)) > 1:
                     # Use regime-aware CV for overfitting monitoring
                     try:
-                        from src.training.steps.model_training.enhanced_regime_aware_hpo import EnhancedCVStrategies
                         cv_strategies = EnhancedCVStrategies()
 
                         splits = cv_strategies.regime_aware_time_series_split(

@@ -425,7 +425,6 @@ class WeightOptimizationEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare optimization data: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -555,7 +554,6 @@ class WeightOptimizationEngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Scipy optimization failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
@@ -626,7 +624,6 @@ class WeightOptimizationEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Grid search optimization failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
@@ -729,7 +726,6 @@ class WeightOptimizationEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Genetic algorithm optimization failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
@@ -928,7 +924,6 @@ class WeightOptimizationEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare optimization data with overfitting protection: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -1016,7 +1011,6 @@ class WeightOptimizationEngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Scipy optimization with overfitting protection failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     

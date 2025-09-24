@@ -18,6 +18,35 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[TRAINING_ORCHESTRATOR] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 # Import components
 from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult
 from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionResult
@@ -141,17 +170,22 @@ class TrainingOrchestrator:
         Args:
             config: Orchestrator configuration
         """
+        tprint("🎯 Initializing Training Orchestrator", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"📊 Config: mode={config.mode.value}, regime_detection={config.enable_regime_detection}", color="cyan")
         
         # Set up logging
+        tprint("📝 Setting up logging", color="yellow")
         if config.enable_logging:
             self._setup_logging()
         
         # Initialize components
+        tprint("🔧 Initializing components", color="yellow")
         self._initialize_components()
         
         # Orchestration state
+        tprint("📊 Initializing orchestration state", color="yellow")
         self.current_pipeline_state = {}
         self.execution_history = []
         self.performance_cache = {}
@@ -165,6 +199,9 @@ class TrainingOrchestrator:
         self.logger.info(f"     - Model selection: {config.enable_model_selection}")
         self.logger.info(f"     - Model management: {config.enable_model_management}")
         self.logger.info(f"     - Performance tracking: {config.enable_performance_tracking}")
+        
+        tprint("✅ Training Orchestrator initialization complete", color="green")
+        tprint(f"🎯 Mode: {config.mode.value}, Components: regime={config.enable_regime_detection}, training={config.enable_model_training}, selection={config.enable_model_selection}", color="cyan")
     
     def _setup_logging(self):
         """Set up logging configuration."""
@@ -179,36 +216,52 @@ class TrainingOrchestrator:
     
     def _initialize_components(self):
         """Initialize orchestration components."""
+        tprint("🔧 Starting component initialization", color="yellow")
         try:
             # Initialize trainer
             if self.config.enable_model_training:
+                tprint("🎓 Creating regime-aware trainer", color="yellow")
                 self.trainer = RegimeAwareTrainer(self.config.training_config)
                 self.logger.info("✅ Regime-aware trainer initialized")
+                tprint("✅ Regime-aware trainer created", color="green")
             else:
                 self.trainer = None
+                tprint("⏭️ Model training disabled, skipping trainer", color="cyan")
             
             # Initialize selector
             if self.config.enable_model_selection:
+                tprint("🎯 Creating model selector", color="yellow")
                 self.selector = ModelSelector(self.config.selection_config)
                 self.logger.info("✅ Model selector initialized")
+                tprint("✅ Model selector created", color="green")
             else:
                 self.selector = None
+                tprint("⏭️ Model selection disabled, skipping selector", color="cyan")
             
             # Initialize manager
             if self.config.enable_model_management:
+                tprint("📁 Creating model manager", color="yellow")
                 self.manager = ModelManager(self.config.manager_config)
                 self.logger.info("✅ Model manager initialized")
+                tprint("✅ Model manager created", color="green")
             else:
                 self.manager = None
+                tprint("⏭️ Model management disabled, skipping manager", color="cyan")
             
             # Initialize performance tracker
             if self.config.enable_performance_tracking:
+                tprint("📊 Creating performance tracker", color="yellow")
                 self.performance_tracker = PerformanceTracker(self.config.performance_config)
                 self.logger.info("✅ Performance tracker initialized")
+                tprint("✅ Performance tracker created", color="green")
             else:
                 self.performance_tracker = None
+                tprint("⏭️ Performance tracking disabled, skipping tracker", color="cyan")
+            
+            tprint("✅ All components initialized successfully", color="green")
             
         except Exception as e:
+            tprint(f"❌ Component initialization failed: {e}", color="red")
             self.logger.error(f"❌ Component initialization failed: {e}")
             raise
     
@@ -353,22 +406,36 @@ class TrainingOrchestrator:
             # Check for missing values
             missing_values = market_data.isnull().sum()
             if missing_values.any():
-                self.logger.warning(f"⚠️ Found missing values: {missing_values[missing_values > 0].to_dict()}")
-                # Fill missing values with forward fill
-                market_data = market_data.fillna(method='ffill').fillna(method='bfill')
+                missing_summary = missing_values[missing_values > 0].to_dict()
+                self.logger.warning(f"⚠️ Found missing values in {len(missing_summary)} columns: {missing_summary}")
+                try:
+                    # Fill missing values with forward fill, then backward fill
+                    market_data = market_data.ffill().bfill()
+                    self.logger.info(f"✅ Filled missing values using forward/backward fill")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to fill missing values: {e}")
+                    raise
             
             # Check for infinite values
             inf_values = np.isinf(market_data.select_dtypes(include=[np.number])).sum()
             if inf_values.any():
-                self.logger.warning(f"⚠️ Found infinite values: {inf_values[inf_values > 0].to_dict()}")
-                # Replace infinite values with NaN and fill
-                market_data = market_data.replace([np.inf, -np.inf], np.nan)
-                market_data = market_data.fillna(method='ffill').fillna(method='bfill')
+                inf_summary = inf_values[inf_values > 0].to_dict()
+                self.logger.warning(f"⚠️ Found infinite values in {len(inf_summary)} columns: {inf_summary}")
+                try:
+                    # Replace infinite values with NaN and fill
+                    market_data = market_data.replace([np.inf, -np.inf], np.nan)
+                    market_data = market_data.ffill().bfill()
+                    self.logger.info(f"✅ Replaced infinite values and filled using forward/backward fill")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to handle infinite values: {e}")
+                    raise
             
             # Check data types
             numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-            if len(numeric_columns) < len(feature_columns):
-                self.logger.warning("⚠️ Some feature columns are not numeric")
+            non_numeric_features = [col for col in feature_columns if col not in numeric_columns]
+            if non_numeric_features:
+                self.logger.warning(f"⚠️ Non-numeric feature columns detected: {non_numeric_features}")
+                self.logger.info(f"   Total features: {len(feature_columns)}, Numeric features: {len(numeric_columns)}")
             
             self.logger.info(f"✅ Data validation completed - Shape: {market_data.shape}")
             return market_data
@@ -425,6 +492,10 @@ class TrainingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"❌ Feature engineering failed: {e}")
+            self.logger.warning("⚠️ Returning original data - feature engineering will be skipped, which may impact model performance")
+            # Add warning to result warnings if we have access to result object
+            if 'result' in locals():
+                result.warnings.append(f"Feature engineering failed: {e}")
             return market_data  # Return original data if engineering fails
     
     def _orchestrate_training(self, 
@@ -497,7 +568,9 @@ class TrainingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"❌ Model management orchestration failed: {e}")
-            return {'error': str(e)}
+            error_result = {'error': str(e), 'success': False}
+            self.logger.warning("⚠️ Model management failed - models will not be registered or deployed")
+            return error_result
     
     def _orchestrate_performance_tracking(self, training_result: RegimeTrainingResult) -> Dict[str, Any]:
         """Orchestrate performance tracking setup."""
@@ -536,10 +609,20 @@ class TrainingOrchestrator:
                 regime_performance = {}
                 
                 for model_type, model_info in models.items():
-                    model = model_info['model']
-                    
+                    if not isinstance(model_info, dict):
+                        self.logger.warning(f"⚠️ Invalid model_info for {model_type}: {model_info}")
+                        continue
+
+                    model = model_info.get('model')
+                    if model is None:
+                        self.logger.warning(f"⚠️ No model found for {model_type} in regime {regime_id}")
+                        continue
+
                     # Get test performance
                     test_metrics = model_info.get('test_metrics', {})
+                    if not isinstance(test_metrics, dict):
+                        test_metrics = {}
+
                     regime_performance[model_type] = test_metrics.get('f1_score', 0.0)
                 
                 # Average performance for regime

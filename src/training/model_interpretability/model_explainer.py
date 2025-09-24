@@ -17,7 +17,6 @@ from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
 
 class ModelExplainer:
     """Comprehensive model explainer using SHAP and LIME."""

@@ -31,8 +31,7 @@ from .core.tree_cvlSA_architecture import TreeCVLSASearch, CVLSAResult
 
 # Meta-learning components
 from .meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML, TreePrototypicalNetwork
-from .meta_learning.few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
-from .meta_learning.continual_learning import ContinualTreeLearner, TreeEpisodicMemory
+from .meta_learning import FewShotTreeLearner, TreeFewShotAdapter, ContinualTreeLearner, TreeEpisodicMemory
 
 # Search strategies
 from .search.evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm
@@ -41,9 +40,9 @@ from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
 from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2
 
 # Optimization components
-from .optimization.hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
-from .optimization.memory_optimization import TreeMemoryOptimizer, TreeCacheManager
-from .optimization.parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch
+from .optimization.enhanced_hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
+from .optimization import TreeMemoryOptimizer, TreeCacheManager
+from .optimization import TreeParallelOptimizer, TreeDistributedSearch
 
 # Uncertainty estimation
 from .uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty

@@ -24,6 +24,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
+from tprint import tprint
 
 # Import existing neural NAS
 from .neural_architecture_search import NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
@@ -124,17 +125,23 @@ class HybridNASSystem:
     
     def __init__(self, config: HybridNASConfig):
         """Initialize hybrid NAS system."""
+        tprint("🚀 [HYBRID_NAS] Initializing Hybrid NAS System", color="cyan", bold=True)
+        tprint(f"📊 [HYBRID_NAS] Strategy: {config.hybrid_strategy}", color="blue")
         self.config = config
         self.logger = logger.getChild('HybridNASSystem')
         
         # Initialize individual NAS systems
+        tprint("🧠 [HYBRID_NAS] Initializing neural NAS system", color="yellow")
         self.neural_nas = NeuralArchitectureSearch(config.neural_config)
+        tprint("🌳 [HYBRID_NAS] Initializing tree-based NAS system", color="yellow")
         self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
         
         # Hybrid components
+        tprint("🔧 [HYBRID_NAS] Initializing hybrid components", color="blue")
         self.candidates = []
         self.best_candidate = None
         
+        tprint(f"✅ [HYBRID_NAS] Hybrid NAS System initialized with strategy: {config.hybrid_strategy}", color="green", bold=True)
         self.logger.info(f"✅ Hybrid NAS System initialized with strategy: {config.hybrid_strategy}")
     
     def search(self, 
@@ -158,23 +165,31 @@ class HybridNASSystem:
         Returns:
             Best hybrid architecture candidate
         """
+        tprint("🚀 [HYBRID_NAS] Starting Hybrid NAS Search", color="cyan", bold=True)
+        tprint(f"📊 [HYBRID_NAS] Training data shape: {X_train.shape}, labels: {y_train.shape}", color="blue")
         self.logger.info("🚀 Starting Hybrid NAS Search...")
         start_time = time.time()
         
         try:
             # Prepare validation data
             if X_val is None or y_val is None:
+                tprint("🔧 [HYBRID_NAS] Splitting training data for validation", color="yellow")
                 from sklearn.model_selection import train_test_split
                 X_train, X_val, y_train, y_val = train_test_split(
                     X_train, y_train, test_size=0.2, random_state=42
                 )
+                tprint(f"📊 [HYBRID_NAS] Validation data shape: {X_val.shape}, labels: {y_val.shape}", color="blue")
             
             # Analyze data characteristics
             if data_characteristics is None:
+                tprint("🔍 [HYBRID_NAS] Analyzing data characteristics", color="yellow")
                 data_characteristics = self._analyze_data_characteristics(X_train, y_train)
+                tprint(f"📊 [HYBRID_NAS] Data characteristics: {data_characteristics}", color="cyan")
             
             # Choose search strategy based on data characteristics
+            tprint("🎯 [HYBRID_NAS] Choosing search strategy", color="yellow")
             search_strategy = self._choose_search_strategy(data_characteristics)
+            tprint(f"📊 [HYBRID_NAS] Selected search strategy: {search_strategy}", color="green")
             self.logger.info(f"📊 Selected search strategy: {search_strategy}")
             
             # Perform hybrid search

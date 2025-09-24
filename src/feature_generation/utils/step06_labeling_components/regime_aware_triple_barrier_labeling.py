@@ -621,5 +621,3 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
         data_copy['labeling_method'] = 'error_fallback'
         data_copy['labeling_error'] = str(e)
         return data_copy
-
-from typing import Dict, Optional, Any, Union

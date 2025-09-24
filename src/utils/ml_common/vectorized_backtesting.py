@@ -695,7 +695,6 @@ def run_vectorized_backtest(signals: Union[np.ndarray, pd.DataFrame],
 # Example usage and benchmarking
 def benchmark_backtesting():
     """Benchmark traditional vs vectorized backtesting."""
-    import time
 
     # Generate sample data
     np.random.seed(42)

@@ -473,8 +473,6 @@ class RegimeWeightManager:
     async def save_performance_data(self):
         """Save performance data and weights to cache."""
         try:
-            import os
-            import json
             
             # Prepare data for saving
             save_data = {

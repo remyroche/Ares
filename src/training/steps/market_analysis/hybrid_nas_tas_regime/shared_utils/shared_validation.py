@@ -688,7 +688,6 @@ class SharedValidator:
                     metrics[metric.value] = mean_squared_error(y_true, y_pred)
                 
                 elif metric == ValidationMetric.RMSE:
-                    from sklearn.metrics import mean_squared_error
                     metrics[metric.value] = np.sqrt(mean_squared_error(y_true, y_pred))
                 
                 elif metric == ValidationMetric.R2_SCORE:

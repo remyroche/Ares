@@ -56,7 +56,6 @@ from .step06_utility_container import (
 
 # Import validation utilities
 # Math validation functions - defined inline to avoid import issues
-import numpy as np
 
 def safe_divide(a, b, default=0.0):
     try:
@@ -1046,7 +1045,6 @@ class Step06ComprehensiveImplementation:
         # Save final data if available
         if 'integration_results' in results and 'final_data' in results['integration_results']:
             final_data_path = output_path / 'final_engineered_data.parquet'
-            from src.utils.parquet_utils import ParquetWriter
             final_reduced = reduce_dataframe_memory(results['integration_results']['final_data'])
             ParquetWriter.write_partitioned(final_reduced, final_data_path, partition_size=500_000)
         

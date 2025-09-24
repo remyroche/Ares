@@ -201,7 +201,6 @@ def create_fallback_logger(name: str = 'fallback'):
     Returns:
         logging.Logger: Configured fallback logger
     """
-    import logging
     logger = logging.getLogger(name)
     # Avoid duplicate emissions
     logger.propagate = False

@@ -492,7 +492,6 @@ class MLEnhancedDiscovery:
         method = self.config.manifold_method.lower()
         
         if method == "tsne":
-            from sklearn.manifold import TSNE
             manifold = TSNE(
                 n_components=self.config.manifold_components,
                 random_state=self.config.random_state,
@@ -775,7 +774,6 @@ class MLEnhancedDiscovery:
             n_clusters = trial.suggest_int('n_clusters', 2, 15)
             
             if method == 'kmeans':
-                from sklearn.cluster import KMeans
                 clusterer = KMeans(n_clusters=n_clusters, random_state=42)
             elif method == 'gmm':
                 from sklearn.mixture import GaussianMixture

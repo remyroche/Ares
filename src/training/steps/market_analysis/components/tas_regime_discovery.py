@@ -17,6 +17,10 @@ import time
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 
 class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
@@ -29,9 +33,15 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the TAS regime discovery component."""
+        tprint_info("🚀 Initializing TAS Regime Discovery Component")
+        tprint_debug(f"Configuration: {config}")
+        
         super().__init__(config)
         self.logger = system_logger.getChild('TASRegimeDiscovery')
         self._resources_to_cleanup = []
+        
+        tprint_success("✅ TAS Regime Discovery Component initialized")
+        tprint_info("🔧 Component ready for regime discovery")
     
     def __enter__(self):
         """Context manager entry."""
@@ -72,51 +82,72 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with TAS regime discovery results
         """
+        tprint_info("🌳 Starting TAS Regime Discovery")
         self.logger.info('🌳 Starting TAS Regime Discovery')
         
         try:
             # Resolve symbol from config or pipeline state
+            tprint_debug("🔍 Resolving symbol configuration...")
             symbol = getattr(self.config, 'symbol', None)
             if symbol is None and 'symbol' in pipeline_state:
                 symbol = pipeline_state['symbol']
             if symbol is None:
+                tprint_error("❌ Symbol must be provided in config or pipeline state")
                 raise ValueError("Symbol must be provided in config or pipeline state")
+            tprint_success(f"✅ Symbol resolved: {symbol}")
                 
             # Resolve timeframe from config or pipeline state
+            tprint_debug("🔍 Resolving timeframe configuration...")
             timeframe = getattr(self.config, 'timeframe', None)
             if timeframe is None and 'timeframe' in pipeline_state:
                 timeframe = pipeline_state['timeframe']
             if timeframe is None:
-                timeframe = '15m'  # Default timeframe for regime discovery
+                timeframe = '1h'  # Default timeframe for regime discovery
+                tprint_warning(f"⚠️ Using default timeframe: {timeframe}")
+            tprint_success(f"✅ Timeframe resolved: {timeframe}")
 
             # Get market data
+            tprint_info("📊 Loading market data...")
             market_data = await self._load_market_data(data, symbol)
             if market_data is None or market_data.empty:
+                tprint_error(f"❌ No market data available for symbol: {symbol}")
                 raise ValueError(f"No market data available for TAS regime discovery for symbol: {symbol}")
+            tprint_success(f"✅ Market data loaded: {len(market_data)} rows")
             
             # Configure TAS regime detection
+            tprint_info("⚙️ Creating TAS configuration...")
             tas_config = self._create_tas_config(market_data, pipeline_state)
+            tprint_success("✅ TAS configuration created")
             
             # Perform TAS regime discovery
+            tprint_info("🌳 Performing TAS regime discovery...")
             discovery_start_time = time.time()
             tas_result = await self._perform_tas_regime_discovery(market_data, tas_config)
             discovery_time = time.time() - discovery_start_time
+            tprint_success(f"✅ TAS regime discovery completed in {discovery_time:.2f}s")
             
             if not tas_result.success:
+                tprint_error(f"❌ TAS regime discovery failed: {tas_result.error_message}")
                 raise ValueError(f"TAS regime discovery failed: {tas_result.error_message}")
 
             # Extract regime data
+            tprint_debug("📊 Extracting regime data...")
             regime_predictions = tas_result.regime_predictions
             regime_probabilities = tas_result.regime_probabilities
             unique_regimes = len(set(regime_predictions))
+            tprint_success(f"✅ Extracted {unique_regimes} unique regimes")
             
             # Calculate regime metrics
+            tprint_info("📊 Calculating regime metrics...")
             regime_metrics = self._calculate_tas_regime_metrics(regime_predictions, tas_result)
+            tprint_success("✅ Regime metrics calculated")
             
             # Create regime characteristics for clustering
+            tprint_info("🔍 Creating regime characteristics...")
             regime_characteristics = self._create_tas_regime_characteristics(
                 market_data, regime_predictions, tas_result
             )
+            tprint_success("✅ Regime characteristics created")
 
             # Create single consolidated artifact
             artifacts = {
@@ -166,6 +197,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 }
             }
             
+            tprint_success(f"✅ TAS Regime Discovery completed: {unique_regimes} regimes discovered using advanced tree-based learning")
             self.logger.info(f'✅ TAS Regime Discovery completed: {unique_regimes} regimes discovered using advanced tree-based learning')
             return ComponentResult(
                 success=True,
@@ -182,6 +214,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             )
             
         except Exception as e:
+            tprint_error(f"❌ TAS Regime Discovery failed: {e}")
             self.logger.error(f'❌ TAS Regime Discovery failed: {e}')
             import traceback
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
@@ -193,9 +226,11 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     
     def _create_tas_config(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create TAS configuration based on data and pipeline state."""
+        tprint_debug("⚙️ Creating TAS configuration...")
         try:
             # Calculate optimal parameters based on data size
             data_size = len(market_data)
+            tprint_debug(f"📊 Data size: {data_size} rows")
             
             # Determine number of regimes based on data characteristics
             if data_size < 1000:
@@ -233,10 +268,12 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'enable_multi_scale_analysis': True
             }
             
+            tprint_success(f"✅ TAS Configuration created: {n_regimes} regimes, depth={tree_depth}, estimators={n_estimators}")
             self.logger.info(f"📊 TAS Configuration: {n_regimes} regimes, depth={tree_depth}, estimators={n_estimators}")
             return tas_config
             
         except Exception as e:
+            tprint_warning(f"⚠️ Failed to create TAS config: {e}, using defaults")
             self.logger.warning(f"Failed to create TAS config: {e}, using defaults")
             return {
                 'n_regimes': 8,
@@ -312,7 +349,6 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Fallback regime discovery using basic clustering."""
         try:
             from sklearn.cluster import KMeans
-            import numpy as np
             
             self.logger.warning("⚠️ Using fallback clustering for TAS regime discovery")
             
@@ -417,10 +453,8 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 start_date = None
                 end_date = None
                 if hasattr(self.config, 'start_date') and self.config.start_date:
-                    from datetime import datetime
                     start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
                 if hasattr(self.config, 'end_date') and self.config.end_date:
-                    from datetime import datetime
                     end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
                 
                 # Try processed data first

@@ -152,7 +152,6 @@ class StatisticalDimensionAnalyzer:
     
     def _apply_pca(self, data: np.ndarray, feature_names: pd.Index, n_components: int) -> DimensionalityResult:
         """Apply Principal Component Analysis."""
-        from sklearn.decomposition import PCA
         
         pca = PCA(n_components=n_components)
         transformed = pca.fit_transform(data)
@@ -347,7 +346,6 @@ class StatisticalDimensionAnalyzer:
     
     def _calculate_kurtosis(self, data: np.ndarray) -> float:
         """Calculate kurtosis of data."""
-        from scipy import stats
         return float(stats.kurtosis(data))
     
     def _calculate_negentropy(self, data: np.ndarray) -> float:

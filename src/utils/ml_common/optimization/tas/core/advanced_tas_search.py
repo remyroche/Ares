@@ -29,6 +29,10 @@ from ..search.advanced_search import AdvancedTASSearch
 from ..hardware.accelerator import HardwareAccelerator
 from ..meta_learning.meta_learner import MetaLearner
 from ..validation.economic_validator import EconomicValidator
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,29 +74,51 @@ class AdvancedTradingArchitectureSearch:
         Args:
             config: Advanced TAS configuration
         """
+        tprint_info("🚀 Initializing Advanced Trading Architecture Search")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize components
+        tprint_info("🔧 Initializing components...")
+        tprint_debug("🔍 Initializing micro regime detector...")
         self.micro_regime_detector = MicroRegimeDetector(
             sensitivity=config.micro_regime_sensitivity,
             detection_threshold=config.micro_regime_detection_threshold
         )
+        tprint_success("✅ Micro regime detector initialized")
 
+        tprint_debug("📊 Initializing evaluator...")
         self.evaluator = TASEvaluator(config)
+        tprint_success("✅ Evaluator initialized")
+        
+        tprint_debug("💻 Initializing hardware accelerator...")
         self.hardware_accelerator = HardwareAccelerator(config)
+        tprint_success("✅ Hardware accelerator initialized")
+        
+        tprint_debug("🧠 Initializing meta learner...")
         self.meta_learner = MetaLearner(config)
+        tprint_success("✅ Meta learner initialized")
+        
+        tprint_debug("💰 Initializing economic validator...")
         self.economic_validator = EconomicValidator(config)
+        tprint_success("✅ Economic validator initialized")
 
         # Architecture search
+        tprint_debug("🔍 Initializing search engine...")
         self.search_engine = AdvancedTASSearch(config)
+        tprint_success("✅ Search engine initialized")
 
         # Results tracking
+        tprint_debug("📊 Initializing results tracking...")
         self.current_regime: Optional[MarketRegime] = None
         self.regime_history: List[Dict[str, Any]] = []
         self.micro_regime_history: List[MicroRegimeDetectionResult] = []
         self.performance_history: List[Dict[str, Any]] = []
+        tprint_success("✅ Results tracking initialized")
 
+        tprint_success("✅ Advanced TAS initialized with all components")
         self.logger.info("✅ Advanced TAS initialized with all components")
 
     def optimize_advanced_architecture(self,
@@ -110,20 +136,30 @@ class AdvancedTradingArchitectureSearch:
         Returns:
             AdvancedTASResult with optimal architectures and comprehensive analysis
         """
+        tprint_info("🚀 Starting Advanced TAS optimization...")
+        tprint_debug(f"Market data shape: {market_data.shape}")
+        tprint_debug(f"Target returns shape: {target_returns.shape}")
+        tprint_debug(f"Existing regimes: {'Yes' if existing_regimes is not None else 'No'}")
         self.logger.info("🚀 Starting Advanced TAS optimization...")
         start_time = time.time()
 
         try:
             # Step 1: Comprehensive market analysis
+            tprint_info("📊 Step 1: Performing comprehensive market analysis...")
             market_analysis = self._perform_comprehensive_market_analysis(market_data, target_returns)
+            tprint_success("✅ Market analysis completed")
 
             # Step 2: Micro-regime detection and analysis
+            tprint_info("🔍 Step 2: Analyzing micro-regimes...")
             micro_regime_analysis = self._analyze_micro_regimes(market_data)
+            tprint_success("✅ Micro-regime analysis completed")
 
             # Step 3: Advanced architecture search
+            tprint_info("🔍 Step 3: Performing advanced architecture search...")
             optimal_architecture = self._perform_advanced_architecture_search(
                 market_data, target_returns, market_analysis, micro_regime_analysis
             )
+            tprint_success("✅ Advanced architecture search completed")
 
             # Step 4: Multi-objective optimization and evaluation
             evaluation_results = self._evaluate_architecture_comprehensive(
@@ -187,10 +223,13 @@ class AdvancedTradingArchitectureSearch:
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-            except:
+                self.logger.info("✅ Successfully used NAS clustering for regime detection")
+            except Exception as e:
+                self.logger.warning(f"⚠️ NAS clustering regime detection failed: {e}, falling back to tree models")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
+            self.logger.info("✅ Using tree models for regime detection")
 
         # Enhance regime analysis with micro-regime information
         enhanced_regimes = {}

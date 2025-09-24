@@ -183,13 +183,15 @@ class OrderManager:
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an order"""
         if order_id not in self.orders:
-            self.logger.warning(f"Order not found: {order_id}")
+            self.logger.error(f"❌ Order not found: {order_id}")
+            self.logger.warning("⚠️ Order cancellation failed - order does not exist")
             return False
         
         order = self.orders[order_id]
         
         if not order.is_active:
-            self.logger.warning(f"Order is not active: {order_id}")
+            self.logger.error(f"❌ Order is not active: {order_id} (status: {order.status.value})")
+            self.logger.warning("⚠️ Cannot cancel order - it is already completed, cancelled, or failed")
             return False
         
         try:
@@ -215,7 +217,8 @@ class OrderManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to cancel order {order_id}: {e}")
+            self.logger.error(f"❌ Failed to cancel order {order_id}: {e}")
+            self.logger.warning("⚠️ Order cancellation failed - order may still be active on exchange")
             order.error_message = str(e)
             order.status = OrderStatus.FAILED
             await self._notify_handlers("on_order_failed", order)
@@ -279,7 +282,8 @@ class OrderManager:
                 order.updated_at = datetime.now()
                 
         except Exception as e:
-            self.logger.error(f"Failed to execute paper order {order.id}: {e}")
+            self.logger.error(f"❌ Failed to execute paper order {order.id}: {e}")
+            self.logger.warning("⚠️ Paper order execution failed - order will not be filled")
             order.error_message = str(e)
             order.status = OrderStatus.FAILED
             await self._notify_handlers("on_order_failed", order)
@@ -317,7 +321,8 @@ class OrderManager:
                 raise Exception("Invalid response from exchange")
                 
         except Exception as e:
-            self.logger.error(f"Failed to execute live order {order.id}: {e}")
+            self.logger.error(f"❌ Failed to execute live order {order.id}: {e}")
+            self.logger.warning("⚠️ Live order execution failed - order may not have been submitted to exchange")
             order.error_message = str(e)
             order.status = OrderStatus.FAILED
             await self._notify_handlers("on_order_failed", order)
@@ -343,7 +348,8 @@ class OrderManager:
                                 await self._update_order_from_exchange(order, status_response)
                     
                     except Exception as e:
-                        self.logger.warning(f"Failed to check order status {order_id}: {e}")
+                        self.logger.error(f"❌ Failed to check order status {order_id}: {e}")
+                        self.logger.warning(f"⚠️ Order monitoring failed for {order_id} - status may be outdated")
                 
                 # Wait before next check
                 await asyncio.sleep(self.config.data_update_interval)
@@ -351,7 +357,8 @@ class OrderManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error in order monitoring: {e}")
+                self.logger.error(f"❌ Error in order monitoring: {e}")
+                self.logger.warning("⚠️ Order monitoring loop failed - continuing after retry delay")
                 await asyncio.sleep(self.config.retry_delay)
     
     async def _update_order_from_exchange(self, order: Order, status_response: Dict[str, Any]) -> None:
@@ -391,7 +398,8 @@ class OrderManager:
             order.updated_at = datetime.now()
             
         except Exception as e:
-            self.logger.error(f"Failed to update order {order.id}: {e}")
+            self.logger.error(f"❌ Failed to update order {order.id}: {e}")
+            self.logger.warning(f"⚠️ Order update failed for {order.id} - order status may be incorrect")
     
     async def _notify_handlers(self, event_type: str, order: Order) -> None:
         """Notify registered handlers of order events"""
@@ -400,7 +408,8 @@ class OrderManager:
                 try:
                     await handler(order)
                 except Exception as e:
-                    self.logger.error(f"Error in order handler: {e}")
+                    self.logger.error(f"❌ Error in order handler: {e}")
+                    self.logger.warning("⚠️ Order handler failed - continuing with other handlers")
     
     async def get_performance_metrics(self) -> Dict[str, Any]:
         """Get order performance metrics"""

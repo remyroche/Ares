@@ -254,7 +254,6 @@ class EnhancedModelFactory:
         
         # PyTorch
         try:
-            import torch
             dependencies['torch'] = True
             self.logger.debug("✅ PyTorch available")
         except ImportError:
@@ -494,7 +493,6 @@ class EnhancedModelFactory:
         """Create LightGBM model with CLVSA wrapper by default."""
         
         import lightgbm as lgb
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters with overfitting prevention
         default_params = {
@@ -551,7 +549,6 @@ class EnhancedModelFactory:
         """Create CatBoost model with CLVSA wrapper by default."""
         
         from catboost import CatBoostRegressor, CatBoostClassifier
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters with overfitting prevention
         default_params = {
@@ -605,7 +602,6 @@ class EnhancedModelFactory:
         """Create XGBoost model with CLVSA wrapper by default."""
         
         import xgboost as xgb
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {
@@ -1754,7 +1750,6 @@ class EnhancedModelFactory:
     def _create_elastic_net_cv_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model with cross-validation."""
         
-        from sklearn.linear_model import ElasticNetCV
         
         # Default parameters for ElasticNetCV
         default_params = {
@@ -1847,7 +1842,6 @@ class EnhancedModelFactory:
         """Create HistGradientBoosting model with CLVSA wrapper by default."""
         
         from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {
@@ -1897,7 +1891,6 @@ class EnhancedModelFactory:
         """Create ExtraTrees model with CLVSA wrapper by default."""
         
         from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
         
         # Default parameters
         default_params = {
@@ -1946,7 +1939,6 @@ class EnhancedModelFactory:
     def _create_xgboost_custom_model(self, model_config: ModelConfig) -> Any:
         """Create XGBoost with custom financial objectives."""
         
-        import xgboost as xgb
         
         # Default parameters with financial focus
         default_params = {
@@ -1972,7 +1964,6 @@ class EnhancedModelFactory:
     def _create_xgboost_meta_model(self, model_config: ModelConfig) -> Any:
         """Create XGBoost meta-model for ensemble combination."""
         
-        import xgboost as xgb
         
         # Default parameters for meta-model
         default_params = {
@@ -2088,7 +2079,6 @@ class EnhancedModelFactory:
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
         
-        from sklearn.linear_model import ElasticNetCV
         
         # Default parameters for ElasticNetCV (replacing Ridge)
         default_params = {
@@ -2243,7 +2233,6 @@ class EnhancedModelFactory:
     def _create_attention_catboost_model(self, model_config: ModelConfig) -> Any:
         """Create CLVSA-enhanced CatBoost model."""
         try:
-            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
             # CLVSA configuration for tree models
             clvsa_config = {
@@ -2283,7 +2272,6 @@ class EnhancedModelFactory:
     def _create_attention_xgboost_model(self, model_config: ModelConfig) -> Any:
         """Create CLVSA-enhanced XGBoost model."""
         try:
-            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
             # CLVSA configuration for tree models
             clvsa_config = {

@@ -22,6 +22,35 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 import torch
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[TAS_EVALUATOR] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
 
 # Import unified utilities
@@ -116,26 +145,36 @@ class TASEvaluator:
         Args:
             config: TAS configuration
         """
+        tprint("📊 Initializing TAS Evaluator", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"📊 Config: economic_threshold={config.economic_significance_threshold}, trading_threshold={config.trading_viability_threshold}", color="cyan")
 
         # Evaluation parameters
+        tprint("⚙️ Setting evaluation parameters", color="yellow")
         self.min_trades_for_evaluation = 50
         self.confidence_level = 0.95
         self.risk_free_rate = 0.02  # 2% annual risk-free rate
+        tprint(f"📊 Min trades: {self.min_trades_for_evaluation}, confidence: {self.confidence_level}, risk-free rate: {self.risk_free_rate}", color="cyan")
 
         # Validation thresholds
+        tprint("🎯 Setting validation thresholds", color="yellow")
         self.economic_significance_threshold = config.economic_significance_threshold
         self.trading_viability_threshold = config.trading_viability_threshold
         self.max_drawdown_threshold = config.max_drawdown_threshold
+        tprint(f"🎯 Economic: {self.economic_significance_threshold}, Trading: {self.trading_viability_threshold}, Max DD: {self.max_drawdown_threshold}", color="cyan")
 
         # Initialize unified utilities
+        tprint("🔧 Initializing unified utilities", color="yellow")
         self._initialize_unified_utilities()
+        tprint("✅ TAS Evaluator initialization complete", color="green")
 
     def _initialize_unified_utilities(self):
         """Initialize unified utilities for TAS evaluation."""
+        tprint("🔧 Starting unified utilities initialization", color="yellow")
         try:
             # Initialize unified economic significance evaluator
+            tprint("💰 Creating economic significance evaluator", color="yellow")
             economic_config = EconomicEvaluationConfig(
                 significance_threshold=self.economic_significance_threshold,
                 price_impact_threshold=0.5,
@@ -145,8 +184,10 @@ class TASEvaluator:
                 efficiency_threshold=0.5
             )
             self.unified_economic_evaluator = create_unified_economic_evaluator(economic_config)
+            tprint("✅ Economic significance evaluator created", color="green")
             
             # Initialize unified trading viability evaluator
+            tprint("📈 Creating trading viability evaluator", color="yellow")
             trading_config = TradingViabilityConfig(
                 viability_threshold=self.trading_viability_threshold,
                 min_trading_frequency=0.1,
@@ -157,8 +198,10 @@ class TASEvaluator:
                 min_risk_adjusted_return=0.1
             )
             self.unified_trading_evaluator = create_unified_trading_viability_evaluator(trading_config)
+            tprint("✅ Trading viability evaluator created", color="green")
             
             # Initialize unified multi-objective optimizer
+            tprint("🎯 Creating multi-objective optimizer", color="yellow")
             optimization_config = OptimizationConfig(
                 objectives=['regime_accuracy', 'economic_significance', 'trading_viability', 'computational_efficiency'],
                 objective_weights={
@@ -171,8 +214,10 @@ class TASEvaluator:
                 population_size=50
             )
             self.unified_optimizer = create_unified_multi_objective_optimizer(optimization_config)
+            tprint("✅ Multi-objective optimizer created", color="green")
             
             # Initialize unified hardware optimizer
+            tprint("💻 Creating hardware optimizer", color="yellow")
             hardware_config = HardwareConfig(
                 enable_hardware_optimization=True,
                 max_memory_usage_gb=8.0,
@@ -180,8 +225,10 @@ class TASEvaluator:
                 enable_performance_monitoring=True
             )
             self.unified_hardware_optimizer = create_unified_hardware_optimizer(hardware_config)
+            tprint("✅ Hardware optimizer created", color="green")
             
             # Initialize unified regime analyzer
+            tprint("📊 Creating regime analyzer", color="yellow")
             regime_config = RegimeAnalysisConfig(
                 analysis_types=['stability', 'transitions', 'uncertainty'],
                 stability_window=20,
@@ -189,8 +236,10 @@ class TASEvaluator:
                 uncertainty_method='entropy'
             )
             self.unified_regime_analyzer = create_unified_regime_analyzer(regime_config)
+            tprint("✅ Regime analyzer created", color="green")
             
             # Initialize unified validation system
+            tprint("✅ Creating validation system", color="yellow")
             validation_config = ValidationConfig(
                 validation_type='time_series_validation',
                 n_folds=5,
@@ -200,10 +249,13 @@ class TASEvaluator:
                 enable_regime_metrics=True
             )
             self.unified_validator = create_unified_validation_system(validation_config)
+            tprint("✅ Validation system created", color="green")
             
             self.logger.info("✅ Unified utilities initialized for TAS evaluation")
+            tprint("✅ All unified utilities initialized successfully", color="green")
             
         except Exception as e:
+            tprint(f"⚠️ Failed to initialize unified utilities: {e}", color="red")
             self.logger.warning(f"Failed to initialize unified utilities: {e}")
             # Set fallback evaluators
             self.unified_economic_evaluator = None

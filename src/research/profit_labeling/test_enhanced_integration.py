@@ -97,7 +97,6 @@ def test_integration_with_existing():
         from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
             MultiHorizonProfitLabeler, MultiHorizonConfig
         )
-        from src.research.profit_labeling import enhance_existing_labeler, EnhancementLevel
         
         # Generate test data
         market_data = generate_test_data(200)

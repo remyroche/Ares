@@ -509,7 +509,6 @@ class VectorizedTrainingManager:
         """
         VECTORIZED: Train ensembles in parallel using existing infrastructure.
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         self.logger.info("🔄 VECTORIZED: Parallel ensemble training with infrastructure")
         ensemble_results = {}
@@ -750,7 +749,6 @@ class VectorizedTrainingManager:
                                         regime_labels: np.ndarray,
                                         regime_analysis: Dict[str, Any]) -> Dict[int, Dict[str, np.ndarray]]:
         """Parallel regime data preparation using existing infrastructure."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         unique_regimes = np.unique(regime_labels)
         regime_data = {}
@@ -875,7 +873,6 @@ class VectorizedTrainingManager:
 
         for model_type in model_types:
             if is_classification:
-                from sklearn.ensemble import StackingClassifier, VotingClassifier, BaggingClassifier, AdaBoostClassifier
 
                 if model_type == "StackingRegressor":
                     ensemble_configs['stacking'] = StackingClassifier(
@@ -902,7 +899,6 @@ class VectorizedTrainingManager:
                         algorithm='SAMME'
                     )
             else:
-                from sklearn.ensemble import StackingRegressor, VotingRegressor, BaggingRegressor, AdaBoostRegressor
 
                 if model_type == "StackingRegressor":
                     ensemble_configs['stacking'] = StackingRegressor(
@@ -1126,7 +1122,6 @@ class VectorizedTrainingManager:
                 eval_start_time = time.time()
 
                 # Use unified CV with comprehensive scoring
-                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                 cv_result = unified_perform_cv(
                     model, X, y,
                     strategy='standard',
@@ -1419,7 +1414,6 @@ class VectorizedTrainingManager:
     def _standard_preprocessing(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                               scaling_method: str) -> Dict[str, Any]:
         """Standard vectorized preprocessing."""
-        from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 
         # Choose and apply scaler
         if scaling_method == 'standard':
@@ -1831,8 +1825,6 @@ class VectorizedTrainingManager:
         self.logger.info("🚀 Training with automatic mixed precision (AMP)")
 
         try:
-            import torch
-            from torch.cuda.amp import autocast, GradScaler
 
             # Check if model is PyTorch
             is_pytorch = hasattr(model, 'parameters') and hasattr(model, 'to')
@@ -1949,7 +1941,6 @@ class VectorizedTrainingManager:
         self.logger.info("🔄 Falling back to CPU training")
 
         try:
-            import torch
 
             best_loss = float('inf')
             patience_counter = 0

@@ -188,8 +188,6 @@ class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
 
     def _load_optimized_weights(self) -> None:
         """Load previously optimized weights if available."""
-        import json
-        import os
 
         weights_file = os.path.join(self.config.get('model_dir', 'models'), f'sr_weights_{self.exchange}_{self.symbol}.json')
         try:

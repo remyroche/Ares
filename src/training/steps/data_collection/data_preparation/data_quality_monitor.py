@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.logger import system_logger
 
 from .enhanced_data_quality_manager import EnhancedDataQualityManager
 import time

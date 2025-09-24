@@ -420,7 +420,6 @@ class DataValidationValidator(BaseValidator):
         self.logger.info(f"🔍 Validating data for step02 readiness for {symbol} on {exchange}")
         
         try:
-            from src.utils.validator_orchestrator import ValidatorOrchestrator
             
             # Create validator orchestrator
             validator_orchestrator = ValidatorOrchestrator()

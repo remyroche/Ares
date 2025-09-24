@@ -10,7 +10,6 @@ with detailed tracking and analysis.
 
 from collections import defaultdict, deque
 
-from src.utils.logger import system_logger
 import numpy as np
 import datetime
 import logging

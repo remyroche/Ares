@@ -17,8 +17,8 @@ from ..shared_utils.position_aware_trading import (
 )
 
 # Import TAS and NAS detectors
-from ..tas_regime.core.tas_regime_detector import TASRegimeDetector
-from ..nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector
+from ...tas_regime.core.tas_regime_detector import TASRegimeDetector
+from ...nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def demonstrate_shared_position_aware_utilities():
     logger.info("📊 Step 1: Generating sample market data...")
     market_data = generate_sample_market_data(1000)
     logger.info(f"   Generated {len(market_data)} samples")
-    logger.info(f"   Price range: {market_data['close'].min()".2f"} - {market_data['close'].max()".2f"}")
+    logger.info(f"   Price range: {market_data['close'].min():.2f} - {market_data['close'].max():.2f}")
 
     # Step 2: Create position-aware analyzer
     logger.info("🔧 Step 2: Creating shared position-aware analyzer...")
@@ -89,9 +89,9 @@ def demonstrate_shared_position_aware_utilities():
     )
 
     logger.info("📈 Quick Analysis Results:")
-    logger.info(f"   Overall win rate: {quick_result['overall_analysis']['overall_win_rate']".3f"}")
-    logger.info(f"   Long win rate: {quick_result['overall_analysis']['long_win_rate']".3f"}")
-    logger.info(f"   Short win rate: {quick_result['overall_analysis']['short_win_rate']".3f"}")
+    logger.info(f"   Overall win rate: {quick_result['overall_analysis']['overall_win_rate']:.3f}")
+    logger.info(f"   Long win rate: {quick_result['overall_analysis']['long_win_rate']:.3f}")
+    logger.info(f"   Short win rate: {quick_result['overall_analysis']['short_win_rate']:.3f}")
 
     # Step 5: Detailed analysis per regime
     logger.info("🔍 Step 5: Detailed regime analysis...")
@@ -102,9 +102,9 @@ def demonstrate_shared_position_aware_utilities():
     logger.info("📊 Regime Analysis Summary:")
     for regime_key, regime_data in detailed_result['regime_analyses'].items():
         logger.info(f"   {regime_key}:")
-        logger.info(f"     Long win rate: {regime_data['long_win_rate']".3f"}")
-        logger.info(f"     Short win rate: {regime_data['short_win_rate']".3f"}")
-        logger.info(f"     Economic significance: {regime_data['economic_significance']".3f"}")
+        logger.info(f"     Long win rate: {regime_data['long_win_rate']:.3f}")
+        logger.info(f"     Short win rate: {regime_data['short_win_rate']:.3f}")
+        logger.info(f"     Economic significance: {regime_data['economic_significance']:.3f}")
 
     # Step 6: Trading viability analysis
     logger.info("💰 Step 6: Position-aware trading viability...")
@@ -113,9 +113,9 @@ def demonstrate_shared_position_aware_utilities():
     )
 
     logger.info("🎯 Viability Analysis:")
-    logger.info(f"   Long viability: {viability_result['long_viability']".3f"}")
-    logger.info(f"   Short viability: {viability_result['short_viability']".3f"}")
-    logger.info(f"   Overall viability: {viability_result['overall_viability']".3f"}")
+    logger.info(f"   Long viability: {viability_result['long_viability']:.3f}")
+    logger.info(f"   Short viability: {viability_result['short_viability']:.3f}")
+    logger.info(f"   Overall viability: {viability_result['overall_viability']:.3f}")
 
     # Step 7: Position-aware recommendations
     logger.info("📋 Step 7: Position-aware recommendations...")
@@ -124,7 +124,7 @@ def demonstrate_shared_position_aware_utilities():
     logger.info("🎯 Position Recommendations:")
     for position_type, rec in recommendations['position_recommendations'].items():
         logger.info(f"   {position_type.upper()}: {rec['recommendation']}")
-        logger.info(f"     Confidence: {rec['confidence']".3f"}")
+        logger.info(f"     Confidence: {rec['confidence']:.3f}")
         logger.info(f"     Position size: {rec['position_size']}")
 
     logger.info("✅ Shared position-aware utilities demonstration completed!")
@@ -137,7 +137,7 @@ def demonstrate_tas_position_awareness():
 
     try:
         # Create TAS detector with position-aware support
-        from ..tas_regime.core.tas_regime_config import TASRegimeConfig
+        from ...tas_regime.core.tas_regime_config import TASRegimeConfig
 
         config = TASRegimeConfig(
             n_regimes=6,
@@ -162,8 +162,8 @@ def demonstrate_tas_position_awareness():
 
         logger.info("📊 TAS Results with Position-Aware Analysis:")
         logger.info(f"   Regimes detected: {len(np.unique(tas_result.regime_predictions))}")
-        logger.info(f"   Economic significance: {np.mean(tas_result.economic_significance_scores)".3f"}")
-        logger.info(f"   Trading viability: {np.mean(tas_result.trading_viability_scores)".3f"}")
+        logger.info(f"   Economic significance: {np.mean(tas_result.economic_significance_scores):.3f}")
+        logger.info(f"   Trading viability: {np.mean(tas_result.trading_viability_scores):.3f}")
         logger.info(f"   Position-aware analysis: Available")
 
     except Exception as e:
@@ -177,7 +177,7 @@ def demonstrate_nas_position_awareness():
 
     try:
         # Create NAS detector with position-aware support
-        from ..nas_regime.core.perfect_nas_config import PerfectNASConfig
+        from ...nas_regime.core.perfect_nas_config import PerfectNASConfig
 
         config = PerfectNASConfig(
             n_regimes=6,
@@ -203,8 +203,8 @@ def demonstrate_nas_position_awareness():
 
         logger.info("📊 NAS Results with Position-Aware Analysis:")
         logger.info(f"   Regimes detected: {len(np.unique(nas_result.regime_predictions))}")
-        logger.info(f"   Economic significance: {np.mean(nas_result.economic_significance_scores)".3f"}")
-        logger.info(f"   Trading viability: {np.mean(nas_result.trading_viability_scores)".3f"}")
+        logger.info(f"   Economic significance: {np.mean(nas_result.economic_significance_scores):.3f}")
+        logger.info(f"   Trading viability: {np.mean(nas_result.trading_viability_scores):.3f}")
         logger.info(f"   Position-aware analysis: Available")
 
     except Exception as e:

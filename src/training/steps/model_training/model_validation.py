@@ -536,7 +536,6 @@ class ModelValidationStep:
                 try:
                     model_path = model_info.get('path')
                     if model_path and Path(model_path).exists():
-                        import joblib
                         from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                         model = joblib.load(model_path)
                         
@@ -581,7 +580,6 @@ class ModelValidationStep:
                 try:
                     model_path = model_info.get('path')
                     if model_path and Path(model_path).exists():
-                        import joblib
                         model = joblib.load(model_path)
                         
                         # Extract feature importance based on model type

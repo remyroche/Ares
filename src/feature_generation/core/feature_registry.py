@@ -6,8 +6,11 @@ feature generators by category and name.
 """
 
 import logging
+import traceback
+import inspect
 from typing import Dict, List, Optional, Set
 from collections import defaultdict
+from datetime import datetime
 
 from .feature_generator import FeatureGenerator, FeatureCategory
 
@@ -31,6 +34,10 @@ class FeatureRegistry:
         self._generators_by_category: Dict[FeatureCategory, List[FeatureGenerator]] = defaultdict(list)
         self._category_names: Set[str] = set()
         
+        # Registration tracking for enhanced warnings
+        self._registration_info: Dict[str, Dict[str, any]] = {}
+        self._registration_count: int = 0
+        
         self.logger.info("FeatureRegistry initialized")
     
     def register(self, generator: FeatureGenerator) -> None:
@@ -42,10 +49,32 @@ class FeatureRegistry:
         """
         name = generator.config.name
         category = generator.config.category
+        self._registration_count += 1
         
-        # Check for duplicate names
+        # Capture registration context
+        registration_context = self._capture_registration_context()
+        
+        # Check for duplicate names and provide enhanced warning
         if name in self._generators_by_name:
-            self.logger.warning(f"Overwriting existing generator: {name}")
+            old_info = self._registration_info.get(name, {})
+            self._log_overwrite_warning(name, old_info, registration_context)
+        else:
+            # First registration - log with context
+            self.logger.debug(f"📝 First registration of generator: {name} ({category.value})")
+        
+        # Store registration info
+        self._registration_info[name] = {
+            'registration_count': self._registration_count,
+            'timestamp': datetime.now().isoformat(),
+            'category': category.value,
+            'generator_class': generator.__class__.__name__,
+            'config': {
+                'period': getattr(generator.config, 'period', None),
+                'base_calculation': str(getattr(generator.config, 'base_calculation', 'unknown')),
+                'dependencies': getattr(generator.config, 'dependencies', [])
+            },
+            'call_stack': registration_context
+        }
         
         # Register by name
         self._generators_by_name[name] = generator
@@ -57,7 +86,75 @@ class FeatureRegistry:
         # Track category names
         self._category_names.add(category.value)
         
-        self.logger.debug(f"Registered generator: {name} ({category.value})")
+        self.logger.debug(f"✅ Registered generator: {name} ({category.value})")
+    
+    def _capture_registration_context(self) -> Dict[str, str]:
+        """Capture the call stack context for registration tracking."""
+        try:
+            # Get the current call stack
+            stack = traceback.extract_stack()
+            
+            # Find the caller that's not part of this registry
+            caller_info = None
+            for frame in reversed(stack):
+                if 'feature_registry.py' not in frame.filename:
+                    caller_info = {
+                        'filename': frame.filename,
+                        'function': frame.name,
+                        'line': frame.lineno,
+                        'code': frame.line.strip() if frame.line else 'N/A'
+                    }
+                    break
+            
+            # Fallback to the immediate caller
+            if not caller_info and len(stack) > 1:
+                frame = stack[-2]
+                caller_info = {
+                    'filename': frame.filename,
+                    'function': frame.name,
+                    'line': frame.lineno,
+                    'code': frame.line.strip() if frame.line else 'N/A'
+                }
+            
+            return caller_info or {'filename': 'unknown', 'function': 'unknown', 'line': 0, 'code': 'N/A'}
+            
+        except Exception as e:
+            return {'error': f'Failed to capture context: {e}'}
+    
+    def _log_overwrite_warning(self, name: str, old_info: Dict[str, any], new_context: Dict[str, str]) -> None:
+        """Log enhanced warning for overwriting existing generators."""
+        # Extract key information
+        old_timestamp = old_info.get('timestamp', 'unknown')
+        old_class = old_info.get('generator_class', 'unknown')
+        old_config = old_info.get('config', {})
+        old_period = old_config.get('period', 'unknown')
+        old_base_calc = old_config.get('base_calculation', 'unknown')
+        
+        new_filename = new_context.get('filename', 'unknown')
+        new_function = new_context.get('function', 'unknown')
+        new_line = new_context.get('line', 0)
+        
+        # Extract filename for cleaner logging
+        if '/' in new_filename:
+            new_filename = new_filename.split('/')[-1]
+        elif '\\' in new_filename:
+            new_filename = new_filename.split('\\')[-1]
+        
+        # Enhanced warning message
+        warning_msg = (
+            f"⚠️ Overwriting existing generator: {name}\n"
+            f"   📊 Previous registration:\n"
+            f"      - Class: {old_class}\n"
+            f"      - Period: {old_period}\n"
+            f"      - Base Calculation: {old_base_calc}\n"
+            f"      - Timestamp: {old_timestamp}\n"
+            f"   🔄 New registration from:\n"
+            f"      - File: {new_filename}\n"
+            f"      - Function: {new_function}\n"
+            f"      - Line: {new_line}"
+        )
+        
+        self.logger.warning(warning_msg)
     
     def unregister(self, name: str) -> bool:
         """

@@ -277,7 +277,6 @@ class TradingDataExporter:
         
         try:
             # Prepare export directory
-            import os
             export_dir = "data_cache/training_export"
             os.makedirs(export_dir, exist_ok=True)
             
@@ -296,7 +295,6 @@ class TradingDataExporter:
                 tprint_success(f"✅ Exported trading decisions to {decisions_file}")
             
             # Export performance metrics
-            import json
             metrics_file = os.path.join(export_dir, f"performance_metrics_{timestamp}.json")
             with open(metrics_file, 'w') as f:
                 json.dump(performance_metrics, f, indent=2, default=str)

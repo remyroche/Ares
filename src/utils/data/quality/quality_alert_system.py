@@ -21,7 +21,6 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 # Define alert classes locally since advanced_ml_validation doesn't exist
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -74,7 +73,6 @@ class QualityAlertManager:
         try:
             self.logger = get_system_logger().getChild('QualityAlertManager')
         except NameError:
-            import logging
             self.logger = logging.getLogger('QualityAlertManager')
 
     def check_alerts(self, validation_result: MLValidationResult) -> List[Alert]:

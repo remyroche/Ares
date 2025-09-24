@@ -22,6 +22,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Tree models for adaptive selection
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -199,7 +200,6 @@ class RegimeDetector:
             
             if best_algorithm is None:
                 # Fallback to simple clustering
-                from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=3, random_state=42)
                 best_labels = kmeans.fit_predict(X)
                 best_algorithm = 'kmeans'
@@ -448,7 +448,6 @@ class RegimeDetector:
     def _evaluate_regime_quality(self, X: np.ndarray, refined_regimes: Dict[str, Any]) -> Dict[str, float]:
         """Evaluate regime quality using multiple metrics."""
         try:
-            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
             labels = refined_regimes['labels']
             unique_labels = np.unique(labels)
@@ -568,30 +567,46 @@ class AdaptiveRegimeNAS:
     
     def __init__(self, config: AdaptiveRegimeNASConfig):
         """Initialize adaptive regime NAS."""
+        tprint("🚀 [ADAPTIVE_REGIME_NAS] Initializing Adaptive Regime NAS", color="cyan", bold=True)
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Max regimes: {config.max_regimes}", color="blue")
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Min regime samples: {config.min_regime_samples}", color="blue")
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] NAS trials: {config.nas_trials}", color="blue")
         self.config = config
         self.logger = logger.getChild('AdaptiveRegimeNAS')
+        
+        tprint("🔍 [ADAPTIVE_REGIME_NAS] Initializing regime detector", color="yellow")
         self.regime_detector = RegimeDetector(config)
         self.trading_models = {}
         self.is_trained = False
         
+        tprint("✅ [ADAPTIVE_REGIME_NAS] Adaptive Regime NAS initialized successfully", color="green")
         self.logger.info("✅ Adaptive Regime NAS initialized")
     
     def search(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Perform adaptive regime NAS search."""
+        tprint("🚀 [ADAPTIVE_REGIME_NAS] Starting Adaptive Regime NAS Search", color="cyan", bold=True)
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Input data shape: {X.shape}", color="blue")
         self.logger.info("🚀 Starting Adaptive Regime NAS Search...")
         start_time = time.time()
         
         try:
             # Step 1: Detect regimes and discover optimal models
+            tprint("🔍 [ADAPTIVE_REGIME_NAS] Step 1: Detecting regimes", color="yellow")
             regime_results = self.regime_detector.detect_regimes(X, y)
+            tprint(f"✅ [ADAPTIVE_REGIME_NAS] Detected {len(np.unique(regime_results['regime_predictions']))} regimes", color="green")
             
             # Step 2: Discover optimal trading models for each regime
+            tprint("🧠 [ADAPTIVE_REGIME_NAS] Step 2: Discovering optimal trading models", color="yellow")
             trading_results = self._discover_trading_models(X, regime_results)
+            tprint(f"✅ [ADAPTIVE_REGIME_NAS] Discovered {len(trading_results)} trading models", color="green")
             
             # Step 3: Create adaptive ensemble
+            tprint("🎯 [ADAPTIVE_REGIME_NAS] Step 3: Creating adaptive ensemble", color="yellow")
             ensemble_results = self._create_adaptive_ensemble(regime_results, trading_results)
+            tprint("✅ [ADAPTIVE_REGIME_NAS] Adaptive ensemble created", color="green")
             
             search_time = time.time() - start_time
+            tprint(f"🎉 [ADAPTIVE_REGIME_NAS] Adaptive Regime NAS completed in {search_time:.2f}s", color="green", bold=True)
             self.logger.info(f"✅ Adaptive Regime NAS completed in {search_time:.2f}s")
             
             return {

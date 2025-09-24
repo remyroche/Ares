@@ -228,8 +228,6 @@ class StandardizedParquetHandler:
         try:
             # Use PyArrow for partitioned reading if available
             try:
-                import pyarrow.dataset as ds
-                import pyarrow.parquet as pq
                 
                 # Read partitioned dataset
                 dataset = ds.dataset(base_path, format='parquet')
@@ -397,7 +395,6 @@ class StandardizedParquetHandler:
 
         # Validate required columns for unified schema
         if schema_name == 'unified':
-            from src.utils.pipeline_standards import pipeline_standards
             required_columns = pipeline_standards.SCHEMAS['unified']['required_columns']
             missing_columns = [col for col in required_columns if col not in df.columns]
 
@@ -755,7 +752,6 @@ class StandardizedParquetHandler:
             metadata_path = file_path.with_suffix('.metadata.json')
             if metadata_path.exists():
                 try:
-                    import json
                     with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
                     file_info['metadata'] = metadata

@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 '\nComprehensive Enhanced Scenario-Based Predictor for Tactician\n\nImplements advanced probabilistic scenario analysis with:\n- ALL technical indicators (50+ indicators)\n- 15-minute look-ahead period\n- Fractal scenario definitions (linear progression)\n- FULL step17 optimization for ALL parameters including decision logic\n- Complete migration from existing system\n'
 import logging
-from typing import TYPE_CHECKING, Any
 import lightgbm as lgb
 import numpy as np
 import pandas as pd

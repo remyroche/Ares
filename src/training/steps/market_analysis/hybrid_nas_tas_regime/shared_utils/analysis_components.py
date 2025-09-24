@@ -688,19 +688,16 @@ class SharedClusteringUtilities:
 
             # Perform clustering based on algorithm
             if algorithm == "kmeans":
-                from sklearn.cluster import KMeans
                 clusterer = KMeans(n_clusters=n_clusters, random_state=42)
                 labels = clusterer.fit_predict(data)
                 centers = clusterer.cluster_centers_
 
             elif algorithm == "dbscan":
-                from sklearn.cluster import DBSCAN
                 clusterer = DBSCAN(eps=0.5, min_samples=5)
                 labels = clusterer.fit_predict(data)
                 centers = self._calculate_cluster_centers(data, labels)
 
             elif algorithm == "agglomerative":
-                from sklearn.cluster import AgglomerativeClustering
                 clusterer = AgglomerativeClustering(n_clusters=n_clusters)
                 labels = clusterer.fit_predict(data)
                 centers = self._calculate_cluster_centers(data, labels)
@@ -737,17 +734,14 @@ class SharedClusteringUtilities:
             for algorithm in algorithms:
                 try:
                     if algorithm == "kmeans":
-                        from sklearn.cluster import KMeans
                         clusterer = KMeans(n_clusters=n_clusters, random_state=42)
                         labels = clusterer.fit_predict(data)
 
                     elif algorithm == "gmm":
-                        from sklearn.mixture import GaussianMixture
                         clusterer = GaussianMixture(n_components=n_clusters, random_state=42)
                         labels = clusterer.fit_predict(data)
 
                     elif algorithm == "agglomerative":
-                        from sklearn.cluster import AgglomerativeClustering
                         clusterer = AgglomerativeClustering(n_clusters=n_clusters)
                         labels = clusterer.fit_predict(data)
 

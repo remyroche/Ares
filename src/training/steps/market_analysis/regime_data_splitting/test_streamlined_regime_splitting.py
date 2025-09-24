@@ -59,7 +59,7 @@ def test_class_instantiation():
     print("🔍 Testing class instantiation...")
 
     try:
-        from src.training.steps.market_analysis.regime_data_splitting.streamlined_regime_splitting import (
+        from src.training.steps.market_analysis.regime_data_splitting import (
             StreamlinedRegimeDataSplitting,
             create_streamlined_regime_splitting
         )
@@ -99,7 +99,7 @@ def test_basic_functionality():
     print("🔍 Testing basic functionality...")
 
     try:
-        from src.training.steps.market_analysis.regime_data_splitting.streamlined_regime_splitting import (
+        from src.training.steps.market_analysis.regime_data_splitting import (
             StreamlinedRegimeDataSplitting
         )
 
@@ -190,7 +190,6 @@ def test_basic_functionality():
 
     except Exception as e:
         print(f"❌ Error during basic functionality test: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -199,7 +198,7 @@ def test_error_handling():
     print("🔍 Testing error handling...")
 
     try:
-        from src.training.steps.market_analysis.regime_data_splitting.streamlined_regime_splitting import (
+        from src.training.steps.market_analysis.regime_data_splitting import (
             StreamlinedRegimeDataSplitting
         )
 
@@ -250,7 +249,6 @@ def test_error_handling():
 
     except Exception as e:
         print(f"❌ Error during error handling test: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -275,7 +273,6 @@ async def test_main_integration():
 
     except Exception as e:
         print(f"❌ Error during main module integration test: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -284,7 +281,7 @@ async def test_streamlined_implementation():
     print("🔍 Testing streamlined implementation...")
 
     try:
-        from src.training.steps.market_analysis.regime_data_splitting.streamlined_regime_splitting import (
+        from src.training.steps.market_analysis.regime_data_splitting import (
             StreamlinedRegimeDataSplitting
         )
 
@@ -328,7 +325,6 @@ async def test_streamlined_implementation():
 
     except Exception as e:
         print(f"❌ Error during streamlined implementation test: {e}")
-        import traceback
         traceback.print_exc()
         return False
 

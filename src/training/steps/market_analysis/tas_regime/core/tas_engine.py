@@ -15,6 +15,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 from enum import Enum
+from contextlib import contextmanager
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import TAS components
 from .tas_config import TASConfig, TASSearchConfig, TASOptimizationConfig
@@ -82,24 +89,74 @@ from src.utils.data.klines_parquet import (
 try:
     from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
-    from src.utils.ml_common.lookahead_bias_detector import LookaheadBiasDetector
-    from src.utils.ml_common.overfitting_detector import OverfittingDetector
-    from src.utils.ml_common.cv import CrossValidationManager
-    from src.utils.ml_common.hpo import HyperparameterOptimizer
+    from src.utils.lookahead_bias_detector import LookaheadBiasDetector
+    from src.utils.ml_common.optimization.overfitting_prevention import OverfittingDetector
+    from src.utils.ml_common.validation.cv import CrossValidationManager
+    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
 
 # Import advanced components
-from ..meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML
-from ..search.evolutionary_search import EvolutionaryTreeSearch
-from ..search.bayesian_search import BayesianTreeSearch
-from ..search.rl_search import RLTreeSearch
-from ..optimization.hardware_optimization import TreeHardwareOptimizer
-from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
-from ..regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
-from ..adaptation.real_time_adaptation import TreeRealTimeAdapter
-from ..evaluation.tree_evaluator import TreeEvaluator
+try:
+    from ..meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML
+    META_LEARNING_AVAILABLE = True
+except ImportError:
+    META_LEARNING_AVAILABLE = False
+
+try:
+    from ..search.evolutionary_search import EvolutionaryTreeSearch
+    EVOLUTIONARY_SEARCH_AVAILABLE = True
+except ImportError:
+    EVOLUTIONARY_SEARCH_AVAILABLE = False
+
+try:
+    from ..search.bayesian_search import BayesianTreeSearch
+    BAYESIAN_SEARCH_AVAILABLE = True
+except ImportError:
+    BAYESIAN_SEARCH_AVAILABLE = False
+
+try:
+    from ..search.rl_search import RLTreeSearch
+    RL_SEARCH_AVAILABLE = True
+except ImportError:
+    RL_SEARCH_AVAILABLE = False
+
+try:
+    from ..optimization.enhanced_hardware_optimization import TreeHardwareOptimizer
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+try:
+    from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
+    UNCERTAINTY_ESTIMATION_AVAILABLE = True
+except ImportError:
+    UNCERTAINTY_ESTIMATION_AVAILABLE = False
+
+try:
+    from ..regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
+    REGIME_ANALYSIS_AVAILABLE = True
+except ImportError:
+    REGIME_ANALYSIS_AVAILABLE = False
+
+try:
+    from ..adaptation.real_time_adaptation import TreeRealTimeAdapter
+    REAL_TIME_ADAPTATION_AVAILABLE = True
+except ImportError:
+    REAL_TIME_ADAPTATION_AVAILABLE = False
+
+try:
+    from ..evaluation.tree_evaluator import TreeEvaluator
+    TREE_EVALUATOR_AVAILABLE = True
+except ImportError:
+    TREE_EVALUATOR_AVAILABLE = False
+
+try:
+    from ..adaptation.real_time_adaptation import TreePerformanceMonitor
+    PERFORMANCE_MONITOR_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_MONITOR_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -172,20 +229,29 @@ class TreeArchitectureSearchEngine:
         Args:
             config: TAS engine configuration
         """
+        tprint_info("🚀 Initializing Tree Architecture Search Engine")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize utility tools
+        tprint_info("🔧 Initializing utility tools...")
         self._initialize_utility_tools()
         
         # Initialize core components
+        tprint_info("🧩 Initializing core components...")
+        tprint_debug("🌳 Creating search space...")
         self.search_space = TreeSearchSpace(config.base_config)
+        tprint_debug("📊 Creating evaluator...")
         self.evaluator = TreeEvaluator(config.base_config)
         
         # Initialize advanced components
+        tprint_info("⚡ Initializing advanced components...")
         self._initialize_advanced_components()
         
         # Search state
+        tprint_debug("📊 Initializing search state...")
         self.search_history = []
         self.best_architectures = []
         self.current_search = None
@@ -203,41 +269,61 @@ class TreeArchitectureSearchEngine:
     
     def _initialize_utility_tools(self):
         """Initialize enhanced utility tools."""
+        tprint_debug("🔧 Starting utility tools initialization...")
         try:
             # Initialize common utilities
+            tprint_debug("📦 Creating common utilities...")
             self.common_utils = CommonUtilities()
+            tprint_success("✅ Common utilities initialized")
             self.logger.info("✅ Common utilities initialized")
             
             # Initialize math validation
+            tprint_debug("🧮 Creating math validator...")
             self.math_validator = MathValidation()
+            tprint_success("✅ Math validation initialized")
             self.logger.info("✅ Math validation initialized")
             
             # Initialize matrix operations
+            tprint_debug("🔢 Creating matrix operations...")
             self.matrix_ops = get_unified_matrix_operations(
                 enable_gpu=True,
                 enable_memory_optimization=True,
                 enable_parallel=True
             )
+            tprint_success("✅ Matrix operations initialized")
             self.logger.info("✅ Matrix operations initialized")
             
             # Initialize serialization
+            tprint_debug("💾 Creating serializer...")
             self.serializer = UniversalSerializer()
+            tprint_success("✅ Serialization utilities initialized")
             self.logger.info("✅ Serialization utilities initialized")
             
             # Initialize data management
+            tprint_debug("📊 Creating klines manager...")
             self.klines_manager = get_klines_manager()
+            tprint_success("✅ Klines data manager initialized")
             self.logger.info("✅ Klines data manager initialized")
             
             # Initialize ML common utilities
+            tprint_debug("🤖 Checking ML common availability...")
             if ML_COMMON_AVAILABLE:
+                tprint_debug("🔧 Creating ML common operations...")
                 self.ml_common_ops = get_ml_common_operations()
+                tprint_debug("🛡️ Creating validation framework...")
                 self.validation_framework = get_validation_framework()
+                tprint_debug("🔍 Creating lookahead detector...")
                 self.lookahead_detector = LookaheadBiasDetector()
+                tprint_debug("⚠️ Creating overfitting detector...")
                 self.overfitting_detector = OverfittingDetector()
+                tprint_debug("📊 Creating CV manager...")
                 self.cv_manager = CrossValidationManager()
+                tprint_debug("🎯 Creating HPO optimizer...")
                 self.hpo_optimizer = HyperparameterOptimizer()
+                tprint_success("✅ ML common utilities initialized")
                 self.logger.info("✅ ML common utilities initialized")
             else:
+                tprint_warning("⚠️ ML common utilities not available")
                 self.ml_common_ops = None
                 self.validation_framework = None
                 self.lookahead_detector = None
@@ -247,9 +333,11 @@ class TreeArchitectureSearchEngine:
                 self.logger.warning("⚠️ ML common utilities not available")
             
             # Initialize M1 optimizations
+            tprint_debug("🍎 Initializing M1 optimizations...")
             self._initialize_m1_optimizations()
             
         except Exception as e:
+            tprint_error(f"❌ Utility tools initialization failed: {e}")
             self.logger.error(f"❌ Utility tools initialization failed: {e}")
             # Set fallback values
             self.common_utils = None
@@ -266,23 +354,34 @@ class TreeArchitectureSearchEngine:
     
     def _initialize_m1_optimizations(self):
         """Initialize M1 hardware optimizations."""
+        tprint_debug("🍎 Starting M1 optimizations initialization...")
         try:
             # Get M1 optimizers
+            tprint_debug("🎮 Getting M1 GPU manager...")
             self.gpu_manager = get_m1_gpu_manager()
+            tprint_debug("💾 Getting M1 memory optimizer...")
             self.memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("⚡ Getting M1 CPU optimizer...")
             self.cpu_optimizer = get_m1_cpu_optimizer()
             
             # Integrate M1 optimizations
+            tprint_debug("🔗 Integrating M1 optimizations...")
             integration_result = integrate_with_m1_optimizers()
             if integration_result.get('success', False):
+                tprint_success("✅ M1 optimizations integrated successfully")
+                tprint_info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
+                tprint_info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
+                tprint_info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
                 self.logger.info("✅ M1 optimizations integrated successfully")
                 self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
                 self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
                 self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
             else:
+                tprint_warning("⚠️ M1 optimizations integration failed")
                 self.logger.warning("⚠️ M1 optimizations integration failed")
                 
         except Exception as e:
+            tprint_warning(f"⚠️ M1 optimizations initialization failed: {e}")
             self.logger.warning(f"⚠️ M1 optimizations initialization failed: {e}")
             self.gpu_manager = None
             self.memory_optimizer = None

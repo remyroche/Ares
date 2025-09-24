@@ -28,7 +28,6 @@ from enum import Enum
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation

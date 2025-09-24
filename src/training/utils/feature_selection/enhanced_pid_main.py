@@ -33,7 +33,6 @@ except ImportError as e:
     # Create fallback classes
     from enum import Enum
     from dataclasses import dataclass
-    from typing import List
     
     class PIDMeasure(Enum):
         I_MIN = "i_min"

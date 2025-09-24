@@ -320,12 +320,10 @@ class EnhancedArtifactManager:
             Loaded data
         """
         if extension == ".pkl":
-            import pickle
             with open(file_path, 'rb') as f:
                 return pickle.load(f)
         elif extension == ".parquet":
             try:
-                import pandas as pd
                 return pd.read_parquet(file_path)
             except ImportError:
                 raise ValueError("pandas is required for .parquet files")
@@ -333,7 +331,6 @@ class EnhancedArtifactManager:
             with open(file_path, 'r') as f:
                 return json.load(f)
         elif extension == ".joblib":
-            import joblib
             return joblib.load(file_path)
         else:
             raise ValueError(f"Unsupported file extension: {extension}")

@@ -13,7 +13,6 @@ import time
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from ...utils.logger import system_logger
 
 from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
 from .training.model_interpretability.lime_analyzer import LIMEAnalyzer

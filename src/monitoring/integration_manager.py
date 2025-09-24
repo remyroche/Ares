@@ -10,7 +10,6 @@ Coordinates monitoring components.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ...utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio

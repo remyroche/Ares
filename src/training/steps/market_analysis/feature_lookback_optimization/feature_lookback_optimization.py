@@ -18,8 +18,14 @@ from enum import Enum
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
 
+# Import logging functions
+from src.utils.logger import get_logger, log_error, log_warning, log_info
+
 # Import hardware optimization decorator
-from src.utils.matrix_operations.hardware_integration import hardware_optimized
+from src.utils.matrix_operations.hardware_integration import hardware_optimized, get_hardware_optimized_processor
+
+# Import M1 optimization utilities
+from src.utils.hardware.m1_gpu_utils import optimize_dataframe_for_m1
 
 # Use dependency manager for robust imports
 from .dependency_manager import dependency_manager, get_dependency, is_dependency_available
@@ -31,39 +37,108 @@ pd, pd_fallback = get_dependency('pandas')
 if np_fallback or pd_fallback:
     tprint("⚠️ Using fallback implementations for core dependencies")
 
+# Import optimization configuration classes
+try:
+    from src.feature_generation.utils.optimization_config import (
+        FeatureOptimizationConfig,
+        OptimizationConfigManager
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_multi_objective_optimizer import (
+        OptimizationConfig  # noqa: E402
+    )
+except ImportError as e:
+    tprint(f"⚠️ Optimization config imports not available: {e}")
+    # Define fallback classes
+    class FeatureOptimizationConfig:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+    
+    class OptimizationConfig:
+        """Fallback configuration class for optimization."""
+
+        def __init__(self, **kwargs):
+            """Initialize optimization configuration.
+
+            Args:
+                **kwargs: Configuration parameters
+            """
+            self.__dict__.update(kwargs)
+
 # Import common utilities for enhanced functionality
 from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    optimize_dataframe_dtypes, safe_fillna, safe_rolling, safe_groupby_operation,
-    safe_apply_function, safe_filter_dataframe, create_summary_statistics,
-    safe_to_parquet, safe_read_parquet, validate_dataframe_schema,
-    guard_dataframe_nulls, memory_checkpoint, gpu_context, optimize_memory,
-    get_memory_usage, integrate_with_m1_optimizers, get_m1_gpu_manager,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer, validate_dataframe
+    safe_dataframe_operation,
+    validate_dataframe_columns,
+    safe_convert_dtypes,
+    calculate_data_quality_metrics,
+    safe_merge_dataframes,
+    safe_groupby_operation,
+    safe_apply_function,
+    create_summary_statistics,
+    safe_drop_columns,
+    safe_rename_columns,
+    validate_timestamp_column,
+    safe_timestamp_conversion,
+    get_dataframe_info,
+    safe_filter_dataframe,
+    create_data_quality_report,
+    optimize_dataframe_dtypes,
+    safe_fillna,
+    safe_rolling,
+    safe_to_parquet,
+    safe_read_parquet,
+    validate_dataframe_schema,
+    guard_dataframe_nulls,
+    memory_checkpoint,
+    gpu_context,
+    optimize_memory,
+    get_memory_usage,
+    integrate_with_m1_optimizers,
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+    get_m1_cpu_optimizer,
+    validate_dataframe
 )
 
 from src.utils.common_utilities import (
-    CommonUtilities, safe_dataframe_operation as safe_df_op,
-    validate_dataframe_columns as validate_df_cols, safe_convert_dtypes as safe_conv_dtypes,
-    calculate_data_quality_metrics as calc_quality_metrics, safe_merge_dataframes as safe_merge,
-    safe_groupby_operation as safe_groupby, safe_apply_function as safe_apply,
-    create_summary_statistics as create_summary, safe_drop_columns as safe_drop,
-    safe_rename_columns as safe_rename, validate_timestamp_column as validate_ts,
-    safe_timestamp_conversion as safe_ts_conv, get_dataframe_info as get_df_info,
-    safe_filter_dataframe as safe_filter, create_data_quality_report as create_quality_report
+    CommonUtilities,
+    safe_dataframe_operation as safe_df_op,
+    validate_dataframe_columns as validate_df_cols,
+    safe_convert_dtypes as safe_conv_dtypes,
+    calculate_data_quality_metrics as calc_quality_metrics,
+    safe_merge_dataframes as safe_merge,
+    safe_groupby_operation as safe_groupby,
+    safe_apply_function as safe_apply,
+    create_summary_statistics as create_summary,
+    safe_drop_columns as safe_drop,
+    safe_rename_columns as safe_rename,
+    validate_timestamp_column as validate_ts,
+    safe_timestamp_conversion as safe_ts_conv,
+    get_dataframe_info as get_df_info,
+    safe_filter_dataframe as safe_filter,
+    create_data_quality_report as create_quality_report
 )
 
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-    validate_positive, validate_range, safe_kelly_calculation,
-    safe_weighted_average, safe_percentage_change, safe_correlation,
-    safe_covariance, safe_mean, safe_std, safe_percentile,
-    validate_correlation_matrix, safe_matrix_inverse, math_safe,
-    MathValidation, MathValidationError
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_power,
+    validate_finite,
+    validate_positive,
+    validate_range,
+    safe_kelly_calculation,
+    safe_weighted_average,
+    safe_percentage_change,
+    safe_correlation,
+    safe_covariance,
+    safe_mean,
+    safe_std,
+    safe_percentile,
+    validate_correlation_matrix,
+    safe_matrix_inverse,
+    math_safe,
+    MathValidation,
+    MathValidationError
 )
 
 from src.utils.serialization_utils import (
@@ -102,11 +177,6 @@ try:
         vectorized_rolling_features, matrix_correlation_analysis,
         get_vectorized_processing_core
     )
-    from src.utils.matrix_operations.hardware_integration import (
-        HardwareOptimizedMatrixProcessor,
-        hardware_optimized, optimize_matrix_operation, get_hardware_optimized_processor,
-        HardwareConfig
-    )
     from src.utils.matrix_operations.batch_operations import (
         BatchMatrixProcessor, batch_feature_transformation,
         batch_correlation_analysis, get_batch_matrix_processor
@@ -116,9 +186,17 @@ except ImportError as e:
     MATRIX_OPS_AVAILABLE = False
     tprint(f"⚠️ Matrix operations not available: {e}")
 
-from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...market_analysis.components.base_component import (
+    BaseMarketAnalysisComponent,
+    ComponentConfig,
+    ComponentResult
+)
 from .optimization_reporter import OptimizationReporter
-from src.utils.validation.unified_framework import FeatureLookbackValidationFramework, ValidationLevel, ValidationStatus
+from src.utils.validation.unified_framework import (
+    FeatureLookbackValidationFramework,
+    ValidationLevel,
+    ValidationStatus
+)
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 from .optimization_strategy import OptimizationStrategyFactory, OptimizationMethod
 from src.utils.logger import system_logger
@@ -127,14 +205,35 @@ class StandardizedErrorHandler:
     """Standardized error handling for consistent error management across the component."""
     
     def __init__(self, logger, component_name: str = "FeatureLookbackOptimization"):
+        """Initialize standardized error handler.
+
+        Args:
+            logger: Logger instance for error reporting
+            component_name: Name of the component for error context
+        """
         self.logger = logger
         self.component_name = component_name
     
-    def handle_error(self, error: Exception, operation: str, return_value=None, reraise: bool = False):
-        """Handle errors in a standardized way."""
+    def handle_error(
+        self,
+        error: Exception,
+        operation: str,
+        return_value=None,
+        reraise: bool = False
+    ):
+        """Handle errors in a standardized way.
+
+        Args:
+            error: Exception that occurred
+            operation: Name of the operation that failed
+            return_value: Value to return if not reraising
+            reraise: Whether to re-raise the exception
+
+        Returns:
+            Return value if specified and not reraising
+        """
         error_msg = f"{operation} failed in {self.component_name}: {str(error)}"
-        self.logger.error(error_msg)
-        tprint(f"❌ {error_msg}")
+        log_error(error_msg)
         
         if reraise:
             raise type(error)(error_msg) from error
@@ -142,16 +241,24 @@ class StandardizedErrorHandler:
         return return_value
     
     def handle_warning(self, warning_msg: str, operation: str):
-        """Handle warnings in a standardized way."""
+        """Handle warnings in a standardized way.
+
+        Args:
+            warning_msg: Warning message to log
+            operation: Name of the operation that generated the warning
+        """
         warning_msg = f"{operation} warning in {self.component_name}: {warning_msg}"
-        self.logger.warning(warning_msg)
-        tprint(f"⚠️ {warning_msg}")
+        log_warning(warning_msg)
     
     def handle_info(self, info_msg: str, operation: str):
-        """Handle info messages in a standardized way."""
+        """Handle info messages in a standardized way.
+
+        Args:
+            info_msg: Info message to log
+            operation: Name of the operation that generated the info
+        """
         info_msg = f"{operation} in {self.component_name}: {info_msg}"
-        self.logger.info(info_msg)
-        tprint(f"ℹ️ {info_msg}")
+        log_info(info_msg)
 
 # Hardware optimization imports
 try:
@@ -239,7 +346,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the feature lookback optimization component."""
         super().__init__(config)
-        self.logger = system_logger.getChild('FeatureLookbackOptimization')
+        # Use standardized logging
+        self.logger = get_logger('FeatureLookbackOptimization')
         self.error_handler = StandardizedErrorHandler(self.logger, 'FeatureLookbackOptimization')
         self.optimization_status = OptimizationStatus.PENDING
         self.start_time: Optional[float] = None
@@ -330,10 +438,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         if MATRIX_OPS_AVAILABLE:
             try:
-                from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
-                from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
-                from src.utils.matrix_operations.batch_operations import get_batch_matrix_processor
-                from src.utils.matrix_operations.hardware_integration import get_hardware_optimized_processor
                 
                 self.matrix_ops = get_unified_matrix_operations()
                 self.vectorized_ops = get_vectorized_processing_core()
@@ -354,9 +458,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Initialize M1 GPU manager if available
         try:
-            from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
             self.m1_cpu_optimizer = get_m1_cpu_optimizer()
             tprint("✅ M1 optimization components initialized")
         except Exception as e:
@@ -406,7 +507,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Initialize reporter
         self.reporter = OptimizationReporter(
-            output_dir=f"outcomes/market_analysis/feature_lookback_optimization/{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
+            output_dir=(
+                f"outcomes/market_analysis/feature_lookback_optimization/"
+                f"{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
+            )
         )
         
         # Initialize validation framework
@@ -440,10 +544,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     # Use common operations memory optimization
                     memory_result = optimize_memory()
                     if memory_result.get('success', False):
-                        tprint(f"🧹 Common operations memory cleanup: {memory_result.get('objects_collected', 0)} objects collected")
+                        tprint(
+                            f"🧹 Common operations memory cleanup: "
+                            f"{memory_result.get('objects_collected', 0)} objects collected"
+                        )
                     else:
                         # Basic cleanup
-                        import gc
                         collected = gc.collect()
                         tprint(f"🧹 Basic memory cleanup: {collected} objects collected")
             except Exception as e:
@@ -455,7 +561,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 except Exception:
                     pass
     
-    async def _enhanced_data_handling(self, data: Any, pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    async def _enhanced_data_handling(
+        self,
+        data: Any,
+        pipeline_state: Dict[str, Any]
+    ) -> Optional[pd.DataFrame]:
         """Enhanced data handling to get data from multiple sources with optimized memory usage."""
         try:
             # Try direct data first - avoid unnecessary copies
@@ -529,7 +639,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return None
     
     def _check_memory_usage(self) -> Dict[str, float]:
-        """"Check current memory usage and issue warnings if necessary."""
+        """Check current memory usage and issue warnings if necessary."""
         try:
             import psutil
             process = psutil.Process()
@@ -545,16 +655,24 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
             # Keep only recent memory measurements
             if len(self.performance_monitor['memory_usage']) > 1000:
-                self.performance_monitor['memory_usage'] = self.performance_monitor['memory_usage'][-500:]
+                self.performance_monitor['memory_usage'] = (
+                    self.performance_monitor['memory_usage'][-500:]
+                )
             
             # Issue warnings if necessary
             if memory_mb > self.memory_critical_threshold_mb:
                 self.performance_monitor['memory_warnings'] += 1
-                tprint(f"🚨 CRITICAL: Memory usage {memory_mb:.1f}MB exceeds critical threshold {self.memory_critical_threshold_mb}MB")
+                tprint(
+                    f"🚨 CRITICAL: Memory usage {memory_mb:.1f}MB exceeds "
+                    f"critical threshold {self.memory_critical_threshold_mb}MB"
+                )
                 raise MemoryError(f"Memory usage {memory_mb:.1f}MB exceeds critical threshold")
             elif memory_mb > self.memory_warning_threshold_mb:
                 self.performance_monitor['memory_warnings'] += 1
-                tprint(f"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds warning threshold {self.memory_warning_threshold_mb}MB")
+                tprint(
+                    f"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds "
+                    f"warning threshold {self.memory_warning_threshold_mb}MB"
+                )
             
             return {
                 'current_memory_mb': memory_mb,
@@ -596,7 +714,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return True
             
         except Exception as e:
-            self.error_handler.handle_warning(f"Quick validation failed: {e}", "quick_validate_data")
+            self.error_handler.handle_warning(
+                f"Quick validation failed: {e}",
+                "quick_validate_data"
+            )
             return False
     
     def _validate_and_optimize_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -786,7 +907,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         try:
             # Validate input data type
             if not isinstance(data, pd.DataFrame):
-                tprint(f"⚠️ Batch optimization processing failed: Expected DataFrame but got {type(data)}")
+                tprint(
+                    f"⚠️ Batch optimization processing failed: "
+                    f"Expected DataFrame but got {type(data)}"
+                )
                 return {'data': pd.DataFrame(), 'error': 'invalid_data_type'}
             
             if not MATRIX_OPS_AVAILABLE or not self.batch_processor:
@@ -1232,7 +1356,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _create_optimization_config(self, pipeline_state: Dict[str, Any]) -> Any:
         """Create optimization configuration based on pipeline state and component config."""
         try:
-            from src.feature_generation.utils.feature_generation_optimization import FeatureOptimizationConfig, OptimizationMethod
             
             # Check if regime data is available for regime-aware optimization
             regime_data_splitting = pipeline_state.get('regime_data_splitting_result', {})
@@ -1553,7 +1676,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             artifact_path = f"artifacts/feature_lookback_optimization_artifacts.json"
             
             # Ensure directory exists
-            from pathlib import Path
             Path(artifact_path).parent.mkdir(parents=True, exist_ok=True)
             
             # Save using common serialization utilities
@@ -1584,8 +1706,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _load_recent_labeling_results(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """Load recent labeling results from outcomes directory."""
         try:
-            import json
-            from pathlib import Path
             import glob
             
             # Look for recent multi-horizon labeling outcome files
@@ -1642,8 +1762,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _load_recent_regime_splitting_results(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """Load recent regime data splitting results from outcomes directory."""
         try:
-            import json
-            from pathlib import Path
             
             # Look for recent regime data splitting outcome files
             outcomes_dir = Path("outcomes")
@@ -1941,8 +2059,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     tprint('🔄 Loading actual multi-horizon labeled data from saved artifacts...')
                     
                     # Look for saved labeled data files
-                    from pathlib import Path
-                    import glob
                     
                     # Check if there are any saved parquet files with labeled data
                     data_cache_dir = Path("data_cache")
@@ -2134,7 +2250,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             if self.m1_gpu_manager and self.m1_gpu_manager.is_m1:
                 try:
                     with gpu_context("data_preparation"):
-                        from src.utils.hardware.m1_gpu_utils import optimize_dataframe_for_m1
                         prepared_data = optimize_dataframe_for_m1(prepared_data)
                         tprint("✅ Data optimized for M1")
                 except Exception as e:

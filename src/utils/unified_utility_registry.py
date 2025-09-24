@@ -504,7 +504,7 @@ def get_utility_usage_stats() -> Dict[str, Dict[str, Any]]:
         """Register ML Common utilities."""
         try:
             # Import ML Common utilities
-            from src.utils.ml_common import (
+            from src.utils.ml_common.validation import (
                 UnifiedCrossValidator, UnifiedCVResult, perform_cross_validation,
                 EnhancedValidator, EnhancedValidationConfig,
                 get_enhanced_validator, validate_model_comprehensively

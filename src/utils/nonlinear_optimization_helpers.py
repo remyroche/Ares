@@ -287,8 +287,9 @@ def create_enhanced_search_space(original_space: Dict[str, Dict[str, Any]],
     
     for param_name, param_config in original_space.items():
         if param_config['type'] == 'float':
-            min_val = param_config['min']
-            max_val = param_config['max']
+            # Support both 'min'/'max' and 'low'/'high' formats for backward compatibility
+            min_val = param_config.get('min', param_config.get('low', 0))
+            max_val = param_config.get('max', param_config.get('high', 1))
             range_size = max_val - min_val
             
             # Determine optimal transformation

@@ -20,8 +20,7 @@ from enum import Enum
 
 try:
     import psutil
-import collections
-
+    import collections
 except ImportError:
     psutil = None
 

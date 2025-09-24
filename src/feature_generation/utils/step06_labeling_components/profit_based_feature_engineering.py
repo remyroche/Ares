@@ -9,7 +9,6 @@ from typing import Tuple, Optional, List, Dict, Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-import numpy as np
 
 # Import PyTorch
 try:
@@ -29,7 +28,6 @@ triple barrier labeling to create rich feature sets for machine learning models.
 import time
 
 # Import essential decorators
-from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
 
@@ -304,7 +302,6 @@ class ProfitBasedFeatureEngineering:
         start_time = time.time()
         
         # Generate unique correlation ID for tracking
-        import uuid
         correlation_id = str(uuid.uuid4())[:8]
         
         self.logger.info(f"🚀 M1-optimized profit feature engineering start {correlation_id}")

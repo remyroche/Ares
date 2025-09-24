@@ -3,7 +3,6 @@ import numpy as np
 
 '\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
 
-from .logger import system_logger
 from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 import logging
 import pandas as pd

@@ -217,7 +217,6 @@ class ANOVAAnalyzer(BaseImportanceAnalyzer):
     
     def analyze(self, features: pd.DataFrame, target: np.ndarray) -> ImportanceResult:
         from sklearn.feature_selection import f_classif, f_regression
-        from sklearn.preprocessing import LabelEncoder
         
         # Prepare data
         X = features.fillna(0).values
@@ -259,7 +258,6 @@ class RandomForestAnalyzer(BaseImportanceAnalyzer):
     
     def analyze(self, features: pd.DataFrame, target: np.ndarray) -> ImportanceResult:
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        from sklearn.preprocessing import LabelEncoder
         
         # Prepare data
         X = features.fillna(0).values
@@ -307,7 +305,6 @@ class XGBoostAnalyzer(BaseImportanceAnalyzer):
             self.logger.warning("XGBoost not available, falling back to Random Forest")
             return RandomForestAnalyzer(self.config).analyze(features, target)
         
-        from sklearn.preprocessing import LabelEncoder
         
         # Prepare data
         X = features.fillna(0).values
@@ -350,9 +347,7 @@ class PermutationAnalyzer(BaseImportanceAnalyzer):
     
     def analyze(self, features: pd.DataFrame, target: np.ndarray) -> ImportanceResult:
         from sklearn.inspection import permutation_importance
-        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
         from sklearn.model_selection import train_test_split
-        from sklearn.preprocessing import LabelEncoder
         
         # Prepare data
         X = features.fillna(0).values
@@ -413,8 +408,6 @@ class SHAPAnalyzer(BaseImportanceAnalyzer):
             self.logger.warning("SHAP not available, falling back to Permutation Importance")
             return PermutationAnalyzer(self.config).analyze(features, target)
         
-        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        from sklearn.preprocessing import LabelEncoder
         
         # Prepare data
         X = features.fillna(0).values
@@ -482,7 +475,6 @@ class LassoAnalyzer(BaseImportanceAnalyzer):
     
     def analyze(self, features: pd.DataFrame, target: np.ndarray) -> ImportanceResult:
         from sklearn.linear_model import Lasso, LassoCV, LogisticRegression
-        from sklearn.preprocessing import StandardScaler, LabelEncoder
         
         # Prepare data
         scaler = StandardScaler()

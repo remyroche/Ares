@@ -25,6 +25,7 @@ import json
 import os
 
 try:
+    import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
         pass
@@ -41,14 +42,21 @@ from src.utils.warning_symbols import (
    warning,
 )
 
-from typing import TYPE_CHECKING
-from src.integration.paper_trading_integration import (
 import logging
 import time
+from typing import TYPE_CHECKING, Any
 
-    PaperTradingIntegration,
-    setup_paper_trading_integration,
-)
+try:
+    from src.integration.paper_trading_integration import (
+        PaperTradingIntegration,
+        setup_paper_trading_integration,
+    )
+except ImportError:
+    # Fallback classes if module is not available
+    class PaperTradingIntegration:
+        pass
+    def setup_paper_trading_integration():
+        pass
 if TYPE_CHECKING:
     pass
 
@@ -68,7 +76,7 @@ class EnhancedTradingLauncher:
 
         # Trading components
         self.paper_trading_integration: PaperTradingIntegration | None = None
-        self.enhanced_backtester: "EnhancedBacktester | None" = None
+        self.enhanced_backtester: Any = None
 
         # Launcher state
         self.is_initialized: bool = False
@@ -172,7 +180,7 @@ class EnhancedTradingLauncher:
             # Initialize enhanced backtester
             if self.enable_backtesting:
                 try:
-                    from src.training.enhanced_backtester import (
+                    from src.training.enhanced_backtester import (  # type: ignore
                         setup_enhanced_backtester as _setup_backtester,
                     )
                     self.enhanced_backtester = await _setup_backtester(self.config)

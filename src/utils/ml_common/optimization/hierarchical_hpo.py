@@ -37,12 +37,12 @@ except Exception:
     _PURGED_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 
-# Import universal validation integration
-from ..training.universal_validation_integration import (
-    get_validation_integrator,
-    validate_hpo_trial,
-    ValidationIntegrationConfig
-)
+# Import universal validation integration - use lazy import to avoid circular dependency
+# from ..training.universal_validation_integration import (
+#     get_validation_integrator,
+#     validate_hpo_trial,
+#     ValidationIntegrationConfig
+# )
 
 logger = system_logger.getChild('HierarchicalHPO')
 
@@ -131,23 +131,34 @@ class HierarchicalHPO:
     
     def _initialize_validation_integration(self):
         """Initialize universal validation integration for HPO."""
-        # Create validation configuration
-        validation_config = ValidationIntegrationConfig(
-            enable_validation=self.config.enable_validation,
-            enable_overfitting_detection=self.config.enable_overfitting_detection,
-            enable_temporal_validation=self.config.enable_temporal_validation,
-            enable_timeframe_validation=self.config.enable_timeframe_validation,
-            validation_failure_threshold=self.config.validation_failure_threshold,
-            fail_on_validation_error=self.config.fail_on_validation_error,
-            save_validation_reports=True,
-            validation_report_directory=f"{self.config.cache_dir}/validation_reports",
-            enable_validation_logging=True
-        )
-        
-        # Initialize validation integrator
-        self.validation_integrator = get_validation_integrator(validation_config)
-        
-        logger.info("✅ Universal validation integration initialized for HPO")
+        try:
+            # Lazy import to avoid circular dependency
+            from ..training.universal_validation_integration import (
+                get_validation_integrator,
+                ValidationIntegrationConfig
+            )
+            
+            # Create validation configuration
+            validation_config = ValidationIntegrationConfig(
+                enable_validation=self.config.enable_validation,
+                enable_overfitting_detection=self.config.enable_overfitting_detection,
+                enable_temporal_validation=self.config.enable_temporal_validation,
+                enable_timeframe_validation=self.config.enable_timeframe_validation,
+                validation_failure_threshold=self.config.validation_failure_threshold,
+                fail_on_validation_error=self.config.fail_on_validation_error,
+                save_validation_reports=True,
+                validation_report_directory=f"{self.config.cache_dir}/validation_reports",
+                enable_validation_logging=True
+            )
+            
+            # Initialize validation integrator
+            self.validation_integrator = get_validation_integrator(validation_config)
+            
+            logger.info("✅ Universal validation integration initialized for HPO")
+            
+        except ImportError as e:
+            logger.warning(f"⚠️ Could not initialize validation integration: {e}")
+            self.validation_integrator = None
         
         self.logger.info("✅ Hierarchical HPO initialized")
     
@@ -592,13 +603,10 @@ class HierarchicalHPO:
                         y_pred = optimized_model.predict(X_val)
                         
                         if scoring_metric == 'neg_mean_squared_error':
-                            from sklearn.metrics import mean_squared_error
                             score = -mean_squared_error(y_val, y_pred)
                         elif scoring_metric == 'neg_mean_absolute_error':
-                            from sklearn.metrics import mean_absolute_error
                             score = -mean_absolute_error(y_val, y_pred)
                         elif scoring_metric == 'r2':
-                            from sklearn.metrics import r2_score
                             score = r2_score(y_val, y_pred)
                         else:
                             score = 0.0
@@ -665,13 +673,10 @@ class HierarchicalHPO:
                         y_pred = optimized_model.predict(X_val)
                         
                         if scoring_metric == 'neg_mean_squared_error':
-                            from sklearn.metrics import mean_squared_error
                             score = -mean_squared_error(y_val, y_pred)
                         elif scoring_metric == 'neg_mean_absolute_error':
-                            from sklearn.metrics import mean_absolute_error
                             score = -mean_absolute_error(y_val, y_pred)
                         elif scoring_metric == 'r2':
-                            from sklearn.metrics import r2_score
                             score = r2_score(y_val, y_pred)
                         else:
                             score = 0.0
@@ -751,7 +756,6 @@ class HierarchicalHPO:
     def _create_fine_parameter_grid_phase(self, search_space: Dict[str, Any], 
                                         best_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create fine parameter grid around best parameters for hierarchical HPO."""
-        import itertools
         
         param_combinations = []
         
@@ -860,13 +864,10 @@ class HierarchicalHPO:
                         y_pred = optimized_model.predict(X_val)
                         
                         if scoring_metric == 'neg_mean_squared_error':
-                            from sklearn.metrics import mean_squared_error
                             score = -mean_squared_error(y_val, y_pred)
                         elif scoring_metric == 'neg_mean_absolute_error':
-                            from sklearn.metrics import mean_absolute_error
                             score = -mean_absolute_error(y_val, y_pred)
                         elif scoring_metric == 'r2':
-                            from sklearn.metrics import r2_score
                             score = r2_score(y_val, y_pred)
                         else:
                             score = 0.0

@@ -20,6 +20,7 @@ import torch.nn.functional as F
 from torch.optim import Optimizer, Adam, SGD, AdamW
 from torch.optim.lr_scheduler import _LRScheduler, StepLR, CosineAnnealingLR, ReduceLROnPlateau
 import warnings
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 logger = logging.getLogger(__name__)
 
@@ -386,26 +387,35 @@ class NASFinancialOptimizer:
 
     def __init__(self, model: nn.Module, config: NASOptimizerConfig):
         """Initialize the NAS financial optimizer."""
+        tprint("🚀 [NAS_FINANCIAL_OPTIMIZER] Initializing NAS Financial Optimizer", color="cyan", bold=True)
+        tprint(f"📊 [NAS_FINANCIAL_OPTIMIZER] Base Optimizer: {config.base_optimizer}", color="blue")
+        tprint(f"📊 [NAS_FINANCIAL_OPTIMIZER] Loss Function: {config.loss_function.value}", color="blue")
+        tprint(f"📊 [NAS_FINANCIAL_OPTIMIZER] LR Schedule: {config.lr_schedule.value}", color="blue")
         self.config = config
         self.model = model
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize base optimizer
+        tprint("🔧 [NAS_FINANCIAL_OPTIMIZER] Creating base optimizer", color="yellow")
         self.optimizer = self._create_base_optimizer()
 
         # Initialize learning rate scheduler
+        tprint("📈 [NAS_FINANCIAL_OPTIMIZER] Creating learning rate scheduler", color="yellow")
         self.scheduler = self._create_scheduler()
 
         # Loss function
+        tprint("🎯 [NAS_FINANCIAL_OPTIMIZER] Creating loss function", color="yellow")
         self.criterion = self._create_loss_function()
 
         # Training state
+        tprint("📊 [NAS_FINANCIAL_OPTIMIZER] Initializing training state", color="blue")
         self.current_epoch = 0
         self.best_loss = float('inf')
         self.patience_counter = 0
         self.performance_history = []
         self.volatility_history = []
 
+        tprint("✅ [NAS_FINANCIAL_OPTIMIZER] NAS Financial Optimizer initialized successfully", color="green", bold=True)
         self.logger.info("✅ NAS Financial Optimizer initialized")
         self.logger.info(f"   Base Optimizer: {config.base_optimizer}")
         self.logger.info(f"   Loss Function: {config.loss_function.value}")

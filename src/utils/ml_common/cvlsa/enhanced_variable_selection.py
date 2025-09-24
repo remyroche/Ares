@@ -45,7 +45,6 @@ try:
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Feature selection modules not available: {e}")
 
@@ -245,7 +244,6 @@ class EnhancedVariableSelector:
         """Calculate linearity score between features and target."""
         try:
             from sklearn.linear_model import LinearRegression
-            from sklearn.metrics import r2_score
             
             # Fit linear model
             lr = LinearRegression()
@@ -261,8 +259,6 @@ class EnhancedVariableSelector:
     def _estimate_noise_level(self, X: np.ndarray, y: np.ndarray) -> float:
         """Estimate noise level in the data."""
         try:
-            from sklearn.linear_model import LinearRegression
-            from sklearn.metrics import mean_squared_error
             
             # Fit linear model
             lr = LinearRegression()
@@ -513,8 +509,6 @@ class EnhancedVariableSelector:
     def _evaluate_feature_set(self, X: np.ndarray, y: np.ndarray) -> float:
         """Quick evaluation of a feature set."""
         try:
-            from sklearn.linear_model import LinearRegression
-            from sklearn.metrics import r2_score
             from sklearn.model_selection import cross_val_score
             
             # Use cross-validation for robust evaluation

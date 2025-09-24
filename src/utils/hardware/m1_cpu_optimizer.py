@@ -10,6 +10,8 @@ import multiprocessing
 import concurrent.futures
 import threading
 import time
+import os
+import asyncio
 from typing import Any, Dict, List, Optional, Callable, Union
 import sys
 import platform
@@ -169,7 +171,6 @@ class M1CPUOptimizer:
             # M1 benefits from using all cores for vectorized operations
 
             # Set environment variables for optimal performance
-            import os
             os.environ['OMP_NUM_THREADS'] = str(self.performance_cores)
             os.environ['MKL_NUM_THREADS'] = str(self.performance_cores)
 
@@ -187,7 +188,6 @@ class M1CPUOptimizer:
 
             def __enter__(self):
                 # Save original environment
-                import os
                 env_vars = ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS']
                 for var in env_vars:
                     if var in os.environ:
@@ -204,7 +204,6 @@ class M1CPUOptimizer:
 
             def __exit__(self, exc_type, exc_val, exc_tb):
                 # Restore original environment
-                import os
                 for var, value in self.original_env.items():
                     os.environ[var] = value
                 for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS']:
@@ -338,7 +337,8 @@ async def parallel_backtesting_worker(
 
     try:
         # Optimize for M1 performance cores
-        with m1_cpu_optimizer.create_m1_optimized_context():
+        optimizer = get_m1_cpu_optimizer()
+        with optimizer.create_m1_optimized_context():
             # Execute strategy on data chunk
             results = await _execute_backtesting_chunk(
                 data_chunk, strategy_params, config, strategy_func
@@ -389,7 +389,6 @@ async def _execute_backtesting_chunk(
         Backtesting results for this chunk
     """
     try:
-        import numpy as np
 
         # Simulate backtesting execution
         # In a real implementation, this would call the actual strategy function
@@ -415,7 +414,6 @@ async def _execute_backtesting_chunk(
             results['total_trades'] = random.randint(10, 100)
 
         # Generate realistic trading metrics
-        import random
         results['win_rate'] = 0.5 + random.uniform(-0.1, 0.1)
         results['profit_factor'] = 1.0 + random.uniform(0, 0.2)
         results['max_drawdown'] = random.uniform(0, 0.05)
@@ -455,7 +453,8 @@ def create_parallel_backtesting_pool(max_workers: Optional[int] = None):
     Returns:
         Configured thread/process pool for parallel backtesting
     """
-    return m1_cpu_optimizer.create_optimized_thread_pool(max_workers)
+    optimizer = get_m1_cpu_optimizer()
+    return optimizer.create_optimized_thread_pool(max_workers)
 
 
 async def parallel_monte_carlo_simulation(
@@ -482,13 +481,15 @@ async def parallel_monte_carlo_simulation(
         List of simulation results
     """
     if not max_workers:
-        max_workers = m1_cpu_optimizer.cpu_count
+        optimizer = get_m1_cpu_optimizer()
+        max_workers = optimizer.cpu_count
 
     logger.info(f"🎲 Starting parallel Monte Carlo simulation with {max_workers} workers")
 
     # Create optimized thread pool for M1
-    with m1_cpu_optimizer.create_m1_optimized_context():
-        with m1_cpu_optimizer.create_optimized_thread_pool(max_workers) as executor:
+    optimizer = get_m1_cpu_optimizer()
+    with optimizer.create_m1_optimized_context():
+        with optimizer.create_optimized_thread_pool(max_workers) as executor:
             # Create tasks for parallel execution
             tasks = []
             for i, data_chunk in enumerate(data_chunks):
@@ -598,7 +599,6 @@ def run_monte_carlo_batch(
     Returns:
         List of simulation results
     """
-    import asyncio
 
     async def run_batch():
         all_results = []
@@ -623,10 +623,10 @@ def run_monte_carlo_batch(
         return asyncio.run(run_batch())
     except RuntimeError:
         # If already in an event loop, run synchronously
-        import concurrent.futures
         all_results = []
 
-        with m1_cpu_optimizer.create_optimized_thread_pool() as executor:
+        optimizer = get_m1_cpu_optimizer()
+        with optimizer.create_optimized_thread_pool() as executor:
             for i in range(0, len(data_chunks), batch_size):
                 batch = data_chunks[i:i + batch_size]
                 logger.info(f"🎲 Processing Monte Carlo batch {i//batch_size + 1} with {len(batch)} simulations")

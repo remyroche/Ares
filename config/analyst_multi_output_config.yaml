@@ -5,7 +5,7 @@
 # Basic configuration
 analyst_config:
   model_name: "analyst_multi_output"
-  timeframe: "5m"
+  timeframe: "15m"
   n_outputs: 4
   output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
 

@@ -180,7 +180,6 @@ class PredictiveSREngine:
             
             if not self.weight_optimizer:
                 self.logger.info("Initializing weight optimization engine")
-                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                 weight_config = WeightOptimizationConfig(
                     optimization_method='scipy_minimize',
                     primary_objective='r2_score',
@@ -211,7 +210,6 @@ class PredictiveSREngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Weight optimization failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             self.optimized_weights = {}
     
@@ -279,7 +277,6 @@ class PredictiveSREngine:
             
         except Exception as e:
             self.logger.error(f"❌ Feature engineering failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return np.array([]), np.array([])
     
@@ -717,7 +714,6 @@ class PredictiveSREngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Model training failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'failed', 'error': str(e)}
     
@@ -911,7 +907,6 @@ class PredictiveSREngine:
             
         except Exception as e:
             self.logger.error(f"❌ SR quality prediction failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
@@ -1006,7 +1001,6 @@ class PredictiveSREngine:
             
         except Exception as e:
             self.logger.error(f"❌ High quality prediction failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     

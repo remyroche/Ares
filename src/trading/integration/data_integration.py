@@ -282,7 +282,6 @@ class DataSyncManager:
     ):
         """Save performance metrics to training pipeline."""
         try:
-            import os
             import json
             
             # Create metrics directory
@@ -425,7 +424,6 @@ class TrainingDataReader:
     ) -> Optional[pd.DataFrame]:
         """Read data from training pipeline data store."""
         try:
-            import os
             import glob
             
             # Look for data in training pipeline directories

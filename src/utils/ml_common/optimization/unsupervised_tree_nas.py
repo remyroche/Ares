@@ -23,6 +23,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Unsupervised learning imports
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
@@ -198,11 +199,16 @@ class UnsupervisedTreeNAS:
     
     def __init__(self, config: UnsupervisedTreeNASConfig):
         """Initialize unsupervised tree-based NAS."""
+        tprint("🚀 [UNSUPERVISED_TREE_NAS] Initializing Unsupervised Tree-Based NAS", color="cyan", bold=True)
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Trials: {config.n_trials}", color="blue")
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Max clusters: {config.max_clusters}", color="blue")
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Min cluster size: {config.min_cluster_size}", color="blue")
         self.config = config
         self.logger = logger.getChild('UnsupervisedTreeNAS')
         self.candidates = []
         self.best_candidate = None
         
+        tprint("✅ [UNSUPERVISED_TREE_NAS] Unsupervised Tree-Based NAS initialized successfully", color="green")
         self.logger.info(f"✅ Unsupervised Tree-Based NAS initialized with {config.n_trials} trials")
     
     def search(self, 
@@ -218,17 +224,25 @@ class UnsupervisedTreeNAS:
         Returns:
             Best unsupervised architecture candidate
         """
+        tprint("🚀 [UNSUPERVISED_TREE_NAS] Starting Unsupervised Tree-Based NAS Search", color="cyan", bold=True)
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Market data shape: {market_data.shape}", color="blue")
         self.logger.info("🚀 Starting Unsupervised Tree-Based NAS Search...")
         start_time = time.time()
         
         try:
             # Prepare data
+            tprint("🔧 [UNSUPERVISED_TREE_NAS] Preparing features from market data", color="yellow")
             X, feature_names = self._prepare_features(market_data)
+            tprint(f"✅ [UNSUPERVISED_TREE_NAS] Prepared {X.shape[1]} features from {len(feature_names)} feature types", color="green")
             
             # Search for architectures
+            tprint("🔍 [UNSUPERVISED_TREE_NAS] Searching for optimal architectures", color="yellow")
             best_candidate = self._search_architectures(X, feature_names, timestamps)
             
             search_time = time.time() - start_time
+            tprint(f"🎉 [UNSUPERVISED_TREE_NAS] Unsupervised NAS completed in {search_time:.2f}s", color="green", bold=True)
+            tprint(f"📊 [UNSUPERVISED_TREE_NAS] Best architecture: {best_candidate.clustering_algorithm}, score: {best_candidate.overall_score:.4f}", color="cyan")
+            tprint(f"🔍 [UNSUPERVISED_TREE_NAS] Detected {best_candidate.n_regimes} regimes", color="cyan")
             self.logger.info(f"✅ Unsupervised NAS completed in {search_time:.2f}s")
             self.logger.info(f"📊 Best architecture: {best_candidate.clustering_algorithm}, score: {best_candidate.overall_score:.4f}")
             self.logger.info(f"🔍 Detected {best_candidate.n_regimes} regimes")

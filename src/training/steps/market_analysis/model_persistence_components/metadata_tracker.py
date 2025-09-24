@@ -2,7 +2,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 from typing import Dict
 from typing import Any
-from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
@@ -12,7 +11,6 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 import hashlib
 import json
 from datetime import datetime
-from src.utils.logger import system_logger
 import logging
 import numpy as np
 import time
@@ -220,4 +218,3 @@ class MetadataTracker:
             if section in metadata and (not metadata[section]):
                 validation['warnings'].append(f'Empty section: {section}')
         return validation
-from typing import Dict

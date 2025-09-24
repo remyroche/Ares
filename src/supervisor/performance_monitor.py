@@ -28,7 +28,6 @@ except ImportError:
         def decorator(func):
             return func
         return decorator
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, warning
 import numpy as np
 import time

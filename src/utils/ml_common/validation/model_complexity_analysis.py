@@ -466,7 +466,7 @@ class ModelComplexityAnalyzer:
             if hasattr(model, 'feature_importances_'):
                 # Tree-based models
                 for i in range(len(model.feature_importances_)):
-                    feature_name = f"feature_{i}" if X.shape[1] <= 10 else f"feature_{i"03d"}"
+                    feature_name = f"feature_{i}" if X.shape[1] <= 10 else f"feature_{i:03d}"
                     importances[feature_name] = model.feature_importances_[i]
 
             elif hasattr(model, 'coef_'):

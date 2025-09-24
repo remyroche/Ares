@@ -80,17 +80,17 @@ class RegimeAwareLabeling:
     def create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from .triple_barrier_labeling import UnifiedTripleBarrierLabeler, TripleBarrierConfig
-            config = TripleBarrierConfig(
+            from .multi_horizon_profit_labeler import MultiHorizonProfitLabeler, MultiHorizonConfig
+            config = MultiHorizonConfig(
                 profit_take_multiplier = 0.002,
                 stop_loss_multiplier = 0.001,
                 time_barrier_minutes = self.time_barrier_minutes,
                 max_lookahead = self.max_lookahead,
                 regime_aware = True
             )
-            return UnifiedTripleBarrierLabeler(config)
+            return MultiHorizonProfitLabeler(config)
         except ImportError as e:
-            self.logger.error(f'❌ Failed to import UnifiedTripleBarrierLabeler: {e}')
+            self.logger.error(f'❌ Failed to import MultiHorizonProfitLabeler: {e}')
             return None
     
     def generate_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:

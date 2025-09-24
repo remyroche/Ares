@@ -1101,7 +1101,6 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
         try:
             import csv
             import os
-            from datetime import datetime
             from pathlib import Path
 
             # Create outcomes directory if it doesn't exist

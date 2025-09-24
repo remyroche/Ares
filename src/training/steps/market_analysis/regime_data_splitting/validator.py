@@ -47,8 +47,6 @@ from src.core.errors import (
 This module validates the regime data splitting step outputs with support for 10+ regimes.
 """
 import json
-from pathlib import Path
-from typing import Any, Dict
 import pandas as pd
 from src.core.decorators.logging import log_execution_time, log_call
 
@@ -354,6 +352,5 @@ if __name__ == '__main__':
     import asyncio
     test_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache', 'config': {}}
     test_state = {}
-    import asyncio
     result = asyncio.run(run_validator(test_input, test_state))
     tprint(json.dumps(result, indent = 2))

@@ -315,7 +315,6 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         """Run the actual parameter optimization process with robust error handling."""
         try:
             # Import the function here to ensure it's available
-            from src.utils.sr_clustering.parameter_optimization_engine import get_parameter_optimization_engine
             
             # Get parameter optimization engine
             optimization_engine = get_parameter_optimization_engine(param_config)
@@ -338,7 +337,6 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
                 )
             else:
                 # Run in thread pool for non-async methods
-                import asyncio
                 loop = asyncio.get_event_loop()
                 optimization_result = await loop.run_in_executor(
                     None,
@@ -483,7 +481,6 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         # Check GPU availability
         gpu_available = False
         try:
-            import torch
             gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
         except ImportError:
             pass
@@ -491,7 +488,6 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         # Determine optimal memory settings
         memory_limit_gb = 4.0  # Conservative default
         try:
-            import psutil
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
         except ImportError:

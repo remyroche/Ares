@@ -1096,7 +1096,6 @@ class AdvancedMarkovPipeline:
 
 # Example usage and comprehensive testing
 if __name__ == "__main__":
-    import asyncio
     
     # Generate synthetic 1h market data for comprehensive testing
     np.random.seed(42)

@@ -478,7 +478,6 @@ class FeatureSelectionFramework:
     def _safe_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
         """Calculate safe mutual information with error handling."""
         try:
-            from sklearn.feature_selection import mutual_info_regression
             mi = mutual_info_regression(x.reshape(-1, 1), y, discrete_features=False)[0]
             return validate_finite(mi, "mutual_information")
         except Exception as e:
@@ -860,7 +859,6 @@ class FeatureSelectionFramework:
             
             # Check NumPy
             try:
-                import numpy as np
                 requirements['numpy_version'] = np.__version__
             except ImportError:
                 requirements['numpy_available'] = False
@@ -884,7 +882,6 @@ class FeatureSelectionFramework:
             
             # Check psutil
             try:
-                import psutil
                 requirements['psutil_version'] = psutil.__version__
                 requirements['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
                 requirements['cpu_count'] = psutil.cpu_count()
@@ -1646,7 +1643,6 @@ class FeatureSelectionFramework:
 
                     # Log memory usage if monitoring is available
                     try:
-                        import psutil
                         process = psutil.Process()
                         memory_mb = process.memory_info().rss / 1024 / 1024
                         _LOGGER.debug(f"💾 Memory usage after pipeline: {memory_mb:.1f} MB")
@@ -1832,8 +1828,6 @@ class FeatureSelectionFramework:
             # Use processed data for RFECV
             X = X_processed
 
-            from sklearn.model_selection import cross_val_score
-            from sklearn.feature_selection import RFECV
 
             _LOGGER.info(f"🔍 Determining optimal RFE features using {cv_folds}-fold CV...")
             
@@ -3507,7 +3501,6 @@ class FeatureSelectionFramework:
                     corr_matrix = safe_correlation_matrix(X.T)
                 elif method == 'spearman':
                     # For Spearman, convert to DataFrame and use pandas (more efficient than loops)
-                    import pandas as pd
                     df = pd.DataFrame(X.T)
                     corr_matrix = df.corr(method='spearman').values
                 else:
@@ -3523,7 +3516,6 @@ class FeatureSelectionFramework:
                 if method == 'pearson':
                     corr_matrix = np.corrcoef(X.T)
                 elif method == 'spearman':
-                    from scipy.stats import spearmanr
                     corr_matrix = np.zeros((X.shape[1], X.shape[1]))
                     for i in range(X.shape[1]):
                         for j in range(X.shape[1]):
@@ -4641,7 +4633,6 @@ class FeatureSelectionFramework:
             
             # Train final model with best hyperparameters
             if is_classification:
-                from sklearn.ensemble import RandomForestClassifier
                 tree_model = RandomForestClassifier(
                     n_estimators=best_params['n_estimators'],
                     max_depth=best_params['max_depth'],
@@ -4649,7 +4640,6 @@ class FeatureSelectionFramework:
                     n_jobs=-1
                 )
             else:
-                from sklearn.ensemble import RandomForestRegressor
                 tree_model = RandomForestRegressor(
                     n_estimators=best_params['n_estimators'],
                     max_depth=best_params['max_depth'],
@@ -4762,10 +4752,8 @@ class FeatureSelectionFramework:
                 cv_importances = []
                 
                 if is_classification:
-                    from sklearn.model_selection import StratifiedKFold
                     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
                 else:
-                    from sklearn.model_selection import KFold
                     cv = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
                 
                 for fold, (train_idx, val_idx) in enumerate(cv.split(X_selected, y)):
@@ -4979,13 +4967,11 @@ class FeatureSelectionFramework:
         
         # Create base model
         if is_classification:
-            from sklearn.ensemble import RandomForestClassifier
             base_model = RandomForestClassifier(
                 random_state=self.random_state,
                 n_jobs=-1
             )
         else:
-            from sklearn.ensemble import RandomForestRegressor
             base_model = RandomForestRegressor(
                 random_state=self.random_state,
                 n_jobs=-1
@@ -5075,7 +5061,6 @@ class FeatureSelectionFramework:
             
             # Create model
             if is_classification:
-                from sklearn.ensemble import RandomForestClassifier
                 model = RandomForestClassifier(
                     n_estimators=n_estimators,
                     max_depth=max_depth,
@@ -5083,7 +5068,6 @@ class FeatureSelectionFramework:
                     n_jobs=1  # Single job for parallel processing
                 )
             else:
-                from sklearn.ensemble import RandomForestRegressor
                 model = RandomForestRegressor(
                     n_estimators=n_estimators,
                     max_depth=max_depth,
@@ -5448,7 +5432,6 @@ class FeatureSelectionFramework:
             mi_redundancy = 0.0
             if len(selected_features) > 1:
                 try:
-                    from sklearn.feature_selection import mutual_info_regression
                     for i in range(len(selected_features)):
                         for j in range(i + 1, len(selected_features)):
                             mi = mutual_info_regression(
@@ -5482,7 +5465,6 @@ class FeatureSelectionFramework:
             individual_relevance = []
             for i in range(len(selected_features)):
                 try:
-                    from sklearn.feature_selection import mutual_info_regression, f_regression
                     
                     # Mutual information with target
                     mi = mutual_info_regression(
@@ -5678,7 +5660,6 @@ class FeatureSelectionFramework:
             # Distribution diversity (using Kolmogorov-Smirnov test)
             distribution_diversity = 0.0
             if len(selected_features) > 1:
-                from scipy import stats
                 ks_scores = []
                 for i in range(len(selected_features)):
                     for j in range(i + 1, len(selected_features)):
@@ -5812,7 +5793,6 @@ class FeatureSelectionFramework:
         _LOGGER.info(f"📊 CV folds: {cv_folds}, Test size: {test_size}")
         
         try:
-            from sklearn.model_selection import KFold, train_test_split
             from sklearn.metrics import accuracy_score, mean_squared_error
             
             # Split data into train+val and test sets
@@ -5991,10 +5971,8 @@ class FeatureSelectionFramework:
             y_pred = model_copy.predict(X_test_selected)
             
             if len(np.unique(y_test)) <= 10:  # Classification
-                from sklearn.metrics import accuracy_score
                 return accuracy_score(y_test, y_pred)
             else:  # Regression
-                from sklearn.metrics import mean_squared_error
                 return -mean_squared_error(y_test, y_pred)
                 
         except Exception as e:
@@ -6638,7 +6616,6 @@ class FeatureSelectionFramework:
             linear_corr = abs(safe_correlation(feature_values, target))
             
             # Calculate mutual information (captures non-linear relationships)
-            from sklearn.feature_selection import mutual_info_regression
             mi = mutual_info_regression(feature_values.reshape(-1, 1), target)[0]
             
             # Non-linearity is the difference between MI and linear correlation
@@ -6718,7 +6695,6 @@ class FeatureSelectionFramework:
         granger_features = []
         
         try:
-            from scipy import stats
             
             for i, feature in enumerate(feature_names):
                 # Calculate correlation between feature and target
@@ -6747,7 +6723,6 @@ class FeatureSelectionFramework:
         conditional_features = []
         
         try:
-            from scipy import stats
             
             for i, feature in enumerate(feature_names):
                 # Test if feature is independent of target given other features
@@ -6777,7 +6752,6 @@ class FeatureSelectionFramework:
                                      z: np.ndarray) -> float:
         """Calculate partial correlation between x and y given z."""
         try:
-            from sklearn.linear_model import LinearRegression
             
             # Regress x on z
             reg_x = LinearRegression().fit(z, x)
@@ -6788,7 +6762,6 @@ class FeatureSelectionFramework:
             y_residual = y - reg_y.predict(z)
             
             # Calculate correlation of residuals
-            from scipy.stats import pearsonr
             corr, _ = pearsonr(x_residual, y_residual)
             return corr
             
@@ -7156,7 +7129,6 @@ class FeatureSelectionFramework:
     def _calculate_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
         """Calculate mutual information between feature and target."""
         try:
-            from sklearn.feature_selection import mutual_info_regression
             mi = mutual_info_regression(x.reshape(-1, 1), y, discrete_features=False)[0]
             return mi
         except:
@@ -7511,8 +7483,6 @@ class FeatureSelectionFramework:
                           causal_weights: Dict[str, float], interaction_weights: Dict[str, float]) -> List[str]:
         """Run enhanced LASSO with causal and interaction weights."""
         try:
-            from sklearn.linear_model import LassoCV
-            from sklearn.preprocessing import StandardScaler
             
             # Standardize features
             scaler = StandardScaler()
@@ -7540,7 +7510,6 @@ class FeatureSelectionFramework:
             _LOGGER.warning(f"⚠️ Enhanced LASSO failed: {e}")
             # Fallback to simple LASSO
             try:
-                from sklearn.linear_model import LassoCV
                 lasso = LassoCV(cv=5, random_state=42)
                 lasso.fit(X, y)
                 selected_indices = np.where(lasso.coef_ != 0)[0]
@@ -7627,7 +7596,6 @@ class FeatureSelectionFramework:
         try:
             # Initialize base model
             if base_model is None:
-                from sklearn.ensemble import RandomForestRegressor
                 base_model = RandomForestRegressor(n_estimators=50, random_state=42)
             
             # Calculate interaction importance scores
@@ -8335,10 +8303,8 @@ class FeatureSelectionFramework:
                 elif method == 'importance':
                     # Use a simple importance calculation for the chunk
                     if len(np.unique(y)) <= 10:
-                        from sklearn.ensemble import RandomForestClassifier
                         model = RandomForestClassifier(n_estimators=10, random_state=self.random_state)
                     else:
-                        from sklearn.ensemble import RandomForestRegressor
                         model = RandomForestRegressor(n_estimators=10, random_state=self.random_state)
                     
                     model.fit(X_chunk[:, i:i+1], y)
@@ -8536,7 +8502,6 @@ class FeatureSelectionFramework:
             if not SKLEARN_AVAILABLE:
                 return self._calculate_importance_scores(X, y, feature_names)
 
-            from sklearn.inspection import permutation_importance
 
             # Get baseline score
             baseline_score = self._calculate_model_score(model, X, y)
@@ -8590,7 +8555,6 @@ class FeatureSelectionFramework:
                 # Fallback to accuracy for classification
                 predictions = model.predict(X)
                 if len(np.unique(y)) <= 10:  # Classification
-                    from sklearn.metrics import accuracy_score
                     return accuracy_score(y, predictions)
                 else:  # Regression
                     from sklearn.metrics import r2_score

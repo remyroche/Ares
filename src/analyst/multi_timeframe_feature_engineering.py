@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 from .config import CONFIG
-from ...utils.logger import system_logger
 import time
 
 # Add the project root to the Python path

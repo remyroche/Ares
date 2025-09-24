@@ -10,7 +10,6 @@ Scaffolding for monitoring trade conditions and decisions.
 from enum import Enum
 from typing import Any
 
-from ...utils.logger import system_logger
 import logging
 
 class TradeAction(Enum):

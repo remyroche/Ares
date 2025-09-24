@@ -115,7 +115,6 @@ except ImportError as e:
         def process_parallel(self, func, items, *args, **kwargs):
             """Process items in parallel using ThreadPoolExecutor"""
             try:
-                from concurrent.futures import ThreadPoolExecutor
                 with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                     futures = [executor.submit(func, item, *args, **kwargs) for item in items]
                     results = [future.result() for future in futures]
@@ -706,7 +705,6 @@ class BaseFeatureSelectionFramework:
         }
         
         try:
-            import psutil
             requirements['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
             requirements['cpu_count'] = psutil.cpu_count()
         except ImportError:

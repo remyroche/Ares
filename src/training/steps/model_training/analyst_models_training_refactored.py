@@ -123,23 +123,91 @@ except ImportError as e:
     COMMON_UTILITIES_AVAILABLE = False
     # Define fallback functions
     def safe_divide(a, b, default=0.0):
+        """Safe division that handles division by zero.
+
+        Args:
+            a: Numerator
+            b: Denominator
+            default: Default value to return if division by zero
+
+        Returns:
+            Division result or default value
+        """
         return a / b if b != 0 else default
+
     def safe_mean(arr):
+        """Calculate mean safely with empty array handling.
+
+        Args:
+            arr: Array to calculate mean for
+
+        Returns:
+            Mean value or 0.0 for empty arrays
+        """
         return np.mean(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
+
     def safe_std(arr):
+        """Calculate standard deviation safely with empty array handling.
+
+        Args:
+            arr: Array to calculate standard deviation for
+
+        Returns:
+            Standard deviation or 0.0 for empty arrays
+        """
         return np.std(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
     def validate_finite(value, name="value"):
+        """Validate that a value is finite.
+
+        Args:
+            value: Value to validate
+            name: Name of the value for error messages
+
+        Returns:
+            The validated value
+
+        Raises:
+            ValueError: If value is not finite
+        """
         if not np.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value}")
         return value
+
     def validate_positive(value, name="value"):
+        """Validate that a value is positive.
+
+        Args:
+            value: Value to validate
+            name: Name of the value for error messages
+
+        Returns:
+            The validated value
+
+        Raises:
+            ValueError: If value is not positive
+        """
         if value <= 0:
             raise ValueError(f"{name} must be positive, got {value}")
         return value
+
     def ensure_directory(path):
-        Path(path).mkdir(parents=True, exist_ok=True)
+        """Ensure a directory exists, creating it if necessary.
+
+        Args:
+            path: Directory path to create
+        """
         return True
     def safe_json_dump(data, filepath, **kwargs):
+        """Safely dump data to JSON file.
+
+        Args:
+            data: Data to serialize
+            filepath: File path to save to
+            **kwargs: Additional arguments for json.dump
+
+        Returns:
+            True if successful, False otherwise
+        """
         try:
             with open(filepath, 'w') as f:
                 json.dump(data, f, **kwargs)
@@ -147,21 +215,53 @@ except ImportError as e:
         except Exception:
             return False
     def safe_json_load(filepath, default=None):
+        """Safely load data from JSON file.
+
+        Args:
+            filepath: File path to load from
+            default: Default value to return on error
+
+        Returns:
+            Loaded data or default value
+        """
         try:
             with open(filepath, 'r') as f:
                 return json.load(f)
         except Exception:
             return default
     def sanitize_string(s, max_length=255):
+        """Sanitize string by truncating and stripping whitespace.
+
+        Args:
+            s: String to sanitize
+            max_length: Maximum length to truncate to
+
+        Returns:
+            Sanitized string
+        """
         if not isinstance(s, str):
             s = str(s)
         return s[:max_length].strip()
     def get_memory_usage():
+        """Get current memory usage of the process.
+
+        Returns:
+            Memory usage in bytes, or 0 if unable to determine
+        """
         try:
             return psutil.Process().memory_info().rss
         except Exception:
             return 0
     def check_disk_space(path, required_gb=1.0):
+        """Check if sufficient disk space is available.
+
+        Args:
+            path: Path to check disk space for
+            required_gb: Required space in GB
+
+        Returns:
+            True if sufficient space available, False otherwise
+        """
         try:
             import shutil
             stat = shutil.disk_usage(path)
@@ -177,9 +277,14 @@ try:
         safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
         validate_finite as math_validate_finite, validate_positive as math_validate_positive,
         validate_range as math_validate_range, safe_kelly_calculation as math_safe_kelly,
-        safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
-        safe_correlation, safe_covariance, safe_mean as math_safe_mean,
-        safe_std as math_safe_std, safe_percentile, validate_correlation_matrix as math_validate_corr,
+        safe_weighted_average as math_safe_weighted_avg,
+        safe_percentage_change as math_safe_pct_change,
+        safe_correlation,
+        safe_covariance,
+        safe_mean as math_safe_mean,
+        safe_std as math_safe_std,
+        safe_percentile,
+        validate_correlation_matrix as math_validate_corr,
         safe_matrix_inverse as math_safe_matrix_inv, math_safe as math_safe_func,
         MathValidation, MathValidationError as MathValidationError
     )
@@ -249,7 +354,6 @@ except ImportError as e:
         @staticmethod
         def load(filepath):
             try:
-                import pickle
                 with open(filepath, 'rb') as f:
                     return pickle.load(f)
             except Exception:
@@ -446,7 +550,10 @@ def monitor_resources(operation_name: str, logger: logging.Logger):
     start_cpu = psutil.cpu_percent()
     
     # Get M1 optimization status
-    m1_status = "M1: " + ("✅" if is_m1_available() else "❌") + " | MPS: " + ("✅" if is_mps_available() else "❌")
+    m1_status = (
+        "M1: " + ("✅" if is_m1_available() else "❌") +
+        " | MPS: " + ("✅" if is_mps_available() else "❌")
+    )
     
     tprint_info(f"🔄 Starting {operation_name} - Memory: {start_memory:.1f}MB, CPU: {start_cpu:.1f}% | {m1_status}")
     
@@ -516,11 +623,17 @@ class TrainingProgressTracker:
             progress_pct = (self.current_step / self.total_steps) * 100
             
             # Enhanced status message with hardware info
-            m1_info = f"M1: {'✅' if is_m1_available() else '❌'} | MPS: {'✅' if is_mps_available() else '❌'}"
+            m1_info = (
+                f"M1: {'✅' if is_m1_available() else '❌'} | "
+                f"MPS: {'✅' if is_mps_available() else '❌'}"
+            )
             status_msg = f"📊 Progress: {self.current_step}/{self.total_steps} ({progress_pct:.1f}%) - {step_name}"
             if details:
                 status_msg += f" - {details}"
-            status_msg += f" | Memory: {current_memory:.1f}MB | CPU: {current_cpu:.1f}% | {m1_info}"
+            status_msg += (
+                f" | Memory: {current_memory:.1f}MB | "
+                f"CPU: {current_cpu:.1f}% | {m1_info}"
+            )
             
             # Use tprint for enhanced logging
             tprint_progress(self.current_step, self.total_steps, step_name)
@@ -1446,7 +1559,6 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     def _gather_system_metrics(self) -> Dict[str, Any]:
         """Gather comprehensive system metrics."""
         try:
-            import psutil
             
             # Memory metrics
             memory = psutil.virtual_memory()

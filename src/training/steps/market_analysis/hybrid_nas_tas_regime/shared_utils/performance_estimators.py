@@ -422,7 +422,6 @@ class TreePerformanceEstimator(BasePerformanceEstimator):
 
     def extract_features(self, architecture: Any) -> ArchitectureFeatures:
         """Extract features from a tree architecture."""
-        from ..search_spaces import TreeArchitecture, LayerType
 
         if not isinstance(architecture, TreeArchitecture):
             raise ValueError("Architecture must be a TreeArchitecture instance")
@@ -632,7 +631,6 @@ class UnifiedPerformanceEstimator:
 
     def predict_performance(self, architecture: Any) -> PerformancePrediction:
         """Predict performance of any architecture type."""
-        from ..search_spaces import NeuralArchitecture, TreeArchitecture
 
         if isinstance(architecture, NeuralArchitecture):
             return self.neural_estimator.predict_performance(architecture)
@@ -650,7 +648,6 @@ class UnifiedPerformanceEstimator:
 
         # Separate architectures by type
         for arch, perf in zip(architectures, performances):
-            from ..search_spaces import NeuralArchitecture, TreeArchitecture
             if isinstance(arch, NeuralArchitecture):
                 neural_archs.append(arch)
                 neural_perfs.append(perf)

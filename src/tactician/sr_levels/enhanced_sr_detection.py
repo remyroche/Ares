@@ -7,7 +7,6 @@ from scipy.signal import find_peaks
 import warnings
 import numpy as np
 import time
-import numpy as np
 
 # Try to import Numba for JIT compilation
 try:
@@ -658,7 +657,6 @@ class EnhancedSRDetector:
             width_threshold = self.width_threshold
             
             # Use scipy.signal.find_peaks to find significant peaks/valleys
-            from scipy.signal import find_peaks
             
             if level_type == 'support':
                 # For support levels, find valleys (invert the signal)
@@ -732,7 +730,6 @@ class EnhancedSRDetector:
             width_threshold = self.width_threshold
             
             # Use scipy.signal.find_peaks to find significant peaks/valleys
-            from scipy.signal import find_peaks
             
             if level_type == 'support':
                 # For support, find valleys (invert the data)
@@ -833,7 +830,6 @@ class EnhancedSRDetector:
             closest_idx = np.argmin(np.abs(price_data - level.price))
             
             # Calculate prominence using scipy.signal.peak_prominences
-            from scipy.signal import peak_prominences
             
             if level_type == 'support':
                 # For support, we need to find the prominence of the valley
@@ -1205,7 +1201,6 @@ class EnhancedSRDetector:
             List of detected S/R levels
         """
         try:
-            import time
             start_time = time.time()
             self.logger.info('🔍 Starting enhanced S/R level detection...')
             
@@ -2029,7 +2024,6 @@ class EnhancedSRDetector:
 
     def _detect_trendline_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using trend line analysis with performance optimizations."""
-        import time
         start_time = time.time()
 
         try:
@@ -2168,7 +2162,6 @@ class EnhancedSRDetector:
     def _detect_channel_levels(self, data: pd.DataFrame) -> List[SRLevel]:
         """Detect S/R levels using channel analysis."""
         try:
-            import time
             channel_start = time.time()
 
             levels = []
@@ -2230,7 +2223,6 @@ class EnhancedSRDetector:
                                          data: pd.DataFrame) -> List[SRLevel]:
         """Optimized parallel channel detection using vectorized operations and intelligent filtering."""
         try:
-            import time
             start_time = time.time()
             levels = []
 
@@ -3626,7 +3618,6 @@ class EnhancedSRDetector:
     def _validate_and_merge_levels_optimized(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
         """Optimized level merging for large datasets using spatial clustering."""
         try:
-            import time
             merge_start = time.time()
 
             if not levels:
@@ -4702,7 +4693,6 @@ class EnhancedSRDetector:
             eps_relative, min_samples = params
             eps = eps_relative * avg_price
 
-            from sklearn.cluster import DBSCAN
             clustering = DBSCAN(eps=eps, min_samples=int(min_samples), metric=self._strength_aware_distance)
             labels = clustering.fit_predict(level_data)
 
@@ -4764,9 +4754,6 @@ class EnhancedSRDetector:
     def _optimize_dbscan_enhanced(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Enhanced DBSCAN parameter optimization with ATR-based constraints."""
         try:
-            from skopt import gp_minimize
-            from skopt.space import Real, Integer
-            from skopt.utils import use_named_args
             
             level_data = np.array([[level.price, level.strength] for level in levels])
             avg_price = data['close'].mean()
@@ -4792,7 +4779,6 @@ class EnhancedSRDetector:
                 min_samples = params['min_samples']
                 
                 try:
-                    from sklearn.cluster import DBSCAN
                     clustering = DBSCAN(eps=eps, min_samples=min_samples, metric=self._strength_aware_distance)
                     labels = clustering.fit_predict(level_data)
                     
@@ -4832,7 +4818,6 @@ class EnhancedSRDetector:
     def _calculate_silhouette_score(self, data: np.ndarray, labels: np.ndarray) -> float:
         """Calculate silhouette score for clustering quality."""
         try:
-            from sklearn.metrics import silhouette_score
             if len(set(labels)) > 1 and -1 not in labels:
                 return silhouette_score(data, labels)
             return 0.0

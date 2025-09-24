@@ -18,6 +18,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import warnings
 warnings.filterwarnings('ignore')
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,28 +77,38 @@ class EconomicClusterer:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize economic clusterer."""
+        tprint_info("🚀 Initializing Economic Clusterer")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Economic parameters
+        tprint_debug("⚙️ Setting economic parameters...")
         self.momentum_threshold = config.get('momentum_threshold', 0.7)
         self.volume_threshold = config.get('volume_threshold', 0.6)
         self.economic_significance_weight = config.get('economic_significance_weight', 0.3)
         self.momentum_weight = config.get('momentum_weight', 0.25)
         self.volume_weight = config.get('volume_weight', 0.25)
         self.momentum_periods = config.get('momentum_periods', [1, 2, 5, 10])  # 15m, 30m, 1.25h, 2.5h for 15m trading
+        tprint_success("✅ Economic parameters configured")
 
         # Economic distance metric
+        tprint_debug("📏 Setting economic distance metric...")
         self.economic_distance_metric = config.get('economic_distance_metric', 'economic_euclidean')
+        tprint_success(f"✅ Distance metric: {self.economic_distance_metric}")
 
         # Available clustering algorithms
+        tprint_debug("🔧 Initializing clustering algorithms...")
         self.clustering_algorithms = {
             'economic_kmeans': self._economic_kmeans,
             'economic_hierarchical': self._economic_hierarchical,
             'economic_gmm': self._economic_gmm,
             'economic_adaptive': self._economic_adaptive
         }
+        tprint_success(f"✅ {len(self.clustering_algorithms)} clustering algorithms available")
 
+        tprint_success("✅ Economic Clusterer initialized")
         self.logger.info("✅ Economic Clusterer initialized")
 
     def cluster_economic_features(self,
@@ -111,10 +125,15 @@ class EconomicClusterer:
             EconomicClusteringResult with economic clustering results
         """
         try:
+            tprint_info("🔍 Starting economic clustering...")
+            tprint_debug(f"Features shape: {features.shape}")
+            tprint_debug(f"Market data shape: {market_data.shape}")
             self.logger.info("🔍 Starting economic clustering...")
 
             # Extract economic features
+            tprint_debug("📊 Extracting economic features...")
             economic_features = self._extract_economic_features(features, market_data)
+            tprint_success(f"✅ Economic features extracted: {economic_features.shape}")
 
             # Calculate momentum features
             momentum_features = self._calculate_momentum_features(market_data)
@@ -613,7 +632,7 @@ class EconomicClusterer:
             if best_result is None:
                 raise ValueError("All economic clustering algorithms failed")
 
-            self.logger.info(f"Selected economic algorithm: {best_algorithm} (score: {best_score".3f"})")
+            self.logger.info(f"Selected economic algorithm: {best_algorithm} (score: {best_score:.3f})")
             return best_result
 
         except Exception as e:

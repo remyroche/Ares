@@ -898,7 +898,6 @@ class ParameterOptimizationEngine:
         except Exception as e:
             self.logger.warning(f"Failed to calculate data-driven parameters: {e}")
             # Return conservative defaults with realistic market-based variation
-            import random
             random.seed(42)  # For reproducibility
 
             # Use more realistic fallback values based on typical market conditions
@@ -1019,7 +1018,6 @@ class ParameterOptimizationEngine:
     def _create_minimal_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create minimal parameter grid for small samples."""
         # Use fewer parameter combinations for small samples with added randomness
-        import random
         random.seed(42)  # For reproducibility
 
         # Create values with some randomness to avoid perfectly round numbers
@@ -1065,7 +1063,6 @@ class ParameterOptimizationEngine:
     def _create_conservative_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create conservative parameter grid for medium samples."""
         # Use moderate number of parameter combinations with added realism
-        import random
         random.seed(42)
 
         # Create values with some randomness to avoid perfectly round numbers

@@ -102,7 +102,6 @@ class FeatureBank:
         Auto-register default feature generators from all categories.
         """
         try:
-            from .feature_generator import FeatureCategory
 
             # List of categories to auto-register (including all available categories)
             categories_to_register = [
@@ -114,7 +113,6 @@ class FeatureBank:
                 FeatureCategory.RETURNS,
                 FeatureCategory.OSCILLATOR,
                 FeatureCategory.CANDLESTICK_PATTERN,
-                FeatureCategory.HMM_REGIME,
                 FeatureCategory.ENTROPY,
                 FeatureCategory.ORDER_FLOW,
                 FeatureCategory.ACCELERATION,
@@ -165,7 +163,7 @@ class FeatureBank:
                 FeatureCategory.RETURNS: self._create_returns_generators,
                 FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
                 FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators,
-                FeatureCategory.HMM_REGIME: self._create_hmm_regime_generators,
+                # FeatureCategory.HMM_REGIME: self._create_hmm_regime_generators,  # DEPRECATED
                 FeatureCategory.ENTROPY: self._create_entropy_generators,
                 FeatureCategory.ORDER_FLOW: self._create_order_flow_generators,
                 FeatureCategory.ACCELERATION: self._create_acceleration_generators,
@@ -200,6 +198,7 @@ class FeatureBank:
 
             # Fallback to legacy generators if advanced ones fail
             if not generators:
+                from ..categories.legacy import create_default_legacy_generators
                 from ..categories.legacy import create_default_legacy_generators
                 legacy_generators = create_default_legacy_generators()
 
@@ -385,7 +384,7 @@ class FeatureBank:
             # Try to create advanced candlestick pattern generators
             # Note: This might not exist yet, so we'll handle the exception
             try:
-                from ..categories.candlestick import create_default_candlestick_generators
+                from ..categories.candlestick_pattern import create_default_candlestick_generators
                 advanced_generators = create_default_candlestick_generators()
                 generators.extend(advanced_generators)
             except ImportError:
@@ -410,27 +409,27 @@ class FeatureBank:
 
         return generators
 
-    def _create_hmm_regime_generators(self) -> List[FeatureGenerator]:
-        """Create HMM regime-specific feature generators."""
-        generators = []
-        try:
-            # Try to create advanced HMM regime generators
-            from ..categories.hmm_regime import create_default_hmm_regime_generators
-            advanced_generators = create_default_hmm_regime_generators()
-            generators.extend(advanced_generators)
+    # def _create_hmm_regime_generators(self) -> List[FeatureGenerator]:  # DEPRECATED
+    #     """Create HMM regime-specific feature generators."""
+    #     generators = []
+    #     try:
+    #         # Try to create advanced HMM regime generators
+    #         from ..categories.hmm_regime import create_default_hmm_regime_generators
+    #         advanced_generators = create_default_hmm_regime_generators()
+    #         generators.extend(advanced_generators)
 
-            # Try performance metrics generators
-            from ..categories.hmm_performance_metrics import create_default_hmm_performance_metrics_generators
-            try:
-                performance_generators = create_default_hmm_performance_metrics_generators()
-                generators.extend(performance_generators)
-            except ImportError:
-                pass
+    #         # Try performance metrics generators
+    #         from ..categories.hmm_performance_metrics import create_default_hmm_performance_metrics_generators
+    #         try:
+    #             performance_generators = create_default_hmm_performance_metrics_generators()
+    #             generators.extend(performance_generators)
+    #         except ImportError:
+    #             pass
 
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to create HMM regime generators: {e}")
+    #     except Exception as e:
+    #         self.logger.warning(f"⚠️ Failed to create HMM regime generators: {e}")
 
-        return generators
+    #     return generators
 
     def _create_entropy_generators(self) -> List[FeatureGenerator]:
         """Create entropy-specific feature generators."""
@@ -544,7 +543,7 @@ class FeatureBank:
             generator: Feature generator to register
         """
         self.registry.register(generator)
-        self.logger.info(f"Registered generator: {generator.config.name} ({generator.config.category.value})")
+        self.logger.debug(f"Registered generator: {generator.config.name} ({generator.config.category.value})")
     
     def register_generators(self, generators: List[FeatureGenerator]) -> None:
         """

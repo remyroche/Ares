@@ -25,6 +25,9 @@ from src.utils.common_operations import (
     safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
     format_datetime, validate_file_path, get_file_size, check_disk_space
 )
+
+# Import evaluation result types
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import EvaluationResult
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
@@ -46,15 +49,29 @@ from src.core.errors import (
 )
 from src.utils.logger import system_logger
 
-# Import post-training components
-from .post_training import (
-    ModelEvaluator, EvaluationConfig, EvaluationResult,
-    ModelValidator, ValidationConfig, ValidationResult,
-    ModelPersistence, PersistenceConfig, PersistenceResult
+# Import model evaluation components
+from .model_registry import (
+    ModelRegistry
 )
 
-# Import multi-timeframe training
-from .multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
+# Import evaluation result from post_training
+try:
+    from ..post_training.model_evaluation import EvaluationResult
+except ImportError:
+    # Fallback if post_training module is not available
+    from dataclasses import dataclass
+    from typing import Optional, Dict, Any
+    
+    @dataclass
+    class EvaluationResult:
+        """Fallback EvaluationResult class."""
+        pre_hpo_metrics: Optional[Dict[str, Any]] = None
+        post_hpo_metrics: Optional[Dict[str, Any]] = None
+        validation_metrics: Optional[Dict[str, Any]] = None
+        test_metrics: Optional[Dict[str, Any]] = None
+
+# Import multi-timeframe training - commented out as module doesn't exist
+# from .multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
 
 @dataclass
 class EnhancedTrainingConfig:
@@ -184,22 +201,22 @@ class EnhancedModelTrainer:
             save_persistence_log=True
         ))
         
-        # Initialize multi-timeframe trainer if enabled
+        # Initialize multi-timeframe trainer if enabled - commented out as module doesn't exist
         self.multi_timeframe_trainer = None
-        if config.enable_multi_timeframe_training:
-            timeframe_configs = [
-                TimeframeConfig(timeframe=tf, weight=weight)
-                for tf, weight in zip(config.timeframes, config.timeframe_weights)
-            ]
-            
-            mtf_config = MultiTimeframeTrainingConfig(
-                timeframes=timeframe_configs,
-                enable_cross_timeframe_features=True,
-                enable_timeframe_ensemble=True,
-                ensemble_method="weighted_average"
-            )
-            
-            self.multi_timeframe_trainer = MultiTimeframeTrainer(mtf_config, "default", "default")
+        # if config.enable_multi_timeframe_training:
+        #     timeframe_configs = [
+        #         TimeframeConfig(timeframe=tf, weight=weight)
+        #         for tf, weight in zip(config.timeframes, config.timeframe_weights)
+        #     ]
+        #     
+        #     mtf_config = MultiTimeframeTrainingConfig(
+        #         timeframes=timeframe_configs,
+        #         enable_cross_timeframe_features=True,
+        #         enable_timeframe_ensemble=True,
+        #         ensemble_method="weighted_average"
+        #     )
+        #     
+        #     self.multi_timeframe_trainer = MultiTimeframeTrainer(mtf_config, "default", "default")
         
         # Apply intensity scaling
         intensity_pct = get_intensity_from_environment()
@@ -381,7 +398,6 @@ class EnhancedModelTrainer:
                 model = MLPClassifier(random_state=42, max_iter=1000)
             else:
                 # Default to LightGBM
-                import lightgbm as lgb
                 model = lgb.LGBMClassifier(random_state=42, verbose=-1)
             
             model.fit(X_train, y_train)
@@ -411,7 +427,6 @@ class EnhancedModelTrainer:
                         'reg_alpha': trial.suggest_float('reg_alpha', 0, 1),
                         'reg_lambda': trial.suggest_float('reg_lambda', 0, 1)
                     }
-                    import lightgbm as lgb
                     model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
                 elif model_type == "random_forest":
                     params = {
@@ -421,7 +436,6 @@ class EnhancedModelTrainer:
                         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
                         'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
                     }
-                    from sklearn.ensemble import RandomForestClassifier
                     model = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
                 else:
                     # Default to LightGBM
@@ -430,7 +444,6 @@ class EnhancedModelTrainer:
                         'max_depth': trial.suggest_int('max_depth', 3, 10),
                         'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3)
                     }
-                    import lightgbm as lgb
                     model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
                 
                 # Train and evaluate
@@ -448,13 +461,10 @@ class EnhancedModelTrainer:
             
             # Train final model with best parameters
             if model_type == "lightgbm":
-                import lightgbm as lgb
                 best_model = lgb.LGBMClassifier(**best_params, random_state=42, verbose=-1)
             elif model_type == "random_forest":
-                from sklearn.ensemble import RandomForestClassifier
                 best_model = RandomForestClassifier(**best_params, random_state=42, n_jobs=-1)
             else:
-                import lightgbm as lgb
                 best_model = lgb.LGBMClassifier(**best_params, random_state=42, verbose=-1)
             
             best_model.fit(X_train, y_train)

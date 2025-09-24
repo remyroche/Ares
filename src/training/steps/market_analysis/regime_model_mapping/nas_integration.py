@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 import time
 from datetime import datetime
-
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .data_driven_model_selector import DataDrivenModelSelector, ModelSelectorConfig
 from ..nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector
 from ..nas_regime.core.perfect_nas_config import PerfectNASConfig
@@ -27,14 +27,18 @@ class NASModelSelector:
                  nas_config: PerfectNASConfig,
                  selector_config: Optional[ModelSelectorConfig] = None):
         """Initialize NAS model selector."""
+        tprint("🚀 [NAS_INTEGRATION] Initializing NAS Model Selector", color="cyan", bold=True)
         self.nas_config = nas_config
         self.selector_config = selector_config or ModelSelectorConfig()
         
         # Initialize components
+        tprint("🧠 [NAS_INTEGRATION] Initializing NAS detector", color="yellow")
         self.nas_detector = PerfectNASRegimeDetector(nas_config)
+        tprint("🔧 [NAS_INTEGRATION] Initializing model selector", color="yellow")
         self.model_selector = DataDrivenModelSelector(self.selector_config)
         
         # NAS-specific model registry
+        tprint("📊 [NAS_INTEGRATION] Setting up NAS model registry", color="blue")
         self.nas_models = {
             'neural_ode': 'Neural ODE Regime Detector',
             'vision_transformer': 'Vision Transformer Regime Detector', 
@@ -46,6 +50,7 @@ class NASModelSelector:
         }
         
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"✅ [NAS_INTEGRATION] NAS Model Selector initialized with {len(self.nas_models)} models", color="green")
         self.logger.info("✅ NAS Model Selector initialized")
     
     def detect_regimes_and_select_models(self,

@@ -50,7 +50,6 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
         import logging
         
         try:
-            from ..logger import system_logger
             if system_logger is not None:
                 prefix = f'Error in {fn_name}'
                 if context:

@@ -12,6 +12,10 @@ import logging
 from datetime import datetime
 
 from ..config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,26 +30,37 @@ class TASIntegrationComponent:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize TAS integration component."""
+        tprint_info("🚀 Initializing TAS Integration Component")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize TAS components
+        tprint_info("🔧 Initializing TAS components...")
         self._initialize_tas_components()
 
+        tprint_success("✅ TAS Integration Component initialized")
+        tprint_info(f"   Tree models: {len(self.config.get('tree_models', []))}")
+        tprint_info(f"   Feature importance threshold: {self.config.get('min_feature_importance', 0.01)}")
         self.logger.info("✅ TAS Integration Component initialized")
         self.logger.info(f"   Tree models: {len(self.config.get('tree_models', []))}")
         self.logger.info(f"   Feature importance threshold: {self.config.get('min_feature_importance', 0.01)}")
 
     def _initialize_tas_components(self):
         """Initialize TAS-specific components."""
+        tprint_debug("🔧 Initializing TAS-specific components...")
         try:
             # Import TAS components dynamically
+            tprint_debug("📦 Importing TAS components...")
             from src.utils.ml_common.optimization.tas.regime_analysis.clustering_regime_detection import (
                 TreeBasedClusteringRegimeDetector,
                 ClusteringRegimeConfig
             )
+            tprint_success("✅ TAS components imported")
 
             # Create TAS regime detector
+            tprint_debug("🔍 Creating TAS regime detector...")
             tas_config = ClusteringRegimeConfig(
                 clustering_strategy=self.config.get('clustering_strategy', 'auto'),
                 n_regimes=self.config.get('n_regimes', 8),

@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from pathlib import Path
 import time
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
@@ -29,9 +30,11 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the NAS regime discovery component."""
+        tprint("🚀 [NAS_REGIME_DISCOVERY] Initializing NAS Regime Discovery Component", color="cyan", bold=True)
         super().__init__(config)
         self.logger = system_logger.getChild('NASRegimeDiscovery')
         self._resources_to_cleanup = []
+        tprint("✅ [NAS_REGIME_DISCOVERY] NAS Regime Discovery Component initialized successfully", color="green")
     
     def __enter__(self):
         """Context manager entry."""
@@ -303,7 +306,6 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Fallback regime discovery using basic clustering."""
         try:
             from sklearn.cluster import KMeans
-            import numpy as np
             
             self.logger.warning("⚠️ Using fallback clustering for regime discovery")
             
@@ -402,10 +404,8 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 start_date = None
                 end_date = None
                 if hasattr(self.config, 'start_date') and self.config.start_date:
-                    from datetime import datetime
                     start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
                 if hasattr(self.config, 'end_date') and self.config.end_date:
-                    from datetime import datetime
                     end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
                 
                 # Try processed data first

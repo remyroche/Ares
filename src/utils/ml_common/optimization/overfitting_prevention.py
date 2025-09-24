@@ -439,7 +439,6 @@ class OverfittingPrevention:
             y_val_pred = model.predict(X_val)
             
             # Calculate metrics
-            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
             
             train_mse = mean_squared_error(y_train, y_train_pred)
             val_mse = mean_squared_error(y_val, y_val_pred)

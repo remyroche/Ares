@@ -506,7 +506,6 @@ class EnhancedMLIntegration:
                 ensemble = StackingClassifier(models, cv=5)
             else:
                 # Fallback to basic voting
-                from sklearn.ensemble import VotingClassifier
                 ensemble = VotingClassifier(models, voting='soft')
             
             self.logger.info(f"✅ Ensemble created using {method} method")

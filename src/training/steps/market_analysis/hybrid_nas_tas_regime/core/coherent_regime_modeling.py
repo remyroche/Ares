@@ -18,6 +18,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mutual_info_score
 import warnings
 warnings.filterwarnings('ignore')
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +65,20 @@ class CoherentRegimeModeler:
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize coherent regime modeler."""
+        tprint_info("🚀 Initializing Coherent Regime Modeler")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Configuration parameters
+        tprint_debug("⚙️ Setting configuration parameters...")
         self.micro_regime_threshold = config.get('micro_regime_threshold', 0.3)
         self.stability_period = config.get('stability_period', 50)
         self.transition_smoothness = config.get('transition_smoothness', 0.8)
+        tprint_success("✅ Configuration parameters set")
 
+        tprint_success("✅ Coherent Regime Modeler initialized")
         self.logger.info("✅ Coherent Regime Modeler initialized")
 
     def model_regimes(self,
@@ -87,16 +97,26 @@ class CoherentRegimeModeler:
             CoherentRegimeResult with comprehensive modeling results
         """
         try:
+            tprint_info("🏗️ Starting coherent regime modeling...")
+            tprint_debug(f"Market data shape: {market_data.shape}")
+            tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+            tprint_debug(f"Regime probabilities shape: {regime_probabilities.shape}")
             self.logger.info("🏗️ Starting coherent regime modeling...")
 
             # Identify macro regimes
+            tprint_debug("🔍 Identifying macro regimes...")
             macro_regimes = self._identify_macro_regimes(market_data, regime_labels)
+            tprint_success(f"✅ Macro regimes identified: {len(macro_regimes)}")
 
             # Detect micro regimes
+            tprint_debug("🔍 Detecting micro regimes...")
             micro_regimes = self._detect_micro_regimes(market_data, regime_labels, macro_regimes)
+            tprint_success(f"✅ Micro regimes detected: {len(micro_regimes)}")
 
             # Perform economic analysis
+            tprint_debug("💰 Performing economic analysis...")
             economic_analysis = self._economic_regime_analysis(market_data, regime_labels, macro_regimes)
+            tprint_success("✅ Economic analysis completed")
 
             # Perform financial analysis
             financial_analysis = self._financial_regime_analysis(market_data, regime_labels, macro_regimes)
@@ -776,7 +796,6 @@ class CoherentRegimeModeler:
             returns = np.diff(prices, prepend=prices[0])
 
             # Linear trend analysis
-            from scipy.stats import linregress
             x = np.arange(len(prices))
             slope, intercept, r_value, p_value, std_err = linregress(x, prices)
 

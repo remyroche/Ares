@@ -15,10 +15,10 @@ from .artifact_manager import ArtifactManager
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
-from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
+# from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
-from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent
+# from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent  # DEPRECATED
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent

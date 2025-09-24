@@ -417,7 +417,6 @@ class RandomSurvivalForestTactician:
             from src.utils.ml_common.validation.universal_temporal_validation import (
                 UniversalTimeSeriesSplit
             )
-            from sksurv.metrics import concordance_index_censored
             
             # Configure HPO with existing tools and staged optimization
             hpo_config = HPOOverfittingPreventionConfig(
@@ -724,7 +723,6 @@ class RandomSurvivalForestTactician:
     
     def load_model(self, filepath: str) -> None:
         """Load trained model from file."""
-        import joblib
         
         model_data = joblib.load(filepath)
         

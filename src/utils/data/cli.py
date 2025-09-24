@@ -32,7 +32,6 @@ def setup_logging(verbose: bool = False):
         import logging
         logging.basicConfig(level=logging.DEBUG)
     else:
-        import logging
         logging.basicConfig(level=logging.INFO)
 
 
@@ -67,9 +66,7 @@ async def download_standardized_command(args):
     print(f"🎯 Ensuring format consistency: volume=float64, symbol=object")
 
     # Import required modules
-    from pathlib import Path
     import pandas as pd
-    import numpy as np
     from exchange.binance import BinanceExchange
 
     try:
@@ -205,8 +202,6 @@ def fix_timezone_command(args):
     print(f"🕐 Fixing timezone issues for {args.symbol} ({args.data_type})...")
 
     try:
-        from pathlib import Path
-        import pandas as pd
         import shutil
 
         data_dir = Path(args.data_dir) / "binance" / args.symbol.lower() / args.data_type
@@ -332,10 +327,6 @@ async def pipeline_command(args):
 
     try:
         # Import required modules
-        from pathlib import Path
-        import pandas as pd
-        import numpy as np
-        from datetime import datetime, timedelta
 
         # Initialize components
         pipeline = HistoricalDataPipeline(args.data_dir)
@@ -534,7 +525,6 @@ async def pipeline_command(args):
 
     except Exception as e:
         print(f"❌ Comprehensive pipeline failed: {e}")
-        import traceback
         traceback.print_exc()
         return 1
 
@@ -949,7 +939,6 @@ async def enhanced_pipeline_command(args):
                         import glob
                         parquet_files = list(processed_dir.rglob("*.parquet"))
                         if parquet_files:
-                            import pandas as pd
                             processed_data = pd.concat([pd.read_parquet(f) for f in parquet_files], ignore_index=True)
                             # Ensure proper datetime index for monthly grouping
                             if 'timestamp' in processed_data.columns and not isinstance(processed_data.index, pd.DatetimeIndex):

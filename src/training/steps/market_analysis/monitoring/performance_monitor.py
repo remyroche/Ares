@@ -21,8 +21,7 @@ import asyncio
 
 try:
     import psutil
-import time
-
+    import time
 except ImportError:
     psutil = None
 

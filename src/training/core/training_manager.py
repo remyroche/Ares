@@ -5,7 +5,6 @@ This module provides the main training manager that coordinates
 the training pipeline execution with enhanced error detection,
 monitoring, and reporting capabilities.
 """
-from typing import Any, Dict, Optional
 from ..simplified_training_manager import SimplifiedTrainingManager
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors

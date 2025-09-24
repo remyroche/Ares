@@ -36,7 +36,6 @@ except ImportError:
             """Simple math validation wrapper class."""
 
         def __init__(self):
-            from src.utils.logger import system_logger
             self.logger = system_logger.getChild("MathValidation")
 
         def validate_finite(self, value, name: str = "value"):

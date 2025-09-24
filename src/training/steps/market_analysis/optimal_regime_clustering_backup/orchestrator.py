@@ -30,8 +30,6 @@ from .enhanced_analysis import (
     calculate_cluster_dimension_analysis,
     DimensionCVMetrics
 )
-import glob
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -461,8 +459,6 @@ class OptimalRegimeClusteringOrchestrator:
             DataFrame with regime clustering features or None if failed
         """
         try:
-            import pandas as pd
-            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
             data_path = Path(processed_data_path)
             if not data_path.exists():
@@ -619,7 +615,6 @@ class OptimalRegimeClusteringOrchestrator:
                 merge_tail_into_topk,
                 balance_topk_range,
             )
-            import numpy as np
 
             # Check if constraint enforcement is disabled in config
             if not self.config.enable_aggressive_splitting:

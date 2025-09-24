@@ -282,7 +282,6 @@ def demonstrate_integration_with_multi_horizon_labeler():
     
     print("\n🚀 Option 2: Use ModifiedMultiHorizonLabeler")
     print("""
-    from src.research.profit_labeling import create_optimized_labeler
     
     # Replace original labeler with optimized version
     optimized_labeler = create_optimized_labeler(market_data)
@@ -312,7 +311,6 @@ def demonstrate_parameter_sensitivity_analysis():
     
     try:
         from src.research.profit_labeling import BonusPenaltyOptimizer, BonusPenaltyOptimizationConfig
-        from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
         
         # Test different risk penalty multipliers
         risk_multipliers = [10, 30, 50, 100]

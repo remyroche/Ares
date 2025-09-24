@@ -466,7 +466,6 @@ def example_multi_model_comparison():
     y_test = np.random.randint(0, 3, 200)
 
     # Create multiple models
-    from sklearn.ensemble import RandomForestClassifier
     from sklearn.tree import DecisionTreeClassifier
 
     models = [

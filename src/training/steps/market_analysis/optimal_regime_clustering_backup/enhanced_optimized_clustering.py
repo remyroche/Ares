@@ -185,8 +185,8 @@ class EnhancedMatrixOptimizedClusterer:
             )
 
             self.logger.info("✅ Enhanced clustering completed successfully")
-            self.logger.info(f"📊 Final metrics - Silhouette: {final_quality.get('silhouette', 0.0)".3f"}, "
-                           f"DB: {final_quality.get('davies_bouldin', float('inf'))".3f"}")
+            self.logger.info(f"📊 Final metrics - Silhouette: {final_quality.get('silhouette', 0.0):.3f}, "
+                           f"DB: {final_quality.get('davies_bouldin', float('inf')):.3f}")
 
             return result
 

@@ -17,6 +17,9 @@ from datetime import datetime
 import pickle
 import os
 from pathlib import Path
+# from tprint import tprint  # Not available, using print instead
+def tprint(*args, **kwargs):
+    print(*args, **kwargs)
 
 # Import enhanced utility tools
 from src.utils.common_operations import (
@@ -101,15 +104,16 @@ from src.utils.ml_common import (
     setup_logger, get_logger
 )
 
-from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
-    UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType
-)
-from ...hybrid_nas_tas_regime.core.performance_estimator import (
-    UnifiedPerformanceEstimator, create_unified_performance_estimator
-)
-from ...hybrid_nas_tas_regime.core.advanced_search_strategies import (
-    AdvancedSearchStrategies, SearchStrategyType
-)
+# Circular import removed to prevent import errors
+# from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
+#     UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType
+# )
+# from ...hybrid_nas_tas_regime.core.performance_estimator import (
+#     UnifiedPerformanceEstimator, create_unified_performance_estimator
+# )
+# from ...hybrid_nas_tas_regime.core.advanced_search_strategies import (
+#     AdvancedSearchStrategies, SearchStrategyType
+# )
 from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
     TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
 )
@@ -234,21 +238,30 @@ class EnhancedNASEngine:
 
     def __init__(self, config: NASSearchConfig):
         """Initialize the enhanced NAS engine with integrated utility tools."""
+        tprint("🚀 [NAS_ENGINE] Initializing Enhanced NAS Engine", color="cyan", bold=True)
+        tprint(f"📊 [NAS_ENGINE] Search Strategy: {config.search_strategy.value}", color="blue")
+        tprint(f"📊 [NAS_ENGINE] Population Size: {config.population_size}", color="blue")
+        tprint(f"📊 [NAS_ENGINE] Max Generations: {config.max_generations}", color="blue")
         self.config = config
 
         # Initialize utility managers
+        tprint("🔧 [NAS_ENGINE] Initializing utility managers", color="yellow")
         self.common_utils = CommonUtilities()
         self.math_validator = MathValidation()
         self.universal_serializer = UniversalSerializer()
         self.klines_manager = get_klines_manager()
+        tprint("✅ [NAS_ENGINE] Utility managers initialized", color="green")
 
         # Initialize shared ML utilities from hybrid_nas_tas_regime
+        tprint("🧠 [NAS_ENGINE] Initializing shared ML utilities", color="yellow")
         self._initialize_shared_ml_utilities()
 
         # Initialize shared components
+        tprint("🔧 [NAS_ENGINE] Initializing shared components", color="yellow")
         self._initialize_shared_components()
 
         # Search state
+        tprint("📊 [NAS_ENGINE] Initializing search state", color="blue")
         self.current_generation = 0
         self.best_architecture = None
         self.best_score = -np.inf
@@ -261,11 +274,14 @@ class EnhancedNASEngine:
         self.evaluation_times = []
 
         # Initialize hardware optimization with enhanced utilities
+        tprint("⚡ [NAS_ENGINE] Initializing hardware optimization", color="yellow")
         self._initialize_hardware_optimization()
 
         # Initialize memory optimization
+        tprint("💾 [NAS_ENGINE] Initializing memory optimization", color="yellow")
         self._initialize_memory_optimization()
 
+        tprint("🎉 [NAS_ENGINE] Enhanced NAS Engine initialized successfully", color="green", bold=True)
         self.logger.info("✅ Enhanced NAS Engine initialized with integrated utility tools")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Population Size: {config.population_size}")
@@ -442,9 +458,9 @@ class EnhancedNASEngine:
                 # Check disk space for data storage
                 disk_status = check_disk_space(".", required_gb=1.0)
                 if disk_status['sufficient']:
-                    self.logger.info(f"   Disk Space: ✅ {disk_status['available_percentage']".1f"}% available")
+                    self.logger.info(f"   Disk Space: ✅ {disk_status['available_percentage']:.1f}% available")
                 else:
-                    self.logger.warning(f"   Disk Space: ⚠️ Low space ({disk_status['available_percentage']".1f"}%)")
+                    self.logger.warning(f"   Disk Space: ⚠️ Low space ({disk_status['available_percentage']:.1f}%)")
 
             else:
                 self.hardware_optimizer = None
@@ -496,6 +512,7 @@ class EnhancedNASEngine:
                test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                regime_data: Optional[Dict[str, Any]] = None) -> NASSearchResult:
         """Perform comprehensive neural architecture search with integrated utility tools."""
+        tprint("🚀 [NAS_ENGINE] Starting Enhanced NAS Search", color="cyan", bold=True)
         self.start_time = time.time()
         self.logger.info("🚀 Starting Enhanced NAS Search with integrated utility tools...")
 
@@ -503,17 +520,23 @@ class EnhancedNASEngine:
             # Validate input data using enhanced utilities
             X_train, y_train = train_data
             X_val, y_val = validation_data
+            
+            tprint(f"📊 [NAS_ENGINE] Training data shape: {X_train.shape}, labels: {y_train.shape}", color="blue")
+            tprint(f"📊 [NAS_ENGINE] Validation data shape: {X_val.shape}, labels: {y_val.shape}", color="blue")
 
             # Convert to DataFrame for validation
             train_df = pd.DataFrame({'X': X_train.flatten(), 'y': y_train.flatten()})
             val_df = pd.DataFrame({'X': X_val.flatten(), 'y': y_val.flatten()})
 
             # Validate data quality
+            tprint("🔍 [NAS_ENGINE] Validating data quality", color="yellow")
             train_quality = calculate_data_quality_metrics(train_df)
             val_quality = calculate_data_quality_metrics(val_df)
 
-            self.logger.info(f"📊 Train Data Quality - Missing: {train_quality['missing_percentage']".2f"}%, Duplicates: {train_quality['duplicate_percentage']".2f"}%")
-            self.logger.info(f"📊 Validation Data Quality - Missing: {val_quality['missing_percentage']".2f"}%, Duplicates: {val_quality['duplicate_percentage']".2f"}%")
+            tprint(f"📊 [NAS_ENGINE] Train Data Quality - Missing: {train_quality['missing_percentage']:.2f}%, Duplicates: {train_quality['duplicate_percentage']:.2f}%", color="cyan")
+            tprint(f"📊 [NAS_ENGINE] Validation Data Quality - Missing: {val_quality['missing_percentage']:.2f}%, Duplicates: {val_quality['duplicate_percentage']:.2f}%", color="cyan")
+            self.logger.info(f"📊 Train Data Quality - Missing: {train_quality['missing_percentage']:.2f}%, Duplicates: {train_quality['duplicate_percentage']:.2f}%")
+            self.logger.info(f"📊 Validation Data Quality - Missing: {val_quality['missing_percentage']:.2f}%, Duplicates: {val_quality['duplicate_percentage']:.2f}%")
 
             # Guard against excessive nulls
             train_df = guard_dataframe_nulls(train_df, threshold=0.3)
@@ -596,9 +619,9 @@ class EnhancedNASEngine:
                 )
 
                 self.logger.info("✅ Enhanced NAS Search completed successfully with ML Common utilities")
-                self.logger.info(f"   Best Score: {search_result.best_score".4f"}")
+                self.logger.info(f"   Best Score: {search_result.best_score:.4f}")
                 self.logger.info(f"   Total Evaluations: {self.evaluation_count}")
-                self.logger.info(f"   Execution Time: {execution_time".2f"}s")
+                self.logger.info(f"   Execution Time: {execution_time:.2f}s")
 
                 return search_result
 
@@ -700,7 +723,7 @@ class EnhancedNASEngine:
                     self.evaluation_times.append(evaluation_time)
                     self.evaluation_count += 1
 
-                    self.logger.debug(f"Architecture evaluated with estimator: {estimated_score".4f"}")
+                    self.logger.debug(f"Architecture evaluated with estimator: {estimated_score:.4f}")
                     return estimated_score
                 except Exception as e:
                     self.logger.warning(f"Performance estimator failed: {e}")

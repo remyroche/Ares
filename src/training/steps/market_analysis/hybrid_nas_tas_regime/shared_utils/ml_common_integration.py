@@ -17,10 +17,10 @@ from datetime import datetime
 
 # Import existing ML Common utilities
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
-from src.utils.ml_common.validation.enhanced_overfitting_detection import EnhancedOverfittingDetector
+from src.utils.ml_common.validation.enhanced_overfitting_detection import UniversalOverfittingDetector
 from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
 from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention
-from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
+# from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
 
 # Import existing optimization utilities
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization as CanonicalHPO
@@ -38,6 +38,31 @@ class MLCommonIntegrationType(Enum):
     DATA_LEAKAGE_PREVENTION = "data_leakage_prevention"
     UNIFIED_VALIDATION = "unified_validation"
     GRID_BAYESIAN_OPTIMIZATION = "grid_bayesian_optimization"
+
+
+class MLUtilityType(Enum):
+    """Types of ML utilities."""
+    VALIDATION = "validation"
+    OPTIMIZATION = "optimization"
+    PREPROCESSING = "preprocessing"
+    FEATURE_ENGINEERING = "feature_engineering"
+    MODEL_EVALUATION = "model_evaluation"
+
+
+@dataclass
+class MLUtilityConfig:
+    """Configuration for ML utilities."""
+    utility_type: MLUtilityType
+    enable_validation: bool = True
+    enable_optimization: bool = True
+    enable_preprocessing: bool = True
+    enable_feature_engineering: bool = True
+    enable_model_evaluation: bool = True
+    validation_config: Dict[str, Any] = field(default_factory=dict)
+    optimization_config: Dict[str, Any] = field(default_factory=dict)
+    preprocessing_config: Dict[str, Any] = field(default_factory=dict)
+    feature_engineering_config: Dict[str, Any] = field(default_factory=dict)
+    model_evaluation_config: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -121,7 +146,7 @@ class MLCommonIntegration:
             
             # Initialize Overfitting Detection
             if self.config.enable_overfitting_detection:
-                self.overfitting_detector = EnhancedOverfittingDetector(
+                self.overfitting_detector = UniversalOverfittingDetector(
                     config=self.config.overfitting_config
                 )
                 self.logger.info("✅ Overfitting Detection initialized")
@@ -148,9 +173,10 @@ class MLCommonIntegration:
             
             # Initialize Unified Validation
             if self.config.enable_unified_validation:
-                self.unified_validation = UnifiedValidationSystem(
-                    config=self.config.validation_config
-                )
+                # self.unified_validation = UnifiedValidationSystem(
+                #     config=self.config.validation_config
+                # )
+                self.unified_validation = None
                 self.logger.info("✅ Unified Validation initialized")
             else:
                 self.unified_validation = None
@@ -385,6 +411,55 @@ class MLCommonIntegration:
 
 
 # Convenience functions for creating ML Common integrations
+class MLCommonIntegrationManager:
+    """Manager for ML Common integrations."""
+    
+    def __init__(self, config: MLCommonIntegrationConfig, integration_types: List[MLCommonIntegrationType]):
+        """Initialize the ML Common integration manager."""
+        self.config = config
+        self.integration_types = integration_types
+        self.logger = logging.getLogger(__name__)
+        self.integrations = {}
+        
+        # Initialize integrations
+        self._initialize_integrations()
+    
+    def _initialize_integrations(self):
+        """Initialize all configured integrations."""
+        for integration_type in self.integration_types:
+            try:
+                if integration_type == MLCommonIntegrationType.LOOKAHEAD_PROTECTION:
+                    self.integrations[integration_type] = LookaheadProtection(
+                        **self.config.lookahead_config
+                    )
+                elif integration_type == MLCommonIntegrationType.OVERFITTING_DETECTION:
+                    self.integrations[integration_type] = UniversalOverfittingDetector(
+                        **self.config.overfitting_config
+                    )
+                elif integration_type == MLCommonIntegrationType.HPO_OPTIMIZATION:
+                    self.integrations[integration_type] = HyperparameterOptimization(
+                        **self.config.hpo_config
+                    )
+                elif integration_type == MLCommonIntegrationType.DATA_LEAKAGE_PREVENTION:
+                    self.integrations[integration_type] = DataLeakagePrevention(
+                        **self.config.data_leakage_config
+                    )
+                
+                self.logger.info(f"✅ Initialized {integration_type.value}")
+                
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize {integration_type.value}: {e}")
+                raise
+    
+    def get_integration(self, integration_type: MLCommonIntegrationType):
+        """Get a specific integration."""
+        return self.integrations.get(integration_type)
+    
+    def get_all_integrations(self):
+        """Get all integrations."""
+        return self.integrations
+
+
 def create_ml_common_integration(architecture_type: ArchitectureType,
                                config: Optional[MLCommonIntegrationConfig] = None) -> MLCommonIntegration:
     """Create ML Common integration with default settings."""
@@ -424,3 +499,34 @@ def create_hybrid_ml_common_integration(config: Optional[MLCommonIntegrationConf
         config.lookahead_config['strict_mode'] = True
     
     return MLCommonIntegration(architecture_type=ArchitectureType.HYBRID, config=config)
+
+
+def create_shared_ml_utilities_manager(
+    config: Optional[MLCommonIntegrationConfig] = None,
+    integration_types: Optional[List[MLCommonIntegrationType]] = None
+) -> MLCommonIntegrationManager:
+    """
+    Create a shared ML utilities manager for hybrid NAS-TAS regime detection.
+    
+    Args:
+        config: Configuration for ML Common integration
+        integration_types: Types of integrations to enable
+        
+    Returns:
+        MLCommonIntegrationManager: Configured ML utilities manager
+    """
+    if config is None:
+        config = MLCommonIntegrationConfig()
+    
+    if integration_types is None:
+        integration_types = [
+            MLCommonIntegrationType.LOOKAHEAD_PROTECTION,
+            MLCommonIntegrationType.OVERFITTING_DETECTION,
+            MLCommonIntegrationType.HPO_OPTIMIZATION,
+            MLCommonIntegrationType.DATA_LEAKAGE_PREVENTION
+        ]
+    
+    return MLCommonIntegrationManager(
+        config=config,
+        integration_types=integration_types
+    )

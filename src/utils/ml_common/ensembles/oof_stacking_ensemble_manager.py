@@ -187,7 +187,7 @@ class OOFStackingEnsembleManager:
         self.logger.debug("✅ Output directory ready")
 
         init_time = time.time() - start_time
-        self.logger.info(f"✅ OOF StackingEnsembleManager initialized for {config.ensemble_name} in {init_time".3f"}s")
+        self.logger.info(f"✅ OOF StackingEnsembleManager initialized for {config.ensemble_name} in {init_time:.3f}s")
 
     def add_base_model(self, output_name: str, model_name: str, model: Any) -> None:
         """Add a base model for a specific output."""
@@ -330,7 +330,7 @@ class OOFStackingEnsembleManager:
                     oof_scores[output_name] = {}
                 oof_scores[output_name][model_name] = score
 
-                self.logger.debug(f"✅ OOF predictions generated for {model_name}, score: {score:.4f".4f"
+                self.logger.debug(f"✅ OOF predictions generated for {model_name}, score: {score:.4f}")
             self.logger.info(f"✅ OOF predictions generated for {output_name}")
 
         self.oof_predictions = oof_predictions
@@ -725,7 +725,7 @@ class OOFStackingEnsembleManager:
                 'oof_scores': self.oof_scores
             })
 
-            self.logger.info(f"✅ OOF StackingEnsemble fitted in {training_time".3f"}s")
+            self.logger.info(f"✅ OOF StackingEnsemble fitted in {training_time:.3f}s")
             self.logger.info(f"📊 OOF scores: {self.oof_scores}")
 
             return self
@@ -838,7 +838,7 @@ class OOFStackingEnsembleManager:
             )
 
             prediction_time = time.time() - start_time
-            self.logger.info(f"✅ Predictions completed in {prediction_time".3f"}s")
+            self.logger.info(f"✅ Predictions completed in {prediction_time:.3f}s")
             self.logger.info(f"📊 Confidence: {np.mean(confidence_scores):.3f} ± {np.std(confidence_scores):.3f}")
 
             return predictions, probabilities, confidence_scores

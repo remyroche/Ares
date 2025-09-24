@@ -16,11 +16,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 from collections import defaultdict
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 from .tas_config import TASConfig, TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from ..components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from ..evaluation.tas_evaluator import TASEvaluator, EvaluationResult
-from .tree_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+from src.utils.ml_common.optimization.tree_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -58,19 +65,27 @@ class TreeCVLSASearch:
         Args:
             config: TAS configuration
         """
+        tprint_info("🌲 Initializing Tree CVLSA Architecture")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize components
+        tprint_info("🔧 Initializing components...")
+        tprint_debug("🔍 Creating micro regime detector...")
         self.micro_regime_detector = MicroRegimeDetector(
             sensitivity=config.micro_regime_sensitivity,
             detection_threshold=config.micro_regime_detection_threshold
         )
 
+        tprint_debug("📊 Creating TAS evaluator...")
         self.evaluator = TASEvaluator(config)
+        tprint_debug("🌳 Creating base TAS search...")
         self.base_tas = TreeArchitectureSearch(config.get_tree_search_space())
 
         # CVLSA-specific parameters
+        tprint_debug("⚙️ Setting CVLSA-specific parameters...")
         self.cascade_depth = 3
         self.variable_selection_methods = [
             'variance_threshold',
@@ -81,9 +96,11 @@ class TreeCVLSASearch:
         ]
 
         # Results tracking
+        tprint_debug("📊 Initializing results tracking...")
         self.cascade_history: List[Dict[str, Any]] = []
         self.variable_selection_history: List[Dict[str, Any]] = []
 
+        tprint_success("✅ Tree CVLSA initialized with cascade architecture")
         self.logger.info("✅ Tree CVLSA initialized with cascade architecture")
 
     def optimize_cvlSA_architecture(self,
@@ -101,38 +118,54 @@ class TreeCVLSASearch:
         Returns:
             CVLSAResult with optimal CVLSA architecture
         """
+        tprint_info("🌲 Starting Tree CVLSA optimization...")
         self.logger.info("🌲 Starting Tree CVLSA optimization...")
         start_time = time.time()
 
         try:
             # Step 1: Comprehensive market analysis
+            tprint_info("📊 Step 1: Performing comprehensive market analysis...")
             market_analysis = self._perform_comprehensive_market_analysis(market_data, target_returns)
+            tprint_success("✅ Market analysis completed")
 
             # Step 2: Micro-regime detection
+            tprint_info("🔍 Step 2: Analyzing micro-regimes...")
             micro_regime_analysis = self._analyze_micro_regimes(market_data)
+            tprint_success("✅ Micro-regime analysis completed")
 
             # Step 3: Feature engineering with variable selection
+            tprint_info("🔧 Step 3: Performing advanced feature engineering...")
             engineered_features = self._perform_advanced_feature_engineering(market_data, target_returns)
+            tprint_success("✅ Feature engineering completed")
 
             # Step 4: CVLSA cascade optimization
+            tprint_info("🌊 Step 4: Optimizing cascade architecture...")
             cvlsa_architecture = self._optimize_cascade_architecture(
                 engineered_features, target_returns, market_analysis, micro_regime_analysis
             )
+            tprint_success("✅ Cascade optimization completed")
 
             # Step 5: Variable selection optimization
+            tprint_info("🎯 Step 5: Optimizing variable selection...")
             variable_selection_config = self._optimize_variable_selection(
                 engineered_features, target_returns, cvlsa_architecture
             )
+            tprint_success("✅ Variable selection optimization completed")
 
             # Step 6: Comprehensive evaluation
+            tprint_info("📈 Step 6: Performing comprehensive evaluation...")
             evaluation_results = self._evaluate_cvlSA_architecture(
                 cvlsa_architecture, engineered_features, target_returns, market_analysis, micro_regime_analysis
             )
+            tprint_success("✅ Comprehensive evaluation completed")
 
             # Step 7: Economic validation
+            tprint_info("💰 Step 7: Performing economic validation...")
             validation_results = self._validate_cvlSA_performance(evaluation_results)
+            tprint_success("✅ Economic validation completed")
 
             # Step 8: Create final CVLSA result
+            tprint_info("📋 Step 8: Creating final CVLSA result...")
             result = CVLSAResult(
                 best_architecture=cvlsa_architecture,
                 cascade_levels=self._create_cascade_levels(cvlsa_architecture),
@@ -160,6 +193,10 @@ class TreeCVLSASearch:
                 }
             )
 
+            tprint_success(f"✅ Tree CVLSA completed in {result.execution_time:.2f}s")
+            tprint_info(f"   Cascade Levels: {len(result.cascade_levels)}")
+            tprint_info(f"   Economic Significance: {result.economic_significance_score:.3f}")
+            tprint_info(f"   Cascade Efficiency: {result.cascade_efficiency:.3f}")
             self.logger.info(f"✅ Tree CVLSA completed in {result.execution_time:.2f}s")
             self.logger.info(f"   Cascade Levels: {len(result.cascade_levels)}")
             self.logger.info(f"   Economic Significance: {result.economic_significance_score:.3f}")
@@ -168,6 +205,7 @@ class TreeCVLSASearch:
             return result
 
         except Exception as e:
+            tprint_error(f"❌ Tree CVLSA failed: {e}")
             self.logger.error(f"Tree CVLSA failed: {e}")
             raise
 
@@ -520,7 +558,6 @@ class TreeCVLSASearch:
     def _recursive_elimination_selection(self, features: np.ndarray, target: pd.Series) -> np.ndarray:
         """Apply recursive feature elimination."""
         from sklearn.feature_selection import RFE
-        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
         if len(np.unique(target)) <= 10:
             estimator = RandomForestClassifier(n_estimators=50, random_state=42)
@@ -565,7 +602,6 @@ class TreeCVLSASearch:
     def _calculate_feature_importance_scores(self, features: np.ndarray, target: pd.Series) -> Dict[str, float]:
         """Calculate feature importance scores."""
         try:
-            from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
             if len(np.unique(target)) <= 10:
                 model = RandomForestClassifier(n_estimators=100, random_state=42)

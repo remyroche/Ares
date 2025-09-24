@@ -699,7 +699,6 @@ class OptimalRegimeClusterer:
             Cluster labels
         """
         try:
-            from hdbscan import HDBSCAN
 
             clusterer = HDBSCAN(
                 min_cluster_size=self.config.min_cluster_size,

@@ -420,7 +420,6 @@ class ComputePipeline:
         # Simulate GPU Monte Carlo
         time.sleep(0.3)  # Simulate computation time
         
-        import random
         return {
             'operation_id': operation.operation_id,
             'result_type': 'monte_carlo',

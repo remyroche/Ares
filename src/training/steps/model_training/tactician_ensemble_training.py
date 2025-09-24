@@ -942,7 +942,6 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             Boolean mask for time-based ride filtering
         """
         try:
-            import pandas as pd
 
             # Convert timestamps to pandas datetime for easier manipulation
             timestamp_series = pd.to_datetime(timestamps)
@@ -1287,7 +1286,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                             )
                         else:
                             X_enhanced[:, current_col:current_col + hmm_features_count] = hmm_features
-                    except:
+                    except (ValueError, TypeError, IndexError) as e:
+                        self.logger.debug(f"Could not use optimized copy for HMM features: {e}")
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + hmm_features_count] = hmm_features
+                    except Exception as e:
+                        self.logger.warning(f"Unexpected error with HMM features copy: {e}")
                         # Fallback to standard copy
                         X_enhanced[:, current_col:current_col + hmm_features_count] = hmm_features
                     
@@ -1306,7 +1310,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                             )
                         else:
                             X_enhanced[:, current_col:current_col + pred_cols] = predictions
-                    except:
+                    except (ValueError, TypeError, IndexError) as e:
+                        self.logger.debug(f"Could not use optimized copy: {e}")
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except Exception as e:
+                        self.logger.warning(f"Unexpected error with copy: {e}")
                         # Fallback to standard copy
                         X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     
@@ -1340,7 +1349,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                             )
                         else:
                             X_enhanced[:, current_col:current_col + pred_cols] = predictions
-                    except:
+                    except (ValueError, TypeError, IndexError) as e:
+                        self.logger.debug(f"Could not use optimized copy: {e}")
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except Exception as e:
+                        self.logger.warning(f"Unexpected error with copy: {e}")
                         # Fallback to standard copy
                         X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     
@@ -1362,14 +1376,15 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         del analyst_predictions, ensemble_predictions
                         if hmm_features is not None:
                             del hmm_features
-                except:
+                except Exception as e:
                     # Emergency cleanup
                     try:
                         del analyst_predictions, ensemble_predictions
                         if hmm_features is not None:
                             del hmm_features
-                    except:
-                        pass
+                        self.logger.info(f"✅ Emergency cleanup completed after error: {e}")
+                    except Exception as cleanup_e:
+                        self.logger.warning(f"Emergency cleanup failed: {cleanup_e}")
                 
             else:
                 # No additional features, return view of original array to save memory

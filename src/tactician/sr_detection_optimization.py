@@ -9,7 +9,6 @@ import json
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
@@ -31,7 +30,6 @@ from src.tactician.sr_levels.sr_regime_optimizer import SRRegimeOptimizer
 from src.tactician.sr_levels.sr_ml_enhancer import SRMLEnhancer
 from src.tactician.sr_levels.sr_computational_optimizer import SRComputationalOptimizer
 from src.tactician.sr_levels.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
-from ...utils.logger import system_logger
 from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
 from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError, SRConfigurationError, validate_sr_data, validate_sr_parameters, handle_sr_error
 if TYPE_CHECKING:
@@ -604,7 +602,6 @@ class SRDetectionOptimizer:
     def _emergency_cleanup(self) -> None:
         """Perform emergency memory cleanup."""
         try:
-            import gc
             self.clear_caches()
             self.training_data = None
             self.validation_data = None

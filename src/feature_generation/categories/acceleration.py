@@ -324,6 +324,10 @@ def create_acceleration_generators() -> List[FeatureGenerator]:
     
     return generators
 
+def create_default_acceleration_generators() -> List[FeatureGenerator]:
+    """Create default acceleration-based feature generators (alias for create_acceleration_generators)."""
+    return create_acceleration_generators()
+
 # Export all generators
 __all__ = [
     'AccelerationFeatureGenerator',
@@ -334,5 +338,6 @@ __all__ = [
     'TrendConsistencyGenerator',
     'VolumeAccelerationGenerator',
     'VolatilityAccelerationGenerator',
-    'create_acceleration_generators'
+    'create_acceleration_generators',
+    'create_default_acceleration_generators'
 ]

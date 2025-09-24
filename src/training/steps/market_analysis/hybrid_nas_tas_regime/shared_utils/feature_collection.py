@@ -11,6 +11,11 @@ import logging
 from dataclasses import dataclass
 import time
 from datetime import datetime
+# from tprint import tprint  # Not available, using print instead
+def tprint(*args, **kwargs):
+    # Remove color argument if present since print() doesn't support it
+    kwargs.pop('color', None)
+    print(*args, **kwargs)
 
 try:
     from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureConfig, FeatureResult
@@ -78,8 +83,10 @@ class StandardizedFeatureCalculator:
         Args:
             config: Feature collection configuration
         """
+        tprint("🔧 Initializing StandardizedFeatureCalculator", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"📊 Config: {config.feature_categories} categories, {config.lookback_periods} lookbacks", color="cyan")
         
         # Initialize matrix operations if available
         self.matrix_ops = None
@@ -89,32 +96,44 @@ class StandardizedFeatureCalculator:
         
         if MATRIX_OPERATIONS_AVAILABLE and config.use_matrix_operations:
             try:
+                tprint("⚡ Initializing matrix operations for hardware acceleration", color="yellow")
                 self.matrix_ops = get_unified_matrix_operations()
                 self.vectorized_core = get_vectorized_processing_core()
                 self.enhanced_ops = get_enhanced_matrix_operations()
                 self.batch_processor = get_batch_matrix_processor()
                 self.logger.info("✅ Matrix operations initialized for feature calculation")
+                tprint("✅ Matrix operations initialized successfully", color="green")
             except Exception as e:
                 self.logger.warning(f"⚠️ Matrix operations not available: {e}")
+                tprint(f"⚠️ Matrix operations failed: {e}", color="red")
         
         # Initialize feature calculators
+        tprint("🧮 Initializing feature calculators", color="blue")
         self.feature_calculators = self._initialize_feature_calculators()
         
         self.logger.info("✅ Standardized Feature Calculator initialized")
+        tprint("✅ StandardizedFeatureCalculator initialization complete", color="green")
     
     def _initialize_feature_calculators(self) -> Dict[str, Any]:
         """Initialize feature calculators for different categories."""
+        tprint("🔧 Setting up feature calculators for each category", color="blue")
         calculators = {}
         
         if FEATURE_GENERATION_AVAILABLE:
             try:
+                tprint("📈 Creating momentum calculator", color="cyan")
                 calculators['momentum'] = MomentumCalculator()
+                tprint("📊 Creating volatility calculator", color="cyan")
                 calculators['volatility'] = VolatilityCalculator()
+                tprint("📦 Creating volume calculator", color="cyan")
                 calculators['volume'] = VolumeCalculator()
+                tprint("📈 Creating trend calculator", color="cyan")
                 calculators['trend'] = TrendCalculator()
                 self.logger.info("✅ Feature calculators initialized")
+                tprint(f"✅ All {len(calculators)} feature calculators initialized", color="green")
             except Exception as e:
                 self.logger.warning(f"⚠️ Feature calculator initialization failed: {e}")
+                tprint(f"❌ Feature calculator initialization failed: {e}", color="red")
         
         return calculators
     
@@ -128,6 +147,7 @@ class StandardizedFeatureCalculator:
             DataFrame with calculated features
         """
         try:
+            tprint(f"🔧 Starting feature calculation for {data.shape[0]} samples", color="blue")
             self.logger.info("🔧 Calculating standardized features")
             start_time = time.time()
             
@@ -135,25 +155,35 @@ class StandardizedFeatureCalculator:
             features_df = pd.DataFrame(index=data.index)
             
             # Calculate features for each category
+            tprint(f"📊 Processing {len(self.config.feature_categories)} feature categories", color="cyan")
             for category in self.config.feature_categories:
+                tprint(f"🔄 Processing {category} features", color="yellow")
                 if category in self.feature_calculators:
                     category_features = self._calculate_category_features(
                         data, category, self.feature_calculators[category]
                     )
                     if category_features is not None and not category_features.empty:
                         features_df = pd.concat([features_df, category_features], axis=1)
+                        tprint(f"✅ {category}: {category_features.shape[1]} features added", color="green")
+                    else:
+                        tprint(f"⚠️ {category}: No features generated", color="yellow")
+                else:
+                    tprint(f"❌ {category}: Calculator not available", color="red")
             
             # Apply standardization if configured
             if self.config.use_standardized_features:
+                tprint("🔧 Applying feature standardization", color="blue")
                 features_df = self._standardize_features(features_df)
             
             processing_time = time.time() - start_time
             self.logger.info(f"✅ Features calculated: {features_df.shape} in {processing_time:.2f}s")
+            tprint(f"✅ Feature calculation complete: {features_df.shape[1]} features in {processing_time:.2f}s", color="green")
             
             return features_df
             
         except Exception as e:
             self.logger.error(f"❌ Feature calculation failed: {e}")
+            tprint(f"❌ Feature calculation failed: {e}", color="red")
             return pd.DataFrame()
     
     def _calculate_category_features(self, data: pd.DataFrame, category: str, calculator: Any) -> Optional[pd.DataFrame]:
@@ -187,6 +217,7 @@ class StandardizedFeatureCalculator:
     def _calculate_momentum_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
         """Calculate momentum features."""
         try:
+            tprint(f"📈 Calculating momentum features for {len(self.config.lookback_periods)} lookback periods", color="cyan")
             features = pd.DataFrame(index=data.index)
             
             # Calculate momentum features for different lookback periods
@@ -210,6 +241,7 @@ class StandardizedFeatureCalculator:
     def _calculate_volatility_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
         """Calculate volatility features."""
         try:
+            tprint(f"📊 Calculating volatility features for {len(self.config.lookback_periods)} lookback periods", color="cyan")
             features = pd.DataFrame(index=data.index)
             
             # Calculate volatility features for different lookback periods
@@ -234,6 +266,7 @@ class StandardizedFeatureCalculator:
     def _calculate_volume_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
         """Calculate volume features."""
         try:
+            tprint(f"📦 Calculating volume features for {len(self.config.lookback_periods)} lookback periods", color="cyan")
             features = pd.DataFrame(index=data.index)
             
             # Calculate volume features for different lookback periods
@@ -259,6 +292,7 @@ class StandardizedFeatureCalculator:
     def _calculate_trend_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
         """Calculate trend features."""
         try:
+            tprint(f"📈 Calculating trend features for {len(self.config.lookback_periods)} lookback periods", color="cyan")
             features = pd.DataFrame(index=data.index)
             
             # Calculate trend features for different lookback periods
@@ -345,11 +379,13 @@ class FeatureCollectionManager:
         Args:
             config: Feature collection configuration
         """
+        tprint("🎯 Initializing FeatureCollectionManager", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.calculator = StandardizedFeatureCalculator(config)
         
         self.logger.info("✅ Feature Collection Manager initialized")
+        tprint("✅ FeatureCollectionManager initialization complete", color="green")
     
     async def collect_features_for_nas(self, data: pd.DataFrame) -> FeatureCollectionResult:
         """Collect features specifically for NAS regime detection.
@@ -361,6 +397,7 @@ class FeatureCollectionManager:
             FeatureCollectionResult with NAS-specific features
         """
         try:
+            tprint(f"🧠 Starting NAS feature collection for {data.shape[0]} samples", color="blue")
             self.logger.info("🧠 Collecting features for NAS regime detection")
             start_time = time.time()
             
@@ -371,11 +408,13 @@ class FeatureCollectionManager:
                 raise ValueError("No features calculated")
             
             # NAS-specific feature selection and processing
+            tprint("🔍 Selecting NAS-specific features", color="yellow")
             nas_features = self._select_nas_features(features)
             
             processing_time = time.time() - start_time
             
             # Get feature categories
+            tprint("📊 Categorizing features", color="cyan")
             feature_categories = self._categorize_features(nas_features)
             
             metadata = {
@@ -388,6 +427,7 @@ class FeatureCollectionManager:
             }
             
             self.logger.info(f"✅ NAS features collected: {nas_features.shape}")
+            tprint(f"✅ NAS feature collection complete: {nas_features.shape[1]} features in {processing_time:.2f}s", color="green")
             
             return FeatureCollectionResult(
                 features=nas_features,
@@ -403,6 +443,7 @@ class FeatureCollectionManager:
         except Exception as e:
             processing_time = time.time() - start_time
             self.logger.error(f"❌ NAS feature collection failed: {e}")
+            tprint(f"❌ NAS feature collection failed: {e}", color="red")
             return FeatureCollectionResult(
                 features=pd.DataFrame(),
                 feature_names=[],
@@ -423,6 +464,7 @@ class FeatureCollectionManager:
             FeatureCollectionResult with TAS-specific features
         """
         try:
+            tprint(f"🌳 Starting TAS feature collection for {data.shape[0]} samples", color="blue")
             self.logger.info("🌳 Collecting features for TAS regime detection")
             start_time = time.time()
             
@@ -433,11 +475,13 @@ class FeatureCollectionManager:
                 raise ValueError("No features calculated")
             
             # TAS-specific feature selection and processing
+            tprint("🔍 Selecting TAS-specific features", color="yellow")
             tas_features = self._select_tas_features(features)
             
             processing_time = time.time() - start_time
             
             # Get feature categories
+            tprint("📊 Categorizing features", color="cyan")
             feature_categories = self._categorize_features(tas_features)
             
             metadata = {
@@ -450,6 +494,7 @@ class FeatureCollectionManager:
             }
             
             self.logger.info(f"✅ TAS features collected: {tas_features.shape}")
+            tprint(f"✅ TAS feature collection complete: {tas_features.shape[1]} features in {processing_time:.2f}s", color="green")
             
             return FeatureCollectionResult(
                 features=tas_features,
@@ -465,6 +510,7 @@ class FeatureCollectionManager:
         except Exception as e:
             processing_time = time.time() - start_time
             self.logger.error(f"❌ TAS feature collection failed: {e}")
+            tprint(f"❌ TAS feature collection failed: {e}", color="red")
             return FeatureCollectionResult(
                 features=pd.DataFrame(),
                 feature_names=[],
@@ -485,6 +531,7 @@ class FeatureCollectionManager:
             NAS-optimized features
         """
         try:
+            tprint(f"🔍 Selecting NAS features from {features.shape[1]} total features", color="cyan")
             # NAS typically benefits from momentum and volatility features
             nas_feature_names = []
             
@@ -493,10 +540,13 @@ class FeatureCollectionManager:
                     nas_feature_names.append(col)
             
             if nas_feature_names:
+                tprint(f"✅ Selected {len(nas_feature_names)} NAS-specific features", color="green")
                 return features[nas_feature_names]
             else:
                 # Fallback to first few features
-                return features.iloc[:, :min(10, features.shape[1])]
+                fallback_count = min(10, features.shape[1])
+                tprint(f"⚠️ Using fallback: first {fallback_count} features", color="yellow")
+                return features.iloc[:, :fallback_count]
                 
         except Exception as e:
             self.logger.warning(f"⚠️ NAS feature selection failed: {e}")
@@ -512,6 +562,7 @@ class FeatureCollectionManager:
             TAS-optimized features
         """
         try:
+            tprint(f"🔍 Selecting TAS features from {features.shape[1]} total features", color="cyan")
             # TAS typically benefits from volume and trend features
             tas_feature_names = []
             
@@ -520,10 +571,13 @@ class FeatureCollectionManager:
                     tas_feature_names.append(col)
             
             if tas_feature_names:
+                tprint(f"✅ Selected {len(tas_feature_names)} TAS-specific features", color="green")
                 return features[tas_feature_names]
             else:
                 # Fallback to first few features
-                return features.iloc[:, :min(10, features.shape[1])]
+                fallback_count = min(10, features.shape[1])
+                tprint(f"⚠️ Using fallback: first {fallback_count} features", color="yellow")
+                return features.iloc[:, :fallback_count]
                 
         except Exception as e:
             self.logger.warning(f"⚠️ TAS feature selection failed: {e}")
@@ -539,6 +593,7 @@ class FeatureCollectionManager:
             Dictionary mapping categories to feature names
         """
         try:
+            tprint(f"📊 Categorizing {features.shape[1]} features", color="cyan")
             categories = {
                 'momentum': [],
                 'volatility': [],
@@ -576,6 +631,7 @@ class FeatureCollectionManager:
             Feature statistics
         """
         try:
+            tprint(f"📊 Calculating statistics for {features.shape[1]} features", color="cyan")
             stats = {
                 'total_features': features.shape[1],
                 'total_samples': features.shape[0],
@@ -595,6 +651,7 @@ class FeatureCollectionManager:
                         'median': float(features[col].median())
                     }
             
+            tprint(f"✅ Feature statistics calculated: {stats['total_features']} features, {stats['total_samples']} samples", color="green")
             return stats
             
         except Exception as e:
@@ -611,4 +668,7 @@ def create_feature_collection_manager(config: FeatureCollectionConfig) -> Featur
     Returns:
         FeatureCollectionManager instance
     """
-    return FeatureCollectionManager(config)
+    tprint("🏭 Creating FeatureCollectionManager instance", color="blue")
+    manager = FeatureCollectionManager(config)
+    tprint("✅ FeatureCollectionManager created successfully", color="green")
+    return manager

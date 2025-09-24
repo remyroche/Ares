@@ -186,7 +186,6 @@ def demonstrate_training_utils_validation():
     y = np.random.choice([0, 1], size=500, p=[0.6, 0.4])
     
     # Split data
-    from sklearn.model_selection import train_test_split
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )

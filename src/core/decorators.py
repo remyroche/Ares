@@ -64,17 +64,13 @@ def handles_errors(*args, **kwargs) -> Callable:
                 except Exception as e:
                     # Try to import error classes for better handling
                     try:
-                        from .errors.base import AppError, ValidationError
-                        from .error_classes import initialization_error, execution_error
                         
                         # Safe logger import with fallback
                         def get_safe_logger():
                             try:
-                                from src.utils.logger import system_logger
                                 return system_logger
                             except (ImportError, AttributeError, Exception):
                                 # Fallback to basic logging
-                                import logging
                                 return logging.getLogger('AresFallback')
                         
                         system_logger = get_safe_logger()
@@ -122,16 +118,13 @@ def validates(*args, **kwargs) -> Callable:
             except Exception as e:
                 # Try to import validation error for better handling
                 try:
-                    from .errors.base import AppError, ValidationError
                     
                     # Safe logger import with fallback
                     def get_safe_logger():
                         try:
-                            from src.utils.logger import system_logger
                             return system_logger
                         except (ImportError, AttributeError, Exception):
                             # Fallback to basic logging
-                            import logging
                             return logging.getLogger('AresFallback')
                     
                     system_logger = get_safe_logger()
@@ -178,7 +171,6 @@ def log_execution_time(func_or_callable=None, **kwargs):
     @log_execution_time(param=value)
     """
     import time
-    import logging
 
     def decorator(func):
         @functools.wraps(func)

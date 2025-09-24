@@ -198,7 +198,6 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         from src.utils.common_operations import get_current_datetime, format_datetime
     except Exception:
         pass
-    from src.utils.logger import system_logger
     from .utils.validator_orchestrator import ValidatorOrchestrator
     from .utils.step_dependency_validator import StepDependencyValidator
     logger = system_logger.getChild('ModelTrainingPipeline')
@@ -210,7 +209,6 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         """Monitor memory usage and provide optimization alerts."""
         import json
         import logging
-        import time
         
         try:
             import psutil

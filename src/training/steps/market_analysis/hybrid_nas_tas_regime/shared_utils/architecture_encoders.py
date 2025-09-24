@@ -159,7 +159,6 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
 
     def decode(self, encoding: Any, encoding_type: EncodingType) -> DecodingResult:
         """Decode a neural architecture encoding."""
-        from ..search_spaces import NeuralArchitecture, LayerSpecification, ConnectionType
 
         start_time = __import__('time').time()
 
@@ -286,7 +285,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 layer_str += f"_A{layer.activation.value}"
 
             if layer.dropout_rate > 0:
-                layer_str += f"_D{layer.dropout_rate".2f"}"
+                layer_str += f"_D{layer.dropout_rate:.2f}"
 
             path_elements.append(layer_str)
 
@@ -365,7 +364,6 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
 
     def encode(self, architecture: Any) -> EncodingResult:
         """Encode a tree architecture."""
-        from ..search_spaces import TreeArchitecture, LayerType
 
         if not isinstance(architecture, TreeArchitecture):
             raise ValueError("Architecture must be a TreeArchitecture instance")
@@ -417,7 +415,6 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
 
     def decode(self, encoding: Any, encoding_type: EncodingType) -> DecodingResult:
         """Decode a tree architecture encoding."""
-        from ..search_spaces import TreeArchitecture, TreeSpecification
 
         start_time = __import__('time').time()
 
@@ -571,7 +568,6 @@ class UnifiedArchitectureEncoder:
 
     def encode(self, architecture: Any) -> EncodingResult:
         """Encode any architecture type."""
-        from ..search_spaces import NeuralArchitecture, TreeArchitecture
 
         if isinstance(architecture, NeuralArchitecture):
             return self.neural_encoder.encode(architecture)

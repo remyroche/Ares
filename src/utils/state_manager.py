@@ -17,7 +17,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .logger import system_logger
 
 from src.utils.warning_symbols import (
     error,

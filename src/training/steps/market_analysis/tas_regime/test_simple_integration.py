@@ -54,9 +54,6 @@ def test_imports():
 def test_utility_initialization():
     """Test utility tool initialization."""
     try:
-        from src.utils.common_operations import CommonUtilities
-        from src.utils.math_validation import MathValidation
-        from src.utils.serialization_utils import UniversalSerializer
         
         # Test common utilities
         common_utils = CommonUtilities()
@@ -79,7 +76,7 @@ def test_utility_initialization():
 def test_enhanced_engine_initialization():
     """Test enhanced engine initialization."""
     try:
-        from src.training.steps.market_analysis.tas_regime.core.tas_engine import (
+        from src.training.steps.market_analysis.tas_regime.core import (
             TreeArchitectureSearchEngine, TASEngineConfig
         )
         
@@ -109,7 +106,7 @@ def test_enhanced_engine_initialization():
 def test_enhanced_detector_initialization():
     """Test enhanced detector initialization."""
     try:
-        from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import (
+        from src.training.steps.market_analysis.tas_regime.core import (
             TASRegimeDetector, TASRegimeConfig
         )
         
@@ -138,7 +135,7 @@ def test_enhanced_detector_initialization():
 def test_enhanced_backtesting_initialization():
     """Test enhanced backtesting initialization."""
     try:
-        from src.training.steps.market_analysis.tas_regime.backtesting.backtesting_engine import (
+        from src.training.steps.market_analysis.tas_regime.backtesting import (
             BacktestingEngine, BacktestingConfig
         )
         
@@ -167,7 +164,6 @@ def test_enhanced_backtesting_initialization():
 def test_math_validation_basic():
     """Test basic math validation without external dependencies."""
     try:
-        from src.utils.math_validation import MathValidation
         
         math_validator = MathValidation()
         
@@ -195,7 +191,6 @@ def test_math_validation_basic():
 def test_serialization_basic():
     """Test basic serialization without external dependencies."""
     try:
-        from src.utils.serialization_utils import UniversalSerializer
         
         serializer = UniversalSerializer()
         

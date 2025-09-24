@@ -416,7 +416,6 @@ class M1MemoryOptimizer:
     def get_current_memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
         try:
-            import psutil
             process = psutil.Process()
             memory_info = process.memory_info()
             return memory_info.rss / (1024 * 1024)  # Convert to MB
@@ -450,7 +449,6 @@ class M1MemoryOptimizer:
 
     def force_garbage_collection(self) -> None:
         """Force garbage collection to free memory."""
-        import gc
 
         # Get stats before cleanup
         before_objects = len(gc.get_objects())

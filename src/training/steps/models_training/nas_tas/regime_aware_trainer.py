@@ -28,6 +28,35 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[REGIME_AWARE_TRAINER] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 # Import regime detection systems
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
@@ -166,19 +195,25 @@ class RegimeAwareTrainer:
         Args:
             config: Training configuration
         """
+        tprint("🎓 Initializing Regime-Aware Trainer", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint(f"📊 Config: strategy={config.training_strategy.value}, models={[mt.value for mt in config.model_types]}, regime_method={config.regime_detection_method}", color="cyan")
         
         # Initialize regime detection
+        tprint("🔍 Initializing regime detection", color="yellow")
         self._initialize_regime_detection()
         
         # Initialize ML common utilities
+        tprint("🤖 Initializing ML common utilities", color="yellow")
         self._initialize_ml_common()
         
         # Initialize model factories
+        tprint("🏭 Initializing model factories", color="yellow")
         self._initialize_model_factories()
         
         # Training state
+        tprint("📊 Initializing training state", color="yellow")
         self.trained_models = {}
         self.regime_models = {}
         self.ensemble_models = {}
@@ -188,10 +223,15 @@ class RegimeAwareTrainer:
         self.logger.info(f"   Training strategy: {config.training_strategy.value}")
         self.logger.info(f"   Model types: {[mt.value for mt in config.model_types]}")
         self.logger.info(f"   Regime detection: {config.regime_detection_method}")
+        
+        tprint("✅ Regime-Aware Trainer initialization complete", color="green")
+        tprint(f"🎓 Strategy: {config.training_strategy.value}, Models: {len(config.model_types)}, Regime: {config.regime_detection_method}", color="cyan")
     
     def _initialize_regime_detection(self):
         """Initialize regime detection systems."""
+        tprint("🔍 Starting regime detection initialization", color="yellow")
         if not REGIME_DETECTION_AVAILABLE:
+            tprint("⚠️ Regime detection systems not available", color="red")
             self.logger.warning("⚠️ Regime detection systems not available")
             self.tas_detector = None
             self.nas_detector = None
@@ -199,6 +239,7 @@ class RegimeAwareTrainer:
         
         try:
             if self.config.regime_detection_method in ["tas", "hybrid", "hybrid_nas_tas"]:
+                tprint("🌳 Creating TAS regime detector", color="yellow")
                 tas_config = TASRegimeConfig(
                     n_regimes=8,
                     enable_economic_evaluation=True,
@@ -206,13 +247,17 @@ class RegimeAwareTrainer:
                 )
                 self.tas_detector = TASRegimeDetector(tas_config)
                 self.logger.info("✅ TAS regime detector initialized")
+                tprint("✅ TAS regime detector created", color="green")
 
             if self.config.regime_detection_method in ["nas", "hybrid", "hybrid_nas_tas"]:
+                tprint("🧠 Creating NAS regime detector", color="yellow")
                 nas_config = PerfectNASConfig.create_short_term_trading_config()
                 self.nas_detector = PerfectNASRegimeDetector(nas_config)
                 self.logger.info("✅ NAS regime detector initialized")
+                tprint("✅ NAS regime detector created", color="green")
 
             if self.config.regime_detection_method == "hybrid_nas_tas":
+                tprint("🔗 Creating hybrid NAS-TAS regime detector", color="yellow")
                 hybrid_config = HybridRegimeConfig(
                     combination_strategy="weighted",
                     tas_weight=0.4,
@@ -222,8 +267,12 @@ class RegimeAwareTrainer:
                 )
                 self.hybrid_detector = HybridNASTASRegimeDetector(hybrid_config)
                 self.logger.info("✅ Hybrid NAS-TAS regime detector initialized")
+                tprint("✅ Hybrid NAS-TAS regime detector created", color="green")
+
+            tprint("✅ Regime detection systems initialized successfully", color="green")
 
         except Exception as e:
+            tprint(f"⚠️ Regime detection initialization failed: {e}", color="red")
             self.logger.warning(f"Regime detection initialization failed: {e}")
             self.tas_detector = None
             self.nas_detector = None
@@ -231,17 +280,23 @@ class RegimeAwareTrainer:
     
     def _initialize_ml_common(self):
         """Initialize ML common utilities."""
+        tprint("🤖 Starting ML common utilities initialization", color="yellow")
         if not ML_COMMON_AVAILABLE:
+            tprint("⚠️ ML common utilities not available", color="red")
             self.logger.warning("⚠️ ML common utilities not available")
             self.ml_common_ops = None
             self.validation_framework = None
             return
         
         try:
+            tprint("🔧 Creating ML common operations", color="yellow")
             self.ml_common_ops = get_ml_common_operations()
+            tprint("🛡️ Creating validation framework", color="yellow")
             self.validation_framework = get_validation_framework()
             self.logger.info("✅ ML common utilities initialized")
+            tprint("✅ ML common utilities initialized successfully", color="green")
         except Exception as e:
+            tprint(f"⚠️ ML common initialization failed: {e}", color="red")
             self.logger.warning(f"ML common initialization failed: {e}")
             self.ml_common_ops = None
             self.validation_framework = None
@@ -668,8 +723,13 @@ class RegimeAwareTrainer:
                         
                         self.logger.info(f"   ✅ {model_type.value} trained - Val F1: {val_metrics['f1_score']:.3f}")
                     
-                except Exception as e:
+                except (ValueError, TypeError, RuntimeError) as e:
                     self.logger.warning(f"   ⚠️ Failed to train {model_type.value} for regime {regime_id}: {e}")
+                    self.logger.info(f"   Continuing with other models for regime {regime_id}")
+                    continue
+                except Exception as e:
+                    self.logger.error(f"   ❌ Unexpected error training {model_type.value} for regime {regime_id}: {e}")
+                    self.logger.warning(f"   ⚠️ Continuing with other models for regime {regime_id}")
                     continue
         
         return regime_models
@@ -715,8 +775,13 @@ class RegimeAwareTrainer:
             
             return ensemble_models
             
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             self.logger.warning(f"Ensemble training failed: {e}")
+            self.logger.info("Returning empty ensemble models - models will use individual regime models")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Unexpected error during ensemble training: {e}")
+            self.logger.warning("Returning empty ensemble models - models will use individual regime models")
             return {}
     
     def _evaluate_performance(self, 
@@ -820,15 +885,25 @@ class RegimeAwareTrainer:
         """Get feature importance from model."""
         try:
             if hasattr(model, 'feature_importances_'):
+                if len(feature_names) != len(model.feature_importances_):
+                    self.logger.warning(f"Feature names length ({len(feature_names)}) doesn't match importance length ({len(model.feature_importances_)})")
+                    return {}
                 importance_dict = dict(zip(feature_names, model.feature_importances_))
                 return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
             elif hasattr(model, 'coef_'):
                 # For linear models
+                if len(feature_names) != len(model.coef_[0]):
+                    self.logger.warning(f"Feature names length ({len(feature_names)}) doesn't match coefficients length ({len(model.coef_[0])})")
+                    return {}
                 importance_dict = dict(zip(feature_names, np.abs(model.coef_[0])))
                 return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
             else:
                 return {}
-        except:
+        except (ValueError, IndexError, TypeError) as e:
+            self.logger.warning(f"Could not extract feature importance: {e}")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Unexpected error extracting feature importance: {e}")
             return {}
     
     def _get_model_hyperparameters(self, model: Any) -> Dict[str, Any]:
@@ -837,8 +912,10 @@ class RegimeAwareTrainer:
             if hasattr(model, 'get_params'):
                 return model.get_params()
             else:
+                self.logger.debug(f"Model type {type(model).__name__} doesn't support get_params()")
                 return {}
-        except:
+        except Exception as e:
+            self.logger.warning(f"Could not extract hyperparameters: {e}")
             return {}
     
     def _save_models(self, regime_models: Dict[int, Dict[str, Any]], ensemble_models: Optional[Dict[str, Any]]):
@@ -869,8 +946,12 @@ class RegimeAwareTrainer:
             
             self.logger.info(f"✅ Models saved to {save_path}")
             
+        except (IOError, OSError, pickle.PicklingError) as e:
+            self.logger.error(f"❌ Could not save models: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"❌ Failed to save models: {e}")
+            self.logger.error(f"❌ Unexpected error saving models: {e}")
+            raise
     
     # Model factory methods
     def _create_random_forest(self):

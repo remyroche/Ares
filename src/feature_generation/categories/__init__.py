@@ -25,23 +25,23 @@ from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
 from .candlestick_pattern import CandlestickPatternFeatureGenerator
-from .hmm_regime import (
-    HMMRegimeFeatureGenerator,
-    HMMRegimeLabelGenerator,
-    HMMRegimeProbabilityGenerator,
-    HMMRegimeTransitionGenerator,
-    HMMRegimeDurationGenerator,
-    HMMRegimeStabilityGenerator,
-    create_hmm_regime_generators,
-    create_default_hmm_regime_generators,
-    create_advanced_hmm_regime_generators,
-    create_minimal_hmm_regime_generators
-)
-from .hmm_performance_metrics import (
-    HMMPerformanceMetricsFeatureGenerator,
-    create_hmm_performance_features_from_result,
-    integrate_hmm_metrics_with_features
-)
+# from .hmm_regime import (  # DEPRECATED
+#     HMMRegimeFeatureGenerator,
+#     HMMRegimeLabelGenerator,
+#     HMMRegimeProbabilityGenerator,
+#     HMMRegimeTransitionGenerator,
+#     HMMRegimeDurationGenerator,
+#     HMMRegimeStabilityGenerator,
+#     create_hmm_regime_generators,
+#     create_default_hmm_regime_generators,
+#     create_advanced_hmm_regime_generators,
+#     create_minimal_hmm_regime_generators
+# )
+# from .hmm_performance_metrics import (  # DEPRECATED
+#     HMMPerformanceMetricsFeatureGenerator,
+#     create_hmm_performance_features_from_result,
+#     integrate_hmm_metrics_with_features
+# )
 
 # New consolidated categories
 from .acceleration import (
@@ -126,7 +126,7 @@ __all__ = [
     "CandlestickPatternFeatureGenerator",
     
     # HMM Regime
-    "HMMRegimeFeatureGenerator",
+    # "HMMRegimeFeatureGenerator",  # Deprecated
     "HMMRegimeLabelGenerator",
     "HMMRegimeProbabilityGenerator",
     "HMMRegimeTransitionGenerator",

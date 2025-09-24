@@ -314,7 +314,6 @@ class UnifiedVectorizationManager:
 
         elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
             # Use GPU-accelerated backtesting
-            from .vectorized_backtesting import BacktestMode
             result = self.backtesting_engine.run_vectorized_backtest(
                 data['signals'], data['prices'], mode=BacktestMode.GPU_ACCELERATED, **kwargs
             )
@@ -362,7 +361,6 @@ class UnifiedVectorizationManager:
 
         if operation_type == OperationType.BACKTESTING and self.backtesting_available:
             # Use hybrid backtesting (GPU + parallel chunks)
-            from .vectorized_backtesting import BacktestMode
             result = self.backtesting_engine.run_vectorized_backtest(
                 data['signals'], data['prices'], mode=BacktestMode.HYBRID, **kwargs
             )
@@ -430,7 +428,6 @@ class UnifiedVectorizationManager:
 
         elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
             # Use vectorized backtesting
-            from .vectorized_backtesting import BacktestMode
             result = self.backtesting_engine.run_vectorized_backtest(
                 data['signals'], data['prices'], mode=BacktestMode.VECTORIZED, **kwargs
             )

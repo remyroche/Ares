@@ -548,7 +548,6 @@ class BacktestingDataManager:
             # Export regime data
             regime_file = filepath.replace('.csv', '_regime.json')
             if self.regime_data is not None:
-                import json
                 with open(regime_file, 'w') as f:
                     json.dump(self.regime_data, f, indent=2, default=str)
             

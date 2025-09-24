@@ -421,12 +421,10 @@ def with_memory_optimization(operation_name: str = None, max_retries: int = 3):
                 try:
                     # Memory cleanup before execution
                     if attempt > 0:
-                        import gc
                         gc.collect()
 
                         # Clear caches if available
                         try:
-                            import torch
                             if torch.cuda.is_available():
                                 torch.cuda.empty_cache()
                             elif torch.backends.mps.is_available():

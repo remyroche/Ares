@@ -204,7 +204,6 @@ class ComputationToolbox:
         try:
             if self.hardware_optimization_enabled:
                 # Use hardware-optimized correlation analysis
-                from .vectorized_core import get_vectorized_processing_core
                 
                 core = get_vectorized_processing_core()
                 if isinstance(data, pd.DataFrame):

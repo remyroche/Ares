@@ -5,11 +5,11 @@
 # Basic configuration
 tactician_config:
   model_name: "tactician_multi_output"
-  timeframe: "1m"
+  timeframe: "5m"
   n_outputs: 4
   output_names: ["entry_timing", "position_size", "stop_loss", "take_profit"]
 
-  # Model configuration - Updated for 1m precision entry timing
+  # Model configuration - Updated for 5m precision entry timing
   base_models:
     xgboost:
       model_type: "XGBRegressor"
@@ -188,7 +188,7 @@ tactician_config:
 # Feature engineering configuration
 feature_engineering:
   enable_cross_timeframe_features: true
-  cross_timeframe_periods: [1, 5, 15, 30]  # minutes
+  cross_timeframe_periods: [5, 15, 30, 60]  # minutes
   enable_regime_features: true
   enable_technical_indicators: true
   enable_market_microstructure: true

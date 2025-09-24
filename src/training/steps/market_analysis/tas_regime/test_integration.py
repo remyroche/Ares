@@ -36,7 +36,6 @@ def test_tas_regime_imports():
 def test_tas_regime_configuration():
     """Test TAS regime configuration."""
     try:
-        from src.training.steps.market_analysis.tas_regime.core.tas_config import TASConfig, TASArchitectureType
         
         # Test configuration creation
         config = TASConfig.create_advanced_trading_config()
@@ -54,8 +53,6 @@ def test_tas_regime_configuration():
 def test_tas_regime_engine():
     """Test TAS regime engine initialization."""
     try:
-        from src.training.steps.market_analysis.tas_regime.core.tas_engine import TreeArchitectureSearchEngine
-        from src.training.steps.market_analysis.tas_regime.core.tas_config import TASConfig
         
         # Create configuration
         config = TASConfig.create_advanced_trading_config()
@@ -72,8 +69,6 @@ def test_tas_regime_engine():
 def test_cvlSA_architecture():
     """Test CVLSA architecture."""
     try:
-        from src.training.steps.market_analysis.tas_regime.core.tree_cvlSA_architecture import TreeCVLSASearch
-        from src.training.steps.market_analysis.tas_regime.core.tas_config import TASConfig
         
         # Create configuration
         config = TASConfig.create_cvlSA_tree_config()

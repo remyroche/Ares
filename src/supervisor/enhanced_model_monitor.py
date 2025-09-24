@@ -6,7 +6,6 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 from dataclasses_json import dataclass_json
-from ...utils.logger import system_logger
 if TYPE_CHECKING:
     import asyncio
 import logging

@@ -11,11 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from typing import Optional, List, Dict
 import numpy as np
 
-from ..logger import system_logger
 import pandas as pd
-import numpy as np
 
-import numpy as np
 import logging
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:

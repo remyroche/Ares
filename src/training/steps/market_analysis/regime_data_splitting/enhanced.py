@@ -22,7 +22,6 @@ import logging
 import pickle
 from datetime import datetime
 import warnings
-from datetime import datetime
 warnings.filterwarnings('ignore')
 
 # Import existing infrastructure
@@ -54,7 +53,6 @@ from src.core.errors import (
 
 from src.utils.logger import system_logger
 from src.utils.data.klines_parquet import get_klines_manager
-from src.utils.tprint import tprint
 
 # Import our standardized utilities
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state, create_standardized_error
@@ -208,28 +206,16 @@ class HMMRegimeTagger:
         """Tag regimes using trained HMM models."""
         # Input validation using standardized error messages
         if market_data is None:
-            raise ValueError(create_validation_error(
-                "market_data is None", 
-                "Provide valid market data DataFrame"
-            ))
+            raise ValueError("market_data is None - Provide valid market data DataFrame")
         
         if not isinstance(market_data, pd.DataFrame):
-            raise ValueError(create_validation_error(
-                f"market_data must be a DataFrame, got {type(market_data)}", 
-                "Convert data to pandas DataFrame"
-            ))
+            raise ValueError(f"market_data must be a DataFrame, got {type(market_data)} - Convert data to pandas DataFrame")
         
         if market_data.empty:
-            raise ValueError(create_validation_error(
-                "market_data is empty", 
-                "Provide non-empty market data"
-            ))
+            raise ValueError("market_data is empty - Provide non-empty market data")
         
         if not isinstance(use_ensemble, bool):
-            raise ValueError(create_validation_error(
-                f"use_ensemble must be a boolean, got {type(use_ensemble)}", 
-                "Set use_ensemble to True or False"
-            ))
+            raise ValueError(f"use_ensemble must be a boolean, got {type(use_ensemble)} - Set use_ensemble to True or False")
         
         try:
             # Create features with memory optimization
@@ -735,10 +721,8 @@ class RegimeDataSplittingEnhanced:
                     start_date = None
                     end_date = None
                     if hasattr(self.config, 'start_date') and self.config.start_date:
-                        from datetime import datetime
                         start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
                     if hasattr(self.config, 'end_date') and self.config.end_date:
-                        from datetime import datetime
                         end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
                     
                     market_data = klines_manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")

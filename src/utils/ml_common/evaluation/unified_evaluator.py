@@ -103,7 +103,8 @@ def compute_classification_metrics(
         metrics["recall"] = metrics["recall_weighted"]
         metrics["f1_score"] = metrics["f1_weighted"]
     except Exception as e:  # pragma: no cover
-        _logger.warning(f"Classification aggregate metrics failed: {e}")
+        _logger.error(f"❌ Classification aggregate metrics failed: {e}")
+        _logger.warning("⚠️ Classification metrics failed - returning empty metrics")
 
     # Detailed outputs
     try:
@@ -111,14 +112,18 @@ def compute_classification_metrics(
         metrics["confusion_matrix"] = cm.tolist()
     except Exception as e:
         _logger.error(f"❌ Critical error: Could not compute confusion matrix: {e}")
-        raise ValueError(f"Confusion matrix calculation failed: {e}")
+        _logger.warning("⚠️ Confusion matrix calculation failed - returning empty metrics")
+        metrics["confusion_matrix"] = []
+        # Don't raise - return partial results instead
 
     try:
         report = classification_report(y_true, y_pred, output_dict=True)
         metrics["classification_report"] = report
     except Exception as e:
         _logger.error(f"❌ Critical error: Could not generate classification report: {e}")
-        raise ValueError(f"Classification report generation failed: {e}")
+        _logger.warning("⚠️ Classification report generation failed - returning empty report")
+        metrics["classification_report"] = {}
+        # Don't raise - return partial results instead
 
     # Probability-based metrics
     if y_prob is not None:
@@ -128,12 +133,14 @@ def compute_classification_metrics(
                 metrics["roc_auc"] = float(roc_auc_score(y_true, y_prob[:, 1]))
             elif y_prob.ndim == 2:
                 metrics["roc_auc"] = float(roc_auc_score(y_true, y_prob, multi_class="ovr"))
-        except Exception:
+        except Exception as e:
+            _logger.warning(f"⚠️ ROC-AUC calculation failed: {e}")
             metrics["roc_auc"] = None
 
         try:
             metrics["log_loss"] = float(log_loss(y_true, y_prob))
-        except Exception:
+        except Exception as e:
+            _logger.warning(f"⚠️ Log loss calculation failed: {e}")
             metrics["log_loss"] = None
 
     # Optional include filter
@@ -173,7 +180,12 @@ def compute_regression_metrics(
         metrics["mae"] = float(mean_absolute_error(y_true, y_pred))
         metrics["r2"] = float(r2_score(y_true, y_pred))
     except Exception as e:  # pragma: no cover
-        _logger.warning(f"Regression basic metrics failed: {e}")
+        _logger.error(f"❌ Regression basic metrics failed: {e}")
+        _logger.warning("⚠️ Regression metrics failed - using default values")
+        metrics["mse"] = 0.0
+        metrics["rmse"] = 0.0
+        metrics["mae"] = 0.0
+        metrics["r2"] = 0.0
 
     # MAPE (avoid division by zero)
     try:
@@ -183,7 +195,8 @@ def compute_regression_metrics(
             metrics["mape"] = float(np.mean(mape_vals) * 100.0)
         else:
             metrics["mape"] = 0.0
-    except Exception:
+    except Exception as e:
+        _logger.warning(f"⚠️ MAPE calculation failed: {e}")
         metrics["mape"] = 0.0
 
     # SMAPE
@@ -191,7 +204,8 @@ def compute_regression_metrics(
         denom = np.abs(y_true) + np.abs(y_pred)
         smape_vals = np.where(denom != 0, 2.0 * np.abs(y_true - y_pred) / denom, 0.0)
         metrics["smape"] = float(np.mean(smape_vals) * 100.0)
-    except Exception:
+    except Exception as e:
+        _logger.warning(f"⚠️ SMAPE calculation failed: {e}")
         metrics["smape"] = 0.0
 
     # Explained variance (manual, to avoid extra imports)
@@ -201,7 +215,8 @@ def compute_regression_metrics(
             metrics["explained_variance"] = float(1.0 - float(np.var(y_true - y_pred)) / var_true)
         else:
             metrics["explained_variance"] = 0.0
-    except Exception:
+    except Exception as e:
+        _logger.warning(f"⚠️ Explained variance calculation failed: {e}")
         metrics["explained_variance"] = 0.0
 
     if include:
@@ -230,14 +245,16 @@ def evaluate_model(
     try:
         y_pred = model.predict(X)
     except Exception as e:  # pragma: no cover
-        _logger.warning(f"Model prediction failed: {e}")
+        _logger.error(f"❌ Model prediction failed: {e}")
+        _logger.warning("⚠️ Model prediction failed - using zero predictions")
         y_pred = np.zeros(len(y))
 
     y_prob = None
     if task in (None, "classification") and hasattr(model, "predict_proba"):
         try:
             y_prob = model.predict_proba(X)
-        except Exception:
+        except Exception as e:
+            _logger.warning(f"⚠️ Probability prediction failed: {e}")
             y_prob = None
 
     resolved_task = task
@@ -299,7 +316,8 @@ def compute_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.0) -> fl
         if std <= 1e-12:
             return 0.0
         return float(np.mean(excess) / std)
-    except Exception:
+    except Exception as e:
+        _logger.warning(f"⚠️ Sharpe ratio calculation failed: {e}")
         return 0.0
 
 

@@ -18,9 +18,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
+from contextlib import contextmanager
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from src.utils.tprint import tprint
+import pickle
 
 # Import enhanced utility tools
 from src.utils.common_operations import (
@@ -103,7 +106,6 @@ except ImportError as e:
     HARDWARE_AVAILABLE = False
 
 try:
-    from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
     MATRIX_OPS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Matrix operations not available: {e}")
@@ -120,12 +122,12 @@ except ImportError as e:
 
 # Import NAS clustering components
 try:
-    from ..nas_clustering.core.essential_nas_clusterer import EssentialNASClusterer
-    from ..nas_clustering.core.nas_regime_optimizer import NASRegimeOptimizer
-    from ..nas_clustering.core.nas_feature_extractor import NASFeatureExtractor
-    from ..nas_clustering.core.nas_regime_analyzer import NASRegimeAnalyzer
-    from ..nas_clustering.core.micro_regime_detector import MicroRegimeDetector
-    from ..nas_clustering.core.evaluation.multi_objective import NSGAIIOptimizer, create_nas_objectives
+    from ...nas_clustering.core.essential_nas_clusterer import EssentialNASClusterer
+    from ...nas_clustering.core.nas_regime_optimizer import NASRegimeOptimizer
+    from ...nas_clustering.core.nas_feature_extractor import NASFeatureExtractor
+    from ...nas_clustering.core.nas_regime_analyzer import NASRegimeAnalyzer
+    from ...nas_clustering.core.micro_regime_detector import MicroRegimeDetector
+    from ...nas_clustering.core.evaluation.multi_objective import NSGAIIOptimizer, create_nas_objectives
     NAS_CLUSTERING_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"NAS clustering components not available: {e}")
@@ -133,11 +135,11 @@ except ImportError as e:
 
 # Import NAS modeling components
 try:
-    from ..nas_modeling.core.nas_evaluator import NASEvaluator
-    from ..nas_modeling.core.nas_trainer import NASTrainer
-    from ..nas_modeling.core.hardware_acceleration import OptimizedTrainer
-    from ..nas_modeling.core.advanced_preprocessing import AdvancedPreprocessor
-    from ..nas_modeling.core.meta_learning import MetaNAS_Optimizer
+    from ...nas_modeling.core.nas_evaluator import NASEvaluator
+    from ...nas_modeling.core.nas_trainer import NASTrainer
+    from ...nas_modeling.core.hardware_acceleration import OptimizedTrainer
+    from ...nas_modeling.core.advanced_preprocessing import AdvancedPreprocessor
+    from ...nas_modeling.core.meta_learning import MetaNAS_Optimizer
     NAS_MODELING_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"NAS modeling components not available: {e}")
@@ -156,9 +158,9 @@ from .nas_search import (
     create_nas_objectives as create_perfect_nas_objectives, NASClusteringResult
 )
 
-# Import evaluation components
-from ..evaluation.economic_evaluator import EconomicSignificanceEvaluator
-from ..evaluation.trading_viability_evaluator import TradingViabilityEvaluator
+# Import evaluation components from hybrid_nas_tas_regime shared_utils
+from ...hybrid_nas_tas_regime.shared_utils.unified_economic_evaluator import UnifiedEconomicSignificanceEvaluator as EconomicSignificanceEvaluator
+from ...hybrid_nas_tas_regime.shared_utils.unified_trading_viability_evaluator import UnifiedTradingViabilityEvaluator as TradingViabilityEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +217,7 @@ class EnhancedPerfectNASRegimeDetector:
         self.matrix_ops = UnifiedMatrixOperations(
             enable_gpu=True,
             enable_memory_optimization=True,
-            enable_parallel_processing=True,
+            enable_parallel=True,
             optimization_level='aggressive'
         )
 
@@ -337,7 +339,7 @@ class EnhancedPerfectNASRegimeDetector:
             self.matrix_ops = UnifiedMatrixOperations(
                 enable_gpu=True,
                 enable_memory_optimization=True,
-                enable_parallel_processing=True,
+                enable_parallel=True,
                 optimization_level='aggressive'
             )
             self.logger.info("✅ Matrix operations initialized")
@@ -674,7 +676,7 @@ class EnhancedPerfectNASRegimeDetector:
             if isinstance(market_data, pd.DataFrame):
                 # Validate DataFrame quality
                 data_quality = calculate_data_quality_metrics(market_data)
-                self.logger.info(f"📊 Input Data Quality - Missing: {data_quality['missing_percentage']".2f"}%, Duplicates: {data_quality['duplicate_percentage']".2f"}%")
+                self.logger.info(f"📊 Input Data Quality - Missing: {data_quality['missing_percentage']:.2f}%, Duplicates: {data_quality['duplicate_percentage']:.2f}%")
 
                 # Guard against excessive nulls
                 market_data = guard_dataframe_nulls(market_data, threshold=0.3)
@@ -1000,7 +1002,6 @@ class EnhancedPerfectNASRegimeDetector:
     def load_results(self, filepath: str) -> EnhancedPerfectNASResult:
         """Load enhanced results from file."""
         try:
-            import pickle
             
             with open(filepath, 'rb') as f:
                 result = pickle.load(f)

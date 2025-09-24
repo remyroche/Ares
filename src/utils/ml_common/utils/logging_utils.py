@@ -178,7 +178,6 @@ def summarize_trials(trials: List[TrialLog], key_metrics: Optional[List[str]] = 
         try:
             durations = [trial.duration_s for trial in valid_trials if hasattr(trial, 'duration_s')]
             if durations:
-                import numpy as np
                 arr = np.array(durations, dtype=float)
                 summary['duration_stats'] = {
                     'mean': float(np.nanmean(arr)),

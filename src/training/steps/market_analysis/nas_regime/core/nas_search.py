@@ -12,6 +12,7 @@ import logging
 import random
 from dataclasses import dataclass
 from collections import defaultdict
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +44,16 @@ class EssentialNASClusterer:
     
     def __init__(self, population_size: int = 50, generations: int = 100, 
                  enable_multi_objective: bool = True):
+        tprint("🚀 [NAS_SEARCH] Initializing Essential NAS Clusterer", color="cyan", bold=True)
+        tprint(f"📊 [NAS_SEARCH] Population size: {population_size}", color="blue")
+        tprint(f"📊 [NAS_SEARCH] Generations: {generations}", color="blue")
+        tprint(f"📊 [NAS_SEARCH] Multi-objective: {enable_multi_objective}", color="blue")
         self.population_size = population_size
         self.generations = generations
         self.enable_multi_objective = enable_multi_objective
         
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint("✅ [NAS_SEARCH] Essential NAS Clusterer initialized", color="green")
         self.population = []
         self.pareto_frontier = []
         self.search_history = []

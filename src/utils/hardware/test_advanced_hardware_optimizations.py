@@ -502,10 +502,10 @@ class TestIntegration(unittest.TestCase):
     def test_full_workflow(self):
         """Test complete optimization workflow."""
         try:
-            from utils.hardware.unified_hardware_manager import (
+            from src.utils.hardware.unified_hardware_manager import (
                 get_unified_hardware_manager, WorkloadType, OptimizationLevel
             )
-            from utils.hardware.adaptive_optimization_engine import (
+            from src.utils.hardware.adaptive_optimization_engine import (
                 get_adaptive_optimization_engine, OptimizationTarget
             )
             
@@ -558,7 +558,6 @@ def run_performance_benchmark():
     logger.info("🚀 Running Performance Benchmarks")
     
     try:
-        from utils.hardware.unified_hardware_manager import get_unified_hardware_manager, WorkloadType
         from utils.hardware.adaptive_optimization_engine import get_adaptive_optimization_engine, OptimizationTarget
         
         # Initialize systems

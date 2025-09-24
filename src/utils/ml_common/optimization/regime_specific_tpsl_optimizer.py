@@ -33,7 +33,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 from .config import CONFIG
-from src.utils.logger import system_logger
 from .utils.warning_symbols import error, failed, initialization_error, warning
 import logging
 import time
@@ -126,7 +125,6 @@ class RegimeSpecificTPSLOptimizer:
         try:
             results_file = os.path.join(self.model_dir, 'optimization_results.json')
             if os.path.exists(results_file):
-                import json
 
                 with open(results_file) as f:
                     self.optimization_results = json.load(f)

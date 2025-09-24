@@ -21,9 +21,9 @@ from enum import Enum
 import psutil
 import os
 
-from src.utils.common_operations import (
 import typing
 
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )

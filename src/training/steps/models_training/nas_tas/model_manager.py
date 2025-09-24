@@ -674,10 +674,14 @@ class ModelManager:
     def _calculate_model_size(self, model: Any) -> int:
         """Calculate model size in bytes."""
         try:
-            # Simple size estimation
+            # Calculate actual model size
+            return len(pickle.dumps(model))
+        except (pickle.PicklingError, TypeError, AttributeError) as e:
+            self.logger.warning(f"Could not calculate model size: {e}")
             return 1024 * 1024  # 1MB default
-        except:
-            return 0
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating model size: {e}")
+            raise
     
     def _save_model(self, model_id: str, version: str, model: Any, metadata: ModelMetadata):
         """Save model and metadata to storage."""
@@ -714,20 +718,31 @@ class ModelManager:
             with open(metadata_path, 'w') as f:
                 json.dump(metadata_dict, f, indent=2)
             
+        except (IOError, OSError, pickle.PicklingError) as e:
+            self.logger.error(f"❌ Could not save model {model_id}: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"❌ Failed to save model {model_id}: {e}")
+            self.logger.error(f"❌ Unexpected error saving model {model_id}: {e}")
             raise
     
     def _load_model(self, model_id: str, version: str) -> Any:
         """Load model from storage."""
         try:
             model_path = Path(self.config.model_storage_path) / model_id / f"{version}.pkl"
-            
+
+            if not model_path.exists():
+                self.logger.error(f"❌ Model file not found: {model_path}")
+                raise FileNotFoundError(f"Model {model_id} v{version} not found at {model_path}")
+
             with open(model_path, 'rb') as f:
                 model = pickle.load(f)
-            
+
+            self.logger.debug(f"✅ Successfully loaded model {model_id} v{version}")
             return model
-            
+
+        except (FileNotFoundError, IOError, OSError, pickle.UnpicklingError) as e:
+            self.logger.error(f"❌ Could not load model {model_id} v{version}: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"❌ Failed to load model {model_id} v{version}: {e}")
+            self.logger.error(f"❌ Unexpected error loading model {model_id} v{version}: {e}")
             raise

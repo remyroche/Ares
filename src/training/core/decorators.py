@@ -49,7 +49,6 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
                 except exceptions as e:
                     # Try to import error classes for better handling
                     try:
-                        from src.utils.logger import system_logger
                         import logging
 
                         error_msg = f"Error in {func.__name__}"
@@ -82,7 +81,6 @@ def traced(span_name: str = None) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             try:
-                from src.utils.logger import system_logger
                 name = span_name or func.__name__
                 system_logger.debug(f"Starting {name}")
                 start_time = time.time()
@@ -116,7 +114,6 @@ def validates(validation_func: Callable = None) -> Callable:
             except Exception as e:
                 # Try to import validation error for better handling
                 try:
-                    from src.utils.logger import system_logger
 
                     error_msg = f"Validation failed in {func.__name__}: {str(e)}"
                     system_logger.error(error_msg)
@@ -149,7 +146,6 @@ def log_execution_time(log_level: str = "info") -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             try:
-                from src.utils.logger import system_logger
                 start_time = time.time()
 
                 result = func(*args, **kwargs)
@@ -178,7 +174,6 @@ def log_call(log_level: str = "debug") -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             try:
-                from src.utils.logger import system_logger
                 log_method = getattr(system_logger, log_level, system_logger.debug)
                 log_method(f"Calling {func.__name__}")
                 return func(*args, **kwargs)
@@ -210,7 +205,6 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
 
             if circuit_open:
                 try:
-                    from src.utils.logger import system_logger
                     system_logger.warning(f"Circuit breaker open for {func.__name__}")
                 except ImportError:
                     tprint(f"Circuit breaker open for {func.__name__}")
@@ -227,7 +221,6 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
                 if failure_count >= failure_threshold:
                     circuit_open = True
                     try:
-                        from src.utils.logger import system_logger
                         system_logger.warning(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
                     except ImportError:
                         tprint(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
@@ -243,7 +236,6 @@ def span_event(event_name: str = None) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             try:
-                from src.utils.logger import system_logger
                 name = event_name or func.__name__
                 system_logger.debug(f"Span event: {name}")
                 return func(*args, **kwargs)

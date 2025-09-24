@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from ..utils.logger import system_logger
 from ..utils.warning_symbols import failed, initialization_error
 from .performance_monitor import PerformanceMonitor
 import numpy as np

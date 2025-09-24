@@ -12,7 +12,6 @@ from typing import Any
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .logger import system_logger
 from .warning_symbols import missing
 from .prometheus_metrics import PrometheusMetrics
 from .graceful_module_handler import graceful_handler

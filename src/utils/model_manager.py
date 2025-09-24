@@ -28,10 +28,8 @@ import numpy.random._pickle as np_random_pickle
 from .common_operations import ensure_directory, format_datetime, get_current_datetime
 
 # File operations functions - using built-in alternatives
-from datetime import datetime
 
-from .logger import system_logger
-from src.utils.warning_symbols import _warn_symbol as _warn_symbol
+from src.utils.warning_symbols import warning_symbol as _warn_symbol
 from src.utils.warning_symbols import warning as warn_symbol
 
 import numpy as np

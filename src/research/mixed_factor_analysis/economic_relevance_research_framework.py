@@ -352,7 +352,6 @@ class CausalImpactResearchMethodology(BaseResearchMethodology):
             treatment = aligned_data['treatment'].values
             target = aligned_data['target'].values
             
-            from sklearn.linear_model import LinearRegression
             
             # First stage regression
             first_stage = LinearRegression()
@@ -425,7 +424,6 @@ class CausalImpactResearchMethodology(BaseResearchMethodology):
         # Use PCA to create composite signal
         try:
             from sklearn.decomposition import PCA
-            from sklearn.preprocessing import StandardScaler
             
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(dimension_features.fillna(0))

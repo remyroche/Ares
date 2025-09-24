@@ -19,9 +19,66 @@ including:
 - Metrics reporting and analysis
 """
 
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
+
+# Missing config classes as placeholders
+@dataclass
+class EconomicSignificanceConfig:
+    """Configuration for economic significance evaluation."""
+    significance_threshold: float = 0.5
+    min_regime_duration: int = 10
+
+# TradingViabilityConfig is now imported from unified_trading_viability_evaluator
+
+@dataclass
+class SearchStrategyConfig:
+    """Configuration for search strategies."""
+    max_iterations: int = 100
+    use_bayesian_optimization: bool = True
+
+@dataclass
+class EvolutionaryAlgorithmConfig:
+    """Configuration for evolutionary algorithms."""
+    population_size: int = 50
+    max_generations: int = 100
+    use_nsga2: bool = True
+    use_spea2: bool = True
+
+@dataclass
+class HardwareOptimizationConfig:
+    """Configuration for hardware optimization."""
+    use_gpu_acceleration: bool = True
+    memory_limit_gb: float = 8.0
+
+@dataclass
+class MetricsReportingConfig:
+    """Configuration for metrics reporting."""
+    include_detailed_metrics: bool = True
+    save_to_file: bool = False
+
+# Placeholder managers
+class EconomicSignificanceEvaluator:
+    def __init__(self, config: EconomicSignificanceConfig):
+        self.config = config
+
+# TradingViabilityEvaluator is now imported from unified_trading_viability_evaluator
+
+class SearchStrategyManager:
+    def __init__(self, config: SearchStrategyConfig):
+        self.config = config
+
+class EvolutionaryAlgorithmManager:
+    def __init__(self, config: EvolutionaryAlgorithmConfig):
+        self.config = config
+
+class HardwareOptimizer:
+    def __init__(self, config: HardwareOptimizationConfig):
+        self.config = config
+
 # Original utilities
-from .data_pipeline import DataPipelineManager, MarketDataProcessor
-from .feature_collection import FeatureCollectionManager, StandardizedFeatureCalculator
+from .data_pipeline import DataPipelineManager, DataPipelineConfig, MarketDataProcessor
+from .feature_collection import FeatureCollectionManager, FeatureCollectionConfig, StandardizedFeatureCalculator
 # Removed redundant imports - now using unified versions
 from .position_aware_trading import (
     PositionAwareTradingAnalyzer, PositionAwareConfig, PositionAwareResult,
@@ -29,7 +86,7 @@ from .position_aware_trading import (
 )
 from .search_strategies import AdvancedSearchStrategy, BayesianOptimizer, GridOptimizer
 from .evolutionary_algorithms import NSGA2Optimizer, SPEA2Optimizer, EvolutionaryAlgorithm
-from .hardware_optimization import HardwareOptimizer, PerformanceMonitor
+# from .hardware_optimization import HardwareOptimizer, PerformanceMonitor  # DEPRECATED
 from .analysis_components import AdvancedAnalysisComponent, RegimeAnalyzer, ClusterAnalyzer
 from .metrics_reporting import MetricsReporter, ConsolidatedMetricsReport
 
@@ -76,6 +133,9 @@ from .unified_trading_viability_evaluator import (
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig, TradingViabilityResult,
     create_unified_trading_viability_evaluator, quick_trading_viability_evaluation
 )
+
+# Alias for compatibility
+TradingViabilityEvaluator = UnifiedTradingViabilityEvaluator
 from .unified_multi_objective_optimizer import (
     UnifiedMultiObjectiveOptimizer, OptimizationConfig, OptimizationResult,
     create_unified_multi_objective_optimizer, quick_multi_objective_optimization
@@ -84,6 +144,7 @@ from .unified_hardware_optimizer import (
     UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics,
     create_unified_hardware_optimizer, quick_hardware_optimization
 )
+# Evaluation utilities are available in unified_evaluation_framework.py
 from .unified_regime_analyzer import (
     UnifiedRegimeAnalyzer, RegimeAnalysisConfig, RegimeAnalysisResult,
     create_unified_regime_analyzer, quick_regime_analysis
@@ -142,7 +203,7 @@ from .unified_search_space_evolution import (
 )
 
 from .unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareType, OptimizationLevel, WorkloadType,
+    UnifiedHardwareManager, HardwareType, CanonicalOptimizationLevel as OptimizationLevel, WorkloadType,
     HardwareMetrics, OptimizationResult, HardwareConfig,
     create_hardware_manager, create_basic_hardware_manager, create_aggressive_hardware_manager
 )
@@ -166,7 +227,7 @@ __all__ = [
     # Search Strategies
     'AdvancedSearchStrategy', 'BayesianOptimizer', 'GridOptimizer',
     'NSGA2Optimizer', 'SPEA2Optimizer', 'EvolutionaryAlgorithm',
-    'HardwareOptimizer', 'PerformanceMonitor',
+    # 'HardwareOptimizer', 'PerformanceMonitor',  # DEPRECATED
     'AdvancedAnalysisComponent', 'RegimeAnalyzer', 'ClusterAnalyzer',
     'MetricsReporter', 'ConsolidatedMetricsReport',
 

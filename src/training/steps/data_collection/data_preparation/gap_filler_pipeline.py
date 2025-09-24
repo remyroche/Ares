@@ -15,7 +15,6 @@ from datetime import datetime
 from pathlib import Path
 import aiohttp
 import certifi
-from src.utils.logger import system_logger
 import logging
 import numpy as np
 import time
@@ -39,7 +38,6 @@ class GapFillerPipeline:
         """Ensure aiohttp session is available."""
         if self.session is None:
             # Create connector with SSL configuration to handle certificate issues
-            import ssl
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE

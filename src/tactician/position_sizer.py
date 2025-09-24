@@ -1,26 +1,45 @@
-from src.utils.tprint import tprint
-
 """
+Simplified Position Sizer for high leverage trading.
+Uses ML confidence scores and Kelly criterion for position sizing.
+"""
+
 import contextlib
 from datetime import datetime
 import math
-from typing import Any
+from typing import Any, Dict
 
-from core.decorators import handles_errors
-from core.domain.decorators import validate_data_quality
-from kelly_criterion_fix import calculate_correct_kelly_position_size
-from utils.confidence import normalize_dual_confidence
-from utils.linear_confidence_scaling import LinearConfidenceScaler
-from utils.logger import system_logger
-from utils.math_validation import MathValidationError
-from utils.math_validation import safe_divide
-from utils.math_validation import safe_kelly_calculation
-from utils.math_validation import safe_log
-from utils.math_validation import validate_positive
-from utils.math_validation import validate_range
-from utils.warning_symbols import error
-from utils.warning_symbols import initialization_error
-from utils.warning_symbols import missing
+from src.core.decorators import handles_errors
+from src.core.domain.decorators import validate_data_quality
+# Kelly criterion calculation function
+def calculate_correct_kelly_position_size(price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float], kelly_multiplier: float, min_position_size: float, max_position_size: float) -> float:
+    """Calculate Kelly criterion position size."""
+    try:
+        # Simple Kelly calculation based on confidence scores
+        avg_confidence = sum(price_target_confidences.values()) / len(price_target_confidences) if price_target_confidences else 0.5
+        avg_risk = sum(adversarial_confidences.values()) / len(adversarial_confidences) if adversarial_confidences else 0.3
+        
+        # Kelly formula: f = (bp - q) / b where b = odds, p = win probability, q = loss probability
+        win_prob = avg_confidence
+        loss_prob = 1 - win_prob
+        odds = 1.0 / max(avg_risk, 0.1)  # Avoid division by zero
+        
+        kelly_fraction = (odds * win_prob - loss_prob) / odds
+        kelly_fraction = max(0, min(1, kelly_fraction))  # Clamp between 0 and 1
+        
+        position_size = kelly_fraction * kelly_multiplier
+        return max(min_position_size, min(max_position_size, position_size))
+    except Exception:
+        return min_position_size
+from src.utils.confidence import normalize_dual_confidence
+from src.utils.linear_confidence_scaling import LinearConfidenceScaler
+from src.utils.logger import system_logger
+from src.utils.math_validation import MathValidationError
+from src.utils.math_validation import safe_divide
+from src.utils.math_validation import safe_kelly_calculation
+from src.utils.math_validation import safe_log
+from src.utils.math_validation import validate_positive
+from src.utils.math_validation import validate_range
+from src.utils.tprint import tprint
 # Enhanced error handling and performance monitoring
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
@@ -30,17 +49,14 @@ from src.utils.model_manager import ModelManager
 # Live trading validation
 from src.utils.trading_decorators import validate_trading_inputs
 from src.utils.error_handler import handle_trading_errors
-
-Simplified Position Sizer for high leverage trading.
-Uses ML confidence scores and Kelly criterion for position sizing.
-"""
-    safe_divide, safe_log, safe_kelly_calculation, 
-    validate_positive, validate_range, MathValidationError
+from src.utils.validation.unified_framework import (
+    safe_divide as unified_safe_divide, safe_log as unified_safe_log, safe_kelly_calculation as unified_safe_kelly_calculation, 
+    validate_positive as unified_validate_positive, validate_range as unified_validate_range, MathValidationError as unified_MathValidationError
 )
 
-def core_handles_errors(*_args, **kwargs) -> None:
+def core_handles_errors(*_args, **kwargs):
     fallback = kwargs.get('default_return', kwargs.get('fallback', None))
-    return _handles_errors(fallback = fallback)
+    return handles_errors(fallback=fallback)
 
 class PositionSizer:
     """
@@ -118,7 +134,7 @@ class PositionSizer:
                     error_msg = f'Missing required configuration key: {key}'
                     self.logger.error(error_msg)
                     tprint(f"❌ {error_msg}")
-                    self.tprint(missing(error_msg))
+                    tprint(f"❌ {error_msg}")
                     return False
             
             if self.max_position_size <= self.min_position_size:
@@ -130,7 +146,7 @@ class PositionSizer:
                 error_msg = 'kelly_multiplier must be between 0 and 1'
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
-                self.tprint(error(error_msg))
+                tprint(f"❌ {error_msg}")
                 return False
             
             self.logger.info("✅ Position sizer configuration validated successfully")
@@ -140,7 +156,7 @@ class PositionSizer:
             error_msg = f'Error validating configuration: {e}'
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            self.tprint(error(error_msg))
+            tprint(f"❌ {error_msg}")
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
@@ -164,7 +180,7 @@ class PositionSizer:
             raise
 
     @validate_data_quality(required_columns = None, min_rows = 1, max_null_ratio = 0.0, check_duplicates = False, check_timestamps = False, context='position sizing calculation input validation')
-    @core_handles_errors(fallback = None)
+    @core_handles_errors(fallback=None)
     @cached(ttl=300, key_func=lambda self, ml_predictions, current_price, account_balance, analyst_confidence, tactician_confidence, market_health_analysis, strategist_risk_parameters: f"position_size_{ml_predictions.get('combined_confidence', 0.5)}_{current_price}_{account_balance}")
     @global_monitor.track_function
     async def calculate_position_size(self, ml_predictions: dict[str, Any], current_price: float = 0.0, account_balance: float = 1000.0, analyst_confidence: float = 0.5, tactician_confidence: float = 0.5, market_health_analysis: dict[str, Any] | None = None, strategist_risk_parameters: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -185,7 +201,7 @@ class PositionSizer:
             error_msg = 'Position sizer not initialized'
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            self.tprint(initialization_error(error_msg))
+            tprint(f"❌ {error_msg}")
             return None
         
         # Start performance monitoring
@@ -208,7 +224,31 @@ class PositionSizer:
             confidence_multiplier = self.linear_scaler.calculate_position_size_multiplier(confidence = combined_confidence, intensity = intensity, reliability = reliability, risk_score = risk_score)
             confidence_adjusted_size = base_position_size * confidence_multiplier
             final_position_size = self._apply_position_size_modifiers(confidence_adjusted_size, market_health_analysis = market_health_analysis, strategist_risk_parameters = strategist_risk_parameters, analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
-            sizing_analysis = {'timestamp': datetime.now(), 'current_price': current_price, 'account_balance': account_balance, 'kelly_position_size': kelly_position_size, 'ml_position_size': ml_position_size, 'base_position_size': base_position_size, 'confidence_adjusted_size': confidence_adjusted_size, 'final_position_size': final_position_size, 'combined_confidence': combined_confidence, 'intensity': intensity, 'reliability': reliability, 'risk_score': risk_score, 'confidence_multiplier': confidence_multiplier, 'linear_scaling_enabled': True, 'price_target_confidences': price_target_confidences, 'adversarial_confidences': adversarial_confidences, 'directional_confidence': directional_confidence, 'market_health_modifiers': market_health_analysis or {}, 'strategist_risk_parameters': strategist_risk_parameters or {}, 'sizing_reason': self._generate_sizing_reason(final_position_size, kelly_position_size, ml_position_size, price_target_confidences, adversarial_confidences, combined_confidence)}
+            sizing_analysis = {
+                'timestamp': datetime.now(),
+                'current_price': current_price,
+                'account_balance': account_balance,
+                'kelly_position_size': kelly_position_size,
+                'ml_position_size': ml_position_size,
+                'base_position_size': base_position_size,
+                'confidence_adjusted_size': confidence_adjusted_size,
+                'final_position_size': final_position_size,
+                'combined_confidence': combined_confidence,
+                'intensity': intensity,
+                'reliability': reliability,
+                'risk_score': risk_score,
+                'confidence_multiplier': confidence_multiplier,
+                'linear_scaling_enabled': True,
+                'price_target_confidences': price_target_confidences,
+                'adversarial_confidences': adversarial_confidences,
+                'directional_confidence': directional_confidence,
+                'market_health_modifiers': market_health_analysis or {},
+                'strategist_risk_parameters': strategist_risk_parameters or {},
+                'sizing_reason': self._generate_sizing_reason(
+                    final_position_size, kelly_position_size, ml_position_size,
+                    price_target_confidences, adversarial_confidences, combined_confidence
+                )
+            }
             self.position_sizing_history.append(sizing_analysis)
             if len(self.position_sizing_history) > 100:
                 self.position_sizing_history = self.position_sizing_history[-100:]
@@ -226,7 +266,7 @@ class PositionSizer:
             error_msg = f'Error calculating position size: {e}'
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            self.tprint(error(error_msg))
+            tprint(f"❌ {error_msg}")
             
             # End performance monitoring even on error
             if self.performance_monitor:
@@ -302,7 +342,7 @@ class PositionSizer:
             self.logger.warning(f'Mathematical validation error in weighted position size: {e}')
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
         except Exception as e:
-            self.tprint(error(f'Error calculating weighted position size: {e}'))
+            tprint(f"❌ Error calculating weighted position size: {e}")
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
     def _apply_position_size_modifiers(self, base_size: float, *, market_health_analysis: dict[str, Any] | None, strategist_risk_parameters: dict[str, Any] | None, analyst_confidence: float, tactician_confidence: float) -> float:
@@ -343,7 +383,7 @@ class PositionSizer:
             adjusted = math.exp(log_adjusted)
             return max(self.min_position_size, min(self.max_position_size, adjusted))
         except Exception as e:
-            self.tprint(error(f'Error applying size modifiers: {e}'))
+            tprint(f"❌ Error applying size modifiers: {e}")
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
     def _generate_sizing_reason(self, final_position_size: float, kelly_position_size: float, ml_position_size: float, price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float], combined_confidence: float = 0.5) -> str:
@@ -369,7 +409,7 @@ class PositionSizer:
                 return f'Minimum position size due to low combined confidence ({combined_confidence:.2f}) below threshold ({self.positionsize_combined_threshold:.2f})'
             return f'Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})'
         except Exception as e:
-            self.tprint(error(f'Error generating sizing reason: {e}'))
+            tprint(f"❌ Error generating sizing reason: {e}")
             return 'Position size calculated using ML intelligence and Kelly criterion'
 
     def _generate_dual_confidence_sizing_reason(self, final_position_size: float, final_confidence: float, normalized_confidence: float, analyst_confidence: float, tactician_confidence: float, p_avg: float, b_avg: float, fractional_kelly_pct: float) -> str:
@@ -403,7 +443,7 @@ class PositionSizer:
             b_avg = max(0.8, min(2.5, b_avg))
             return (p_avg, b_avg)
         except Exception as e:
-            self.tprint(error(f'Error getting historical performance: {e}'))
+            tprint(f"❌ Error getting historical performance: {e}")
             return (0.5, 1.5)
 
     def get_position_sizing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -412,7 +452,7 @@ class PositionSizer:
             return self.position_sizing_history[-limit:]
         return self.position_sizing_history.copy()
 
-    @core_handles_errors(fallback = None)
+    @core_handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the position sizer."""
         try:
@@ -420,10 +460,10 @@ class PositionSizer:
             self.is_initialized = False
             self.logger.info('✅ Position sizer stopped successfully')
         except Exception as e:
-            self.tprint(error(f'Error stopping position sizer: {e}'))
+            tprint(f"❌ Error stopping position sizer: {e}")
             raise
 
-    @core_handles_errors(fallback = None)
+    @core_handles_errors(fallback=None)
     async def cleanup(self) -> None:
         """Cleanup position sizer resources."""
         try:
@@ -601,7 +641,7 @@ class PositionSizer:
             tprint(f"❌ {error_msg}")
             return False
 
-@core_handles_errors(fallback = None)
+@core_handles_errors(fallback=None)
 async def setup_position_sizer(config: dict[str, Any] | None = None) -> PositionSizer | None:
     """
     Setup position sizer.
@@ -620,5 +660,5 @@ async def setup_position_sizer(config: dict[str, Any] | None = None) -> Position
             return position_sizer
         return None
     except Exception as e:
-        system_logger.exception(error(f'Error setting up position sizer: {e}'))
+        system_logger.exception(f'Error setting up position sizer: {e}')
         return None

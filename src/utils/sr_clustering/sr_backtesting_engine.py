@@ -661,7 +661,6 @@ class SRBacktestingEngine:
                         
                 except Exception as e:
                     self.logger.error(f"❌ Weight optimization failed: {e}")
-                    import traceback
                     self.logger.error(f"Traceback: {traceback.format_exc()}")
             else:
                 self.logger.info("⏭️ Weight optimization skipped (insufficient data or disabled)")
@@ -722,7 +721,6 @@ class SRBacktestingEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to learn quality rules: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -838,7 +836,6 @@ class SRBacktestingEngine:
     def _detect_touches_numba(self, level: SRLevel, data: pd.DataFrame, tolerance: float) -> List[Dict[str, Any]]:
         """Numba-accelerated touch detection for large datasets."""
         try:
-            import numba
             
             # Extract numpy arrays for Numba processing
             highs = data['high'].values
@@ -2145,7 +2142,6 @@ class SRBacktestingEngine:
             params_dir.mkdir(exist_ok=True)
             
             # Save parameters with timestamp
-            from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             params_file = params_dir / f"sr_optimized_parameters_{timestamp}.json"
             
@@ -2186,8 +2182,6 @@ class SRBacktestingEngine:
     def load_optimized_parameters(self, params_file: str = None) -> Dict[str, Any]:
         """Load optimized parameters from file."""
         try:
-            import json
-            from pathlib import Path
             
             if params_file is None:
                 # Load latest parameters
@@ -2362,7 +2356,6 @@ class SRBacktestingEngine:
         optimized_weights = {}
         if optimize_weights and len(results) >= 20:
             try:
-                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                 
                 # Use conservative weight optimization
                 weight_config = WeightOptimizationConfig(
@@ -2443,7 +2436,6 @@ class SRBacktestingEngine:
         optimized_weights = {}
         if optimize_weights and market_data is not None:
             try:
-                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                 
                 weight_config = WeightOptimizationConfig(
                     min_samples_for_optimization=20,
@@ -2589,7 +2581,6 @@ class SRBacktestingEngine:
             
             # Use simple linear regression with high regularization
             from sklearn.linear_model import Ridge
-            from sklearn.preprocessing import StandardScaler
             from sklearn.metrics import r2_score
             
             scaler = StandardScaler()
@@ -2696,10 +2687,6 @@ class SRBacktestingEngine:
             self.logger.warning("⚠️ Consider reducing features or increasing samples")
         
         try:
-            from sklearn.linear_model import RidgeCV
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.model_selection import cross_val_score
-            from sklearn.metrics import mean_squared_error, mean_absolute_error
             
             # Standardize features
             scaler = StandardScaler()

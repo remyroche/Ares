@@ -211,7 +211,6 @@ def test_parameter_optimization_engine():
 
 def test_data_driven_thresholds():
     """Test data-driven threshold calculation."""
-    from src.utils.sr_clustering.sr_backtesting_engine import SRBacktestingEngine, BacktestConfig
     
     logger.info(f"\n{'='*60}")
     logger.info("Testing Data-Driven Threshold Calculation")

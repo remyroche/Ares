@@ -24,6 +24,10 @@ from datetime import datetime
 
 # Import position-aware trading analyzer
 from .position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +101,10 @@ class TradingViabilityConfig:
     # Hybrid analysis
     enable_hybrid_viability: bool = True
     hybrid_consensus_threshold: float = 0.7
+    
+    # Additional parameters for compatibility
+    viability_threshold: float = 0.5
+    minimum_regime_duration: int = 5
     hybrid_ensemble_weight: float = 0.5
 
 
@@ -152,16 +160,27 @@ class UnifiedTradingViabilityEvaluator:
         Args:
             config: Trading viability configuration
         """
+        tprint_info("🚀 Initializing Unified Trading Viability Evaluator")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize position-aware analyzer if enabled
+        tprint_debug("🔍 Initializing position-aware analyzer...")
         self.position_analyzer = None
         if config.enable_position_aware_analysis:
             if config.position_aware_config is None:
                 config.position_aware_config = PositionAwareConfig()
             self.position_analyzer = PositionAwareTradingAnalyzer(config.position_aware_config)
+            tprint_success("✅ Position-aware analyzer initialized")
+        else:
+            tprint_debug("🚫 Position-aware analysis disabled")
         
+        tprint_success("✅ Unified Trading Viability Evaluator initialized")
+        tprint_info(f"   Position-aware analysis: {config.enable_position_aware_analysis}")
+        tprint_info(f"   Liquidity analysis: {config.enable_liquidity_analysis}")
+        tprint_info(f"   Execution analysis: {config.enable_execution_analysis}")
         self.logger.info("✅ Unified Trading Viability Evaluator initialized")
         self.logger.info(f"   Position-aware analysis: {config.enable_position_aware_analysis}")
         self.logger.info(f"   Liquidity analysis: {config.enable_liquidity_analysis}")

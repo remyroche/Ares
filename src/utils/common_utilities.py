@@ -253,22 +253,18 @@ class CommonUtilities:
     
     def file_exists(self, path):
         """Check if file exists."""
-        import os
         return os.path.isfile(path)
     
     def directory_exists(self, path):
         """Check if directory exists."""
-        import os
         return os.path.isdir(path)
     
     def glob_files(self, pattern):
         """Glob files matching pattern."""
-        from pathlib import Path
         return list(Path().glob(pattern))
     
     def get_file_size(self, path):
         """Get file size in bytes."""
-        import os
         try:
             return os.path.getsize(path)
         except OSError:
@@ -276,5 +272,4 @@ class CommonUtilities:
     
     def get_file_extension(self, path):
         """Get file extension."""
-        from pathlib import Path
         return Path(path).suffix

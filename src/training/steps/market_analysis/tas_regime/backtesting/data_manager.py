@@ -12,8 +12,16 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 import warnings
+import json
 warnings.filterwarnings('ignore')
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +116,22 @@ class BacktestingDataManager:
         Args:
             config: Data configuration
         """
+        tprint_info("📊 Initializing Backtesting Data Manager")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Data state
+        tprint_debug("📊 Initializing data state...")
         self.raw_data = None
         self.processed_data = None
         self.feature_data = None
         self.regime_data = None
         
+        tprint_success("✅ Backtesting Data Manager initialized")
+        tprint_info(f"📊 Data source: {config.data_source.value}")
+        tprint_info(f"📊 Data frequency: {config.data_frequency}")
         self.logger.info("✅ Backtesting Data Manager initialized")
         self.logger.info(f"📊 Data source: {config.data_source.value}")
         self.logger.info(f"📊 Data frequency: {config.data_frequency}")
@@ -131,39 +146,59 @@ class BacktestingDataManager:
         Returns:
             Data management result
         """
+        tprint_info("🚀 Loading data for backtesting")
         self.logger.info("🚀 Loading data for backtesting")
         start_time = datetime.now()
         
         try:
             # Load data based on source
+            tprint_debug("📥 Loading data based on source...")
             if data is not None:
                 if isinstance(data, pd.DataFrame):
+                    tprint_debug("📊 Loading from DataFrame...")
                     raw_data = data.copy()
                 elif isinstance(data, str):
+                    tprint_debug(f"📁 Loading from file: {data}")
                     raw_data = self._load_from_file(data)
                 elif isinstance(data, dict):
+                    tprint_debug("📋 Loading from dictionary...")
                     raw_data = self._load_from_dict(data)
                 else:
+                    tprint_error(f"❌ Unsupported data type: {type(data)}")
                     raise ValueError(f"Unsupported data type: {type(data)}")
             else:
+                tprint_debug("⚙️ Loading from configuration...")
                 raw_data = self._load_from_config()
             
+            tprint_success(f"✅ Data loaded with shape: {raw_data.shape}")
+            
             # Validate data
+            tprint_debug("🔍 Validating data...")
             self._validate_data(raw_data)
+            tprint_success("✅ Data validation passed")
             
             # Preprocess data
+            tprint_debug("🔧 Preprocessing data...")
             processed_data = self._preprocess_data(raw_data)
+            tprint_success(f"✅ Data preprocessed with shape: {processed_data.shape}")
             
             # Generate features
+            tprint_debug("🎯 Generating features...")
             feature_data = self._generate_features(processed_data)
+            tprint_success(f"✅ Features generated with shape: {feature_data.shape}")
             
             # Generate regime data
+            tprint_debug("📊 Generating regime data...")
             regime_data = self._generate_regime_data(processed_data)
+            tprint_success("✅ Regime data generated")
             
             # Calculate data quality metrics
+            tprint_debug("📈 Calculating data quality metrics...")
             data_quality = self._calculate_data_quality(processed_data)
+            tprint_success(f"✅ Data quality score: {data_quality['data_quality_score']:.3f}")
             
             # Create comprehensive result
+            tprint_debug("📋 Creating comprehensive result...")
             result = DataResult(
                 # Data information
                 data_shape=processed_data.shape,
@@ -188,14 +223,22 @@ class BacktestingDataManager:
             
             # Save processed data if configured
             if self.config.save_processed_data:
+                tprint_debug("💾 Saving processed data...")
                 self._save_processed_data(result)
+                tprint_success("✅ Processed data saved")
             
             # Store data in manager
+            tprint_debug("📊 Storing data in manager...")
             self.raw_data = raw_data
             self.processed_data = processed_data
             self.feature_data = feature_data
             self.regime_data = regime_data
             
+            tprint_success(f"✅ Data loading completed in {result.processing_time:.2f}s")
+            tprint_info(f"📊 Data shape: {result.data_shape}")
+            tprint_info(f"📊 Data quality score: {result.data_quality_score:.3f}")
+            tprint_info(f"📊 Missing values: {sum(result.missing_values.values())}")
+            tprint_info(f"📊 Outliers: {result.outlier_count}")
             self.logger.info(f"✅ Data loading completed in {result.processing_time:.2f}s")
             self.logger.info(f"📊 Data shape: {result.data_shape}")
             self.logger.info(f"📊 Data quality score: {result.data_quality_score:.3f}")
@@ -205,6 +248,7 @@ class BacktestingDataManager:
             return result
             
         except Exception as e:
+            tprint_error(f"❌ Data loading failed: {e}")
             self.logger.error(f"❌ Data loading failed: {e}")
             raise
     
@@ -548,7 +592,6 @@ class BacktestingDataManager:
             # Export regime data
             regime_file = filepath.replace('.csv', '_regime.json')
             if self.regime_data is not None:
-                import json
                 with open(regime_file, 'w') as f:
                     json.dump(self.regime_data, f, indent=2, default=str)
             

@@ -377,7 +377,6 @@ class TPrintManager:
                 _original_print(colored_message, **kwargs)
             except BrokenPipeError:
                 # Handle broken pipe gracefully (e.g., when piping output)
-                import sys
                 sys.stdout.close()
                 sys.exit(0)
 
@@ -522,13 +521,31 @@ def tprint(*args, **kwargs) -> None:
     
     Args:
         *args: Arguments to print
-        **kwargs: Keyword arguments for print function
+        **kwargs: Keyword arguments for print function (including color for backward compatibility)
     
     Example:
         tprint("User logged in")  # [2025-01-11 06:30:15] User logged in
         tprint("Value:", 42)      # [2025-01-11 06:30:15] Value: 42
+        tprint("Message", color="blue")  # [2025-01-11 06:30:15] Message (with blue color)
     """
-    _global_manager._log_without_level(*args, **kwargs)
+    # Handle color parameter for backward compatibility
+    color = kwargs.pop('color', None)
+    bold = kwargs.pop('bold', False)
+    
+    if color:
+        # Map color names to log levels for backward compatibility
+        color_to_level = {
+            'red': LogLevel.ERROR,
+            'green': LogLevel.SUCCESS,
+            'yellow': LogLevel.WARNING,
+            'blue': LogLevel.INFO,
+            'cyan': LogLevel.DEBUG,
+            'magenta': LogLevel.PERFORMANCE,
+        }
+        level = color_to_level.get(color, LogLevel.INFO)
+        _global_manager._log(level, *args, **kwargs)
+    else:
+        _global_manager._log_without_level(*args, **kwargs)
 
 
 def tprint_debug(*args, **kwargs) -> None:
@@ -827,21 +844,16 @@ def enhanced_print(*args, **kwargs):
 # Function to replace built-in print with enhanced version
 def replace_builtin_print():
     """Replace the built-in print function with our enhanced version."""
-    import builtins
     builtins.print = enhanced_print
 
 
 # Function to restore original print function
 def restore_builtin_print():
     """Restore the original built-in print function."""
-    import builtins
     builtins.print = _original_print
 
 
 # Context manager for automatic print capture
-import io
-import sys
-from contextlib import contextmanager
 
 @contextmanager
 def capture_print_to_tprint():

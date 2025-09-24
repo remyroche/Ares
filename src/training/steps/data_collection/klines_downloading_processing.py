@@ -1417,7 +1417,6 @@ async def run_ethusdt_3year_pipeline(
     """
     # Use centralized configuration if years not specified
     if years is None:
-        from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
     
@@ -1503,7 +1502,6 @@ async def run_custom_symbol_pipeline(
     """
     # Use centralized configuration if years not specified
     if years is None:
-        from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
     
@@ -1577,7 +1575,6 @@ def test_add_required_columns():
 
 
 if __name__ == "__main__":
-    import sys
 
     if len(sys.argv) > 1:
         if sys.argv[1] == "test_consolidated":

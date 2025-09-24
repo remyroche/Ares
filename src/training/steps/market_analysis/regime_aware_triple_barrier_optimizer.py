@@ -28,14 +28,15 @@ from datetime import datetime
 import contextlib
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from scipy.optimize import minimize
+from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig, apply_multi_horizon_labeling
 import warnings
 
 # Import the triple barrier labeling module
-from .triple_barrier_labeling import (
-    UnifiedTripleBarrierLabeler,
-    TripleBarrierConfig,
-    create_triple_barrier_labeler,
-    apply_triple_barrier_labeling
+from .multi_horizon_profit_labeler import (
+    MultiHorizonProfitLabeler,
+    MultiHorizonConfig,
+    create_multi_horizon_labeler,
+    apply_multi_horizon_labeling
 )
 
 @dataclass
@@ -262,7 +263,7 @@ class RegimeAwareTripleBarrierOptimizer:
                 max_lookahead = max(50, min(200, int(params[3])))
                 
                 # Create regime-specific config
-                regime_config = TripleBarrierConfig(
+                regime_config = MultiHorizonConfig(
                     profit_take_multiplier=profit_take,
                     stop_loss_multiplier=stop_loss,
                     time_barrier_minutes=time_barrier,
@@ -273,7 +274,7 @@ class RegimeAwareTripleBarrierOptimizer:
                 )
                 
                 # Create labeler with regime-specific config
-                labeler = UnifiedTripleBarrierLabeler(regime_config)
+                labeler = MultiHorizonProfitLabeler(regime_config)
                 
                 # Apply labeling to validation data
                 result = labeler.apply_labeling(val_data)
@@ -423,7 +424,7 @@ class RegimeAwareTripleBarrierOptimizer:
             Comprehensive performance metrics
         """
         # Create labeler with optimized parameters
-        regime_config = TripleBarrierConfig(
+        regime_config = MultiHorizonConfig(
             profit_take_multiplier=params.profit_take_multiplier,
             stop_loss_multiplier=params.stop_loss_multiplier,
             time_barrier_minutes=params.time_barrier_minutes,
@@ -433,7 +434,7 @@ class RegimeAwareTripleBarrierOptimizer:
             regime_aware=False
         )
         
-        labeler = UnifiedTripleBarrierLabeler(regime_config)
+        labeler = MultiHorizonProfitLabeler(regime_config)
         result = labeler.apply_labeling(data)
         labeled_data = result.labeled_data if result.success else pd.DataFrame()
         
@@ -540,7 +541,7 @@ class RegimeAwareTripleBarrierOptimizer:
         
         if not self.regime_parameters:
             self.logger.warning('⚠️ No optimized parameters available, using default labeling')
-            return apply_triple_barrier_labeling(data, regime_aware=True, regime_column=regime_column)
+            return apply_multi_horizon_labeling(data, regime_aware=True, regime_column=regime_column)
         
         if regime_column not in data.columns:
             self.logger.error(f'❌ Regime column "{regime_column}" not found in data')
@@ -575,7 +576,7 @@ class RegimeAwareTripleBarrierOptimizer:
                 self.logger.warning(f'⚠️ Using default parameters for regime {regime}')
             
             # Apply labeling with regime-specific parameters
-            regime_config = TripleBarrierConfig(
+            regime_config = MultiHorizonConfig(
                 profit_take_multiplier=params.profit_take_multiplier,
                 stop_loss_multiplier=params.stop_loss_multiplier,
                 time_barrier_minutes=params.time_barrier_minutes,
@@ -585,7 +586,7 @@ class RegimeAwareTripleBarrierOptimizer:
                 regime_aware=False
             )
             
-            labeler = UnifiedTripleBarrierLabeler(regime_config)
+            labeler = MultiHorizonProfitLabeler(regime_config)
             result = labeler.apply_labeling(regime_data)
             labeled_regime_data = result.labeled_data if result.success else pd.DataFrame()
             

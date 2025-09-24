@@ -15,6 +15,12 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,9 +144,15 @@ class DataValidator:
         Args:
             config: Validation configuration
         """
+        tprint_info("🔍 Initializing Data Validator")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint_success("✅ Data Validator initialized")
+        tprint_info(f"📊 Validation types: {[vt.value for vt in config.validation_types]}")
+        tprint_info(f"📊 Data quality thresholds: missing={config.max_missing_ratio}, outliers={config.max_outlier_ratio}")
         self.logger.info("✅ Data Validator initialized")
         self.logger.info(f"📊 Validation types: {[vt.value for vt in config.validation_types]}")
         self.logger.info(f"📊 Data quality thresholds: missing={config.max_missing_ratio}, outliers={config.max_outlier_ratio}")
@@ -158,47 +170,59 @@ class DataValidator:
         Returns:
             Validation result
         """
+        tprint_info("🚀 Starting data validation")
         self.logger.info("🚀 Starting data validation")
         start_time = datetime.now()
         
         try:
             # Initialize validation results
+            tprint_debug("📊 Initializing validation results...")
             validation_details = {}
             critical_issues = []
             warnings = []
             recommendations = []
             
             # Perform validation based on configuration
+            tprint_info(f"🔍 Performing {len(self.config.validation_types)} validation types...")
             for validation_type in self.config.validation_types:
+                tprint_debug(f"🔍 Validating {validation_type.value}...")
                 if validation_type == ValidationType.DATA_QUALITY:
                     quality_result = self._validate_data_quality(data)
                     validation_details['data_quality'] = quality_result
+                    tprint_debug(f"✅ Data quality validation completed")
                 
                 elif validation_type == ValidationType.CONSISTENCY:
                     consistency_result = self._validate_consistency(data)
                     validation_details['consistency'] = consistency_result
+                    tprint_debug(f"✅ Consistency validation completed")
                 
                 elif validation_type == ValidationType.COMPLETENESS:
                     completeness_result = self._validate_completeness(data)
                     validation_details['completeness'] = completeness_result
+                    tprint_debug(f"✅ Completeness validation completed")
                 
                 elif validation_type == ValidationType.ACCURACY:
                     accuracy_result = self._validate_accuracy(data)
                     validation_details['accuracy'] = accuracy_result
+                    tprint_debug(f"✅ Accuracy validation completed")
                 
                 elif validation_type == ValidationType.TIMELINESS:
                     timeliness_result = self._validate_timeliness(data)
                     validation_details['timeliness'] = timeliness_result
+                    tprint_debug(f"✅ Timeliness validation completed")
                 
                 elif validation_type == ValidationType.REGIME_VALIDATION and regime_data is not None:
                     regime_result = self._validate_regime_data(regime_data)
                     validation_details['regime_validation'] = regime_result
+                    tprint_debug(f"✅ Regime validation completed")
                 
                 elif validation_type == ValidationType.FEATURE_VALIDATION and features is not None:
                     feature_result = self._validate_features(features)
                     validation_details['feature_validation'] = feature_result
+                    tprint_debug(f"✅ Feature validation completed")
             
             # Collect issues and warnings
+            tprint_debug("📋 Collecting issues and warnings...")
             for validation_name, validation_result in validation_details.items():
                 if 'issues' in validation_result:
                     critical_issues.extend(validation_result['issues'])
@@ -208,8 +232,10 @@ class DataValidator:
                     recommendations.extend(validation_result['recommendations'])
             
             # Calculate overall validation score
+            tprint_debug("📊 Calculating overall validation score...")
             validation_score = self._calculate_validation_score(validation_details)
             validation_passed = validation_score >= 0.8 and len(critical_issues) == 0
+            tprint_info(f"📊 Validation score: {validation_score:.3f}, Passed: {validation_passed}")
             
             # Calculate individual scores
             data_quality_score = validation_details.get('data_quality', {}).get('score', 0.0)
@@ -226,6 +252,7 @@ class DataValidator:
             validation_time = (datetime.now() - start_time).total_seconds()
             
             # Create comprehensive result
+            tprint_debug("📋 Creating comprehensive validation result...")
             result = ValidationResult(
                 # Validation results
                 validation_passed=validation_passed,
@@ -261,12 +288,22 @@ class DataValidator:
             
             # Save validation results if configured
             if self.config.save_validation_results:
+                tprint_debug("💾 Saving validation results...")
+                self._save_validation_results(result)
+                tprint_success("✅ Validation results saved")
                 self._save_validation_results(result)
             
             # Generate validation report if configured
             if self.config.generate_validation_report:
+                tprint_debug("📄 Generating validation report...")
                 self._generate_validation_report(result)
+                tprint_success("✅ Validation report generated")
             
+            tprint_success(f"✅ Data validation completed in {result.validation_time:.2f}s")
+            tprint_info(f"📊 Validation passed: {result.validation_passed}")
+            tprint_info(f"📊 Validation score: {result.validation_score:.3f}")
+            tprint_info(f"📊 Critical issues: {len(result.critical_issues)}")
+            tprint_info(f"📊 Warnings: {len(result.warnings)}")
             self.logger.info(f"✅ Data validation completed in {result.validation_time:.2f}s")
             self.logger.info(f"📊 Validation passed: {result.validation_passed}")
             self.logger.info(f"📊 Validation score: {result.validation_score:.3f}")
@@ -276,6 +313,7 @@ class DataValidator:
             return result
             
         except Exception as e:
+            tprint_error(f"❌ Data validation failed: {e}")
             self.logger.error(f"❌ Data validation failed: {e}")
             raise
     
@@ -716,7 +754,6 @@ class DataValidator:
     def export_validation_results(self, result: ValidationResult, filepath: str):
         """Export validation results to file."""
         try:
-            import json
             validation_data = {
                 'validation_passed': result.validation_passed,
                 'validation_score': result.validation_score,

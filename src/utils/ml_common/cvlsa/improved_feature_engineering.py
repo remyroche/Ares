@@ -40,7 +40,6 @@ try:
     FEATURE_GENERATION_AVAILABLE = True
 except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Feature generation modules not available: {e}")
 
@@ -389,7 +388,6 @@ class ImprovedFeatureEngineer:
         # Calculate feature importance for interaction selection
         if target is not None and len(target) == len(data):
             try:
-                from sklearn.feature_selection import mutual_info_regression
                 importance_scores = mutual_info_regression(data[numeric_cols].fillna(0), target)
                 important_features = numeric_cols[importance_scores > self.config.interaction_threshold]
             except Exception as e:

@@ -1,7 +1,7 @@
 """Central registry for all decorators with metadata and versioning and comprehensive error handling."""
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 
 try:
     from .logger import log_error_with_context
@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 class DecoratorMetadata:
     """Metadata for a registered decorator with comprehensive error handling."""
-import numpy as np
     
     def __init__(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool = False) -> None:
         try:

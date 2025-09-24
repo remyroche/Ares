@@ -209,7 +209,6 @@ class ClusteringMetrics:
                     X.min(axis=0), X.max(axis=0), X.shape
                 )
                 # Cluster random data with same number of clusters
-                from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=len(np.unique(labels)), random_state=42)
                 random_labels = kmeans.fit_predict(random_data)
                 ref_wss.append(wss(random_data, random_labels))

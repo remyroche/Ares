@@ -256,7 +256,6 @@ class SimilarityMatrixClusterer:
     def _calculate_distance_correlation_matrix(self, features: pd.DataFrame) -> np.ndarray:
         """Calculate distance correlation similarity matrix."""
         try:
-            from scipy.spatial.distance import pdist, squareform
             
             # Use distance correlation approximation
             n_features = features.shape[1]

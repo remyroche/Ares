@@ -31,7 +31,7 @@ from ..shared_utils import (
 )
 
 # Import ML Common integration
-from ..shared_utils import (
+from src.utils.ml_common.integration import (
     create_ml_common_integration, create_tas_ml_common_integration,
     create_nas_ml_common_integration, create_hybrid_ml_common_integration,
     MLCommonIntegrationConfig
@@ -223,7 +223,6 @@ def example_hardware_optimization():
     nas_hardware.start_performance_monitoring()
     
     # Simulate some work
-    import time
     time.sleep(2)
     
     # Get hardware status

@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ...utils.logger import system_logger
 
 import json
 import logging

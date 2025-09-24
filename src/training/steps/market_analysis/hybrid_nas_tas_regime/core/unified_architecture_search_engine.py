@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 import pickle
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Import existing components
 from ..shared_utils.search_spaces import NeuralSearchSpace, TreeSearchSpace
@@ -111,13 +112,19 @@ class UnifiedArchitectureSearchEngine:
 
     def __init__(self, config: UnifiedSearchConfig):
         """Initialize the unified architecture search engine."""
+        tprint("🚀 [UNIFIED_ARCH_SEARCH] Initializing Unified Architecture Search Engine", color="cyan", bold=True)
+        tprint(f"📊 [UNIFIED_ARCH_SEARCH] Architecture Types: {[t.value for t in config.architecture_types]}", color="blue")
+        tprint(f"📊 [UNIFIED_ARCH_SEARCH] Search Mode: {config.search_mode.value}", color="blue")
+        tprint(f"📊 [UNIFIED_ARCH_SEARCH] Max Evaluations: {config.max_evaluations}", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize components
+        tprint("🔧 [UNIFIED_ARCH_SEARCH] Initializing search components", color="yellow")
         self._initialize_components()
 
         # Search state
+        tprint("📊 [UNIFIED_ARCH_SEARCH] Setting up search state", color="blue")
         self.current_generation = 0
         self.best_architecture = None
         self.best_score = -np.inf
@@ -129,6 +136,7 @@ class UnifiedArchitectureSearchEngine:
         self.start_time = None
         self.evaluation_times = []
 
+        tprint("✅ [UNIFIED_ARCH_SEARCH] Unified Architecture Search Engine initialized successfully", color="green")
         self.logger.info("✅ Unified Architecture Search Engine initialized")
         self.logger.info(f"   Architecture Types: {[t.value for t in config.architecture_types]}")
         self.logger.info(f"   Search Mode: {config.search_mode.value}")
@@ -247,14 +255,20 @@ class UnifiedArchitectureSearchEngine:
                test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                regime_data: Optional[Dict[str, Any]] = None) -> UnifiedSearchResult:
         """Perform unified architecture search across NAS and TAS spaces."""
+        tprint("🚀 [UNIFIED_ARCH_SEARCH] Starting Unified Architecture Search", color="cyan", bold=True)
+        tprint(f"📊 [UNIFIED_ARCH_SEARCH] Train data shape: {train_data[0].shape}, labels: {train_data[1].shape}", color="blue")
+        tprint(f"📊 [UNIFIED_ARCH_SEARCH] Validation data shape: {validation_data[0].shape}, labels: {validation_data[1].shape}", color="blue")
         self.start_time = time.time()
         self.logger.info("🚀 Starting Unified Architecture Search...")
 
         try:
             # Prepare search environment
+            tprint("🔧 [UNIFIED_ARCH_SEARCH] Preparing search environment", color="yellow")
             search_env = self._prepare_search_environment(train_data, validation_data, test_data, regime_data)
+            tprint("✅ [UNIFIED_ARCH_SEARCH] Search environment prepared", color="green")
 
             # Perform search based on mode
+            tprint(f"🎯 [UNIFIED_ARCH_SEARCH] Starting {self.config.search_mode.value} search", color="yellow")
             if self.config.search_mode == SearchMode.SINGLE_OBJECTIVE:
                 result = self._single_objective_search(search_env)
             elif self.config.search_mode == SearchMode.MULTI_OBJECTIVE:
@@ -269,8 +283,10 @@ class UnifiedArchitectureSearchEngine:
                 raise ValueError(f"Unknown search mode: {self.config.search_mode}")
 
             execution_time = time.time() - self.start_time
+            tprint(f"✅ [UNIFIED_ARCH_SEARCH] Search completed in {execution_time:.2f}s", color="green")
 
             # Create final result
+            tprint("📊 [UNIFIED_ARCH_SEARCH] Creating final search results", color="blue")
             search_result = UnifiedSearchResult(
                 best_architecture=result['best_architecture'],
                 best_score=result['best_score'],
@@ -290,6 +306,7 @@ class UnifiedArchitectureSearchEngine:
                 }
             )
 
+            tprint(f"🎉 [UNIFIED_ARCH_SEARCH] Best architecture: {result['architecture_type']}, score: {result['best_score']:.4f}", color="cyan")
             self.logger.info("✅ Unified Architecture Search completed successfully")
             self.logger.info(f"   Best Score: {search_result.best_score:.4f}")
             self.logger.info(f"   Architecture Type: {search_result.architecture_type.value}")
@@ -469,7 +486,8 @@ class UnifiedArchitectureSearchEngine:
             complexity = (n_layers / 10.0) * (n_parameters / 100000.0)
             return min(complexity, 1.0)
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to calculate architecture complexity score: {e}. Using default score of 0.5")
             return 0.5
 
     def _calculate_parameter_efficiency(self, architecture: Dict[str, Any]) -> float:
@@ -482,7 +500,8 @@ class UnifiedArchitectureSearchEngine:
             efficiency = 1000.0 / max(n_parameters, 1000.0)
             return min(efficiency, 1.0)
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to calculate architecture complexity score: {e}. Using default score of 0.5")
             return 0.5
 
     def _single_objective_search(self, search_env: Dict[str, Any]) -> Dict[str, Any]:

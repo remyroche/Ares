@@ -30,10 +30,6 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
-import logging
-import time
-import typing
-
                 MissingDataDownloaderAndGapFiller,
             )
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)

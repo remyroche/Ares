@@ -809,7 +809,6 @@ class StackingConfidenceCalibrator:
         """Load the calibrator from disk."""
         
         try:
-            import pickle
             
             with open(file_path, 'rb') as f:
                 calibrator_data = pickle.load(f)

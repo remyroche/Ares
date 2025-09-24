@@ -140,7 +140,8 @@ class DataStreamer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error streaming ticker for {symbol}: {e}")
+                self.logger.error(f"❌ Error streaming ticker for {symbol}: {e}")
+                self.logger.warning(f"⚠️ Ticker streaming failed for {symbol} - continuing with other streams")
                 await self._handle_streaming_error(symbol, "ticker")
     
     async def _stream_trades(self, symbol: str) -> None:
@@ -169,7 +170,8 @@ class DataStreamer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error streaming trades for {symbol}: {e}")
+                self.logger.error(f"❌ Error streaming trades for {symbol}: {e}")
+                self.logger.warning(f"⚠️ Trade streaming failed for {symbol} - continuing with other streams")
                 await self._handle_streaming_error(symbol, "trades")
     
     async def _stream_orderbook(self, symbol: str) -> None:
@@ -200,7 +202,8 @@ class DataStreamer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error streaming orderbook for {symbol}: {e}")
+                self.logger.error(f"❌ Error streaming orderbook for {symbol}: {e}")
+                self.logger.warning(f"⚠️ Orderbook streaming failed for {symbol} - continuing with other streams")
                 await self._handle_streaming_error(symbol, "orderbook")
     
     async def _stream_klines(self, symbol: str) -> None:
@@ -252,7 +255,8 @@ class DataStreamer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error streaming klines for {symbol}: {e}")
+                self.logger.error(f"❌ Error streaming klines for {symbol}: {e}")
+                self.logger.warning(f"⚠️ Kline streaming failed for {symbol} - continuing with other streams")
                 await self._handle_streaming_error(symbol, "klines")
     
     async def _handle_streaming_error(self, symbol: str, stream_type: str) -> None:
@@ -353,7 +357,8 @@ class DataStreamer:
                 try:
                     await handler(stream_data)
                 except Exception as e:
-                    self.logger.error(f"Error in data handler: {e}")
+                    self.logger.error(f"❌ Error in data handler: {e}")
+                    self.logger.warning("⚠️ Data handler failed - continuing with other handlers")
     
     async def get_streaming_status(self) -> Dict[str, Any]:
         """Get current streaming status"""

@@ -1,4 +1,5 @@
-from .core.decorators import handles_errors
+from ..core.decorators import handles_errors, log_call, traced, validates
+from ..core.decorators.auth import authenticated, requires_permission
 """
 from .logger import system_logger
 from .logger import system_logger
@@ -20,12 +21,12 @@ from .logger import system_logger
 import pandas as pd
 import numpy as np
 
-from .utils.data_utils import (
 import datetime
 import json
 import logging
-import typing
+from typing import Dict, Any, List
 
+from .common_operations import (
     safe_file_exists, safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, generate_hash
 )
@@ -631,7 +632,7 @@ class DataAccessProtection:
             self.logger.error(f"❌ Secure data write failed: {e}")
             return False
 
-    @handles_errors(Exception, fallback = data, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _sanitize_data(self, data: pd.DataFrame, access_level: AccessLevel) -> pd.DataFrame:

@@ -561,7 +561,6 @@ class ModelSaver:
         
         with open(pipeline_file, 'wb') as f:
             if self.config.enable_compression:
-                import gzip
                 with gzip.GzipFile(fileobj=f, compresslevel=self.config.compression_level) as gz:
                     pickle.dump(pipeline, gz)
             else:
@@ -575,7 +574,6 @@ class ModelSaver:
         
         with open(pipeline_file, 'wb') as f:
             if self.config.enable_compression:
-                import gzip
                 with gzip.GzipFile(fileobj=f, compresslevel=self.config.compression_level) as gz:
                     pickle.dump(pipeline, gz)
             else:

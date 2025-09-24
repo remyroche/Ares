@@ -11,13 +11,30 @@ This module implements the TAS regime detection system that combines:
 
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
 from typing import Dict, List, Any, Optional, Tuple, Union
+
+# Optional torch import
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    nn = None
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from contextlib import contextmanager
+import pickle
+from sklearn.cluster import KMeans
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import hardware optimization tools
 try:
@@ -92,9 +109,9 @@ except ImportError:
 
 # Import shared utilities from hybrid regime system
 try:
-    from ..shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
-    from ..shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
-    from ..shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
+    from ...hybrid_nas_tas_regime.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
+    from ...hybrid_nas_tas_regime.shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
+    from ...hybrid_nas_tas_regime.shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
     SHARED_UTILITIES_AVAILABLE = True
     POSITION_AWARE_AVAILABLE = True
 except ImportError:
@@ -163,57 +180,86 @@ class TASRegimeDetector:
 
     def __init__(self, config: TASRegimeConfig):
         """Initialize TAS Regime Detector with enhanced utility integration."""
+        tprint_info("🚀 Initializing TAS Regime Detector")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize enhanced utility tools
+        tprint_info("🔧 Initializing enhanced utility tools...")
         self._initialize_enhanced_utility_tools()
         
         # Initialize tool integrations
+        tprint_info("🛠️ Initializing tool integrations...")
+        tprint_debug("💻 Initializing hardware optimization...")
         self._initialize_hardware_optimization()
+        tprint_debug("⚡ Initializing enhanced hardware optimization...")
         self._initialize_enhanced_hardware_optimization()
+        tprint_debug("🔢 Initializing matrix operations...")
         self._initialize_matrix_operations()
+        tprint_debug("🤖 Initializing ML common...")
         self._initialize_ml_common()
+        tprint_debug("🏗️ Initializing CLVSA architecture...")
         self._initialize_clvsa_architecture()
+        tprint_debug("🌳 Initializing tree components...")
         self._initialize_tree_components()
+        tprint_debug("🌲 Initializing advanced tree models...")
         self._initialize_advanced_tree_models()
+        tprint_debug("🔗 Initializing shared utilities...")
         self._initialize_shared_utilities()
+        tprint_debug("📊 Initializing position aware analyzer...")
         self._initialize_position_aware_analyzer()
 
+        tprint_success("✅ TAS Regime Detector initialized with enhanced utility integration")
+        tprint_info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
         self.logger.info("✅ TAS Regime Detector initialized with enhanced utility integration")
         self.logger.info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
 
     def _initialize_enhanced_utility_tools(self):
         """Initialize enhanced utility tools for TAS regime detection."""
+        tprint_debug("🔧 Starting enhanced utility tools initialization...")
         try:
             # Initialize common utilities
+            tprint_debug("📦 Creating common utilities...")
             self.common_utils = CommonUtilities()
+            tprint_success("✅ Common utilities initialized")
             self.logger.info("✅ Common utilities initialized")
             
             # Initialize math validation
+            tprint_debug("🧮 Creating math validator...")
             self.math_validator = MathValidation()
+            tprint_success("✅ Math validation initialized")
             self.logger.info("✅ Math validation initialized")
             
             # Initialize matrix operations
+            tprint_debug("🔢 Creating enhanced matrix operations...")
             self.enhanced_matrix_ops = get_unified_matrix_operations(
                 enable_gpu=True,
                 enable_memory_optimization=True,
                 enable_parallel=True
             )
+            tprint_success("✅ Enhanced matrix operations initialized")
             self.logger.info("✅ Enhanced matrix operations initialized")
             
             # Initialize serialization
+            tprint_debug("💾 Creating enhanced serializer...")
             self.enhanced_serializer = UniversalSerializer()
+            tprint_success("✅ Enhanced serialization initialized")
             self.logger.info("✅ Enhanced serialization initialized")
             
             # Initialize data management
+            tprint_debug("📊 Creating klines data manager...")
             self.enhanced_klines_manager = get_klines_manager()
+            tprint_success("✅ Enhanced klines data manager initialized")
             self.logger.info("✅ Enhanced klines data manager initialized")
             
             # Initialize M1 optimizations
+            tprint_debug("🍎 Initializing M1 optimizations...")
             self._initialize_enhanced_m1_optimizations()
             
         except Exception as e:
+            tprint_error(f"❌ Enhanced utility tools initialization failed: {e}")
             self.logger.error(f"❌ Enhanced utility tools initialization failed: {e}")
             # Set fallback values
             self.common_utils = None
@@ -224,23 +270,33 @@ class TASRegimeDetector:
     
     def _initialize_enhanced_m1_optimizations(self):
         """Initialize enhanced M1 hardware optimizations."""
+        tprint_debug("🍎 Starting M1 optimizations initialization...")
         try:
             # Get M1 optimizers
+            tprint_debug("🎮 Getting M1 GPU manager...")
             self.enhanced_gpu_manager = get_m1_gpu_manager()
+            tprint_debug("💾 Getting M1 memory optimizer...")
             self.enhanced_memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("⚡ Getting M1 CPU optimizer...")
             self.enhanced_cpu_optimizer = get_m1_cpu_optimizer()
             
             # Integrate M1 optimizations
+            tprint_debug("🔗 Integrating M1 optimizations...")
             integration_result = integrate_with_m1_optimizers()
             if integration_result.get('success', False):
+                tprint_success("✅ Enhanced M1 optimizations integrated successfully")
+                tprint_info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
+                tprint_info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
                 self.logger.info("✅ Enhanced M1 optimizations integrated successfully")
                 self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
                 self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
                 self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
             else:
+                tprint_warning("⚠️ Enhanced M1 optimizations integration failed")
                 self.logger.warning("⚠️ Enhanced M1 optimizations integration failed")
                 
         except Exception as e:
+            tprint_warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
             self.logger.warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
             self.enhanced_gpu_manager = None
             self.enhanced_memory_optimizer = None
@@ -261,11 +317,14 @@ class TASRegimeDetector:
 
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
+        tprint_debug("💻 Starting hardware optimization initialization...")
         if not HARDWARE_AVAILABLE:
+            tprint_warning("⚠️ Hardware optimization not available")
             self.hardware_manager = None
             return
 
         try:
+            tprint_debug("⚙️ Creating hardware configuration...")
             hardware_config = HardwareConfig(
                 cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
                 gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
@@ -274,19 +333,25 @@ class TASRegimeDetector:
                 enable_learning=True,
                 auto_tuning_enabled=True
             )
+            tprint_debug("🏗️ Creating unified hardware manager...")
             self.hardware_manager = UnifiedHardwareManager(hardware_config)
+            tprint_success("✅ Hardware optimization initialized")
             self.logger.info("✅ Hardware optimization initialized")
         except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
             self.logger.warning(f"Hardware optimization initialization failed: {e}")
             self.hardware_manager = None
 
     def _initialize_enhanced_hardware_optimization(self):
         """Initialize enhanced TAS hardware optimization components."""
+        tprint_debug("⚡ Starting enhanced hardware optimization initialization...")
         if not ENHANCED_HARDWARE_AVAILABLE:
+            tprint_warning("⚠️ Enhanced hardware optimization not available")
             self.enhanced_hardware_optimizer = None
             return
 
         try:
+            tprint_debug("⚙️ Creating TAS hardware configuration...")
             hardware_config = TASHardwareConfig(
                 cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
                 gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
@@ -302,9 +367,12 @@ class TASRegimeDetector:
                 enable_performance_monitoring=True,
                 enable_adaptive_optimization=True
             )
+            tprint_debug("🏗️ Creating enhanced TAS hardware optimizer...")
             self.enhanced_hardware_optimizer = EnhancedTASHardwareOptimizer(hardware_config)
+            tprint_success("✅ Enhanced TAS hardware optimization initialized")
             self.logger.info("✅ Enhanced TAS hardware optimization initialized")
         except Exception as e:
+            tprint_warning(f"⚠️ Enhanced hardware optimization initialization failed: {e}")
             self.logger.warning(f"Enhanced hardware optimization initialization failed: {e}")
             self.enhanced_hardware_optimizer = None
 
@@ -318,7 +386,7 @@ class TASRegimeDetector:
             self.matrix_ops = UnifiedMatrixOperations(
                 enable_gpu=True,
                 enable_memory_optimization=True,
-                enable_parallel_processing=True,
+                enable_parallel=True,
                 optimization_level='aggressive'
             )
             self.logger.info("✅ Matrix operations initialized")
@@ -818,7 +886,6 @@ class TASRegimeDetector:
         """Fallback regime discovery using traditional methods."""
         try:
             # Simple k-means clustering as fallback
-            from sklearn.cluster import KMeans
 
             kmeans = KMeans(n_clusters=self.config.n_regimes, random_state=42)
             labels = kmeans.fit_predict(data)
@@ -1214,7 +1281,11 @@ class TASRegimeDetector:
 
             return stability
 
-        except:
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            self.logger.warning(f"Could not calculate bootstrap stability: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating bootstrap stability: {e}")
             return 0.0
 
     def _calculate_statistical_significance(self, data: np.ndarray, regime_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -1283,7 +1354,6 @@ class TASRegimeDetector:
     def load_results(self, filepath: str) -> TASRegimeResult:
         """Load TAS results from file."""
         try:
-            import pickle
 
             with open(filepath, 'rb') as f:
                 result = pickle.load(f)

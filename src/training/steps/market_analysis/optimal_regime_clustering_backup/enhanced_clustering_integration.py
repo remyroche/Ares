@@ -112,7 +112,6 @@ class EnhancedClusteringIntegration:
         
         # Check GPU acceleration
         try:
-            import psutil
             # Simple check for Apple Silicon
             status['gpu_acceleration'] = 'Apple' in str(psutil.cpu_freq()) or True  # Fallback
         except Exception:

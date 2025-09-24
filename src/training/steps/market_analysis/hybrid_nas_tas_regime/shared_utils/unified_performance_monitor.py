@@ -21,6 +21,10 @@ import json
 import pickle
 
 from .unified_architecture_config import ArchitectureType, OptimizationObjective
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +111,13 @@ class UnifiedPerformanceMonitor:
             monitoring_interval: Interval between monitoring checks (seconds)
             enable_real_time: Whether to enable real-time monitoring
         """
+        tprint_info("🚀 Initializing Unified Performance Monitor")
+        tprint_debug(f"Architecture type: {architecture_type}")
+        tprint_debug(f"Monitoring level: {monitoring_level}")
+        tprint_debug(f"Max history size: {max_history_size}")
+        tprint_debug(f"Monitoring interval: {monitoring_interval}")
+        tprint_debug(f"Real-time monitoring: {enable_real_time}")
+        
         self.architecture_type = architecture_type
         self.monitoring_level = monitoring_level
         self.max_history_size = max_history_size
@@ -116,27 +127,39 @@ class UnifiedPerformanceMonitor:
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Performance history
+        tprint_debug("📊 Initializing performance history...")
         self.performance_history: deque = deque(maxlen=max_history_size)
         self.regime_performance: Dict[str, RegimePerformanceProfile] = {}
+        tprint_success("✅ Performance history initialized")
         
         # Real-time monitoring
+        tprint_debug("⏱️ Initializing real-time monitoring...")
         self.current_iteration = 0
         self.monitoring_active = False
         self.monitoring_thread: Optional[threading.Thread] = None
+        tprint_success("✅ Real-time monitoring initialized")
         
         # Performance tracking
+        tprint_debug("📈 Initializing performance tracking...")
         self.start_time = time.time()
         self.last_check_time = time.time()
         self.performance_trends: Dict[PerformanceMetric, PerformanceTrend] = {}
+        tprint_success("✅ Performance tracking initialized")
         
         # Adaptive thresholds
+        tprint_debug("⚙️ Initializing adaptive thresholds...")
         self.performance_thresholds = self._initialize_thresholds()
         self.adaptive_thresholds = True
+        tprint_success("✅ Adaptive thresholds initialized")
         
         # Alert system
+        tprint_debug("🚨 Initializing alert system...")
         self.alert_callbacks: List[callable] = []
         self.alert_history: deque = deque(maxlen=1000)
+        tprint_success("✅ Alert system initialized")
         
+        tprint_success(f"✅ Unified Performance Monitor initialized for {architecture_type.value}")
+        tprint_info(f"   Monitoring Level: {monitoring_level.value}")
         self.logger.info(f"✅ Unified Performance Monitor initialized for {architecture_type.value}")
         self.logger.info(f"   Monitoring Level: {monitoring_level.value}")
         self.logger.info(f"   Real-time: {enable_real_time}")

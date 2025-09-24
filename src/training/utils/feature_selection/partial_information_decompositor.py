@@ -1165,7 +1165,6 @@ class PartialInformationDecompositor:
     def save_analysis_results(self, pid_result: PIDResult, output_path: str = None):
         """Save PID analysis results to file with datetime in filename."""
         try:
-            from datetime import datetime
             
             # Generate filename with datetime if not provided
             if output_path is None:
@@ -1235,8 +1234,6 @@ class PartialInformationDecompositor:
                                    pid_result: PIDResult, output_path: str = None):
         """Save expanded feature matrix as artifact with datetime."""
         try:
-            from datetime import datetime
-            import pandas as pd
             
             # Generate expanded feature matrix
             expanded_X, expanded_names = self.generate_feature_matrix(X, feature_names, pid_result)
@@ -1309,8 +1306,6 @@ class PartialInformationDecompositor:
                                     output_dir: str = "pid_artifacts") -> Dict[str, str]:
         """Create comprehensive artifacts with datetime in filenames."""
         try:
-            import os
-            from datetime import datetime
             
             # Create output directory if it doesn't exist
             if COMMON_OPERATIONS_AVAILABLE:
@@ -1353,7 +1348,6 @@ class PartialInformationDecompositor:
                 else:
                     _LOGGER.warning("⚠️ Failed to save feature importance using JSONSerializer")
             else:
-                import json
                 with open(importance_path, 'w') as f:
                     json.dump(importance_data, f, indent=2)
                 artifacts['feature_importance'] = importance_path
@@ -1389,7 +1383,6 @@ class PartialInformationDecompositor:
                 else:
                     _LOGGER.warning("⚠️ Failed to save interaction summary using JSONSerializer")
             else:
-                import json
                 with open(summary_path, 'w') as f:
                     json.dump(summary_data, f, indent=2)
                 artifacts['interaction_summary'] = summary_path

@@ -230,9 +230,11 @@ class UniversalMLValidator:
             return report
             
         except Exception as e:
-            logger.error(f"Validation failed for {model_name}: {e}")
+            logger.error(f"❌ Validation failed for {model_name}: {e}")
+            logger.warning("⚠️ Universal ML validation failed - returning failure report")
             report.overall_validation_passed = False
             report.validation_score = 0.0
+            report.critical_issues.append(f"Validation failed: {str(e)}")
             report.critical_issues.append(f"Validation failed: {str(e)}")
             return report
     
@@ -244,7 +246,8 @@ class UniversalMLValidator:
                 primary_timeframe, model_type, model_name
             )
         except Exception as e:
-            logger.error(f"Timeframe validation failed: {e}")
+            logger.error(f"❌ Timeframe validation failed: {e}")
+            logger.warning("⚠️ Timeframe validation failed - returning False")
             return False
     
     def _detect_overfitting(self, 
@@ -270,7 +273,8 @@ class UniversalMLValidator:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
                 except Exception as e:
-                    logger.warning(f"Could not get probabilities from model: {e}")
+                    logger.error(f"❌ Could not get probabilities from model: {e}")
+                    logger.warning("⚠️ Could not get probabilities from model - continuing without probability-based metrics")
                     # Continue without probabilities - they're optional
             
             # Get feature importance if available
@@ -295,7 +299,8 @@ class UniversalMLValidator:
             )
             
         except Exception as e:
-            logger.error(f"Overfitting detection failed: {e}")
+            logger.error(f"❌ Overfitting detection failed: {e}")
+            logger.warning("⚠️ Overfitting detection failed - returning error report")
             return self.overfitting_detector._create_error_report(
                 str(e), model_name, model_type, fold_number
             )
@@ -361,7 +366,8 @@ class UniversalMLValidator:
             logger.info(f"Comprehensive validation report saved: {filepath}")
             
         except Exception as e:
-            logger.error(f"Failed to save comprehensive report: {e}")
+            logger.error(f"❌ Failed to save comprehensive report: {e}")
+            logger.warning("⚠️ Comprehensive report save failed - validation results may not be persisted")
     
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validations."""

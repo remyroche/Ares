@@ -395,7 +395,7 @@ class NeuralSearchSpace:
 
         # Check complexity
         if architecture.estimated_complexity > 5.0:
-            errors.append(f"Architecture too complex: {architecture.estimated_complexity".2f"}")
+            errors.append(f"Architecture too complex: {architecture.estimated_complexity:.2f}")
 
         return len(errors) == 0, errors
 
@@ -549,7 +549,7 @@ class TreeSearchSpace:
 
         # Check complexity
         if architecture.estimated_complexity > 5.0:
-            errors.append(f"Architecture too complex: {architecture.estimated_complexity".2f"}")
+            errors.append(f"Architecture too complex: {architecture.estimated_complexity:.2f}")
 
         # Validate individual trees
         for i, tree in enumerate(architecture.trees):

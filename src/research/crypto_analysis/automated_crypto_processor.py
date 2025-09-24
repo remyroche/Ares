@@ -311,7 +311,6 @@ class AutomatedCryptoProcessor:
                     logger.info("Volume analysis saved to volume_analysis.csv")
             
             # Save comprehensive JSON results
-            import json
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             

@@ -426,7 +426,6 @@ class ModelWrapper(IModel):
             X_scaled = X.values
         
         if self.model_type == 'neural_network':
-            import torch
             X_tensor = torch.FloatTensor(X_scaled)
             self.model.eval()
             with torch.no_grad():
@@ -444,7 +443,6 @@ class ModelWrapper(IModel):
             X_scaled = X.values
         
         if self.model_type == 'neural_network':
-            import torch
             X_tensor = torch.FloatTensor(X_scaled)
             self.model.eval()
             with torch.no_grad():
@@ -459,15 +457,12 @@ class ModelWrapper(IModel):
         path.parent.mkdir(parents = True, exist_ok = True)
         
         if self.model_type == 'neural_network':
-            import torch
-            import joblib
             torch.save(self.model.state_dict(), path.with_suffix('.pth'))
             if self.scaler:
                 joblib.dump(self.scaler, path.with_suffix('.scaler'))
         elif self.model_type == 'xgboost':
             self.model.save_model(str(path))
         else:
-            import joblib
             joblib.dump(self.model, path)
 
     def load(self, path: Path) -> None:

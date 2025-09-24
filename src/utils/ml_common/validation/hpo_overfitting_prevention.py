@@ -789,7 +789,6 @@ class HPOWithOverfittingPrevention:
 
             # Stability assessment
             try:
-                from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                 cv_res = unified_perform_cv(final_model, X, y, strategy='standard', cv_folds=5, scoring='accuracy' if is_classification else 'r2')
                 cv_scores = np.array(cv_res.get('scores', []) or [])
                 report.final_model_stability = 1 - float(np.std(cv_scores)) if cv_scores.size else 0.0

@@ -63,7 +63,6 @@ def timeout(seconds: float):
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             import signal
-            from contextlib import contextmanager
 
             @contextmanager
             def timeout_context():

@@ -616,7 +616,11 @@ class PIDBasedFeatureOrchestrator:
                         for i in range(X.shape[1]):
                             try:
                                 X_numeric[:, i] = pd.to_numeric(X[:, i], errors='coerce')
-                            except:
+                            except (ValueError, TypeError) as e:
+                                self.logger.debug(f"Could not convert column {i} to numeric: {e}")
+                                X_numeric[:, i] = np.nan
+                            except Exception as e:
+                                self.logger.warning(f"Unexpected error converting column {i} to numeric: {e}")
                                 X_numeric[:, i] = np.nan
                     X = X_numeric
                 
@@ -1531,7 +1535,6 @@ class PIDBasedFeatureOrchestrator:
                 return await method(X, feature_names, optimized_lookback_periods, target)
             else:
                 # Wrap sync method in async call for consistency
-                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
                     return future.result(timeout=300)  # 5 minute timeout for safety
@@ -1575,7 +1578,6 @@ class PIDBasedFeatureOrchestrator:
                 return await method(X, feature_names, optimized_lookback_periods, target)
             else:
                 # Wrap sync method in async call for consistency
-                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
                     return future.result(timeout=300)  # 5 minute timeout for safety

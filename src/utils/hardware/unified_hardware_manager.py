@@ -595,7 +595,6 @@ class UnifiedHardwareManager:
             self.cpu_optimizer.set_conservative_mode()
         
         # Add a small delay to prevent busy waiting
-        import time
         time.sleep(0.1)
         
         # Set reduced intensity flag

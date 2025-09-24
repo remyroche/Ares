@@ -671,8 +671,6 @@ class RegimeAnalyzer:
     async def save_analysis_data(self):
         """Save analysis data to cache."""
         try:
-            import os
-            import json
             
             # Prepare data for saving
             save_data = {

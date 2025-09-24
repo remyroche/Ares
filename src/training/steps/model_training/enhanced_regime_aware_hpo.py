@@ -229,8 +229,8 @@ class RegimeAnalyzer:
             regime_char = self._calculate_regime_characteristics(regime, X_regime, y_regime)
             regime_stats[RegimeType(regime)] = regime_char
 
-            self.logger.info(f"📊 Regime {regime}: vol={regime_char.volatility_level".3f"}, "
-                           f"trend={regime_char.trend_strength".3f"}, noise={regime_char.noise_level".3f"}, "
+            self.logger.info(f"📊 Regime {regime}: vol={regime_char.volatility_level:.3f}, "
+                           f"trend={regime_char.trend_strength:.3f}, noise={regime_char.noise_level:.3f}, "
                            f"size={regime_char.data_size}")
 
         return regime_stats
@@ -628,7 +628,6 @@ class EnhancedRegimeAwareHPO:
 
     def _calculate_efficiency_score(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> float:
         """Calculate model efficiency score."""
-        import time
         import psutil
 
         # Training time

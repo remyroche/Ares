@@ -964,7 +964,6 @@ class TacticianDualTrainingStep:
                                signal_type: str = "long") -> Dict[str, float]:
         """Calculate comprehensive metrics for a set of models."""
         try:
-            import numpy as np
             from sklearn.metrics import (
                 accuracy_score, f1_score, precision_score, recall_score,
                 roc_auc_score, mean_squared_error, mean_absolute_error,
@@ -1092,7 +1091,6 @@ class TacticianDualTrainingStep:
                                  actual_returns: np.ndarray, signal_type: str) -> Dict[str, Union[float, int, Dict]]:
         """Calculate trading frequency and monthly P&L metrics."""
         try:
-            import numpy as np
             from datetime import datetime
 
             # Get timestamps for monthly grouping

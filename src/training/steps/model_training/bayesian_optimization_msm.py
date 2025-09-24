@@ -234,7 +234,7 @@ class MSMBayesianOptimizer:
         }
 
     def _evaluate_msm_params(self, X: np.ndarray, y: Optional[np.ndarray] = None,
-                           params: Dict[str, Any], evaluation_function: Optional[Callable] = None) -> float:
+                           params: Optional[Dict[str, Any]] = None, evaluation_function: Optional[Callable] = None) -> float:
         """Evaluate MSM parameters and return score.
 
         Args:
@@ -393,8 +393,8 @@ class MSMBayesianOptimizer:
             'grid_scores': grid_scores
         }
 
-    def _optimize_bayesian_around_best(self, X: np.ndarray, y: Optional[np.ndarray] = None,
-                                      best_grid_params: Dict[str, Any],
+    def _optimize_bayesian_around_best(self, X: np.ndarray, best_grid_params: Dict[str, Any],
+                                      y: Optional[np.ndarray] = None,
                                       evaluation_function: Optional[Callable] = None) -> Dict[str, Any]:
         """Perform Bayesian optimization around the best grid search result."""
 

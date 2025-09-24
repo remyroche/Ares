@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import logging
 import time
 from datetime import datetime
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Tree models optimized for financial data
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -510,29 +511,42 @@ class RegimeTradingTreeNAS:
     
     def __init__(self, config: RegimeTradingTreeNASConfig):
         """Initialize regime trading tree NAS."""
+        tprint("🚀 [REGIME_TRADING_TREE_NAS] Initializing Regime Trading Tree NAS", color="cyan", bold=True)
+        tprint(f"📊 [REGIME_TRADING_TREE_NAS] Regime types: {config.regime_types}", color="blue")
+        tprint(f"📊 [REGIME_TRADING_TREE_NAS] Tree configs: {len(config.tree_configs)}", color="blue")
         self.config = config
         self.logger = logger.getChild('RegimeTradingTreeNAS')
         
         # Initialize specialized models
+        tprint("🔍 [REGIME_TRADING_TREE_NAS] Initializing regime detector", color="yellow")
         self.regime_detector = RegimeDetectionTree(config.tree_configs['regime_classifier'])
+        tprint("📈 [REGIME_TRADING_TREE_NAS] Initializing signal generator", color="yellow")
         self.signal_generator = TradingSignalTree(config.tree_configs['signal_generator'])
+        tprint("⚠️ [REGIME_TRADING_TREE_NAS] Initializing risk manager", color="yellow")
         self.risk_manager = RiskManagementTree(config.tree_configs['risk_manager'])
+        tprint("💰 [REGIME_TRADING_TREE_NAS] Initializing position sizer", color="yellow")
         self.position_sizer = PositionSizingTree(config.tree_configs.get('position_sizer', {}))
         
         # Results storage
+        tprint("💾 [REGIME_TRADING_TREE_NAS] Setting up results storage", color="blue")
         self.regime_results = None
         self.trading_results = None
         self.combined_results = None
         
+        tprint("✅ [REGIME_TRADING_TREE_NAS] Regime Trading Tree NAS initialized successfully", color="green")
         self.logger.info("✅ Regime Trading Tree NAS initialized")
     
     def detect_regimes(self, market_data: pd.DataFrame, timestamps: np.ndarray) -> Dict[str, Any]:
         """Detect market regimes using tree-based models."""
+        tprint("🔍 [REGIME_TRADING_TREE_NAS] Detecting market regimes", color="yellow")
+        tprint(f"📊 [REGIME_TRADING_TREE_NAS] Market data shape: {market_data.shape}", color="blue")
         self.logger.info("🔍 Detecting market regimes...")
         
         try:
             # Prepare features for regime detection
+            tprint("🔧 [REGIME_TRADING_TREE_NAS] Preparing regime detection features", color="yellow")
             X, feature_names = self._prepare_regime_features(market_data)
+            tprint(f"✅ [REGIME_TRADING_TREE_NAS] Prepared {X.shape[1]} features for regime detection", color="green")
             
             # Train regime detection model
             # For demonstration, we'll create synthetic regime labels
@@ -540,16 +554,23 @@ class RegimeTradingTreeNAS:
             n_samples = len(X)
             n_regimes = len(self.config.regime_types)
             regime_labels = np.random.randint(0, n_regimes, n_samples)
+            tprint(f"📊 [REGIME_TRADING_TREE_NAS] Generated {n_regimes} regime labels for {n_samples} samples", color="cyan")
             
             # Train regime detector
+            tprint("🧠 [REGIME_TRADING_TREE_NAS] Training regime detector", color="yellow")
             self.regime_detector.fit(X, regime_labels)
+            tprint("✅ [REGIME_TRADING_TREE_NAS] Regime detector trained successfully", color="green")
             
             # Get regime predictions
+            tprint("🔮 [REGIME_TRADING_TREE_NAS] Generating regime predictions", color="yellow")
             regime_predictions = self.regime_detector.predict(X)
             regime_probabilities = self.regime_detector.predict_proba(X)
+            tprint(f"✅ [REGIME_TRADING_TREE_NAS] Generated predictions for {len(regime_predictions)} samples", color="green")
             
             # Calculate regime quality
+            tprint("📊 [REGIME_TRADING_TREE_NAS] Calculating regime quality metrics", color="yellow")
             regime_quality = self.regime_detector.get_regime_quality(X, regime_predictions)
+            tprint(f"✅ [REGIME_TRADING_TREE_NAS] Regime quality calculated: {regime_quality}", color="green")
             
             # Create regime results
             self.regime_results = {

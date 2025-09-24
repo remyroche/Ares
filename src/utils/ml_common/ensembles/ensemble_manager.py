@@ -277,6 +277,7 @@ class EnsembleManager:
             self.logger.error(f"❌ Failed to add model {model_name} after {add_time:.3f}s: {e}")
             self.logger.error(f"📋 Model type: {type(model).__name__}")
             self.logger.error(f"📊 Performance metrics: {performance_metrics}")
+            self.logger.warning("⚠️ Model addition failed - ensemble may be incomplete")
             return False
     
     async def create_ensemble(
@@ -576,7 +577,6 @@ class EnsembleManager:
         self.logger.debug("🔄 Creating blending ensemble...")
         start_time = time.time()
         
-        from sklearn.linear_model import LogisticRegression, LinearRegression
         
         # Determine if classification or regression
         self.logger.debug("🔍 Determining task type...")
@@ -766,6 +766,7 @@ class EnsembleManager:
         except Exception as e:
             creation_time = time.time() - start_time
             self.logger.error(f"❌ Failed to create multi-output stacking ensemble after {creation_time:.3f}s: {e}")
+            self.logger.warning("⚠️ Multi-output stacking ensemble creation failed - ensemble may not be available")
             raise
     
     async def _evaluate_ensemble(self, ensemble_model: Any, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, float]:
@@ -828,7 +829,8 @@ class EnsembleManager:
         except Exception as e:
             eval_time = time.time() - start_time
             self.logger.error(f"❌ Error evaluating ensemble after {eval_time:.3f}s: {e}")
-            return {}
+            self.logger.warning("⚠️ Ensemble evaluation failed - returning empty metrics")
+            return {'error': str(e)}
     
     async def _calculate_diversity_score(self, models: Dict[str, ModelMetadata], X: pd.DataFrame) -> float:
         """Calculate diversity score of models."""
@@ -877,6 +879,7 @@ class EnsembleManager:
         except Exception as e:
             calc_time = time.time() - start_time
             self.logger.error(f"❌ Error calculating diversity score after {calc_time:.3f}s: {e}")
+            self.logger.warning("⚠️ Diversity score calculation failed - returning zero diversity")
             return 0.0
     
     async def _calculate_stability_score(self, models: Dict[str, ModelMetadata], X: pd.DataFrame, y: pd.Series) -> float:
@@ -934,6 +937,7 @@ class EnsembleManager:
         except Exception as e:
             calc_time = time.time() - start_time
             self.logger.error(f"❌ Error calculating stability score after {calc_time:.3f}s: {e}")
+            self.logger.warning("⚠️ Stability score calculation failed - returning zero stability")
             return 0.0
     
     def _validate_model(self, model: Any) -> bool:
@@ -945,6 +949,7 @@ class EnsembleManager:
         for method in required_methods:
             if not hasattr(model, method) or not callable(getattr(model, method)):
                 self.logger.error(f"❌ Model missing required method: {method}")
+                self.logger.warning("⚠️ Model validation failed - model cannot be used in ensemble")
                 return False
             else:
                 self.logger.debug(f"✅ Model has required method: {method}")
@@ -1056,7 +1061,8 @@ class EnsembleManager:
             return y_pred, y_pred_proba
             
         except Exception as e:
-            self.logger.error(f"Error making predictions: {e}")
+            self.logger.error(f"❌ Error making predictions: {e}")
+            self.logger.warning("⚠️ Prediction failed - ensemble predictions may be incomplete")
             raise
     
     async def _update_weights(self) -> None:
@@ -1090,7 +1096,8 @@ class EnsembleManager:
             self.logger.info(f"💾 Ensemble saved to {file_path}")
             
         except Exception as e:
-            self.logger.error(f"Error saving ensemble: {e}")
+            self.logger.error(f"❌ Error saving ensemble: {e}")
+            self.logger.warning("⚠️ Ensemble save failed - ensemble data may not be persisted")
             raise
     
     async def load_ensemble(self, file_path: str) -> None:
@@ -1108,5 +1115,6 @@ class EnsembleManager:
             self.logger.info(f"📂 Ensemble loaded from {file_path}")
             
         except Exception as e:
-            self.logger.error(f"Error loading ensemble: {e}")
+            self.logger.error(f"❌ Error loading ensemble: {e}")
+            self.logger.warning("⚠️ Ensemble load failed - ensemble may not be restored from disk")
             raise

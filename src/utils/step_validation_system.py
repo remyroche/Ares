@@ -8,7 +8,6 @@ import json
 from datetime import datetime
 from .logger import system_logger
 
-from .logger import system_logger
 import logging
 import time
 

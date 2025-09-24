@@ -733,7 +733,8 @@ class PerformanceTracker:
         """Save performance report to file."""
         try:
             report_path = Path(self.config.report_path) / f"{report.report_id}.json"
-            
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
             # Convert report to dictionary
             report_dict = {
                 'report_id': report.report_id,
@@ -757,14 +758,16 @@ class PerformanceTracker:
                 ],
                 'recommendations': report.recommendations
             }
-            
+
             with open(report_path, 'w') as f:
                 json.dump(report_dict, f, indent=2)
-            
+
             self.logger.info(f"💾 Performance report saved: {report_path}")
-            
+
+        except (IOError, OSError, json.JSONEncodeError) as e:
+            self.logger.error(f"❌ Could not save performance report: {e}")
         except Exception as e:
-            self.logger.error(f"❌ Failed to save performance report: {e}")
+            self.logger.error(f"❌ Unexpected error saving performance report: {e}")
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary."""

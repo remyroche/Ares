@@ -9,7 +9,6 @@ Error Detection and Alerting System (minimal scaffold)
 from enum import Enum
 from typing import Any
 
-from ...utils.logger import system_logger
 import logging
 
 class AlertSeverity(Enum):

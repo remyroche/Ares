@@ -377,7 +377,6 @@ class RegimePredictabilityValidator(BaseValidator):
     def validate(self, data: pd.DataFrame, regime_labels: np.ndarray, **kwargs) -> ValidationResult:
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.model_selection import cross_val_score
-        from sklearn.preprocessing import StandardScaler
         
         # Prepare features (lagged regime labels and market features)
         n_lags = kwargs.get('n_lags', 5)

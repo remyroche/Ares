@@ -17,7 +17,6 @@ from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
 from src.core.decorators import validates, log_call, traced
 
 class InterpretabilityReporter:
@@ -247,7 +246,6 @@ class InterpretabilityReporter:
                     target_summary_path = report_manager.create_ml_interpretability_report_path(
                         model_type, symbol, exchange, "summary.json"
                     )
-                    import shutil
 
                     shutil.copy2(summary_report_path, target_summary_path)
                     reports_created.append(str(target_summary_path))

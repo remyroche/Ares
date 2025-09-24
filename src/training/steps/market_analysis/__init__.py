@@ -37,17 +37,11 @@ from .gradient_flow_analysis import (
 
 # Legacy compatibility - DEPRECATED but maintained for backward compatibility
 try:
-    from .triple_barrier_labeling import (
-        UnifiedTripleBarrierLabeler,
-        TripleBarrierConfig,
-        TripleBarrierResult,
-        create_triple_barrier_labeler,
-        apply_triple_barrier_labeling,
-        TripleBarrierError,
-        ValidationError,
-        ConfigurationError,
-        HardwareOptimizationError,
-        DataQualityError
+    from .multi_horizon_profit_labeler import (
+        MultiHorizonProfitLabeler,
+        MultiHorizonConfig,
+        create_multi_horizon_labeler,
+        apply_multi_horizon_labeling
     )
     LEGACY_TRIPLE_BARRIER_AVAILABLE = True
 except ImportError:
@@ -55,7 +49,7 @@ except ImportError:
 
 # Legacy compatibility mapping
 if LEGACY_TRIPLE_BARRIER_AVAILABLE:
-    MarketAnalysisTripleBarrierLabeling = UnifiedTripleBarrierLabeler
+    MarketAnalysisTripleBarrierLabeling = MultiHorizonProfitLabeler
 
 # Import regime-aware optimizer
 from .regime_aware_triple_barrier_optimizer import (
@@ -267,16 +261,10 @@ __all__ = [
     "analyze_gradient_flow_benefits",
     
     # Legacy triple barrier components (DEPRECATED - for backward compatibility only)
-    "UnifiedTripleBarrierLabeler",
-    "TripleBarrierConfig",
-    "TripleBarrierResult", 
-    "create_triple_barrier_labeler",
-    "apply_triple_barrier_labeling",
-    "TripleBarrierError",
-    "ValidationError",
-    "ConfigurationError",
-    "HardwareOptimizationError",
-    "DataQualityError",
+    "MultiHorizonProfitLabeler",
+    "MultiHorizonConfig",
+    "create_multi_horizon_labeler",
+    "apply_multi_horizon_labeling",
     "MarketAnalysisTripleBarrierLabeling",
     
     # Regime-aware optimizer

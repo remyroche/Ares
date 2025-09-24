@@ -77,12 +77,48 @@ SRLevel = None
 
 # M1 Optimization Utilities - Now in hardware modules
 try:
-    from src.utils.common_operations import (
-        integrate_with_m1_optimizers, get_m1_gpu_manager,
-        cleanup_m1_optimizers, memory_checkpoint, gpu_context
-    )
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.hardware.m1_memory_optimizer import optimize_memory, get_memory_usage
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager as m1_gpu_manager
+    from src.utils.hardware.m1_optimizations import M1Optimizer
+    
+    # Create wrapper functions for compatibility
+    def integrate_with_m1_optimizers():
+        """Integrate with M1 optimizers."""
+        try:
+            # Initialize components
+            gpu_manager = get_m1_gpu_manager()
+            cpu_optimizer = m1_cpu_optimizer()
+            memory_optimizer = M1Optimizer()
+            
+            return {
+                'gpu_manager': True,
+                'cpu_optimizer': True,
+                'memory_optimizer': True,
+                'integration_status': 'success'
+            }
+        except Exception as e:
+            logger.warning(f"Failed to integrate M1 optimizers: {e}")
+            return {
+                'gpu_manager': False,
+                'cpu_optimizer': False,
+                'memory_optimizer': False,
+                'integration_status': 'failed'
+            }
+    
+    def cleanup_m1_optimizers():
+        """Cleanup M1 optimizers."""
+        pass
+    
+    def memory_checkpoint(checkpoint_name: str):
+        """Memory checkpoint context manager."""
+        optimizer = M1Optimizer()
+        return optimizer.memory_checkpoint(checkpoint_name)
+    
+    def gpu_context():
+        """GPU context manager."""
+        gpu_manager = get_m1_gpu_manager()
+        return gpu_manager.get_gpu_context()
+    
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as m1_cpu_optimizer
 
     # Initialize M1 integration through common operations

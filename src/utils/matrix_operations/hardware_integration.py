@@ -404,7 +404,6 @@ class HardwareOptimizedMatrixProcessor:
             if self.gpu_manager and self.gpu_manager.is_m1 and TORCH_AVAILABLE:
                 # GPU-accelerated scaling using PyTorch
                 try:
-                    import torch
                     # Convert to tensor
                     tensor_data = torch.from_numpy(data_array)
                     

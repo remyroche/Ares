@@ -234,7 +234,6 @@ def demonstrate_individual_utilities():
         
     except Exception as e:
         logger.error(f"❌ Individual utilities test failed: {e}")
-        import traceback
         traceback.print_exc()
         return False
 

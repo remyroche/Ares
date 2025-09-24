@@ -9,7 +9,6 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 from uuid import uuid4
 import optuna
 try:
@@ -17,7 +16,6 @@ try:
 except Exception:
     PerformanceReporter = None
 from src.tactician.enhanced_order_manager import EnhancedOrderManager, OrderRequest, OrderSide, OrderType
-from ...utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, invalid
 import logging
 import numpy as np

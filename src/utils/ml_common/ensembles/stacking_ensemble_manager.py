@@ -466,7 +466,6 @@ class StackingEnsembleManager:
         try:
             # Load ensemble metadata
             with open(file_path, 'rb') as f:
-                import pickle
                 ensemble_data = pickle.load(f)
             
             self.config = ensemble_data['config']

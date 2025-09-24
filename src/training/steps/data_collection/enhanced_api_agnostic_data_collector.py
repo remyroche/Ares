@@ -30,7 +30,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
@@ -773,8 +772,6 @@ class EnhancedAPIAgnosticDataCollector:
     async def _load_existing_data(self, data_dir: str, data_type: str) -> pd.DataFrame:
         """Load existing data from files."""
         try:
-            import os
-            import glob
             
             pattern = f"{data_type}_{self.exchange}_{self.symbol}*_validated.parquet"
             search_path = os.path.join(data_dir, pattern)
@@ -805,7 +802,6 @@ class EnhancedAPIAgnosticDataCollector:
     async def _save_collected_data(self, data: List[Dict[str, Any]], data_type: str, data_dir: str, batch_num: int = None, gap_id: int = None):
         """Save collected data to files."""
         try:
-            import os
             
             # Create data directory
             os.makedirs(data_dir, exist_ok = True)

@@ -384,3 +384,6 @@ def batch_correlation_analysis(data: Union['np.ndarray', 'pd.DataFrame'],
     """Convenience function for batch correlation analysis."""
     processor = get_batch_matrix_processor()
     return processor.batch_correlation_analysis(data, method)
+
+# Alias for backwards compatibility
+BatchMatrixOperations = BatchMatrixProcessor

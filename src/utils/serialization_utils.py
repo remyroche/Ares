@@ -84,7 +84,6 @@ class ParquetSerializer:
     def load(filepath: str) -> Optional[Any]:
         """Load data from parquet."""
         try:
-            import pandas as pd
             return pd.read_parquet(filepath)
         except Exception as e:
             logger.error(f"Failed to load parquet: {e}")

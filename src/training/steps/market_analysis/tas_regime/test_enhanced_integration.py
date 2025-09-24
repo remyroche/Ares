@@ -116,9 +116,6 @@ def test_enhanced_backtesting_engine():
 def test_utility_tools_functionality():
     """Test utility tools functionality."""
     try:
-        from src.utils.common_operations import CommonUtilities, safe_dataframe_operation
-        from src.utils.math_validation import MathValidation, safe_divide
-        from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
         
         # Test common utilities
         common_utils = CommonUtilities()

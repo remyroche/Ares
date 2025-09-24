@@ -70,7 +70,6 @@ except ImportError as e:
 
 # Import pandas for ewm operations
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     logging.warning("Pandas not available - ewm operations will be limited")

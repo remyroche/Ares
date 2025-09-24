@@ -378,7 +378,6 @@ class HDBSCANClusterer(BaseClusterer):
             # Fallback to DBSCAN
             return DBSCANClusterer(self.config).fit_predict(data)
         
-        from sklearn.preprocessing import StandardScaler
         # Keep research module unchanged with respect to constraints
         
         # Standardize data
@@ -418,7 +417,6 @@ class HierarchicalClusterer(BaseClusterer):
     
     def fit_predict(self, data: np.ndarray) -> ClusteringResult:
         from sklearn.cluster import AgglomerativeClustering
-        from sklearn.preprocessing import StandardScaler
         
         # Standardize data
         scaler = StandardScaler()
@@ -456,7 +454,6 @@ class SpectralClusterer(BaseClusterer):
     
     def fit_predict(self, data: np.ndarray) -> ClusteringResult:
         from sklearn.cluster import SpectralClustering
-        from sklearn.preprocessing import StandardScaler
         
         # Standardize data
         scaler = StandardScaler()
@@ -562,7 +559,6 @@ class EnsembleClusterer(BaseClusterer):
         ensemble_labels = self._ensemble_voting(individual_results)
         
         # Calculate ensemble metrics
-        from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(data)
         metrics = self._calculate_metrics(data_scaled, ensemble_labels)
@@ -648,7 +644,6 @@ class EnsembleClusterer(BaseClusterer):
         co_assignment = (co_assignment > threshold).astype(int)
         
         # Convert to cluster labels
-        from scipy.sparse.csgraph import connected_components
         n_components, labels = connected_components(co_assignment)
         
         return labels
@@ -672,7 +667,6 @@ class EnsembleClusterer(BaseClusterer):
         co_assignment = (co_assignment == n_methods).astype(int)
         
         # Convert to cluster labels
-        from scipy.sparse.csgraph import connected_components
         n_components, labels = connected_components(co_assignment)
         
         return labels
@@ -859,7 +853,6 @@ class RegimeClusterer:
         
         try:
             from sklearn.decomposition import PCA, FactorAnalysis
-            from sklearn.preprocessing import StandardScaler
             
             # Standardize data
             scaler = StandardScaler()

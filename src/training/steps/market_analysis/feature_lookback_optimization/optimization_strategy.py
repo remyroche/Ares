@@ -148,7 +148,6 @@ class GridSearchStrategy(OptimizationStrategy):
                  **kwargs) -> OptimizationResult:
         """Perform grid search optimization."""
         import time
-        import numpy as np
         from sklearn.feature_selection import mutual_info_regression
         
         start_time = time.time()

@@ -762,7 +762,6 @@ class ContextualFeatureEngineer:
                 selector = SelectKBest(score_func=f_regression, k=self.config.feature_selection_k)
             elif self.config.feature_selection_method == "pca":
                 # Use PCA for dimensionality reduction
-                from sklearn.decomposition import PCA
                 selector = PCA(n_components=self.config.feature_selection_k)
                 
                 X_selected = selector.fit_transform(X)

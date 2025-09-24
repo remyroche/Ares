@@ -485,7 +485,6 @@ def m1_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
 
 def get_enhanced_matrix_operations():
     """Legacy function for backward compatibility."""
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning("⚠️ get_enhanced_matrix_operations() is deprecated. Use get_unified_matrix_operations() instead.")
     return get_unified_matrix_operations()

@@ -32,7 +32,8 @@ from src.utils.common_operations import (
 
 # Import logger with fallback
 try:
-    from src.utils.logger import system_logger
+    from src.utils.logger import get_logger
+    system_logger = get_logger(__name__)
 except ImportError:
     system_logger = logging.getLogger(__name__)
 

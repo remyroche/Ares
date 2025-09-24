@@ -828,7 +828,6 @@ class UnifiedDataConverter:
 
     async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
         try:
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
             self.logger.info('🔍 Running enhanced quality validation...')
             manager = EnhancedDataQualityManager(str(self.data_cache_dir))
             results = await manager.comprehensive_quality_check(symbol = symbol, exchange = exchange, timeframe = timeframe, check_gaps = True, fill_gaps = True, validate_format = True)
@@ -1844,7 +1843,6 @@ if __name__ == '__main__':
     async def _main() -> None:
         ok = await run_step(symbol = args.symbol, exchange = args.exchange, timeframe = args.timeframe, data_dir = args.data_dir, force_rerun = args.force_rerun)
         tprint('✅ Step 1.5: Data Converter completed successfully' if ok else '❌ Step 1.5: Data Converter failed')
-        import gc
         gc.collect()
     try:
         asyncio.run(_main())
@@ -1853,7 +1851,6 @@ if __name__ == '__main__':
     except Exception:
         pass
     finally:
-        import gc
         gc.collect()
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils

@@ -41,6 +41,16 @@ try:
 except ImportError as e:
     logging.warning(f"ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
+    
+    # Define fallback classes
+    class ValidationLevel:
+        LAX = "lax"
+        STANDARD = "standard"
+        STRICT = "strict"
+    
+    class MathValidator:
+        def __init__(self, validation_level=None):
+            self.validation_level = validation_level
 
 logger = logging.getLogger(__name__)
 

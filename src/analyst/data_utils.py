@@ -9,7 +9,6 @@ from scipy.signal import find_peaks
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import critical, failed, initialization_error, invalid, missing, warning
-from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
 

@@ -1,28 +1,31 @@
 
 
-import src.utils.warning_symbols
-import numpy as np
-from ...utils.logger import system_logger
-from .core.decorators import handles_errors
-
-# src/tactician/position_closing.py
-
-
 """
 Position Closing Module for Tactician.
 Handles position closure based on dual model confidence scores and ATR-based exit rules.
 """
+import logging
+import time
 from datetime import datetime
 from typing import Any
 
-from ...utils.logger import system_logger
-from src.core.exceptions import (
-import logging
-import time
+import numpy as np
+import src.utils.warning_symbols
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
 
-    failed,
-    invalid,
-)
+# Optional imports with fallbacks
+try:
+    from ..core.exceptions import (  # type: ignore
+        failed,
+        invalid,
+    )
+except ImportError:
+    # Fallback functions if exceptions module is not available
+    def failed(message: str) -> str:
+        return f"FAILED: {message}"
+    def invalid(message: str) -> str:
+        return f"INVALID: {message}"
 
 
 class PositionCloser:

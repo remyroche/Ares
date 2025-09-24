@@ -493,7 +493,6 @@ class AutoConfiguration:
     def _estimate_noise_level(self, X: np.ndarray, y: np.ndarray) -> float:
         """Estimate noise level in the data."""
         try:
-            from sklearn.linear_model import LinearRegression
             from sklearn.metrics import mean_squared_error
             
             lr = LinearRegression()

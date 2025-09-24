@@ -1197,8 +1197,10 @@ class TacticianPreMLOrchestrator:
                 tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
                 tprint_info(f"  🔢 Long Features: {features['long_features_count']}")
                 tprint_info(f"  🔢 Short Features: {features['short_features_count']}")
-            except:
-                pass
+            except (KeyError, TypeError) as e:
+                tprint_warning(f"⚠️ Could not display basic summary: {e}")
+            except Exception as e:
+                tprint_error(f"❌ Unexpected error in basic summary logging: {e}")
 
     async def _apply_horizon_labeling(
         self,

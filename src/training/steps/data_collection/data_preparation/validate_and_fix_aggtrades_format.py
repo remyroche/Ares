@@ -21,7 +21,6 @@ from typing import Any, Dict, List
 import threading
 import time
 
-from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

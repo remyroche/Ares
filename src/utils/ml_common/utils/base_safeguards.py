@@ -817,7 +817,6 @@ class MLTrainingSafeguards:
                                              context: ErrorContext,
                                              rule_config: Dict[str, Any]) -> float:
         """Calculate confidence score for error classification."""
-        import re
 
         confidence = 0.0
         patterns = rule_config['patterns']

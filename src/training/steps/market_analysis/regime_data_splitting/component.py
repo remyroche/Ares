@@ -593,7 +593,6 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Load regime discovery results from previous successful outcomes."""
         import os
         import json
-        from pathlib import Path
 
         try:
             outcomes_dir = Path("/Users/remyroche/Documents/Ares/outcomes")

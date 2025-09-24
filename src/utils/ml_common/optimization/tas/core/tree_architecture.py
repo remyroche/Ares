@@ -8,10 +8,13 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
 import json
+import logging
 from datetime import datetime
 from enum import Enum
 
 from ..core.tas_config import TreeModelType, OptimizationObjective
+
+logger = logging.getLogger(__name__)
 
 
 class ArchitectureStatus(Enum):
@@ -181,7 +184,7 @@ class TreeArchitectureCandidate:
             'search_iteration': self.search_iteration,
             'search_strategy': self.search_strategy,
             'parent_architectures': self.parent_architectures,
-            'feature_importance': self.feature_importance.tolist() if self.feature_importance is not None else None,
+            'feature_importance': self.feature_importance.tolist() if self.feature_importance is not None and hasattr(self.feature_importance, 'tolist') else None,
             'uncertainty_estimates': self.uncertainty_estimates,
             'robustness_scores': self.robustness_scores
         }
@@ -246,7 +249,13 @@ class TreeArchitectureCandidate:
     def get_complexity_score(self) -> float:
         """Calculate complexity score for the architecture."""
         # Base complexity from number of trees and depth
-        tree_complexity = self.n_trees * (2 ** self.max_depth)
+        try:
+            # Prevent overflow by capping max_depth
+            effective_depth = min(self.max_depth, 30)  # Cap at 30 to prevent overflow
+            tree_complexity = self.n_trees * (2 ** effective_depth)
+        except OverflowError:
+            self.logger.warning(f"⚠️ Max depth {self.max_depth} causes overflow, capping at 30")
+            tree_complexity = self.n_trees * (2 ** 30)
         
         # Feature complexity
         if isinstance(self.max_features, (int, float)):
@@ -272,13 +281,18 @@ class TreeArchitectureCandidate:
         # Efficiency based on performance per complexity
         if self.overall_score <= 0:
             return 0.0
-        
-        complexity = self.get_complexity_score()
-        if complexity <= 0:
+
+        try:
+            complexity = self.get_complexity_score()
+            if complexity <= 0:
+                return 0.0
+
+            efficiency = self.overall_score / complexity
+            # Cap efficiency at reasonable maximum to prevent extreme values
+            return min(max(efficiency, 0.0), 10.0)
+        except Exception as e:
+            logger.warning(f"❌ Failed to calculate efficiency score: {e}")
             return 0.0
-        
-        efficiency = self.overall_score / complexity
-        return min(efficiency, 1.0)
     
     def is_valid(self) -> bool:
         """Check if architecture is valid."""
@@ -351,7 +365,6 @@ class TreeArchitectureCandidate:
     
     def crossover(self, other: 'TreeArchitectureCandidate') -> 'TreeArchitectureCandidate':
         """Create a crossover between two architectures."""
-        import random
         
         # Create offspring
         offspring = TreeArchitectureCandidate(

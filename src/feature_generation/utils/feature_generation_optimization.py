@@ -917,7 +917,6 @@ class FeatureGenerationOptimizer:
                         from ..categories.returns import ReturnsFeatureGenerator
                         from ..categories.support_resistance import SupportResistanceFeatureGenerator
                         from ..categories.candlestick_pattern import CandlestickPatternFeatureGenerator
-                        from ..categories.hmm_regime import HMMRegimeFeatureGenerator
                         from ..categories.interaction import InteractionFeatureGenerator
                         
                         # Factory functions for complex generators
@@ -937,7 +936,6 @@ class FeatureGenerationOptimizer:
                             ReturnsFeatureGenerator(),
                             SupportResistanceFeatureGenerator(),
                             CandlestickPatternFeatureGenerator(),
-                            HMMRegimeFeatureGenerator(),
                             InteractionFeatureGenerator()
                         ]
                         
@@ -995,7 +993,7 @@ class FeatureGenerationOptimizer:
                     # Generate features for ALL available categories
                     categories_to_generate = [
                         FeatureCategory.MOMENTUM,
-                        FeatureCategory.VOLATILITY, 
+                        FeatureCategory.VOLATILITY,
                         FeatureCategory.TREND,
                         FeatureCategory.OSCILLATOR,
                         FeatureCategory.VOLUME,
@@ -1005,7 +1003,6 @@ class FeatureGenerationOptimizer:
                         FeatureCategory.MICROSTRUCTURE,
                         FeatureCategory.ORDER_FLOW,
                         FeatureCategory.CROSS_TIMEFRAME,
-                        FeatureCategory.HMM_REGIME,
                         FeatureCategory.ENTROPY,
                         FeatureCategory.TIME
                         # Note: CUSTOM and LEGACY categories available too

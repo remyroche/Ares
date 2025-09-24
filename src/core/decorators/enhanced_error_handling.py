@@ -176,7 +176,6 @@ class EnhancedErrorHandler:
     def _get_cpu_usage(self) -> float:
         """Get current CPU usage percentage."""
         try:
-            import psutil
             process = psutil.Process()
             return process.cpu_percent()
         except Exception:

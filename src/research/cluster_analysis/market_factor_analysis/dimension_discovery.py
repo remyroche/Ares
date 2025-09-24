@@ -1042,7 +1042,6 @@ class MarketDimensionAnalyzer:
         # Use supervised importance (mutual information or feature importance)
         try:
             from sklearn.feature_selection import mutual_info_classif
-            from sklearn.preprocessing import StandardScaler
             
             # Standardize features
             scaler = StandardScaler()
@@ -1090,7 +1089,6 @@ class MarketDimensionAnalyzer:
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import cross_val_score
-            from sklearn.preprocessing import StandardScaler
             
             # Prepare data
             scaler = StandardScaler()
@@ -1115,8 +1113,6 @@ class MarketDimensionAnalyzer:
             # Use clustering-based discriminability
             try:
                 from sklearn.cluster import KMeans
-                from sklearn.metrics import silhouette_score
-                from sklearn.preprocessing import StandardScaler
                 
                 scaler = StandardScaler()
                 X = scaler.fit_transform(features.fillna(0))
@@ -1140,7 +1136,6 @@ class MarketDimensionAnalyzer:
         # Use supervised discriminability
         try:
             from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-            from sklearn.preprocessing import StandardScaler
             
             scaler = StandardScaler()
             X = scaler.fit_transform(features.fillna(0))

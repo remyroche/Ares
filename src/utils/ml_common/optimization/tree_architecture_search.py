@@ -1073,8 +1073,6 @@ class TreeArchitectureSearch:
 
     def _create_model_from_candidate(self, candidate: TreeArchitectureCandidate, y_train: np.ndarray = None):
         """Create a tree-based model from architecture candidate."""
-        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-        from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
         from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
 
         # Try to import XGBoost and LightGBM

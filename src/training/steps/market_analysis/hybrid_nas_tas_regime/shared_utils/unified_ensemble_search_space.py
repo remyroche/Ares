@@ -16,8 +16,8 @@ import time
 from datetime import datetime
 import random
 from collections import defaultdict
-
-from .architecture_encoders import ArchitectureEncoder, UnifiedArchitectureEncoder
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
+from .architecture_encoders import BaseArchitectureEncoder, UnifiedArchitectureEncoder
 from .performance_estimators import UnifiedPerformanceEstimator
 from .constraint_systems import UnifiedConstraintValidator
 

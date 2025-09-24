@@ -16,7 +16,6 @@ from .explainability.tactician_explainer import TacticianExplainer
 from .explainability.hmm_explainer import HMMExplainer
 from .explainability.sr_explainer import SRExplainer
 from .explainability.analyst_explainer import AnalystExplainer
-from ..utils.logger import system_logger
 import logging
 import time
 

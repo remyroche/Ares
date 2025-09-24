@@ -414,7 +414,7 @@ class BayesianEntryTimingOptimizer:
                                      analyst_signals: Optional[np.ndarray] = None,
                                      hmm_regime_probs: Optional[np.ndarray] = None,
                                      timestamps: Optional[np.ndarray] = None,
-                                     params: Dict[str, Any]) -> Dict[str, Any]:
+                                     params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Simulate trading with given parameters."""
         try:
             # Extract parameters

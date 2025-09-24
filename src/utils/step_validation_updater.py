@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Type
 from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 
-from .logger import system_logger
 import logging
 import numpy as np
 

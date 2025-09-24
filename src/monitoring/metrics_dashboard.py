@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from ..utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime

@@ -427,7 +427,6 @@ class BacktestingSubPipeline:
         
         # Import and use Monte Carlo simulation
         try:
-            from .consolidated_backtesting_step import ConsolidatedBacktestingStep
             
             backtester = ConsolidatedBacktestingStep()
             mc_result = await backtester.monte_carlo_simulation(
@@ -468,7 +467,6 @@ class BacktestingSubPipeline:
         
         # Import and use A/B testing
         try:
-            from .consolidated_backtesting_step import ConsolidatedBacktestingStep
             
             backtester = ConsolidatedBacktestingStep()
             ab_result = await backtester.ab_testing(

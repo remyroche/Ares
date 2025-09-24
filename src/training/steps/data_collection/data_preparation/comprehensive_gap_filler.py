@@ -5,7 +5,6 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-import pandas as pd
 
 #!/usr/bin/env python3
 
@@ -26,7 +25,6 @@ from typing import Any
 import aiohttp
 import certifi
 
-from src.utils.logger import system_logger
 import logging
 import numpy as np
 import time
@@ -50,7 +48,6 @@ class ComprehensiveGapFiller:
         """Ensure aiohttp session is available."""
         if self.session is None:
             # Create connector with SSL configuration to handle certificate issues
-            import ssl
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
@@ -457,7 +454,6 @@ class ComprehensiveGapFiller:
 
         try:
             # Use the enhanced Binance exchange client
-            from src.exchange.binance import BinanceExchange
             
             # Initialize Binance exchange
             binance_config = {

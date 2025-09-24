@@ -76,22 +76,22 @@ def demonstrate_enhanced_clustering():
         print("="*60)
 
         print(f"📈 Number of clusters: {result.statistics.n_clusters}")
-        print(f"📊 Coverage: {result.statistics.coverage_percentage".3f"}")
-        print(f"🔊 Noise percentage: {result.statistics.noise_percentage".3f"}")
+        print(f"📊 Coverage: {result.statistics.coverage_percentage:.3f}")
+        print(f"🔊 Noise percentage: {result.statistics.noise_percentage:.3f}")
 
         print(f"\n📊 Quality Metrics:")
-        print(f"  • Silhouette Score: {result.quality_metrics.get('silhouette', 0.0)".3f"}")
-        print(f"  • Davies-Bouldin Score: {result.quality_metrics.get('davies_bouldin', float('inf'))".3f"}")
-        print(f"  • Calinski-Harabasz Score: {result.quality_metrics.get('calinski_harabasz', 0.0)".3f"}")
+        print(f"  • Silhouette Score: {result.quality_metrics.get('silhouette', 0.0):.3f}")
+        print(f"  • Davies-Bouldin Score: {result.quality_metrics.get('davies_bouldin', float('inf')):.3f}")
+        print(f"  • Calinski-Harabasz Score: {result.quality_metrics.get('calinski_harabasz', 0.0):.3f}")
 
         print(f"\n📊 Enhanced CV Metrics:")
-        print(f"  • Mean within-cluster CV: {result.quality_metrics.get('mean_within_cluster_cv', 0.0)".3f"}")
-        print(f"  • Enhanced quality score: {result.quality_metrics.get('enhanced_quality_score', 0.0)".3f"}")
+        print(f"  • Mean within-cluster CV: {result.quality_metrics.get('mean_within_cluster_cv', 0.0):.3f}")
+        print(f"  • Enhanced quality score: {result.quality_metrics.get('enhanced_quality_score', 0.0):.3f}")
 
         print(f"\n📊 Performance Improvements:")
         perf_metrics = result.performance_metrics
-        print(f"  • Silhouette improvement: {perf_metrics.get('improvement_silhouette', 0.0)".3f"}")
-        print(f"  • Davies-Bouldin improvement: {perf_metrics.get('improvement_davies_bouldin', 0.0)".3f"}")
+        print(f"  • Silhouette improvement: {perf_metrics.get('improvement_silhouette', 0.0):.3f}")
+        print(f"  • Davies-Bouldin improvement: {perf_metrics.get('improvement_davies_bouldin', 0.0):.3f}")
 
         print(f"\n🔄 Optimization Details:")
         print(f"  • Frontier optimization applied: {result.metadata.get('frontier_optimization_applied', False)}")
@@ -112,14 +112,14 @@ def demonstrate_enhanced_clustering():
         sizes = result.statistics.cluster_sizes
         percentages = result.statistics.cluster_percentages
 
-        print(f"  • Mean cluster size: {result.statistics.mean_cluster_size".2f"} ({result.statistics.mean_cluster_size/len(result.labels)*100".2f"}%)")
-        print(f"  • Std cluster size: {result.statistics.std_cluster_size".2f"}")
-        print(f"  • Min cluster size: {result.statistics.min_cluster_size".2f"} ({percentages.min()*100".2f"}%)")
-        print(f"  • Max cluster size: {result.statistics.max_cluster_size".2f"} ({percentages.max()*100".2f"}%)")
+        print(f"  • Mean cluster size: {result.statistics.mean_cluster_size:.2f} ({result.statistics.mean_cluster_size/len(result.labels)*100:.2f}%)")
+        print(f"  • Std cluster size: {result.statistics.std_cluster_size:.2f}")
+        print(f"  • Min cluster size: {result.statistics.min_cluster_size:.2f} ({percentages.min()*100:.2f}%)")
+        print(f"  • Max cluster size: {result.statistics.max_cluster_size:.2f} ({percentages.max()*100:.2f}%)")
 
         # Count clusters in target range (3-8%)
         target_range_count = np.sum((percentages >= 0.03) & (percentages <= 0.08))
-        print(f"  • Clusters in 3-8% range: {target_range_count}/{len(sizes)} ({target_range_count/len(sizes)*100".1f"}%)")
+        print(f"  • Clusters in 3-8% range: {target_range_count}/{len(sizes)} ({target_range_count/len(sizes)*100:.1f}%)")
 
         # Analyze transfer history
         print(f"\n🔄 Regime Transfer History:")
@@ -128,8 +128,8 @@ def demonstrate_enhanced_clustering():
 
         if transfer_history:
             benefits = [transfer['benefit'] for transfer in transfer_history]
-            print(f"  • Mean transfer benefit: {np.mean(benefits)".3f"}")
-            print(f"  • Max transfer benefit: {np.max(benefits)".3f"}")
+            print(f"  • Mean transfer benefit: {np.mean(benefits):.3f}")
+            print(f"  • Max transfer benefit: {np.max(benefits):.3f}")
 
         print(f"\n" + "="*60)
 
@@ -165,7 +165,7 @@ def demonstrate_custom_configuration():
 
     print("✅ Custom configuration created:")
     print(f"  • Target clusters: {config.target_n_clusters}")
-    print(f"  • Size range: {config.min_cluster_size_pct*100".1f"}% - {config.max_cluster_size_pct*100".1f"}%")
+    print(f"  • Size range: {config.min_cluster_size_pct*100:.1f}% - {config.max_cluster_size_pct*100:.1f}%")
     print(f"  • Quality thresholds - Silhouette: {config.min_silhouette_score}, CH: {config.min_calinski_harabasz_score}, DB: {config.min_davies_bouldin_score}")
     print(f"  • Enhanced features enabled: {config.weighted_4d_mapping and config.cv_based_similarity}")
 
@@ -199,14 +199,14 @@ def analyze_frontier_characteristics(result):
         cv_ratios = [f['cv_ratio'] for f in frontier_list]
         size_ratios = [f['size_ratio'] for f in frontier_list]
 
-        print(f"  • Mean similarity: {np.mean(similarities)".3f"} ± {np.std(similarities)".3f"}")
-        print(f"  • Mean CV ratio: {np.mean(cv_ratios)".3f"} ± {np.std(cv_ratios)".3f"}")
-        print(f"  • Mean size ratio: {np.mean(size_ratios)".3f"} ± {np.std(size_ratios)".3f"}")
+        print(f"  • Mean similarity: {np.mean(similarities):.3f} ± {np.std(similarities):.3f}")
+        print(f"  • Mean CV ratio: {np.mean(cv_ratios):.3f} ± {np.std(cv_ratios):.3f}")
+        print(f"  • Mean size ratio: {np.mean(size_ratios):.3f} ± {np.std(size_ratios):.3f}")
 
         # Count high-quality frontiers
         high_quality_count = sum(1 for f in frontier_list
                                if f['similarity_score'] > 0.7 and f['cv_ratio'] < 1.5 and f['size_ratio'] < 2.0)
-        print(f"  • High-quality frontiers: {high_quality_count}/{len(frontier_list)} ({high_quality_count/len(frontier_list)*100".1f"}%)")
+        print(f"  • High-quality frontiers: {high_quality_count}/{len(frontier_list)} ({high_quality_count/len(frontier_list)*100:.1f}%)")
 
     # Overall frontier statistics
     all_frontiers = [f for frontier_list in frontiers.values() for f in frontier_list]
@@ -215,11 +215,11 @@ def analyze_frontier_characteristics(result):
         all_cv_ratios = [f['cv_ratio'] for f in all_frontiers]
         all_size_ratios = [f['size_ratio'] for f in all_frontiers]
 
-        print("
-📊 Overall Frontier Statistics:"        print(f"  • Total frontiers: {len(all_frontiers)}")
-        print(f"  • Mean similarity: {np.mean(all_similarities)".3f"}")
-        print(f"  • Mean CV ratio: {np.mean(all_cv_ratios)".3f"}")
-        print(f"  • Mean size ratio: {np.mean(all_size_ratios)".3f"}")
+        print("\n📊 Overall Frontier Statistics:")
+        print(f"  • Total frontiers: {len(all_frontiers)}")
+        print(f"  • Mean similarity: {np.mean(all_similarities):.3f}")
+        print(f"  • Mean CV ratio: {np.mean(all_cv_ratios):.3f}")
+        print(f"  • Mean size ratio: {np.mean(all_size_ratios):.3f}")
 
     print(f"\n" + "="*60)
 
@@ -250,16 +250,16 @@ def compare_with_standard_clustering():
     print("="*60)
 
     print("📊 Standard Clustering Results:")
-    print(f"  • Silhouette: {standard_result.quality_metrics.get('silhouette', 0.0)".3f"}")
-    print(f"  • Davies-Bouldin: {standard_result.quality_metrics.get('davies_bouldin', float('inf'))".3f"}")
-    print(f"  • Within-cluster CV: {standard_result.quality_metrics.get('mean_within_cluster_cv', 0.0)".3f"}")
-    print(f"  • Enhanced quality: {standard_result.quality_metrics.get('enhanced_quality_score', 0.0)".3f"}")
+    print(f"  • Silhouette: {standard_result.quality_metrics.get('silhouette', 0.0):.3f}")
+    print(f"  • Davies-Bouldin: {standard_result.quality_metrics.get('davies_bouldin', float('inf')):.3f}")
+    print(f"  • Within-cluster CV: {standard_result.quality_metrics.get('mean_within_cluster_cv', 0.0):.3f}")
+    print(f"  • Enhanced quality: {standard_result.quality_metrics.get('enhanced_quality_score', 0.0):.3f}")
 
-    print("
-🚀 Enhanced Clustering Results:"    print(f"  • Silhouette: {enhanced_result.quality_metrics.get('silhouette', 0.0)".3f"}")
-    print(f"  • Davies-Bouldin: {enhanced_result.quality_metrics.get('davies_bouldin', float('inf'))".3f"}")
-    print(f"  • Within-cluster CV: {enhanced_result.quality_metrics.get('mean_within_cluster_cv', 0.0)".3f"}")
-    print(f"  • Enhanced quality: {enhanced_result.quality_metrics.get('enhanced_quality_score', 0.0)".3f"}")
+    print("\n🚀 Enhanced Clustering Results:")
+    print(f"  • Silhouette: {enhanced_result.quality_metrics.get('silhouette', 0.0):.3f}")
+    print(f"  • Davies-Bouldin: {enhanced_result.quality_metrics.get('davies_bouldin', float('inf')):.3f}")
+    print(f"  • Within-cluster CV: {enhanced_result.quality_metrics.get('mean_within_cluster_cv', 0.0):.3f}")
+    print(f"  • Enhanced quality: {enhanced_result.quality_metrics.get('enhanced_quality_score', 0.0):.3f}")
 
     # Calculate improvements
     if enhanced_result.success and standard_result.success:
@@ -272,11 +272,11 @@ def compare_with_standard_clustering():
         quality_improvement = (enhanced_result.quality_metrics.get('enhanced_quality_score', 0.0) -
                              standard_result.quality_metrics.get('enhanced_quality_score', 0.0))
 
-        print("
-📈 Improvements:"        print(f"  • Silhouette improvement: {silhouette_improvement".3f"} ({silhouette_improvement/standard_result.quality_metrics.get('silhouette', 0.0)*100".1f"}%)")
-        print(f"  • Davies-Bouldin improvement: {db_improvement".3f"} ({db_improvement/max(1, standard_result.quality_metrics.get('davies_bouldin', 1.0))*100".1f"}%)")
-        print(f"  • Within-cluster CV improvement: {cv_improvement".3f"} ({cv_improvement/max(0.01, standard_result.quality_metrics.get('mean_within_cluster_cv', 0.01))*100".1f"}%)")
-        print(f"  • Enhanced quality improvement: {quality_improvement".3f"} ({quality_improvement/standard_result.quality_metrics.get('enhanced_quality_score', 0.01)*100".1f"}%)")
+        print("\n📈 Improvements:")
+        print(f"  • Silhouette improvement: {silhouette_improvement:.3f} ({silhouette_improvement/standard_result.quality_metrics.get('silhouette', 0.0)*100:.1f}%)")
+        print(f"  • Davies-Bouldin improvement: {db_improvement:.3f} ({db_improvement/max(1, standard_result.quality_metrics.get('davies_bouldin', 1.0))*100:.1f}%)")
+        print(f"  • Within-cluster CV improvement: {cv_improvement:.3f} ({cv_improvement/max(0.01, standard_result.quality_metrics.get('mean_within_cluster_cv', 0.01))*100:.1f}%)")
+        print(f"  • Enhanced quality improvement: {quality_improvement:.3f} ({quality_improvement/standard_result.quality_metrics.get('enhanced_quality_score', 0.01)*100:.1f}%)")
 
     print(f"\n" + "="*60)
 

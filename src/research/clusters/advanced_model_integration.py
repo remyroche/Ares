@@ -1027,7 +1027,6 @@ class AdvancedModelSelector:
 
 # Example usage and testing
 if __name__ == "__main__":
-    import asyncio
     
     # Generate synthetic 1h market data for testing
     np.random.seed(42)

@@ -42,6 +42,8 @@ Usage:
     )
 """
 
+import logging
+
 # Core framework imports
 try:
     from .core import (
@@ -84,7 +86,6 @@ try:
     BASE_CALCULATIONS_AVAILABLE = True
 except ImportError as e:
     BASE_CALCULATIONS_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Base calculations not available: {e}")
 
@@ -152,7 +153,6 @@ try:
     CATEGORIES_AVAILABLE = True
 except ImportError as e:
     CATEGORIES_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Category generators not available: {e}")
 
@@ -167,7 +167,6 @@ try:
     MATRIX_INTEGRATION_AVAILABLE = True
 except ImportError as e:
     MATRIX_INTEGRATION_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Matrix integration not available: {e}")
 
@@ -181,7 +180,6 @@ try:
     HMM_COMPATIBILITY_AVAILABLE = True
 except ImportError as e:
     HMM_COMPATIBILITY_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"HMM compatibility not available: {e}")
 
@@ -197,7 +195,6 @@ try:
     CONVENIENCE_AVAILABLE = True
 except ImportError as e:
     CONVENIENCE_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Convenience functions not available: {e}")
 
@@ -231,7 +228,6 @@ try:
     UTILS_AVAILABLE = True
 except ImportError as e:
     UTILS_AVAILABLE = False
-    import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Advanced utils not available: {e}")
 
@@ -355,12 +351,10 @@ if CORE_AVAILABLE:
         from .core import _initialize_default_bank
         _initialize_default_bank()
     except Exception as e:
-        import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"Failed to initialize default feature bank: {e}")
 
 # Log initialization
-import logging
 logger = logging.getLogger(__name__)
 logger.info("✅ Unified Feature Generation System initialized")
 logger.info(f"📦 Version: {__version__}")

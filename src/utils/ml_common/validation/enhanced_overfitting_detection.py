@@ -1389,7 +1389,6 @@ class UniversalMLValidationOrchestrator:
     def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
         """Calculate comprehensive metrics."""
         try:
-            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, mean_squared_error, r2_score
 
             metrics = {}
 
@@ -1399,16 +1398,21 @@ class UniversalMLValidationOrchestrator:
                 metrics['f1'] = float(f1_score(y_true, y_pred, average='weighted'))
                 metrics['precision'] = float(precision_score(y_true, y_pred, average='weighted'))
                 metrics['recall'] = float(recall_score(y_true, y_pred, average='weighted'))
-            except:
-                pass
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to calculate classification metrics: {e}")
+                metrics['precision'] = None
+                metrics['recall'] = None
 
             # Regression metrics
             try:
                 metrics['mse'] = float(mean_squared_error(y_true, y_pred))
                 metrics['rmse'] = float(np.sqrt(metrics['mse']))
                 metrics['r2'] = float(r2_score(y_true, y_pred))
-            except:
-                pass
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to calculate regression metrics: {e}")
+                metrics['mse'] = None
+                metrics['rmse'] = None
+                metrics['r2'] = None
 
             return metrics
 
@@ -1447,8 +1451,8 @@ class UniversalMLValidationOrchestrator:
                     if np.any(train_corr > high_corr_threshold) or np.any(val_corr > high_corr_threshold):
                         assessment['train_data_issues'].append('high_feature_correlation')
                         assessment['validation_data_issues'].append('high_feature_correlation')
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"⚠️ Failed to check feature correlation: {e}")
 
             # Check target distribution differences
             if len(y_train) > 10 and len(y_val) > 10:

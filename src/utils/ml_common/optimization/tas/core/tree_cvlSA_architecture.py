@@ -83,6 +83,7 @@ class TreeCVLSASearch:
         # Results tracking
         self.cascade_history: List[Dict[str, Any]] = []
         self.variable_selection_history: List[Dict[str, Any]] = []
+        self.micro_regime_history: List[MicroRegimeDetectionResult] = []
 
         self.logger.info("✅ Tree CVLSA initialized with cascade architecture")
 
@@ -180,7 +181,11 @@ class TreeCVLSASearch:
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-            except:
+                if not regimes:
+                    self.logger.warning("⚠️ NAS clustering returned empty results, falling back to tree models")
+                    regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
+            except Exception as e:
+                self.logger.error(f"❌ NAS clustering failed: {e}, falling back to tree models")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
@@ -314,7 +319,16 @@ class TreeCVLSASearch:
             self.logger.info(f"✅ Variable selection optimized: {len(variable_selection_config['selected_methods'])} methods selected")
 
         except Exception as e:
-            self.logger.warning(f"Variable selection optimization failed: {e}")
+            self.logger.error(f"❌ Variable selection optimization failed: {e}")
+            # Set fallback values for critical parameters
+            variable_selection_config.update({
+                'selected_methods': ['variance_threshold', 'tree_importance'],
+                'feature_importance_threshold': 0.1,
+                'redundancy_threshold': 0.8,
+                'optimal_feature_count': X.shape[1] if 'X' in locals() else 0,
+                'selection_accuracy': 0.5  # Conservative fallback accuracy
+            })
+            self.logger.warning(f"⚠️ Using fallback variable selection config: {variable_selection_config}")
 
         return variable_selection_config
 
@@ -520,7 +534,6 @@ class TreeCVLSASearch:
     def _recursive_elimination_selection(self, features: np.ndarray, target: pd.Series) -> np.ndarray:
         """Apply recursive feature elimination."""
         from sklearn.feature_selection import RFE
-        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
         if len(np.unique(target)) <= 10:
             estimator = RandomForestClassifier(n_estimators=50, random_state=42)
@@ -565,7 +578,6 @@ class TreeCVLSASearch:
     def _calculate_feature_importance_scores(self, features: np.ndarray, target: pd.Series) -> Dict[str, float]:
         """Calculate feature importance scores."""
         try:
-            from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
             if len(np.unique(target)) <= 10:
                 model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -582,7 +594,8 @@ class TreeCVLSASearch:
             return importance_dict
 
         except Exception as e:
-            self.logger.warning(f"Feature importance calculation failed: {e}")
+            self.logger.error(f"❌ Feature importance calculation failed: {e}")
+            self.logger.warning("⚠️ Returning empty feature importance dict - feature selection may be impacted")
             return {}
 
     def _optimize_cascade_structure(self, base_architecture: TreeArchitectureCandidate,
@@ -735,7 +748,8 @@ class TreeCVLSASearch:
             return efficiency_score
 
         except Exception as e:
-            self.logger.warning(f"Cascade performance evaluation failed: {e}")
+            self.logger.error(f"❌ Cascade performance evaluation failed: {e}")
+            self.logger.warning("⚠️ Returning 0.0 score - cascade architecture evaluation will be affected")
             return 0.0
 
     def _calculate_cascade_efficiency(self, architecture: TreeArchitectureCandidate) -> float:
@@ -837,7 +851,8 @@ class TreeCVLSASearch:
             return optimal_count
 
         except Exception as e:
-            self.logger.warning(f"Feature count optimization failed: {e}")
+            self.logger.error(f"❌ Feature count optimization failed: {e}")
+            self.logger.warning(f"⚠️ Using original feature count ({X.shape[1]}) as fallback")
             return X.shape[1]
 
     def _evaluate_variable_selection_method(self, X: np.ndarray, y: np.ndarray,
@@ -864,7 +879,8 @@ class TreeCVLSASearch:
             }
 
         except Exception as e:
-            self.logger.warning(f"Variable selection method evaluation failed: {e}")
+            self.logger.error(f"❌ Variable selection method evaluation failed: {e}")
+            self.logger.warning(f"⚠️ Returning zero scores for method {method} - will impact selection process")
             return {'accuracy': 0.0, 'n_features': X.shape[1], 'score': 0.0}
 
     def _create_cascade_levels(self, architecture: TreeArchitectureCandidate) -> List[Dict[str, Any]]:

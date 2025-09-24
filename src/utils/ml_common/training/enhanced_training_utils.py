@@ -257,14 +257,12 @@ class EnhancedTrainingUtils:
                 # Use unified temporal cross-validation with gap as a proxy for purging
                 try:
                     import inspect
-                    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
                     ucv = UnifiedCrossValidator()
                     # approximate gap from purge_pct relative to fold size
                     approx_fold_size = max(1, len(X) // (self.purged_cv_config.n_splits + 1))
                     gap = max(0, int(approx_fold_size * self.purged_cv_config.purge_pct))
                     tscv = None
                     # Build a generator of indices similar to TimeSeriesSplit
-                    from sklearn.model_selection import TimeSeriesSplit
                     if 'test_size' in inspect.signature(TimeSeriesSplit).parameters:
                         tscv = TimeSeriesSplit(n_splits=self.purged_cv_config.n_splits, gap=gap, test_size=approx_fold_size)
                     else:
@@ -466,7 +464,6 @@ class EnhancedTrainingUtils:
         """Apply generic early stopping for other models."""
         try:
             # Use enhanced early stopping system for generic models
-            from .enhanced_early_stopping import apply_enhanced_early_stopping, get_early_stopping_config
 
             # Create early stopping config
             config = get_early_stopping_config(

@@ -32,6 +32,10 @@ from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
 from ..regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
 from ..adaptation.real_time_adaptation import TreeRealTimeAdapter
 from ..evaluation.tree_evaluator import TreeEvaluator
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,22 +108,42 @@ class TreeArchitectureSearchEngine:
         Args:
             config: TAS engine configuration
         """
+        tprint_info("🚀 Initializing Advanced Tree Architecture Search Engine")
+        tprint_debug(f"Configuration: {config}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize core components
+        tprint_info("🔧 Initializing core components...")
+        tprint_debug("🌳 Creating search space...")
         self.search_space = TreeSearchSpace(config.base_config)
+        tprint_success("✅ Search space created")
+        
+        tprint_debug("📊 Creating evaluator...")
         self.evaluator = TreeEvaluator(config.base_config)
+        tprint_success("✅ Evaluator created")
         
         # Initialize advanced components
+        tprint_info("⚡ Initializing advanced components...")
         self._initialize_advanced_components()
         
         # Search state
+        tprint_debug("📊 Initializing search state...")
         self.search_history = []
         self.best_architectures = []
         self.current_search = None
         self.performance_monitor = None
+        tprint_success("✅ Search state initialized")
         
+        tprint_success("✅ Advanced TAS Engine initialized")
+        tprint_info(f"🔍 Search strategy: {config.search_strategy.value}")
+        tprint_info(f"⚙️ Optimization mode: {config.optimization_mode.value}")
+        tprint_info(f"🧠 Meta-learning: {config.enable_meta_learning}")
+        tprint_info(f"🖥️ Hardware optimization: {config.enable_hardware_optimization}")
+        tprint_info(f"🎯 Uncertainty estimation: {config.enable_uncertainty_estimation}")
+        tprint_info(f"📊 Regime analysis: {config.enable_regime_analysis}")
+        tprint_info(f"⚡ Real-time adaptation: {config.enable_real_time_adaptation}")
         self.logger.info("✅ Advanced TAS Engine initialized")
         self.logger.info(f"🔍 Search strategy: {config.search_strategy.value}")
         self.logger.info(f"⚙️ Optimization mode: {config.optimization_mode.value}")
@@ -131,11 +155,14 @@ class TreeArchitectureSearchEngine:
     
     def _initialize_advanced_components(self):
         """Initialize advanced TAS components."""
+        tprint_debug("🔧 Initializing advanced TAS components...")
         try:
             # Meta-learning components
             if self.config.enable_meta_learning:
+                tprint_debug("🧠 Initializing meta-learning components...")
                 self.meta_learner = TreeMetaLearning(self.config.base_config)
                 self.maml = TreeMAML(self.config.base_config)
+                tprint_success("✅ Meta-learning components initialized")
                 self.logger.info("✅ Meta-learning components initialized")
             
             # Hardware optimization
@@ -444,7 +471,8 @@ class TreeArchitectureSearchEngine:
             return result
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Post-processing failed: {e}")
+            self.logger.error(f"❌ Post-processing failed: {e}")
+            self.logger.warning("⚠️ Post-processing failed - returning results without uncertainty estimates and regime analysis")
             return result
     
     def _save_search_results(self, result: TASResult):
@@ -467,7 +495,8 @@ class TreeArchitectureSearchEngine:
             self.logger.info(f"💾 Results saved to {output_dir}")
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not save results: {e}")
+            self.logger.error(f"❌ Failed to save search results: {e}")
+            self.logger.warning("⚠️ Results will only be available in memory - consider checking disk space and permissions")
     
     def adapt_to_new_data(self,
                           new_data: Tuple[np.ndarray, np.ndarray],
@@ -514,13 +543,39 @@ class TreeArchitectureSearchEngine:
     
     def get_search_statistics(self) -> Dict[str, Any]:
         """Get search statistics."""
-        return {
-            'total_searches': len(self.search_history),
-            'best_score': max([r.best_score for r in self.search_history]) if self.search_history else 0.0,
-            'average_execution_time': np.mean([r.execution_time for r in self.search_history]) if self.search_history else 0.0,
-            'search_strategies_used': list(set([r.search_strategy for r in self.search_history])),
-            'optimization_modes_used': list(set([r.optimization_mode for r in self.search_history]))
-        }
+        try:
+            if not self.search_history:
+                return {
+                    'total_searches': 0,
+                    'best_score': 0.0,
+                    'average_execution_time': 0.0,
+                    'search_strategies_used': [],
+                    'optimization_modes_used': []
+                }
+
+            # Safely extract scores and times
+            valid_scores = [r.best_score for r in self.search_history if hasattr(r, 'best_score') and r.best_score is not None]
+            valid_times = [r.execution_time for r in self.search_history if hasattr(r, 'execution_time') and r.execution_time is not None and r.execution_time > 0]
+            valid_strategies = [r.search_strategy for r in self.search_history if hasattr(r, 'search_strategy') and r.search_strategy]
+            valid_modes = [r.optimization_mode for r in self.search_history if hasattr(r, 'optimization_mode') and r.optimization_mode]
+
+            return {
+                'total_searches': len(self.search_history),
+                'best_score': max(valid_scores) if valid_scores else 0.0,
+                'average_execution_time': np.mean(valid_times) if valid_times else 0.0,
+                'search_strategies_used': list(set(valid_strategies)),
+                'optimization_modes_used': list(set(valid_modes))
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate search statistics: {e}")
+            return {
+                'total_searches': len(self.search_history),
+                'best_score': 0.0,
+                'average_execution_time': 0.0,
+                'search_strategies_used': [],
+                'optimization_modes_used': [],
+                'error': str(e)
+            }
 
 
 # Convenience functions

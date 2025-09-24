@@ -673,7 +673,6 @@ class BacktestingEnhancedClustering:
         except Exception as e:
             tprint(f"❌ Failed to update quality rules: {e}")
             self.logger.error(f"❌ Failed to update quality rules: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
     
     def _filter_by_quality(self, levels: List[Dict], backtest_results: List[Any]) -> List[Dict]:
@@ -764,7 +763,6 @@ class BacktestingEnhancedClustering:
         except Exception as e:
             tprint(f"❌ Quality filtering failed: {e}")
             self.logger.error(f"❌ Quality filtering failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return levels
     
@@ -849,7 +847,6 @@ class BacktestingEnhancedClustering:
         except Exception as e:
             tprint(f"❌ Level enhancement failed: {e}")
             self.logger.error(f"❌ Level enhancement failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return levels
     
@@ -905,7 +902,6 @@ class BacktestingEnhancedClustering:
             tprint(f"❌ Quality-enhanced clustering failed: {e}")
             tprint("🔄 Falling back to standard clustering...")
             self.logger.error(f"❌ Quality-enhanced clustering failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             self.logger.warning("🔄 Falling back to standard clustering")
             return self._fallback_clustering(levels, price_range)
@@ -952,7 +948,6 @@ class BacktestingEnhancedClustering:
             
         except Exception as e:
             self.logger.error(f"❌ Cluster validation failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return clustering_result
     
@@ -1067,7 +1062,6 @@ class BacktestingEnhancedClustering:
             
         except Exception as e:
             self.logger.error(f"❌ Cluster quality metrics calculation failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
@@ -1139,7 +1133,6 @@ class BacktestingEnhancedClustering:
             
         except Exception as e:
             self.logger.error(f"❌ Rule merging failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return existing_rules
     
@@ -1197,7 +1190,6 @@ class BacktestingEnhancedClustering:
             
         except Exception as e:
             self.logger.error(f"❌ Extensive clustering failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             # Fallback to simple clustering
             self.logger.warning("🔄 Falling back to simple clustering")
@@ -1265,7 +1257,6 @@ class BacktestingEnhancedClustering:
             
         except Exception as e:
             self.logger.error(f"❌ Simple fallback clustering failed: {e}")
-            import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             # Return single-level clusters as final fallback
             self.logger.warning("🔄 Using single-level clusters as final fallback")

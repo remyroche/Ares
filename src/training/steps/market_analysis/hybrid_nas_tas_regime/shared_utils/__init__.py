@@ -98,11 +98,44 @@ from .unified_validation_system import (
     create_unified_validation_system, quick_validation
 )
 
-# ML Common Integration - Shared utilities for TAS and NAS
+# ML Common Integration - Integration with existing utilities
 from .ml_common_integration import (
-    SharedMLUtilitiesManager, create_shared_ml_utilities_manager,
-    TASSharedMLUtilities, NASSharedMLUtilities, HybridSharedMLUtilities,
-    MLUtilityType, MLUtilityConfig
+    MLCommonIntegration, MLCommonIntegrationType, MLCommonIntegrationConfig,
+    create_ml_common_integration, create_tas_ml_common_integration,
+    create_nas_ml_common_integration, create_hybrid_ml_common_integration
+)
+
+# New Unified Architecture Management
+from .unified_architecture_config import (
+    BaseArchitectureConfig, TASArchitectureConfig, NASArchitectureConfig, HybridArchitectureConfig,
+    ArchitectureType, SearchStrategy, OptimizationObjective, MarketRegime,
+    create_tas_config, create_nas_config, create_hybrid_config,
+    create_quick_config, create_comprehensive_config
+)
+
+from .unified_performance_monitor import (
+    UnifiedPerformanceMonitor, PerformanceMetric, MonitoringLevel,
+    PerformanceSnapshot, PerformanceTrend, RegimePerformanceProfile,
+    create_performance_monitor, create_basic_monitor, create_real_time_monitor
+)
+
+from .unified_meta_learning import (
+    UnifiedMetaLearner, MetaLearningMethod, AdaptationType,
+    MetaTask, AdaptationResult, MetaLearningConfig,
+    TASMetaModel, NASMetaModel, HybridMetaModel,
+    create_meta_learner, create_few_shot_learner, create_continual_learner
+)
+
+from .unified_hardware_manager import (
+    UnifiedHardwareManager, HardwareType, OptimizationLevel, WorkloadType,
+    HardwareMetrics, OptimizationResult, HardwareConfig,
+    create_hardware_manager, create_basic_hardware_manager, create_aggressive_hardware_manager
+)
+
+from .unified_evaluation_framework import (
+    UnifiedEvaluationFramework, EvaluationType, EvaluationMetric,
+    EvaluationResult, EvaluationConfig,
+    create_evaluation_framework, create_basic_evaluator, create_trading_evaluator
 )
 
 __all__ = [
@@ -171,8 +204,35 @@ __all__ = [
     'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
     'create_unified_validation_system', 'quick_validation',
 
-    # ML Common Integration - Shared utilities for TAS and NAS
-    'SharedMLUtilitiesManager', 'create_shared_ml_utilities_manager',
-    'TASSharedMLUtilities', 'NASSharedMLUtilities', 'HybridSharedMLUtilities',
-    'MLUtilityType', 'MLUtilityConfig'
+    # ML Common Integration - Integration with existing utilities
+    'MLCommonIntegration', 'MLCommonIntegrationType', 'MLCommonIntegrationConfig',
+    'create_ml_common_integration', 'create_tas_ml_common_integration',
+    'create_nas_ml_common_integration', 'create_hybrid_ml_common_integration',
+
+    # New Unified Architecture Management
+    'BaseArchitectureConfig', 'TASArchitectureConfig', 'NASArchitectureConfig', 'HybridArchitectureConfig',
+    'ArchitectureType', 'SearchStrategy', 'OptimizationObjective', 'MarketRegime',
+    'create_tas_config', 'create_nas_config', 'create_hybrid_config',
+    'create_quick_config', 'create_comprehensive_config',
+
+    # Unified Performance Monitoring
+    'UnifiedPerformanceMonitor', 'PerformanceMetric', 'MonitoringLevel',
+    'PerformanceSnapshot', 'PerformanceTrend', 'RegimePerformanceProfile',
+    'create_performance_monitor', 'create_basic_monitor', 'create_real_time_monitor',
+
+    # Unified Meta-Learning
+    'UnifiedMetaLearner', 'MetaLearningMethod', 'AdaptationType',
+    'MetaTask', 'AdaptationResult', 'MetaLearningConfig',
+    'TASMetaModel', 'NASMetaModel', 'HybridMetaModel',
+    'create_meta_learner', 'create_few_shot_learner', 'create_continual_learner',
+
+    # Unified Hardware Management
+    'UnifiedHardwareManager', 'HardwareType', 'OptimizationLevel', 'WorkloadType',
+    'HardwareMetrics', 'OptimizationResult', 'HardwareConfig',
+    'create_hardware_manager', 'create_basic_hardware_manager', 'create_aggressive_hardware_manager',
+
+    # Unified Evaluation Framework
+    'UnifiedEvaluationFramework', 'EvaluationType', 'EvaluationMetric',
+    'EvaluationResult', 'EvaluationConfig',
+    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator'
 ]

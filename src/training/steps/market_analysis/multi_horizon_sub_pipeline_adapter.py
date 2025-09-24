@@ -623,7 +623,7 @@ class MultiHorizonSubPipelineAdapter:
         if self.optimization_enabled:
             self.logger.info('🎯 Automatic timeframe optimization ENABLED')
         else:
-            self.logger.warning('⚠️ Automatic timeframe optimization DISABLED - using default timeframes')
+            self.logger.error('❌ FAST FAIL: Automatic timeframe optimization DISABLED - cannot proceed')
 
     def _initialize_optimization_components(self):
         """Initialize optimization components for automatic timeframe discovery."""
@@ -660,8 +660,12 @@ class MultiHorizonSubPipelineAdapter:
         for both Analyst and Tactician model training.
         """
         if not self.optimization_enabled:
-            self.logger.warning('⚠️ Optimization disabled - using default timeframes')
-            return MultiHorizonConfig()
+            self.logger.error('❌ FAST FAIL: Optimization disabled - cannot proceed without optimal timeframes')
+            raise RuntimeError(
+                "❌ FAST FAIL: Automatic timeframe optimization is disabled. "
+                "Cannot proceed without optimal timeframe discovery. "
+                "Training pipeline will terminate."
+            )
         
         self.logger.info('🎯 Starting automatic timeframe optimization')
         
@@ -671,8 +675,11 @@ class MultiHorizonSubPipelineAdapter:
             optimization_result = self.optimizer.optimize_target_horizon_combinations(data)
             
             if optimization_result.objective_score < 0.3:
-                self.logger.warning('⚠️ Low optimization score - using default timeframes')
-                return MultiHorizonConfig()
+                self.logger.error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) - cannot proceed')
+                raise RuntimeError(
+                    f"❌ FAST FAIL: Optimization score ({optimization_result.objective_score:.3f}) below minimum threshold (0.3). "
+                    f"Cannot proceed without optimal timeframe discovery. Training pipeline will terminate."
+                )
             
             # Step 2: Extract optimal timeframes
             optimal_horizons = optimization_result.optimal_horizons
@@ -719,13 +726,20 @@ class MultiHorizonSubPipelineAdapter:
                 self.logger.info(f'✅ Optimized configuration validated (score: {validation_score:.3f})')
                 return optimized_config
             else:
-                self.logger.warning(f'⚠️ Low validation score ({validation_score:.3f}) - using default config')
-                return MultiHorizonConfig()
+                self.logger.error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) - cannot proceed')
+                raise RuntimeError(
+                    f"❌ FAST FAIL: Optimized configuration validation failed. "
+                    f"Validation score ({validation_score:.3f}) below minimum threshold (0.5). "
+                    f"Cannot proceed with invalid timeframe configuration. Training pipeline will terminate."
+                )
                 
         except Exception as e:
-            self.logger.error(f'❌ Automatic optimization failed: {e}')
-            self.logger.info('🔄 Falling back to default configuration')
-            return MultiHorizonConfig()
+            self.logger.error(f'❌ FAST FAIL: Automatic optimization failed: {e}')
+            raise RuntimeError(
+                f"❌ FAST FAIL: Automatic timeframe optimization failed. "
+                f"Error: {e}. Cannot proceed without optimal timeframe discovery. "
+                f"Training pipeline will terminate."
+            )
 
     def _validate_optimized_config(self, config: MultiHorizonConfig, data: pd.DataFrame) -> float:
         """Validate the optimized configuration using heuristic analysis."""

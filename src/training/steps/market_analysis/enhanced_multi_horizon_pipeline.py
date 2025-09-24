@@ -51,8 +51,8 @@ class EnhancedPipelineConfig:
     save_optimization_results: bool = True
     optimization_output_dir: str = "optimization_results"
     
-    # Fallback settings
-    use_fallback_on_optimization_failure: bool = True
+    # Fast fail settings (no fallbacks allowed)
+    fast_fail_on_optimization_failure: bool = True
     log_optimization_details: bool = True
 
 
@@ -189,12 +189,12 @@ class EnhancedMultiHorizonPipeline:
             return optimized_configs
             
         except Exception as e:
-            self.logger.error(f'❌ Automatic optimization failed: {e}')
-            if self.config.use_fallback_on_optimization_failure:
-                self.logger.info('🔄 Using fallback configurations')
-                return self._get_fallback_configurations(model_type)
-            else:
-                raise
+            self.logger.error(f'❌ FAST FAIL: Automatic optimization failed: {e}')
+            raise RuntimeError(
+                f"❌ FAST FAIL: Automatic timeframe optimization failed. "
+                f"Error: {e}. Cannot proceed without optimal timeframe discovery. "
+                f"Training pipeline will terminate."
+            )
     
     def _execute_model_specific_labeling(self,
                                        data: pd.DataFrame,
@@ -276,34 +276,12 @@ class EnhancedMultiHorizonPipeline:
         return combined_result
     
     def _get_fallback_configurations(self, model_type: str) -> Dict[str, Any]:
-        """Get fallback configurations when optimization fails."""
-        fallback_configs = {}
-        
-        if model_type.lower() in ["analyst", "both"]:
-            # Analyst fallback: 15m base timeframe (1-16 periods = 15m-240m)
-            fallback_configs['analyst'] = {
-                'config': {
-                    'time_horizons': {'immediate': 2, 'short': 8},  # 30m and 120m
-                    'profit_targets': {'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010}
-                },
-                'score': 0.5,
-                'validation_score': 0.5,
-                'performance_metrics': {'fallback': True}
-            }
-        
-        if model_type.lower() in ["tactician", "both"]:
-            # Tactician fallback: 5m base timeframe (1-16 periods = 5m-80m)
-            fallback_configs['tactician'] = {
-                'config': {
-                    'time_horizons': {'immediate': 2, 'short': 8},  # 10m and 40m
-                    'profit_targets': {'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015}
-                },
-                'score': 0.5,
-                'validation_score': 0.5,
-                'performance_metrics': {'fallback': True}
-            }
-        
-        return fallback_configs
+        """Fast fail - no fallback configurations allowed."""
+        raise RuntimeError(
+            f"❌ FAST FAIL: Fallback configurations not allowed. "
+            f"Optimization must succeed for {model_type} model. "
+            f"Training cannot proceed without optimal timeframe discovery."
+        )
     
     def _save_optimization_results(self, 
                                  optimized_configs: Dict[str, Any],

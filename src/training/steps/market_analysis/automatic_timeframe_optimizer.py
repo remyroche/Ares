@@ -166,7 +166,11 @@ class AutomaticTimeframeOptimizer:
             OptimizationResult with optimal configuration
         """
         if not self.optimization_enabled:
-            return self._create_fallback_result(model_type)
+            raise RuntimeError(
+                f"❌ FAST FAIL: Optimization disabled for {model_type.value} model. "
+                f"Cannot proceed without optimal timeframe discovery. "
+                f"Training pipeline will terminate."
+            )
         
         # Check for cached results
         if not force_optimization and model_type in self.optimization_results:
@@ -193,8 +197,12 @@ class AutomaticTimeframeOptimizer:
             optimization_result = optimizer.optimize_target_horizon_combinations(market_data)
             
             if optimization_result.objective_score < 0.3:
-                self.logger.warning(f'⚠️ Low optimization score for {model_type.value} - using fallback')
-                return self._create_fallback_result(model_type)
+                self.logger.error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) for {model_type.value}')
+                raise RuntimeError(
+                    f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "
+                    f"Optimization score ({optimization_result.objective_score:.3f}) below minimum threshold (0.3). "
+                    f"Cannot proceed without optimal timeframe discovery."
+                )
             
             # Create optimized configuration
             optimized_config = self._create_optimized_config(
@@ -205,6 +213,15 @@ class AutomaticTimeframeOptimizer:
             validation_score = self._validate_optimized_config(
                 optimized_config, market_data, model_type
             )
+            
+            # Fast fail if validation score is too low
+            if validation_score < 0.5:
+                self.logger.error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) for optimized configuration')
+                raise RuntimeError(
+                    f"❌ FAST FAIL: Optimized configuration validation failed for {model_type.value} model. "
+                    f"Validation score ({validation_score:.3f}) below minimum threshold (0.5). "
+                    f"Cannot proceed with invalid timeframe configuration."
+                )
             
             # Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
@@ -234,8 +251,11 @@ class AutomaticTimeframeOptimizer:
             return result
             
         except Exception as e:
-            self.logger.error(f'❌ Optimization failed for {model_type.value}: {e}')
-            return self._create_fallback_result(model_type)
+            self.logger.error(f'❌ FAST FAIL: Optimization failed for {model_type.value}: {e}')
+            raise RuntimeError(
+                f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "
+                f"Error: {e}. Cannot proceed without optimal timeframe discovery."
+            )
     
     def _optimize_for_both_models(self, market_data: pd.DataFrame) -> OptimizationResult:
         """Optimize for both Analyst and Tactician models."""
@@ -372,35 +392,11 @@ class AutomaticTimeframeOptimizer:
         return metrics
     
     def _create_fallback_result(self, model_type: ModelType) -> OptimizationResult:
-        """Create fallback result when optimization is not available."""
-        # Create default configuration based on model type
-        config = MultiHorizonConfig()
-        
-        if model_type == ModelType.ANALYST:
-            # Analyst: 15m base timeframe (1-16 periods = 15m-240m)
-            config.time_horizons = {'immediate': 2, 'short': 8}  # 30m and 120m
-            config.profit_targets = {
-                'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010
-            }
-        elif model_type == ModelType.TACTICIAN:
-            # Tactician: 5m base timeframe (1-16 periods = 5m-80m)
-            config.time_horizons = {'immediate': 2, 'short': 8}  # 10m and 40m
-            config.profit_targets = {
-                'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015
-            }
-        else:  # BOTH
-            config.time_horizons = {'immediate': 2, 'short': 8}  # Balanced approach
-            config.profit_targets = {
-                'micro': 0.004, 'small': 0.006, 'medium': 0.008, 'good': 0.012
-            }
-        
-        return OptimizationResult(
-            model_type=model_type,
-            optimal_config=config,
-            optimization_score=0.5,  # Neutral score
-            validation_score=0.5,   # Neutral score
-            performance_metrics={'fallback': True},
-            optimization_time=0.0
+        """Fast fail when optimization is not available - no fallback allowed."""
+        raise RuntimeError(
+            f"❌ FAST FAIL: Cannot find optimal periods for {model_type.value} model. "
+            f"Optimization components not available or failed to initialize. "
+            f"Training cannot proceed without optimal timeframe discovery."
         )
     
     def get_optimization_summary(self) -> Dict[str, Any]:

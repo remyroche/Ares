@@ -594,7 +594,7 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
             enhanced_report['overall_recommendations'] = [
                 f"Best overall model: {best_overall} (avg F1: {model_comparison[best_overall]['avg_f1_score']:.4f})",
-                "XGBoost vs CatBoost comparison: Both models trained, select best performer per regime",
+                "XGBoost vs Elastic Net comparison: Both models trained, select best performer per regime",
                 "Consider ensemble of top 2 models (logistic_regression + lightgbm) for robustness",
                 "Monitor regime-specific performance for model drift detection"
             ]

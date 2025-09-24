@@ -30,10 +30,10 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - **Reporting integration** - comprehensive reporting and metrics
 
 ### 3. HMM-Specific Optimizations
-- **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
+- **Optimized models** - LightGBM, XGBoost, Random Forest, Elastic Net
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
-- **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
+- **Gradient booster comparison** - XGBoost vs LightGBM, training both to select best
 - **Regime-aware training** - per-regime model training with regime prediction capability (models trained per regime for better specialization, but unified prediction capability)
 - **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - **HMM search spaces** - optimized HPO spaces for state recognition
@@ -63,7 +63,7 @@ from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 config = HMMTrainingConfig(
     model_types=[
         # Optimized models for HMM state classification
-        "lightgbm", "xgboost", "catboost", "random_forest"
+        "lightgbm", "xgboost", "random_forest", "elastic_net"
     ],
     hpo_trials=100,
     enable_multi_objective=True
@@ -75,10 +75,10 @@ results = training_step.execute(X, y, regime_labels, feature_names)
 
 **Key Features:**
 - ✅ **15m timeframe enforcement** - automatic HMM state recognition
-- ✅ **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
+- ✅ **Optimized models** - LightGBM, XGBoost, Random Forest, Elastic Net
 - ✅ **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - ✅ **No deep learning models** - removed TabNet and neural networks for HMM focus
-- ✅ **Gradient booster comparison** - XGBoost vs CatBoost, training both to select best
+- ✅ **Gradient booster comparison** - XGBoost vs LightGBM, training both to select best
 - ✅ **Enhanced reporting** - comprehensive metrics and recommendations for all models
 - ✅ **HMM state focus** - optimized for state recognition, not prediction
 - ✅ **Common_utils pipeline** - leverages robust ML training infrastructure
@@ -97,18 +97,18 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 - ✅ **90%+ reduction in custom code** - leverages BaseTrainingStep inheritance
 - ✅ **Universal validation, HPO, and reporting** from common_utils
 - ✅ **HMM state recognition focus** with 15m timeframe enforcement
-- ✅ **Optimized models** - LightGBM, XGBoost, CatBoost, Random Forest
+- ✅ **Optimized models** - LightGBM, XGBoost, Random Forest, Elastic Net
 - ✅ **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - ✅ **No deep learning models** - removed TabNet and neural networks for HMM focus
 - ✅ **Enhanced reporting** - comprehensive metrics and recommendations for all models
 
 ### What Changed
 - **Complete file replacement** - `hmm_models_training_enhanced.py` now contains the streamlined implementation
-- **Model selection optimized** - Base models: top 2 (logistic regression, LightGBM, Random Forest) + gradient boosters (XGBoost, CatBoost)
+- **Model selection optimized** - Base models: top 2 (LightGBM, Random Forest) + gradient boosters (XGBoost, Elastic Net)
 - **Ensemble models removed** - removed voting, stacking, bagging, ada boost, extra trees for HMM focus
 - **Deep learning models removed** - removed TabNet and neural networks for HMM focus
 - **Enhanced reporting added** - comprehensive metrics and recommendations for all models
-- **Gradient booster comparison** - both XGBoost and CatBoost trained to select best performer
+- **Gradient booster comparison** - both XGBoost and LightGBM trained to select best performer
 - **Single-step migration** - no gradual transition needed
 - **Backward compatibility maintained** - existing function names preserved
 
@@ -135,7 +135,7 @@ The HMM training has been **completely migrated** to leverage the common_utils/ 
 
 **Not Needed**: ❌ **Ensemble per regime**
 - No need for separate ensemble models per regime
-- Base models (logistic, LightGBM, RF, XGBoost, CatBoost) are sufficient
+- Base models (LightGBM, RF, XGBoost, Elastic Net) are sufficient
 - Focus on regime prediction capability rather than complex ensemble per regime
 
 ## Multi-Objective Optimization
@@ -214,13 +214,13 @@ objective_weights=[0.4, 0.3, 0.2]  # Reduced regime stability weight for 15m sho
 ### Streamlined Approach
 The streamlined approach automatically configures:
 - **Timeframe**: 15m (enforced for HMM state recognition)
-- **Base models**: 5 models (logistic regression, LightGBM, Random Forest, XGBoost, CatBoost)
+- **Base models**: 4 models (LightGBM, Random Forest, XGBoost, Elastic Net)
 - **No ensemble models** - removed voting, stacking, bagging, ada boost, extra trees
 - **No deep learning models** - removed TabNet and neural networks for HMM focus
 - **HPO**: Enabled with HMM-specific search spaces for all model types
 - **Validation**: Universal validation integration
 - **Enhanced reporting**: Comprehensive metrics and recommendations for all models
-- **Gradient booster comparison**: XGBoost vs CatBoost to select best performer
+- **Gradient booster comparison**: XGBoost vs LightGBM to select best performer
 - **Comprehensive features**: 13 feature categories from feature bank (momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick_pattern, hmm_regime, entropy, order_flow, acceleration, legacy) - excludes complex categories (cross_timeframe, autoencoder, interaction, microstructure, time)
 - **Feature bank integration**: Automatic feature generation for maximum signal extraction
 

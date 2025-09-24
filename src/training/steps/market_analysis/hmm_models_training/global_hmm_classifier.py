@@ -111,8 +111,8 @@ class GlobalHMMClassifier:
         model_type_mapping = {
             'lightgbm': ModelType.LIGHTGBM_CLASSIFIER,
             'xgboost': ModelType.XGBOOST_CLASSIFIER,
-            'catboost': ModelType.CATBOOST_CLASSIFIER,
-            'random_forest': ModelType.RANDOM_FOREST_CLASSIFIER
+            'random_forest': ModelType.RANDOM_FOREST_CLASSIFIER,
+            'elastic_net': ModelType.ELASTIC_NET_CLASSIFIER
         }
         
         if model_type not in model_type_mapping:
@@ -151,16 +151,15 @@ class GlobalHMMClassifier:
                 'verbosity': 0,
                 'random_state': 42
             },
-            'catboost': {
-                'objective': 'MultiClass',
-                'classes_count': self.n_hmm_states,
-                'verbose': False,
-                'random_seed': 42
-            },
             'random_forest': {
                 'n_estimators': 100,
                 'random_state': 42,
                 'n_jobs': -1
+            },
+            'elastic_net': {
+                'multi_class': 'ovr',
+                'random_state': 42,
+                'max_iter': 1000
             }
         }
         
@@ -202,8 +201,8 @@ class GlobalHMMTrainingStep(BaseTrainingStep):
         self.global_model_types = [
             "lightgbm",            # Multi-class LightGBM
             "xgboost",             # Multi-class XGBoost
-            "catboost",            # Multi-class CatBoost
-            "random_forest"        # Multi-class Random Forest
+            "random_forest",       # Multi-class Random Forest
+            "elastic_net"          # Multi-class Elastic Net
         ]
         
         # Initialize ml_commons utilities

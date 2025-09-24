@@ -76,7 +76,7 @@ config = HMMTrainingConfig(
 )
 
 # Available model types (Logistic Regression removed for better performance)
-available_models = ["lightgbm", "xgboost", "catboost", "random_forest"]
+available_models = ["lightgbm", "xgboost", "random_forest", "elastic_net"]
 
 # Create and execute training
 training_step = create_global_hmm_training(config)

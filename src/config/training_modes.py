@@ -44,7 +44,7 @@ def _get_default_training_modes_config() -> Dict[str, Any]:
         "training_modes": {
             "full": {
                 "description": "Production mode - Complete training with full dataset",
-                "lookback_days": 730,
+                "lookback_days": 1460,
                 "training_mode": "full",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": False,
@@ -74,7 +74,7 @@ def _get_default_training_modes_config() -> Dict[str, Any]:
             },
             "light": {
                 "description": "Ultra-light development mode - Minimal data for code testing only",
-                "lookback_days": 730,  # Override: HMM regime discovery needs 2 years of data
+                "lookback_days": 1460,  # Override: HMM regime discovery needs 4 years of data
                 "training_mode": "light",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": True,
@@ -109,10 +109,10 @@ def get_training_mode_config(training_mode: str, sub_pipeline_name: Optional[str
     
     mode_data = modes[training_mode]
     
-    # Special exception: HMM regime discovery always uses 730 days (2 years) regardless of training mode
+    # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
     lookback_days = mode_data.get("lookback_days", 30)
     if sub_pipeline_name == "hmm_regime_discovery":
-        lookback_days = 730
+        lookback_days = 1460
     
     return TrainingModeConfig(
         description=mode_data.get("description", ""),
@@ -225,10 +225,10 @@ def get_training_input_dict(training_mode: str, sub_pipeline_name: Optional[str]
     """Get training input dictionary for a mode."""
     mode_config = get_training_mode_config(training_mode)
     
-    # Special exception: HMM regime discovery always uses 730 days (2 years) regardless of training mode
+    # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
     lookback_days = mode_config.lookback_days
     if sub_pipeline_name == "hmm_regime_discovery":
-        lookback_days = 730
+        lookback_days = 1460
     
     return {
         "training_mode": training_mode,

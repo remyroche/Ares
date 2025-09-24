@@ -75,7 +75,7 @@ class DataLoadingCommandHandler(BaseCommandHandler):
     """Handles data loading commands."""
     
     def execute(self, symbol: str, exchange: str, 
-                lookback_days: int = 730, blank_mode: bool = False) -> bool:
+                lookback_days: int = 1460, blank_mode: bool = False) -> bool:
         """Execute data loading and consolidation."""
         actual_lookback = 30 if blank_mode else lookback_days
         return self.launcher.run_data_loading(

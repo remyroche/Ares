@@ -790,7 +790,7 @@ def get_full_pipeline_config(
     mode_config = get_training_mode_config("full")
     intensity_pct = get_intensity_percentage("full")
     
-    # Full mode: 730 days of data
+    # Full mode: 1460 days of data
     end_date = datetime.now()
     start_date = end_date - timedelta(days=mode_config.lookback_days)
     

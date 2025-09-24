@@ -9,7 +9,7 @@ The Ares Trading Bot GUI has been **fully implemented and tested** with complete
 ### 🎛️ **Launcher Control**
 - ✅ **Start/Stop Launcher Modes**: Paper, Live, Backtest, Training, Data Loading, Precompute
 - ✅ **Real-time Process Monitoring**: Process tracking with PIDs and status
-- ✅ **Training Mode Selection**: Light (10 days), Blank (180 days), Full (730 days)
+- ✅ **Training Mode Selection**: Light (10 days), Blank (180 days), Full (1460 days)
 - ✅ **Configuration Management**: Symbol, Exchange, Lookback days
 - ✅ **Process Log Collection**: Real-time log viewing and management
 
@@ -123,7 +123,7 @@ cd GUI && npm run dev            # Terminal 2
 ### **Training Modes**
 - **Light Training**: 10 days, ~15 minutes, quick testing
 - **Blank Training**: 180 days, ~60 minutes, standard training
-- **Full Training**: 730 days, ~240 minutes, production training
+- **Full Training**: 1460 days, ~240 minutes, production training
 
 ## 🔧 **API Endpoints**
 

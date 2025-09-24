@@ -211,7 +211,7 @@ class KlinesDataProcessingPipeline:
     async def run_complete_pipeline(
         self,
         symbol: str = "ETHUSDT",
-        years: int = 2,
+        years: int = 4,
         interval: str = "1m",
         api_key: str = "",
         api_secret: str = "",
@@ -1378,7 +1378,7 @@ def resolve_duplicates_in_files(input_files: List[str],
 # Convenience functions for the complete pipeline
 async def run_ethusdt_3year_pipeline(
     symbol: str = "ETHUSDT",
-    years: int = 2,
+    years: int = 4,
     data_dir: str = "historical_data",
     api_key: str = "",
     api_secret: str = "",
@@ -1466,7 +1466,7 @@ async def run_ethusdt_3year_pipeline(
 
 async def run_custom_symbol_pipeline(
     symbol: str,
-    years: int = 2,
+    years: int = 4,
     interval: str = "1m",
     data_dir: str = "historical_data",
     api_key: str = "",
@@ -1575,8 +1575,8 @@ if __name__ == "__main__":
             print("  python klines_downloading_processing.py test_columns")
             print("")
             print("Examples:")
-            print("  python klines_downloading_processing.py                    # ETHUSDT, 2 years (default)")
-            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 2 years")
+            print("  python klines_downloading_processing.py                    # ETHUSDT, 4 years (default)")
+            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 4 years")
             print("  python klines_downloading_processing.py ETHUSDT 3         # ETHUSDT, 3 years")
             print("  python klines_downloading_processing.py BTCUSDT 1         # BTCUSDT, 1 year")
     else:
@@ -1584,7 +1584,7 @@ if __name__ == "__main__":
         async def main():
             # Parse command line arguments for symbol and years
             symbol = "ETHUSDT"  # default
-            years = 2  # default
+            years = 4  # default
             
             # Check for additional command line arguments
             if len(sys.argv) > 1:

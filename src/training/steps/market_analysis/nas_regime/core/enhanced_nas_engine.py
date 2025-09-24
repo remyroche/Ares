@@ -18,21 +18,20 @@ import pickle
 import os
 from pathlib import Path
 
-from ...hybrid_nas_tas_regime.shared_utils.search_spaces import (
-    NeuralSearchSpace, TreeSearchSpace, create_neural_search_space, create_tree_search_space
+from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
+    UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType
 )
-from ...hybrid_nas_tas_regime.shared_utils.performance_estimators import (
+from ...hybrid_nas_tas_regime.core.performance_estimator import (
     UnifiedPerformanceEstimator, create_unified_performance_estimator
 )
-from ...hybrid_nas_tas_regime.shared_utils.architecture_encoders import (
+from ...hybrid_nas_tas_regime.core.advanced_search_strategies import (
+    AdvancedSearchStrategies, SearchStrategyType
+)
+from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
+    TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
+)
+from ...hybrid_nas_tas_regime.core.architecture_encoder import (
     UnifiedArchitectureEncoder, create_unified_architecture_encoder
-)
-from ...hybrid_nas_tas_regime.shared_utils.constraint_systems import (
-    UnifiedConstraintValidator, create_unified_constraint_validator
-)
-from ...hybrid_nas_tas_regime.shared_utils.advanced_search_strategies import (
-    ReinforcementLearningSearch, EnhancedBayesianOptimization, AdaptiveEvolutionarySearch,
-    create_rl_search_strategy, create_enhanced_bayesian_search, create_adaptive_evolutionary_search
 )
 
 logger = logging.getLogger(__name__)
@@ -130,27 +129,44 @@ class EnhancedNASEngine:
         self.logger.info(f"   Max Generations: {config.max_generations}")
 
     def _initialize_shared_components(self):
-        """Initialize shared utility components."""
+        """Initialize shared utility components from unified framework."""
         try:
-            # Search space
+            # Use unified search space
             self.search_space = create_neural_search_space()
 
-            # Performance estimator
+            # Performance estimator with financial objectives
             self.performance_estimator = create_unified_performance_estimator({
+                'estimator_type': 'ensemble',
                 'neural_config': {'estimator_type': 'ensemble'}
             })
 
-            # Architecture encoder
+            # Architecture encoder with advanced encoding
             self.architecture_encoder = create_unified_architecture_encoder({
-                'neural_config': {'encoding_method': 'hybrid'}
+                'encoding_method': 'hybrid',
+                'latent_dim': 128
             })
 
             # Constraint validator
             self.constraint_validator = create_unified_constraint_validator({
-                'neural_config': {'constraints': self._create_architecture_constraints()}
+                'max_layers': self.config.max_layers,
+                'max_parameters': self.config.max_parameters,
+                'max_memory_usage_mb': self.config.max_memory_mb,
+                'max_training_time_seconds': self.config.max_training_time_per_arch
             })
 
-            self.logger.info("✅ All shared components initialized")
+            # Multi-objective optimizer
+            self.multi_objective_optimizer = TradingMultiObjectiveOptimizer(MultiObjectiveConfig(
+                objectives=[ObjectiveType.PERFORMANCE, ObjectiveType.SHARPE_RATIO,
+                           ObjectiveType.MAX_DRAWDOWN, ObjectiveType.WIN_RATE],
+                weights={
+                    ObjectiveType.PERFORMANCE: 1.0,
+                    ObjectiveType.SHARPE_RATIO: 0.8,
+                    ObjectiveType.MAX_DRAWDOWN: 0.6,
+                    ObjectiveType.WIN_RATE: 0.7
+                }
+            ))
+
+            self.logger.info("✅ All shared components initialized with unified framework")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize shared components: {e}")

@@ -209,23 +209,86 @@ class TradingReceiver:
         **kwargs
     ) -> TradingResponse:
         """Send order to specified exchange"""
-        message = TradingMessage(
-            id=str(int(time.time() * 1000)),
-            type=MessageType.ORDER,
-            exchange=exchange,
-            symbol=symbol,
-            timestamp=datetime.now(),
-            data={
-                "side": side,
-                "order_type": order_type,
-                "quantity": quantity,
-                "price": price,
-                **kwargs
-            }
-        )
-        
-        return await self.process_message(message)
-    
+        try:
+            # Validate inputs
+            if not exchange:
+                raise ValueError("Exchange name is required")
+            if not symbol:
+                raise ValueError("Symbol is required")
+            if not side:
+                raise ValueError("Side is required")
+            if not order_type:
+                raise ValueError("Order type is required")
+            if quantity <= 0:
+                raise ValueError("Quantity must be positive")
+
+            message = TradingMessage(
+                id=str(int(time.time() * 1000)),
+                type=MessageType.ORDER,
+                exchange=exchange,
+                symbol=symbol,
+                timestamp=datetime.now(),
+                data={
+                    "side": side,
+                    "order_type": order_type,
+                    "quantity": quantity,
+                    "price": price,
+                    **kwargs
+                }
+            )
+
+            return await self.process_message(message)
+
+        except Exception as e:
+            self.logger.error(f"Error sending order: {e}")
+            return TradingResponse(
+                id=str(int(time.time() * 1000)),
+                request_id=str(int(time.time() * 1000)),
+                success=False,
+                timestamp=datetime.now(),
+                data={},
+                error=str(e)
+            )
+
+    async def send_multi_exchange_order(
+        self,
+        exchanges: List[str],
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        **kwargs
+    ) -> List[TradingResponse]:
+        """Send order to multiple exchanges"""
+        responses = []
+
+        for exchange in exchanges:
+            try:
+                response = await self.send_order(
+                    exchange=exchange,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    **kwargs
+                )
+                responses.append(response)
+
+            except Exception as e:
+                self.logger.error(f"Error sending order to {exchange}: {e}")
+                responses.append(TradingResponse(
+                    id=str(int(time.time() * 1000)),
+                    request_id=str(int(time.time() * 1000)),
+                    success=False,
+                    timestamp=datetime.now(),
+                    data={},
+                    error=str(e)
+                ))
+
+        return responses
+
     async def request_data(
         self,
         exchange: str,
@@ -305,20 +368,28 @@ class TradingReceiver:
     async def _initialize_exchanges(self) -> None:
         """Initialize configured exchanges"""
         exchanges_config = self.config.get("exchanges", {})
-        
+
         for exchange_name, exchange_config in exchanges_config.items():
             try:
                 # Create exchange instance using factory
                 from ..exchange.factory import ExchangeFactory
                 exchange = ExchangeFactory.get_exchange(exchange_name)
-                
+
+                # Initialize exchange with configuration
+                if hasattr(exchange, '_initialize_exchange'):
+                    await exchange._initialize_exchange()
+
                 # Register exchange
-                await self.exchange_registry.register_exchange(exchange_name, exchange)
-                
-                self.logger.info(f"Initialized exchange: {exchange_name}")
-                
+                success = await self.exchange_registry.register_exchange(exchange_name, exchange)
+
+                if success:
+                    self.logger.info(f"Initialized exchange: {exchange_name}")
+                else:
+                    self.logger.error(f"Failed to register exchange {exchange_name}")
+
             except Exception as e:
                 self.logger.error(f"Failed to initialize exchange {exchange_name}: {e}")
+                self.message_stats["total_errors"] += 1
     
     def _register_default_handlers(self) -> None:
         """Register default message handlers"""
@@ -332,18 +403,38 @@ class TradingReceiver:
     async def _handle_order_message(self, message: TradingMessage) -> TradingResponse:
         """Handle order message"""
         try:
+            # Validate message data
+            required_fields = ["side", "order_type", "quantity"]
+            for field in required_fields:
+                if field not in message.data:
+                    raise ValueError(f"Missing required field: {field}")
+
+            # Normalize order type and side
+            side = message.data["side"].lower()
+            order_type = message.data["order_type"].upper()
+
+            # Validate side
+            valid_sides = ["buy", "sell"]
+            if side not in valid_sides:
+                raise ValueError(f"Invalid side: {side}. Must be one of {valid_sides}")
+
+            # Validate order type
+            valid_order_types = ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]
+            if order_type not in valid_order_types:
+                raise ValueError(f"Invalid order type: {order_type}. Must be one of {valid_order_types}")
+
             # Route order to appropriate exchange
             result = await self.order_router.route_order(
                 exchange=message.exchange,
                 symbol=message.symbol,
-                side=message.data["side"],
-                order_type=message.data["order_type"],
-                quantity=message.data["quantity"],
+                side=side,
+                order_type=order_type,
+                quantity=float(message.data["quantity"]),
                 price=message.data.get("price"),
-                **{k: v for k, v in message.data.items() 
+                **{k: v for k, v in message.data.items()
                    if k not in ["side", "order_type", "quantity", "price"]}
             )
-            
+
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=message.id,
@@ -352,7 +443,7 @@ class TradingReceiver:
                 data=result,
                 error=result.get("error")
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error handling order message: {e}")
             return TradingResponse(
@@ -367,14 +458,24 @@ class TradingReceiver:
     async def _handle_data_request(self, message: TradingMessage) -> TradingResponse:
         """Handle data request message"""
         try:
+            # Validate message data
+            if "data_type" not in message.data:
+                raise ValueError("Missing required field: data_type")
+
+            # Validate data type
+            valid_data_types = ["ticker", "klines", "trades", "orderbook", "account_info", "position_info", "open_orders"]
+            data_type = message.data["data_type"].lower()
+            if data_type not in valid_data_types:
+                raise ValueError(f"Invalid data type: {data_type}. Must be one of {valid_data_types}")
+
             # Route data request to appropriate exchange
             result = await self.data_aggregator.get_data(
                 exchange=message.exchange,
                 symbol=message.symbol,
-                data_type=message.data["data_type"],
+                data_type=data_type,
                 **{k: v for k, v in message.data.items() if k != "data_type"}
             )
-            
+
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=message.id,
@@ -383,7 +484,7 @@ class TradingReceiver:
                 data=result,
                 error=result.get("error")
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error handling data request: {e}")
             return TradingResponse(

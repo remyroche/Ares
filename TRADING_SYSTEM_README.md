@@ -1,382 +1,514 @@
-# Live Trading System
+# Unified Trading System
 
-A comprehensive, production-ready trading system with exchange-agnostic architecture, real-time data streaming, risk management, and order execution capabilities.
+A comprehensive, multi-exchange trading system that provides exchange-agnostic trading capabilities with robust error handling, configuration management, and live trading support.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
-The trading system is built with a modular, exchange-agnostic architecture:
+The trading system consists of several key components:
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Live Trading  │    │  Exchange-Agnostic │    │    Exchanges    │
-│     Module      │◄──►│     Receiver      │◄──►│   (CEX APIs)    │
-│                 │    │                  │    │                 │
-│ • Order Manager │    │ • TradingReceiver│    │ • Binance       │
-│ • Data Streamer │    │ • OrderRouter    │    │ • OKX           │
-│ • Risk Manager  │    │ • DataAggregator │    │ • GateIO        │
-│ • Trading Engine│    │ • ExchangeRegistry│    │ • MEXC          │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
+### 1. Live Trading Module (`live_trading/`)
+- **Trading Orchestrator**: Main interface for submitting trading signals and managing trades
+- **Unified Trading System**: High-level system that integrates all components
+- **Order Manager**: Handles order lifecycle and execution
+- **Data Streamer**: Manages real-time market data streaming
+- **Configuration Management**: Centralized configuration for multiple exchanges
+- **Error Handling**: Comprehensive error handling with retry logic
 
-## 📁 Directory Structure
+### 2. Exchange-Agnostic Receiver (`exchanges/`)
+- **Trading Receiver**: Routes orders and data requests to appropriate exchanges
+- **Order Router**: Manages order routing and tracking
+- **Data Aggregator**: Aggregates data from multiple exchanges
+- **Exchange Registry**: Manages exchange connections and health monitoring
 
-```
-live_trading/                 # Main trading module
-├── __init__.py              # Module exports
-├── config.py                # Trading configuration
-├── order_manager.py         # Order lifecycle management
-├── data_streamer.py         # Real-time data streaming
-├── risk_manager.py          # Risk management system
-└── trading_engine.py        # Main trading coordinator
+### 3. Exchange APIs (`exchange/`)
+- **Base Exchange**: Abstract interface for all exchange implementations
+- **Exchange-Specific Implementations**: Binance, OKX, Gate.io, MEXC, Phemex
+- **Factory Pattern**: Centralized exchange creation and configuration
 
-exchanges/                   # Exchange-agnostic receiver
-├── __init__.py              # Module exports
-├── trading_receiver.py      # Main receiver interface
-├── order_router.py          # Order routing logic
-├── data_aggregator.py       # Multi-exchange data aggregation
-└── exchange_registry.py     # Exchange instance management
+## Key Features
 
-exchange/                    # Exchange implementations
-├── base_exchange.py         # Base exchange interface
-├── factory.py              # Exchange factory
-├── binance.py              # Binance implementation
-├── okx.py                  # OKX implementation
-├── gateio.py               # GateIO implementation
-└── mexc.py                 # MEXC implementation
-```
+### ✅ Multi-Exchange Support
+- Support for 5 major exchanges: Binance, OKX, Gate.io, MEXC, Phemex
+- Exchange-agnostic interface for seamless switching
+- Failover and load balancing capabilities
+- Unified API for all exchange operations
 
-## 🚀 Quick Start
+### ✅ Comprehensive Error Handling
+- Categorized error types with appropriate recovery strategies
+- Exponential backoff retry logic with jitter
+- Error tracking and statistics
+- Graceful degradation under failure conditions
+
+### ✅ Advanced Configuration Management
+- Multi-source configuration (environment, files, defaults)
+- Runtime configuration updates
+- Validation and type checking
+- Configuration history and versioning
+
+### ✅ Live Trading Capabilities
+- Real-time order execution
+- Market data streaming
+- Position and risk management
+- Performance tracking and metrics
+
+### ✅ Robust Architecture
+- Async/await throughout for high performance
+- Type-safe interfaces with comprehensive validation
+- Modular design for easy extension
+- Comprehensive logging and monitoring
+
+## Quick Start
 
 ### 1. Basic Setup
 
 ```python
-from live_trading import TradingEngine, TradingConfig, TradingMode
-from exchange.factory import ExchangeFactory
-
-# Configure trading parameters
-config = TradingConfig(
-    mode=TradingMode.PAPER,  # Start with paper trading
-    exchange_name="binance",
-    symbols=["BTCUSDT", "ETHUSDT"],
-    max_position_size=1000.0,
-    max_daily_loss=100.0,
-    max_leverage=5.0
-)
-
-# Create exchange client
-exchange_client = ExchangeFactory.get_exchange(config.exchange_name)
-
-# Create and start trading engine
-trading_engine = TradingEngine(config, exchange_client)
-await trading_engine.start()
-```
-
-### 2. Execute Trades
-
-```python
-from src.interfaces.base_interfaces import TradeDecision
-from datetime import datetime
-
-# Create trade decision
-decision = TradeDecision(
-    timestamp=datetime.now(),
-    symbol="BTCUSDT",
-    action="buy",
-    quantity=0.001,
-    price=0.0,  # Market order
-    leverage=1.0,
-    stop_loss=45000.0,
-    take_profit=55000.0,
-    confidence=0.8,
-    risk_score=0.3
-)
-
-# Execute trade
-order = await trading_engine.execute_trade_decision(decision)
-print(f"Order executed: {order.id}")
-```
-
-### 3. Use Exchange-Agnostic Receiver
-
-```python
-from exchanges import TradingReceiver
-
-# Configure receiver with multiple exchanges
-receiver_config = {
-    "exchanges": {
-        "binance": {
-            "api_key": "your_binance_key",
-            "api_secret": "your_binance_secret"
-        },
-        "okx": {
-            "api_key": "your_okx_key",
-            "api_secret": "your_okx_secret",
-            "password": "your_okx_passphrase"
-        }
-    }
-}
-
-# Create receiver
-receiver = TradingReceiver(receiver_config)
-await receiver.start()
-
-# Send orders to any exchange
-response = await receiver.send_order(
-    exchange="binance",
-    symbol="BTCUSDT",
-    side="buy",
-    order_type="market",
-    quantity=0.001
-)
-```
-
-## 🔧 Configuration
-
-### Trading Configuration
-
-```python
+import asyncio
+from live_trading.unified_trading_system import create_trading_system
 from live_trading.config import TradingConfig, TradingMode
 
-config = TradingConfig(
-    # Trading Mode
-    mode=TradingMode.PAPER,  # PAPER, LIVE, BACKTEST
-    
-    # Exchange Configuration
-    exchange_name="binance",
-    symbols=["BTCUSDT", "ETHUSDT"],
-    
-    # Risk Management
-    max_position_size=1000.0,
-    max_daily_loss=100.0,
-    max_leverage=10.0,
-    stop_loss_percentage=2.0,
-    take_profit_percentage=4.0,
-    
-    # Order Management
-    order_timeout=30,
-    max_retries=3,
-    retry_delay=1.0,
-    
-    # Data Streaming
-    data_update_interval=1.0,
-    reconnect_attempts=5,
-    reconnect_delay=5.0,
-    
-    # Performance Monitoring
-    performance_log_interval=60,
-    trade_log_enabled=True,
-    metrics_enabled=True
-)
+async def main():
+    # Create trading configuration
+    config = TradingConfig(
+        mode=TradingMode.PAPER,  # Use paper trading for testing
+        symbols=["BTCUSDT", "ETHUSDT"],
+        max_position_size=1000.0
+    )
+
+    # Create trading system
+    system = await create_trading_system(
+        trading_config=config,
+        exchanges=["binance", "okx"],
+        enable_paper_trading=True
+    )
+
+    # Start the system
+    await system.start()
+
+    # Submit a trading signal
+    from live_trading.trading_orchestrator import TradingSignal
+
+    signal = TradingSignal(
+        symbol="BTCUSDT",
+        action="buy",
+        quantity=0.001,
+        confidence=0.8,
+        strategy="example_strategy"
+    )
+
+    success = await system.submit_trading_signal(signal)
+    print(f"Signal submitted: {success}")
+
+    # Get system status
+    status = await system.get_system_status()
+    print(f"System status: {status}")
+
+    # Stop the system
+    await system.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-## 📊 Features
-
-### 1. Order Management
-- **Order Lifecycle**: Complete order tracking from creation to execution
-- **Status Monitoring**: Real-time order status updates
-- **Error Handling**: Comprehensive error handling and retry logic
-- **Order History**: Complete order history and performance tracking
-
-### 2. Real-Time Data Streaming
-- **Multi-Symbol Support**: Stream data for multiple trading pairs
-- **Data Types**: Ticker, trades, orderbook, and kline data
-- **Automatic Reconnection**: Built-in reconnection logic for reliability
-- **Data Normalization**: Standardized data format across exchanges
-
-### 3. Risk Management
-- **Position Limits**: Maximum position size enforcement
-- **Daily Loss Limits**: Daily loss protection
-- **Leverage Controls**: Maximum leverage enforcement
-- **Risk Scoring**: Dynamic risk assessment for trades
-- **Real-Time Monitoring**: Continuous risk monitoring and alerts
-
-### 4. Exchange Support
-- **Binance**: Full spot and futures support
-- **OKX**: Complete API implementation
-- **GateIO**: Spot trading support
-- **MEXC**: Spot and futures support
-- **Extensible**: Easy to add new exchanges
-
-### 5. Exchange-Agnostic Interface
-- **Unified API**: Single interface for all exchanges
-- **Order Routing**: Automatic order routing to appropriate exchanges
-- **Data Aggregation**: Multi-exchange data aggregation
-- **Load Balancing**: Distribute orders across multiple exchanges
-
-## 🛡️ Risk Management
-
-The system includes comprehensive risk management:
+### 2. Configuration Management
 
 ```python
-# Risk limits are enforced automatically
-risk_limits = RiskLimits(
-    max_position_size=1000.0,
-    max_daily_loss=100.0,
-    max_leverage=10.0,
-    max_drawdown_percent=10.0,
-    max_volatility=0.05,
-    min_sharpe_ratio=1.0,
-    max_orders_per_minute=60
-)
+from live_trading.config_manager import create_config_manager, ConfigValidationLevel
 
-# Validate trades before execution
-is_valid, message = await risk_manager.validate_trade_decision(decision)
-if not is_valid:
-    print(f"Trade rejected: {message}")
+async def config_example():
+    # Create configuration manager
+    config_manager = await create_config_manager(
+        validation_level=ConfigValidationLevel.STRICT
+    )
+
+    # Update configuration
+    updates = {
+        "trading_config": {
+            "max_position_size": 2000.0,
+            "symbols": ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+        },
+        "exchange_config": {
+            "primary_exchange": "binance",
+            "enable_failover": True
+        }
+    }
+
+    await config_manager.update_configuration(updates)
+
+    # Save configuration
+    await config_manager.save_configuration("custom_config.json")
+
+    # Get configuration status
+    status = await config_manager.get_configuration_status()
+    print(f"Configuration status: {status}")
 ```
 
-## 📈 Performance Monitoring
-
-Built-in performance tracking:
+### 3. Error Handling
 
 ```python
-# Get performance metrics
-performance = await trading_engine.get_performance_metrics()
-print(f"Win rate: {performance['win_rate']:.2%}")
-print(f"Total PnL: ${performance['total_pnl']:.2f}")
-print(f"Sharpe ratio: {performance['sharpe_ratio']:.2f}")
+from live_trading.error_handler import create_default_error_handler, with_error_handling
 
-# Get position summary
-positions = await trading_engine.get_position_summary()
-for symbol, position in positions.items():
-    print(f"{symbol}: {position['current_position']} @ ${position['current_price']}")
+# Create error handler
+error_handler = create_default_error_handler()
+
+# Use decorator for error handling
+@with_error_handling(error_handler)
+async def risky_operation():
+    # Your trading logic here
+    pass
+
+# Handle errors manually
+async def handle_with_retry():
+    try:
+        # Some operation that might fail
+        result = await risky_operation()
+    except Exception as e:
+        # Handle error with retry logic
+        result = await error_handler.handle_error(e, {"context": "example"})
+
+    return result
 ```
 
-## 🔄 Data Streaming
+## Advanced Usage
 
-Real-time data streaming with automatic reconnection:
+### Multi-Exchange Trading
 
 ```python
-# Register data handlers
-async def on_ticker_data(data):
-    print(f"Ticker: {data['symbol']} @ ${data['data']['last_price']}")
+from live_trading.unified_trading_system import UnifiedTradingSystem, SystemConfig
 
-async def on_trade_data(data):
-    print(f"Trade: {data['symbol']} - {data['data']['quantity']} @ ${data['data']['price']}")
+async def multi_exchange_example():
+    # Configure multiple exchanges
+    system_config = SystemConfig(
+        trading_config=TradingConfig(
+            mode=TradingMode.LIVE,
+            symbols=["BTCUSDT", "ETHUSDT"]
+        ),
+        exchanges=["binance", "okx", "gateio"],
+        enable_websockets=True,
+        enable_paper_trading=False
+    )
 
-# Register handlers
-trading_engine.data_streamer.register_handler("ticker", on_ticker_data)
-trading_engine.data_streamer.register_handler("trade", on_trade_data)
+    system = UnifiedTradingSystem(system_config)
+    await system.initialize()
+    await system.start()
+
+    # Get account info from all exchanges
+    account_summary = await system.get_account_summary()
+    print(f"Account summary: {account_summary}")
+
+    # Submit order to specific exchange
+    from live_trading.trading_orchestrator import TradingSignal
+
+    signal = TradingSignal(
+        symbol="BTCUSDT",
+        action="buy",
+        quantity=0.001,
+        confidence=0.85
+    )
+
+    # The system will automatically route to the best exchange
+    await system.submit_trading_signal(signal)
+
+    await system.stop()
 ```
 
-## 🌐 Multi-Exchange Support
-
-Trade across multiple exchanges:
+### Custom Strategy Integration
 
 ```python
-# Send orders to different exchanges
-await receiver.send_order("binance", "BTCUSDT", "buy", "market", 0.001)
-await receiver.send_order("okx", "BTCUSDT", "buy", "market", 0.001)
+from live_trading.trading_orchestrator import TradingOrchestrator
+from live_trading.unified_trading_system import UnifiedTradingSystem
+from src.interfaces.base_interfaces import TradeDecision
 
-# Get aggregated data
-aggregated_data = await receiver.get_aggregated_data(
-    "BTCUSDT", 
-    "ticker", 
-    exchanges=["binance", "okx"]
-)
+class CustomStrategy:
+    def __init__(self, trading_system: UnifiedTradingSystem):
+        self.system = trading_system
+        self.trading_orchestrator = None
+
+    async def initialize(self):
+        # Get the trading orchestrator from the system
+        if hasattr(self.system, 'trading_orchestrator'):
+            self.trading_orchestrator = self.system.trading_orchestrator
+
+    async def generate_signals(self):
+        # Your strategy logic here
+        # Analyze market data, generate signals, etc.
+
+        # Example: Create a trade decision
+        decision = TradeDecision(
+            symbol="BTCUSDT",
+            action="buy",
+            quantity=0.001,
+            price=45000.0,  # Optional: current market price
+            confidence=0.8,
+            risk_score=0.3,
+            leverage=1.0,
+            stop_loss=44000.0,
+            take_profit=47000.0
+        )
+
+        # Execute the decision
+        if self.trading_orchestrator:
+            success = await self.trading_orchestrator.execute_trade_decision(decision)
+            return success
+
+        return False
 ```
 
-## 📝 Logging and Monitoring
+## Configuration
 
-Comprehensive logging and monitoring:
+### Environment Variables
+
+```bash
+# Trading Configuration
+TRADING_MODE=paper
+EXCHANGE_NAME=binance
+TRADING_SYMBOLS=BTCUSDT,ETHUSDT
+MAX_POSITION_SIZE=1000.0
+MAX_DAILY_LOSS=100.0
+
+# Exchange Configuration
+BINANCE_API_KEY=your_binance_api_key
+BINANCE_API_SECRET=your_binance_secret
+OKX_API_KEY=your_okx_api_key
+OKX_API_SECRET=your_okx_secret
+
+# Primary exchange for routing
+PRIMARY_EXCHANGE=binance
+ENABLE_FAILOVER=true
+FAILOVER_EXCHANGES=okx,gateio
+```
+
+### Configuration Files
+
+Create `config/trading_config.json`:
+
+```json
+{
+  "trading_config": {
+    "mode": "paper",
+    "exchange_name": "binance",
+    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "max_position_size": 1000.0,
+    "max_daily_loss": 100.0,
+    "max_leverage": 10.0,
+    "stop_loss_percentage": 2.0,
+    "take_profit_percentage": 4.0,
+    "order_timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 1.0,
+    "data_update_interval": 1.0,
+    "reconnect_attempts": 5,
+    "reconnect_delay": 5.0
+  },
+  "exchange_config": {
+    "primary_exchange": "binance",
+    "exchanges": {
+      "binance": {
+        "name": "binance",
+        "api_key": "your_binance_api_key",
+        "api_secret": "your_binance_secret",
+        "sandbox": false,
+        "rate_limit": 1200,
+        "timeout": 30,
+        "enabled": true,
+        "symbols": ["BTCUSDT", "ETHUSDT"],
+        "risk_limits": {},
+        "custom_settings": {}
+      },
+      "okx": {
+        "name": "okx",
+        "api_key": "your_okx_api_key",
+        "api_secret": "your_okx_secret",
+        "sandbox": false,
+        "rate_limit": 1200,
+        "timeout": 30,
+        "enabled": true,
+        "symbols": ["BTCUSDT", "ETHUSDT"],
+        "risk_limits": {},
+        "custom_settings": {}
+      }
+    },
+    "enable_failover": true,
+    "failover_exchanges": ["okx", "gateio"],
+    "load_balancing": false,
+    "load_balancing_strategy": "round_robin"
+  }
+}
+```
+
+## API Reference
+
+### TradingOrchestrator
+
+Main interface for trading operations:
+
+```python
+class TradingOrchestrator:
+    async def submit_signal(self, signal: TradingSignal) -> bool
+    async def execute_trade_decision(self, decision: TradeDecision) -> bool
+    async def get_account_info(self) -> Dict[str, Any]
+    async def get_positions(self) -> Dict[str, Position]
+    async def get_market_data(self, symbol: str, data_type: str) -> Dict[str, Any]
+    async def get_statistics(self) -> Dict[str, Any]
+    async def pause_trading(self) -> None
+    async def resume_trading(self) -> None
+    async def emergency_stop(self) -> None
+```
+
+### UnifiedTradingSystem
+
+High-level system interface:
+
+```python
+class UnifiedTradingSystem:
+    async def initialize(self) -> None
+    async def start(self) -> None
+    async def stop(self) -> None
+    async def submit_trading_signal(self, signal: TradingSignal) -> bool
+    async def execute_trade_decision(self, decision: TradeDecision) -> bool
+    async def get_account_summary(self) -> Dict[str, Any]
+    async def get_system_status(self) -> Dict[str, Any]
+    async def emergency_stop(self) -> None
+    async def pause_trading(self) -> None
+    async def resume_trading(self) -> None
+```
+
+### ConfigurationManager
+
+Configuration management interface:
+
+```python
+class ConfigurationManager:
+    async def load_configuration(self, sources: List[ConfigSource]) -> SystemConfig
+    async def update_configuration(self, updates: Dict[str, Any]) -> SystemConfig
+    async def save_configuration(self, file_path: str, format: str) -> None
+    async def get_configuration_status(self) -> Dict[str, Any]
+```
+
+### ErrorHandler
+
+Error handling interface:
+
+```python
+class ErrorHandler:
+    async def handle_error(self, error: Exception, context: Dict[str, Any]) -> Optional[T]
+    async def get_error_statistics(self) -> Dict[str, Any]
+    async def clear_error_history(self) -> None
+```
+
+## Monitoring and Logging
+
+The system provides comprehensive monitoring capabilities:
+
+### System Metrics
+- Order execution statistics
+- Error rates and categories
+- Performance metrics
+- Exchange connectivity status
+- Configuration change history
+
+### Logging
+- Structured logging with levels
+- Error tracking with context
+- Performance monitoring
+- Audit trail for configuration changes
+
+### Health Monitoring
+- Exchange connectivity checks
+- API rate limit monitoring
+- System resource monitoring
+- Automatic failover detection
+
+## Security Considerations
+
+### API Key Management
+- Store API keys securely (environment variables, key management systems)
+- Never log API keys or secrets
+- Use separate keys for different environments
+
+### Network Security
+- SSL/TLS for all API communications
+- IP whitelisting where supported
+- Request signing and validation
+
+### Risk Management
+- Position size limits
+- Daily loss limits
+- Maximum leverage controls
+- Order validation
+
+## Testing
+
+### Paper Trading
+Always test strategies in paper trading mode first:
+
+```python
+config = TradingConfig(mode=TradingMode.PAPER)
+```
+
+### Unit Testing
+```python
+import unittest
+from live_trading.unified_trading_system import create_trading_system
+
+class TestTradingSystem(unittest.TestCase):
+    async def test_paper_trading(self):
+        system = await create_trading_system(
+            trading_config=TradingConfig(mode=TradingMode.PAPER)
+        )
+        # Test your logic here
+        await system.stop()
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **API Key Errors**: Verify API keys are correct and have proper permissions
+2. **Rate Limiting**: Check rate limits and implement proper delays
+3. **Network Issues**: Verify internet connection and exchange status
+4. **Configuration Errors**: Validate configuration files and environment variables
+
+### Debug Mode
+
+Enable debug logging for detailed information:
 
 ```python
 import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# System automatically logs:
-# - Order executions
-# - Risk violations
-# - Data streaming events
-# - Performance metrics
-# - Error conditions
+logging.basicConfig(level=logging.DEBUG)
 ```
 
-## 🚨 Error Handling
-
-Robust error handling throughout:
+### Error Analysis
 
 ```python
-try:
-    order = await trading_engine.execute_trade_decision(decision)
-    if order:
-        print(f"Order executed: {order.id}")
-    else:
-        print("Order rejected or failed")
-except Exception as e:
-    logger.error(f"Trading error: {e}")
-    # System continues running with error logged
+# Get detailed error statistics
+error_stats = await error_handler.get_error_statistics()
+print(f"Error statistics: {error_stats}")
+
+# Get system status
+system_status = await system.get_system_status()
+print(f"System status: {system_status}")
 ```
 
-## 🔒 Security
-
-Security best practices:
-
-- **API Key Management**: Secure API key storage and handling
-- **Signature Generation**: Proper HMAC signature generation for exchanges
-- **SSL/TLS**: All connections use secure protocols
-- **Rate Limiting**: Built-in rate limiting to prevent API abuse
-- **Input Validation**: Comprehensive input validation and sanitization
-
-## 📚 Examples
-
-See `examples/live_trading_example.py` for comprehensive examples including:
-
-- Basic trading setup
-- Order execution
-- Data streaming
-- Risk management
-- Multi-exchange trading
-- Performance monitoring
-
-## 🛠️ Development
+## Contributing
 
 ### Adding New Exchanges
 
-1. Create new exchange class inheriting from `BaseExchange`
-2. Implement all abstract methods
-3. Add to `ExchangeFactory`
-4. Test with paper trading
+1. Implement the exchange interface in `exchange/`
+2. Add factory method in `exchange/factory.py`
+3. Update configuration schemas
+4. Add tests and documentation
 
-### Custom Risk Rules
+### Extending Functionality
 
-1. Extend `RiskManager` class
-2. Override `validate_trade_decision` method
-3. Add custom risk metrics
-4. Register with trading engine
+1. Follow the existing architecture patterns
+2. Use the error handling system
+3. Add comprehensive tests
+4. Update documentation
 
-### Custom Data Handlers
+## License
 
-1. Create async handler functions
-2. Register with `DataStreamer`
-3. Handle different data types (ticker, trades, etc.)
-4. Implement error handling
+This trading system is provided for educational and research purposes. Use at your own risk.
 
-## 📄 License
+## Disclaimer
 
-This trading system is part of the larger Ares trading platform and follows the same licensing terms.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please ensure:
-
-1. All tests pass
-2. Code follows existing patterns
-3. Documentation is updated
-4. Risk management is considered
-5. Paper trading is tested first
-
-## ⚠️ Disclaimer
-
-This is a trading system for educational and development purposes. Always:
-
-- Test thoroughly with paper trading
-- Understand the risks involved
-- Start with small position sizes
-- Monitor your trades closely
-- Never trade with money you can't afford to lose
-
-The developers are not responsible for any financial losses incurred through the use of this system.
+This software is for educational purposes only. Trading cryptocurrencies involves substantial risk of loss and is not suitable for every investor. Past performance does not guarantee future results. Only trade with money you can afford to lose.

@@ -60,6 +60,23 @@ class RegimeAnalysisConfig:
     enable_meta_learning: bool = True
     adaptation_rate: float = 0.1
     learning_threshold: float = 0.05
+    
+    # TAS-specific enhancements
+    enable_tree_based_analysis: bool = True
+    tree_importance_threshold: float = 0.1
+    tree_depth_penalty: float = 0.1
+    tree_interpretability_weight: float = 0.3
+    
+    # NAS-specific enhancements
+    enable_neural_based_analysis: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.3
+    neural_architecture_complexity: float = 0.1
+    
+    # Hybrid analysis
+    enable_hybrid_analysis: bool = True
+    hybrid_consensus_threshold: float = 0.7
+    hybrid_ensemble_weight: float = 0.5
 
 
 @dataclass
@@ -114,7 +131,9 @@ class UnifiedRegimeAnalyzer:
                 regime_predictions: np.ndarray,
                 regime_probabilities: Optional[np.ndarray] = None,
                 market_data: Optional[np.ndarray] = None,
-                timestamps: Optional[np.ndarray] = None) -> RegimeAnalysisResult:
+                timestamps: Optional[np.ndarray] = None,
+                architecture_type: Optional[str] = None,
+                model_metadata: Optional[Dict[str, Any]] = None) -> RegimeAnalysisResult:
         """
         Perform unified regime analysis.
         
@@ -157,6 +176,31 @@ class UnifiedRegimeAnalyzer:
             
             if RegimeAnalysisType.META_LEARNING in self.config.analysis_types and self.config.enable_meta_learning:
                 adaptation_scores, meta_learning_analysis = self._analyze_meta_learning(regime_predictions, market_data)
+            
+            # Architecture-specific enhancements
+            if architecture_type == "TAS" and self.config.enable_tree_based_analysis:
+                tree_analysis = self._analyze_tree_based_regime_patterns(
+                    regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on tree analysis
+                stability_scores = self._adjust_scores_with_tree_analysis(stability_scores, tree_analysis)
+                uncertainty_estimates = self._adjust_scores_with_tree_analysis(uncertainty_estimates, tree_analysis)
+                
+            elif architecture_type == "NAS" and self.config.enable_neural_based_analysis:
+                neural_analysis = self._analyze_neural_based_regime_patterns(
+                    regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on neural analysis
+                stability_scores = self._adjust_scores_with_neural_analysis(stability_scores, neural_analysis)
+                uncertainty_estimates = self._adjust_scores_with_neural_analysis(uncertainty_estimates, neural_analysis)
+                
+            elif architecture_type == "HYBRID" and self.config.enable_hybrid_analysis:
+                hybrid_analysis = self._analyze_hybrid_regime_patterns(
+                    regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on hybrid analysis
+                stability_scores = self._adjust_scores_with_hybrid_analysis(stability_scores, hybrid_analysis)
+                uncertainty_estimates = self._adjust_scores_with_hybrid_analysis(uncertainty_estimates, hybrid_analysis)
             
             # Calculate confidence scores
             confidence_scores = self._calculate_confidence_scores(regime_predictions, regime_probabilities)
@@ -593,6 +637,193 @@ class UnifiedRegimeAnalyzer:
             
         except Exception:
             return 0.0
+    
+    def _analyze_tree_based_regime_patterns(self, regime_predictions: np.ndarray,
+                                          regime_probabilities: Optional[np.ndarray],
+                                          model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Analyze tree-based regime patterns."""
+        try:
+            tree_analysis = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract tree-specific information
+            tree_depth = model_metadata.get('tree_depth', 5)
+            tree_importance = model_metadata.get('feature_importance', {})
+            tree_interpretability = model_metadata.get('interpretability', 0.8)
+            
+            # Calculate tree-based regime patterns
+            depth_penalty = max(0.0, 1.0 - (tree_depth - 3) * self.config.tree_depth_penalty)
+            interpretability_score = tree_interpretability * self.config.tree_interpretability_weight
+            
+            # Feature importance based regime analysis
+            importance_scores = np.zeros(len(regime_predictions))
+            for i, regime in enumerate(regime_predictions):
+                regime_importance = tree_importance.get(f'regime_{regime}', 0.5)
+                importance_scores[i] = regime_importance
+            
+            tree_analysis = {
+                'depth_penalty': np.full(len(regime_predictions), depth_penalty),
+                'interpretability_score': np.full(len(regime_predictions), interpretability_score),
+                'importance_score': importance_scores
+            }
+            
+            return tree_analysis
+            
+        except Exception as e:
+            self.logger.warning(f"Tree-based regime pattern analysis failed: {e}")
+            return {}
+    
+    def _analyze_neural_based_regime_patterns(self, regime_predictions: np.ndarray,
+                                            regime_probabilities: Optional[np.ndarray],
+                                            model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Analyze neural-based regime patterns."""
+        try:
+            neural_analysis = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract neural-specific information
+            model_confidence = model_metadata.get('confidence', 0.8)
+            architecture_complexity = model_metadata.get('architecture_complexity', 0.5)
+            uncertainty_estimates = model_metadata.get('uncertainty', None)
+            
+            # Calculate neural-based regime patterns
+            confidence_scores = np.full(len(regime_predictions), model_confidence)
+            complexity_scores = np.full(len(regime_predictions), 1.0 - architecture_complexity)
+            
+            # Uncertainty-based regime analysis
+            if uncertainty_estimates is not None:
+                uncertainty_scores = 1.0 - uncertainty_estimates * self.config.neural_uncertainty_weight
+            else:
+                uncertainty_scores = np.ones(len(regime_predictions)) * 0.5
+            
+            neural_analysis = {
+                'confidence_score': confidence_scores,
+                'complexity_score': complexity_scores,
+                'uncertainty_score': uncertainty_scores
+            }
+            
+            return neural_analysis
+            
+        except Exception as e:
+            self.logger.warning(f"Neural-based regime pattern analysis failed: {e}")
+            return {}
+    
+    def _analyze_hybrid_regime_patterns(self, regime_predictions: np.ndarray,
+                                     regime_probabilities: Optional[np.ndarray],
+                                     model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Analyze hybrid regime patterns."""
+        try:
+            hybrid_analysis = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract hybrid information
+            tree_confidence = model_metadata.get('tree_confidence', 0.7)
+            neural_confidence = model_metadata.get('neural_confidence', 0.8)
+            consensus_score = model_metadata.get('consensus', 0.5)
+            ensemble_weight = model_metadata.get('ensemble_weight', 0.5)
+            
+            # Calculate hybrid regime patterns
+            weighted_confidence = (
+                tree_confidence * (1.0 - ensemble_weight) +
+                neural_confidence * ensemble_weight
+            )
+            
+            consensus_scores = np.full(len(regime_predictions), consensus_score)
+            confidence_scores = np.full(len(regime_predictions), weighted_confidence)
+            ensemble_scores = np.full(len(regime_predictions), ensemble_weight)
+            
+            hybrid_analysis = {
+                'consensus_score': consensus_scores,
+                'confidence_score': confidence_scores,
+                'ensemble_score': ensemble_scores
+            }
+            
+            return hybrid_analysis
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid regime pattern analysis failed: {e}")
+            return {}
+    
+    def _adjust_scores_with_tree_analysis(self, base_scores: np.ndarray, 
+                                        tree_analysis: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on tree analysis."""
+        try:
+            if not tree_analysis:
+                return base_scores
+            
+            # Apply tree-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'importance_score' in tree_analysis:
+                adjusted_scores *= tree_analysis['importance_score']
+            
+            if 'depth_penalty' in tree_analysis:
+                adjusted_scores *= tree_analysis['depth_penalty']
+            
+            if 'interpretability_score' in tree_analysis:
+                adjusted_scores *= tree_analysis['interpretability_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Tree score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_neural_analysis(self, base_scores: np.ndarray, 
+                                           neural_analysis: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on neural analysis."""
+        try:
+            if not neural_analysis:
+                return base_scores
+            
+            # Apply neural-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'confidence_score' in neural_analysis:
+                adjusted_scores *= neural_analysis['confidence_score']
+            
+            if 'uncertainty_score' in neural_analysis:
+                adjusted_scores *= neural_analysis['uncertainty_score']
+            
+            if 'complexity_score' in neural_analysis:
+                adjusted_scores *= neural_analysis['complexity_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Neural score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_hybrid_analysis(self, base_scores: np.ndarray, 
+                                          hybrid_analysis: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on hybrid analysis."""
+        try:
+            if not hybrid_analysis:
+                return base_scores
+            
+            # Apply hybrid-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'consensus_score' in hybrid_analysis:
+                adjusted_scores *= hybrid_analysis['consensus_score']
+            
+            if 'confidence_score' in hybrid_analysis:
+                adjusted_scores *= hybrid_analysis['confidence_score']
+            
+            if 'ensemble_score' in hybrid_analysis:
+                adjusted_scores *= hybrid_analysis['ensemble_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid score adjustment failed: {e}")
+            return base_scores
 
 
 # Convenience functions

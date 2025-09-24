@@ -81,6 +81,23 @@ class TradingViabilityConfig:
     enable_regime_specific_analysis: bool = True
     min_regime_samples: int = 50
     regime_stability_threshold: float = 0.7
+    
+    # TAS-specific enhancements
+    enable_tree_based_viability: bool = True
+    tree_decision_threshold: float = 0.6
+    tree_leaf_penalty: float = 0.1
+    tree_interpretability_weight: float = 0.3
+    
+    # NAS-specific enhancements
+    enable_neural_based_viability: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.2
+    neural_architecture_efficiency: float = 0.1
+    
+    # Hybrid analysis
+    enable_hybrid_viability: bool = True
+    hybrid_consensus_threshold: float = 0.7
+    hybrid_ensemble_weight: float = 0.5
 
 
 @dataclass
@@ -155,7 +172,9 @@ class UnifiedTradingViabilityEvaluator:
                  regime_predictions: np.ndarray,
                  regime_probabilities: Optional[np.ndarray] = None,
                  timestamps: Optional[np.ndarray] = None,
-                 regime_metadata: Optional[Dict[str, Any]] = None) -> TradingViabilityResult:
+                 regime_metadata: Optional[Dict[str, Any]] = None,
+                 architecture_type: Optional[str] = None,
+                 model_metadata: Optional[Dict[str, Any]] = None) -> TradingViabilityResult:
         """
         Evaluate trading viability of regimes using unified approach.
         
@@ -195,6 +214,31 @@ class UnifiedTradingViabilityEvaluator:
             liquidity_scores = self._calculate_market_liquidity_viability(data_array, regime_predictions)
             stability_scores = self._calculate_regime_stability_viability(regime_predictions)
             execution_scores = self._calculate_execution_feasibility_viability(data_array, regime_predictions)
+            
+            # Architecture-specific enhancements
+            if architecture_type == "TAS" and self.config.enable_tree_based_viability:
+                tree_viability_scores = self._calculate_tree_based_trading_viability(
+                    data_array, regime_predictions, model_metadata
+                )
+                # Adjust scores based on tree analysis
+                frequency_scores = self._adjust_scores_with_tree_viability(frequency_scores, tree_viability_scores)
+                confidence_scores = self._adjust_scores_with_tree_viability(confidence_scores, tree_viability_scores)
+                
+            elif architecture_type == "NAS" and self.config.enable_neural_based_viability:
+                neural_viability_scores = self._calculate_neural_based_trading_viability(
+                    data_array, regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on neural analysis
+                frequency_scores = self._adjust_scores_with_neural_viability(frequency_scores, neural_viability_scores)
+                confidence_scores = self._adjust_scores_with_neural_viability(confidence_scores, neural_viability_scores)
+                
+            elif architecture_type == "HYBRID" and self.config.enable_hybrid_viability:
+                hybrid_viability_scores = self._calculate_hybrid_trading_viability(
+                    data_array, regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on hybrid analysis
+                frequency_scores = self._adjust_scores_with_hybrid_viability(frequency_scores, hybrid_viability_scores)
+                confidence_scores = self._adjust_scores_with_hybrid_viability(confidence_scores, hybrid_viability_scores)
             
             # Calculate weighted overall trading viability
             overall_scores = (
@@ -821,6 +865,191 @@ class UnifiedTradingViabilityEvaluator:
         except Exception as e:
             self.logger.warning(f"Execution feasibility analysis failed: {e}")
             return {}
+    
+    def _calculate_tree_based_trading_viability(self, market_data: np.ndarray,
+                                             regime_predictions: np.ndarray,
+                                             model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate tree-based trading viability metrics."""
+        try:
+            tree_viability = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract tree-specific information
+            tree_depth = model_metadata.get('tree_depth', 5)
+            tree_leaves = model_metadata.get('n_leaves', 10)
+            tree_interpretability = model_metadata.get('interpretability', 0.8)
+            decision_threshold = model_metadata.get('decision_threshold', 0.6)
+            
+            # Calculate tree-based viability metrics
+            depth_penalty = max(0.0, 1.0 - (tree_depth - 3) * self.config.tree_leaf_penalty)
+            interpretability_score = tree_interpretability * self.config.tree_interpretability_weight
+            decision_confidence = min(decision_threshold / self.config.tree_decision_threshold, 1.0)
+            
+            tree_viability = {
+                'depth_penalty': np.full(len(regime_predictions), depth_penalty),
+                'interpretability_score': np.full(len(regime_predictions), interpretability_score),
+                'decision_confidence': np.full(len(regime_predictions), decision_confidence)
+            }
+            
+            return tree_viability
+            
+        except Exception as e:
+            self.logger.warning(f"Tree-based trading viability calculation failed: {e}")
+            return {}
+    
+    def _calculate_neural_based_trading_viability(self, market_data: np.ndarray,
+                                                regime_predictions: np.ndarray,
+                                                regime_probabilities: Optional[np.ndarray],
+                                                model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate neural-based trading viability metrics."""
+        try:
+            neural_viability = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract neural-specific information
+            model_confidence = model_metadata.get('confidence', 0.8)
+            architecture_efficiency = model_metadata.get('architecture_efficiency', 0.7)
+            uncertainty_estimates = model_metadata.get('uncertainty', None)
+            
+            # Calculate neural-based viability metrics
+            confidence_scores = np.full(len(regime_predictions), model_confidence)
+            efficiency_scores = np.full(len(regime_predictions), architecture_efficiency)
+            
+            # Uncertainty-based viability
+            if uncertainty_estimates is not None:
+                uncertainty_scores = 1.0 - uncertainty_estimates * self.config.neural_uncertainty_weight
+            else:
+                uncertainty_scores = np.ones(len(regime_predictions)) * 0.5
+            
+            neural_viability = {
+                'confidence_score': confidence_scores,
+                'efficiency_score': efficiency_scores,
+                'uncertainty_score': uncertainty_scores
+            }
+            
+            return neural_viability
+            
+        except Exception as e:
+            self.logger.warning(f"Neural-based trading viability calculation failed: {e}")
+            return {}
+    
+    def _calculate_hybrid_trading_viability(self, market_data: np.ndarray,
+                                         regime_predictions: np.ndarray,
+                                         regime_probabilities: Optional[np.ndarray],
+                                         model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate hybrid trading viability metrics."""
+        try:
+            hybrid_viability = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract hybrid information
+            tree_confidence = model_metadata.get('tree_confidence', 0.7)
+            neural_confidence = model_metadata.get('neural_confidence', 0.8)
+            consensus_score = model_metadata.get('consensus', 0.5)
+            ensemble_weight = model_metadata.get('ensemble_weight', 0.5)
+            
+            # Calculate hybrid viability metrics
+            weighted_confidence = (
+                tree_confidence * (1.0 - ensemble_weight) +
+                neural_confidence * ensemble_weight
+            )
+            
+            consensus_scores = np.full(len(regime_predictions), consensus_score)
+            confidence_scores = np.full(len(regime_predictions), weighted_confidence)
+            ensemble_scores = np.full(len(regime_predictions), ensemble_weight)
+            
+            hybrid_viability = {
+                'consensus_score': consensus_scores,
+                'confidence_score': confidence_scores,
+                'ensemble_score': ensemble_scores
+            }
+            
+            return hybrid_viability
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid trading viability calculation failed: {e}")
+            return {}
+    
+    def _adjust_scores_with_tree_viability(self, base_scores: np.ndarray, 
+                                         tree_viability: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on tree viability analysis."""
+        try:
+            if not tree_viability:
+                return base_scores
+            
+            # Apply tree-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'depth_penalty' in tree_viability:
+                adjusted_scores *= tree_viability['depth_penalty']
+            
+            if 'interpretability_score' in tree_viability:
+                adjusted_scores *= tree_viability['interpretability_score']
+            
+            if 'decision_confidence' in tree_viability:
+                adjusted_scores *= tree_viability['decision_confidence']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Tree viability score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_neural_viability(self, base_scores: np.ndarray, 
+                                           neural_viability: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on neural viability analysis."""
+        try:
+            if not neural_viability:
+                return base_scores
+            
+            # Apply neural-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'confidence_score' in neural_viability:
+                adjusted_scores *= neural_viability['confidence_score']
+            
+            if 'efficiency_score' in neural_viability:
+                adjusted_scores *= neural_viability['efficiency_score']
+            
+            if 'uncertainty_score' in neural_viability:
+                adjusted_scores *= neural_viability['uncertainty_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Neural viability score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_hybrid_viability(self, base_scores: np.ndarray, 
+                                          hybrid_viability: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on hybrid viability analysis."""
+        try:
+            if not hybrid_viability:
+                return base_scores
+            
+            # Apply hybrid-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'consensus_score' in hybrid_viability:
+                adjusted_scores *= hybrid_viability['consensus_score']
+            
+            if 'confidence_score' in hybrid_viability:
+                adjusted_scores *= hybrid_viability['confidence_score']
+            
+            if 'ensemble_score' in hybrid_viability:
+                adjusted_scores *= hybrid_viability['ensemble_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid viability score adjustment failed: {e}")
+            return base_scores
 
 
 # Convenience functions

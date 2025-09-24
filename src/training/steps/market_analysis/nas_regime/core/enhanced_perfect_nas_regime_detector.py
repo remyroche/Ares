@@ -22,6 +22,73 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+# Import enhanced utility tools
+from src.utils.common_operations import (
+    # DataFrame utilities
+    create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    validate_timestamp_column, safe_timestamp_conversion, optimize_dataframe_dtypes,
+    # Data quality utilities
+    calculate_data_quality_metrics, get_dataframe_info, create_data_quality_report,
+    # Math utilities
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    safe_float, safe_int, validate_finite, validate_positive, validate_range,
+    safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+    # String utilities
+    safe_lower, safe_upper, safe_join,
+    # Collection utilities
+    safe_append, safe_extend, safe_dict_get, safe_dict_items,
+    # Async utilities
+    safe_sleep, safe_gather, create_async_task,
+    # Performance utilities
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    # Matrix utilities
+    validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    # File utilities
+    ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
+    safe_copy, safe_deepcopy, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls,
+    # Memory optimization utilities
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+    validate_file_path, get_file_size, check_disk_space
+)
+
+from src.utils.common_utilities import (
+    safe_dataframe_operation as safe_df_op, validate_dataframe_columns as validate_df_cols,
+    calculate_data_quality_metrics as calc_data_quality, create_summary_statistics,
+    safe_convert_dtypes as safe_convert_dtypes_util, safe_merge_dataframes as safe_merge_dfs,
+    safe_groupby_operation, safe_apply_function, safe_drop_columns as safe_drop_cols,
+    safe_rename_columns as safe_rename_cols, validate_timestamp_column as validate_ts_col,
+    safe_timestamp_conversion as safe_ts_conversion, get_dataframe_info as get_df_info,
+    safe_filter_dataframe, create_data_quality_report as create_dq_report,
+    CommonUtilities
+)
+
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log as math_safe_log, safe_sqrt as math_safe_sqrt,
+    safe_power as math_safe_power, validate_finite as math_validate_finite,
+    validate_positive as math_validate_positive, validate_range as math_validate_range,
+    validate_numeric_array, safe_kelly_calculation as math_safe_kelly,
+    safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
+    safe_correlation, safe_covariance, safe_mean as math_safe_mean, safe_std as math_safe_std,
+    safe_percentile, validate_correlation_matrix as math_validate_corr_matrix,
+    safe_matrix_inverse as math_safe_matrix_inverse, math_safe, MathValidation
+)
+
+from src.utils.data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+
 # Import existing tool integrations
 try:
     from src.utils.hardware.unified_hardware_manager import (
@@ -132,41 +199,61 @@ class EnhancedPerfectNASRegimeDetector:
     """
     
     def __init__(self, config: PerfectNASConfig):
-        """Initialize Enhanced Perfect NAS Regime Detector.
-        
+        """Initialize Enhanced Perfect NAS Regime Detector with integrated utility tools.
+
         Args:
             config: Perfect NAS configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Initialize hardware optimization
+
+        # Initialize enhanced utility managers
+        self.common_utils = CommonUtilities()
+        self.math_validator = MathValidation()
+        self.universal_serializer = UniversalSerializer()
+        self.klines_manager = get_klines_manager()
+        self.matrix_ops = UnifiedMatrixOperations(
+            enable_gpu=True,
+            enable_memory_optimization=True,
+            enable_parallel_processing=True,
+            optimization_level='aggressive'
+        )
+
+        # Initialize hardware optimization with enhanced utilities
         self._initialize_hardware_optimization()
-        
+
         # Initialize matrix operations
         self._initialize_matrix_operations()
-        
+
         # Initialize ML common utilities
         self._initialize_ml_common()
-        
+
         # Initialize NAS clustering components
         self._initialize_nas_clustering()
-        
+
         # Initialize NAS modeling components
         self._initialize_nas_modeling()
-        
+
         # Initialize neural architectures
         self._initialize_neural_architectures()
-        
+
         # Initialize evaluation components
         self._initialize_evaluation_components()
-        
-        self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized")
+
+        # Initialize memory optimization
+        self._initialize_memory_optimization()
+
+        # Initialize data quality validation
+        self._initialize_data_quality_validation()
+
+        self.logger.info("✅ Enhanced Perfect NAS Regime Detector initialized with integrated utilities")
         self.logger.info(f"   Hardware optimization: {HARDWARE_AVAILABLE}")
         self.logger.info(f"   Matrix operations: {MATRIX_OPS_AVAILABLE}")
         self.logger.info(f"   ML common: {ML_COMMON_AVAILABLE}")
         self.logger.info(f"   NAS clustering: {NAS_CLUSTERING_AVAILABLE}")
         self.logger.info(f"   NAS modeling: {NAS_MODELING_AVAILABLE}")
+        self.logger.info(f"   Memory optimization: {'✅ Enabled' if hasattr(self, 'memory_optimizer') else '❌ Disabled'}")
+        self.logger.info(f"   Data quality validation: {'✅ Enabled' if hasattr(self, 'data_quality_validator') else '❌ Disabled'}")
     
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
@@ -200,6 +287,45 @@ class EnhancedPerfectNASRegimeDetector:
         except Exception as e:
             self.logger.warning(f"Hardware optimization initialization failed: {e}")
             self.hardware_manager = None
+
+    def _initialize_memory_optimization(self):
+        """Initialize memory optimization using enhanced utilities."""
+        try:
+            # Initialize memory checkpoint context manager
+            self.memory_checkpoint = memory_checkpoint("Perfect_NAS_Detector")
+            self.gpu_context = gpu_context("Regime_Detection_Operations")
+
+            # Optimize memory on startup
+            memory_status = optimize_memory()
+            if memory_status['success']:
+                self.logger.info(f"✅ Memory optimization initialized: {memory_status.get('method', 'unknown')}")
+            else:
+                self.logger.warning(f"⚠️ Memory optimization failed: {memory_status.get('error', 'unknown')}")
+
+            # Set up periodic memory monitoring
+            self.memory_monitoring_enabled = True
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Memory optimization initialization failed: {e}")
+            self.memory_checkpoint = None
+            self.gpu_context = None
+            self.memory_monitoring_enabled = False
+
+    def _initialize_data_quality_validation(self):
+        """Initialize data quality validation using enhanced utilities."""
+        try:
+            # Create data quality validator
+            self.data_quality_validator = create_data_quality_report
+
+            # Set up data validation pipeline
+            self.data_validation_enabled = True
+
+            self.logger.info("✅ Data quality validation initialized")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Data quality validation initialization failed: {e}")
+            self.data_quality_validator = None
+            self.data_validation_enabled = False
     
     def _initialize_matrix_operations(self):
         """Initialize matrix operations optimization."""
@@ -540,11 +666,22 @@ class EnhancedPerfectNASRegimeDetector:
         else:
             yield
     
-    def _prepare_data_optimized(self, market_data: Union[pd.DataFrame, np.ndarray], 
+    def _prepare_data_optimized(self, market_data: Union[pd.DataFrame, np.ndarray],
                                timestamps: Optional[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare and preprocess market data with optimizations."""
+        """Prepare and preprocess market data with enhanced utilities and optimizations."""
         try:
+            # Validate input data using enhanced utilities
             if isinstance(market_data, pd.DataFrame):
+                # Validate DataFrame quality
+                data_quality = calculate_data_quality_metrics(market_data)
+                self.logger.info(f"📊 Input Data Quality - Missing: {data_quality['missing_percentage']".2f"}%, Duplicates: {data_quality['duplicate_percentage']".2f"}%")
+
+                # Guard against excessive nulls
+                market_data = guard_dataframe_nulls(market_data, threshold=0.3)
+
+                # Optimize data types
+                market_data = optimize_dataframe_dtypes(market_data)
+
                 data_array = market_data.values
                 if timestamps is None and 'timestamp' in market_data.columns:
                     timestamps = market_data['timestamp'].values
@@ -552,18 +689,34 @@ class EnhancedPerfectNASRegimeDetector:
                 data_array = market_data
                 if timestamps is None:
                     timestamps = np.arange(len(data_array))
-            
+
+            # Validate data array using math utilities
+            data_array = validate_numeric_array(data_array, "market_data_array")
+
             # Use matrix operations optimization if available
             if self.matrix_ops:
                 data_array = self.matrix_ops.normalize_data(data_array)
+                self.logger.info("✅ Matrix operations used for data normalization")
             else:
-                # Fallback normalization
-                data_array = (data_array - np.mean(data_array, axis=0)) / (np.std(data_array, axis=0) + 1e-8)
-            
+                # Enhanced normalization with validation
+                mean_vals = math_safe_mean(data_array, axis=0, default=0.0)
+                std_vals = math_safe_std(data_array, axis=0, default=1.0)
+
+                # Safe normalization
+                data_array = math_safe(
+                    lambda x, mean, std: (x - mean) / (std + 1e-8),
+                    data_array, mean_vals, std_vals,
+                    default=data_array
+                )
+
+            # Validate normalized data
+            math_validate_finite(data_array, "normalized_data")
+            validate_numeric_array(data_array, "normalized_data")
+
             return data_array, timestamps
-            
+
         except Exception as e:
-            self.logger.error(f"Optimized data preparation failed: {e}")
+            self.logger.error(f"Enhanced data preparation failed: {e}")
             raise
     
     def _extract_features_optimized(self, data: np.ndarray) -> np.ndarray:

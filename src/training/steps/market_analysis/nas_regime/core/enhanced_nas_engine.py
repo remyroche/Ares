@@ -18,6 +18,71 @@ import pickle
 import os
 from pathlib import Path
 
+# Import enhanced utility tools
+from src.utils.common_operations import (
+    # DataFrame utilities
+    create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    validate_timestamp_column, safe_timestamp_conversion, optimize_dataframe_dtypes,
+    # Data quality utilities
+    calculate_data_quality_metrics, get_dataframe_info, create_data_quality_report,
+    # Math utilities
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    safe_float, safe_int, validate_finite, validate_positive, validate_range,
+    safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+    # String utilities
+    safe_lower, safe_upper, safe_join,
+    # Collection utilities
+    safe_append, safe_extend, safe_dict_get, safe_dict_items,
+    # Async utilities
+    safe_sleep, safe_gather, create_async_task,
+    # Performance utilities
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    # Matrix utilities
+    validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    # File utilities
+    ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
+    safe_copy, safe_deepcopy, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls,
+    # Memory optimization utilities
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage,
+    validate_file_path, get_file_size, check_disk_space
+)
+
+from src.utils.common_utilities import (
+    safe_dataframe_operation as safe_df_op, validate_dataframe_columns as validate_df_cols,
+    calculate_data_quality_metrics as calc_data_quality, create_summary_statistics,
+    safe_convert_dtypes as safe_convert_dtypes_util, safe_merge_dataframes as safe_merge_dfs,
+    safe_groupby_operation, safe_apply_function, safe_drop_columns as safe_drop_cols,
+    safe_rename_columns as safe_rename_cols, validate_timestamp_column as validate_ts_col,
+    safe_timestamp_conversion as safe_ts_conversion, get_dataframe_info as get_df_info,
+    safe_filter_dataframe, create_data_quality_report as create_dq_report,
+    CommonUtilities
+)
+
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log as math_safe_log, safe_sqrt as math_safe_sqrt,
+    safe_power as math_safe_power, validate_finite as math_validate_finite,
+    validate_positive as math_validate_positive, validate_range as math_validate_range,
+    validate_numeric_array, safe_kelly_calculation as math_safe_kelly,
+    safe_weighted_average as math_safe_weighted_avg, safe_percentage_change as math_safe_pct_change,
+    safe_correlation, safe_covariance, safe_mean as math_safe_mean, safe_std as math_safe_std,
+    safe_percentile, validate_correlation_matrix as math_validate_corr_matrix,
+    safe_matrix_inverse as math_safe_matrix_inverse, math_safe, MathValidation
+)
+
+from src.utils.data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
 # Import ML Common Utilities
 from src.utils.ml_common import (
     # Model utilities
@@ -168,8 +233,14 @@ class EnhancedNASEngine:
     """Enhanced Neural Architecture Search Engine."""
 
     def __init__(self, config: NASSearchConfig):
-        """Initialize the enhanced NAS engine with shared ML utilities."""
+        """Initialize the enhanced NAS engine with integrated utility tools."""
         self.config = config
+
+        # Initialize utility managers
+        self.common_utils = CommonUtilities()
+        self.math_validator = MathValidation()
+        self.universal_serializer = UniversalSerializer()
+        self.klines_manager = get_klines_manager()
 
         # Initialize shared ML utilities from hybrid_nas_tas_regime
         self._initialize_shared_ml_utilities()
@@ -189,13 +260,18 @@ class EnhancedNASEngine:
         self.start_time = None
         self.evaluation_times = []
 
-        # Initialize hardware optimization
+        # Initialize hardware optimization with enhanced utilities
         self._initialize_hardware_optimization()
 
-        self.logger.info("✅ Enhanced NAS Engine initialized with shared ML utilities")
+        # Initialize memory optimization
+        self._initialize_memory_optimization()
+
+        self.logger.info("✅ Enhanced NAS Engine initialized with integrated utility tools")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Population Size: {config.population_size}")
         self.logger.info(f"   Max Generations: {config.max_generations}")
+        self.logger.info(f"   Memory Optimization: {'✅ Enabled' if hasattr(self, 'memory_optimizer') else '❌ Disabled'}")
+        self.logger.info(f"   Data Quality Validation: {'✅ Enabled' if hasattr(self, 'data_quality_validator') else '❌ Disabled'}")
 
     def _initialize_shared_ml_utilities(self):
         """Initialize shared ML utilities from hybrid_nas_tas_regime."""
@@ -322,7 +398,7 @@ class EnhancedNASEngine:
             raise
 
     def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization for NAS search."""
+        """Initialize hardware optimization for NAS search with enhanced utilities."""
         try:
             if self.config.enable_hardware_optimization:
                 # Import unified hardware manager
@@ -362,6 +438,14 @@ class EnhancedNASEngine:
                 self.logger.info(f"   CPU Optimization: {hardware_config.cpu_optimization_level.value}")
                 self.logger.info(f"   GPU Optimization: {hardware_config.gpu_optimization_level.value}")
                 self.logger.info(f"   Memory Limit: {hardware_config.memory_limit_gb} GB")
+
+                # Check disk space for data storage
+                disk_status = check_disk_space(".", required_gb=1.0)
+                if disk_status['sufficient']:
+                    self.logger.info(f"   Disk Space: ✅ {disk_status['available_percentage']".1f"}% available")
+                else:
+                    self.logger.warning(f"   Disk Space: ⚠️ Low space ({disk_status['available_percentage']".1f"}%)")
+
             else:
                 self.hardware_optimizer = None
                 self.logger.info("⚠️ Hardware optimization disabled")
@@ -369,6 +453,29 @@ class EnhancedNASEngine:
         except Exception as e:
             self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
             self.hardware_optimizer = None
+
+    def _initialize_memory_optimization(self):
+        """Initialize memory optimization using enhanced utilities."""
+        try:
+            # Initialize memory checkpoint context manager
+            self.memory_checkpoint = memory_checkpoint("NAS_Engine")
+            self.gpu_context = gpu_context("NAS_Operations")
+
+            # Optimize memory on startup
+            memory_status = optimize_memory()
+            if memory_status['success']:
+                self.logger.info(f"✅ Memory optimization initialized: {memory_status.get('method', 'unknown')}")
+            else:
+                self.logger.warning(f"⚠️ Memory optimization failed: {memory_status.get('error', 'unknown')}")
+
+            # Set up periodic memory monitoring
+            self.memory_monitoring_enabled = True
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Memory optimization initialization failed: {e}")
+            self.memory_checkpoint = None
+            self.gpu_context = None
+            self.memory_monitoring_enabled = False
 
     def _create_architecture_constraints(self):
         """Create architecture constraints from config."""
@@ -388,11 +495,30 @@ class EnhancedNASEngine:
                validation_data: Tuple[np.ndarray, np.ndarray],
                test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                regime_data: Optional[Dict[str, Any]] = None) -> NASSearchResult:
-        """Perform comprehensive neural architecture search with ML Common utilities."""
+        """Perform comprehensive neural architecture search with integrated utility tools."""
         self.start_time = time.time()
-        self.logger.info("🚀 Starting Enhanced NAS Search with ML Common utilities...")
+        self.logger.info("🚀 Starting Enhanced NAS Search with integrated utility tools...")
 
         try:
+            # Validate input data using enhanced utilities
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
+
+            # Convert to DataFrame for validation
+            train_df = pd.DataFrame({'X': X_train.flatten(), 'y': y_train.flatten()})
+            val_df = pd.DataFrame({'X': X_val.flatten(), 'y': y_val.flatten()})
+
+            # Validate data quality
+            train_quality = calculate_data_quality_metrics(train_df)
+            val_quality = calculate_data_quality_metrics(val_df)
+
+            self.logger.info(f"📊 Train Data Quality - Missing: {train_quality['missing_percentage']".2f"}%, Duplicates: {train_quality['duplicate_percentage']".2f"}%")
+            self.logger.info(f"📊 Validation Data Quality - Missing: {val_quality['missing_percentage']".2f"}%, Duplicates: {val_quality['duplicate_percentage']".2f"}%")
+
+            # Guard against excessive nulls
+            train_df = guard_dataframe_nulls(train_df, threshold=0.3)
+            val_df = guard_dataframe_nulls(val_df, threshold=0.3)
+
             # Apply safeguards before search using shared utilities
             if not self.shared_ml_utilities.check_training_safety(train_data, validation_data):
                 self.logger.warning("Training safety check failed, proceeding with caution")
@@ -400,6 +526,12 @@ class EnhancedNASEngine:
             # Check lookahead protection using shared utilities
             if not self.shared_ml_utilities.validate_data_split(train_data, validation_data):
                 self.logger.warning("Data split may have lookahead bias")
+
+            # Memory checkpoint for search operation
+            with self.memory_checkpoint:
+                # Check memory usage before search
+                memory_before = get_memory_usage()
+                self.logger.info(f"📈 Memory before search: {format_bytes(memory_before)}")
 
             # Select and initialize search strategy
             search_strategy = self._create_search_strategy()
@@ -525,12 +657,27 @@ class EnhancedNASEngine:
             return None
 
     def _evaluate_architecture_with_shared_utilities(self, architecture, validation_data, regime_data=None) -> float:
-        """Evaluate architecture using shared ML utilities."""
+        """Evaluate architecture using shared ML utilities with enhanced validation."""
         try:
+            # Validate architecture using math utilities
+            if hasattr(architecture, 'layers') and architecture.layers:
+                # Validate numeric parameters
+                for layer in architecture.layers:
+                    if hasattr(layer, 'weights'):
+                        for weight in layer.weights:
+                            if isinstance(weight, (int, float)):
+                                math_validate_finite(weight, f"architecture_weight_{layer.name}")
+
             # Use NAS-specific evaluation from shared utilities
-            return self.shared_ml_utilities.evaluate_neural_architecture(
+            result = self.shared_ml_utilities.evaluate_neural_architecture(
                 architecture, validation_data, regime_data
             )
+
+            # Validate result using math utilities
+            result = math_validate_finite(result, "architecture_evaluation_result")
+            result = math_validate_range(result, 0.0, 1.0, "architecture_evaluation_result")
+
+            return result
 
         except Exception as e:
             self.logger.error(f"Architecture evaluation with shared utilities failed: {e}")
@@ -843,9 +990,10 @@ class EnhancedNASEngine:
 
 
     def save_search_state(self, filepath: str) -> bool:
-        """Save the current NAS search state with shared ML utilities."""
+        """Save the current NAS search state with enhanced serialization utilities."""
         try:
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            # Ensure directory exists
+            ensure_directory(os.path.dirname(filepath))
 
             state = {
                 'config': self.config,
@@ -857,16 +1005,30 @@ class EnhancedNASEngine:
                 'evaluation_count': self.evaluation_count,
                 'evaluation_times': self.evaluation_times,
                 'start_time': self.start_time,
-                # Shared ML utilities state
+                # Enhanced utilities state
+                'utilities_version': '2.0',
                 'shared_ml_utilities_used': True,
                 'utility_type': 'NAS',
-                'ml_utilities_status': self.shared_ml_utilities.get_system_status()
+                'memory_optimization_enabled': self.memory_monitoring_enabled,
+                'hardware_optimization_enabled': self.config.enable_hardware_optimization,
+                'ml_utilities_status': self.shared_ml_utilities.get_system_status() if hasattr(self, 'shared_ml_utilities') else None,
+                'memory_usage': get_memory_usage(),
+                'disk_status': check_disk_space(".", required_gb=0.1)
             }
 
-            with open(filepath, 'wb') as f:
-                pickle.dump(state, f)
+            # Use universal serializer for enhanced persistence
+            success = self.universal_serializer.save(state, filepath)
 
-            self.logger.info(f"✅ NAS search state saved to {filepath} with shared ML utilities")
+            if success:
+                self.logger.info(f"✅ NAS search state saved to {filepath} with enhanced utilities")
+                file_size = get_file_size(filepath)
+                self.logger.info(f"   File size: {format_bytes(file_size)}")
+            else:
+                # Fallback to pickle if universal serializer fails
+                with open(filepath, 'wb') as f:
+                    pickle.dump(state, f)
+                self.logger.info(f"⚠️ Universal serializer failed, used pickle fallback for {filepath}")
+
             return True
 
         except Exception as e:
@@ -874,10 +1036,21 @@ class EnhancedNASEngine:
             return False
 
     def load_search_state(self, filepath: str) -> bool:
-        """Load a saved NAS search state with shared ML utilities."""
+        """Load a saved NAS search state with enhanced utilities."""
         try:
-            with open(filepath, 'rb') as f:
-                state = pickle.load(f)
+            # Validate file exists and is accessible
+            if not validate_file_path(filepath):
+                self.logger.error(f"❌ File does not exist or is not accessible: {filepath}")
+                return False
+
+            # Use universal serializer for enhanced loading
+            state = self.universal_serializer.load(filepath)
+
+            if state is None:
+                # Fallback to pickle if universal serializer fails
+                with open(filepath, 'rb') as f:
+                    state = pickle.load(f)
+                self.logger.info(f"⚠️ Universal serializer failed, used pickle fallback for {filepath}")
 
             self.config = state['config']
             self.current_generation = state['current_generation']
@@ -889,7 +1062,10 @@ class EnhancedNASEngine:
             self.evaluation_times = state['evaluation_times']
             self.start_time = state['start_time']
 
-            # Restore shared ML utilities state if available
+            # Restore enhanced utilities state if available
+            utilities_version = state.get('utilities_version', '1.0')
+            self.logger.info(f"Loading NAS search state with utilities version {utilities_version}")
+
             if state.get('shared_ml_utilities_used', False):
                 self.logger.info("Loading NAS search state with shared ML utilities")
 
@@ -897,7 +1073,25 @@ class EnhancedNASEngine:
                 self._initialize_shared_ml_utilities()
                 self._initialize_shared_components()
 
-            self.logger.info(f"✅ NAS search state loaded from {filepath} with shared ML utilities")
+            # Restore memory optimization settings
+            if state.get('memory_optimization_enabled', False):
+                self._initialize_memory_optimization()
+
+            # Restore hardware optimization settings
+            if state.get('hardware_optimization_enabled', False):
+                self._initialize_hardware_optimization()
+
+            # Log restoration summary
+            file_size = get_file_size(filepath)
+            memory_usage = state.get('memory_usage', 0)
+            disk_status = state.get('disk_status', {})
+
+            self.logger.info(f"✅ NAS search state loaded from {filepath} with enhanced utilities")
+            self.logger.info(f"   File size: {format_bytes(file_size)}")
+            self.logger.info(f"   Previous memory usage: {format_bytes(memory_usage)}")
+            if disk_status:
+                self.logger.info(f"   Previous disk status: {disk_status.get('available_percentage', 'unknown')}% available")
+
             return True
 
         except Exception as e:

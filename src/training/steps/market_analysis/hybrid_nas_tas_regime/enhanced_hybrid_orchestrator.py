@@ -35,7 +35,7 @@ from .core.unified_architecture_search_engine import (
 )
 from .core.performance_estimator import UnifiedPerformanceEstimator
 from .core.advanced_search_strategies import AdvancedSearchStrategies
-from .core.multi_objective_optimizer import TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
+from .shared_utils import UnifiedMultiObjectiveOptimizer, OptimizationConfig
 from .core.nas_financial_features import NASFinancialFeatureEngineer
 from .core.nas_financial_optimizer import NASFinancialOptimizer
 from .core.architecture_signal_generator import ArchitectureSignalGenerator, TradingSignal

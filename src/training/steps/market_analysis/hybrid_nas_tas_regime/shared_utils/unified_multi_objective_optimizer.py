@@ -101,6 +101,23 @@ class OptimizationConfig:
     parallel_evaluation: bool = True
     n_workers: int = 4
     memory_limit_gb: float = 8.0
+    
+    # TAS-specific enhancements
+    enable_tree_based_optimization: bool = True
+    tree_complexity_weight: float = 0.2
+    tree_interpretability_weight: float = 0.3
+    tree_depth_penalty: float = 0.1
+    
+    # NAS-specific enhancements
+    enable_neural_based_optimization: bool = True
+    neural_architecture_complexity_weight: float = 0.2
+    neural_uncertainty_weight: float = 0.3
+    neural_efficiency_weight: float = 0.1
+    
+    # Hybrid optimization
+    enable_hybrid_optimization: bool = True
+    hybrid_consensus_weight: float = 0.4
+    hybrid_ensemble_weight: float = 0.3
 
 
 @dataclass

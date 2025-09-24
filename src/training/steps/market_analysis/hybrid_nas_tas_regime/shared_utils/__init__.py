@@ -22,8 +22,7 @@ including:
 # Original utilities
 from .data_pipeline import DataPipelineManager, MarketDataProcessor
 from .feature_collection import FeatureCollectionManager, StandardizedFeatureCalculator
-from .economic_significance import EconomicSignificanceEvaluator, EconomicSignificanceResult
-from .trading_viability import TradingViabilityEvaluator, TradingViabilityResult
+# Removed redundant imports - now using unified versions
 from .position_aware_trading import (
     PositionAwareTradingAnalyzer, PositionAwareConfig, PositionAwareResult,
     create_position_aware_analyzer, quick_position_aware_analysis
@@ -158,8 +157,7 @@ __all__ = [
     # Original utilities
     'DataPipelineManager', 'MarketDataProcessor',
     'FeatureCollectionManager', 'StandardizedFeatureCalculator',
-    'EconomicSignificanceEvaluator', 'EconomicSignificanceResult',
-    'TradingViabilityEvaluator', 'TradingViabilityResult',
+    # Removed redundant exports - now using unified versions
 
     # Position-Aware Trading
     'PositionAwareTradingAnalyzer', 'PositionAwareConfig', 'PositionAwareResult',

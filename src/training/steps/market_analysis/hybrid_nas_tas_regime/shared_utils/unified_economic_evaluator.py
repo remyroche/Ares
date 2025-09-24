@@ -79,6 +79,23 @@ class EconomicEvaluationConfig:
     enable_regime_specific_analysis: bool = True
     min_regime_samples: int = 50
     regime_stability_threshold: float = 0.7
+    
+    # TAS-specific enhancements
+    enable_tree_based_analysis: bool = True
+    tree_importance_threshold: float = 0.1
+    tree_depth_penalty: float = 0.1
+    tree_complexity_weight: float = 0.2
+    
+    # NAS-specific enhancements
+    enable_neural_based_analysis: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.3
+    neural_architecture_complexity: float = 0.1
+    
+    # Hybrid analysis
+    enable_hybrid_analysis: bool = True
+    hybrid_weighting: float = 0.5  # Balance between TAS and NAS
+    hybrid_consensus_threshold: float = 0.7
 
 
 @dataclass
@@ -171,7 +188,9 @@ class UnifiedEconomicSignificanceEvaluator:
                  regime_predictions: np.ndarray,
                  regime_probabilities: Optional[np.ndarray] = None,
                  timestamps: Optional[np.ndarray] = None,
-                 regime_metadata: Optional[Dict[str, Any]] = None) -> EconomicSignificanceResult:
+                 regime_metadata: Optional[Dict[str, Any]] = None,
+                 architecture_type: Optional[str] = None,
+                 model_metadata: Optional[Dict[str, Any]] = None) -> EconomicSignificanceResult:
         """
         Evaluate economic significance of regimes using unified approach.
         
@@ -211,6 +230,31 @@ class UnifiedEconomicSignificanceEvaluator:
             indicator_scores = self._calculate_economic_indicator_correlation(data_array, regime_predictions, timestamps)
             trading_scores = self._calculate_trading_opportunity_significance(data_array, regime_predictions)
             risk_scores = self._calculate_risk_adjustment_significance(data_array, regime_predictions)
+            
+            # Architecture-specific enhancements
+            if architecture_type == "TAS" and self.config.enable_tree_based_analysis:
+                tree_scores = self._calculate_tree_based_economic_significance(
+                    data_array, regime_predictions, model_metadata
+                )
+                # Adjust scores based on tree analysis
+                price_impact_scores = self._adjust_scores_with_tree_analysis(price_impact_scores, tree_scores)
+                volume_scores = self._adjust_scores_with_tree_analysis(volume_scores, tree_scores)
+                
+            elif architecture_type == "NAS" and self.config.enable_neural_based_analysis:
+                neural_scores = self._calculate_neural_based_economic_significance(
+                    data_array, regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on neural analysis
+                price_impact_scores = self._adjust_scores_with_neural_analysis(price_impact_scores, neural_scores)
+                volume_scores = self._adjust_scores_with_neural_analysis(volume_scores, neural_scores)
+                
+            elif architecture_type == "HYBRID" and self.config.enable_hybrid_analysis:
+                hybrid_scores = self._calculate_hybrid_economic_significance(
+                    data_array, regime_predictions, regime_probabilities, model_metadata
+                )
+                # Adjust scores based on hybrid analysis
+                price_impact_scores = self._adjust_scores_with_hybrid_analysis(price_impact_scores, hybrid_scores)
+                volume_scores = self._adjust_scores_with_hybrid_analysis(volume_scores, hybrid_scores)
             
             # Calculate weighted overall economic significance
             overall_scores = (
@@ -944,6 +988,191 @@ class UnifiedEconomicSignificanceEvaluator:
             
         except Exception:
             return 0.0
+    
+    def _calculate_tree_based_economic_significance(self, market_data: np.ndarray,
+                                                  regime_predictions: np.ndarray,
+                                                  model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate tree-based economic significance metrics."""
+        try:
+            tree_scores = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract tree-specific information
+            tree_depth = model_metadata.get('tree_depth', 5)
+            tree_importance = model_metadata.get('feature_importance', {})
+            tree_complexity = model_metadata.get('complexity', 1.0)
+            
+            # Calculate tree-based economic metrics
+            depth_penalty = max(0.0, 1.0 - (tree_depth - 3) * self.config.tree_depth_penalty)
+            complexity_score = max(0.0, 1.0 - tree_complexity * self.config.tree_complexity_weight)
+            
+            # Feature importance based economic significance
+            importance_scores = np.zeros(len(regime_predictions))
+            for i, regime in enumerate(regime_predictions):
+                # Use feature importance to weight economic significance
+                regime_importance = tree_importance.get(f'regime_{regime}', 0.5)
+                importance_scores[i] = regime_importance
+            
+            tree_scores = {
+                'depth_penalty': np.full(len(regime_predictions), depth_penalty),
+                'complexity_score': np.full(len(regime_predictions), complexity_score),
+                'importance_score': importance_scores
+            }
+            
+            return tree_scores
+            
+        except Exception as e:
+            self.logger.warning(f"Tree-based economic significance calculation failed: {e}")
+            return {}
+    
+    def _calculate_neural_based_economic_significance(self, market_data: np.ndarray,
+                                                   regime_predictions: np.ndarray,
+                                                   regime_probabilities: Optional[np.ndarray],
+                                                   model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate neural-based economic significance metrics."""
+        try:
+            neural_scores = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract neural-specific information
+            model_confidence = model_metadata.get('confidence', 0.8)
+            architecture_complexity = model_metadata.get('architecture_complexity', 0.5)
+            uncertainty_estimates = model_metadata.get('uncertainty', None)
+            
+            # Calculate neural-based economic metrics
+            confidence_scores = np.full(len(regime_predictions), model_confidence)
+            complexity_scores = np.full(len(regime_predictions), 1.0 - architecture_complexity)
+            
+            # Uncertainty-based economic significance
+            if uncertainty_estimates is not None:
+                uncertainty_scores = 1.0 - uncertainty_estimates
+            else:
+                uncertainty_scores = np.ones(len(regime_predictions)) * 0.5
+            
+            neural_scores = {
+                'confidence_score': confidence_scores,
+                'complexity_score': complexity_scores,
+                'uncertainty_score': uncertainty_scores
+            }
+            
+            return neural_scores
+            
+        except Exception as e:
+            self.logger.warning(f"Neural-based economic significance calculation failed: {e}")
+            return {}
+    
+    def _calculate_hybrid_economic_significance(self, market_data: np.ndarray,
+                                             regime_predictions: np.ndarray,
+                                             regime_probabilities: Optional[np.ndarray],
+                                             model_metadata: Optional[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+        """Calculate hybrid economic significance metrics."""
+        try:
+            hybrid_scores = {}
+            
+            if model_metadata is None:
+                return {}
+            
+            # Extract hybrid information
+            tree_confidence = model_metadata.get('tree_confidence', 0.7)
+            neural_confidence = model_metadata.get('neural_confidence', 0.8)
+            consensus_score = model_metadata.get('consensus', 0.5)
+            
+            # Calculate hybrid economic metrics
+            weighted_confidence = (
+                tree_confidence * (1.0 - self.config.hybrid_weighting) +
+                neural_confidence * self.config.hybrid_weighting
+            )
+            
+            consensus_scores = np.full(len(regime_predictions), consensus_score)
+            confidence_scores = np.full(len(regime_predictions), weighted_confidence)
+            
+            hybrid_scores = {
+                'consensus_score': consensus_scores,
+                'confidence_score': confidence_scores,
+                'hybrid_weight': np.full(len(regime_predictions), self.config.hybrid_weighting)
+            }
+            
+            return hybrid_scores
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid economic significance calculation failed: {e}")
+            return {}
+    
+    def _adjust_scores_with_tree_analysis(self, base_scores: np.ndarray, 
+                                        tree_scores: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on tree analysis."""
+        try:
+            if not tree_scores:
+                return base_scores
+            
+            # Apply tree-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'importance_score' in tree_scores:
+                adjusted_scores *= tree_scores['importance_score']
+            
+            if 'depth_penalty' in tree_scores:
+                adjusted_scores *= tree_scores['depth_penalty']
+            
+            if 'complexity_score' in tree_scores:
+                adjusted_scores *= tree_scores['complexity_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Tree score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_neural_analysis(self, base_scores: np.ndarray, 
+                                          neural_scores: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on neural analysis."""
+        try:
+            if not neural_scores:
+                return base_scores
+            
+            # Apply neural-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'confidence_score' in neural_scores:
+                adjusted_scores *= neural_scores['confidence_score']
+            
+            if 'uncertainty_score' in neural_scores:
+                adjusted_scores *= neural_scores['uncertainty_score']
+            
+            if 'complexity_score' in neural_scores:
+                adjusted_scores *= neural_scores['complexity_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Neural score adjustment failed: {e}")
+            return base_scores
+    
+    def _adjust_scores_with_hybrid_analysis(self, base_scores: np.ndarray, 
+                                          hybrid_scores: Dict[str, np.ndarray]) -> np.ndarray:
+        """Adjust scores based on hybrid analysis."""
+        try:
+            if not hybrid_scores:
+                return base_scores
+            
+            # Apply hybrid-specific adjustments
+            adjusted_scores = base_scores.copy()
+            
+            if 'consensus_score' in hybrid_scores:
+                adjusted_scores *= hybrid_scores['consensus_score']
+            
+            if 'confidence_score' in hybrid_scores:
+                adjusted_scores *= hybrid_scores['confidence_score']
+            
+            return np.clip(adjusted_scores, 0.0, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Hybrid score adjustment failed: {e}")
+            return base_scores
 
 
 # Convenience functions

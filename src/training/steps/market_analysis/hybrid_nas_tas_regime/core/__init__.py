@@ -6,7 +6,7 @@ from .hybrid_regime_detector import HybridNASTASRegimeDetector
 from .unified_architecture_search_engine import UnifiedArchitectureSearchEngine
 from .performance_estimator import UnifiedPerformanceEstimator
 from .advanced_search_strategies import AdvancedSearchStrategies
-from .multi_objective_optimizer import MultiObjectiveOptimizer
+from ..shared_utils import UnifiedMultiObjectiveOptimizer
 from .architecture_encoder import UnifiedArchitectureEncoder
 from .nas_financial_features import NASFinancialFeatureEngineer, FeatureSet
 from .nas_financial_optimizer import NASFinancialOptimizer, FinancialLossFunctions
@@ -17,7 +17,7 @@ __all__ = [
     'UnifiedArchitectureSearchEngine',
     'UnifiedPerformanceEstimator',
     'AdvancedSearchStrategies',
-    'MultiObjectiveOptimizer',
+    'UnifiedMultiObjectiveOptimizer',
     'UnifiedArchitectureEncoder',
     'NASFinancialFeatureEngineer',
     'FeatureSet',

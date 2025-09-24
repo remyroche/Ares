@@ -30,6 +30,9 @@ from .core.unified_architecture_search_engine import (
 from .core.performance_estimator import UnifiedPerformanceEstimator
 from .core.advanced_search_strategies import AdvancedSearchStrategies
 from .core.multi_objective_optimizer import TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
+from .core.nas_financial_features import NASFinancialFeatureEngineer
+from .core.nas_financial_optimizer import NASFinancialOptimizer
+from .core.architecture_signal_generator import ArchitectureSignalGenerator, TradingSignal
 
 # Import configuration
 from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
@@ -105,6 +108,10 @@ class EnhancedHybridOrchestrator:
         self.use_unified_search = config.get('use_unified_search', True)
         self.unified_search_engine = None
 
+        # Signal generation system
+        self.use_signal_generation = config.get('use_signal_generation', True)
+        self.signal_generator = None
+
         # Results tracking
         self.regime_history = []
         self.tas_history = []
@@ -115,11 +122,16 @@ class EnhancedHybridOrchestrator:
         self.logger.info(f"   TAS Integration: ✅ Enabled")
         self.logger.info(f"   NAS Integration: ✅ Enabled")
         self.logger.info(f"   Unified Search Engine: {'✅ Enabled' if self.use_unified_search else '❌ Disabled'}")
+        self.logger.info(f"   Signal Generation: {'✅ Enabled' if self.use_signal_generation else '❌ Disabled'}")
         self.logger.info(f"   Multi-timeframe: {'✅ Enabled' if self.enable_multi_timeframe else '❌ Disabled'}")
 
         # Initialize unified search engine if enabled
         if self.use_unified_search:
             self._initialize_unified_search_engine()
+
+        # Initialize signal generation system if enabled
+        if self.use_signal_generation:
+            self._initialize_signal_generator()
 
     def _initialize_unified_search_engine(self):
         """Initialize unified architecture search engine."""
@@ -146,6 +158,93 @@ class EnhancedHybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize unified search engine: {e}")
             self.use_unified_search = False
+
+    def _initialize_signal_generator(self):
+        """Initialize architecture-based signal generation system."""
+        try:
+            from .core.architecture_signal_generator import ArchitectureSignalConfig
+
+            # Create signal generator configuration
+            signal_config = ArchitectureSignalConfig(
+                signal_threshold=0.6,
+                confidence_threshold=0.7,
+                ensemble_method="weighted_average",
+                enable_signal_validation=True,
+                enable_real_time_processing=True
+            )
+
+            self.signal_generator = ArchitectureSignalGenerator(signal_config)
+
+            # Mock neural and tree generators for demonstration
+            # In practice, these would be trained architectures
+            mock_neural = type('MockNeural', (), {})()
+            mock_tree = type('MockTree', (), {})()
+
+            self.signal_generator.add_neural_generator(mock_neural)
+            self.signal_generator.add_tree_generator(mock_tree)
+            self.signal_generator.create_ensemble_generator()
+
+            self.logger.info("✅ Signal Generation System initialized")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize signal generator: {e}")
+            self.use_signal_generation = False
+
+    def generate_architecture_signals(self,
+                                    market_data: Union[pd.DataFrame, np.ndarray],
+                                    regime_data: Optional[Dict[str, Any]] = None) -> List[TradingSignal]:
+        """Generate trading signals from discovered architectures."""
+        if not self.use_signal_generation or not self.signal_generator:
+            self.logger.warning("Signal generation system not available")
+            return []
+
+        try:
+            self.logger.info("🔄 Generating signals from architectures...")
+
+            # Convert to numpy array if needed
+            if isinstance(market_data, pd.DataFrame):
+                market_array = market_data.values
+            else:
+                market_array = market_data
+
+            # Generate signal using ensemble
+            signal = self.signal_generator.generate_signal(market_array, regime_data)
+
+            # Get recent signals for analysis
+            recent_signals = self.signal_generator.get_recent_signals(5)
+
+            self.logger.info(f"✅ Generated signal: {signal.signal_type.value} with confidence {signal.confidence:.3f}")
+            return [signal] + recent_signals
+
+        except Exception as e:
+            self.logger.error(f"❌ Signal generation failed: {e}")
+            return []
+
+    def get_signal_quality_metrics(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Get signal quality metrics."""
+        if not self.use_signal_generation or not self.signal_generator:
+            return {'error': 'Signal generation system not available'}
+
+        try:
+            quality_metrics = self.signal_generator.evaluate_signal_quality(market_data)
+            signal_stats = self.signal_generator.get_signal_statistics()
+
+            return {
+                'quality_metrics': {
+                    'accuracy': quality_metrics.accuracy,
+                    'precision': quality_metrics.precision,
+                    'recall': quality_metrics.recall,
+                    'f1_score': quality_metrics.f1_score,
+                    'sharpe_ratio': quality_metrics.sharpe_ratio,
+                    'max_drawdown': quality_metrics.max_drawdown,
+                    'win_rate': quality_metrics.win_rate,
+                    'profit_factor': quality_metrics.profit_factor
+                },
+                'signal_statistics': signal_stats
+            }
+
+        except Exception as e:
+            return {'error': str(e)}
 
     def _convert_unified_result_to_regime_analysis(self, search_result) -> RegimeAnalysisResult:
         """Convert unified search result to regime analysis result."""
@@ -834,6 +933,10 @@ class EnhancedHybridOrchestrator:
                 'unified_search_engine': {
                     'enabled': self.use_unified_search,
                     'available': self.unified_search_engine is not None
+                },
+                'signal_generation_system': {
+                    'enabled': self.use_signal_generation,
+                    'available': self.signal_generator is not None
                 },
                 'multi_timeframe_support': self.enable_multi_timeframe,
                 'available_algorithms': self.search_manager.get_available_algorithms() if self.search_manager else [],

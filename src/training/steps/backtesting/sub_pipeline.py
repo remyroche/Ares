@@ -31,14 +31,11 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
+from .unified_config import UnifiedBacktestingConfig, ConfigurationBuilder, ExecutionMode
 
 logger = system_logger.getChild('BacktestingSubPipeline')
 
-class ExecutionMode(Enum):
-    """Execution modes for sub-pipelines."""
-    FULL = "full"          # Complete execution with all features
-    LIGHT = "light"        # Lightweight execution with essential features only
-    BLANK = "blank"        # Minimal execution for testing/validation
+# ExecutionMode is now imported from unified_config
 
 class SubPipelineStatus(Enum):
     """Status of sub-pipeline execution."""
@@ -58,22 +55,60 @@ class LoggingConfig:
 
 @dataclass
 class SubPipelineConfig:
-    """Configuration for sub-pipeline execution."""
-    mode: ExecutionMode = ExecutionMode.FULL
-    symbol: str = "BTCUSDT"
-    exchange: str = "binance"
-    timeframe: str = "1m"
-    data_dir: str = "historical_data"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    """Configuration for sub-pipeline execution - now uses unified configuration."""
+    unified_config: UnifiedBacktestingConfig = field(default_factory=lambda: ConfigurationBuilder().build())
     force_rerun: bool = False
-    parallel_processing: bool = True
-    max_workers: int = 4
-    validation_enabled: bool = True
-    monitoring_enabled: bool = True
     single_stage_only: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    
+    # Convenience properties for backward compatibility
+    @property
+    def mode(self) -> ExecutionMode:
+        return self.unified_config.mode
+    
+    @property
+    def symbol(self) -> str:
+        return self.unified_config.data.symbol
+    
+    @property
+    def exchange(self) -> str:
+        return self.unified_config.data.exchange
+    
+    @property
+    def timeframe(self) -> str:
+        return self.unified_config.data.timeframe
+    
+    @property
+    def data_dir(self) -> str:
+        return self.unified_config.data.data_dir
+    
+    @property
+    def start_date(self) -> Optional[str]:
+        return self.unified_config.data.start_date
+    
+    @property
+    def end_date(self) -> Optional[str]:
+        return self.unified_config.data.end_date
+    
+    @property
+    def parallel_processing(self) -> bool:
+        return self.unified_config.hardware.enable_parallel_processing
+    
+    @property
+    def max_workers(self) -> int:
+        return self.unified_config.hardware.max_workers
+    
+    @property
+    def validation_enabled(self) -> bool:
+        return self.unified_config.validation.validation_enabled
+    
+    @property
+    def monitoring_enabled(self) -> bool:
+        return self.unified_config.validation.monitoring_enabled
+    
+    @property
+    def logging(self) -> LoggingConfig:
+        return self.unified_config.logging
 
 @dataclass
 class SubPipelineResult:
@@ -511,64 +546,74 @@ class BacktestingSubPipeline:
         
         try:
             # Import real backtesting engine
-            from .real_backtesting_engine import execute_real_backtest
+            from .real_backtesting_engine import RealBacktestingEngine
             
             # Execute real backtest based on mode
             if config.mode == ExecutionMode.BLANK:
                 # Minimal real backtesting for testing
                 self.logger.info("🧪 BLANK mode: Minimal real backtesting")
-                backtest_results = await execute_real_backtest(
-                    symbol=config.symbol,
-                    exchange=config.exchange,
-                    timeframe=config.timeframe,
-                    data_dir=config.data_dir,
-                    start_date=config.start_date,
-                    end_date=config.end_date,
-                    initial_capital=10000.0,  # Smaller capital for testing
-                    commission_rate=0.001,
-                    slippage_rate=0.0005,
-                    enable_gpu_acceleration=False,  # Disable for speed
-                    enable_memory_optimization=True,
-                    enable_parallel_processing=False
-                )
+                backtest_config = (ConfigurationBuilder()
+                                 .set_mode(ExecutionMode.BLANK)
+                                 .set_symbol(config.symbol)
+                                 .set_exchange(config.exchange)
+                                 .set_timeframe(config.timeframe)
+                                 .set_data_dir(config.data_dir)
+                                 .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                                 .set_initial_capital(10000.0)
+                                 .enable_gpu_acceleration(False)
+                                 .enable_parallel_processing(False)
+                                 .for_testing()
+                                 .build())
+                
+                engine = RealBacktestingEngine(backtest_config)
+                data = await engine.load_market_data()
+                data = engine.calculate_technical_indicators(data)
+                signals = engine.generate_trading_signals(data)
+                backtest_results = await engine.execute_backtest(data, signals)
                 
             elif config.mode == ExecutionMode.LIGHT:
                 # Light real backtesting for development
                 self.logger.info("💡 LIGHT mode: Light real backtesting")
-                backtest_results = await execute_real_backtest(
-                    symbol=config.symbol,
-                    exchange=config.exchange,
-                    timeframe=config.timeframe,
-                    data_dir=config.data_dir,
-                    start_date=config.start_date,
-                    end_date=config.end_date,
-                    initial_capital=50000.0,
-                    commission_rate=0.001,
-                    slippage_rate=0.0005,
-                    enable_gpu_acceleration=True,
-                    enable_memory_optimization=True,
-                    enable_parallel_processing=True,
-                    max_workers=2
-                )
+                backtest_config = (ConfigurationBuilder()
+                                 .set_mode(ExecutionMode.LIGHT)
+                                 .set_symbol(config.symbol)
+                                 .set_exchange(config.exchange)
+                                 .set_timeframe(config.timeframe)
+                                 .set_data_dir(config.data_dir)
+                                 .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                                 .set_initial_capital(50000.0)
+                                 .enable_gpu_acceleration(True)
+                                 .enable_parallel_processing(True, max_workers=2)
+                                 .for_development()
+                                 .build())
+                
+                engine = RealBacktestingEngine(backtest_config)
+                data = await engine.load_market_data()
+                data = engine.calculate_technical_indicators(data)
+                signals = engine.generate_trading_signals(data)
+                backtest_results = await engine.execute_backtest(data, signals)
                 
             else:  # FULL mode
                 # Complete real backtesting
                 self.logger.info("📊 FULL mode: Complete real backtesting")
-                backtest_results = await execute_real_backtest(
-                    symbol=config.symbol,
-                    exchange=config.exchange,
-                    timeframe=config.timeframe,
-                    data_dir=config.data_dir,
-                    start_date=config.start_date,
-                    end_date=config.end_date,
-                    initial_capital=100000.0,
-                    commission_rate=0.001,
-                    slippage_rate=0.0005,
-                    enable_gpu_acceleration=True,
-                    enable_memory_optimization=True,
-                    enable_parallel_processing=True,
-                    max_workers=config.max_workers
-                )
+                backtest_config = (ConfigurationBuilder()
+                                 .set_mode(ExecutionMode.FULL)
+                                 .set_symbol(config.symbol)
+                                 .set_exchange(config.exchange)
+                                 .set_timeframe(config.timeframe)
+                                 .set_data_dir(config.data_dir)
+                                 .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                                 .set_initial_capital(100000.0)
+                                 .enable_gpu_acceleration(True)
+                                 .enable_parallel_processing(True, max_workers=config.max_workers)
+                                 .for_production()
+                                 .build())
+                
+                engine = RealBacktestingEngine(backtest_config)
+                data = await engine.load_market_data()
+                data = engine.calculate_technical_indicators(data)
+                signals = engine.generate_trading_signals(data)
+                backtest_results = await engine.execute_backtest(data, signals)
             
             # Store real results
             artifacts['basic_backtest_results'] = backtest_results

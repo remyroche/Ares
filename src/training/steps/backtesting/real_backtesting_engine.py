@@ -44,42 +44,8 @@ class BacktestMode(Enum):
     GPU_ACCELERATED = "gpu_accelerated"
     HYBRID = "hybrid"
 
-@dataclass
-class RealBacktestingConfig:
-    """Configuration for real backtesting."""
-    # Basic configuration
-    symbol: str
-    exchange: str
-    timeframe: str
-    data_dir: str
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    
-    # Backtesting parameters
-    initial_capital: float = 100000.0
-    commission_rate: float = 0.001
-    slippage_rate: float = 0.0005
-    max_position_size: float = 0.1
-    min_position_size: float = 0.01
-    
-    # Hardware optimization
-    enable_gpu_acceleration: bool = True
-    enable_memory_optimization: bool = True
-    enable_parallel_processing: bool = True
-    max_workers: int = 4
-    
-    # ML parameters
-    enable_cv_validation: bool = True
-    enable_hpo: bool = True
-    hpo_method: str = "bayesian"  # "grid", "bayesian", "random"
-    
-    # Risk management
-    max_drawdown: float = 0.2
-    stop_loss: float = 0.05
-    take_profit: float = 0.1
-    
-    # Custom parameters
-    custom_params: Dict[str, Any] = field(default_factory=dict)
+# Import unified configuration
+from .unified_config import UnifiedBacktestingConfig, ExecutionMode
 
 class RealBacktestingEngine:
     """
@@ -93,25 +59,25 @@ class RealBacktestingEngine:
     - Risk management and performance metrics
     """
     
-    def __init__(self, config: RealBacktestingConfig):
+    def __init__(self, config: UnifiedBacktestingConfig):
         """Initialize the real backtesting engine."""
         self.config = config
         self.logger = logger.getChild('RealBacktestingEngine')
         
         # Initialize data manager
-        self.klines_manager = get_klines_manager(data_dir=config.data_dir)
+        self.klines_manager = get_klines_manager(data_dir=config.data.data_dir)
         
         # Initialize hardware optimizers
-        self.gpu_manager = get_m1_gpu_manager() if config.enable_gpu_acceleration else None
-        self.memory_optimizer = get_m1_memory_optimizer() if config.enable_memory_optimization else None
-        self.cpu_optimizer = get_m1_cpu_optimizer() if config.enable_parallel_processing else None
+        self.gpu_manager = get_m1_gpu_manager() if config.hardware.enable_gpu_acceleration else None
+        self.memory_optimizer = get_m1_memory_optimizer() if config.hardware.enable_memory_optimization else None
+        self.cpu_optimizer = get_m1_cpu_optimizer() if config.hardware.enable_parallel_processing else None
         
         # Initialize matrix operations
         self.matrix_ops = get_unified_matrix_operations()
         
         # Initialize ML utilities
-        self.cv_validator = CVLSAValidator() if config.enable_cv_validation else None
-        self.hpo_optimizer = HyperparameterOptimizer() if config.enable_hpo else None
+        self.cv_validator = CVLSAValidator() if config.validation.enable_cv_validation else None
+        self.hpo_optimizer = HyperparameterOptimizer() if config.validation.enable_hpo else None
         
         # Initialize backtesting engines
         self.vectorized_engine = VectorizedBacktestEngine()
@@ -126,38 +92,38 @@ class RealBacktestingEngine:
         
     async def load_market_data(self) -> pd.DataFrame:
         """Load real market data using klines_parquet."""
-        self.logger.info(f"📊 Loading market data for {self.config.symbol} on {self.config.exchange}")
+        self.logger.info(f"📊 Loading market data for {self.config.data.symbol} on {self.config.data.exchange}")
         
         try:
             # Parse date range
             start_date = None
             end_date = None
-            if self.config.start_date:
-                start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
-            if self.config.end_date:
-                end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
+            if self.config.data.start_date:
+                start_date = datetime.strptime(self.config.data.start_date, '%Y-%m-%d')
+            if self.config.data.end_date:
+                end_date = datetime.strptime(self.config.data.end_date, '%Y-%m-%d')
             
             # Load data with memory optimization
             if self.memory_optimizer:
                 with self.memory_optimizer.optimize_for_workload("data_loading"):
                     data = self.klines_manager.read_data(
-                        symbol=self.config.symbol,
-                        interval=self.config.timeframe,
-                        data_type="processed",  # Use processed data for better performance
+                        symbol=self.config.data.symbol,
+                        interval=self.config.data.timeframe,
+                        data_type=self.config.data.data_type,
                         start_date=start_date,
                         end_date=end_date
                     )
             else:
                 data = self.klines_manager.read_data(
-                    symbol=self.config.symbol,
-                    interval=self.config.timeframe,
-                    data_type="processed",
+                    symbol=self.config.data.symbol,
+                    interval=self.config.data.timeframe,
+                    data_type=self.config.data.data_type,
                     start_date=start_date,
                     end_date=end_date
                 )
             
             if data is None or data.empty:
-                raise ValueError(f"No data found for {self.config.symbol} on {self.config.exchange}")
+                raise ValueError(f"No data found for {self.config.data.symbol} on {self.config.data.exchange}")
             
             self.logger.info(f"✅ Loaded {len(data)} rows of market data")
             return data
@@ -315,13 +281,13 @@ class RealBacktestingEngine:
                 confidence = signals.iloc[i]['confidence']
                 
                 # Base position size
-                base_size = self.config.min_position_size + (confidence - 0.5) * (self.config.max_position_size - self.config.min_position_size)
+                base_size = self.config.backtesting.min_position_size + (confidence - 0.5) * (self.config.backtesting.max_position_size - self.config.backtesting.min_position_size)
                 
                 # Risk adjustment based on volatility
                 if 'atr' in data.columns and i > 0:
                     volatility = data['atr'].iloc[i] / data['close'].iloc[i]
                     risk_adjusted_size = base_size * (1 - volatility)  # Reduce size in high volatility
-                    positions.iloc[i] = np.clip(risk_adjusted_size, self.config.min_position_size, self.config.max_position_size)
+                    positions.iloc[i] = np.clip(risk_adjusted_size, self.config.backtesting.min_position_size, self.config.backtesting.max_position_size)
                 else:
                     positions.iloc[i] = base_size
         
@@ -333,9 +299,9 @@ class RealBacktestingEngine:
         
         try:
             # Initialize portfolio
-            portfolio_value = self.config.initial_capital
+            portfolio_value = self.config.backtesting.initial_capital
             position = 0.0
-            cash = self.config.initial_capital
+            cash = self.config.backtesting.initial_capital
             
             # Performance tracking
             equity_curve = [portfolio_value]
@@ -353,8 +319,8 @@ class RealBacktestingEngine:
                     shares = trade_value / current_price
                     
                     # Apply transaction costs
-                    commission = trade_value * self.config.commission_rate
-                    slippage = trade_value * self.config.slippage_rate
+                    commission = trade_value * self.config.backtesting.commission_rate
+                    slippage = trade_value * self.config.backtesting.slippage_rate
                     total_cost = trade_value + commission + slippage
                     
                     if signal == 1 and cash >= total_cost:  # Buy signal
@@ -498,15 +464,16 @@ async def execute_real_backtest(
     **kwargs
 ) -> Dict[str, Any]:
     """Execute a real backtest with the given parameters."""
-    config = RealBacktestingConfig(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        start_date=start_date,
-        end_date=end_date,
-        **kwargs
-    )
+    from .unified_config import create_config
+    
+    config = (create_config()
+              .set_symbol(symbol)
+              .set_exchange(exchange)
+              .set_timeframe(timeframe)
+              .set_data_dir(data_dir)
+              .set_date_range(start_date or "2024-01-01", end_date or "2024-01-31")
+              .set_custom_params(**kwargs)
+              .build())
     
     engine = RealBacktestingEngine(config)
     

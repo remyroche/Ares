@@ -63,11 +63,11 @@ class HMMHyperparameterOptimizer:
                 'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
                 'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
             },
-            'catboost': {
-                'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'depth': {'type': 'int', 'low': 4, 'high': 10},
-                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
+            'elastic_net': {
+                'alpha': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
+                'l1_ratio': {'type': 'float', 'low': 0.0, 'high': 1.0},
+                'max_iter': {'type': 'int', 'low': 500, 'high': 2000},
+                'tol': {'type': 'float', 'low': 1e-6, 'high': 1e-3, 'log': True}
             }
         }
 
@@ -80,7 +80,7 @@ class HMMHyperparameterOptimizer:
         """
         return {
             'stacking': {
-                'meta_learner': {'type': 'categorical', 'choices': ['logistic_regression', 'xgboost', 'lightgbm']},
+                'meta_learner': {'type': 'categorical', 'choices': ['elastic_net', 'xgboost', 'lightgbm']},
                 'cv_folds': {'type': 'int', 'low': 3, 'high': 10},
                 'stack_method': {'type': 'categorical', 'choices': ['auto', 'predict_proba', 'decision_function']}
             },
@@ -251,11 +251,10 @@ class HMMHyperparameterOptimizer:
     def get_hmm_model_types(self) -> List[str]:
         """Get recommended HMM model types."""
         return [
-            "logistic_regression",  # Interpretable linear model
             "lightgbm",             # Fast, efficient gradient boosting
-            "random_forest",        # Robust ensemble tree model
             "xgboost",              # XGBoost gradient boosting
-            "catboost"              # CatBoost gradient boosting
+            "random_forest",        # Robust ensemble tree model
+            "elastic_net"           # Elastic Net regularization
         ]
 
     def get_hmm_objectives(self) -> List[str]:

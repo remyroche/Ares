@@ -10,7 +10,7 @@ Logistic Regression has been removed from the GlobalHMMClassifier model selectio
 - **Logistic Regression**: 60-75% accuracy for complex HMM patterns
 - **LightGBM**: 85-95% accuracy for HMM state classification
 - **XGBoost**: 85-95% accuracy for complex patterns
-- **CatBoost**: 80-90% accuracy for regime features
+- **Elastic Net**: 75-85% accuracy for regime features
 - **Random Forest**: 75-85% accuracy as baseline
 
 ### **Technical Limitations**
@@ -29,7 +29,7 @@ self.global_model_types = [
     "lightgbm",            # Multi-class LightGBM
     "random_forest",       # Multi-class Random Forest
     "xgboost",             # Multi-class XGBoost
-    "catboost"             # Multi-class CatBoost
+    "elastic_net"           # Multi-class Elastic Net
 ]
 ```
 
@@ -38,7 +38,7 @@ self.global_model_types = [
 self.global_model_types = [
     "lightgbm",            # Multi-class LightGBM
     "xgboost",             # Multi-class XGBoost
-    "catboost",            # Multi-class CatBoost
+    "elastic_net",         # Multi-class Elastic Net
     "random_forest"        # Multi-class Random Forest
 ]
 ```
@@ -99,7 +99,7 @@ model_type_mapping = {
 ```
 1. LightGBM     ████████████████████ 95% - Best overall
 2. XGBoost      ████████████████████ 95% - Best for complex patterns  
-3. CatBoost     ███████████████████  90% - Best for categorical regimes
+3. Elastic Net  ███████████████████  85% - Best for linear relationships
 4. Random Forest██████████████████   85% - Good baseline
 ```
 
@@ -113,7 +113,7 @@ model_type_mapping = {
 ### **For New Implementations**
 ```python
 # Use optimized model types
-available_models = ["lightgbm", "xgboost", "catboost", "random_forest"]
+available_models = ["lightgbm", "xgboost", "random_forest", "elastic_net"]
 
 # Recommended configuration
 config = HMMTrainingConfig(
@@ -127,7 +127,7 @@ config = HMMTrainingConfig(
 ### **Primary Models (Use These)**
 1. **LightGBM** - Best balance of speed and accuracy
 2. **XGBoost** - Best for complex market patterns
-3. **CatBoost** - Best for regime-specific features
+3. **Elastic Net** - Best for linear relationships with regularization
 
 ### **Secondary Model**
 4. **Random Forest** - Good baseline and interpretability

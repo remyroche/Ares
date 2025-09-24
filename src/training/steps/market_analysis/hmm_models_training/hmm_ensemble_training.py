@@ -1395,8 +1395,8 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
     def _train_global_regime_classifier(self, X: np.ndarray, regime_labels: np.ndarray) -> None:
         """
         Train multiple global stacked classifiers with different meta learners for comparison.
-        Base models: ElasticNet, CatBoostClassifier, XGBoostClassifier.
-        Meta learners: XGBoostClassifier, CatBoostClassifier, ElasticNet.
+        Base models: ElasticNet, LightGBM, XGBoostClassifier, RandomForestClassifier.
+        Meta learners: XGBoostClassifier, LightGBM, ElasticNet.
         Includes regime-specific features and base model outputs.
         """
         # Determine classes (thread-safe)
@@ -1442,7 +1442,7 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
             tprint(f"   • {name}: {type(estimator).__name__}")
         
         # Get meta models to compare
-        meta_models_to_test = getattr(self.config, 'meta_models', ['XGBoostClassifier', 'CatBoostClassifier', 'ElasticNet'])
+        meta_models_to_test = getattr(self.config, 'meta_models', ['XGBoostClassifier', 'LightGBMClassifier', 'ElasticNet'])
         tprint(f"🔍 Meta model comparison setup:")
         tprint(f"   • Models to test: {len(meta_models_to_test)}")
         tprint(f"   • Model list: {meta_models_to_test}")
@@ -1651,30 +1651,30 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 except Exception:
                     pass
             
-            # CatBoostClassifier with validated parameters
+            # LightGBMClassifier with validated parameters
             try:
-                from catboost import CatBoostClassifier
-                iterations = getattr(self.config, 'catboost_iterations', 800)
-                learning_rate = getattr(self.config, 'catboost_learning_rate', 0.05)
-                depth = getattr(self.config, 'catboost_depth', 6)
+                import lightgbm as lgb
+                n_estimators = getattr(self.config, 'lightgbm_n_estimators', 800)
+                learning_rate = getattr(self.config, 'lightgbm_learning_rate', 0.05)
+                max_depth = getattr(self.config, 'lightgbm_max_depth', 6)
                 if self.math_validator:
-                    iterations = self.math_validator.validate_positive(iterations, "CatBoost iterations")
-                    learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "CatBoost learning_rate")
-                    depth = self.math_validator.validate_positive(depth, "CatBoost depth")
-                ensemble_models['CatBoostClassifier'] = CatBoostClassifier(
-                    iterations=int(iterations),
+                    n_estimators = self.math_validator.validate_positive(n_estimators, "LightGBM n_estimators")
+                    learning_rate = self.math_validator.validate_range(learning_rate, 0.0, 1.0, "LightGBM learning_rate")
+                    max_depth = self.math_validator.validate_positive(max_depth, "LightGBM max_depth")
+                ensemble_models['LightGBMClassifier'] = lgb.LGBMClassifier(
+                    n_estimators=int(n_estimators),
                     learning_rate=learning_rate,
-                    depth=int(depth),
-                    random_seed=42,
-                    verbose=False,
-                    loss_function='MultiClass'
+                    max_depth=int(max_depth),
+                    random_state=42,
+                    verbose=-1,
+                    objective='multiclass'
                 )
-                tprint("✅ CatBoostClassifier created with validated parameters")
+                tprint("✅ LightGBMClassifier created with validated parameters")
             except Exception as e:
-                tprint(f"⚠️ CatBoostClassifier creation failed: {e}")
+                tprint(f"⚠️ LightGBMClassifier creation failed: {e}")
                 try:
-                    from catboost import CatBoostClassifier
-                    ensemble_models['CatBoostClassifier'] = CatBoostClassifier(iterations=800, learning_rate=0.05, depth=6, random_seed=42, verbose=False, loss_function='MultiClass')
+                    import lightgbm as lgb
+                    ensemble_models['LightGBMClassifier'] = lgb.LGBMClassifier(n_estimators=800, learning_rate=0.05, max_depth=6, random_state=42, verbose=-1, objective='multiclass')
                 except Exception:
                     pass
             
@@ -2873,11 +2873,11 @@ class HMMEnsembleTrainingComponent(EnsembleTrainingStep):
                 colsample_bylevel=0.8,     # Use 80% of features per level
                 colsample_bynode=0.8       # Use 80% of features per node
             )
-        elif model_name == 'CatBoostClassifier':
-            from catboost import CatBoostClassifier
-            return CatBoostClassifier(
-                iterations=100, learning_rate=0.1, depth=6,
-                random_seed=42, verbose=False, loss_function='MultiClass'
+        elif model_name == 'LightGBMClassifier':
+            import lightgbm as lgb
+            return lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.1, max_depth=6,
+                random_state=42, verbose=-1, objective='multiclass'
             )
         elif model_name == 'ElasticNet':
             from sklearn.linear_model import LogisticRegression
@@ -3386,7 +3386,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble_models",
         timeframe=get_primary_timeframe(),
-        model_types=["catboost", "elastic_net", "ensemble_rf"],
+        model_types=["lightgbm", "xgboost", "random_forest", "elastic_net"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
@@ -3419,7 +3419,7 @@ if __name__ == "__main__":
     print("- Combines individual HMM models into robust ensembles")
     print("- Per-regime ensemble training for regime-specific optimization")
     print("- Enhanced market regime detection accuracy through model combination")
-    print("- Models: CatBoost, Elastic Net, Random Forest (with validated parameters)")
+    print("- Models: LightGBM, XGBoost, Random Forest, Elastic Net (with validated parameters)")
     print("- Comprehensive context from multi-timeframe dynamics")
     print("- M1 hardware optimization for Apple Silicon Macs")
     print("- Memory management and GPU acceleration")

@@ -1,25 +1,44 @@
-"""
-ML Common - Logger Module
+"""Utilities for obtaining ML-common loggers.
 
-This module provides logging utilities for the ML Common package.
+This module centralizes creation of loggers used throughout
+``src.utils.ml_common`` so that other modules do not need to replicate
+fallback logic or import low-level logging primitives directly.
 """
+
+from __future__ import annotations
 
 import logging
-from ...utils.logger import get_logger as base_get_logger
+from typing import Optional
 
-# Re-export the base logger function
-def get_logger(name: str = "MLCommon") -> logging.Logger:
-    """Get a logger instance with the specified name."""
+from src.utils.logger import get_system_logger
+
+
+def get_ml_logger(name: str = "MLCommon", *, level: Optional[int] = None) -> logging.Logger:
+    """Return a logger scoped to the ML common package.
+
+    The function prefers the application's system logger hierarchy when
+    available and gracefully falls back to the standard library's logging
+    module if the unified logger has not been initialised yet.
+    """
     try:
-        return base_get_logger(name)
-    except Exception:
-        # Fallback to standard logging
-        return logging.getLogger(name)
+        base_logger = get_system_logger()
+    except Exception:  # pragma: no cover - defensive fallback
+        base_logger = logging.getLogger("Ares")
 
-def setup_logger(name: str = "MLCommon", level: int = logging.INFO) -> logging.Logger:
-    """Setup and return a logger with the specified configuration."""
-    logger = get_logger(name)
-    logger.setLevel(level)
+    if name:
+        logger = base_logger.getChild(name)
+    else:
+        logger = base_logger
+
+    if level is not None:
+        logger.setLevel(level)
+
     return logger
 
-__all__ = ['get_logger', 'setup_logger']
+
+def setup_ml_logger(name: str = "MLCommon", level: int = logging.INFO) -> logging.Logger:
+    """Compatibility wrapper that configures and returns a child logger."""
+    return get_ml_logger(name, level=level)
+
+
+__all__ = ["get_ml_logger", "setup_ml_logger"]

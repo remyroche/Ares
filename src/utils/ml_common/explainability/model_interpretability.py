@@ -36,7 +36,7 @@ from src.core.decorators import (
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 # Optional imports for interpretability
 try:
@@ -113,7 +113,7 @@ class ModelInterpretabilityEngine:
     def __init__(self, config: Dict[str, Any]):
         """Initialize model interpretability engine."""
         self.config = config
-        self.logger = system_logger.getChild('ModelInterpretabilityEngine')
+        self.logger = get_ml_logger('ModelInterpretabilityEngine')
         
         # Interpretability configuration
         self.interpretability_config = config.get('interpretability', {})

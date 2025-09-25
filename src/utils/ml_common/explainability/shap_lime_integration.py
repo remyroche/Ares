@@ -30,9 +30,9 @@ except ImportError:
     LIME_AVAILABLE = False
     lime = None
 
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
-logger = system_logger.getChild('SHAPLIMEIntegration')
+logger = get_ml_logger('SHAPLIMEIntegration')
 
 @dataclass
 class ExplanationConfig:

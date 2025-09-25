@@ -88,7 +88,6 @@ except ImportError as e:
 try:
     from src.utils.ml_common.validation.unified_cv import perform_cross_validation
     from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
-    from src.utils.ml_common.common_operations import get_ml_common_operations
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False

@@ -80,7 +80,6 @@ except ImportError:
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
     # Import Bayesian TPE optimizer
@@ -302,14 +301,11 @@ class RegimeAwareTrainer:
         if not ML_COMMON_AVAILABLE:
             tprint("⚠️ ML common utilities not available", color="red")
             self.logger.warning("⚠️ ML common utilities not available")
-            self.ml_common_ops = None
             self.validation_framework = None
             self.bayesian_tpe_optimizer = None
             return
-        
+
         try:
-            tprint("🔧 Creating ML common operations", color="yellow")
-            self.ml_common_ops = get_ml_common_operations()
             tprint("🛡️ Creating validation framework", color="yellow")
             self.validation_framework = get_validation_framework()
             # Initialize Bayesian TPE optimizer
@@ -329,7 +325,6 @@ class RegimeAwareTrainer:
         except Exception as e:
             tprint(f"⚠️ ML common initialization failed: {e}", color="red")
             self.logger.warning(f"ML common initialization failed: {e}")
-            self.ml_common_ops = None
             self.validation_framework = None
             self.bayesian_tpe_optimizer = None
     

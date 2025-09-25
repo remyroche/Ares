@@ -118,7 +118,7 @@ except ImportError as e:
 
 # ML-specific imports with comprehensive error handling
 try:
-    from src.utils.ml_common.common_operations import (
+    from src.utils.common_operations import (
         safe_dataframe_operation as ml_safe_df_op
     )
     from src.utils.ml_common.feature_selection import (

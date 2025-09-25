@@ -234,7 +234,7 @@ except ImportError as e:
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.common_operations import (
+    from src.utils.common_operations import (
         safe_cross_validation, safe_hyperparameter_optimization,
         safe_model_evaluation, safe_feature_importance_analysis
     )

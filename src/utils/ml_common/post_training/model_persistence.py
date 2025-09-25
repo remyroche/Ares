@@ -47,7 +47,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     ConfigurationError, ModelTrainingError
 )
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 @dataclass
 class ModelMetadata:
@@ -150,7 +150,7 @@ class ModelPersistence:
             config: Persistence configuration
         """
         self.config = config
-        self.logger = system_logger.getChild('ModelPersistence')
+        self.logger = get_ml_logger('ModelPersistence')
         
         # Ensure base directory exists
         ensure_directory(Path(self.config.base_model_dir))

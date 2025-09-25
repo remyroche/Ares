@@ -151,7 +151,7 @@ array_optimized = create_m1_optimized_array(data)
 ### 6. ML Common Utilities
 
 ```python
-from src.utils.ml_common.common_operations import (
+from src.utils.common_operations import (
     preprocess_data, create_cv_splits, optimize_hyperparameters,
     detect_lookahead_bias, evaluate_model_performance
 )

@@ -37,12 +37,12 @@ import tempfile
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.common_utilities import safe_dataframe_operation
 
-logger = logging.getLogger(__name__)
+logger = get_ml_logger('MemoryOptimization')
 
 try:
     import torch
@@ -616,7 +616,7 @@ class MemoryEfficientProcessor:
     
     def __init__(self):
         """Initialize memory efficient processor."""
-        self.logger = system_logger.getChild('MemoryEfficientProcessor')
+        self.logger = get_ml_logger('MemoryEfficientProcessor')
         self.memory_optimizer = M1MemoryOptimizer()
     
     def process_dataframe(self, df: pd.DataFrame, operation: str = "optimize") -> pd.DataFrame:

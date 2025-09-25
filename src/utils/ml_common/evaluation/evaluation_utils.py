@@ -15,7 +15,7 @@ from sklearn.metrics import (
 
 # Use existing utilities
 from src.utils.math_validation import safe_divide, safe_log, validate_finite
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from src.utils.ml_common.evaluation.unified_evaluator import (
     compute_classification_metrics,
     compute_regression_metrics,
@@ -39,7 +39,7 @@ except ImportError:
     EnhancedBootstrapConfidenceIntervalAnalyzer = None
     BootstrapAnalysisResult = None
 
-logger = system_logger.getChild('EvaluationUtils')
+logger = get_ml_logger('EvaluationUtils')
 logger.info("EvaluationUtils delegating core metric computation to unified_evaluator")
 
 

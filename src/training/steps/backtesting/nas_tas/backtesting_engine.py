@@ -20,7 +20,6 @@ warnings.filterwarnings('ignore')
 
 # Import ML common utilities and optimization tools
 try:
-    from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     ML_COMMON_AVAILABLE = True
 except ImportError:
@@ -225,17 +224,14 @@ class BacktestingEngine:
         """Initialize ML common utilities."""
         if not ML_COMMON_AVAILABLE:
             self.logger.warning("⚠️ ML common utilities not available")
-            self.ml_common_ops = None
             self.validation_framework = None
             return
-        
+
         try:
-            self.ml_common_ops = get_ml_common_operations()
             self.validation_framework = get_validation_framework()
             self.logger.info("✅ ML common utilities initialized")
         except Exception as e:
             self.logger.warning(f"ML common initialization failed: {e}")
-            self.ml_common_ops = None
             self.validation_framework = None
     
     def _initialize_regime_detection(self):

@@ -116,7 +116,7 @@ from src.utils.hardware.m1_cpu_optimizer import (
     parallel_map_m1, create_m1_optimized_thread_pool, run_cpu_intensive_task
 )
 
-from src.utils.ml_common.common_operations import (
+from src.utils.common_operations import (
     safe_json_dump, safe_json_load, ensure_directory
 )
 

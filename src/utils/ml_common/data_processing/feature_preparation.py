@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # Use existing utilities
 from src.utils.data.unified_data_utils import UnifiedDataUtils
 from src.utils.data.processing.data_processing import DataProcessor
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
-logger = system_logger.getChild('FeaturePreparator')
+logger = get_ml_logger('FeaturePreparator')
 
 
 class FeaturePreparator:

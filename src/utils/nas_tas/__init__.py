@@ -64,6 +64,13 @@ from .backtesting_engine import (
     BacktestingMode
 )
 
+from .evolutionary_search import (
+    EvolutionaryTreeSearch,
+    TreeGeneticAlgorithm,
+    TreeNSGA2,
+    EvolutionaryConfig
+)
+
 
 __all__ = [
     'UnifiedEvaluator',
@@ -99,10 +106,13 @@ __all__ = [
     'RiskAnalyzer',
     'RiskConfig',
     'RiskResult',
-    'RiskMetric'
-    'create_tree_search_space'
+    'RiskMetric',
     'BacktestingEngine',
     'BacktestingConfig', 
     'BacktestingResult',
-    'BacktestingMode'
+    'BacktestingMode',
+    'EvolutionaryTreeSearch',
+    'TreeGeneticAlgorithm',
+    'TreeNSGA2',
+    'EvolutionaryConfig'
 ]

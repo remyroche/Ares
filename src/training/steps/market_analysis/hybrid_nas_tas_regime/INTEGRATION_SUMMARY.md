@@ -187,7 +187,7 @@ The `example_comprehensive_integration.py` provides comprehensive testing:
 ### Basic Usage
 
 ```python
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
 from hybrid_nas_tas_regime.config.hybrid_regime_config import HybridRegimeConfig
 
 # Create configuration

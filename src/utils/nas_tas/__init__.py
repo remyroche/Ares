@@ -1,140 +1,63 @@
 """
-NAS TAS (Neural Architecture Search - Tree Architecture Search) Utilities
+Unified TAS-NAS Regime Detection System
 
-This module provides common utilities for NAS and TAS operations including
-backtesting engines, regime detection, and optimization tools.
+This module provides a unified regime detection system that combines the best aspects
+of both TAS (Tree Architecture Search) and NAS (Neural Architecture Search) regime
+detection with enhanced economic significance and trading viability evaluation.
 """
 
-from .unified_evaluator import (
-    UnifiedEvaluator,
-    EvaluationConfig,
-    EvaluationResult,
-    ModelType,
-    EvaluationMode,
-    MetricType
-)
-
-from .unified_multi_objective import (
-    UnifiedMultiObjectiveOptimizer,
-    PerformanceEstimator,
-    ArchitectureFeatures,
-    PerformancePrediction,
-    PerformanceMetric,
-    EstimatorType,
-    OptimizationConfig,
-    MultiObjectiveResult
-)
-
-from .nas_feature_extractor import (
-    NASFeatureExtractor,
-    NASFeatureConfig,
-    FeatureExtractionResult,
-    create_nas_feature_extractor,
-    extract_features_for_clustering
-)
-
-from .bayesian_search import (
-    BayesianTreeSearch,
-    TreeBayesianOptimizer,
-    TreeGaussianProcess,
-    BayesianConfig
-)
-
-from .search_space import (
-    SearchSpace,
-    SearchSpaceConfig,
-    ParameterRange,
-    SearchSpaceType,
+from .unified_regime_config import (
+    UnifiedRegimeConfig,
+    RegimeDetectionMethod,
     OptimizationStrategy,
-    create_default_nas_search_space,
-    create_tree_search_space
+    EconomicEvaluationMode
 )
 
-from .risk_analysis import (
-    RiskAnalyzer,
-    RiskConfig,
-    RiskResult,
-    RiskMetric
+from .unified_regime_detector import (
+    UnifiedRegimeDetector,
+    UnifiedRegimeResult
 )
 
-from .backtesting_engine import (
-    BacktestingEngine,
-    BacktestingConfig,
-    BacktestingResult,
-    BacktestingMode
+from .performance_optimizer import (
+    PerformanceOptimizer,
+    PerformanceCache,
+    GPUAccelerator,
+    MemoryOptimizer,
+    optimize_performance,
+    get_performance_optimizer
 )
 
-from .evolutionary_search import (
-    EvolutionaryTreeSearch,
-    TreeGeneticAlgorithm,
-    TreeNSGA2,
-    EvolutionaryConfig
+from .real_time_monitor import (
+    RealTimeRegimeMonitor,
+    RegimeChangeEvent,
+    RealTimeMetrics,
+    DataStreamProcessor,
+    RegimeChangeDetector,
+    PerformanceMonitor,
+    create_real_time_monitor
 )
-
-from .uncertainty_estimation import (
-    TreeUncertaintyEstimator,
-    TreeEnsembleUncertainty,
-    TreeBayesianUncertainty,
-    UncertaintyConfig
-)
-
-from .confidence_scoring import (
-    TreeConfidenceScorer,
-    TreeReliabilityEstimator,
-    TreeCalibrationScorer,
-    ConfidenceConfig
-)
-
 
 __all__ = [
-    'UnifiedEvaluator',
-    'EvaluationConfig', 
-    'EvaluationResult',
-    'ModelType',
-    'EvaluationMode',
-    'MetricType',
-    'UnifiedMultiObjectiveOptimizer',
-    'PerformanceEstimator',
-    'ArchitectureFeatures',
-    'PerformancePrediction',
-    'PerformanceMetric',
-    'EstimatorType',
-    'OptimizationConfig',
-    'MultiObjectiveResult',
-    'NASFeatureExtractor',
-    'NASFeatureConfig',
-    'FeatureExtractionResult',
-    'create_nas_feature_extractor',
-    'extract_features_for_clustering',
-    'BayesianTreeSearch',
-    'TreeBayesianOptimizer',
-    'TreeGaussianProcess',
-    'BayesianConfig',
-    'SearchSpace',
-    'SearchSpaceConfig',
-    'ParameterRange',
-    'SearchSpaceType',
+    'UnifiedRegimeConfig',
+    'RegimeDetectionMethod',
     'OptimizationStrategy',
-    'create_default_nas_search_space',
-    'create_tree_search_space',
-    'RiskAnalyzer',
-    'RiskConfig',
-    'RiskResult',
-    'RiskMetric',
-    'BacktestingEngine',
-    'BacktestingConfig', 
-    'BacktestingResult',
-    'BacktestingMode',
-    'EvolutionaryTreeSearch',
-    'TreeGeneticAlgorithm',
-    'TreeNSGA2',
-    'EvolutionaryConfig',
-    'TreeUncertaintyEstimator',
-    'TreeEnsembleUncertainty',
-    'TreeBayesianUncertainty',
-    'UncertaintyConfig',
-    'TreeConfidenceScorer',
-    'TreeReliabilityEstimator',
-    'TreeCalibrationScorer',
-    'ConfidenceConfig'
+    'EconomicEvaluationMode',
+    'UnifiedRegimeDetector',
+    'UnifiedRegimeResult',
+    'PerformanceOptimizer',
+    'PerformanceCache',
+    'GPUAccelerator',
+    'MemoryOptimizer',
+    'optimize_performance',
+    'get_performance_optimizer',
+    'RealTimeRegimeMonitor',
+    'RegimeChangeEvent',
+    'RealTimeMetrics',
+    'DataStreamProcessor',
+    'RegimeChangeDetector',
+    'PerformanceMonitor',
+    'create_real_time_monitor'
 ]
+
+__version__ = "1.0.0"
+__author__ = "Unified Regime Detection System"

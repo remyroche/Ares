@@ -533,15 +533,15 @@ class MarketAnalysisSubPipeline:
                 'regime_assignments': results['regime_assignments']
             })
             
-            # Stage 5: NAS Clustering
-            self.logger.info('🎯 Executing Stage 5: NAS Clustering')
-            nas_clustering_result = await self.execute_sub_pipeline('nas_clustering', self.config)
+            # Stage 5: NAS/TAS Clustering
+            self.logger.info('🎯 Executing Stage 5: NAS/TAS Clustering')
+            nas_clustering_result = await self.execute_sub_pipeline('nas_tas_clustering', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(nas_clustering_result, "NAS Clustering")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_clustering_data = nas_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
+            nas_clustering_data = nas_clustering_result.artifacts.get('nas_tas_clustering_result', {})
             results['nas_clusters'] = nas_clustering_data.get('nas_clusters', {})
             results['nas_clustering_metrics'] = nas_clustering_data.get('nas_clustering_metrics', {})
             
@@ -602,39 +602,11 @@ class MarketAnalysisSubPipeline:
                 self.logger.error(f"❌ {error_msg}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
             
-            # Stage 6: NAS Models Training
-            self.logger.info('🏋️ Executing Stage 6: NAS Models Training')
-            nas_models_training_result = await self.execute_sub_pipeline('nas_models_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_models_training_result, "NAS Models Training")
-            if not is_success:
-                return error_info
+            # Stage 6: NAS Models Training - REMOVED (moved to models_training/)
+            self.logger.info('ℹ️ Stage 6: NAS Models Training - REMOVED (moved to models_training/)')
             
-            # Extract data from consolidated artifact
-            nas_models_data = nas_models_training_result.artifacts.get('nas_models_training_result', {})
-            results['nas_models'] = nas_models_data.get('nas_models', {})
-            results['nas_training_metrics'] = nas_models_data.get('nas_training_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'nas_models': results['nas_models']
-            })
-            
-            # Stage 7: NAS Ensemble Training
-            self.logger.info('🎭 Executing Stage 7: NAS Ensemble Training')
-            nas_ensemble_training_result = await self.execute_sub_pipeline('nas_ensemble_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_ensemble_training_result, "NAS Ensemble Training")
-            if not is_success:
-                return error_info
-            
-            # Extract data from consolidated artifact
-            nas_ensemble_data = nas_ensemble_training_result.artifacts.get('nas_ensemble_training_result', {})
-            results['nas_ensemble'] = nas_ensemble_data.get('nas_ensemble', {})
-            results['nas_ensemble_metrics'] = nas_ensemble_data.get('nas_ensemble_metrics', {})
-            
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'nas_ensemble': results['nas_ensemble']
-            })
+            # Stage 7: NAS Ensemble Training - REMOVED (moved to models_training/)
+            self.logger.info('ℹ️ Stage 7: NAS Ensemble Training - REMOVED (moved to models_training/)')
             
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')

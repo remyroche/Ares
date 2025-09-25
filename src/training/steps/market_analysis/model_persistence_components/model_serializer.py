@@ -15,6 +15,12 @@ from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 import logging
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 try:
     JOBLIB_AVAILABLE = True
 except ImportError:
@@ -171,7 +177,8 @@ class ModelSerializer:
             if hasattr(model, 'get_params'):
                 try:
                     model_info['parameters'] = model.get_params()
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Failed to get model parameters: {e}")
                     pass
             if hasattr(model, 'feature_importances_'):
                 model_info['feature_importances'] = model.feature_importances_.tolist()

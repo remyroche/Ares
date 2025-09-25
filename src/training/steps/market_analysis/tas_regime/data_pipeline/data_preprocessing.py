@@ -13,6 +13,13 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 import warnings
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 warnings.filterwarnings('ignore')
 
 # Import existing utilities from the codebase
@@ -408,7 +415,8 @@ class DataPreprocessor:
                 if cleaned_data[col].dtype == 'object':
                     try:
                         cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-                    except:
+                    except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                         pass
             metadata['steps_applied'].append('convert_data_types')
         

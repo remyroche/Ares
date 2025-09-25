@@ -18,6 +18,13 @@ from pathlib import Path
 import pickle
 import os
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -347,7 +354,8 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 return isinstance(encoding, dict) and len(encoding) > 0
             else:
                 return False
-        except:
+        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
             return False
 
 
@@ -548,7 +556,8 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 return isinstance(encoding, dict) and len(encoding) > 0
             else:
                 return False
-        except:
+        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
             return False
 
 

@@ -529,7 +529,8 @@ class UnifiedEnsembleSearchSpace:
                     try:
                         prediction = self.performance_estimator.predict_performance(model)
                         individual_scores.append(prediction.predicted_performance)
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"🔍 Failed to predict performance for model: {e}")
                         individual_scores.append(0.5)
             
             ensemble_diversity = self._calculate_ensemble_diversity(best_ensemble) if best_ensemble else 0.0

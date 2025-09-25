@@ -23,6 +23,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import mean_squared_error, r2_score
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -482,7 +489,8 @@ class UnifiedPerformanceEstimator:
                         try:
                             pred = estimator.predict(X_scaled[i:i+1])[0]
                             base_preds.append(pred)
-                        except:
+                        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                             base_preds.append(0.5)
                     meta_features.append(base_preds)
 
@@ -531,7 +539,8 @@ class UnifiedPerformanceEstimator:
                             try:
                                 pred = estimator.predict(X_scaled[i:i+1])[0]
                                 base_preds.append(pred)
-                            except:
+                            except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                                 base_preds.append(0.5)
                         meta_features.append(base_preds)
 

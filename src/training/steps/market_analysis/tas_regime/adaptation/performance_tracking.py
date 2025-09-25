@@ -16,6 +16,12 @@ from collections import defaultdict, deque
 import json
 import os
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 
@@ -305,7 +311,8 @@ class TreePerformanceTracker:
                 if network:
                     metrics['network_bytes_sent'] = network.bytes_sent
                     metrics['network_bytes_recv'] = network.bytes_recv
-            except:
+            except Exception as e:
+                tprint_debug(f"🔍 Failed to collect network metrics: {e}")
                 pass
 
             return metrics

@@ -12,6 +12,12 @@ import logging
 import numpy as np
 import time
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 class VersionManager:
     """Handles model versioning and version tracking."""
     @log_important_calls
@@ -212,7 +218,8 @@ class VersionManager:
             t2 = datetime.fromisoformat(v2_info['timestamp'])
             comparison['timestamp_diff'] = str(t2 - t1)
             comparison['is_newer'] = version2 if t2 > t1 else version1
-        except:
+        except Exception as e:
+            tprint_debug(f"🔍 Failed to compare timestamps between {version1} and {version2}: {e}")
             pass
         for key in ['symbol', 'exchange', 'scheme']:
             if v1_info.get(key) != v2_info.get(key):

@@ -15,6 +15,13 @@ import time
 from datetime import datetime
 import psutil
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,7 +158,8 @@ class BaseConstraintValidator:
                 'memory_available_gb': psutil.virtual_memory().available / (1024**3),
                 'gpu_available': len(psutil.gpu_count()) > 0 if hasattr(psutil, 'gpu_count') else False
             }
-        except:
+        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
             return {
                 'cpu_count': 4,  # Default assumptions
                 'memory_total_gb': 8,
@@ -719,7 +727,8 @@ class UnifiedConstraintValidator:
 
                 if result.is_valid:
                     valid_architectures.append(architecture)
-            except:
+            except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                 results.append(ConstraintValidationResult(
                     is_valid=False,
                     violations=[],

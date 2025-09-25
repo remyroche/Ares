@@ -14,6 +14,13 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 class QualityMetricType(Enum):
@@ -310,7 +317,8 @@ class AdvancedQualityEvaluator:
                     try:
                         score = silhouette_score(sample_features, sample_labels)
                         stability_scores.append(score)
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"🔍 Failed to calculate silhouette score for stability check: {e}")
                         continue
 
             if not stability_scores:
@@ -386,7 +394,8 @@ class AdvancedQualityEvaluator:
                             cluster_features[:, i]
                         )[0]
                         cluster_preservation += mi
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"🔍 Failed to calculate silhouette score for stability check: {e}")
                         continue
 
                 preservation_scores.append(cluster_preservation)
@@ -1006,7 +1015,8 @@ class AdvancedMultiObjectiveOptimizer:
                         # Calculate silhouette on bootstrap sample
                         score = silhouette_score(sample_features, sample_labels)
                         stability_scores.append(score)
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"🔍 Failed to calculate silhouette score for stability check: {e}")
                         continue
 
             if not stability_scores:

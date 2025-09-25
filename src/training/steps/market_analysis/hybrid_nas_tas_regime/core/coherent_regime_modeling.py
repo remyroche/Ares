@@ -786,7 +786,8 @@ class CoherentRegimeModeler:
                 'volatility_skewness': pd.Series(np.abs(returns)).skew(),
                 'volatility_clusters': self._detect_volatility_clusters(returns)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {}
 
     def _analyze_trend_profile(self, regime_data: pd.DataFrame) -> Dict[str, float]:
@@ -806,7 +807,8 @@ class CoherentRegimeModeler:
                 'trend_significance': 1 - p_value if p_value < 0.1 else 0,
                 'trend_direction': 'up' if slope > 0 else 'down'
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {}
 
     def _analyze_efficiency_profile(self, regime_data: pd.DataFrame) -> Dict[str, float]:
@@ -819,7 +821,8 @@ class CoherentRegimeModeler:
                 'random_walk_test': self._random_walk_test(returns),
                 'variance_ratio_test': self._variance_ratio_test(returns)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {}
 
     def _analyze_liquidity_profile(self, regime_data: pd.DataFrame) -> Dict[str, float]:
@@ -834,7 +837,8 @@ class CoherentRegimeModeler:
                 'volume_price_impact': self._calculate_volume_impact(regime_data),
                 'liquidity_ratio': np.mean(volume) / np.std(volume) if np.std(volume) > 0 else 0
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {}
 
     def _classify_economic_regimes(self, macro_regimes: Dict[str, Any]) -> Dict[str, str]:
@@ -954,7 +958,8 @@ class CoherentRegimeModeler:
             clusters = 1 + np.sum(vol_changes > threshold)
             return min(clusters, 5)  # Cap at 5 clusters
 
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 1
 
     def _random_walk_test(self, returns: np.ndarray) -> float:
@@ -975,7 +980,8 @@ class CoherentRegimeModeler:
             variance_ratio = cumsum_var / (n * return_var)
             return min(abs(1 - variance_ratio), 1.0)
 
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _variance_ratio_test(self, returns: np.ndarray) -> float:
@@ -998,7 +1004,8 @@ class CoherentRegimeModeler:
 
             return np.mean(ratios) if ratios else 0.5
 
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _calculate_volume_impact(self, regime_data: pd.DataFrame) -> float:
@@ -1011,7 +1018,8 @@ class CoherentRegimeModeler:
             correlation = np.corrcoef(volume[1:], np.abs(returns[1:]))[0, 1]
             return abs(correlation)
 
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
 

@@ -17,6 +17,13 @@ import hashlib
 import json
 from enum import Enum
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import existing utilities
 try:
     from src.utils.serialization_utils import (
@@ -510,7 +517,8 @@ class DataCache:
             # Load data
             try:
                 data = load_dataframe(str(cache_file))
-            except:
+            except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                 data = load_object(str(cache_file))
             
             return CacheResult(

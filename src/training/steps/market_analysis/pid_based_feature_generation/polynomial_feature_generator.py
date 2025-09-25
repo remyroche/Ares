@@ -21,6 +21,12 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Core dependencies with fallback support
 try:
     import numpy as np
@@ -582,7 +588,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         numeric_col = pd.to_numeric(X[:, i], errors='coerce')
                         if not numeric_col.isna().all():
                             numeric_features.append(i)
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to convert column {i} to numeric: {e}")
                         continue
                 
                 if not numeric_features:
@@ -722,12 +729,13 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     self.logger.warning(f"⚠️ Feature {feature_name} has no numeric values")
                     return None, ""
                 x = x_numeric.values
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to extract numeric values for feature {feature_name}: {e}")
                 # If conversion fails, try direct conversion
                 try:
                     x = x.astype(float)
-                except:
-                    self.logger.warning(f"⚠️ Cannot convert feature {feature_name} to numeric")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Cannot convert feature {feature_name} to numeric: {e}")
                     return None, ""
             
             # Check for valid numeric data
@@ -819,7 +827,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     feature = x * x  # Self cross product
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
                         return feature, f"{feature_name}_cross_self"
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Failed to create self cross product for {feature_name}: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.INTERACTION:
@@ -829,7 +838,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     feature = x * x_squared
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
                         return feature, f"{feature_name}_interaction"
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Failed to create interaction for {feature_name}: {e}")
                     pass
                 
             return None, ""

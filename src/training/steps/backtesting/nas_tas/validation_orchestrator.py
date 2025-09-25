@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 
 # Import validation components
 from .backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
-from .walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig, WalkForwardResult
+from src.utils.nas_tas.walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig, WalkForwardResult
 from .performance_attribution import PerformanceAttributor, AttributionConfig, AttributionResult
 from .scenario_tester import ScenarioTester, ScenarioConfig, ScenarioResult
 

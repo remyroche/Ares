@@ -17,7 +17,7 @@ The comprehensive backtesting framework for TAS has been successfully implemente
   - Results export and storage
 
 ### 2. **Walk-Forward Analysis** ✅
-- **File**: `walk_forward_analysis.py`
+- **File**: `src/utils/nas_tas/walk_forward_analyzer.py` (consolidated utility)
 - **Features**:
   - Rolling window analysis
   - Expanding window analysis
@@ -96,7 +96,7 @@ The comprehensive backtesting framework for TAS has been successfully implemente
 backtesting/
 ├── __init__.py                          # Package initialization
 ├── backtesting_engine.py               # Core backtesting engine
-├── walk_forward_analysis.py            # Walk-forward analysis
+└── [walk_forward_analysis.py] → src/utils/nas_tas/walk_forward_analyzer.py (consolidated)
 ├── performance_attribution.py          # Performance attribution
 ├── risk_analysis.py                    # Risk analysis
 ├── scenario_testing.py                 # Scenario testing

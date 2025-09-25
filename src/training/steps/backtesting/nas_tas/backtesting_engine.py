@@ -28,7 +28,7 @@ except ImportError:
 
 # Import general ML pipeline optimization tools
 try:
-    from src.utils.common_ml.backtesting.backtesting_engine import (
+    from src.utils.nas_tas.backtesting_engine import (
         BacktestingEngine as CommonBacktestingEngine,
         BacktestingConfig as CommonBacktestingConfig
     )

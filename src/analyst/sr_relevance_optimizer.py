@@ -64,19 +64,56 @@ class SRRelevanceOptimizer:
             weights = {k: v / total for k, v in weights_raw.items()}
             performance = self._evaluate_weights(weights, historical_data, detected_sr_levels, actual_outcomes)
             return -performance
-        study = optuna.create_study(direction='minimize', pruner = optuna.pruners.MedianPruner(n_startup_trials = 10))
-
-        def callback(study: Any, trial: Any) -> None:
-            if trial.number % 10 == 0:
-                self.logger.info(f'Trial {trial.number}: Best value = {-study.best_value:.4f}')
-        study.optimize(objective, n_trials = self.n_trials, callbacks=[callback])
-        best_params = study.best_params
-        total = sum(best_params.values())
-        optimized_weights = {k: v / total for k, v in best_params.items()}
-        self.logger.info(f'Optimization complete. Best performance: {-study.best_value:.4f}')
-        self.logger.info(f'Optimized weights: {optimized_weights}')
-        self.optimization_history.append({'timestamp': datetime.now(), 'method': 'optuna', 'best_performance': -study.best_value, 'weights': optimized_weights, 'n_trials': len(study.trials)})
-        self.best_weights = optimized_weights
+        # Use new Bayesian TPE optimizer
+        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+            BayesianTPEOptimizer,
+            BayesianTPEConfig
+        )
+        
+        # Create search space from weight bounds
+        search_space = {}
+        for factor, (min_w, max_w) in self.weight_bounds.items():
+            search_space[factor] = {
+                'type': 'float',
+                'low': min_w,
+                'high': max_w
+            }
+        
+        # Configure optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.n_trials,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for weight optimization
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
+        )
+        
+        # Run optimization
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective, search_space)
+        
+        if result.success:
+            best_params = result.best_params
+            total = sum(best_params.values())
+            optimized_weights = {k: v / total for k, v in best_params.items()}
+            self.logger.info(f'Optimization complete. Best performance: {-result.best_score:.4f}')
+            self.logger.info(f'Optimized weights: {optimized_weights}')
+            self.optimization_history.append({
+                'timestamp': datetime.now(), 
+                'method': 'bayesian_tpe', 
+                'best_performance': -result.best_score, 
+                'weights': optimized_weights, 
+                'n_trials': result.n_trials
+            })
+            self.best_weights = optimized_weights
+        else:
+            self.logger.error(f'Bayesian TPE optimization failed: {result.error_message}')
+            # Fallback to equal weights
+            self.best_weights = {factor: 1.0 / len(self.weight_bounds) for factor in self.weight_bounds.keys()}
         return optimized_weights
 
     def _optimize_with_scipy(self, historical_data: pd.DataFrame, detected_sr_levels: List[Dict[str, Any]], actual_outcomes: pd.DataFrame) -> Dict[str, float]:

@@ -510,10 +510,49 @@ class BaseEnsemble:
                 model.fit(X_train, y_train)
                 scores.append(model.score(X_val, y_val))
             return float(np.mean(scores))
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials = n_trials, n_jobs=-1)
-        self.logger.info(f'Optuna best params for {model_class.__name__}: {study.best_params}')
-        return study.best_params
+        # Use new Bayesian TPE optimizer
+        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+            BayesianTPEOptimizer,
+            BayesianTPEConfig
+        )
+        
+        # Create search space from model parameters
+        search_space = {}
+        for param_name, param_config in model_params.items():
+            if isinstance(param_config, dict) and 'type' in param_config:
+                search_space[param_name] = param_config
+            else:
+                # Convert simple bounds to search space format
+                if isinstance(param_config, tuple) and len(param_config) == 2:
+                    low, high = param_config
+                    search_space[param_name] = {
+                        'type': 'float',
+                        'low': low,
+                        'high': high
+                    }
+        
+        # Configure optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=n_trials,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=1,  # Use 1 for compatibility
+            log_level='INFO'
+        )
+        
+        # Run optimization
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective, search_space)
+        
+        if result.success:
+            self.logger.info(f'Bayesian TPE best params for {model_class.__name__}: {result.best_params}')
+            return result.best_params
+        else:
+            self.logger.error(f'Bayesian TPE optimization failed: {result.error_message}')
+            return {}
 
     @handles_errors
     def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:

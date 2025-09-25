@@ -201,8 +201,8 @@ class UnsupervisedTreeNAS:
         """Initialize unsupervised tree-based NAS."""
         tprint("🚀 [UNSUPERVISED_TREE_NAS] Initializing Unsupervised Tree-Based NAS", color="cyan", bold=True)
         tprint(f"📊 [UNSUPERVISED_TREE_NAS] Trials: {config.n_trials}", color="blue")
-        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Max clusters: {config.max_clusters}", color="blue")
-        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Min cluster size: {config.min_cluster_size}", color="blue")
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Regime range: {config.n_regimes_range}", color="blue")
+        tprint(f"📊 [UNSUPERVISED_TREE_NAS] Min regime duration: {config.min_regime_duration}", color="blue")
         self.config = config
         self.logger = logger.getChild('UnsupervisedTreeNAS')
         self.candidates = []
@@ -387,7 +387,9 @@ class UnsupervisedTreeNAS:
                 self.logger.debug(f"Trial {trial}: Score {performance['overall_score']:.4f}")
                 
             except Exception as e:
-                self.logger.warning(f"Trial {trial} failed: {e}")
+                tprint_error(f"❌ [UNSUPERVISED_TREE_NAS] Trial {trial} failed: {e}")
+                self.logger.error(f"Trial {trial} failed: {e}")
+                # Continue with next trial but log the error properly
                 continue
         
         if best_candidate is None:
@@ -557,15 +559,10 @@ class UnsupervisedTreeNAS:
             }
             
         except Exception as e:
-            self.logger.warning(f"Architecture training failed: {e}")
-            return {
-                'clustering_quality': 0.0,
-                'regime_detection_accuracy': 0.0,
-                'regime_qualification_score': 0.0,
-                'overall_score': 0.0,
-                'regimes': [],
-                'feature_importance': {}
-            }
+            tprint_error(f"❌ [UNSUPERVISED_TREE_NAS] Architecture training failed: {e}")
+            self.logger.error(f"Architecture training failed: {e}")
+            # Re-raise the exception instead of returning default values
+            raise RuntimeError(f"Architecture training failed: {e}") from e
     
     def _apply_feature_engineering(self, X: np.ndarray, feature_engineering: Dict[str, Any]) -> np.ndarray:
         """Apply feature engineering to the data."""

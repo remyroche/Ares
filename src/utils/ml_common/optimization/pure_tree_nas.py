@@ -411,7 +411,7 @@ class PureTreeNAS:
         tprint("🚀 [PURE_TREE_NAS] Initializing Pure Tree-Based NAS", color="cyan", bold=True)
         tprint(f"📊 [PURE_TREE_NAS] Trials: {config.n_trials}", color="blue")
         tprint(f"📊 [PURE_TREE_NAS] Timeout: {config.timeout_seconds}s", color="blue")
-        tprint(f"📊 [PURE_TREE_NAS] Early stopping patience: {config.early_stopping_patience}", color="blue")
+        tprint(f"📊 [PURE_TREE_NAS] CV folds: {config.cv_folds}", color="blue")
         self.config = config
         self.logger = logger.getChild('PureTreeNAS')
         self.candidates = []
@@ -503,7 +503,9 @@ class PureTreeNAS:
                 self.logger.debug(f"Trial {trial}: {candidate.primary_model} Score {performance['overall_score']:.4f}")
                 
             except Exception as e:
-                self.logger.warning(f"Trial {trial} failed: {e}")
+                tprint_error(f"❌ [PURE_TREE_NAS] Trial {trial} failed: {e}")
+                self.logger.error(f"Trial {trial} failed: {e}")
+                # Continue with next trial but log the error properly
                 continue
         
         if best_candidate is None:
@@ -735,20 +737,10 @@ class PureTreeNAS:
             }
             
         except Exception as e:
-            self.logger.warning(f"Tree architecture training failed: {e}")
-            return {
-                'accuracy': 0.0,
-                'efficiency_score': 0.0,
-                'interpretability_score': 0.0,
-                'robustness_score': 0.0,
-                'overall_score': 0.0,
-                'training_time': 0.0,
-                'model_size': 0,
-                'n_features': X_train.shape[1],
-                'tree_depth': 0,
-                'n_leaves': 0,
-                'feature_importance': {}
-            }
+            tprint_error(f"❌ [PURE_TREE_NAS] Tree architecture training failed: {e}")
+            self.logger.error(f"Tree architecture training failed: {e}")
+            # Re-raise the exception instead of returning default values
+            raise RuntimeError(f"Tree architecture training failed: {e}") from e
     
     def _create_tree_model(self, candidate: TreeArchitectureCandidate):
         """Create tree model from architecture candidate."""

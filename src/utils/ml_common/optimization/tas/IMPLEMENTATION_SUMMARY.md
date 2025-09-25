@@ -163,7 +163,7 @@ quality_result = qualifier.calculate_regime_quality_score(regime_info, regime_da
 
 ### **Basic Regime Detection**
 ```python
-from src.utils.ml_common.optimization.tas.regime_analysis.unsupervised_regime_detection import (
+from src.utils.nas_tas.unsupervised_regime_detection import (
     UnsupervisedRegimeDetector, RegimeDetectionConfig
 )
 

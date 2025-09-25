@@ -149,7 +149,7 @@ class PerformanceMonitor:
         self.is_monitoring = False
         self.monitoring_thread = None
         
-        self.logger.info("✅ Performance Monitor initialized")
+        tprint_info("✅ Performance Monitor initialized")
     
     def start_monitoring(self):
         """Start performance monitoring."""
@@ -265,7 +265,7 @@ class PerformanceMonitor:
                 time.sleep(self.config.monitoring_interval)
                 
             except Exception as e:
-                self.logger.error(f"❌ Monitoring loop error: {e}")
+                tprint_error(f"❌ Monitoring loop error: {e}")
                 time.sleep(self.config.monitoring_interval)
     
     def _update_resource_metrics(self):
@@ -284,7 +284,7 @@ class PerformanceMonitor:
             self.current_metrics.gpu_usage = self._get_gpu_usage()
             
         except Exception as e:
-            self.logger.error(f"❌ Resource metrics update failed: {e}")
+            tprint_error(f"❌ Resource metrics update failed: {e}")
     
     def _get_gpu_usage(self) -> float:
         """Get GPU usage percentage."""
@@ -295,10 +295,11 @@ class PerformanceMonitor:
         """Calculate accuracy."""
         try:
             if isinstance(prediction, (list, np.ndarray)) and isinstance(actual, (list, np.ndarray)):
-                return np.mean(np.array(prediction) == np.array(actual))
-            return 0.0
-        except:
-            return 0.0
+            return np.mean(np.array(prediction) == np.array(actual))
+        return 0.0
+    except Exception as e:
+        tprint_warning(f"Performance evaluation failed: {e}. Returning 0.0.")
+        return 0.0
     
     def _calculate_precision(self, prediction: Any, actual: Any) -> float:
         """Calculate precision."""
@@ -365,7 +366,7 @@ class AdaptationEngine:
         self.cvlsa_adaptation_rate = config.cvlsa_adaptation_rate
         self.cvlsa_memory_efficiency = config.cvlsa_memory_efficiency
         
-        self.logger.info("✅ Adaptation Engine initialized")
+        tprint_info("✅ Adaptation Engine initialized")
     
     def start_adaptation(self):
         """Start adaptation engine."""
@@ -417,7 +418,7 @@ class AdaptationEngine:
             except queue.Empty:
                 continue
             except Exception as e:
-                self.logger.error(f"❌ Adaptation loop error: {e}")
+                tprint_error(f"❌ Adaptation loop error: {e}")
     
     def _perform_adaptation(self, adaptation_request: Dict):
         """Perform model adaptation."""
@@ -444,7 +445,7 @@ class AdaptationEngine:
             self.is_adapting = False
             
         except Exception as e:
-            self.logger.error(f"❌ Adaptation failed: {e}")
+            tprint_error(f"❌ Adaptation failed: {e}")
             self.is_adapting = False
     
     def _adapt_cvlsa_model(self, model: Any, adaptation_data: Dict) -> Any:
@@ -460,7 +461,7 @@ class AdaptationEngine:
             return model
             
         except Exception as e:
-            self.logger.error(f"❌ CLVSA model adaptation failed: {e}")
+            tprint_error(f"❌ CLVSA model adaptation failed: {e}")
             return model
     
     def _adapt_generic_model(self, model: Any, adaptation_data: Dict) -> Any:
@@ -505,7 +506,7 @@ class RealTimeOptimizationEngine:
         self.is_optimizing = False
         self.optimization_thread = None
         
-        self.logger.info("✅ Real-Time Optimization Engine initialized")
+        tprint_info("✅ Real-Time Optimization Engine initialized")
     
     def start_optimization(self):
         """Start real-time optimization."""
@@ -595,7 +596,7 @@ class RealTimeOptimizationEngine:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Real-time optimization failed: {e}")
+            tprint_error(f"❌ Real-time optimization failed: {e}")
             raise
     
     def _optimization_loop(self):
@@ -614,7 +615,7 @@ class RealTimeOptimizationEngine:
                 time.sleep(self.config.optimization_interval)
                 
             except Exception as e:
-                self.logger.error(f"❌ Optimization loop error: {e}")
+                tprint_error(f"❌ Optimization loop error: {e}")
                 time.sleep(self.config.optimization_interval)
     
     def _standard_optimization(self, model: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
@@ -630,7 +631,7 @@ class RealTimeOptimizationEngine:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Standard optimization failed: {e}")
+            tprint_error(f"❌ Standard optimization failed: {e}")
             raise
     
     def get_optimization_status(self) -> Dict[str, Any]:

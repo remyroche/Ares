@@ -33,10 +33,16 @@ from ..components.neural_architecture import TASNeuralModel, NeuralArchitectureC
 from ..evaluation.tas_evaluator import TASEvaluator, EvaluationResult
 from ..search.advanced_search import AdvancedTASSearch
 
+# Import validation and adaptation modules
+try:
+    from ..validation.economic_validator import EconomicValidator
+    ECONOMIC_VALIDATOR_AVAILABLE = True
+except ImportError:
+    ECONOMIC_VALIDATOR_AVAILABLE = False
+
 # Commented out missing imports - will add fallback implementations
 # from ..hardware.accelerator import HardwareAccelerator
 # from ..meta_learning.meta_learner import MetaLearner
-# from ..validation.economic_validator import EconomicValidator
 
 # Fallback implementations for missing modules
 class HardwareAccelerator:
@@ -59,15 +65,16 @@ class MetaLearner:
         """Fallback learning method."""
         return {}
 
-class EconomicValidator:
-    """Fallback economic validator."""
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.logger.warning("EconomicValidator not available - using fallback")
-    
-    def validate_economic_significance(self, *args, **kwargs):
-        """Fallback validation method."""
-        return {"is_significant": True, "score": 0.5}
+if not ECONOMIC_VALIDATOR_AVAILABLE:
+    class EconomicValidator:
+        """Fallback economic validator."""
+        def __init__(self, config=None):
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("EconomicValidator not available - using fallback")
+        
+        def validate_economic_significance(self, *args, **kwargs):
+            """Fallback validation method."""
+            return {"is_significant": True, "score": 0.5}
 
 logger = logging.getLogger(__name__)
 

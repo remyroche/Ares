@@ -114,7 +114,6 @@ except ImportError:
 
 # Import ML common utilities
 try:
-    from ...utils.ml_common.common_operations import MLCommonOperations
     from ...utils.ml_common.matrix_cross_validation import MatrixCrossValidation
     from ...utils.ml_common.feature_selection import FeatureSelector
     from ...utils.ml_common.pipeline_orchestrator import PipelineOrchestrator
@@ -357,14 +356,19 @@ class EssentialNASClusterer:
             
             # Initialize ML utilities
             try:
-                self.ml_operations = MLCommonOperations()
                 self.cross_validator = MatrixCrossValidation()
                 self.feature_selector = FeatureSelector()
                 self.pipeline_orchestrator = PipelineOrchestrator()
                 self.vectorization_manager = UnifiedVectorizationManager()
                 self.backtesting_engine = VectorizedBacktesting()
+                self.ml_operations = None
             except Exception as e:
                 self.logger.warning(f"ML utilities initialization failed: {e}")
+                self.cross_validator = None
+                self.feature_selector = None
+                self.pipeline_orchestrator = None
+                self.vectorization_manager = None
+                self.backtesting_engine = None
                 self.ml_operations = None
             
             tprint_info("✅ Utilities initialized successfully")

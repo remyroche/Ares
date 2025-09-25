@@ -100,7 +100,7 @@ try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer
     )
-    from src.utils.ml_common.common_operations import (
+    from src.utils.common_operations import (
         safe_cross_validation, safe_feature_selection, safe_model_training
     )
     ML_UTILITIES_AVAILABLE = True

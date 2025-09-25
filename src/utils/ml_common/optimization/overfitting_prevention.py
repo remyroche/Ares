@@ -14,9 +14,9 @@ import logging
 import time
 from datetime import datetime
 
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
-logger = system_logger.getChild('OverfittingPrevention')
+logger = get_ml_logger('OverfittingPrevention')
 
 @dataclass
 class OverfittingPreventionConfig:

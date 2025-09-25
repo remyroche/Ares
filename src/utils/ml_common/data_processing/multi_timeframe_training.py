@@ -62,7 +62,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     ConfigurationError, ModelTrainingError
 )
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 # Advanced feature selection tools
 from src.utils.feature_selection.step08_unified_complete import (
@@ -198,7 +198,7 @@ class MultiTimeframeTrainer:
         self.config = config
         self.symbol = symbol
         self.exchange = exchange
-        self.logger = system_logger.getChild(f'EnhancedMultiTimeframeTrainer_{symbol}_{exchange}')
+        self.logger = get_ml_logger(f'EnhancedMultiTimeframeTrainer_{symbol}_{exchange}')
         
         # Initialize hardware optimization components
         self._initialize_hardware_optimization()

@@ -49,7 +49,7 @@ from sklearn.metrics import make_scorer
 import joblib
 
 # Import existing utilities
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from src.utils.ml_common.training.training_utils import TrainingUtils
 from src.utils.ml_common.config.base_training_config import BaseTrainingConfig, EnsembleTrainingConfig
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
@@ -75,7 +75,7 @@ try:
 except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 
-logger = system_logger.getChild('VectorizedTrainingManager')
+logger = get_ml_logger('VectorizedTrainingManager')
 
 
 class VectorizedTrainingManager:

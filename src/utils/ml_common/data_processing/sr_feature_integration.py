@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 import logging
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 class SRFeatureIntegration:
     """
@@ -21,7 +21,7 @@ class SRFeatureIntegration:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize SR feature integration."""
         self.config = config or {}
-        self.logger = system_logger.getChild('SRFeatureIntegration')
+        self.logger = get_ml_logger('SRFeatureIntegration')
         
         # SR feature configuration
         self.sr_config = self.config.get('sr_features', {

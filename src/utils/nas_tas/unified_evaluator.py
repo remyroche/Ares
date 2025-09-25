@@ -154,9 +154,8 @@ except ImportError as e:
     MATRIX_OPERATIONS_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.common_operations import (
-        MLCommonOperations, CrossValidationManager, HyperparameterOptimizer
-    )
+    from src.utils.ml_common.validation.cv import CrossValidationManager
+    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
     ML_COMMON_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"⚠️ ML common utilities not available: {e}")
@@ -350,11 +349,9 @@ class UnifiedEvaluator:
             
             # Initialize ML common operations
             if ML_COMMON_AVAILABLE:
-                self.ml_ops = MLCommonOperations()
                 self.cv_manager = CrossValidationManager()
                 self.hpo_optimizer = HyperparameterOptimizer()
             else:
-                self.ml_ops = None
                 self.cv_manager = None
                 self.hpo_optimizer = None
             

@@ -44,7 +44,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     ConfigurationError, ModelTrainingError
 )
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from src.utils.ml_common.evaluation.unified_evaluator import (
     compute_classification_metrics,
     compute_regression_metrics,
@@ -214,7 +214,7 @@ class ModelEvaluator:
             config: Evaluation configuration
         """
         self.config = config
-        self.logger = system_logger.getChild('ModelEvaluator')
+        self.logger = get_ml_logger('ModelEvaluator')
         
         # Apply intensity scaling
         intensity_pct = get_intensity_from_environment()

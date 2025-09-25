@@ -17,7 +17,7 @@ from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 from src.utils.ml_common.models import EnhancedModelFactory, ModelType, ModelConfig
 from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
@@ -40,7 +40,7 @@ except Exception:
     _PURGED_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 
-logger = system_logger.getChild('TrainingUtils')
+logger = get_ml_logger('TrainingUtils')
 
 
 class TrainingUtils:

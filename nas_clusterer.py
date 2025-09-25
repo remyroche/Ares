@@ -110,7 +110,7 @@ except ImportError:
 
 # ML utilities
 try:
-    from src.utils.ml_common.common_operations import (
+    from src.utils.common_operations import (
         create_data_quality_report, validate_dataframe_schema
     )
     ML_UTILITIES_AVAILABLE = True

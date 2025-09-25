@@ -4,7 +4,7 @@ from src.utils.tprint import tprint
 from typing import Any
 import pandas as pd
 import numpy as np
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from ....core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -59,7 +59,7 @@ class RegimeSpecificTPSLOptimizer:
             config: Configuration dictionary
 
         """
-        self.logger = system_logger.getChild('RegimeSpecificTPSLOptimizer')
+        self.logger = get_ml_logger('RegimeSpecificTPSLOptimizer')
         self.logger.info("🚀 Initializing RegimeSpecificTPSLOptimizer...")
         start_time = time.time()
         

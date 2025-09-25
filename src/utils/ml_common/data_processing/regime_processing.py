@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # Use existing utilities
 from src.utils.data.unified_data_utils import UnifiedDataUtils
 from src.utils.data.quality.data_quality import DataQualityFramework
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
-logger = system_logger.getChild('RegimeProcessor')
+logger = get_ml_logger('RegimeProcessor')
 
 
 class RegimeProcessor:

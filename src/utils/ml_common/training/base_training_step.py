@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 
 # Use existing utilities
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 from src.utils.common_operations import safe_file_exists, safe_json_dump
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.unified_data_utils import UnifiedDataUtils
@@ -76,7 +76,7 @@ def _get_training_integration():
             'TrainingIntegrationConfig': None
         }
 
-logger = system_logger.getChild('BaseTrainingStep')
+logger = get_ml_logger('BaseTrainingStep')
 
 
 class BaseTrainingStep(ABC):

@@ -83,9 +83,6 @@ from src.utils.hardware.m1_cpu_optimizer import (
 # Import ML utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-    from src.utils.ml_common.common_operations import (
-        safe_cross_validation, safe_feature_selection, safe_model_evaluation
-    )
     ML_UTILITIES_AVAILABLE = True
 except ImportError:
     ML_UTILITIES_AVAILABLE = False

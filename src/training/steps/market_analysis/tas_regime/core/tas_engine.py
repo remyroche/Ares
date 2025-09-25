@@ -109,7 +109,6 @@ from src.utils.data.klines_parquet import (
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     from src.utils.lookahead_bias_detector import LookaheadBiasDetector
     from src.utils.ml_common.optimization.overfitting_prevention import OverfittingDetector
@@ -328,30 +327,40 @@ class TreeArchitectureSearchEngine:
             self.logger.info("✅ Klines data manager initialized")
             
             # Initialize ML common utilities
+            self.ml_common_integrated = False
+            self.validation_framework = None
+            self.lookahead_detector = None
+            self.overfitting_detector = None
+            self.cv_manager = None
+            self.hpo_optimizer = None
+
             tprint_debug("🤖 Checking ML common availability...")
             if ML_COMMON_AVAILABLE:
-                tprint_debug("🔧 Creating ML common operations...")
-                self.ml_common_ops = get_ml_common_operations()
-                tprint_debug("🛡️ Creating validation framework...")
-                self.validation_framework = get_validation_framework()
-                tprint_debug("🔍 Creating lookahead detector...")
-                self.lookahead_detector = LookaheadBiasDetector()
-                tprint_debug("⚠️ Creating overfitting detector...")
-                self.overfitting_detector = OverfittingDetector()
-                tprint_debug("📊 Creating CV manager...")
-                self.cv_manager = CrossValidationManager()
-                tprint_debug("🎯 Creating HPO optimizer...")
-                self.hpo_optimizer = HyperparameterOptimizer()
-                tprint_success("✅ ML common utilities initialized")
-                self.logger.info("✅ ML common utilities initialized")
+                try:
+                    tprint_debug("🛡️ Creating validation framework...")
+                    self.validation_framework = get_validation_framework()
+                    tprint_debug("🔍 Creating lookahead detector...")
+                    self.lookahead_detector = LookaheadBiasDetector()
+                    tprint_debug("⚠️ Creating overfitting detector...")
+                    self.overfitting_detector = OverfittingDetector()
+                    tprint_debug("📊 Creating CV manager...")
+                    self.cv_manager = CrossValidationManager()
+                    tprint_debug("🎯 Creating HPO optimizer...")
+                    self.hpo_optimizer = HyperparameterOptimizer()
+                    self.ml_common_integrated = True
+                    tprint_success("✅ ML common utilities initialized")
+                    self.logger.info("✅ ML common utilities initialized")
+                except Exception as exc:
+                    tprint_warning(f"⚠️ ML common utilities partially unavailable: {exc}")
+                    self.logger.warning(f"⚠️ ML common utilities initialization issue: {exc}")
+                    self.validation_framework = None
+                    self.lookahead_detector = None
+                    self.overfitting_detector = None
+                    self.cv_manager = None
+                    self.hpo_optimizer = None
+                    self.ml_common_integrated = False
             else:
                 tprint_warning("⚠️ ML common utilities not available")
-                self.ml_common_ops = None
-                self.validation_framework = None
-                self.lookahead_detector = None
-                self.overfitting_detector = None
-                self.cv_manager = None
-                self.hpo_optimizer = None
                 self.logger.warning("⚠️ ML common utilities not available")
             
             # Initialize M1 optimizations
@@ -367,12 +376,12 @@ class TreeArchitectureSearchEngine:
             self.matrix_ops = None
             self.serializer = None
             self.klines_manager = None
-            self.ml_common_ops = None
             self.validation_framework = None
             self.lookahead_detector = None
             self.overfitting_detector = None
             self.cv_manager = None
             self.hpo_optimizer = None
+            self.ml_common_integrated = False
     
     def _initialize_m1_optimizations(self):
         """Initialize M1 hardware optimizations."""
@@ -417,7 +426,7 @@ class TreeArchitectureSearchEngine:
         if self.matrix_ops: status.append("MatrixOps")
         if self.serializer: status.append("Serialization")
         if self.klines_manager: status.append("DataManager")
-        if self.ml_common_ops: status.append("MLCommon")
+        if self.ml_common_integrated: status.append("MLCommon")
         if self.gpu_manager: status.append("M1GPU")
         if self.memory_optimizer: status.append("M1Memory")
         if self.cpu_optimizer: status.append("M1CPU")
@@ -962,7 +971,7 @@ def _prepare_enhanced_search_environment(self, train_data, validation_data, test
                 'matrix_ops': self.matrix_ops,
                 'serializer': self.serializer,
                 'klines_manager': self.klines_manager,
-                'ml_common_ops': self.ml_common_ops,
+                'ml_common_integrated': self.ml_common_integrated,
                 'validation_framework': self.validation_framework,
                 'lookahead_detector': self.lookahead_detector,
                 'overfitting_detector': self.overfitting_detector,
@@ -1081,7 +1090,7 @@ def _enhanced_save_search_results(self, result):
                 'data_quality_checks': self.common_utils is not None,
                 'math_validation': self.math_validator is not None,
                 'matrix_optimization': self.matrix_ops is not None,
-                'ml_common_integration': self.ml_common_ops is not None,
+                'ml_common_integration': self.ml_common_integrated,
                 'm1_optimization': self.gpu_manager is not None
             }
             

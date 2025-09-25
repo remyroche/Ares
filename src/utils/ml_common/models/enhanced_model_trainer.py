@@ -47,7 +47,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     ConfigurationError, ModelTrainingError
 )
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 # Import model evaluation components
 from .model_registry import (
@@ -160,7 +160,7 @@ class EnhancedModelTrainer:
             config: Enhanced training configuration
         """
         self.config = config
-        self.logger = system_logger.getChild('EnhancedModelTrainer')
+        self.logger = get_ml_logger('EnhancedModelTrainer')
         
         # Initialize post-training components
         self.evaluator = ModelEvaluator(EvaluationConfig(

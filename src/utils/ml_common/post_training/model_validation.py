@@ -44,7 +44,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     ConfigurationError, ModelTrainingError
 )
-from src.utils.logger import system_logger
+from src.utils.ml_common.logger import get_ml_logger
 
 # ML validation
 from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
@@ -188,7 +188,7 @@ class ModelValidator:
             config: Validation configuration
         """
         self.config = config
-        self.logger = system_logger.getChild('ModelValidator')
+        self.logger = get_ml_logger('ModelValidator')
         
         # Apply intensity scaling
         intensity_pct = get_intensity_from_environment()

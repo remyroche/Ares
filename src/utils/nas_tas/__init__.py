@@ -25,6 +25,16 @@ from .unified_multi_objective import (
     MultiObjectiveResult
 )
 
+from .search_space import (
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy,
+    create_default_nas_search_space,
+    create_tree_search_space
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -39,5 +49,12 @@ __all__ = [
     'PerformanceMetric',
     'EstimatorType',
     'OptimizationConfig',
-    'MultiObjectiveResult'
+    'MultiObjectiveResult',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
+    'OptimizationStrategy',
+    'create_default_nas_search_space',
+    'create_tree_search_space'
 ]

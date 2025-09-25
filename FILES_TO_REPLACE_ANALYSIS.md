@@ -172,9 +172,9 @@ Based on my analysis of the codebase, I've identified numerous files that contai
    - **Replacement**: Use `UnifiedSearchEngine` TAS strategies
    - **Status**: Can be replaced
 
-5. **`src/training/steps/market_analysis/tas_regime/search/bayesian_search.py`**
-   - **Size**: Unknown
-   - **Functionality**: Bayesian search for TAS
+5. **`src/utils/nas_tas/bayesian_search.py`** (moved from `src/training/steps/market_analysis/tas_regime/search/bayesian_search.py`)
+   - **Size**: 525 lines
+   - **Functionality**: Advanced Bayesian search for NAS and TAS with hardware optimization
    - **Replacement**: Use `UnifiedSearchEngine` Bayesian strategy
    - **Status**: Can be replaced
 

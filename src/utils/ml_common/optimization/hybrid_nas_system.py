@@ -269,7 +269,7 @@ class HybridNASSystem:
             # Import utilities for advanced analysis
             from src.utils.math_validation import safe_mean, safe_std, safe_correlation, validate_numeric_array
             from src.utils.common_operations import safe_divide, safe_weighted_average
-            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+            from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer
             
             # Validate inputs
             X_train = validate_numeric_array(X_train, "X_train")

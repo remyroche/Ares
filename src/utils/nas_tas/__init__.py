@@ -33,6 +33,23 @@ from .nas_feature_extractor import (
     extract_features_for_clustering
 )
 
+from .bayesian_search import (
+    BayesianTreeSearch,
+    TreeBayesianOptimizer,
+    TreeGaussianProcess,
+    BayesianConfig
+)
+
+from .search_space import (
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy,
+    create_default_nas_search_space,
+    create_tree_search_space
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -52,5 +69,16 @@ __all__ = [
     'NASFeatureConfig',
     'FeatureExtractionResult',
     'create_nas_feature_extractor',
-    'extract_features_for_clustering'
+    'extract_features_for_clustering',
+    'BayesianTreeSearch',
+    'TreeBayesianOptimizer',
+    'TreeGaussianProcess',
+    'BayesianConfig',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
+    'OptimizationStrategy',
+    'create_default_nas_search_space',
+    'create_tree_search_space'
 ]

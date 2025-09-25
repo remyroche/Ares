@@ -231,7 +231,7 @@ tas/
 │   └── continual_learning.py   # Continual learning
 ├── search/                  # Advanced search strategies
 │   ├── evolutionary_search.py   # Evolutionary algorithms
-│   ├── bayesian_search.py    # Bayesian optimization
+│   ├── (moved to src/utils/nas_tas/bayesian_search.py)    # Bayesian optimization
 │   ├── rl_search.py           # Reinforcement learning
 │   └── multi_objective_search.py # Multi-objective optimization
 ├── optimization/            # Hardware and performance optimization

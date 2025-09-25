@@ -47,7 +47,7 @@ try:
     )
     from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
     from src.utils.serialization_utils import UniversalSerializer
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+    from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
 except ImportError as e:
     # Fallback imports for development
     warnings.warn(f"Some shared utilities not available: {e}")

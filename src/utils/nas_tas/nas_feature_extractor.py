@@ -41,7 +41,7 @@ try:
         validate_positive, validate_range, safe_correlation, safe_covariance,
         safe_mean, safe_std, MathValidation
     )
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult
     )
     from src.utils.hardware.m1_gpu_utils import (

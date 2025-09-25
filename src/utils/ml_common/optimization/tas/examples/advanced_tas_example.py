@@ -20,17 +20,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import TAS components
-from src.utils.ml_common.optimization.tas import (
+from src.utils.nas_tas.tas import (
     TreeArchitectureSearchEngine, TASEngineConfig, 
     SearchStrategy, OptimizationMode
 )
-from src.utils.ml_common.optimization.tas.meta_learning import (
+from src.utils.nas_tas.tas.meta_learning import (
     TreeMetaLearning, MetaLearningConfig
 )
-from src.utils.ml_common.optimization.tas.regime_analysis import (
+from src.utils.nas_tas.tas.regime_analysis import (
     TreeRegimeAnalyzer
 )
-from src.utils.ml_common.optimization.tas.utils import (
+from src.utils.nas_tas.tas.utils import (
     TreeVisualizer, TreeLogger
 )
 

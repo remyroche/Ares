@@ -34,7 +34,7 @@ except ImportError:
     TPRINT_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.hardware import (
+    from src.utils.nas_tas.tas.hardware import (
         TreeHardwareAccelerator, CLVSAHardwareOptimizer
     )
     HARDWARE_ACCELERATION_AVAILABLE = True

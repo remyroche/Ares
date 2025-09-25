@@ -1,8 +1,17 @@
 """
 NAS Clustering Module
 
-This module provides NAS-based clustering functionality.
+This module provides NAS-based clustering functionality using agnostic clustering
+with neural-specific adaptations.
 """
 
-# This is a stub module to prevent import errors
-# The actual functionality is integrated into other modules
+from .core.nas_clusterer import NASClusterer, NASClusteringConfig, NASClusteringResult
+from .core.essential_nas_clusterer import EssentialNASClusterer, NASClustererConfig
+
+__all__ = [
+    'NASClusterer',
+    'NASClusteringConfig',
+    'NASClusteringResult',
+    'EssentialNASClusterer',
+    'NASClustererConfig'
+]

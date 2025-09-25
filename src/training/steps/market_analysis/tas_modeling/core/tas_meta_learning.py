@@ -552,7 +552,7 @@ class TASMetaLearning:
                 'recent_mean': float(np.mean(recent_performance)),
                 'older_mean': float(np.mean(older_performance)),
                 'trend_direction': 'improving' if np.mean(recent_performance) > np.mean(older_performance) else 'declining',
-                'trend_strength': float(abs(np.mean(recent_performance) - older_performance))),
+                'trend_strength': float(abs(np.mean(recent_performance) - np.mean(older_performance))),
                 'consistency': float(1.0 - np.std(recent_performance) / np.mean(recent_performance)) if np.mean(recent_performance) > 0 else 0.0
             }
             

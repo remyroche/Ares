@@ -28,7 +28,7 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.ml_common.vectorized_backtesting import VectorizedBacktestEngine, VectorizedBacktestConfig
 from src.utils.ml_common.cvlsa import CVLSAValidator
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.common_ml.backtesting.backtesting_engine import BacktestingEngine, BacktestingConfig
+from src.utils.nas_tas.backtesting_engine import BacktestingEngine, BacktestingConfig
 from src.utils.nas_tas.monte_carlo_engine import UnifiedMonteCarloEngine as MonteCarloEngine, MonteCarloConfig
 from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory

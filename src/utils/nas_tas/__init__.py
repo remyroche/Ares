@@ -1,8 +1,8 @@
 """
-Unified NAS/TAS Utilities
+NAS TAS (Neural Architecture Search - Tree Architecture Search) Utilities
 
-This module provides unified utilities for both Neural Architecture Search (NAS)
-and Tree Architecture Search (TAS) systems.
+This module provides common utilities for NAS and TAS operations including
+backtesting engines, regime detection, and optimization tools.
 """
 
 from .unified_evaluator import (
@@ -23,6 +23,14 @@ from .unified_multi_objective import (
     EstimatorType,
     OptimizationConfig,
     MultiObjectiveResult
+)
+
+from .nas_feature_extractor import (
+    NASFeatureExtractor,
+    NASFeatureConfig,
+    FeatureExtractionResult,
+    create_nas_feature_extractor,
+    extract_features_for_clustering
 )
 
 from .bayesian_search import (
@@ -49,6 +57,14 @@ from .risk_analysis import (
     RiskMetric
 )
 
+from .backtesting_engine import (
+    BacktestingEngine,
+    BacktestingConfig,
+    BacktestingResult,
+    BacktestingMode
+)
+
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -64,6 +80,11 @@ __all__ = [
     'EstimatorType',
     'OptimizationConfig',
     'MultiObjectiveResult',
+    'NASFeatureExtractor',
+    'NASFeatureConfig',
+    'FeatureExtractionResult',
+    'create_nas_feature_extractor',
+    'extract_features_for_clustering',
     'BayesianTreeSearch',
     'TreeBayesianOptimizer',
     'TreeGaussianProcess',
@@ -79,4 +100,9 @@ __all__ = [
     'RiskConfig',
     'RiskResult',
     'RiskMetric'
+    'create_tree_search_space'
+    'BacktestingEngine',
+    'BacktestingConfig', 
+    'BacktestingResult',
+    'BacktestingMode'
 ]

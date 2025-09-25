@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import TAS backtesting components
-from ..backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
+from src.utils.nas_tas.backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
 from src.utils.nas_tas.walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig, WalkForwardResult
 from src.utils.nas_tas.performance_attribution import PerformanceAttributor, AttributionConfig, AttributionResult
 from src.utils.nas_tas.risk_analysis import RiskAnalyzer, RiskConfig, RiskResult

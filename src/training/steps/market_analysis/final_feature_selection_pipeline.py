@@ -531,7 +531,9 @@ class MultiStageFeatureSelector:
     def _handle_insufficient_features(self, X: pd.DataFrame, y: pd.Series) -> FeatureSelectionResult:
         """Handle case where we don't have enough features."""
         
-        self.logger.warning("⚠️ Insufficient features for multi-stage selection")
+        warning_msg = f"Insufficient features for multi-stage selection: {len(X.columns)} features available, {self.config.stage_3_target} required"
+        tprint_warning(warning_msg)
+        self.logger.warning(f"⚠️ {warning_msg}")
         
         # Use all available features
         self.results.final_features = X.columns.tolist()

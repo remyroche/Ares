@@ -111,25 +111,23 @@
 - Apply `src/utils/monitoring_utils.py` for monitoring utilities
 - Use `src/utils/structured_logging.py` for structured logging
 
-### 12. Security & Data Protection
-- Implement `src/utils/security_framework.py` for security measures
-- Use `src/utils/data_access_protection.py` for data protection
-- Apply proper authentication and authorization patterns
-- Implement data encryption and secure communication
-
-### 13. Caching & State Management
-- Use `src/utils/caching.py` and `src/utils/unified_cache.py` for caching
+### 12. Caching & State Management (Hardware-Focused)
+- **PREFER HARDWARE/**: Use `src/utils/hardware/` tools for caching and state management:
+  - `unified_hardware_manager.py` - Hardware-aware caching strategies
+  - `advanced_memory_optimizer.py` - Memory-based caching optimization
+  - `m1_memory_optimizer.py` - M1-specific memory and caching optimizations
+- Use `src/utils/caching.py` and `src/utils/unified_cache.py` as fallbacks
 - Implement `src/utils/state_manager.py` for state management
-- Apply intelligent caching strategies for performance optimization
 - Use `src/utils/artifact_manager.py` for artifact management
+- Apply hardware-aware caching strategies for optimal performance
 
-### 14. Testing & Quality Assurance
+### 13. Testing & Quality Assurance
 - Implement comprehensive testing using `src/utils/testing/`
 - Use `src/utils/purged_kfold.py` for time series cross-validation
 - Apply proper test coverage and quality metrics
 - Implement automated testing pipelines
 
-### 15. Documentation & Reporting
+### 14. Documentation & Reporting
 - Use `src/utils/report_manager.py` and `src/utils/report_collector.py` for reporting
 - Implement `src/utils/explainability/` for model explainability
 - Generate comprehensive documentation for all modules
@@ -151,8 +149,7 @@ When refactoring any module, ensure:
 - [ ] Documentation is updated
 - [ ] Tests are added or updated
 - [ ] Configuration is properly managed
-- [ ] Security measures are implemented
-- [ ] Caching strategies are optimized
+- [ ] Hardware-optimized caching strategies are implemented
 - [ ] Observability is enhanced
 
 ## Code Quality Standards
@@ -166,7 +163,6 @@ When refactoring any module, ensure:
 - Follow the DRY (Don't Repeat Yourself) principle
 - Use design patterns appropriately
 - Implement proper resource cleanup
-- Follow security best practices
 
 ## Performance Targets
 

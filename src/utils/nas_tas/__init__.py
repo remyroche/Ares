@@ -159,14 +159,6 @@ from .risk_analysis.risk_analysis import (
     RiskMetric
 )
 
-# Import backtesting engine
-from .backtesting_engine import (
-    BacktestingEngine,
-    BacktestingConfig,
-    BacktestingResult,
-    BacktestingMode
-)
-
 # Import evolutionary search
 from .evolutionary_search import (
     EvolutionaryTreeSearch,
@@ -249,6 +241,19 @@ from .ensemble_optimizer import (
     OptimizationConfig
 )
 
+from .architectures.neural import (
+    NeuralArchitecture,
+    LayerSpec,
+)
+
+from .search_strategies import (
+    StrategyRegistry as SearchStrategyRegistry,
+    RandomSearchStrategy as PluginRandomSearchStrategy,
+    GridSearchStrategy as PluginGridSearchStrategy,
+    OptunaSearchStrategy,
+    HyperbandSearchStrategy,
+)
+
 
 # Export all main classes and functions. Components that are primarily intended for
 # live trading (e.g., uncertainty estimation or dynamic ensemble management) are
@@ -270,10 +275,13 @@ __all__ = [
     'RiskConfig',
     'RiskResult',
     'RiskMetric',
-    'BacktestingEngine',
-    'BacktestingConfig', 
-    'BacktestingResult',
-    'BacktestingMode',
+    'NeuralArchitecture',
+    'LayerSpec',
+    'SearchStrategyRegistry',
+    'PluginRandomSearchStrategy',
+    'PluginGridSearchStrategy',
+    'OptunaSearchStrategy',
+    'HyperbandSearchStrategy',
     'EvolutionaryTreeSearch',
     'TreeGeneticAlgorithm',
     'TreeNSGA2',

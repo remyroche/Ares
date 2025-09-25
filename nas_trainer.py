@@ -38,10 +38,17 @@ import warnings
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import cross_val_score, StratifiedKFold, train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    r2_score,
+    mean_squared_error,
+)
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neural_network import MLPClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 
 from src.utils.nas_tas.shared_logging import (
@@ -67,6 +74,7 @@ from src.utils.nas_tas.shared_serialization import (
     ParquetSerializer,
     UniversalSerializer,
 )
+from src.utils.nas_tas.architectures.neural import NeuralArchitecture, LayerSpec
 
 # Import unified components with error handling
 try:
@@ -189,38 +197,63 @@ except ImportError as e:
             tprint_error(f"Cross-validation failed: {e}")
             return {'mean_score': 0.0, 'std_score': 0.0, 'scores': []}
     
-    def create_model(model_type='random_forest', **params):
+    def _infer_task_type(y) -> str:
         try:
+            if hasattr(y, "dtype"):
+                import pandas as pd
+
+                if pd.api.types.is_float_dtype(y.dtype) and len(pd.unique(y)) > 10:
+                    return "regression"
+            unique_values = np.unique(y)
+            if len(unique_values) > 20 and np.issubdtype(unique_values.dtype, np.floating):
+                return "regression"
+        except Exception:
+            pass
+        return "classification"
+
+    def create_model(model_type='random_forest', *, task_type: Optional[str] = None, **params):
+        fallback_task = task_type or params.get('task_type', 'classification')
+        params.pop('task_type', None)
+        try:
+            task = fallback_task
             if model_type == 'random_forest':
-                return RandomForestClassifier(**params)
-            elif model_type == 'mlp':
+                estimator_cls = RandomForestRegressor if task == 'regression' else RandomForestClassifier
+                return estimator_cls(**params)
+            if model_type == 'mlp':
                 return MLPClassifier(**params)
-            elif model_type == 'logistic':
+            if model_type == 'logistic':
                 return LogisticRegression(**params)
-            else:
-                return RandomForestClassifier(**params)
+            return RandomForestClassifier(**params)
         except Exception as e:
             tprint_error(f"Model creation failed: {e}")
-            return RandomForestClassifier()
-    
+            return RandomForestRegressor() if fallback_task == 'regression' else RandomForestClassifier()
+
     def train_model(model, X, y):
         try:
             return model.fit(X, y)
         except Exception as e:
             tprint_error(f"Model training failed: {e}")
             return model
-    
-    def evaluate_model(model, X, y):
+
+    def evaluate_model(model, X, y, task_type: Optional[str] = None):
+        task = task_type or _infer_task_type(y)
         try:
             y_pred = model.predict(X)
+            if task == 'regression':
+                return {
+                    'r2': float(r2_score(y, y_pred)),
+                    'mse': float(mean_squared_error(y, y_pred)),
+                }
             return {
-                'accuracy': accuracy_score(y, y_pred),
-                'precision': precision_score(y, y_pred, average='weighted', zero_division=0),
-                'recall': recall_score(y, y_pred, average='weighted', zero_division=0),
-                'f1': f1_score(y, y_pred, average='weighted', zero_division=0)
+                'accuracy': float(accuracy_score(y, y_pred)),
+                'precision': float(precision_score(y, y_pred, average='weighted', zero_division=0)),
+                'recall': float(recall_score(y, y_pred, average='weighted', zero_division=0)),
+                'f1': float(f1_score(y, y_pred, average='weighted', zero_division=0)),
             }
         except Exception as e:
             tprint_error(f"Model evaluation failed: {e}")
+            if task == 'regression':
+                return {'r2': 0.0, 'mse': float('inf')}
             return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
 
 # Setup logging with comprehensive error handling
@@ -1004,8 +1037,9 @@ class NASTrainer:
                 0.5
             ))
             neurons = max(self.config.min_neurons, min(neurons, self.config.max_neurons))
-            
+
             layers.append({
+                'type': 'dense',
                 'neurons': neurons,
                 'activation': np.random.choice(self.config.activation_functions),
                 'dropout': np.random.choice(self.config.dropout_rates)
@@ -1031,86 +1065,151 @@ class NASTrainer:
             'learning_rate': learning_rate,
             'batch_size': batch_size,
             'optimizer': self.config.optimizer,
-            'n_layers': n_layers
+            'n_layers': n_layers,
+            'backend': 'keras',
+            'task_type': 'classification'
         }
     
-    def create_model_from_architecture(self, architecture: Dict[str, Any], 
+    def create_model_from_architecture(self, architecture: Dict[str, Any],
                                      input_shape: int) -> Any:
-        """
-        Create a neural network model from architecture configuration.
-        
-        Args:
-            architecture: Architecture configuration
-            input_shape: Input feature dimension
-            
-        Returns:
-            Compiled neural network model
-        """
+        """Create a neural network model from architecture configuration."""
+
+        task_type = architecture.get('task_type', 'classification')
+        backend = architecture.get('backend')
+
+        def _layer_to_spec(layer: Any) -> LayerSpec:
+            if isinstance(layer, LayerSpec):
+                return layer
+            if not isinstance(layer, dict):
+                return LayerSpec(type='dense', units=int(layer))
+            additional_args = {
+                key: value
+                for key, value in layer.items()
+                if key not in {'type', 'units', 'neurons', 'activation', 'dropout', 'kernel_size', 'stride'}
+            }
+            return LayerSpec(
+                type=layer.get('type', 'dense'),
+                units=layer.get('units', layer.get('neurons')),
+                activation=layer.get('activation'),
+                dropout=layer.get('dropout'),
+                kernel_size=layer.get('kernel_size'),
+                stride=layer.get('stride'),
+                additional_args=additional_args,
+            )
+
+        layer_specs = [_layer_to_spec(layer) for layer in architecture.get('layers', [])]
+        if not layer_specs:
+            layer_specs.append(LayerSpec(type='dense', units=max(32, input_shape), activation='relu'))
+        output_units = architecture.get('output_units', 1)
+        output_activation = architecture.get('output_activation')
+        if output_activation is None:
+            output_activation = 'sigmoid' if task_type == 'classification' else None
+        if not layer_specs or (layer_specs[-1].units != output_units):
+            layer_specs.append(LayerSpec(type='dense', units=output_units, activation=output_activation))
+
         try:
-            # Try to import TensorFlow/Keras
+            neural_architecture = NeuralArchitecture(
+                input_shape=[input_shape],
+                layers=layer_specs,
+                task_type=task_type,
+                preferred_backend=backend or 'keras',
+            )
+            model = neural_architecture.build(backend=backend)
+
+            try:  # Compile if this is a Keras model
+                from tensorflow import keras as tf_keras  # type: ignore
+            except Exception:
+                tf_keras = None  # type: ignore
+
+            if tf_keras is not None and isinstance(model, tf_keras.Model):
+                optimizer_name = architecture.get('optimizer', 'adam')
+                learning_rate = architecture.get('learning_rate', 0.001)
+                optimizer_cls = getattr(
+                    tf_keras.optimizers,
+                    optimizer_name[0].upper() + optimizer_name[1:],
+                    tf_keras.optimizers.Adam,
+                )
+                optimizer = optimizer_cls(learning_rate=learning_rate)
+                loss = 'binary_crossentropy' if task_type == 'classification' else 'mse'
+                metrics = ['accuracy'] if task_type == 'classification' else ['mse']
+                model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+            return model
+
+        except Exception as exc:
+            tprint_warning(
+                f"NeuralArchitecture build failed ({exc}); falling back to legacy model constructors"
+            )
+
+        # Legacy TensorFlow/Keras fallback
+        try:
             import tensorflow as tf
             from tensorflow.keras.models import Sequential
             from tensorflow.keras.layers import Dense, Dropout
             from tensorflow.keras.optimizers import Adam
-            
-            # Create model
+
             model = Sequential()
-            
-            # Add input layer
-            model.add(Dense(
-                architecture['layers'][0]['neurons'],
-                activation=architecture['layers'][0]['activation'],
-                input_shape=(input_shape,)
-            ))
-            
-            if architecture['layers'][0]['dropout'] > 0:
-                model.add(Dropout(architecture['layers'][0]['dropout']))
-            
-            # Add hidden layers
-            for layer_config in architecture['layers'][1:-1]:
-                model.add(Dense(
-                    layer_config['neurons'],
-                    activation=layer_config['activation']
-                ))
-                if layer_config['dropout'] > 0:
-                    model.add(Dropout(layer_config['dropout']))
-            
-            # Add output layer
-            model.add(Dense(1, activation='sigmoid'))
-            
-            # Compile model
-            optimizer = Adam(learning_rate=architecture['learning_rate'])
-            model.compile(
-                optimizer=optimizer,
-                loss='binary_crossentropy',
-                metrics=['accuracy']
+            first_layer = layer_specs[0]
+            model.add(
+                Dense(
+                    first_layer.units or input_shape,
+                    activation=first_layer.activation,
+                    input_shape=(input_shape,),
+                )
             )
-            
+            if first_layer.dropout:
+                model.add(Dropout(first_layer.dropout))
+
+            for hidden_layer in layer_specs[1:-1]:
+                model.add(
+                    Dense(
+                        hidden_layer.units or input_shape,
+                        activation=hidden_layer.activation,
+                    )
+                )
+                if hidden_layer.dropout:
+                    model.add(Dropout(hidden_layer.dropout))
+
+            output_layer = layer_specs[-1]
+            model.add(
+                Dense(
+                    output_layer.units or 1,
+                    activation=output_layer.activation or ('sigmoid' if task_type == 'classification' else None),
+                )
+            )
+
+            optimizer = Adam(learning_rate=architecture.get('learning_rate', 0.001))
+            loss = 'binary_crossentropy' if task_type == 'classification' else 'mse'
+            metrics = ['accuracy'] if task_type == 'classification' else ['mse']
+            model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
             return model
-            
+
         except ImportError:
-            # Fallback to sklearn MLPClassifier
-            from sklearn.neural_network import MLPClassifier
-            
-            # Extract architecture parameters
-            hidden_layer_sizes = tuple(layer['neurons'] for layer in architecture['layers'][:-1])
-            activation = architecture['layers'][0]['activation']
-            learning_rate_init = architecture['learning_rate']
-            batch_size = architecture['batch_size']
-            
-            model = MLPClassifier(
-                hidden_layer_sizes=hidden_layer_sizes,
-                activation=activation,
-                learning_rate_init=learning_rate_init,
-                batch_size=batch_size,
-                max_iter=self.config.max_epochs,
-                early_stopping=True,
-                validation_fraction=0.1,
-                n_iter_no_change=self.config.early_stopping_patience,
-                random_state=42
-            )
-            
-            return model
+            pass
+
+        # Final fallback to sklearn MLPClassifier
+        from sklearn.neural_network import MLPClassifier
+
+        hidden_layer_sizes = tuple(
+            spec.units or input_shape for spec in layer_specs[:-1]
+        )
+        activation = layer_specs[0].activation or 'relu'
+        learning_rate_init = architecture.get('learning_rate', 0.001)
+        batch_size = architecture.get('batch_size', 32)
+
+        model = MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes,
+            activation=activation,
+            learning_rate_init=learning_rate_init,
+            batch_size=batch_size,
+            max_iter=self.config.max_epochs,
+            early_stopping=True,
+            validation_fraction=0.1,
+            n_iter_no_change=self.config.early_stopping_patience,
+            random_state=42
+        )
+
+        return model
     
     def train_architecture(self, architecture: Dict[str, Any], 
                           data_splits: Dict[str, Any]) -> Dict[str, Any]:

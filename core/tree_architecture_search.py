@@ -36,7 +36,7 @@ from src.utils.serialization_utils import JSONSerializer
 
 # Import ML optimization utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer,
         BayesianTPEConfig,
     )
@@ -64,8 +64,11 @@ class TreeArchitectureConfig:
     
     # Search parameters
     n_trials: int = 50
-    optimization_strategy: str = "grid_tpe"  # grid, tpe, grid_tpe, evolutionary
+    optimization_strategy: str = "grid_tpe"  # grid, tpe, grid_tpe, bayesian, bayesian_forest, evolutionary
     early_stopping_patience: int = 10
+    tpe_backend: str = "optuna"
+    tpe_enable_grid_warmup: bool = True
+    random_state: int = 42
     
     # Tree parameter ranges
     min_trees: int = 10
@@ -226,6 +229,10 @@ class TreeArchitectureSearch:
             best_candidate = self._run_grid_search(X_train, y_train, X_val, y_val)
         elif self.config.optimization_strategy == "bayesian":
             best_candidate = self._run_bayesian_search(X_train, y_train, X_val, y_val)
+        elif self.config.optimization_strategy == "bayesian_forest":
+            best_candidate = self._run_bayesian_search(
+                X_train, y_train, X_val, y_val, backend_override="skopt_forest"
+            )
         elif self.config.optimization_strategy == "evolutionary":
             best_candidate = self._run_evolutionary_search(X_train, y_train, X_val, y_val)
         else:
@@ -330,7 +337,10 @@ class TreeArchitectureSearch:
 
         tprint_info(f"Optimizing {n_trials} trials with Bayesian TPE")
 
-        optimizer = self._get_tpe_optimizer(n_trials=n_trials, enable_grid=False)
+        optimizer = self._get_tpe_optimizer(
+            n_trials=n_trials,
+            enable_grid=self.config.tpe_enable_grid_warmup,
+        )
         best_candidate = initial_best
         best_score = initial_best.overall_score
         def objective(params: Dict[str, Any],
@@ -861,14 +871,24 @@ class TreeArchitectureSearch:
 
         return child_params
 
-    def _get_tpe_optimizer(self, n_trials: int, enable_grid: bool) -> BayesianTPEOptimizer:
+    def _get_tpe_optimizer(
+        self,
+        n_trials: int,
+        enable_grid: bool,
+        backend: Optional[str] = None,
+    ) -> BayesianTPEOptimizer:
         """Return configured Bayesian TPE optimizer."""
+        backend_to_use = backend or self.config.tpe_backend
         config = BayesianTPEConfig(
             n_trials=max(1, n_trials),
-            enable_grid_search=enable_grid,
+            enable_grid_search=enable_grid and self.config.tpe_enable_grid_warmup,
             timeout_seconds=None,
             enable_early_stopping=True,
-            early_stopping_patience=self.config.early_stopping_patience
+            early_stopping_patience=self.config.early_stopping_patience,
+            backend=backend_to_use,
+            enable_parallel=self.config.enable_parallel_processing,
+            max_workers=self.config.max_parallel_jobs,
+            random_state=self.config.random_state
         )
         self.tpe_optimizer = BayesianTPEOptimizer(config)
         return self.tpe_optimizer
@@ -894,8 +914,14 @@ class TreeArchitectureSearch:
             X_train, y_train, X_val, y_val, remaining_trials, initial_candidate
         )
 
-    def _run_bayesian_search(self, X_train: np.ndarray, y_train: np.ndarray,
-                              X_val: np.ndarray, y_val: np.ndarray) -> TreeArchitectureCandidate:
+    def _run_bayesian_search(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        backend_override: Optional[str] = None,
+    ) -> TreeArchitectureCandidate:
         """Run Bayesian optimization leveraging the shared optimizer."""
         if not TPE_AVAILABLE:
             tprint_warning("Bayesian optimizer unavailable; falling back to random search")
@@ -903,7 +929,8 @@ class TreeArchitectureSearch:
 
         optimizer = self._get_tpe_optimizer(
             n_trials=self.config.n_trials,
-            enable_grid=True
+            enable_grid=True,
+            backend=backend_override
         )
 
         best_candidate: Optional[TreeArchitectureCandidate] = None

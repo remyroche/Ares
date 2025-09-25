@@ -372,7 +372,7 @@ class ArchitectureSearchConfig:
     """Configuration for architecture search parameters."""
     
     # Search strategy
-    search_strategy: str = "evolutionary"  # evolutionary, random, grid, bayesian
+    search_strategy: str = "evolutionary"  # evolutionary, random, grid, bayesian, bayesian_tpe, random_forest
     max_generations: int = 50
     population_size: int = 20
     mutation_rate: float = 0.1

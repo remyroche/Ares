@@ -119,6 +119,70 @@ from .tas import (
     MarketRegime
 )
 
+# Import search space utilities
+from .search_space import (
+    create_default_nas_search_space,
+    create_tree_search_space,
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy
+)
+
+# Import risk analysis
+from .risk_analysis.risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
+# Import backtesting engine
+from .backtesting_engine import (
+    BacktestingEngine,
+    BacktestingConfig,
+    BacktestingResult,
+    BacktestingMode
+)
+
+# Import evolutionary search
+from .evolutionary_search import (
+    EvolutionaryTreeSearch,
+    TreeGeneticAlgorithm,
+    TreeNSGA2,
+    EvolutionaryConfig
+)
+
+# Import uncertainty estimation
+from .uncertainty_estimation import (
+    TreeUncertaintyEstimator,
+    TreeEnsembleUncertainty,
+    TreeBayesianUncertainty,
+    UncertaintyConfig
+)
+
+# Import unified evaluator
+from .unified_evaluator import (
+    UnifiedEvaluator,
+    EvaluationConfig,
+    EvaluationResult,
+    ModelType,
+    EvaluationMode,
+    MetricType
+)
+
+# Import unified hardware manager
+from .unified_hardware import (
+    UnifiedHardwareManager,
+    HardwareAccelerationConfig,
+    WorkloadType,
+    OptimizationLevel,
+    PerformanceMetrics,
+    create_unified_hardware_manager,
+    get_hardware_manager
+)
+
 # Import Hybrid NAS System
 from .hybrid_nas_system import (
     HybridNASSystem,
@@ -135,6 +199,10 @@ __all__ = [
     'OptimizationStrategy',
     'create_default_nas_search_space',
     'create_tree_search_space',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
     'RiskAnalyzer',
     'RiskConfig',
     'RiskResult',
@@ -155,6 +223,19 @@ __all__ = [
     'TreeReliabilityEstimator',
     'TreeCalibrationScorer',
     'ConfidenceConfig',
+    'UnifiedEvaluator',
+    'EvaluationConfig',
+    'EvaluationResult',
+    'ModelType',
+    'EvaluationMode',
+    'MetricType',
+    'UnifiedHardwareManager',
+    'HardwareAccelerationConfig',
+    'WorkloadType',
+    'OptimizationLevel',
+    'PerformanceMetrics',
+    'create_unified_hardware_manager',
+    'get_hardware_manager',
     
     # NAS modules
     'NeuralArchitectureSearch',

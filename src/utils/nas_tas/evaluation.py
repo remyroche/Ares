@@ -5,8 +5,8 @@ Unified Evaluation Framework - Redirected to New Implementation
 This module redirects to the new unified evaluation framework.
 """
 
-# Redirect to the new unified evaluator
-from src.utils.nas_tas import (
+# Import directly from unified_evaluator to avoid circular imports
+from .unified_evaluator import (
     UnifiedEvaluator,
     EvaluationConfig,
     EvaluationResult,

@@ -129,15 +129,309 @@ class BasePerformanceEstimator:
 
     def extract_features(self, architecture: Any) -> ArchitectureFeatures:
         """Extract features from an architecture."""
-        raise NotImplementedError("Subclasses must implement extract_features")
+        try:
+            features = ArchitectureFeatures()
+            
+            # Basic architecture analysis
+            if hasattr(architecture, 'layers'):
+                # Neural network architecture
+                features.architecture_type = "neural"
+                features.n_layers = len(architecture.layers)
+                
+                # Analyze layers
+                layer_sizes = []
+                for layer in architecture.layers:
+                    if hasattr(layer, 'units'):
+                        layer_sizes.append(layer.units)
+                    elif hasattr(layer, 'filters'):
+                        layer_sizes.append(layer.filters)
+                    else:
+                        layer_sizes.append(128)  # Default size
+                
+                if layer_sizes:
+                    features.max_layer_size = max(layer_sizes)
+                    features.avg_layer_size = sum(layer_sizes) / len(layer_sizes)
+                    features.total_parameters = sum(layer_sizes)
+                
+                # Count layer types
+                for layer in architecture.layers:
+                    layer_type = getattr(layer, 'type', 'unknown').lower()
+                    if 'conv' in layer_type:
+                        features.n_conv_layers += 1
+                    elif 'lstm' in layer_type or 'gru' in layer_type:
+                        features.n_recurrent_layers += 1
+                    elif 'attention' in layer_type:
+                        features.n_attention_layers += 1
+                    elif 'batch_norm' in layer_type:
+                        features.has_batch_norm = True
+                    elif 'dropout' in layer_type:
+                        features.has_dropout = True
+                
+                # Check for residual connections
+                if hasattr(architecture, 'connections'):
+                    features.n_connections = len(architecture.connections)
+                    for conn in architecture.connections:
+                        if conn.get('type') == 'residual':
+                            features.has_residual_connections = True
+                            features.n_residual_connections += 1
+                        elif conn.get('type') == 'skip':
+                            features.n_skip_connections += 1
+                
+                # Calculate complexity
+                features.complexity_score = (
+                    features.n_layers * 0.1 +
+                    features.total_parameters * 0.001 +
+                    features.n_conv_layers * 0.2 +
+                    features.n_recurrent_layers * 0.3 +
+                    features.n_attention_layers * 0.4
+                )
+                
+            elif hasattr(architecture, 'trees'):
+                # Tree architecture
+                features.architecture_type = "tree"
+                features.n_trees = len(architecture.trees)
+                
+                # Analyze trees
+                tree_depths = []
+                for tree in architecture.trees:
+                    if hasattr(tree, 'depth'):
+                        tree_depths.append(tree.depth)
+                    else:
+                        tree_depths.append(1)  # Default depth
+                
+                if tree_depths:
+                    features.max_tree_depth = max(tree_depths)
+                    features.avg_tree_depth = sum(tree_depths) / len(tree_depths)
+                
+                # Check ensemble methods
+                for tree in architecture.trees:
+                    tree_type = getattr(tree, 'tree_type', 'single').lower()
+                    if 'gradient' in tree_type or 'xgboost' in tree_type:
+                        features.has_boosting = True
+                    elif 'random' in tree_type or 'forest' in tree_type:
+                        features.has_bagging = True
+                
+                # Calculate complexity
+                features.complexity_score = (
+                    features.n_trees * 0.1 +
+                    features.max_tree_depth * 0.2 +
+                    (1.0 if features.has_boosting else 0.0) * 0.3 +
+                    (1.0 if features.has_bagging else 0.0) * 0.2
+                )
+            
+            # Calculate memory and training time estimates
+            features.memory_estimate = features.total_parameters * 4 / (1024 * 1024)  # MB
+            features.training_time_estimate = features.complexity_score * 10  # seconds
+            
+            # Generate architecture hash
+            arch_str = str(architecture)
+            features.architecture_hash = hashlib.md5(arch_str.encode()).hexdigest()[:16]
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Feature extraction failed: {e}")
+            # Return default features
+            return ArchitectureFeatures(
+                architecture_type="unknown",
+                complexity_score=1.0,
+                memory_estimate=1.0,
+                training_time_estimate=10.0
+            )
 
     def predict_performance(self, architecture: Any) -> PerformancePrediction:
         """Predict performance of an architecture."""
-        raise NotImplementedError("Subclasses must implement predict_performance")
+        try:
+            if not self.is_trained or self.model is None:
+                # Return default prediction if not trained
+                return PerformancePrediction(
+                    predicted_value=0.5,
+                    confidence=0.1,
+                    prediction_time=0.001,
+                    features_used=ArchitectureFeatures(),
+                    model_type="untrained"
+                )
+            
+            # Extract features from architecture
+            features = self.extract_features(architecture)
+            
+            # Convert features to array for prediction
+            feature_array = np.array([
+                features.n_layers,
+                features.total_parameters,
+                features.max_layer_size,
+                features.avg_layer_size,
+                features.depth,
+                features.width,
+                features.complexity_score,
+                features.memory_estimate,
+                features.training_time_estimate,
+                features.n_conv_layers,
+                features.n_recurrent_layers,
+                features.n_attention_layers,
+                float(features.has_residual_connections),
+                float(features.has_batch_norm),
+                float(features.has_dropout),
+                features.activation_complexity,
+                features.n_trees,
+                features.max_tree_depth,
+                features.avg_tree_depth,
+                float(features.has_boosting),
+                float(features.has_bagging),
+                features.n_connections,
+                features.n_skip_connections,
+                features.n_residual_connections,
+                features.connection_density
+            ]).reshape(1, -1)
+            
+            # Scale features if scaler is available
+            if hasattr(self.feature_scaler, 'transform'):
+                try:
+                    feature_array = self.feature_scaler.transform(feature_array)
+                except:
+                    pass  # Use unscaled features if scaling fails
+            
+            # Make prediction
+            start_time = time.time()
+            predicted_value = self.model.predict(feature_array)[0]
+            prediction_time = time.time() - start_time
+            
+            # Calculate confidence based on model type
+            confidence = 0.5  # Default confidence
+            if hasattr(self.model, 'predict_proba'):
+                try:
+                    proba = self.model.predict_proba(feature_array)[0]
+                    confidence = max(proba) if len(proba) > 1 else proba[0]
+                except:
+                    pass
+            elif hasattr(self.model, 'score'):
+                try:
+                    confidence = min(0.9, max(0.1, self.model.score(feature_array, [predicted_value])))
+                except:
+                    pass
+            
+            return PerformancePrediction(
+                predicted_value=float(predicted_value),
+                confidence=float(confidence),
+                prediction_time=prediction_time,
+                features_used=features,
+                model_type=self.estimator_type.value
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Performance prediction failed: {e}")
+            # Return default prediction on error
+            return PerformancePrediction(
+                predicted_value=0.5,
+                confidence=0.1,
+                prediction_time=0.001,
+                features_used=ArchitectureFeatures(),
+                model_type="error"
+            )
 
     def train(self, architectures: List[ArchitectureFeatures], performances: List[float]) -> Dict[str, float]:
         """Train the performance estimator."""
-        raise NotImplementedError("Subclasses must implement train")
+        try:
+            if len(architectures) != len(performances):
+                raise ValueError("Number of architectures must match number of performances")
+            
+            if len(architectures) < 2:
+                self.logger.warning("Not enough data for training, using default model")
+                return {"error": "insufficient_data"}
+            
+            # Convert features to arrays
+            X = []
+            for arch in architectures:
+                feature_array = np.array([
+                    arch.n_layers,
+                    arch.total_parameters,
+                    arch.max_layer_size,
+                    arch.avg_layer_size,
+                    arch.depth,
+                    arch.width,
+                    arch.complexity_score,
+                    arch.memory_estimate,
+                    arch.training_time_estimate,
+                    arch.n_conv_layers,
+                    arch.n_recurrent_layers,
+                    arch.n_attention_layers,
+                    float(arch.has_residual_connections),
+                    float(arch.has_batch_norm),
+                    float(arch.has_dropout),
+                    arch.activation_complexity,
+                    arch.n_trees,
+                    arch.max_tree_depth,
+                    arch.avg_tree_depth,
+                    float(arch.has_boosting),
+                    float(arch.has_bagging),
+                    arch.n_connections,
+                    arch.n_skip_connections,
+                    arch.n_residual_connections,
+                    arch.connection_density
+                ])
+                X.append(feature_array)
+            
+            X = np.array(X)
+            y = np.array(performances)
+            
+            # Scale features
+            X_scaled = self.feature_scaler.fit_transform(X)
+            
+            # Train model based on estimator type
+            start_time = time.time()
+            
+            if self.estimator_type == EstimatorType.LINEAR_REGRESSION:
+                self.model = LinearRegression()
+            elif self.estimator_type == EstimatorType.RANDOM_FOREST:
+                self.model = RandomForestRegressor(n_estimators=100, random_state=42)
+            elif self.estimator_type == EstimatorType.GRADIENT_BOOSTING:
+                self.model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+            elif self.estimator_type == EstimatorType.GAUSSIAN_PROCESS:
+                kernel = ConstantKernel(1.0) * RBF(1.0) + WhiteKernel(1.0)
+                self.model = GaussianProcessRegressor(kernel=kernel, random_state=42)
+            elif self.estimator_type == EstimatorType.SUPPORT_VECTOR:
+                self.model = SVR(kernel='rbf', C=1.0, gamma='scale')
+            else:
+                # Default to linear regression
+                self.model = LinearRegression()
+            
+            # Fit the model
+            self.model.fit(X_scaled, y)
+            
+            training_time = time.time() - start_time
+            
+            # Calculate training metrics
+            y_pred = self.model.predict(X_scaled)
+            mse = mean_squared_error(y, y_pred)
+            r2 = r2_score(y, y_pred)
+            
+            # Cross-validation if enough data
+            cv_scores = []
+            if len(X_scaled) >= 5:
+                try:
+                    cv_scores = cross_val_score(self.model, X_scaled, y, cv=min(5, len(X_scaled)), scoring='r2')
+                except:
+                    pass
+            
+            # Update training history
+            self.training_history.architectures.extend(architectures)
+            self.training_history.performances.extend(performances)
+            self.training_history.training_times.append(training_time)
+            
+            self.is_trained = True
+            
+            return {
+                "training_time": training_time,
+                "mse": mse,
+                "r2": r2,
+                "cv_mean": np.mean(cv_scores) if cv_scores else 0.0,
+                "cv_std": np.std(cv_scores) if cv_scores else 0.0,
+                "n_samples": len(architectures)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Training failed: {e}")
+            return {"error": str(e)}
 
     def save(self, filepath: str) -> bool:
         """Save the trained estimator."""

@@ -139,15 +139,380 @@ class BaseConstraintValidator:
 
     def validate(self, architecture: Any) -> ConstraintValidationResult:
         """Validate an architecture against all constraints."""
-        raise NotImplementedError("Subclasses must implement validate")
+        start_time = time.time()
+        violations = []
+        warnings = []
+        info = []
+        
+        try:
+            # Check all constraint types
+            constraint_types = [
+                ConstraintType.LAYER_COUNT,
+                ConstraintType.PARAMETER_COUNT,
+                ConstraintType.MEMORY_USAGE,
+                ConstraintType.TRAINING_TIME,
+                ConstraintType.CONNECTION_VALIDITY,
+                ConstraintType.GRADIENT_FLOW,
+                ConstraintType.ARCHITECTURE_COMPLEXITY,
+                ConstraintType.RESOURCE_EFFICIENCY,
+                ConstraintType.NUMERICAL_STABILITY,
+                ConstraintType.PRACTICALITY
+            ]
+            
+            for constraint_type in constraint_types:
+                violation = self.check_single_constraint(architecture, constraint_type)
+                if violation:
+                    if violation.severity == ConstraintSeverity.ERROR:
+                        violations.append(violation)
+                    elif violation.severity == ConstraintSeverity.WARNING:
+                        warnings.append(violation)
+                    else:
+                        info.append(violation)
+            
+            # Determine overall validity
+            is_valid = len(violations) == 0
+            
+            validation_time = time.time() - start_time
+            
+            return ConstraintValidationResult(
+                is_valid=is_valid,
+                violations=violations,
+                warnings=warnings,
+                info=info,
+                validation_time=validation_time,
+                metadata={
+                    "total_constraints_checked": len(constraint_types),
+                    "system_info": self._get_system_info()
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Constraint validation failed: {e}")
+            validation_time = time.time() - start_time
+            return ConstraintValidationResult(
+                is_valid=False,
+                violations=[ConstraintViolation(
+                    constraint_type=ConstraintType.PRACTICALITY,
+                    severity=ConstraintSeverity.ERROR,
+                    message=f"Validation failed: {str(e)}",
+                    value=0.0,
+                    threshold=1.0
+                )],
+                warnings=[],
+                info=[],
+                validation_time=validation_time,
+                metadata={"error": str(e)}
+            )
 
     def check_single_constraint(self, architecture: Any, constraint_type: ConstraintType) -> Optional[ConstraintViolation]:
         """Check a single constraint type."""
-        raise NotImplementedError("Subclasses must implement check_single_constraint")
+        try:
+            if constraint_type == ConstraintType.LAYER_COUNT:
+                return self._check_layer_count(architecture)
+            elif constraint_type == ConstraintType.PARAMETER_COUNT:
+                return self._check_parameter_count(architecture)
+            elif constraint_type == ConstraintType.MEMORY_USAGE:
+                return self._check_memory_usage(architecture)
+            elif constraint_type == ConstraintType.TRAINING_TIME:
+                return self._check_training_time(architecture)
+            elif constraint_type == ConstraintType.CONNECTION_VALIDITY:
+                return self._check_connection_validity(architecture)
+            elif constraint_type == ConstraintType.GRADIENT_FLOW:
+                return self._check_gradient_flow(architecture)
+            elif constraint_type == ConstraintType.ARCHITECTURE_COMPLEXITY:
+                return self._check_architecture_complexity(architecture)
+            elif constraint_type == ConstraintType.RESOURCE_EFFICIENCY:
+                return self._check_resource_efficiency(architecture)
+            elif constraint_type == ConstraintType.NUMERICAL_STABILITY:
+                return self._check_numerical_stability(architecture)
+            elif constraint_type == ConstraintType.PRACTICALITY:
+                return self._check_practicality(architecture)
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Constraint check failed for {constraint_type}: {e}")
+            return ConstraintViolation(
+                constraint_type=constraint_type,
+                severity=ConstraintSeverity.ERROR,
+                message=f"Constraint check failed: {str(e)}",
+                value=0.0,
+                threshold=1.0
+            )
 
     def get_constraint_summary(self) -> Dict[str, Any]:
         """Get a summary of all constraints."""
-        raise NotImplementedError("Subclasses must implement get_constraint_summary")
+        try:
+            return {
+                "constraints": {
+                    "layer_count": {
+                        "min_layers": self.constraints.min_layers,
+                        "max_layers": self.constraints.max_layers
+                    },
+                    "parameter_count": {
+                        "min_parameters": self.constraints.min_parameters,
+                        "max_parameters": self.constraints.max_parameters
+                    },
+                    "memory_usage": {
+                        "max_memory_mb": self.constraints.max_memory_usage_mb
+                    },
+                    "training_time": {
+                        "max_training_time_seconds": self.constraints.max_training_time_seconds
+                    },
+                    "connections": {
+                        "max_connections_per_layer": self.constraints.max_connections_per_layer,
+                        "min_connections_per_layer": self.constraints.min_connections_per_layer,
+                        "allow_residual": self.constraints.allow_residual_connections,
+                        "allow_skip": self.constraints.allow_skip_connections
+                    },
+                    "numerical_stability": {
+                        "max_dropout_rate": self.constraints.max_dropout_rate,
+                        "min_dropout_rate": self.constraints.min_dropout_rate,
+                        "max_gradient_norm": self.constraints.max_gradient_norm,
+                        "min_gradient_norm": self.constraints.min_gradient_norm
+                    },
+                    "complexity": {
+                        "max_complexity_score": self.constraints.max_complexity_score,
+                        "max_tree_depth": self.constraints.max_tree_depth,
+                        "max_trees": self.constraints.max_trees
+                    }
+                },
+                "system_info": self._get_system_info(),
+                "constraint_types": [ct.value for ct in ConstraintType],
+                "severity_levels": [cs.value for cs in ConstraintSeverity]
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to get constraint summary: {e}")
+            return {"error": str(e)}
+
+    def _check_layer_count(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check layer count constraints."""
+        try:
+            if hasattr(architecture, 'layers'):
+                layer_count = len(architecture.layers)
+                if layer_count < self.constraints.min_layers:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.LAYER_COUNT,
+                        severity=ConstraintSeverity.ERROR,
+                        message=f"Too few layers: {layer_count} < {self.constraints.min_layers}",
+                        value=layer_count,
+                        threshold=self.constraints.min_layers
+                    )
+                elif layer_count > self.constraints.max_layers:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.LAYER_COUNT,
+                        severity=ConstraintSeverity.ERROR,
+                        message=f"Too many layers: {layer_count} > {self.constraints.max_layers}",
+                        value=layer_count,
+                        threshold=self.constraints.max_layers
+                    )
+            return None
+        except Exception as e:
+            self.logger.error(f"Layer count check failed: {e}")
+            return None
+
+    def _check_parameter_count(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check parameter count constraints."""
+        try:
+            total_params = 0
+            if hasattr(architecture, 'layers'):
+                for layer in architecture.layers:
+                    if hasattr(layer, 'units'):
+                        total_params += layer.units
+                    elif hasattr(layer, 'filters'):
+                        total_params += layer.filters
+            
+            if total_params < self.constraints.min_parameters:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.PARAMETER_COUNT,
+                    severity=ConstraintSeverity.WARNING,
+                    message=f"Low parameter count: {total_params} < {self.constraints.min_parameters}",
+                    value=total_params,
+                    threshold=self.constraints.min_parameters
+                )
+            elif total_params > self.constraints.max_parameters:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.PARAMETER_COUNT,
+                    severity=ConstraintSeverity.ERROR,
+                    message=f"Too many parameters: {total_params} > {self.constraints.max_parameters}",
+                    value=total_params,
+                    threshold=self.constraints.max_parameters
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Parameter count check failed: {e}")
+            return None
+
+    def _check_memory_usage(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check memory usage constraints."""
+        try:
+            # Estimate memory usage (simplified)
+            memory_estimate = 0
+            if hasattr(architecture, 'layers'):
+                for layer in architecture.layers:
+                    if hasattr(layer, 'units'):
+                        memory_estimate += layer.units * 4  # 4 bytes per parameter
+                    elif hasattr(layer, 'filters'):
+                        memory_estimate += layer.filters * 4
+            
+            memory_mb = memory_estimate / (1024 * 1024)
+            
+            if memory_mb > self.constraints.max_memory_usage_mb:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.MEMORY_USAGE,
+                    severity=ConstraintSeverity.ERROR,
+                    message=f"Memory usage too high: {memory_mb:.2f}MB > {self.constraints.max_memory_usage_mb}MB",
+                    value=memory_mb,
+                    threshold=self.constraints.max_memory_usage_mb
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Memory usage check failed: {e}")
+            return None
+
+    def _check_training_time(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check training time constraints."""
+        try:
+            # Estimate training time (simplified)
+            complexity_score = 1.0
+            if hasattr(architecture, 'layers'):
+                complexity_score = len(architecture.layers) * 0.1
+            
+            estimated_time = complexity_score * 100  # seconds
+            
+            if estimated_time > self.constraints.max_training_time_seconds:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.TRAINING_TIME,
+                    severity=ConstraintSeverity.WARNING,
+                    message=f"Training time too long: {estimated_time:.2f}s > {self.constraints.max_training_time_seconds}s",
+                    value=estimated_time,
+                    threshold=self.constraints.max_training_time_seconds
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Training time check failed: {e}")
+            return None
+
+    def _check_connection_validity(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check connection validity constraints."""
+        try:
+            if hasattr(architecture, 'connections'):
+                for connection in architecture.connections:
+                    if connection.get('type') == 'residual' and not self.constraints.allow_residual_connections:
+                        return ConstraintViolation(
+                            constraint_type=ConstraintType.CONNECTION_VALIDITY,
+                            severity=ConstraintSeverity.ERROR,
+                            message="Residual connections not allowed",
+                            value=1.0,
+                            threshold=0.0
+                        )
+                    elif connection.get('type') == 'skip' and not self.constraints.allow_skip_connections:
+                        return ConstraintViolation(
+                            constraint_type=ConstraintType.CONNECTION_VALIDITY,
+                            severity=ConstraintSeverity.ERROR,
+                            message="Skip connections not allowed",
+                            value=1.0,
+                            threshold=0.0
+                        )
+            return None
+        except Exception as e:
+            self.logger.error(f"Connection validity check failed: {e}")
+            return None
+
+    def _check_gradient_flow(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check gradient flow constraints."""
+        try:
+            if hasattr(architecture, 'layers') and len(architecture.layers) > 10:
+                # Check for potential gradient vanishing/exploding
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.GRADIENT_FLOW,
+                    severity=ConstraintSeverity.WARNING,
+                    message="Deep architecture may have gradient flow issues",
+                    value=len(architecture.layers),
+                    threshold=10
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Gradient flow check failed: {e}")
+            return None
+
+    def _check_architecture_complexity(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check architecture complexity constraints."""
+        try:
+            complexity_score = 1.0
+            if hasattr(architecture, 'layers'):
+                complexity_score = len(architecture.layers) * 0.1
+            
+            if complexity_score > self.constraints.max_complexity_score:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.ARCHITECTURE_COMPLEXITY,
+                    severity=ConstraintSeverity.WARNING,
+                    message=f"Architecture too complex: {complexity_score:.2f} > {self.constraints.max_complexity_score}",
+                    value=complexity_score,
+                    threshold=self.constraints.max_complexity_score
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Architecture complexity check failed: {e}")
+            return None
+
+    def _check_resource_efficiency(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check resource efficiency constraints."""
+        try:
+            # Simple efficiency check
+            if hasattr(architecture, 'layers'):
+                layer_count = len(architecture.layers)
+                if layer_count > 15:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.RESOURCE_EFFICIENCY,
+                        severity=ConstraintSeverity.INFO,
+                        message=f"Architecture has {layer_count} layers, consider optimization",
+                        value=layer_count,
+                        threshold=15
+                    )
+            return None
+        except Exception as e:
+            self.logger.error(f"Resource efficiency check failed: {e}")
+            return None
+
+    def _check_numerical_stability(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check numerical stability constraints."""
+        try:
+            # Check for potential numerical issues
+            if hasattr(architecture, 'layers'):
+                for layer in architecture.layers:
+                    if hasattr(layer, 'dropout_rate'):
+                        dropout_rate = layer.dropout_rate
+                        if dropout_rate > self.constraints.max_dropout_rate:
+                            return ConstraintViolation(
+                                constraint_type=ConstraintType.NUMERICAL_STABILITY,
+                                severity=ConstraintSeverity.WARNING,
+                                message=f"Dropout rate too high: {dropout_rate} > {self.constraints.max_dropout_rate}",
+                                value=dropout_rate,
+                                threshold=self.constraints.max_dropout_rate
+                            )
+            return None
+        except Exception as e:
+            self.logger.error(f"Numerical stability check failed: {e}")
+            return None
+
+    def _check_practicality(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check practicality constraints."""
+        try:
+            # Basic practicality checks
+            if hasattr(architecture, 'layers'):
+                if len(architecture.layers) < 2:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.PRACTICALITY,
+                        severity=ConstraintSeverity.WARNING,
+                        message="Architecture may be too simple for practical use",
+                        value=len(architecture.layers),
+                        threshold=2
+                    )
+            return None
+        except Exception as e:
+            self.logger.error(f"Practicality check failed: {e}")
+            return None
 
     def _get_system_info(self) -> Dict[str, Any]:
         """Get system information for resource constraints."""

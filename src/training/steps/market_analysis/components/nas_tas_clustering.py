@@ -690,7 +690,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Initialize unified clustering algorithm with enhanced error handling."""
         try:
             # Import the unified clustering algorithm
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_clustering_algorithms import (
+            from src.utils.nas_tas.shared_utils.unified_clustering_algorithms import (
                 UnifiedClusteringAlgorithm
             )
 

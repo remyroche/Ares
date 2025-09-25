@@ -4,10 +4,10 @@ Regime Reporting for TAS Tree Architecture
 Uses the unified evaluation framework for regime reporting and visualization.
 """
 
-from ...hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import (
+from src.utils.nas_tas.shared_utils.unified_evaluation_framework import (
     UnifiedEvaluationFramework, EvaluationConfig
 )
-from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_config import ArchitectureType
+from src.utils.nas_tas.shared_utils.unified_architecture_config import ArchitectureType
 
 
 class TreeRegimeReporter:

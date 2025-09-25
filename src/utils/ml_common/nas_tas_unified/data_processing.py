@@ -2,19 +2,19 @@
 """
 Unified Data Processing Pipeline
 
-This module provides a unified data processing pipeline for both NAS and TAS systems,
-consolidating data preprocessing, validation, and splitting functionality.
-
-Key Features:
-- Unified data preprocessing pipeline
-- Feature selection and engineering
-- Data validation and quality checks
-- Train/validation/test splitting
-- Cross-validation support
-- Data normalization and standardization
+This module provides a wrapper around the unified data preprocessing system
+for both NAS and TAS systems, maintaining backward compatibility.
 """
 
-import logging
+# Import the unified data preprocessing system
+from src.utils.nas_tas.data_preprocessing import (
+    UnifiedDataPreprocessor,
+    PreprocessingConfig,
+    PreprocessingResult,
+    PreprocessingStep
+)
+
+# Import additional utilities for data splitting and cross-validation
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Tuple
@@ -53,6 +53,10 @@ class UnifiedDataProcessor:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize the unified data preprocessor
+        preprocessing_config = PreprocessingConfig()
+        self.data_preprocessor = UnifiedDataPreprocessor(preprocessing_config)
+        
         # Initialize preprocessing components
         self.scaler = None
         self.label_encoder = None
@@ -79,40 +83,36 @@ class UnifiedDataProcessor:
         }
         
         try:
-            # Handle missing values
-            if self.config.get('handle_missing_values', True):
-                X, y = self._handle_missing_values(X, y)
+            # Convert numpy arrays to DataFrame for unified preprocessing
+            if isinstance(X, np.ndarray):
+                X_df = pd.DataFrame(X)
+            else:
+                X_df = X.copy()
             
-            # Feature selection
-            if self.config.get('enable_feature_selection', False):
-                X = self._select_features(X, y, fit=fit)
+            # Use the unified data preprocessor
+            preprocessing_result = self.data_preprocessor.preprocess_data(X_df)
             
-            # Normalization/standardization
-            if self.config.get('normalize_data', False):
-                X = self._normalize_data(X, fit=fit)
-            elif self.config.get('standardize_data', False):
-                X = self._standardize_data(X, fit=fit)
-            
-            # Outlier detection and handling
-            if self.config.get('outlier_detection', False):
-                X, y = self._handle_outliers(X, y)
+            # Convert back to numpy arrays
+            X_processed = preprocessing_result.processed_data.values
+            y_processed = y  # Target remains unchanged
             
             # Update processing info
             processing_info.update({
-                'final_shape': X.shape,
-                'missing_values_handled': self.config.get('handle_missing_values', True),
-                'feature_selection_applied': self.config.get('enable_feature_selection', False),
-                'normalization_applied': self.config.get('normalize_data', False),
-                'standardization_applied': self.config.get('standardize_data', False),
-                'outliers_handled': self.config.get('outlier_detection', False)
+                'final_shape': X_processed.shape,
+                'preprocessing_steps_applied': preprocessing_result.preprocessing_steps_applied,
+                'data_quality_improvement': preprocessing_result.data_quality_improvement,
+                'preprocessing_time': preprocessing_result.preprocessing_time,
+                'memory_usage': preprocessing_result.memory_usage,
+                'hardware_acceleration_used': preprocessing_result.hardware_acceleration_used,
+                'matrix_operations_used': preprocessing_result.matrix_operations_used
             })
             
             if fit:
                 self.is_fitted = True
             
-            tprint_success(f"Data processing completed. Final shape: {X.shape}")
+            tprint_success(f"Data processing completed. Final shape: {X_processed.shape}")
             
-            return X, y, processing_info
+            return X_processed, y_processed, processing_info
             
         except Exception as e:
             tprint_error(f"Data processing failed: {e}")

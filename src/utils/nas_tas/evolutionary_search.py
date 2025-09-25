@@ -518,73 +518,287 @@ class TreeGeneticAlgorithm:
 
 class TreeNSGA2:
     """Tree NSGA-II algorithm for multi-objective optimization."""
-    
+
     def __init__(self, config: EvolutionaryConfig):
         self.config = config
-        self.population = []
-        self.fitness_scores = []
-        self.generation = 0
-    
-    def search(self, search_space: Dict[str, Any], objectives: List[str]) -> List[Dict[str, Any]]:
+        self.population: List[Dict[str, Any]] = []
+        self.objective_values: List[List[float]] = []
+        self.objective_names: List[str] = []
+        self.rank_map: Dict[int, int] = {}
+        self.crowding_map: Dict[int, float] = {}
+
+    def search(self, search_space: Dict[str, Any],
+               objective_function: Callable[[Dict[str, Any]], Union[Dict[str, float], List[float], Tuple[float, ...]]]
+               ) -> List[Dict[str, Any]]:
         """Perform NSGA-II search for optimal tree architectures."""
+
+        if not callable(objective_function):
+            raise ValueError("objective_function must be callable")
+
+        population_size = max(2, self.config.population_size)
         tprint_info("🧬 Starting tree NSGA-II search")
-        
-        # Initialize population
-        self._initialize_population(search_space)
-        
-        # Evolution loop
+
+        # Initialize population and evaluate
+        self.population = [self._create_random_individual(search_space) for _ in range(population_size)]
+        self.objective_values = [self._evaluate_individual(individual, objective_function) for individual in self.population]
+        self._update_rankings()
+
         for generation in range(self.config.generations):
-            # Evaluate fitness
-            self._evaluate_population(objectives)
-            
-            # NSGA-II operations
-            self._nsga2_operations()
-            
-            tprint_info(f"Generation {generation + 1} completed")
-        
-        # Return Pareto front
-        return self._get_pareto_front()
-    
-    def _initialize_population(self, search_space: Dict[str, Any]):
-        """Initialize population with random individuals."""
-        self.population = []
-        for _ in range(self.config.population_size):
-            individual = self._create_random_individual(search_space)
-            self.population.append(individual)
-    
+            offspring = self._generate_offspring(search_space)
+            offspring_values = [self._evaluate_individual(child, objective_function) for child in offspring]
+
+            combined_population = self.population + offspring
+            combined_values = self.objective_values + offspring_values
+
+            fronts, _ = self._fast_non_dominated_sort(combined_values)
+            crowding_map = self._compute_crowding_distances(fronts, combined_values)
+
+            self.population, self.objective_values = self._select_next_population(
+                combined_population,
+                combined_values,
+                fronts,
+                crowding_map,
+                population_size
+            )
+
+            self._update_rankings()
+
+            tprint_info(f"Generation {generation + 1}/{self.config.generations} completed")
+
+        # Final Pareto front from last population
+        fronts, _ = self._fast_non_dominated_sort(self.objective_values)
+        pareto_front = fronts[0] if fronts else []
+
+        results = []
+        for idx in pareto_front:
+            results.append({
+                'params': self.population[idx],
+                'objectives': self._format_objectives(self.objective_values[idx])
+            })
+
+        return results
+
+    def _format_objectives(self, values: List[float]) -> Dict[str, float]:
+        if not self.objective_names:
+            self.objective_names = [f"objective_{i}" for i in range(len(values))]
+        return {name: float(val) for name, val in zip(self.objective_names, values)}
+
     def _create_random_individual(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a random individual from search space."""
         individual = {}
-        for param, values in search_space.items():
-            if isinstance(values, list):
-                individual[param] = np.random.choice(values)
-            elif isinstance(values, tuple) and len(values) == 2:
-                individual[param] = np.random.uniform(values[0], values[1])
-            else:
-                individual[param] = values
+        for param, config in search_space.items():
+            individual[param] = self._sample_from_space(config)
         return individual
-    
-    def _evaluate_population(self, objectives: List[str]):
-        """Evaluate fitness of all individuals in population."""
-        self.fitness_scores = []
-        for individual in self.population:
-            fitness = self._evaluate_individual(individual, objectives)
-            self.fitness_scores.append(fitness)
-    
-    def _evaluate_individual(self, individual: Dict[str, Any], objectives: List[str]) -> List[float]:
-        """Evaluate fitness of a single individual for multiple objectives."""
-        # Placeholder implementation - should be replaced with actual evaluation
-        return [random.random() for _ in objectives]
-    
-    def _nsga2_operations(self):
-        """Perform NSGA-II operations."""
-        # Simplified implementation
-        pass
-    
-    def _get_pareto_front(self) -> List[Dict[str, Any]]:
-        """Get Pareto front of non-dominated solutions."""
-        # Simplified implementation
-        return self.population[:10]  # Return top 10 individuals
+
+    def _sample_from_space(self, config: Any) -> Any:
+        if isinstance(config, dict):
+            param_type = config.get('type', 'float')
+            if param_type == 'int':
+                return int(np.random.randint(config['low'], config['high'] + 1))
+            if param_type == 'float':
+                if config.get('log'):
+                    low = np.log(config['low'])
+                    high = np.log(config['high'])
+                    return float(np.exp(np.random.uniform(low, high)))
+                return float(np.random.uniform(config['low'], config['high']))
+            if param_type == 'categorical':
+                return np.random.choice(config['choices'])
+        elif isinstance(config, list):
+            return np.random.choice(config)
+        elif isinstance(config, tuple) and len(config) == 2:
+            low, high = config
+            if all(isinstance(v, int) for v in config):
+                return int(np.random.randint(low, high + 1))
+            return float(np.random.uniform(low, high))
+        return config
+
+    def _evaluate_individual(self, individual: Dict[str, Any], objective_function: Callable) -> List[float]:
+        try:
+            values = objective_function(individual)
+            if isinstance(values, dict):
+                if not self.objective_names:
+                    self.objective_names = list(values.keys())
+                return [float(values[name]) for name in self.objective_names]
+            values_list = list(values)
+            if not self.objective_names:
+                self.objective_names = [f"objective_{i}" for i in range(len(values_list))]
+            return [float(v) for v in values_list]
+        except Exception as e:
+            tprint_warning(f"⚠️ Objective evaluation failed: {e}")
+            return [float('-inf')] * len(self.objective_names or [0])
+
+    def _generate_offspring(self, search_space: Dict[str, Any]) -> List[Dict[str, Any]]:
+        offspring = []
+        while len(offspring) < self.config.population_size:
+            parent1 = self._tournament_selection()
+            parent2 = self._tournament_selection()
+
+            child1, child2 = self._crossover(parent1, parent2)
+            child1 = self._mutate(child1, search_space)
+            child2 = self._mutate(child2, search_space)
+
+            offspring.extend([child1, child2])
+
+        return offspring[:self.config.population_size]
+
+    def _tournament_selection(self) -> Dict[str, Any]:
+        candidates = np.random.choice(len(self.population), size=2, replace=True)
+        idx1, idx2 = int(candidates[0]), int(candidates[1])
+        return self._better_individual(idx1, idx2)
+
+    def _better_individual(self, idx1: int, idx2: int) -> Dict[str, Any]:
+        rank1 = self.rank_map.get(idx1, 0)
+        rank2 = self.rank_map.get(idx2, 0)
+        if rank1 < rank2:
+            return self.population[idx1]
+        if rank2 < rank1:
+            return self.population[idx2]
+        crowd1 = self.crowding_map.get(idx1, 0.0)
+        crowd2 = self.crowding_map.get(idx2, 0.0)
+        if crowd1 > crowd2:
+            return self.population[idx1]
+        return self.population[idx2]
+
+    def _crossover(self, parent1: Dict[str, Any], parent2: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        if np.random.rand() > self.config.crossover_rate:
+            return parent1.copy(), parent2.copy()
+
+        child1 = parent1.copy()
+        child2 = parent2.copy()
+        keys = list(parent1.keys())
+        for key in keys:
+            if np.random.rand() < 0.5:
+                child1[key], child2[key] = child2[key], child1[key]
+        return child1, child2
+
+    def _mutate(self, individual: Dict[str, Any], search_space: Dict[str, Any]) -> Dict[str, Any]:
+        mutated = individual.copy()
+        for key in mutated.keys():
+            if np.random.rand() < self.config.mutation_rate:
+                mutated[key] = self._mutate_value(mutated[key], search_space.get(key))
+        return mutated
+
+    def _mutate_value(self, value: Any, config: Any) -> Any:
+        if isinstance(config, dict):
+            if config['type'] == 'int':
+                step = max(1, (config['high'] - config['low']) // 10 or 1)
+                return int(np.clip(value + np.random.randint(-step, step + 1), config['low'], config['high']))
+            if config['type'] == 'float':
+                range_width = config['high'] - config['low']
+                return float(np.clip(value + np.random.uniform(-0.1 * range_width, 0.1 * range_width),
+                                      config['low'], config['high']))
+            if config['type'] == 'categorical':
+                choices = [choice for choice in config['choices'] if choice != value]
+                return np.random.choice(choices) if choices else value
+        elif isinstance(config, list):
+            choices = [choice for choice in config if choice != value]
+            return np.random.choice(choices) if choices else value
+        elif isinstance(config, tuple) and len(config) == 2:
+            low, high = config
+            if all(isinstance(v, int) for v in config):
+                step = max(1, (high - low) // 10 or 1)
+                return int(np.clip(value + np.random.randint(-step, step + 1), low, high))
+            range_width = high - low
+            return float(np.clip(value + np.random.uniform(-0.1 * range_width, 0.1 * range_width), low, high))
+        return value
+
+    def _update_rankings(self):
+        fronts, rank_map = self._fast_non_dominated_sort(self.objective_values)
+        crowding_map = self._compute_crowding_distances(fronts, self.objective_values)
+        self.rank_map = {idx: rank_map[idx] for idx in range(len(self.population))}
+        self.crowding_map = crowding_map
+
+    def _fast_non_dominated_sort(self, values: List[List[float]]) -> Tuple[List[List[int]], Dict[int, int]]:
+        S = {i: [] for i in range(len(values))}
+        domination_count = {i: 0 for i in range(len(values))}
+        fronts: List[List[int]] = [[]]
+        rank_map: Dict[int, int] = {}
+
+        for p in range(len(values)):
+            S[p] = []
+            domination_count[p] = 0
+            for q in range(len(values)):
+                if p == q:
+                    continue
+                if self._dominates(values[p], values[q]):
+                    S[p].append(q)
+                elif self._dominates(values[q], values[p]):
+                    domination_count[p] += 1
+            if domination_count[p] == 0:
+                rank_map[p] = 0
+                fronts[0].append(p)
+
+        i = 0
+        while fronts[i]:
+            next_front = []
+            for p in fronts[i]:
+                for q in S[p]:
+                    domination_count[q] -= 1
+                    if domination_count[q] == 0:
+                        rank_map[q] = i + 1
+                        next_front.append(q)
+            i += 1
+            fronts.append(next_front)
+
+        if not fronts[-1]:
+            fronts.pop()
+
+        return fronts, rank_map
+
+    def _compute_crowding_distances(self, fronts: List[List[int]], values: List[List[float]]) -> Dict[int, float]:
+        distances: Dict[int, float] = {idx: 0.0 for idx in range(len(values))}
+        for front in fronts:
+            if len(front) <= 2:
+                for idx in front:
+                    distances[idx] = float('inf')
+                continue
+
+            front_values = [values[idx] for idx in front]
+            n_objectives = len(front_values[0])
+            for m in range(n_objectives):
+                sorted_indices = sorted(front, key=lambda idx: values[idx][m])
+                distances[sorted_indices[0]] = float('inf')
+                distances[sorted_indices[-1]] = float('inf')
+
+                objective_min = values[sorted_indices[0]][m]
+                objective_max = values[sorted_indices[-1]][m]
+                if objective_max == objective_min:
+                    continue
+
+                for idx in range(1, len(sorted_indices) - 1):
+                    prev_val = values[sorted_indices[idx - 1]][m]
+                    next_val = values[sorted_indices[idx + 1]][m]
+                    distances[sorted_indices[idx]] += (next_val - prev_val) / (objective_max - objective_min)
+
+        return distances
+
+    def _select_next_population(self,
+                                combined_population: List[Dict[str, Any]],
+                                combined_values: List[List[float]],
+                                fronts: List[List[int]],
+                                crowding_map: Dict[int, float],
+                                population_size: int) -> Tuple[List[Dict[str, Any]], List[List[float]]]:
+        new_population: List[Dict[str, Any]] = []
+        new_values: List[List[float]] = []
+
+        for front in fronts:
+            if len(new_population) + len(front) <= population_size:
+                for idx in front:
+                    new_population.append(combined_population[idx])
+                    new_values.append(combined_values[idx])
+            else:
+                remaining = population_size - len(new_population)
+                sorted_front = sorted(front, key=lambda idx: crowding_map.get(idx, 0.0), reverse=True)
+                for idx in sorted_front[:remaining]:
+                    new_population.append(combined_population[idx])
+                    new_values.append(combined_values[idx])
+                break
+
+        return new_population, new_values
+
+    def _dominates(self, values_p: List[float], values_q: List[float]) -> bool:
+        better_or_equal = all(p >= q for p, q in zip(values_p, values_q))
+        strictly_better = any(p > q for p, q in zip(values_p, values_q))
+        return better_or_equal and strictly_better
 
 
 # Export main classes

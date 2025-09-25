@@ -27,6 +27,9 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
+
+# Import unified performance tracker
+from src.utils.nas_tas import UnifiedPerformanceTracker
 from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
     validate_finite, validate_positive, validate_range, safe_correlation,
@@ -69,6 +72,8 @@ class SystemHealth:
     recommendations: List[str] = field(default_factory=list)
 
 
+# TreePerformanceMonitor has been moved to src.utils.nas_tas.UnifiedPerformanceTracker
+# This class is deprecated - use UnifiedPerformanceTracker instead
 class TreePerformanceMonitor:
     """
     Advanced Performance Monitor for Tree Architecture Search.
@@ -502,7 +507,7 @@ class TreeRealTimeAdapter:
         # Adaptation state
         self.current_architecture = None
         self.adaptation_history = []
-        self.performance_monitor = TreePerformanceMonitor(config)
+        self.performance_monitor = UnifiedPerformanceTracker(config)
 
         # Adaptation parameters
         self.adaptation_threshold = 0.1

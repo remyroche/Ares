@@ -59,9 +59,9 @@ from .components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDe
 from .components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
 
 # Adaptation
-from .adaptation.real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor
+from .adaptation.real_time_adaptation import TreeRealTimeAdapter
 from .adaptation.dynamic_optimization import TreeDynamicOptimizer, TreeAdaptiveSearch
-from .adaptation.performance_tracking import TreePerformanceTracker, TreeMetricsCollector
+from src.utils.nas_tas import UnifiedPerformanceTracker, UnifiedMetricsCollector
 
 # Evaluation
 from .evaluation.tree_evaluator import TreeEvaluator, TreePerformanceEvaluator
@@ -125,9 +125,9 @@ __all__ = [
     'TreeRegimeReporter', 'TreeRegimeVisualizer',
     
     # Adaptation
-    'TreeRealTimeAdapter', 'TreePerformanceMonitor',
+    'TreeRealTimeAdapter',
     'TreeDynamicOptimizer', 'TreeAdaptiveSearch',
-    'TreePerformanceTracker', 'TreeMetricsCollector',
+    'UnifiedPerformanceTracker', 'UnifiedMetricsCollector',
     
     # Evaluation
     'TreeEvaluator', 'TreePerformanceEvaluator',

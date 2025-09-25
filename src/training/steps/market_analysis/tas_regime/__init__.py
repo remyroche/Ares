@@ -40,7 +40,7 @@ from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
 from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2
 
 # Optimization components
-from .optimization.enhanced_hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
+from .optimization import TreeHardwareOptimizer, TreeMatrixOperations
 from .optimization import TreeMemoryOptimizer, TreeCacheManager
 from .optimization import TreeParallelOptimizer, TreeDistributedSearch
 

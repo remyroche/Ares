@@ -25,6 +25,11 @@ from .unified_regime_config import (
     UnifiedRegimeConfig, RegimeDetectionMethod, OptimizationStrategy, EconomicEvaluationMode
 )
 
+# Import performance optimizer
+from .performance_optimizer import (
+    PerformanceOptimizer, optimize_performance, get_performance_optimizer
+)
+
 # Import TAS components
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import (
@@ -115,6 +120,10 @@ class UnifiedRegimeDetector:
         
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance optimizer
+        self.performance_optimizer = get_performance_optimizer()
+        tprint_success("⚡ Performance optimizer initialized")
         
         # Initialize enhanced utilities
         self._initialize_enhanced_utilities()
@@ -313,6 +322,7 @@ class UnifiedRegimeDetector:
         
         return nas_config
     
+    @optimize_performance(enable_cache=True, enable_gpu=True, max_memory_gb=8.0)
     @timed_operation
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
@@ -639,7 +649,14 @@ class UnifiedRegimeDetector:
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
-        return self.performance_metrics.copy()
+        metrics = self.performance_metrics.copy()
+        
+        # Add performance optimizer stats
+        if self.performance_optimizer:
+            optimizer_stats = self.performance_optimizer.get_performance_stats()
+            metrics['optimizer_stats'] = optimizer_stats
+        
+        return metrics
     
     def reset_performance_metrics(self):
         """Reset performance metrics."""

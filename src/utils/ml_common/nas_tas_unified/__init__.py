@@ -18,13 +18,45 @@ from .unified_regime_detector import (
     UnifiedRegimeResult
 )
 
+from .performance_optimizer import (
+    PerformanceOptimizer,
+    PerformanceCache,
+    GPUAccelerator,
+    MemoryOptimizer,
+    optimize_performance,
+    get_performance_optimizer
+)
+
+from .real_time_monitor import (
+    RealTimeRegimeMonitor,
+    RegimeChangeEvent,
+    RealTimeMetrics,
+    DataStreamProcessor,
+    RegimeChangeDetector,
+    PerformanceMonitor,
+    create_real_time_monitor
+)
+
 __all__ = [
     'UnifiedRegimeConfig',
     'RegimeDetectionMethod',
     'OptimizationStrategy',
     'EconomicEvaluationMode',
     'UnifiedRegimeDetector',
-    'UnifiedRegimeResult'
+    'UnifiedRegimeResult',
+    'PerformanceOptimizer',
+    'PerformanceCache',
+    'GPUAccelerator',
+    'MemoryOptimizer',
+    'optimize_performance',
+    'get_performance_optimizer',
+    'RealTimeRegimeMonitor',
+    'RegimeChangeEvent',
+    'RealTimeMetrics',
+    'DataStreamProcessor',
+    'RegimeChangeDetector',
+    'PerformanceMonitor',
+    'create_real_time_monitor'
 ]
 
 __version__ = "1.0.0"

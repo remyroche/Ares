@@ -36,6 +36,24 @@ from src.utils.tprint import (
     tprint_performance, tprint_timer
 )
 
+# Import utilities with error handling
+try:
+    from src.utils.common_operations import (
+        safe_json_dump, safe_json_load, ensure_directory,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        safe_dataframe_operation, validate_dataframe_columns, optimize_dataframe_dtypes
+    )
+    from src.utils.math_validation import (
+        validate_finite, validate_positive, safe_divide, safe_log, safe_sqrt,
+        safe_correlation, safe_covariance, safe_mean, safe_std
+    )
+    from src.utils.serialization_utils import UniversalSerializer
+    UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: Some utilities not available: {e}")
+    UTILS_AVAILABLE = False
+
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 
@@ -161,35 +179,80 @@ class MarketAnalysisSubPipeline:
     """
     
     def __init__(self, config: Optional[SubPipelineConfig] = None):
-        """Initialize the market analysis sub-pipeline with backward compatibility."""
-        # Handle both old dict config and new SubPipelineConfig
-        if isinstance(config, dict):
-            # Convert old config format to SubPipelineConfig
-            self.original_config = config
-            self.config = self._convert_old_config(config)
-        else:
-            # Use provided SubPipelineConfig or create default
-            self.config = config or SubPipelineConfig()
-            self.original_config = {}
-        
-        # Use standardized logging
-        self.logger = get_logger('MarketAnalysisSubPipeline')
-        self.results: List[SubPipelineResult] = []
-        
-        # Apply logging configuration
-        self._apply_logging_config(self.config.logging)
-        
-        # Initialize artifact and version managers
-        self.artifact_manager = get_artifact_manager()
-        self.version_manager = get_version_manager()
-        
-        # Initialize component factory
-        self.component_factory = ComponentFactory()
-        
-        # Initialize pipeline state for component communication
-        self._current_data = None
-        self._current_pipeline_state = {}
-        self._accumulated_artifacts = {}
+        """Initialize the market analysis sub-pipeline with enhanced error handling and utility integration."""
+        try:
+            tprint("🚀 Starting MarketAnalysisSubPipeline initialization...")
+            
+            # Handle both old dict config and new SubPipelineConfig
+            if isinstance(config, dict):
+                self.original_config = config
+                self.config = self._convert_old_config(config)
+            else:
+                self.config = config or SubPipelineConfig()
+                self.original_config = {}
+            
+            # Use standardized logging
+            self.logger = get_logger('MarketAnalysisSubPipeline')
+            self.results: List[SubPipelineResult] = []
+            
+            # Apply logging configuration
+            try:
+                self._apply_logging_config(self.config.logging)
+            except Exception as e:
+                tprint_warning(f"⚠️ Logging configuration failed: {e}")
+            
+            # Initialize utility systems
+            self.utils_available = UTILS_AVAILABLE
+            self.serializer = None
+            self.m1_optimizers = None
+            
+            if self.utils_available:
+                try:
+                    self._initialize_utilities()
+                    tprint_success("✅ Utilities initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Utilities initialization failed: {e}")
+                    self.utils_available = False
+            
+            # Initialize managers
+            self.artifact_manager = get_artifact_manager()
+            self.version_manager = get_version_manager()
+            self.component_factory = ComponentFactory()
+            
+            # Initialize pipeline state
+            self._current_data = None
+            self._current_pipeline_state = {}
+            self._accumulated_artifacts = {}
+            
+            tprint_success("✅ MarketAnalysisSubPipeline initialized successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ MarketAnalysisSubPipeline initialization failed: {e}")
+            raise
+    
+    def _initialize_utilities(self):
+        """Initialize utility systems including serialization, M1 optimizers, and ML utilities."""
+        try:
+            # Initialize serialization utilities
+            if self.utils_available:
+                self.serializer = UniversalSerializer()
+                tprint_info("✅ Serialization utilities initialized")
+            
+            # Initialize M1 optimizers
+            try:
+                self.m1_optimizers = integrate_with_m1_optimizers()
+                if self.m1_optimizers.get('success', False):
+                    tprint_success("✅ M1 optimizers integrated successfully")
+                else:
+                    tprint_warning("⚠️ M1 optimizers integration failed")
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 optimizers not available: {e}")
+                self.m1_optimizers = None
+            
+                
+        except Exception as e:
+            tprint_error(f"❌ Utility initialization failed: {e}")
+            raise
 
     def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
         try:

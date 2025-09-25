@@ -1327,23 +1327,45 @@ class TASRegimeDetector:
     def _calculate_bootstrap_stability(self, predictions: np.ndarray) -> float:
         """Calculate stability metric for bootstrap sample."""
         try:
+            # Validate input
+            if predictions is None:
+                tprint_error("❌ Bootstrap stability calculation failed: predictions is None")
+                raise ValueError("Predictions cannot be None")
+            
+            if len(predictions) == 0:
+                tprint_warning("⚠️ Empty predictions array for bootstrap stability")
+                return 0.0
+            
             if len(predictions) < 2:
+                tprint_debug("📊 Single prediction for bootstrap stability, returning 0.0")
                 return 0.0
 
+            # Ensure predictions are numeric
+            if not np.issubdtype(predictions.dtype, np.number):
+                tprint_error(f"❌ Invalid predictions dtype: {predictions.dtype}")
+                raise ValueError(f"Predictions must be numeric, got {predictions.dtype}")
+
+            # Calculate regime changes
             regime_changes = np.sum(np.diff(predictions) != 0)
             total_periods = len(predictions) - 1
-            stability = 1.0 - (regime_changes / total_periods) if total_periods > 0 else 0.0
-
+            
+            if total_periods <= 0:
+                tprint_warning("⚠️ No periods available for stability calculation")
+                return 0.0
+                
+            stability = 1.0 - (regime_changes / total_periods)
+            
+            tprint_debug(f"📊 Bootstrap stability calculated: {stability:.4f} (changes: {regime_changes}/{total_periods})")
             return stability
 
         except (ValueError, TypeError, ZeroDivisionError) as e:
-            tprint_error(f"Could not calculate bootstrap stability: {e}")
+            tprint_error(f"❌ Bootstrap stability calculation failed: {e}")
             tprint_error("CRITICAL: Bootstrap stability calculation is required for TAS analysis")
             tprint_error("Cannot proceed without proper bootstrap stability")
             self.logger.error(f"Could not calculate bootstrap stability: {e}")
             raise ValueError(f"Bootstrap stability calculation failed: {e}") from e
         except Exception as e:
-            tprint_error(f"Unexpected error calculating bootstrap stability: {e}")
+            tprint_error(f"❌ Unexpected error calculating bootstrap stability: {e}")
             tprint_error("CRITICAL: Bootstrap stability calculation is required for TAS analysis")
             tprint_error("Cannot proceed without proper bootstrap stability")
             self.logger.error(f"Unexpected error calculating bootstrap stability: {e}")

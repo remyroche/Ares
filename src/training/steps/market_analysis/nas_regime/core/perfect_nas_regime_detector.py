@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
@@ -511,13 +512,38 @@ class PerfectNASRegimeDetector:
                         start_date=None, end_date=None, data_type: str = "processed") -> Optional[pd.DataFrame]:
         """Load market data using enhanced data operations."""
         try:
+            # Validate inputs
+            if not symbol or not isinstance(symbol, str):
+                tprint_error(f"❌ Invalid symbol: {symbol}")
+                raise ValueError(f"Symbol must be a non-empty string, got: {symbol}")
+            
+            if not interval or not isinstance(interval, str):
+                tprint_error(f"❌ Invalid interval: {interval}")
+                raise ValueError(f"Interval must be a non-empty string, got: {interval}")
+            
+            if data_type not in ["processed", "raw", "enhanced"]:
+                tprint_warning(f"⚠️ Unknown data_type '{data_type}', using 'processed'")
+                data_type = "processed"
+            
+            tprint_info(f"📊 Loading market data: {symbol} {interval} ({data_type})")
+            
             if self.data_operations:
-                return self.data_operations.load_market_data(symbol, interval, start_date, end_date, data_type)
+                data = self.data_operations.load_market_data(symbol, interval, start_date, end_date, data_type)
+                if data is not None:
+                    tprint_success(f"✅ Loaded {len(data)} records for {symbol} {interval}")
+                    self.logger.info(f"✅ Loaded {len(data)} records for {symbol} {interval}")
+                else:
+                    tprint_warning(f"⚠️ No data returned for {symbol} {interval}")
+                    self.logger.warning(f"No data returned for {symbol} {interval}")
+                return data
             else:
+                tprint_warning("⚠️ Enhanced data operations not available")
                 self.logger.warning("Enhanced data operations not available")
                 return None
+                
         except Exception as e:
-            self.logger.error(f"Failed to load market data: {e}")
+            tprint_error(f"❌ Failed to load market data for {symbol} {interval}: {e}")
+            self.logger.error(f"Failed to load market data for {symbol} {interval}: {e}")
             return None
     
     def get_data_quality_report(self, data: pd.DataFrame) -> Dict[str, Any]:

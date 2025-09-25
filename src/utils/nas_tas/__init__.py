@@ -85,6 +85,48 @@ from .confidence_scoring import (
     ConfidenceConfig
 )
 
+# Import NAS modules
+from .nas import (
+    NeuralArchitectureSearch,
+    ArchitectureConfig,
+    ArchitectureCandidate,
+    ArchitectureSearchSpace,
+    search_neural_architecture,
+    AdaptiveRegimeNAS,
+    AdaptiveRegimeNASConfig,
+    RegimeDetector
+)
+
+# Import TAS modules
+from .tas import (
+    TreeBasedArchitectureSearch,
+    TreeArchitectureConfig,
+    TreeArchitectureCandidate,
+    TreeArchitectureSearchSpace,
+    search_tree_architecture,
+    PureTreeNAS,
+    PureTreeNASConfig,
+    UnsupervisedTreeNAS,
+    UnsupervisedTreeNASConfig,
+    RegimeTradingTreeNAS,
+    RegimeTradingTreeNASConfig,
+    TradingTreeArchitectureSearch,
+    TradingTASConfig,
+    TradingRegime,
+    TradingTASResult,
+    TradingObjective,
+    MarketRegime
+)
+
+# Import Hybrid NAS System
+from .hybrid_nas_system import (
+    HybridNASSystem,
+    HybridNASConfig,
+    HybridArchitectureCandidate,
+    optimize_hybrid_architecture,
+    analyze_data_characteristics
+)
+
 
 __all__ = [
     'UnifiedEvaluator',
@@ -136,5 +178,41 @@ __all__ = [
     'TreeConfidenceScorer',
     'TreeReliabilityEstimator',
     'TreeCalibrationScorer',
-    'ConfidenceConfig'
+    'ConfidenceConfig',
+    
+    # NAS modules
+    'NeuralArchitectureSearch',
+    'ArchitectureConfig',
+    'ArchitectureCandidate',
+    'ArchitectureSearchSpace',
+    'search_neural_architecture',
+    'AdaptiveRegimeNAS',
+    'AdaptiveRegimeNASConfig',
+    'RegimeDetector',
+    
+    # TAS modules
+    'TreeBasedArchitectureSearch',
+    'TreeArchitectureConfig',
+    'TreeArchitectureCandidate',
+    'TreeArchitectureSearchSpace',
+    'search_tree_architecture',
+    'PureTreeNAS',
+    'PureTreeNASConfig',
+    'UnsupervisedTreeNAS',
+    'UnsupervisedTreeNASConfig',
+    'RegimeTradingTreeNAS',
+    'RegimeTradingTreeNASConfig',
+    'TradingTreeArchitectureSearch',
+    'TradingTASConfig',
+    'TradingRegime',
+    'TradingTASResult',
+    'TradingObjective',
+    'MarketRegime',
+    
+    # Hybrid NAS System
+    'HybridNASSystem',
+    'HybridNASConfig',
+    'HybridArchitectureCandidate',
+    'optimize_hybrid_architecture',
+    'analyze_data_characteristics'
 ]

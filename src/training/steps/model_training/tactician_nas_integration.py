@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 # Import NAS
-from src.utils.ml_common.optimization.neural_architecture_search import (
+from src.utils.nas_tas.nas.neural_architecture_search import (
     search_neural_architecture, ArchitectureConfig, ArchitectureCandidate
 )
 

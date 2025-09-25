@@ -101,7 +101,7 @@ except ImportError:
 
 # Import tree-based components
 try:
-    from src.utils.ml_common.optimization.tree_based_architecture_search import (
+    from src.utils.nas_tas.tas.tree_based_architecture_search import (
         TreeBasedArchitectureSearch, TreeArchitectureConfig
     )
     TREE_AVAILABLE = True

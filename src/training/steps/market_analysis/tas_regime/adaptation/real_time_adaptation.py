@@ -37,6 +37,7 @@ from src.utils.math_validation import (
     MathValidation, validate_numeric_array, safe_matrix_inverse
 )
 
+from src.utils.nas_tas.performance_tracker import AdvancedPerformanceTracker
 from ..core.tas_config import TASConfig, TreeModelType
 from ..core.tree_architecture import TreeArchitectureCandidate
 from ..core.tas_result import TASResult
@@ -85,6 +86,15 @@ class TreePerformanceMonitor:
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Use the consolidated performance tracker
+        tracker_config = {
+            'track_system_metrics': True,
+            'track_data_characteristics': True,
+            'anomaly_threshold': 2.0,
+            'storage_path': 'tas_performance_reports'
+        }
+        self.performance_tracker = AdvancedPerformanceTracker(tracker_config)
 
         # Performance tracking
         self.metrics_history: deque = deque(maxlen=1000)
@@ -138,7 +148,9 @@ class TreePerformanceMonitor:
                       training_time: float,
                       inference_time: float,
                       accuracy: float,
-                      complexity: float) -> PerformanceMetrics:
+                      complexity: float,
+                      train_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+                      test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> PerformanceMetrics:
         """Record performance metrics for a model.
 
         Args:
@@ -147,6 +159,8 @@ class TreePerformanceMonitor:
             inference_time: Inference time in seconds
             accuracy: Model accuracy score
             complexity: Model complexity score
+            train_data: Training data tuple (optional)
+            test_data: Test data tuple (optional)
 
         Returns:
             PerformanceMetrics object
@@ -181,6 +195,23 @@ class TreePerformanceMonitor:
             # Check for anomalies
             if self.anomaly_detection_enabled:
                 self._detect_anomalies(metrics)
+
+            # Use consolidated performance tracker if data is available
+            if train_data is not None and test_data is not None:
+                architecture_params = {
+                    'complexity': complexity,
+                    'training_time': training_time,
+                    'inference_time': inference_time
+                }
+                self.performance_tracker.track_performance(
+                    model=model,
+                    architecture_params=architecture_params,
+                    train_data=train_data,
+                    test_data=test_data,
+                    training_time=training_time,
+                    inference_time=inference_time,
+                    model_type="tree"
+                )
 
             self.logger.debug(f"📊 Metrics recorded: CPU={cpu_usage:.1f}%, "
                             f"Memory={memory_usage:.1f}%, Accuracy={accuracy:.4f}")
@@ -480,6 +511,15 @@ class TreePerformanceMonitor:
     def get_optimization_suggestions(self) -> List[Dict[str, Any]]:
         """Get optimization suggestions."""
         return list(self.optimization_queue)
+
+    def get_analytics_report(self, start_time: Optional[datetime] = None, 
+                           end_time: Optional[datetime] = None):
+        """Get analytics report from consolidated tracker."""
+        return self.performance_tracker.generate_analytics_report(start_time, end_time)
+
+    def get_performance_history(self, limit: Optional[int] = None):
+        """Get performance history from consolidated tracker."""
+        return self.performance_tracker.get_performance_history(limit)
 
 
 class TreeRealTimeAdapter:

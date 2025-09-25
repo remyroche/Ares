@@ -11,7 +11,12 @@ Advanced adaptation capabilities for tree architecture search including:
 
 from .real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor, TreeAdaptiveSearch
 from .dynamic_optimization import TreeDynamicOptimizer, TreeIncrementalLearner, TreeOnlineOptimizer
-from .performance_tracking import TreePerformanceTracker, TreeMetricsCollector, TreeAnalytics
+from src.utils.nas_tas.performance_tracker import AdvancedPerformanceTracker, MetricsCollector, PerformanceAnalytics
+
+# Backward compatibility aliases
+TreePerformanceTracker = AdvancedPerformanceTracker
+TreeMetricsCollector = MetricsCollector
+TreeAnalytics = PerformanceAnalytics
 
 __all__ = [
     'TreeRealTimeAdapter', 'TreePerformanceMonitor', 'TreeAdaptiveSearch',

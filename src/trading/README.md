@@ -54,9 +54,9 @@ src/trading/
 │   └── portfolio_allocator.py  # Portfolio allocation
 ├── signal_generation/          # Analyst and tactician signal integration
 │   ├── __init__.py
-│   ├── analyst_signals.py      # Analyst signal generation
-│   ├── tactician_signals.py    # Tactician signal generation
-│   ├── signal_combiner.py      # Signal combination logic
+│   ├── analyst_signals_refactored.py      # Analyst signal generation (refactored)
+│   ├── tactician_signals_refactored.py    # Tactician signal generation (refactored)
+│   ├── signal_combiner_refactored.py      # Signal combination logic (refactored)
 │   └── signal_validator.py     # Signal validation
 └── backtesting/                # Backtesting engine and analysis
     ├── __init__.py

@@ -19,15 +19,15 @@ from .signal_pipeline import (
     SignalGenerationResult,
     setup_signal_generation_pipeline
 )
-from .signal_combiner import SignalCombiner
+from .signal_combiner_refactored import SignalCombiner
 
 # Import new signal generators
-from .analyst_signals import (
+from .analyst_signals_refactored import (
     AnalystSignalGenerator, AnalystSignal, SignalType, SignalStrength,
     create_analyst_signal_generator, generate_analyst_signal
 )
 
-from .tactician_signals import (
+from .tactician_signals_refactored import (
     TacticianSignalGenerator, TacticianSignal, TimingSignal, TimingConfidence,
     create_tactician_signal_generator, generate_tactician_signal
 )

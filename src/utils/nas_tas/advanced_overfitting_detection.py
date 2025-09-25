@@ -33,14 +33,14 @@ from scipy.spatial.distance import pdist, squareform
 import warnings
 
 # Import existing overfitting detection
-from .enhanced_overfitting_detection import (
+from src.utils.ml_common.validation.enhanced_overfitting_detection import (
     UniversalOverfittingDetector, 
     OverfittingConfig, 
     OverfittingReport
 )
 
 # Import learning curve analysis
-from ..evaluation.enhanced_learning_curve_analysis import (
+from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import (
     EnhancedLearningCurveAnalyzer,
     LearningCurveAnalysisResult
 )

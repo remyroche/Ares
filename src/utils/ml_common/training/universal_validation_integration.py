@@ -93,10 +93,10 @@ except ImportError:
     validate_model_comprehensively = None
 
 try:
-    from ..validation.hpo_overfitting_prevention import (
-        get_hpo_with_overfitting_prevention,
-        HPOOverfittingPreventionConfig,
-        optimize_hyperparameters_safely
+    from src.utils.nas_tas.advanced_overfitting_detection import (
+        EnhancedOverfittingDetectorWithLearningCurves,
+        OverfittingConfig,
+        OverfittingReport
     )
     HPO_PREVENTION_AVAILABLE = True
 except ImportError:

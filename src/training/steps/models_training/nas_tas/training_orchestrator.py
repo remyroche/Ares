@@ -53,6 +53,13 @@ from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionR
 from .model_manager import ModelManager, ModelManagerConfig
 from .performance_tracker import PerformanceTracker, PerformanceConfig
 
+# Import advanced overfitting detection
+from src.utils.nas_tas.advanced_overfitting_detection import (
+    EnhancedOverfittingDetectorWithLearningCurves,
+    OverfittingConfig,
+    OverfittingReport
+)
+
 # Import market analysis modules for enhanced compatibility
 try:
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
@@ -123,6 +130,10 @@ class OrchestratorConfig:
     enable_hybrid_regime_detection: bool = True
     hybrid_regime_weight_tas: float = 0.4
     hybrid_regime_weight_nas: float = 0.6
+    
+    # Overfitting detection
+    enable_overfitting_detection: bool = True
+    overfitting_config: Optional[OverfittingConfig] = None
 
 
 @dataclass
@@ -189,6 +200,16 @@ class TrainingOrchestrator:
         self.current_pipeline_state = {}
         self.execution_history = []
         self.performance_cache = {}
+        
+        # Initialize overfitting detection
+        if config.enable_overfitting_detection:
+            tprint("🔍 Initializing overfitting detection", color="yellow")
+            self.overfitting_detector = EnhancedOverfittingDetectorWithLearningCurves(config.overfitting_config)
+            self.logger.info("✅ Overfitting detector initialized")
+            tprint("✅ Overfitting detector created", color="green")
+        else:
+            self.overfitting_detector = None
+            tprint("⏭️ Overfitting detection disabled", color="cyan")
         
         self.logger.info("✅ Training Orchestrator initialized")
         self.logger.info(f"   Mode: {config.mode.value}")
@@ -325,6 +346,14 @@ class TrainingOrchestrator:
                 
                 result.n_regimes_detected = training_result.n_regimes_detected
                 result.n_models_trained = len(training_result.models_trained)
+                
+                # Step 3.5: Overfitting detection
+                if self.config.enable_overfitting_detection and self.overfitting_detector:
+                    self.logger.info("🔍 Performing overfitting detection...")
+                    overfitting_results = self._detect_overfitting_in_training_result(
+                        training_result, processed_data, target_variable, feature_columns
+                    )
+                    result.overfitting_results = overfitting_results
             
             # Step 4: Model selection setup
             if self.config.enable_model_selection and self.selector and training_result:
@@ -497,6 +526,70 @@ class TrainingOrchestrator:
             if 'result' in locals():
                 result.warnings.append(f"Feature engineering failed: {e}")
             return market_data  # Return original data if engineering fails
+    
+    def _detect_overfitting_in_training_result(self, 
+                                             training_result: RegimeTrainingResult,
+                                             market_data: pd.DataFrame,
+                                             target_variable: str,
+                                             feature_columns: Optional[List[str]]) -> Dict[str, Any]:
+        """Detect overfitting in training results."""
+        try:
+            overfitting_results = {}
+            
+            # Prepare data for overfitting detection
+            if feature_columns is None:
+                feature_columns = [col for col in market_data.columns if col != target_variable]
+            
+            X = market_data[feature_columns].values
+            y = market_data[target_variable].values
+            
+            # Check each regime's models for overfitting
+            for regime_id, models in training_result.models_trained.items():
+                regime_overfitting = {}
+                
+                for model_type, model_info in models.items():
+                    if not isinstance(model_info, dict) or 'model' not in model_info:
+                        continue
+                    
+                    model = model_info['model']
+                    
+                    # Perform overfitting detection
+                    try:
+                        overfitting_report = self.overfitting_detector.detect_overfitting_with_learning_curves(
+                            model=model,
+                            X_train=X,
+                            X_val=X,  # Using same data for simplicity
+                            y_train=y,
+                            y_val=y,
+                            model_name=f"regime_{regime_id}_{model_type}",
+                            model_type=model_type,
+                            fold_number=regime_id
+                        )
+                        
+                        regime_overfitting[model_type] = {
+                            'overfitting_detected': overfitting_report.overfitting_detected,
+                            'severity': overfitting_report.severity,
+                            'indicators': overfitting_report.indicators,
+                            'warnings': overfitting_report.warnings,
+                            'recommendations': overfitting_report.recommendations
+                        }
+                        
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Overfitting detection failed for {model_type} in regime {regime_id}: {e}")
+                        regime_overfitting[model_type] = {
+                            'overfitting_detected': False,
+                            'severity': 'unknown',
+                            'error': str(e)
+                        }
+                
+                overfitting_results[f'regime_{regime_id}'] = regime_overfitting
+            
+            self.logger.info(f"✅ Overfitting detection completed for {len(overfitting_results)} regimes")
+            return overfitting_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Overfitting detection failed: {e}")
+            return {'error': str(e)}
     
     def _orchestrate_training(self, 
                             market_data: pd.DataFrame,

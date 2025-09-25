@@ -13,13 +13,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 import logging
 
-from ..config.hybrid_regime_config import (
+from src.utils.nas_tas.config.hybrid_regime_config import (
+    ClusteringAlgorithm,
+    EconomicSignificanceType,
     HybridRegimeConfig,
     RegimeCombinationStrategy,
-    ClusteringAlgorithm,
-    EconomicSignificanceType
 )
-from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector
+from src.utils.nas_tas.core.hybrid_regime_detector import HybridNASTASRegimeDetector
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

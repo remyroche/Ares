@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 
 # Import the new unified utilities
-from ..shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     # Configuration
     create_tas_config, create_nas_config, create_hybrid_config,
     ArchitectureType, SearchStrategy, OptimizationObjective,

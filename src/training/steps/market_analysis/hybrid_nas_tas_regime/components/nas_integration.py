@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime
 
-from ..config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer

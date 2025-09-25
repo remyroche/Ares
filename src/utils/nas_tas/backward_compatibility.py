@@ -51,8 +51,10 @@ try:
     from src.training.steps.market_analysis.tas_regime.regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
     
     # Hybrid legacy imports
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridRegimeDetector
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.multi_objective_optimizer import TradingMultiObjectiveOptimizer as HybridOptimizer
+    from src.utils.nas_tas.core.hybrid_regime_detector import HybridRegimeDetector
+    from src.utils.nas_tas.core.multi_objective_optimizer import (
+        TradingMultiObjectiveOptimizer as HybridOptimizer,
+    )
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.economic_evaluator import EconomicEvaluator as HybridEvaluator
     
     LEGACY_IMPORTS_AVAILABLE = True

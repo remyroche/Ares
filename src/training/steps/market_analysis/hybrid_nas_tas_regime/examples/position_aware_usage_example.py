@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import logging
 
 # Import shared utilities
-from ..shared_utils.position_aware_trading import (
+from src.utils.nas_tas.shared_utils.position_aware_trading import (
     PositionAwareTradingAnalyzer, PositionAwareConfig,
     create_position_aware_analyzer, quick_position_aware_analysis
 )

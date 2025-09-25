@@ -31,10 +31,14 @@ except ImportError:
 
 # Import existing hybrid components
 try:
-    from .core.hybrid_regime_detector import HybridRegimeDetector
-    from .shared_utils.search_strategies import SearchStrategyManager
-    from .shared_utils.analysis_components import SharedClusteringUtilities
-    from .shared_utils.position_aware_trading import PositionAwareTradingAnalyzer
+    from src.utils.nas_tas.core.hybrid_regime_detector import HybridRegimeDetector
+    from src.utils.nas_tas.shared_utils.search_strategies import SearchStrategyManager
+    from src.utils.nas_tas.shared_utils.analysis_components import (
+        SharedClusteringUtilities,
+    )
+    from src.utils.nas_tas.shared_utils.position_aware_trading import (
+        PositionAwareTradingAnalyzer,
+    )
     HYBRID_SYSTEM_AVAILABLE = True
 except ImportError:
     HYBRID_SYSTEM_AVAILABLE = False

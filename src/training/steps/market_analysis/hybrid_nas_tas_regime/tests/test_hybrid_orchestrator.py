@@ -12,8 +12,10 @@ import tempfile
 import json
 from pathlib import Path
 
-from ..config.hybrid_regime_config import HybridRegimeConfig
-from ..integration.hybrid_orchestrator import HybridRegimeOrchestrator
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.integration.hybrid_orchestrator import (
+    HybridRegimeOrchestrator,
+)
 
 
 class TestHybridOrchestrator(unittest.TestCase):

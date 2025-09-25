@@ -12,7 +12,28 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime
 
-from ..config.hybrid_regime_config import HybridRegimeConfig, EconomicSignificanceType
+# Note: This import would need to be updated based on the actual config location
+# from ..config.hybrid_regime_config import HybridRegimeConfig, EconomicSignificanceType
+
+# Define EconomicSignificanceType locally for now
+from enum import Enum
+
+class EconomicSignificanceType(Enum):
+    """Types of economic significance."""
+    VOLATILITY_REGIME = "volatility_regime"
+    TREND_STRENGTH = "trend_strength"
+    VOLUME_PROFILE = "volume_profile"
+    CORRELATION_STRUCTURE = "correlation_structure"
+    MARKET_EFFICIENCY = "market_efficiency"
+    LIQUIDITY_REGIME = "liquidity_regime"
+    MOMENTUM_REGIME = "momentum_regime"
+    VOLUME_MOMENTUM = "volume_momentum"
+    PRICE_ACTION = "price_action"
+    MARKET_MICROSTRUCTURE = "market_microstructure"
+    SHORT_TERM_MOMENTUM = "short_term_momentum"
+    INTRA_BAR_PATTERNS = "intra_bar_patterns"
+    MICROSTRUCTURE_PATTERNS = "microstructure_patterns"
+    SECTOR_ROTATION = "sector_rotation"
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer

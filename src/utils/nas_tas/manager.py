@@ -18,7 +18,7 @@ import time
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 
-from .evaluation import UnifiedEvaluator
+from .unified_evaluator import UnifiedEvaluator
 from .hardware import UnifiedHardwareOptimizer, HardwareConfig, WorkloadType, OptimizationLevel
 from .search import UnifiedSearchEngine
 from .data_processing import UnifiedDataProcessor

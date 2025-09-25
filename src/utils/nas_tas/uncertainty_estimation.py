@@ -48,24 +48,23 @@ try:
     from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
     from src.utils.serialization_utils import UniversalSerializer
     from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+    SHARED_UTILITIES_AVAILABLE = True
 except ImportError as e:
-    # Fallback imports for development
+    # Use centralized fallback utilities
     warnings.warn(f"Some shared utilities not available: {e}")
+    from .fallback_utilities import get_fallback_utils
     
-    def safe_divide(a, b, default=0.0):
-        return a / b if b != 0 else default
+    # Get fallback utilities
+    fallback_utils = get_fallback_utils()
+    math_utils = fallback_utils.get_math_utils()
+    tprint_utils = fallback_utils.get_tprint_utils()
     
-    def safe_log(x, default=0.0):
-        return np.log(x) if x > 0 else default
-    
-    def safe_sqrt(x, default=0.0):
-        return np.sqrt(x) if x >= 0 else default
-    
-    def safe_mean(x, default=0.0):
-        return np.mean(x) if len(x) > 0 else default
-    
-    def safe_std(x, default=0.0):
-        return np.std(x, ddof=1) if len(x) > 1 else default
+    # Map fallback functions to expected names
+    safe_divide = math_utils.safe_divide
+    safe_log = math_utils.safe_log
+    safe_sqrt = math_utils.safe_sqrt
+    safe_mean = math_utils.safe_mean
+    safe_std = math_utils.safe_std
     
     def validate_finite(value, name="value"):
         val = float(value)
@@ -78,10 +77,104 @@ except ImportError as e:
             raise ValueError(f"{name} must be positive, got {value}")
         return value
     
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
+    def validate_numeric_array(arr, name="array"):
+        if not isinstance(arr, (list, np.ndarray)):
+            raise ValueError(f"{name} must be a list or numpy array")
+        return np.array(arr)
     
-    tprint_info = tprint_warning = tprint_error = tprint_success = tprint
+    def safe_matrix_inverse(matrix, default=None):
+        try:
+            return np.linalg.inv(matrix)
+        except np.linalg.LinAlgError:
+            return default if default is not None else np.eye(matrix.shape[0])
+    
+    def safe_correlation(x, y, default=0.0):
+        return math_utils.safe_correlation(x, y, default)
+    
+    def safe_covariance(x, y, default=0.0):
+        try:
+            return np.cov(x, y)[0, 1] if len(x) == len(y) and len(x) > 1 else default
+        except Exception:
+            return default
+    
+    def safe_percentile(values, percentile, default=0.0):
+        return math_utils.safe_percentile(values, percentile, default)
+    
+    # Hardware utilities fallbacks
+    def get_m1_gpu_manager():
+        return fallback_utils.get_hardware_utils()
+    
+    def get_m1_memory_optimizer():
+        return fallback_utils.get_hardware_utils()
+    
+    def get_m1_cpu_optimizer():
+        return fallback_utils.get_hardware_utils()
+    
+    def memory_checkpoint(name="fallback"):
+        return fallback_utils.get_hardware_utils().memory_checkpoint(name)
+    
+    def gpu_context(name="fallback"):
+        return fallback_utils.get_hardware_utils().gpu_context(name)
+    
+    def optimize_memory(data):
+        return fallback_utils.get_hardware_utils().optimize_memory(data)
+    
+    # TPrint utilities
+    tprint = tprint_utils.tprint
+    tprint_info = tprint_utils.tprint_info
+    tprint_warning = tprint_utils.tprint_warning
+    tprint_error = tprint_utils.tprint_error
+    tprint_success = tprint_utils.tprint_success
+    
+    # Serialization fallback
+    class UniversalSerializer:
+        def __init__(self):
+            self.serializer = fallback_utils.get_serialization_utils()
+        
+        def save(self, data, filepath):
+            return self.serializer.save_json(data, filepath)
+        
+        def load(self, filepath):
+            return self.serializer.load_json(filepath)
+    
+    # Math validation fallback
+    class MathValidation:
+        def __init__(self):
+            pass
+        
+        def validate(self, value):
+            return validate_finite(value)
+    
+    def validate_correlation_matrix(matrix, name="correlation_matrix"):
+        try:
+            matrix = np.array(matrix)
+            if matrix.shape[0] != matrix.shape[1]:
+                raise ValueError(f"{name} must be square")
+            return matrix
+        except Exception:
+            raise ValueError(f"Invalid {name}")
+    
+    def math_safe(func, *args, default=0.0, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            return default
+    
+    # Bayesian TPE fallback
+    class BayesianTPEOptimizer:
+        def __init__(self, config):
+            self.config = config
+        
+        def optimize(self, objective, n_trials=10):
+            return fallback_utils.get_optimization_utils().optimize_parameters(
+                objective, {}, n_trials
+            )
+    
+    class BayesianTPEConfig:
+        def __init__(self):
+            pass
+    
+    SHARED_UTILITIES_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 

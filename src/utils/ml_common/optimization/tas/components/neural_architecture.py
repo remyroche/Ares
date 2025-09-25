@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime
 
-from ..core.tas_config import TASConfig, TASArchitectureType, TradingObjective
+from src.utils.nas_tas.tas.tas_config import TASConfig, TASArchitectureType, TradingObjective
 
 logger = logging.getLogger(__name__)
 

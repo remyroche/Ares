@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from enum import Enum
 
-from src.utils.nas_tas.tas.tas_config import TreeModelType, OptimizationObjective
+from .tas_config import TreeModelType, OptimizationObjective
 
 logger = logging.getLogger(__name__)
 
@@ -365,6 +365,7 @@ class TreeArchitectureCandidate:
     
     def crossover(self, other: 'TreeArchitectureCandidate') -> 'TreeArchitectureCandidate':
         """Create a crossover between two architectures."""
+        import random
         
         # Create offspring
         offspring = TreeArchitectureCandidate(

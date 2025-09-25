@@ -24,7 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
 
-from ..core.tas_config import MicroRegimeType, MarketRegime
+from src.utils.nas_tas.tas.tas_config import MicroRegimeType, MarketRegime
 
 logger = logging.getLogger(__name__)
 

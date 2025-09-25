@@ -165,7 +165,7 @@ adaptation_results = meta_learner.few_shot_adaptation(
 ### TAS Engine Configuration
 
 ```python
-from src.utils.ml_common.optimization.tas.core import TASEngineConfig, SearchStrategy, OptimizationMode
+from src.utils.nas_tas.tas.tas_config import TASEngineConfig, SearchStrategy, OptimizationMode
 
 config = TASEngineConfig(
     # Search strategy
@@ -197,7 +197,7 @@ config = TASEngineConfig(
 ### Search Strategy Configuration
 
 ```python
-from src.utils.ml_common.optimization.tas.core import TASSearchConfig, SearchMethod
+from src.utils.nas_tas.tas.tas_config import TASSearchConfig, SearchMethod
 
 search_config = TASSearchConfig(
     search_strategy=SearchMethod.BAYESIAN,

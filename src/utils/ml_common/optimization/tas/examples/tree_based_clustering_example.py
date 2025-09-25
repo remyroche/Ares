@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import Dict, Any
 
-from ..core.tas_config import TASConfig, TreeModelType, ClusteringStrategy, ClusteringMetric
+from src.utils.nas_tas.tas.tas_config import TASConfig, TreeModelType, ClusteringStrategy, ClusteringMetric
 from src.utils.nas_tas.clustering_regime_detection import (
     TreeBasedClusteringRegimeDetector,
     ClusteringRegimeConfig,

@@ -20,9 +20,9 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 
-from ..core.tas_config import TASConfig, TreeModelType
-from ..core.tree_architecture import TreeArchitectureCandidate
-from ..core.tas_result import TASResult
+from src.utils.nas_tas.tas.tas_config import TASConfig, TreeModelType
+from src.utils.nas_tas.tas.tree_architecture import TreeArchitectureCandidate
+from src.utils.nas_tas.tas.tas_result import TASResult
 
 logger = logging.getLogger(__name__)
 

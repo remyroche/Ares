@@ -17,7 +17,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 import torch
 
-from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
+from src.utils.nas_tas.tas.tas_config import TASConfig, TradingObjective, MarketRegime
 
 # Import unified evaluator
 try:

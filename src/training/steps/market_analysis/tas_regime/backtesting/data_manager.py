@@ -480,35 +480,113 @@ class BacktestingDataManager:
         return data
     
     def _generate_regime_data(self, data: pd.DataFrame) -> Optional[Dict[str, Any]]:
-        """Generate regime data for backtesting."""
-        if not self.config.enable_regime_features:
-            return None
-        
-        # Simple regime detection based on features
-        regime_labels = data['combined_regime'].values if 'combined_regime' in data.columns else np.zeros(len(data))
-        
-        # Calculate regime statistics
-        unique_regimes = np.unique(regime_labels)
-        regime_stats = {}
-        
-        for regime_id in unique_regimes:
-            regime_mask = regime_labels == regime_id
-            regime_data = data[regime_mask]
+        """Generate regime data for backtesting with comprehensive error handling."""
+        try:
+            if not self.config.enable_regime_features:
+                tprint_debug("📊 Regime features disabled, skipping regime data generation")
+                return None
             
-            regime_stats[f'regime_{regime_id}'] = {
-                'regime_id': regime_id,
-                'count': np.sum(regime_mask),
-                'percentage': np.sum(regime_mask) / len(regime_labels),
-                'mean_return': regime_data['log_return'].mean() if 'log_return' in regime_data.columns else 0.0,
-                'volatility': regime_data['volatility_20'].mean() if 'volatility_20' in regime_data.columns else 0.0,
-                'mean_volume': regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0
+            if len(data) < 10:
+                tprint_warning("⚠️ Insufficient data for regime detection")
+                return None
+            
+            # Enhanced regime detection with error handling
+            regime_labels = None
+            
+            if 'combined_regime' in data.columns:
+                try:
+                    regime_labels = data['combined_regime'].values
+                    if not np.all(np.isfinite(regime_labels)):
+                        tprint_warning("⚠️ Invalid regime labels detected, using fallback")
+                        regime_labels = None
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error reading combined_regime column: {e}")
+                    regime_labels = None
+            
+            if regime_labels is None:
+                # Fallback: create simple regime labels based on volatility
+                try:
+                    if 'volatility_20' in data.columns:
+                        volatility_threshold = data['volatility_20'].median()
+                        regime_labels = (data['volatility_20'] > volatility_threshold).astype(int)
+                        tprint_debug("📊 Using volatility-based regime detection")
+                    else:
+                        # Last resort: create uniform regime
+                        regime_labels = np.zeros(len(data))
+                        tprint_warning("⚠️ No suitable regime features found, using uniform regime")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error in fallback regime detection: {e}")
+                    regime_labels = np.zeros(len(data))
+            
+            # Calculate regime statistics with validation
+            unique_regimes = np.unique(regime_labels)
+            regime_stats = {}
+            
+            for regime_id in unique_regimes:
+                try:
+                    regime_mask = regime_labels == regime_id
+                    regime_data = data[regime_mask]
+                    
+                    if len(regime_data) == 0:
+                        tprint_warning(f"⚠️ No data for regime {regime_id}")
+                        continue
+                    
+                    # Calculate statistics with error handling
+                    mean_return = 0.0
+                    if 'log_return' in regime_data.columns:
+                        try:
+                            mean_return = regime_data['log_return'].mean()
+                            if not np.isfinite(mean_return):
+                                mean_return = 0.0
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error calculating mean return for regime {regime_id}: {e}")
+                    
+                    volatility = 0.0
+                    if 'volatility_20' in regime_data.columns:
+                        try:
+                            volatility = regime_data['volatility_20'].mean()
+                            if not np.isfinite(volatility):
+                                volatility = 0.0
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error calculating volatility for regime {regime_id}: {e}")
+                    
+                    mean_volume = 0.0
+                    if 'volume' in regime_data.columns:
+                        try:
+                            mean_volume = regime_data['volume'].mean()
+                            if not np.isfinite(mean_volume):
+                                mean_volume = 0.0
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error calculating mean volume for regime {regime_id}: {e}")
+                    
+                    regime_stats[f'regime_{regime_id}'] = {
+                        'regime_id': regime_id,
+                        'count': int(np.sum(regime_mask)),
+                        'percentage': float(np.sum(regime_mask) / len(regime_labels)),
+                        'mean_return': float(mean_return),
+                        'volatility': float(volatility),
+                        'mean_volume': float(mean_volume)
+                    }
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error processing regime {regime_id}: {e}")
+                    continue
+            
+            if not regime_stats:
+                tprint_warning("⚠️ No valid regime statistics calculated")
+                return None
+            
+            tprint_success(f"✅ Regime data generated: {len(regime_stats)} regimes")
+            
+            return {
+                'regime_labels': regime_labels,
+                'regime_stats': regime_stats,
+                'qualified_regimes': regime_stats
             }
-        
-        return {
-            'regime_labels': regime_labels,
-            'regime_stats': regime_stats,
-            'qualified_regimes': regime_stats
-        }
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime data generation failed: {e}")
+            return None
     
     def _calculate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate data quality metrics."""

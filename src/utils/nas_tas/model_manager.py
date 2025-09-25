@@ -12,12 +12,16 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
-import pickle
 import shutil
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
+
+from src.utils.nas_tas.shared_serialization import (
+    JSONSerializer,
+    PickleSerializer,
+    estimate_pickle_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -674,9 +678,11 @@ class ModelManager:
     def _calculate_model_size(self, model: Any) -> int:
         """Calculate model size in bytes."""
         try:
-            # Calculate actual model size
-            return len(pickle.dumps(model))
-        except (pickle.PicklingError, TypeError, AttributeError) as e:
+            size = estimate_pickle_size(model)
+            if size <= 0:
+                raise ValueError("Estimated size was zero")
+            return size
+        except (ValueError, TypeError, AttributeError) as e:
             self.logger.warning(f"Could not calculate model size: {e}")
             return 1024 * 1024  # 1MB default
         except Exception as e:
@@ -689,10 +695,10 @@ class ModelManager:
             # Save model
             model_path = Path(self.config.model_storage_path) / model_id / f"{version}.pkl"
             model_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(model_path, 'wb') as f:
-                pickle.dump(model, f)
-            
+
+            if not PickleSerializer.save(model, model_path):
+                raise IOError(f"Could not persist model {model_id} to {model_path}")
+
             # Save metadata
             metadata_path = Path(self.config.model_metadata_path) / f"{model_id}_{version}.json"
             metadata_dict = {
@@ -714,11 +720,11 @@ class ModelManager:
                 'training_data_shape': metadata.training_data_shape,
                 'feature_names': metadata.feature_names
             }
-            
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata_dict, f, indent=2)
-            
-        except (IOError, OSError, pickle.PicklingError) as e:
+
+            if not JSONSerializer.save(metadata_dict, metadata_path):
+                raise IOError(f"Could not persist metadata for model {model_id}")
+
+        except (IOError, OSError) as e:
             self.logger.error(f"❌ Could not save model {model_id}: {e}")
             raise
         except Exception as e:
@@ -734,13 +740,14 @@ class ModelManager:
                 self.logger.error(f"❌ Model file not found: {model_path}")
                 raise FileNotFoundError(f"Model {model_id} v{version} not found at {model_path}")
 
-            with open(model_path, 'rb') as f:
-                model = pickle.load(f)
+            model = PickleSerializer.load(model_path)
+            if model is None:
+                raise IOError(f"Failed to load model from {model_path}")
 
             self.logger.debug(f"✅ Successfully loaded model {model_id} v{version}")
             return model
 
-        except (FileNotFoundError, IOError, OSError, pickle.UnpicklingError) as e:
+        except (FileNotFoundError, IOError, OSError) as e:
             self.logger.error(f"❌ Could not load model {model_id} v{version}: {e}")
             raise
         except Exception as e:

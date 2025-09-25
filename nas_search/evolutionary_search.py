@@ -5,6 +5,14 @@ This module provides a simplified interface to the shared evolutionary search ut
 It imports and re-exports the main classes from the shared implementation.
 """
 
+import warnings
+
+warnings.warn(
+    "nas_search.evolutionary_search is deprecated; use src.utils.nas_tas.evolutionary_search instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 # Import from shared utilities
 from src.utils.nas_tas.evolutionary_search import (
     EvolutionaryTreeSearch,

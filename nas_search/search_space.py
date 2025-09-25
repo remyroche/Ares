@@ -8,6 +8,14 @@ from the src/utils/ directory.
 This module now uses the consolidated search space implementation from src/utils/nas_tas/.
 """
 
+import warnings
+
+warnings.warn(
+    "nas_search.search_space is deprecated; use src.utils.nas_tas.search_space instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 # Import the consolidated search space implementation
 from src.utils.nas_tas.search_space import (
     SearchSpace, SearchSpaceConfig, ParameterRange, SearchSpaceType, OptimizationStrategy,

@@ -198,6 +198,19 @@ from .confidence_scoring import (
     ConfidenceConfig
 )
 
+from .shared_services import (
+    DataValidationResult,
+    FeatureEngineeringResult,
+    ModelManagerService,
+    ModelSelectorService,
+    PerformanceTrackerService,
+    RegimeTrainerService,
+    SharedOrchestrationServices,
+    engineer_core_features,
+    run_shared_risk_analysis,
+    validate_market_data,
+)
+
 # Import unified evaluator
 from .unified_evaluator import (
     UnifiedEvaluator,
@@ -421,7 +434,19 @@ __all__ = [
     'HybridNASConfig',
     'HybridArchitectureCandidate',
     'optimize_hybrid_architecture',
-    'analyze_data_characteristics'
+    'analyze_data_characteristics',
+
+    # Shared orchestration services
+    'RegimeTrainerService',
+    'ModelSelectorService',
+    'ModelManagerService',
+    'PerformanceTrackerService',
+    'SharedOrchestrationServices',
+    'DataValidationResult',
+    'FeatureEngineeringResult',
+    'validate_market_data',
+    'engineer_core_features',
+    'run_shared_risk_analysis',
 ]
 
 __version__ = "1.0.0"

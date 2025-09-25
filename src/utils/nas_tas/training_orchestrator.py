@@ -12,40 +12,30 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
-import pickle
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import tprint for comprehensive logging
-try:
-    from src.utils.tprint import (
-        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-        tprint_success, tprint_progress, tprint_performance, tprint_timer
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    # Fallback function if tprint is not available
-    def tprint(message: str, color: str = "white", **kwargs):
-        print(f"[TRAINING_ORCHESTRATOR] {message}")
-    def tprint_debug(message: str, **kwargs):
-        print(f"[DEBUG] {message}")
-    def tprint_info(message: str, **kwargs):
-        print(f"[INFO] {message}")
-    def tprint_warning(message: str, **kwargs):
-        print(f"[WARNING] {message}")
-    def tprint_error(message: str, **kwargs):
-        print(f"[ERROR] {message}")
-    def tprint_success(message: str, **kwargs):
-        print(f"[SUCCESS] {message}")
-    def tprint_progress(message: str, **kwargs):
-        print(f"[PROGRESS] {message}")
-    def tprint_performance(message: str, **kwargs):
-        print(f"[PERFORMANCE] {message}")
-    def tprint_timer(message: str, **kwargs):
-        print(f"[TIMER] {message}")
-    TPRINT_AVAILABLE = False
+from src.utils.nas_tas.shared_logging import (
+    TPRINT_AVAILABLE,
+    tprint,
+    tprint_debug,
+    tprint_error,
+    tprint_info,
+    tprint_performance,
+    tprint_progress,
+    tprint_success,
+    tprint_timer,
+    tprint_warning,
+)
+from src.utils.nas_tas.shared_serialization import JSONSerializer, PickleSerializer
+from src.utils.nas_tas.shared_services import (
+    DataValidationResult,
+    FeatureEngineeringResult,
+    SharedOrchestrationServices,
+    engineer_core_features,
+    validate_market_data,
+)
 
 # Import components
 from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult
@@ -187,8 +177,11 @@ class TrainingOrchestrator:
         tprint("🎯 Initializing Training Orchestrator", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.services = SharedOrchestrationServices()
+        self.last_data_validation: Optional[DataValidationResult] = None
+        self.last_feature_engineering: Optional[FeatureEngineeringResult] = None
         tprint(f"📊 Config: mode={config.mode.value}, regime_detection={config.enable_regime_detection}", color="cyan")
-        
+
         # Set up logging
         tprint("📝 Setting up logging", color="yellow")
         if config.enable_logging:
@@ -242,48 +235,50 @@ class TrainingOrchestrator:
         """Initialize orchestration components."""
         tprint("🔧 Starting component initialization", color="yellow")
         try:
+            services = SharedOrchestrationServices()
             # Initialize trainer
             if self.config.enable_model_training:
                 tprint("🎓 Creating regime-aware trainer", color="yellow")
-                self.trainer = RegimeAwareTrainer(self.config.training_config)
+                trainer = RegimeAwareTrainer(self.config.training_config)
+                services = services.with_updates(trainer=trainer)
                 self.logger.info("✅ Regime-aware trainer initialized")
                 tprint("✅ Regime-aware trainer created", color="green")
             else:
-                self.trainer = None
                 tprint("⏭️ Model training disabled, skipping trainer", color="cyan")
-            
+
             # Initialize selector
             if self.config.enable_model_selection:
                 tprint("🎯 Creating model selector", color="yellow")
-                self.selector = ModelSelector(self.config.selection_config)
+                selector = ModelSelector(self.config.selection_config)
+                services = services.with_updates(selector=selector)
                 self.logger.info("✅ Model selector initialized")
                 tprint("✅ Model selector created", color="green")
             else:
-                self.selector = None
                 tprint("⏭️ Model selection disabled, skipping selector", color="cyan")
-            
+
             # Initialize manager
             if self.config.enable_model_management:
                 tprint("📁 Creating model manager", color="yellow")
-                self.manager = ModelManager(self.config.manager_config)
+                manager = ModelManager(self.config.manager_config)
+                services = services.with_updates(manager=manager)
                 self.logger.info("✅ Model manager initialized")
                 tprint("✅ Model manager created", color="green")
             else:
-                self.manager = None
                 tprint("⏭️ Model management disabled, skipping manager", color="cyan")
-            
+
             # Initialize performance tracker
             if self.config.enable_performance_tracking:
                 tprint("📊 Creating performance tracker", color="yellow")
-                self.performance_tracker = PerformanceTracker(self.config.performance_config)
+                performance_tracker = PerformanceTracker(self.config.performance_config)
+                services = services.with_updates(performance_tracker=performance_tracker)
                 self.logger.info("✅ Performance tracker initialized")
                 tprint("✅ Performance tracker created", color="green")
             else:
-                self.performance_tracker = None
                 tprint("⏭️ Performance tracking disabled, skipping tracker", color="cyan")
-            
+
+            self.services = services
             tprint("✅ All components initialized successfully", color="green")
-            
+
         except Exception as e:
             tprint(f"❌ Component initialization failed: {e}", color="red")
             self.logger.error(f"❌ Component initialization failed: {e}")
@@ -336,7 +331,7 @@ class TrainingOrchestrator:
             
             # Step 3: Model training
             training_result = None
-            if self.config.enable_model_training and self.trainer:
+            if self.config.enable_model_training and self.services.trainer:
                 self.logger.info("🤖 Training regime-aware models...")
                 training_result = self._orchestrate_training(
                     processed_data, target_variable, feature_columns, timestamps
@@ -359,20 +354,20 @@ class TrainingOrchestrator:
                     result.overfitting_results = overfitting_results
             
             # Step 4: Model selection setup
-            if self.config.enable_model_selection and self.selector and training_result:
+            if self.config.enable_model_selection and self.services.selector and training_result:
                 self.logger.info("🎯 Setting up model selection...")
                 self._setup_model_selection(training_result)
             
             # Step 5: Model management
             management_result = None
-            if self.config.enable_model_management and self.manager and training_result:
+            if self.config.enable_model_management and self.services.manager and training_result:
                 self.logger.info("📦 Managing trained models...")
                 management_result = self._orchestrate_model_management(training_result)
                 result.management_result = management_result
             
             # Step 6: Performance tracking
             performance_result = None
-            if self.config.enable_performance_tracking and self.performance_tracker:
+            if self.config.enable_performance_tracking and self.services.performance_tracker:
                 self.logger.info("📈 Setting up performance tracking...")
                 performance_result = self._orchestrate_performance_tracking(training_result)
                 result.performance_result = performance_result
@@ -427,51 +422,14 @@ class TrainingOrchestrator:
                                     timestamps: Optional[pd.Series]) -> pd.DataFrame:
         """Validate and preprocess market data."""
         try:
-            # Check if target variable exists
-            if target_variable not in market_data.columns:
-                raise ValueError(f"Target variable '{target_variable}' not found in data")
-            
-            # Determine feature columns
-            if feature_columns is None:
-                feature_columns = [col for col in market_data.columns if col != target_variable]
-            
-            # Check for missing values
-            missing_values = market_data.isnull().sum()
-            if missing_values.any():
-                missing_summary = missing_values[missing_values > 0].to_dict()
-                self.logger.warning(f"⚠️ Found missing values in {len(missing_summary)} columns: {missing_summary}")
-                try:
-                    # Fill missing values with forward fill, then backward fill
-                    market_data = market_data.ffill().bfill()
-                    self.logger.info(f"✅ Filled missing values using forward/backward fill")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to fill missing values: {e}")
-                    raise
-            
-            # Check for infinite values
-            inf_values = np.isinf(market_data.select_dtypes(include=[np.number])).sum()
-            if inf_values.any():
-                inf_summary = inf_values[inf_values > 0].to_dict()
-                self.logger.warning(f"⚠️ Found infinite values in {len(inf_summary)} columns: {inf_summary}")
-                try:
-                    # Replace infinite values with NaN and fill
-                    market_data = market_data.replace([np.inf, -np.inf], np.nan)
-                    market_data = market_data.ffill().bfill()
-                    self.logger.info(f"✅ Replaced infinite values and filled using forward/backward fill")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to handle infinite values: {e}")
-                    raise
-            
-            # Check data types
-            numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-            non_numeric_features = [col for col in feature_columns if col not in numeric_columns]
-            if non_numeric_features:
-                self.logger.warning(f"⚠️ Non-numeric feature columns detected: {non_numeric_features}")
-                self.logger.info(f"   Total features: {len(feature_columns)}, Numeric features: {len(numeric_columns)}")
-            
-            self.logger.info(f"✅ Data validation completed - Shape: {market_data.shape}")
-            return market_data
-            
+            validation_result = validate_market_data(
+                market_data,
+                target_variable,
+                feature_columns,
+                logger=self.logger,
+            )
+            self.last_data_validation = validation_result
+            return validation_result.data
         except Exception as e:
             self.logger.error(f"❌ Data validation failed: {e}")
             raise
@@ -481,54 +439,18 @@ class TrainingOrchestrator:
                                    target_variable: str) -> pd.DataFrame:
         """Perform feature engineering on market data."""
         try:
-            # Create a copy to avoid modifying original data
-            data = market_data.copy()
-            
-            # Technical indicators
-            if 'close' in data.columns:
-                # Price-based features
-                data['price_change'] = data['close'].pct_change()
-                data['price_volatility'] = data['price_change'].rolling(window=20).std()
-                data['price_momentum'] = data['close'] / data['close'].shift(20)
-                
-                # Moving averages
-                data['ma_5'] = data['close'].rolling(window=5).mean()
-                data['ma_20'] = data['close'].rolling(window=20).mean()
-                data['ma_50'] = data['close'].rolling(window=50).mean()
-                
-                # Price position
-                data['price_position_20'] = (data['close'] - data['close'].rolling(window=20).min()) / (data['close'].rolling(window=20).max() - data['close'].rolling(window=20).min())
-            
-            if 'volume' in data.columns:
-                # Volume-based features
-                data['volume_change'] = data['volume'].pct_change()
-                data['volume_ma'] = data['volume'].rolling(window=20).mean()
-                data['volume_ratio'] = data['volume'] / data['volume_ma']
-            
-            if 'high' in data.columns and 'low' in data.columns:
-                # Range-based features
-                data['price_range'] = (data['high'] - data['low']) / data['close']
-                data['range_volatility'] = data['price_range'].rolling(window=20).std()
-            
-            # Time-based features
-            if data.index.dtype == 'datetime64[ns]':
-                data['hour'] = data.index.hour
-                data['day_of_week'] = data.index.dayofweek
-                data['month'] = data.index.month
-            
-            # Remove rows with NaN values created by rolling operations
-            data = data.dropna()
-            
-            self.logger.info(f"✅ Feature engineering completed - New shape: {data.shape}")
-            return data
-            
+            engineering_result = engineer_core_features(
+                market_data,
+                logger=self.logger,
+            )
+            self.last_feature_engineering = engineering_result
+            return engineering_result.data
         except Exception as e:
             self.logger.error(f"❌ Feature engineering failed: {e}")
-            self.logger.warning("⚠️ Returning original data - feature engineering will be skipped, which may impact model performance")
-            # Add warning to result warnings if we have access to result object
-            if 'result' in locals():
-                result.warnings.append(f"Feature engineering failed: {e}")
-            return market_data  # Return original data if engineering fails
+            self.logger.warning(
+                "⚠️ Returning original data - feature engineering will be skipped, which may impact model performance"
+            )
+            return market_data
     
     def _detect_overfitting_in_training_result(self, 
                                              training_result: RegimeTrainingResult,
@@ -602,7 +524,7 @@ class TrainingOrchestrator:
         """Orchestrate model training."""
         try:
             # Train models
-            training_result = self.trainer.train_models(
+            training_result = self.services.trainer.train_models(
                 market_data=market_data,
                 target_variable=target_variable,
                 feature_columns=feature_columns,
@@ -630,7 +552,7 @@ class TrainingOrchestrator:
         """Setup model selection with trained models."""
         try:
             # Register models with selector
-            self.selector.register_models(
+            self.services.selector.register_models(
                 regime_models=training_result.models_trained,
                 ensemble_models=training_result.ensemble_models
             )
@@ -645,13 +567,13 @@ class TrainingOrchestrator:
         """Orchestrate model management."""
         try:
             # Register models with manager
-            management_result = self.manager.register_models(training_result.models_trained)
+            management_result = self.services.manager.register_models(training_result.models_trained)
             
             # Deploy models
-            deployment_result = self.manager.deploy_models()
+            deployment_result = self.services.manager.deploy_models()
             
             # Setup monitoring
-            monitoring_result = self.manager.setup_monitoring()
+            monitoring_result = self.services.manager.setup_monitoring()
             
             result = {
                 'registration': management_result,
@@ -679,7 +601,7 @@ class TrainingOrchestrator:
                     model_id = f"regime_{regime_id}_{model_type}"
                     
                     # Setup tracking for this model
-                    tracking_result[model_id] = self.performance_tracker.setup_model_tracking(
+                    tracking_result[model_id] = self.services.performance_tracker.setup_model_tracking(
                         model_id=model_id,
                         model_info=model_info
                     )
@@ -756,17 +678,20 @@ class TrainingOrchestrator:
                 'warnings': result.warnings
             }
             
-            with open(output_dir / "orchestration_result.json", 'w') as f:
-                json.dump(result_summary, f, indent=2)
-            
+            summary_path = output_dir / "orchestration_result.json"
+            if not JSONSerializer.save(result_summary, summary_path):
+                self.logger.warning(f"⚠️ Failed to persist orchestration summary to {summary_path}")
+
             # Save detailed results if available
             if result.training_result:
-                with open(output_dir / "training_result.pkl", 'wb') as f:
-                    pickle.dump(result.training_result, f)
-            
+                training_path = output_dir / "training_result.pkl"
+                if not PickleSerializer.save(result.training_result, training_path):
+                    self.logger.warning(f"⚠️ Failed to persist training results to {training_path}")
+
             if result.selection_result:
-                with open(output_dir / "selection_result.pkl", 'wb') as f:
-                    pickle.dump(result.selection_result, f)
+                selection_path = output_dir / "selection_result.pkl"
+                if not PickleSerializer.save(result.selection_result, selection_path):
+                    self.logger.warning(f"⚠️ Failed to persist selection results to {selection_path}")
             
             self.logger.info(f"✅ Orchestration results saved to {output_dir}")
             
@@ -804,20 +729,15 @@ class TrainingOrchestrator:
         Returns:
             ModelSelectionResult with selected model
         """
-        if not self.selector:
+        if not self.services.selector:
             raise ValueError("Model selector not initialized")
-        
-        return self.selector.select_model(market_data, context=context)
-    
+
+        return self.services.selector.select_model(market_data, context=context)
+
     def get_orchestration_status(self) -> Dict[str, Any]:
         """Get current orchestration status."""
         return {
-            'components_initialized': {
-                'trainer': self.trainer is not None,
-                'selector': self.selector is not None,
-                'manager': self.manager is not None,
-                'performance_tracker': self.performance_tracker is not None
-            },
+            'components_initialized': self.services.summary(),
             'execution_history': len(self.execution_history),
             'last_execution': self.execution_history[-1].start_time.isoformat() if self.execution_history else None,
             'configuration': self._get_configuration_summary()

@@ -12,11 +12,11 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
-import pickle
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
+
+from src.utils.nas_tas.shared_serialization import JSONSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -759,12 +759,12 @@ class PerformanceTracker:
                 'recommendations': report.recommendations
             }
 
-            with open(report_path, 'w') as f:
-                json.dump(report_dict, f, indent=2)
+            if not JSONSerializer.save(report_dict, report_path):
+                raise IOError(f"Failed to serialise performance report to {report_path}")
 
             self.logger.info(f"💾 Performance report saved: {report_path}")
 
-        except (IOError, OSError, json.JSONEncodeError) as e:
+        except (IOError, OSError) as e:
             self.logger.error(f"❌ Could not save performance report: {e}")
         except Exception as e:
             self.logger.error(f"❌ Unexpected error saving performance report: {e}")

@@ -12,6 +12,16 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
+from ..search_space import (
+    ParameterRange,
+    SearchSpace,
+    SearchSpaceConfig,
+    SearchSpaceType,
+    OptimizationStrategy,
+    create_default_nas_search_space,
+    create_tree_search_space as create_canonical_tree_search_space,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -570,3 +580,31 @@ def create_neural_search_space(constraints: Optional[ArchitectureConstraints] = 
 def create_tree_search_space(constraints: Optional[ArchitectureConstraints] = None) -> TreeSearchSpace:
     """Create a tree search space instance."""
     return TreeSearchSpace(constraints)
+
+
+# Re-export canonical search-space factories to keep a single source of truth.
+create_shared_nas_search_space = create_default_nas_search_space
+create_shared_tree_search_space = create_canonical_tree_search_space
+
+
+__all__ = [
+    "LayerType",
+    "ActivationFunction",
+    "ConnectionType",
+    "LayerSpecification",
+    "TreeSpecification",
+    "ArchitectureConstraints",
+    "NeuralArchitecture",
+    "TreeArchitecture",
+    "NeuralSearchSpace",
+    "TreeSearchSpace",
+    "create_neural_search_space",
+    "create_tree_search_space",
+    "ParameterRange",
+    "SearchSpace",
+    "SearchSpaceConfig",
+    "SearchSpaceType",
+    "OptimizationStrategy",
+    "create_shared_nas_search_space",
+    "create_shared_tree_search_space",
+]

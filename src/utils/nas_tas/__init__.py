@@ -24,7 +24,7 @@ Main Components:
 from .unified_regime_config import (
     UnifiedRegimeConfig,
     RegimeDetectionMethod,
-    OptimizationStrategy,
+    OptimizationStrategy as RegimeOptimizationStrategy,
     EconomicEvaluationMode
 )
 
@@ -151,8 +151,12 @@ from .search_space import (
     SearchSpaceConfig,
     ParameterRange,
     SearchSpaceType,
-    OptimizationStrategy
+    OptimizationStrategy as SearchSpaceOptimizationStrategy
 )
+
+# Maintain backwards compatibility by preferring the regime configuration enum
+# while still exposing the search-space specific strategy under an explicit name.
+OptimizationStrategy = RegimeOptimizationStrategy
 
 # Import risk analysis
 from .risk_analysis.risk_analysis import (
@@ -262,6 +266,8 @@ __all__ = [
     'UnifiedRegimeConfig',
     'RegimeDetectionMethod',
     'OptimizationStrategy',
+    'RegimeOptimizationStrategy',
+    'SearchSpaceOptimizationStrategy',
     'create_default_nas_search_space',
     'create_tree_search_space',
     'SearchSpace',

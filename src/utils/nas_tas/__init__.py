@@ -1,140 +1,263 @@
 """
-NAS TAS (Neural Architecture Search - Tree Architecture Search) Utilities
+NAS-TAS Training Utilities
 
-This module provides common utilities for NAS and TAS operations including
-backtesting engines, regime detection, and optimization tools.
+This module contains all training-related utilities for Neural Architecture Search (NAS)
+and Tree Architecture Search (TAS) systems. These utilities are specifically designed
+for training and optimization processes, not for live trading operations.
+
+Main Components:
+- Unified Search Engine: Core search algorithms for architecture optimization
+- Multi-Objective Optimizer: Advanced optimization strategies
+- Regime Detector: Market regime detection for training data analysis
+- Architecture Config: Configuration management for training architectures
+- Utilities: General training utilities and helper functions
+- Constraint Systems: Architecture constraint validation
+- Backward Compatibility: Legacy component adapters
+- ML Common Integration: Integration with existing ML utilities
+- Economic Evaluator: Economic significance evaluation during training
+- Ensemble Management: Dynamic ensemble optimization for training
 """
 
-from .unified_evaluator import (
-    UnifiedEvaluator,
-    EvaluationConfig,
-    EvaluationResult,
-    ModelType,
-    EvaluationMode,
-    MetricType
+# Core search and optimization components
+from .unified_search_engine import (
+    UnifiedSearchEngine,
+    SearchConfig,
+    SearchResult,
+    SearchStrategy,
+    ArchitectureType,
+    OptimizationObjective,
+    BayesianSearchStrategy,
+    EvolutionarySearchStrategy,
+    RandomSearchStrategy,
+    create_unified_search_engine,
+    quick_search
 )
 
-from .unified_multi_objective import (
+from .unified_multi_objective_optimizer import (
     UnifiedMultiObjectiveOptimizer,
-    PerformanceEstimator,
-    ArchitectureFeatures,
-    PerformancePrediction,
-    PerformanceMetric,
-    EstimatorType,
-    OptimizationConfig,
-    MultiObjectiveResult
+    UnifiedMultiObjectiveConfig,
+    UnifiedOptimizationResult,
+    ParetoSolution,
+    ObjectiveType,
+    OptimizationAlgorithm,
+    create_unified_multi_objective_optimizer,
+    quick_multi_objective_optimization
 )
 
-from .nas_feature_extractor import (
-    NASFeatureExtractor,
-    NASFeatureConfig,
-    FeatureExtractionResult,
-    create_nas_feature_extractor,
-    extract_features_for_clustering
+from .unified_regime_detector import (
+    UnifiedRegimeDetector,
+    RegimeDetectionConfig,
+    RegimeDetectionResult,
+    RegimeInfo,
+    RegimeDetectionMethod,
+    ArchitectureType as RegimeArchitectureType,
+    create_unified_regime_detector
 )
 
-from .bayesian_search import (
-    BayesianTreeSearch,
-    TreeBayesianOptimizer,
-    TreeGaussianProcess,
-    BayesianConfig
+from .unified_architecture_config import (
+    BaseArchitectureConfig,
+    TASArchitectureConfig,
+    NASArchitectureConfig,
+    HybridArchitectureConfig,
+    ArchitectureType as ConfigArchitectureType,
+    SearchStrategy as ConfigSearchStrategy,
+    OptimizationObjective as ConfigOptimizationObjective,
+    MarketRegime,
+    create_tas_config,
+    create_nas_config,
+    create_hybrid_config,
+    create_quick_config,
+    create_comprehensive_config
 )
 
-from .search_space import (
-    SearchSpace,
-    SearchSpaceConfig,
-    ParameterRange,
-    SearchSpaceType,
-    OptimizationStrategy,
-    create_default_nas_search_space,
-    create_tree_search_space
+from .unified_utilities import (
+    UnifiedUtilities,
+    UnifiedUtilityConfig,
+    ArchitectureType as UtilArchitectureType,
+    DataType,
+    create_unified_utilities,
+    quick_data_validation,
+    quick_data_optimization
 )
 
-from .risk_analysis import (
-    RiskAnalyzer,
-    RiskConfig,
-    RiskResult,
-    RiskMetric
+from .constraint_systems import (
+    BaseConstraintValidator,
+    NeuralConstraintValidator,
+    TreeConstraintValidator,
+    UnifiedConstraintValidator,
+    ArchitectureConstraints,
+    ConstraintViolation,
+    ConstraintValidationResult,
+    ConstraintType,
+    ConstraintSeverity,
+    create_neural_constraint_validator,
+    create_tree_constraint_validator,
+    create_unified_constraint_validator
 )
 
-from .backtesting_engine import (
-    BacktestingEngine,
-    BacktestingConfig,
-    BacktestingResult,
-    BacktestingMode
+from .backward_compatibility import (
+    LegacyNASEngineAdapter,
+    LegacyTASEngineAdapter,
+    LegacyMultiObjectiveOptimizerAdapter,
+    LegacyEconomicEvaluatorAdapter,
+    LegacyRegimeDetectorAdapter,
+    LegacyUtilitiesAdapter,
+    migrate_config_to_unified,
+    create_legacy_component,
+    get_migration_guide,
+    deprecated_warning
 )
 
-from .evolutionary_search import (
+from .ml_common_integration import (
+    MLCommonIntegration,
+    MLCommonIntegrationConfig,
+    MLCommonIntegrationType,
+    MLUtilityType,
+    MLUtilityConfig,
+    MLCommonIntegrationManager,
+    create_ml_common_integration,
+    create_tas_ml_common_integration,
+    create_nas_ml_common_integration,
+    create_hybrid_ml_common_integration,
+    create_shared_ml_utilities_manager
+)
+
+from .economic_evaluator import (
+    EconomicRegimeEvaluator,
+    create_economic_evaluator
+)
+
+from .dynamic_ensemble_manager import (
+    DynamicEnsembleManager,
+    EnsembleConfig,
+    EnsembleModel,
+    EnsembleResult
+)
+
+from .ensemble_optimizer import (
+    EnsembleOptimizer,
+    OptimizationConfig
+)
+
+from .evolutionary_algorithms import (
     EvolutionaryTreeSearch,
     TreeGeneticAlgorithm,
     TreeNSGA2,
     EvolutionaryConfig
 )
 
-from .uncertainty_estimation import (
-    TreeUncertaintyEstimator,
-    TreeEnsembleUncertainty,
-    TreeBayesianUncertainty,
-    UncertaintyConfig
-)
-
-from .confidence_scoring import (
-    TreeConfidenceScorer,
-    TreeReliabilityEstimator,
-    TreeCalibrationScorer,
-    ConfidenceConfig
-)
-
-
+# Export all main classes and functions
 __all__ = [
-    'UnifiedEvaluator',
-    'EvaluationConfig', 
-    'EvaluationResult',
-    'ModelType',
-    'EvaluationMode',
-    'MetricType',
+    # Core search and optimization
+    'UnifiedSearchEngine',
+    'SearchConfig',
+    'SearchResult',
+    'SearchStrategy',
+    'ArchitectureType',
+    'OptimizationObjective',
+    'BayesianSearchStrategy',
+    'EvolutionarySearchStrategy',
+    'RandomSearchStrategy',
+    'create_unified_search_engine',
+    'quick_search',
+    
+    # Multi-objective optimization
     'UnifiedMultiObjectiveOptimizer',
-    'PerformanceEstimator',
-    'ArchitectureFeatures',
-    'PerformancePrediction',
-    'PerformanceMetric',
-    'EstimatorType',
+    'UnifiedMultiObjectiveConfig',
+    'UnifiedOptimizationResult',
+    'ParetoSolution',
+    'ObjectiveType',
+    'OptimizationAlgorithm',
+    'create_unified_multi_objective_optimizer',
+    'quick_multi_objective_optimization',
+    
+    # Regime detection
+    'UnifiedRegimeDetector',
+    'RegimeDetectionConfig',
+    'RegimeDetectionResult',
+    'RegimeInfo',
+    'RegimeDetectionMethod',
+    'RegimeArchitectureType',
+    'create_unified_regime_detector',
+    
+    # Architecture configuration
+    'BaseArchitectureConfig',
+    'TASArchitectureConfig',
+    'NASArchitectureConfig',
+    'HybridArchitectureConfig',
+    'ConfigArchitectureType',
+    'ConfigSearchStrategy',
+    'ConfigOptimizationObjective',
+    'MarketRegime',
+    'create_tas_config',
+    'create_nas_config',
+    'create_hybrid_config',
+    'create_quick_config',
+    'create_comprehensive_config',
+    
+    # Utilities
+    'UnifiedUtilities',
+    'UnifiedUtilityConfig',
+    'UtilArchitectureType',
+    'DataType',
+    'create_unified_utilities',
+    'quick_data_validation',
+    'quick_data_optimization',
+    
+    # Constraint systems
+    'BaseConstraintValidator',
+    'NeuralConstraintValidator',
+    'TreeConstraintValidator',
+    'UnifiedConstraintValidator',
+    'ArchitectureConstraints',
+    'ConstraintViolation',
+    'ConstraintValidationResult',
+    'ConstraintType',
+    'ConstraintSeverity',
+    'create_neural_constraint_validator',
+    'create_tree_constraint_validator',
+    'create_unified_constraint_validator',
+    
+    # Backward compatibility
+    'LegacyNASEngineAdapter',
+    'LegacyTASEngineAdapter',
+    'LegacyMultiObjectiveOptimizerAdapter',
+    'LegacyEconomicEvaluatorAdapter',
+    'LegacyRegimeDetectorAdapter',
+    'LegacyUtilitiesAdapter',
+    'migrate_config_to_unified',
+    'create_legacy_component',
+    'get_migration_guide',
+    'deprecated_warning',
+    
+    # ML Common integration
+    'MLCommonIntegration',
+    'MLCommonIntegrationConfig',
+    'MLCommonIntegrationType',
+    'MLUtilityType',
+    'MLUtilityConfig',
+    'MLCommonIntegrationManager',
+    'create_ml_common_integration',
+    'create_tas_ml_common_integration',
+    'create_nas_ml_common_integration',
+    'create_hybrid_ml_common_integration',
+    'create_shared_ml_utilities_manager',
+    
+    # Economic evaluation
+    'EconomicRegimeEvaluator',
+    'create_economic_evaluator',
+    
+    # Ensemble management
+    'DynamicEnsembleManager',
+    'EnsembleConfig',
+    'EnsembleModel',
+    'EnsembleResult',
+    'EnsembleOptimizer',
     'OptimizationConfig',
-    'MultiObjectiveResult',
-    'NASFeatureExtractor',
-    'NASFeatureConfig',
-    'FeatureExtractionResult',
-    'create_nas_feature_extractor',
-    'extract_features_for_clustering',
-    'BayesianTreeSearch',
-    'TreeBayesianOptimizer',
-    'TreeGaussianProcess',
-    'BayesianConfig',
-    'SearchSpace',
-    'SearchSpaceConfig',
-    'ParameterRange',
-    'SearchSpaceType',
-    'OptimizationStrategy',
-    'create_default_nas_search_space',
-    'create_tree_search_space',
-    'RiskAnalyzer',
-    'RiskConfig',
-    'RiskResult',
-    'RiskMetric',
-    'BacktestingEngine',
-    'BacktestingConfig', 
-    'BacktestingResult',
-    'BacktestingMode',
+    
+    # Evolutionary algorithms
     'EvolutionaryTreeSearch',
     'TreeGeneticAlgorithm',
     'TreeNSGA2',
-    'EvolutionaryConfig',
-    'TreeUncertaintyEstimator',
-    'TreeEnsembleUncertainty',
-    'TreeBayesianUncertainty',
-    'UncertaintyConfig',
-    'TreeConfidenceScorer',
-    'TreeReliabilityEstimator',
-    'TreeCalibrationScorer',
-    'ConfidenceConfig'
+    'EvolutionaryConfig'
 ]

@@ -12,6 +12,7 @@ from enum import Enum
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_warning, tprint_error
 
 class ValidationLevel(Enum):
     """Validation levels."""

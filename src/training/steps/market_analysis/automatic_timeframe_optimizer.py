@@ -8,16 +8,14 @@ Key Features:
 - Automatic discovery of optimal timeframes for each model type
 - Integration with existing training pipeline
 - Model-specific optimization (Analyst vs Tactician)
-- Performance monitoring and validation
-- Fallback to default configurations when optimization fails
+- Performance monitoring and validation with strict fast-fail semantics
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 from datetime import datetime
 import json
 from pathlib import Path
@@ -51,8 +49,7 @@ try:
 except ImportError as e:
     OPTIMIZATION_AVAILABLE = False
     tprint_error(f"❌ CRITICAL: Optimization components not available: {e}")
-    tprint_warning("⚠️ Optimization will be disabled - this may cause training failures")
-    tprint_info("💡 Consider installing missing dependencies or using fallback configurations")
+    tprint_warning("⚠️ Automatic timeframe optimization cannot run without these components")
 
 
 class ModelType(Enum):
@@ -103,17 +100,22 @@ class AutomaticTimeframeOptimizer:
         self.logger = get_logger('AutomaticTimeframeOptimizer')
         self.config = config or {}
         self.optimization_enabled = OPTIMIZATION_AVAILABLE
-        
+
         if self.optimization_enabled:
             self._initialize_optimization_components()
             self.logger.info('🎯 Automatic timeframe optimization ENABLED')
         else:
-            self.logger.warning('⚠️ Automatic timeframe optimization DISABLED')
-        
+            self.logger.error('❌ FAST FAIL: Automatic timeframe optimization components missing')
+            self._raise_fast_fail(
+                None,
+                'dependencies_unavailable',
+                'Required optimization components could not be imported',
+            )
+
         # Results storage
         self.optimization_results: Dict[ModelType, OptimizationResult] = {}
         self.optimization_history: List[OptimizationResult] = []
-        
+
         # Performance tracking
         self.performance_metrics: Dict[str, List[float]] = {}
         
@@ -174,8 +176,7 @@ class AutomaticTimeframeOptimizer:
         except Exception as e:
             tprint_error(f"❌ CRITICAL: Failed to initialize optimization components: {e}")
             self.logger.error(f'❌ Failed to initialize optimization components: {e}')
-            tprint_warning("⚠️ Optimization will be disabled - training may fail")
-            self.optimization_enabled = False
+            self._raise_fast_fail(None, 'initialization_failure', str(e))
     
     def optimize_for_model(self, 
                           model_type: ModelType, 
@@ -193,15 +194,12 @@ class AutomaticTimeframeOptimizer:
             OptimizationResult with optimal configuration
         """
         if not self.optimization_enabled:
-            tprint_error(f"❌ FAST FAIL: Optimization disabled for {model_type.value} model")
-            tprint_error("❌ Cannot proceed without optimal timeframe discovery")
-            tprint_error("❌ Training pipeline will terminate")
-            raise RuntimeError(
-                f"❌ FAST FAIL: Optimization disabled for {model_type.value} model. "
-                f"Cannot proceed without optimal timeframe discovery. "
-                f"Training pipeline will terminate."
+            self._raise_fast_fail(
+                model_type,
+                'optimization_disabled',
+                'Automatic timeframe optimization was not initialized successfully',
             )
-        
+
         # Check for cached results
         if not force_optimization and model_type in self.optimization_results:
             tprint_info(f'📋 Using cached optimization results for {model_type.value}')
@@ -236,14 +234,10 @@ class AutomaticTimeframeOptimizer:
             tprint_success(f"✅ Optimization completed with score: {optimization_result.objective_score:.3f}")
             
             if optimization_result.objective_score < 0.3:
-                tprint_error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) for {model_type.value}')
-                tprint_error("❌ Score below minimum threshold (0.3)")
-                tprint_error("❌ Cannot proceed without optimal timeframe discovery")
-                self.logger.error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) for {model_type.value}')
-                raise RuntimeError(
-                    f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "
-                    f"Optimization score ({optimization_result.objective_score:.3f}) below minimum threshold (0.3). "
-                    f"Cannot proceed without optimal timeframe discovery."
+                self._raise_fast_fail(
+                    model_type,
+                    'low_optimization_score',
+                    f'Objective score {optimization_result.objective_score:.3f} below acceptance threshold',
                 )
             
             # Create optimized configuration
@@ -262,14 +256,10 @@ class AutomaticTimeframeOptimizer:
             
             # Fast fail if validation score is too low
             if validation_score < 0.5:
-                tprint_error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) for optimized configuration')
-                tprint_error("❌ Score below minimum threshold (0.5)")
-                tprint_error("❌ Cannot proceed with invalid timeframe configuration")
-                self.logger.error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) for optimized configuration')
-                raise RuntimeError(
-                    f"❌ FAST FAIL: Optimized configuration validation failed for {model_type.value} model. "
-                    f"Validation score ({validation_score:.3f}) below minimum threshold (0.5). "
-                    f"Cannot proceed with invalid timeframe configuration."
+                self._raise_fast_fail(
+                    model_type,
+                    'low_validation_score',
+                    f'Validation score {validation_score:.3f} below acceptance threshold',
                 )
             
             # Calculate performance metrics
@@ -314,13 +304,7 @@ class AutomaticTimeframeOptimizer:
             return result
             
         except Exception as e:
-            tprint_error(f'❌ FAST FAIL: Optimization failed for {model_type.value}: {e}')
-            tprint_error("❌ Training pipeline will terminate")
-            self.logger.error(f'❌ FAST FAIL: Optimization failed for {model_type.value}: {e}')
-            raise RuntimeError(
-                f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "
-                f"Error: {e}. Cannot proceed without optimal timeframe discovery."
-            )
+            self._raise_fast_fail(model_type, 'optimization_error', str(e))
     
     def _optimize_for_both_models(self, market_data: pd.DataFrame) -> OptimizationResult:
         """Optimize for both Analyst and Tactician models."""
@@ -367,49 +351,111 @@ class AutomaticTimeframeOptimizer:
         self.optimization_results[ModelType.BOTH] = combined_result
         return combined_result
     
-    def _create_optimized_config(self, 
-                                optimization_result: Any, 
+    def _create_optimized_config(self,
+                                optimization_result: Any,
                                 model_type: ModelType) -> MultiHorizonConfig:
         """Create optimized configuration from optimization results."""
         config = MultiHorizonConfig()
-        
+
         # Map discovered horizons to configuration
         if hasattr(optimization_result, 'optimal_horizons') and optimization_result.optimal_horizons:
-            horizon_values = list(optimization_result.optimal_horizons.values())
-            if len(horizon_values) >= 2:
-                if model_type == ModelType.ANALYST:
-                    # Analyst needs quick response
-                    config.time_horizons = {
-                        'immediate': min(horizon_values[:2]),
-                        'short': max(horizon_values[:2])
-                    }
-                else:  # Tactician
-                    # Tactician needs more time for position management
-                    config.time_horizons = {
-                        'immediate': max(horizon_values[:2]),
-                        'short': max(horizon_values[:2]) * 2
-                    }
-            else:
-                # Fallback
+            horizons = optimization_result.optimal_horizons
+            if isinstance(horizons, dict):
+                horizon_items = sorted(horizons.items(), key=lambda item: item[1])
+                if len(horizon_items) < 2:
+                    self._raise_fast_fail(
+                        model_type,
+                        'insufficient_horizons',
+                        'Optimizer returned fewer than two horizon candidates',
+                    )
+                immediate = horizon_items[0][1]
+                short = horizon_items[1][1]
+                if model_type == ModelType.TACTICIAN and short <= immediate:
+                    self._raise_fast_fail(
+                        model_type,
+                        'invalid_horizon_ordering',
+                        f'Returned horizons are not strictly increasing: {horizon_items}',
+                    )
                 config.time_horizons = {
-                    'immediate': horizon_values[0] if horizon_values else 2,
-                    'short': horizon_values[0] * 2 if horizon_values else 4
+                    'immediate': int(round(immediate)),
+                    'short': int(round(short)),
                 }
-        
+            elif isinstance(horizons, (list, tuple)) and horizons:
+                sorted_values = sorted(horizons)
+                if len(sorted_values) < 2:
+                    self._raise_fast_fail(
+                        model_type,
+                        'insufficient_horizons',
+                        'Optimizer returned fewer than two horizon values',
+                    )
+                immediate = sorted_values[0]
+                short = sorted_values[1]
+                if short <= immediate:
+                    self._raise_fast_fail(
+                        model_type,
+                        'invalid_horizon_ordering',
+                        f'Returned horizons are not strictly increasing: {sorted_values}',
+                    )
+                config.time_horizons = {
+                    'immediate': int(round(immediate)),
+                    'short': int(round(short)),
+                }
+            else:
+                self._raise_fast_fail(
+                    model_type,
+                    'unsupported_horizon_structure',
+                    f'Optimizer returned horizons of unsupported type: {type(horizons)!r}',
+                )
+        else:
+            self._raise_fast_fail(
+                model_type,
+                'missing_horizons',
+                'Optimizer did not return any candidate horizons',
+            )
+
         # Map discovered targets to configuration
         if hasattr(optimization_result, 'optimal_targets') and optimization_result.optimal_targets:
-            target_values = list(optimization_result.optimal_targets.values())
-            if len(target_values) >= 4:
-                sorted_targets = sorted(target_values)
+            targets = optimization_result.optimal_targets
+            names = ['micro', 'small', 'medium', 'good']
+            if isinstance(targets, dict):
+                sorted_items = sorted(targets.items(), key=lambda item: item[1])
+                if len(sorted_items) < len(names):
+                    self._raise_fast_fail(
+                        model_type,
+                        'insufficient_profit_targets',
+                        'Optimizer returned too few profit target candidates',
+                    )
                 config.profit_targets = {
-                    'micro': sorted_targets[0],
-                    'small': sorted_targets[1],
-                    'medium': sorted_targets[2],
-                    'good': sorted_targets[3]
+                    name: float(sorted_items[idx][1])
+                    for idx, name in enumerate(names)
                 }
-        
+            elif isinstance(targets, (list, tuple)) and targets:
+                sorted_values = sorted(targets)
+                if len(sorted_values) < len(names):
+                    self._raise_fast_fail(
+                        model_type,
+                        'insufficient_profit_targets',
+                        'Optimizer returned too few profit target values',
+                    )
+                config.profit_targets = {
+                    name: float(sorted_values[idx])
+                    for idx, name in enumerate(names)
+                }
+            else:
+                self._raise_fast_fail(
+                    model_type,
+                    'unsupported_target_structure',
+                    f'Optimizer returned targets of unsupported type: {type(targets)!r}',
+                )
+        else:
+            self._raise_fast_fail(
+                model_type,
+                'missing_profit_targets',
+                'Optimizer did not return any profit target candidates',
+            )
+
         return config
-    
+
     def _validate_optimized_config(self, 
                                   config: MultiHorizonConfig, 
                                   market_data: pd.DataFrame,
@@ -439,7 +485,8 @@ class AutomaticTimeframeOptimizer:
         except Exception as e:
             self.logger.warning(f'⚠️ Configuration validation failed: {e}')
             return 0.3  # Low score on error
-    
+
+
     def _calculate_performance_metrics(self, 
                                      optimization_result: Any, 
                                      validation_score: float) -> Dict[str, float]:
@@ -456,12 +503,22 @@ class AutomaticTimeframeOptimizer:
         
         return metrics
     
-    def _create_fallback_result(self, model_type: ModelType) -> OptimizationResult:
-        """Fast fail when optimization is not available - no fallback allowed."""
+    def _raise_fast_fail(
+        self,
+        model_type: ModelType | None,
+        reason: str,
+        detail: str | None = None,
+    ) -> None:
+        """Log contextual information and raise a fast-fail runtime error."""
+
+        model_label = model_type.value if isinstance(model_type, ModelType) else "general"
+        detail_suffix = f": {detail}" if detail else ""
+        message = f"FAST FAIL [{model_label}] - {reason}{detail_suffix}"
+
+        tprint_error(f"❌ {message}")
+        self.logger.error("❌ %s", message)
         raise RuntimeError(
-            f"❌ FAST FAIL: Cannot find optimal periods for {model_type.value} model. "
-            f"Optimization components not available or failed to initialize. "
-            f"Training cannot proceed without optimal timeframe discovery."
+            f"{message}. Automatic timeframe optimization is required for the multi-horizon pipeline."
         )
     
     def get_optimization_summary(self) -> Dict[str, Any]:

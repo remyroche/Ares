@@ -12,7 +12,7 @@ import logging
 from typing import Dict, Any
 
 from ..core.tas_config import TASConfig, TreeModelType, ClusteringStrategy, ClusteringMetric
-from ..regime_analysis.clustering_regime_detection import (
+from src.utils.nas_tas.clustering_regime_detection import (
     TreeBasedClusteringRegimeDetector,
     ClusteringRegimeConfig,
     quick_clustering_detection

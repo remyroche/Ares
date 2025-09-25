@@ -127,6 +127,7 @@ class EvolutionaryConfig:
     diversity_weight: float = 0.1
     early_stopping_patience: int = 20
     convergence_threshold: float = 1e-6
+    min_fitness_threshold: Optional[float] = None
     n_workers: int = 4
     use_parallel_evaluation: bool = True
 
@@ -139,6 +140,7 @@ class EvolutionaryTreeSearch:
         self.population = []
         self.fitness_scores = []
         self.generation = 0
+        self.param_metadata: Dict[str, Dict[str, Any]] = {}
         self.best_individual = None
         self.best_score = -np.inf
         self.fitness_history = []
@@ -161,6 +163,7 @@ class EvolutionaryTreeSearch:
         tprint_info("🚀 Starting evolutionary tree search")
         
         # Initialize population
+        self.param_metadata = self._build_param_metadata(search_space)
         self._initialize_population(search_space)
         
         # Evolution loop
@@ -212,13 +215,8 @@ class EvolutionaryTreeSearch:
         self.population = []
         for _ in range(self.config.population_size):
             individual = {}
-            for param, values in search_space.items():
-                if isinstance(values, list):
-                    individual[param] = np.random.choice(values)
-                elif isinstance(values, tuple) and len(values) == 2:
-                    individual[param] = np.random.uniform(values[0], values[1])
-                else:
-                    individual[param] = values
+            for param in search_space:
+                individual[param] = self._sample_parameter(param)
             self.population.append(individual)
     
     def _evaluate_population(self, objective_function: Callable):
@@ -298,12 +296,15 @@ class EvolutionaryTreeSearch:
                 child1 = self._mutate(child1)
             if random.random() < self.config.mutation_rate:
                 child2 = self._mutate(child2)
-            
-            new_population.extend([child1, child2])
-        
+
+            new_population.extend([
+                self._enforce_constraints(child1),
+                self._enforce_constraints(child2)
+            ])
+
         # Trim to population size
         self.population = new_population[:self.config.population_size]
-    
+
     def _tournament_selection(self, population: List[Dict], fitness_scores: List[float]) -> Dict[str, Any]:
         """Tournament selection."""
         tournament_size = min(self.config.tournament_size, len(population))
@@ -330,16 +331,80 @@ class EvolutionaryTreeSearch:
         """Apply mutation to individual."""
         mutated = individual.copy()
         key = random.choice(list(mutated.keys()))
-        
-        # Simple mutation - randomize the selected parameter
-        if isinstance(mutated[key], (int, float)):
-            mutated[key] = mutated[key] * random.uniform(0.8, 1.2)
-        elif isinstance(mutated[key], str):
-            # For string parameters, randomly select from common values
-            common_values = ['linear', 'sigmoid', 'relu', 'tanh']
-            mutated[key] = random.choice(common_values)
-        
+
+        meta = self.param_metadata.get(key, {})
+        value = mutated[key]
+
+        if meta.get("type") == "categorical":
+            choices = [choice for choice in meta.get("values", []) if choice != value]
+            if choices:
+                mutated[key] = random.choice(choices)
+        elif meta.get("type") == "integer":
+            min_val = meta.get("min", value)
+            max_val = meta.get("max", value)
+            span = max(1, max_val - min_val)
+            window = max(1, int(round(0.1 * span)))
+            lower = max(min_val, int(round(value)) - window)
+            upper = min(max_val, int(round(value)) + window)
+            mutated[key] = random.randint(lower, upper)
+        elif meta.get("type") == "float":
+            min_val = float(meta.get("min", value))
+            max_val = float(meta.get("max", value))
+            span = max(1e-9, max_val - min_val)
+            delta = span * 0.1
+            mutated_value = float(value) + random.uniform(-delta, delta)
+            mutated[key] = float(np.clip(mutated_value, min_val, max_val))
+
         return mutated
+
+    def _build_param_metadata(self, search_space: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Build metadata describing parameter domains."""
+        metadata: Dict[str, Dict[str, Any]] = {}
+        for param, values in search_space.items():
+            if isinstance(values, list):
+                metadata[param] = {"type": "categorical", "values": list(values)}
+            elif isinstance(values, tuple) and len(values) == 2:
+                low, high = values
+                if all(isinstance(v, int) for v in values):
+                    metadata[param] = {"type": "integer", "min": int(low), "max": int(high)}
+                else:
+                    metadata[param] = {"type": "float", "min": float(low), "max": float(high)}
+            else:
+                metadata[param] = {"type": "fixed", "value": values}
+        return metadata
+
+    def _sample_parameter(self, name: str) -> Any:
+        """Sample a parameter value based on metadata."""
+        meta = self.param_metadata.get(name, {})
+        if meta.get("type") == "categorical":
+            return random.choice(meta.get("values", []))
+        if meta.get("type") == "integer":
+            return random.randint(meta.get("min", 0), meta.get("max", 1))
+        if meta.get("type") == "float":
+            return random.uniform(meta.get("min", 0.0), meta.get("max", 1.0))
+        return meta.get("value")
+
+    def _enforce_constraints(self, individual: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure individuals remain inside the feasible domain."""
+        constrained = individual.copy()
+        for param, meta in self.param_metadata.items():
+            if param not in constrained:
+                continue
+
+            if meta.get("type") == "integer":
+                value = int(round(constrained[param]))
+                constrained[param] = int(np.clip(value, meta.get("min", value), meta.get("max", value)))
+            elif meta.get("type") == "float":
+                value = float(constrained[param])
+                constrained[param] = float(np.clip(value, meta.get("min", value), meta.get("max", value)))
+            elif meta.get("type") == "categorical":
+                choices = meta.get("values", [])
+                if choices and constrained[param] not in choices:
+                    constrained[param] = random.choice(choices)
+            elif meta.get("type") == "fixed":
+                constrained[param] = meta.get("value")
+
+        return constrained
     
     def _calculate_diversity(self) -> float:
         """Calculate population diversity."""
@@ -371,12 +436,18 @@ class EvolutionaryTreeSearch:
         """Check if the algorithm has converged."""
         if len(self.fitness_history) < self.config.early_stopping_patience:
             return False
-        
+
         # Check if fitness has improved significantly in recent generations
         recent_fitness = self.fitness_history[-self.config.early_stopping_patience:]
         improvement = max(recent_fitness) - min(recent_fitness)
-        
-        return improvement < self.config.convergence_threshold
+        has_stalled = improvement < self.config.convergence_threshold
+
+        threshold = self.config.min_fitness_threshold
+        meets_absolute = True
+        if threshold is not None:
+            meets_absolute = max(self.best_score, max(recent_fitness)) >= threshold
+
+        return has_stalled and meets_absolute
 
 
 class TreeGeneticAlgorithm:
@@ -389,12 +460,14 @@ class TreeGeneticAlgorithm:
         self.generation = 0
         self.best_individual = None
         self.best_score = -np.inf
+        self.param_metadata: Dict[str, Dict[str, Any]] = {}
     
     def search(self, search_space: Dict[str, Any], objective_function: Callable) -> Dict[str, Any]:
         """Perform genetic algorithm search for optimal tree architecture."""
         tprint_info("🧬 Starting tree genetic algorithm search")
         
         # Initialize population
+        self.param_metadata = self._build_param_metadata(search_space)
         self._initialize_population(search_space)
         
         # Evolution loop
@@ -424,18 +497,10 @@ class TreeGeneticAlgorithm:
         for _ in range(self.config.population_size):
             individual = self._create_random_individual(search_space)
             self.population.append(individual)
-    
+
     def _create_random_individual(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
         """Create a random individual from search space."""
-        individual = {}
-        for param, values in search_space.items():
-            if isinstance(values, list):
-                individual[param] = np.random.choice(values)
-            elif isinstance(values, tuple) and len(values) == 2:
-                individual[param] = np.random.uniform(values[0], values[1])
-            else:
-                individual[param] = values
-        return individual
+        return {param: self._sample_parameter(param) for param in search_space}
     
     def _evaluate_population(self, objective_function: Callable):
         """Evaluate fitness of all individuals in population."""
@@ -453,29 +518,35 @@ class TreeGeneticAlgorithm:
         # Sort by fitness
         sorted_indices = np.argsort(self.fitness_scores)[::-1]
         sorted_population = [self.population[i] for i in sorted_indices]
-        
+
         # Keep elite
         elite_size = min(self.config.elite_size, len(sorted_population))
-        new_population = sorted_population[:elite_size]
-        
+        new_population = [self._enforce_constraints(ind.copy()) for ind in sorted_population[:elite_size]]
+
         # Generate offspring
         while len(new_population) < self.config.population_size:
             # Select parents
             parent1 = self._tournament_selection(sorted_population)
             parent2 = self._tournament_selection(sorted_population)
-            
+
             # Crossover
             if random.random() < self.config.crossover_rate:
                 child1, child2 = self._crossover(parent1, parent2)
-                new_population.extend([child1, child2])
             else:
-                new_population.extend([parent1, parent2])
-        
+                child1, child2 = parent1.copy(), parent2.copy()
+
+            new_population.extend([
+                self._enforce_constraints(child1),
+                self._enforce_constraints(child2)
+            ])
+
         # Mutation
         for i in range(elite_size, len(new_population)):
             if random.random() < self.config.mutation_rate:
-                new_population[i] = self._mutate(new_population[i])
-        
+                new_population[i] = self._enforce_constraints(self._mutate(new_population[i]))
+            else:
+                new_population[i] = self._enforce_constraints(new_population[i])
+
         self.population = new_population[:self.config.population_size]
     
     def _tournament_selection(self, population: List[Dict]) -> Dict[str, Any]:
@@ -504,16 +575,80 @@ class TreeGeneticAlgorithm:
     def _mutate(self, individual: Dict[str, Any]) -> Dict[str, Any]:
         """Mutate an individual."""
         mutated = individual.copy()
-        for key, value in mutated.items():
-            if random.random() < 0.1:  # 10% chance to mutate each parameter
-                if isinstance(value, (int, float)):
-                    # Add small random change
-                    noise = random.gauss(0, 0.1 * abs(value))
-                    mutated[key] = value + noise
-                elif isinstance(value, str):
-                    # Random choice from possible values
-                    mutated[key] = random.choice([v for v in individual.values() if isinstance(v, str)])
+        for key in list(mutated.keys()):
+            if random.random() < 0.1:
+                mutated[key] = self._mutate_value(key, mutated[key])
         return mutated
+
+    def _mutate_value(self, key: str, value: Any) -> Any:
+        meta = self.param_metadata.get(key, {})
+        if meta.get("type") == "categorical":
+            choices = [choice for choice in meta.get("values", []) if choice != value]
+            return random.choice(choices) if choices else value
+        if meta.get("type") == "integer":
+            min_val = meta.get("min", value)
+            max_val = meta.get("max", value)
+            span = max(1, max_val - min_val)
+            window = max(1, int(round(0.1 * span)))
+            lower = max(min_val, int(round(value)) - window)
+            upper = min(max_val, int(round(value)) + window)
+            return random.randint(lower, upper)
+        if meta.get("type") == "float":
+            min_val = float(meta.get("min", value))
+            max_val = float(meta.get("max", value))
+            span = max(1e-9, max_val - min_val)
+            delta = span * 0.1
+            mutated_value = float(value) + random.uniform(-delta, delta)
+            return float(np.clip(mutated_value, min_val, max_val))
+        if meta.get("type") == "fixed":
+            return meta.get("value", value)
+        return value
+
+    def _build_param_metadata(self, search_space: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        metadata: Dict[str, Dict[str, Any]] = {}
+        for param, values in search_space.items():
+            if isinstance(values, list):
+                metadata[param] = {"type": "categorical", "values": list(values)}
+            elif isinstance(values, tuple) and len(values) == 2:
+                low, high = values
+                if all(isinstance(v, int) for v in values):
+                    metadata[param] = {"type": "integer", "min": int(low), "max": int(high)}
+                else:
+                    metadata[param] = {"type": "float", "min": float(low), "max": float(high)}
+            else:
+                metadata[param] = {"type": "fixed", "value": values}
+        return metadata
+
+    def _sample_parameter(self, name: str) -> Any:
+        meta = self.param_metadata.get(name, {})
+        if meta.get("type") == "categorical":
+            return random.choice(meta.get("values", []))
+        if meta.get("type") == "integer":
+            return random.randint(meta.get("min", 0), meta.get("max", 1))
+        if meta.get("type") == "float":
+            return random.uniform(meta.get("min", 0.0), meta.get("max", 1.0))
+        return meta.get("value")
+
+    def _enforce_constraints(self, individual: Dict[str, Any]) -> Dict[str, Any]:
+        constrained = individual.copy()
+        for param, meta in self.param_metadata.items():
+            if param not in constrained:
+                continue
+
+            if meta.get("type") == "integer":
+                value = int(round(constrained[param]))
+                constrained[param] = int(np.clip(value, meta.get("min", value), meta.get("max", value)))
+            elif meta.get("type") == "float":
+                value = float(constrained[param])
+                constrained[param] = float(np.clip(value, meta.get("min", value), meta.get("max", value)))
+            elif meta.get("type") == "categorical":
+                choices = meta.get("values", [])
+                if choices and constrained[param] not in choices:
+                    constrained[param] = random.choice(choices)
+            elif meta.get("type") == "fixed":
+                constrained[param] = meta.get("value")
+
+        return constrained
 
 
 class TreeNSGA2:
@@ -530,6 +665,7 @@ class TreeNSGA2:
         tprint_info("🧬 Starting tree NSGA-II search")
         
         # Initialize population
+        self.param_metadata = self._build_param_metadata(search_space)
         self._initialize_population(search_space)
         
         # Evolution loop
@@ -554,15 +690,32 @@ class TreeNSGA2:
     
     def _create_random_individual(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
         """Create a random individual from search space."""
-        individual = {}
+        return {param: self._sample_parameter(param) for param in search_space}
+
+    def _build_param_metadata(self, search_space: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        metadata: Dict[str, Dict[str, Any]] = {}
         for param, values in search_space.items():
             if isinstance(values, list):
-                individual[param] = np.random.choice(values)
+                metadata[param] = {"type": "categorical", "values": list(values)}
             elif isinstance(values, tuple) and len(values) == 2:
-                individual[param] = np.random.uniform(values[0], values[1])
+                low, high = values
+                if all(isinstance(v, int) for v in values):
+                    metadata[param] = {"type": "integer", "min": int(low), "max": int(high)}
+                else:
+                    metadata[param] = {"type": "float", "min": float(low), "max": float(high)}
             else:
-                individual[param] = values
-        return individual
+                metadata[param] = {"type": "fixed", "value": values}
+        return metadata
+
+    def _sample_parameter(self, name: str) -> Any:
+        meta = self.param_metadata.get(name, {})
+        if meta.get("type") == "categorical":
+            return random.choice(meta.get("values", []))
+        if meta.get("type") == "integer":
+            return random.randint(meta.get("min", 0), meta.get("max", 1))
+        if meta.get("type") == "float":
+            return random.uniform(meta.get("min", 0.0), meta.get("max", 1.0))
+        return meta.get("value")
     
     def _evaluate_population(self, objectives: List[str]):
         """Evaluate fitness of all individuals in population."""

@@ -101,6 +101,16 @@ exit_strategy_optimization:
         type: "float"
         low: 0.6
         high: 0.9
+      reversal_trigger_pct:
+        type: "float"
+        low: 0.005   # 0.5%
+        high: 0.05   # 5%
+      use_atr_log_scaling:
+        type: "bool"
+      atr_log_multiplier:
+        type: "float"
+        low: 0.0
+        high: 3.0
     
     # Regime-aware parameters optimization ranges
     regime_aware:

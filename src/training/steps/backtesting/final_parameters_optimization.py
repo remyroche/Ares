@@ -774,7 +774,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
                 'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
-                
+                'trailing_reversal_pct': {'type': 'float', 'min': 0.005, 'max': 0.05},
+                'use_trailing_atr_log_scaling': {'type': 'bool'},
+                'trailing_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+
                 # Regime-aware parameters
                 'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
                 'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2}
@@ -2091,12 +2094,37 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 trailing_atr = params['trailing_atr_multiplier']
                 min_dist = params['trailing_min_distance']
                 conf_act = params['trailing_confidence_activation']
-                
+
                 # Validate trailing stop parameters
-                if (1.0 <= trailing_atr <= 3.0 and 
-                    0.005 <= min_dist <= 0.03 and 
+                if (1.0 <= trailing_atr <= 3.0 and
+                    0.005 <= min_dist <= 0.03 and
                     0.6 <= conf_act <= 0.9):
                     score += 0.1
+
+            if 'trailing_reversal_pct' in params:
+                reversal_pct = params['trailing_reversal_pct']
+                if 0.005 <= reversal_pct <= 0.05:
+                    score += 0.05
+
+            if 'use_trailing_atr_log_scaling' in params and 'trailing_atr_log_multiplier' in params:
+                use_trailing_log = params['use_trailing_atr_log_scaling']
+                trailing_log_multiplier = params['trailing_atr_log_multiplier']
+
+                if isinstance(use_trailing_log, bool):
+                    score += 0.01
+
+                    if use_trailing_log and 0.0 <= trailing_log_multiplier <= 3.0:
+                        average_atr = calibration_results.get('average_atr', 0.01)
+                        if average_atr > 0:
+                            log_adjustment = np.log1p(average_atr * max(trailing_log_multiplier, 0.0))
+                            if 0.05 <= log_adjustment <= 0.5:
+                                score += 0.03
+                            else:
+                                score += 0.01
+                        else:
+                            score += 0.01
+                    elif not use_trailing_log:
+                        score += 0.01
             
             # 6. Regime-aware parameters validation (0.1 weight)
             regime_params = ['regime_transition_penalty', 'regime_specific_scaling']

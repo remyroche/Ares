@@ -67,7 +67,9 @@ except ImportError:
     nn = None
     optim = None
 
-# Oblivious Decision Trees
+# Oblivious Decision Trees - Implementation for tree-based models with oblivious structure
+# Oblivious trees are decision trees where all nodes at the same level use the same feature
+# This provides better interpretability and can be more efficient for certain problems
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +318,19 @@ class NODEModel:
                 self.final_layer = nn.Linear(num_trees * tree_dim, 1)
                 self.dropout = nn.Dropout(0.1)
                 
+                # Decision nodes - all nodes at same level use same feature
+                for d in range(depth):
+                    # Each level has 2^d nodes, but they all use the same feature
+                    # We create a single linear layer per level
+                    tree.append(nn.Linear(input_dim, 1))
+                
+                # Leaf nodes - 2^depth leaves, each with tree_dim outputs
+                tree.append(nn.Linear(2**depth, tree_dim))
+                
+                return tree
+            
             def forward(self, x):
+                """Forward pass through NODE layer."""
                 # Apply oblivious trees
                 tree_outputs = []
                 for tree in self.trees:
@@ -329,6 +343,36 @@ class NODEModel:
                 output = self.final_layer(combined)
                 
                 return output
+            
+            def _forward_tree(self, x, tree):
+                """Forward pass through a single oblivious tree."""
+                # Decision nodes - oblivious structure
+                decisions = []
+                for i in range(len(tree) - 1):  # All decision layers except last (leaf layer)
+                    # Apply decision at level i
+                    decision = torch.sigmoid(tree[i](x))  # Binary decision
+                    decisions.append(decision)
+                
+                # Create path through tree
+                # For oblivious trees, we need to create the path based on decisions
+                batch_size = x.shape[0]
+                paths = torch.ones(batch_size, 2**self.depth, device=x.device)
+                
+                # Build paths through the tree
+                for level, decision in enumerate(decisions):
+                    level_size = 2**level
+                    for node in range(level_size):
+                        # Each node at this level contributes to 2 nodes at next level
+                        left_child = 2 * node
+                        right_child = 2 * node + 1
+                        
+                        # Update paths based on decision
+                        paths[:, left_child] *= (1 - decision).squeeze()
+                        paths[:, right_child] *= decision.squeeze()
+                
+                # Apply leaf layer
+                leaf_output = tree[-1](paths)  # Final linear layer
+                return leaf_output
         
         return NODELayer(
             input_dim, 

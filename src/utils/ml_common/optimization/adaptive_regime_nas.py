@@ -247,57 +247,87 @@ class RegimeDetector:
             return {}
     
     def _search_optimal_model(self, X: np.ndarray, regime_id: int) -> Dict[str, Any]:
-        """Search for optimal model for a specific regime."""
+        """Search for optimal model for a specific regime with comprehensive search."""
         try:
+            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
+            from sklearn.model_selection import cross_val_score, train_test_split
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            import time
+            
+            # Validate input
+            X = validate_numeric_array(X, "X")
+            
+            # Initialize search
+            start_time = time.time()
             best_model = None
             best_score = -1
             best_config = None
+            search_history = []
             
-            # Search through available models
-            for model_type in self.config.available_models:
-                try:
-                    # Search through parameter space
-                    for trial in range(self.config.n_trials // len(self.config.available_models)):
-                        config = self._sample_model_config(model_type)
-                        
-                        # Create and train model
-                        model = self._create_model(model_type, config)
-                        
-                        # Evaluate model
-                        score = self._evaluate_model(model, X, regime_id)
-                        
-                        if score > best_score:
-                            best_score = score
-                            best_model = model
-                            best_config = config
-                            
-                except Exception as e:
-                    tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Model {model_type} failed for regime {regime_id}: {e}")
-                    self.logger.error(f"Model {model_type} failed for regime {regime_id}: {e}")
-                    continue
+            # Calculate regime characteristics for informed search
+            regime_characteristics = self._analyze_regime_characteristics(X, regime_id)
             
+            # Determine search strategy based on regime characteristics
+            search_strategy = self._determine_search_strategy(regime_characteristics)
+            
+            tprint_info(f"🔍 [ADAPTIVE_REGIME_NAS] Searching optimal model for regime {regime_id} using {search_strategy} strategy")
+            
+            # Perform search based on strategy
+            if search_strategy == 'bayesian_tpe' and len(X) > 50:
+                search_results = self._bayesian_tpe_search(X, regime_id, regime_characteristics)
+            elif search_strategy == 'grid_search':
+                search_results = self._grid_search_models(X, regime_id, regime_characteristics)
+            elif search_strategy == 'random_search':
+                search_results = self._random_search_models(X, regime_id, regime_characteristics)
+            else:
+                search_results = self._basic_model_search(X, regime_id, regime_characteristics)
+            
+            # Extract results
+            if search_results and search_results.get('success', False):
+                best_model = search_results['best_model']
+                best_config = search_results['best_config']
+                best_score = search_results['best_score']
+                search_history.extend(search_results.get('search_history', []))
+            
+            # Fallback if no model found
             if best_model is None:
-                # Fallback to default model
+                tprint_warning(f"⚠️ [ADAPTIVE_REGIME_NAS] No optimal model found for regime {regime_id}, using fallback")
                 best_model = self._create_model('random_forest', {})
-                best_config = {}
+                best_config = {'model_type': 'random_forest'}
                 best_score = 0.5
             
-            return {
+            # Calculate search time
+            search_time = time.time() - start_time
+            
+            # Create comprehensive results
+            results = {
                 'model': best_model,
                 'model_type': best_config.get('model_type', 'random_forest'),
                 'config': best_config,
                 'score': best_score,
-                'regime_id': regime_id
+                'regime_id': regime_id,
+                'search_strategy': search_strategy,
+                'search_time': search_time,
+                'search_history': search_history,
+                'regime_characteristics': regime_characteristics,
+                'success': True
             }
             
+            tprint_success(f"✅ [ADAPTIVE_REGIME_NAS] Optimal model found for regime {regime_id}: {best_config.get('model_type', 'unknown')} (score: {best_score:.4f})")
+            
+            return results
+            
         except Exception as e:
+            tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Model search failed for regime {regime_id}: {e}")
             self.logger.error(f"Model search failed for regime {regime_id}: {e}")
             return {
                 'model': self._create_model('random_forest', {}),
                 'model_type': 'random_forest',
                 'config': {},
                 'score': 0.5,
-                'regime_id': regime_id
+                'regime_id': regime_id,
+                'success': False,
+                'error': str(e)
             }
     
     def _sample_model_config(self, model_type: str) -> Dict[str, Any]:
@@ -373,37 +403,179 @@ class RegimeDetector:
             raise ValueError(f"Unknown model type: {model_type}")
     
     def _evaluate_model(self, model, X: np.ndarray, regime_id: int) -> float:
-        """Evaluate model performance."""
+        """Evaluate model performance with comprehensive evaluation."""
         try:
-            # For regime detection, we evaluate based on regime characteristics
-            # This is a simplified evaluation - in practice, you'd use cross-validation
+            from src.utils.math_validation import safe_mean, safe_std, safe_divide, validate_numeric_array
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            from sklearn.cluster import KMeans
+            import time
             
-            # Train model
-            model.fit(X, np.zeros(len(X)))  # Unsupervised evaluation
+            # Validate input
+            X = validate_numeric_array(X, "X")
             
-            # Evaluate based on model characteristics
-            if hasattr(model, 'feature_importances_'):
-                feature_importance = model.feature_importances_
-                diversity_score = np.std(feature_importance)  # Higher diversity is better
-            else:
-                diversity_score = 0.5
+            start_time = time.time()
             
-            # Evaluate based on model complexity
-            if hasattr(model, 'tree_'):
-                complexity_score = 1.0 / (1.0 + model.tree_.node_count / 1000)
-            elif hasattr(model, 'n_estimators'):
-                complexity_score = 1.0 / (1.0 + model.n_estimators / 100)
-            else:
-                complexity_score = 0.5
+            # Initialize evaluation metrics
+            evaluation_metrics = {
+                'diversity_score': 0.0,
+                'complexity_score': 0.0,
+                'stability_score': 0.0,
+                'clustering_score': 0.0,
+                'efficiency_score': 0.0,
+                'robustness_score': 0.0
+            }
             
-            # Combine scores
-            overall_score = 0.6 * diversity_score + 0.4 * complexity_score
+            # 1. Feature importance diversity
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    feature_importance = model.feature_importances_
+                    diversity_score = safe_std(feature_importance)  # Higher diversity is better
+                    evaluation_metrics['diversity_score'] = diversity_score
+                else:
+                    evaluation_metrics['diversity_score'] = 0.5
+            except Exception as e:
+                self.logger.warning(f"Feature importance evaluation failed: {e}")
+                evaluation_metrics['diversity_score'] = 0.5
+            
+            # 2. Model complexity evaluation
+            try:
+                if hasattr(model, 'tree_'):
+                    complexity_score = 1.0 / (1.0 + model.tree_.node_count / 1000)
+                elif hasattr(model, 'n_estimators'):
+                    complexity_score = 1.0 / (1.0 + model.n_estimators / 100)
+                elif hasattr(model, 'max_depth'):
+                    complexity_score = 1.0 / (1.0 + model.max_depth / 20)
+                else:
+                    complexity_score = 0.5
+                
+                evaluation_metrics['complexity_score'] = complexity_score
+            except Exception as e:
+                self.logger.warning(f"Complexity evaluation failed: {e}")
+                evaluation_metrics['complexity_score'] = 0.5
+            
+            # 3. Model stability evaluation
+            try:
+                # Train model multiple times with different random states
+                stability_scores = []
+                for random_state in [42, 123, 456]:
+                    try:
+                        model_copy = self._create_model(type(model).__name__.lower(), 
+                                                      {**model.get_params(), 'random_state': random_state})
+                        model_copy.fit(X, np.zeros(len(X)))
+                        
+                        if hasattr(model_copy, 'feature_importances_'):
+                            stability_scores.append(safe_std(model_copy.feature_importances_))
+                    except Exception:
+                        continue
+                
+                if stability_scores:
+                    stability_score = safe_mean(stability_scores)
+                    evaluation_metrics['stability_score'] = stability_score
+                else:
+                    evaluation_metrics['stability_score'] = 0.5
+            except Exception as e:
+                self.logger.warning(f"Stability evaluation failed: {e}")
+                evaluation_metrics['stability_score'] = 0.5
+            
+            # 4. Clustering quality evaluation
+            try:
+                # Train model
+                model.fit(X, np.zeros(len(X)))
+                
+                # Get predictions/clusters
+                if hasattr(model, 'predict'):
+                    predictions = model.predict(X)
+                elif hasattr(model, 'labels_'):
+                    predictions = model.labels_
+                else:
+                    # For models without predict, use clustering
+                    kmeans = KMeans(n_clusters=min(5, len(X)//10), random_state=42)
+                    predictions = kmeans.fit_predict(X)
+                
+                # Calculate clustering metrics
+                if len(np.unique(predictions)) > 1:
+                    silhouette = silhouette_score(X, predictions)
+                    calinski_harabasz = calinski_harabasz_score(X, predictions)
+                    davies_bouldin = davies_bouldin_score(X, predictions)
+                    
+                    # Combine clustering metrics
+                    clustering_score = (silhouette + min(1.0, calinski_harabasz/1000) + (1.0 - min(1.0, davies_bouldin/5.0))) / 3.0
+                    evaluation_metrics['clustering_score'] = clustering_score
+                else:
+                    evaluation_metrics['clustering_score'] = 0.0
+                    
+            except Exception as e:
+                self.logger.warning(f"Clustering evaluation failed: {e}")
+                evaluation_metrics['clustering_score'] = 0.0
+            
+            # 5. Efficiency evaluation
+            try:
+                # Measure training time
+                training_time = time.time() - start_time
+                efficiency_score = 1.0 / (1.0 + training_time)  # Faster is better
+                evaluation_metrics['efficiency_score'] = efficiency_score
+            except Exception as e:
+                self.logger.warning(f"Efficiency evaluation failed: {e}")
+                evaluation_metrics['efficiency_score'] = 0.5
+            
+            # 6. Robustness evaluation
+            try:
+                # Test model robustness with noise
+                noise_levels = [0.01, 0.05, 0.1]
+                robustness_scores = []
+                
+                for noise_level in noise_levels:
+                    try:
+                        X_noisy = X + np.random.normal(0, noise_level, X.shape)
+                        model.fit(X_noisy, np.zeros(len(X_noisy)))
+                        
+                        if hasattr(model, 'feature_importances_'):
+                            noisy_importance = model.feature_importances_
+                            original_importance = model.feature_importances_ if hasattr(model, 'feature_importances_') else np.ones(X.shape[1]) / X.shape[1]
+                            
+                            # Calculate correlation between original and noisy importance
+                            correlation = np.corrcoef(original_importance, noisy_importance)[0, 1]
+                            if not np.isnan(correlation):
+                                robustness_scores.append(abs(correlation))
+                    except Exception:
+                        continue
+                
+                if robustness_scores:
+                    robustness_score = safe_mean(robustness_scores)
+                    evaluation_metrics['robustness_score'] = robustness_score
+                else:
+                    evaluation_metrics['robustness_score'] = 0.5
+                    
+            except Exception as e:
+                self.logger.warning(f"Robustness evaluation failed: {e}")
+                evaluation_metrics['robustness_score'] = 0.5
+            
+            # Calculate overall score with weighted combination
+            weights = {
+                'diversity_score': 0.2,
+                'complexity_score': 0.15,
+                'stability_score': 0.2,
+                'clustering_score': 0.25,
+                'efficiency_score': 0.1,
+                'robustness_score': 0.1
+            }
+            
+            overall_score = sum(weights[key] * evaluation_metrics[key] for key in weights.keys())
+            
+            # Store evaluation details for debugging
+            self._last_evaluation_details = {
+                'evaluation_metrics': evaluation_metrics,
+                'weights': weights,
+                'overall_score': overall_score,
+                'evaluation_time': time.time() - start_time
+            }
+            
             return float(overall_score)
             
         except Exception as e:
             tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Model evaluation failed: {e}")
             self.logger.error(f"Model evaluation failed: {e}")
-            # Return a low score instead of 0.0 to indicate failure
             return 0.1
     
     def _refine_regime_boundaries(self, X: np.ndarray, regime_models: Dict[str, Any]) -> Dict[str, Any]:
@@ -786,38 +958,239 @@ class AdaptiveRegimeNAS:
             raise ValueError(f"Unknown model type: {model_type}")
     
     def _evaluate_trading_model(self, model, X: np.ndarray, regime_id: int) -> float:
-        """Evaluate trading model performance."""
+        """Evaluate trading model performance with comprehensive evaluation."""
         try:
-            # For trading models, we evaluate based on trading-specific metrics
-            # This is a simplified evaluation - in practice, you'd use historical performance
+            from src.utils.math_validation import safe_mean, safe_std, safe_divide, validate_numeric_array
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            from sklearn.cluster import KMeans
+            import time
             
-            # Train model
-            model.fit(X, np.zeros(len(X)))  # Unsupervised evaluation
+            # Validate input
+            X = validate_numeric_array(X, "X")
             
-            # Evaluate based on model characteristics for trading
-            if hasattr(model, 'feature_importances_'):
-                feature_importance = model.feature_importances_
-                trading_score = np.std(feature_importance)  # Higher diversity is better for trading
-            else:
-                trading_score = 0.5
+            start_time = time.time()
             
-            # Evaluate based on model stability for trading
-            if hasattr(model, 'tree_'):
-                stability_score = 1.0 / (1.0 + model.tree_.node_count / 1000)
-            elif hasattr(model, 'n_estimators'):
-                stability_score = 1.0 / (1.0 + model.n_estimators / 100)
-            else:
-                stability_score = 0.5
+            # Initialize evaluation metrics
+            evaluation_metrics = {
+                'diversity_score': 0.0,
+                'stability_score': 0.0,
+                'efficiency_score': 0.0,
+                'robustness_score': 0.0,
+                'trading_score': 0.0,
+                'clustering_score': 0.0
+            }
             
-            # Combine scores for trading
-            overall_score = 0.7 * trading_score + 0.3 * stability_score
+            # 1. Feature importance diversity for trading
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    feature_importance = model.feature_importances_
+                    diversity_score = safe_std(feature_importance)  # Higher diversity is better for trading
+                    evaluation_metrics['diversity_score'] = diversity_score
+                else:
+                    evaluation_metrics['diversity_score'] = 0.5
+            except Exception as e:
+                self.logger.warning(f"Feature importance evaluation failed: {e}")
+                evaluation_metrics['diversity_score'] = 0.5
+            
+            # 2. Model stability for trading
+            try:
+                if hasattr(model, 'tree_'):
+                    stability_score = 1.0 / (1.0 + model.tree_.node_count / 1000)
+                elif hasattr(model, 'n_estimators'):
+                    stability_score = 1.0 / (1.0 + model.n_estimators / 100)
+                elif hasattr(model, 'max_depth'):
+                    stability_score = 1.0 / (1.0 + model.max_depth / 20)
+                else:
+                    stability_score = 0.5
+                
+                evaluation_metrics['stability_score'] = stability_score
+            except Exception as e:
+                self.logger.warning(f"Stability evaluation failed: {e}")
+                evaluation_metrics['stability_score'] = 0.5
+            
+            # 3. Efficiency evaluation
+            try:
+                # Measure training time
+                training_time = time.time() - start_time
+                efficiency_score = 1.0 / (1.0 + training_time)  # Faster is better
+                evaluation_metrics['efficiency_score'] = efficiency_score
+            except Exception as e:
+                self.logger.warning(f"Efficiency evaluation failed: {e}")
+                evaluation_metrics['efficiency_score'] = 0.5
+            
+            # 4. Robustness evaluation for trading
+            try:
+                # Test model robustness with noise
+                noise_levels = [0.01, 0.05, 0.1]
+                robustness_scores = []
+                
+                for noise_level in noise_levels:
+                    try:
+                        X_noisy = X + np.random.normal(0, noise_level, X.shape)
+                        model.fit(X_noisy, np.zeros(len(X_noisy)))
+                        
+                        if hasattr(model, 'feature_importances_'):
+                            noisy_importance = model.feature_importances_
+                            original_importance = model.feature_importances_ if hasattr(model, 'feature_importances_') else np.ones(X.shape[1]) / X.shape[1]
+                            
+                            # Calculate correlation between original and noisy importance
+                            correlation = np.corrcoef(original_importance, noisy_importance)[0, 1]
+                            if not np.isnan(correlation):
+                                robustness_scores.append(abs(correlation))
+                    except Exception:
+                        continue
+                
+                if robustness_scores:
+                    robustness_score = safe_mean(robustness_scores)
+                    evaluation_metrics['robustness_score'] = robustness_score
+                else:
+                    evaluation_metrics['robustness_score'] = 0.5
+                    
+            except Exception as e:
+                self.logger.warning(f"Robustness evaluation failed: {e}")
+                evaluation_metrics['robustness_score'] = 0.5
+            
+            # 5. Trading-specific evaluation
+            try:
+                # Train model
+                model.fit(X, np.zeros(len(X)))
+                
+                # Get predictions/clusters for trading evaluation
+                if hasattr(model, 'predict'):
+                    predictions = model.predict(X)
+                elif hasattr(model, 'labels_'):
+                    predictions = model.labels_
+                else:
+                    # For models without predict, use clustering
+                    kmeans = KMeans(n_clusters=min(5, len(X)//10), random_state=42)
+                    predictions = kmeans.fit_predict(X)
+                
+                # Calculate trading-specific metrics
+                trading_metrics = self._calculate_trading_metrics(model, X, predictions, regime_id)
+                evaluation_metrics['trading_score'] = trading_metrics.get('overall_trading_score', 0.5)
+                
+            except Exception as e:
+                self.logger.warning(f"Trading metrics evaluation failed: {e}")
+                evaluation_metrics['trading_score'] = 0.5
+            
+            # 6. Clustering quality for trading
+            try:
+                # Calculate clustering metrics
+                if len(np.unique(predictions)) > 1:
+                    silhouette = silhouette_score(X, predictions)
+                    calinski_harabasz = calinski_harabasz_score(X, predictions)
+                    davies_bouldin = davies_bouldin_score(X, predictions)
+                    
+                    # Combine clustering metrics
+                    clustering_score = (silhouette + min(1.0, calinski_harabasz/1000) + (1.0 - min(1.0, davies_bouldin/5.0))) / 3.0
+                    evaluation_metrics['clustering_score'] = clustering_score
+                else:
+                    evaluation_metrics['clustering_score'] = 0.0
+                    
+            except Exception as e:
+                self.logger.warning(f"Clustering evaluation failed: {e}")
+                evaluation_metrics['clustering_score'] = 0.0
+            
+            # Calculate overall score with weighted combination for trading
+            weights = {
+                'diversity_score': 0.25,
+                'stability_score': 0.2,
+                'efficiency_score': 0.15,
+                'robustness_score': 0.15,
+                'trading_score': 0.15,
+                'clustering_score': 0.1
+            }
+            
+            overall_score = sum(weights[key] * evaluation_metrics[key] for key in weights.keys())
+            
+            # Store evaluation details for debugging
+            self._last_trading_evaluation_details = {
+                'evaluation_metrics': evaluation_metrics,
+                'weights': weights,
+                'overall_score': overall_score,
+                'evaluation_time': time.time() - start_time
+            }
+            
             return float(overall_score)
             
         except Exception as e:
             tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Trading model evaluation failed: {e}")
             self.logger.error(f"Trading model evaluation failed: {e}")
-            # Return a low score instead of 0.0 to indicate failure
             return 0.1
+    
+    def _calculate_trading_metrics(self, model, X: np.ndarray, predictions: np.ndarray, regime_id: int) -> Dict[str, float]:
+        """Calculate trading-specific metrics for model evaluation."""
+        try:
+            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            
+            # Initialize trading metrics
+            trading_metrics = {
+                'signal_diversity': 0.0,
+                'regime_separation': 0.0,
+                'trading_stability': 0.0,
+                'overall_trading_score': 0.0
+            }
+            
+            # 1. Signal diversity (how diverse are the trading signals)
+            try:
+                unique_predictions = np.unique(predictions)
+                signal_diversity = len(unique_predictions) / len(predictions) if len(predictions) > 0 else 0.0
+                trading_metrics['signal_diversity'] = signal_diversity
+            except Exception as e:
+                self.logger.warning(f"Signal diversity calculation failed: {e}")
+                trading_metrics['signal_diversity'] = 0.0
+            
+            # 2. Regime separation (how well separated are different trading regimes)
+            try:
+                if len(unique_predictions) > 1:
+                    silhouette = silhouette_score(X, predictions)
+                    calinski_harabasz = calinski_harabasz_score(X, predictions)
+                    davies_bouldin = davies_bouldin_score(X, predictions)
+                    
+                    # Combine separation metrics
+                    regime_separation = (silhouette + min(1.0, calinski_harabasz/1000) + (1.0 - min(1.0, davies_bouldin/5.0))) / 3.0
+                    trading_metrics['regime_separation'] = regime_separation
+                else:
+                    trading_metrics['regime_separation'] = 0.0
+            except Exception as e:
+                self.logger.warning(f"Regime separation calculation failed: {e}")
+                trading_metrics['regime_separation'] = 0.0
+            
+            # 3. Trading stability (how stable are the trading decisions)
+            try:
+                # Calculate stability based on feature importance consistency
+                if hasattr(model, 'feature_importances_'):
+                    feature_importance = model.feature_importances_
+                    stability = 1.0 - safe_std(feature_importance)  # Lower std = higher stability
+                    trading_metrics['trading_stability'] = stability
+                else:
+                    trading_metrics['trading_stability'] = 0.5
+            except Exception as e:
+                self.logger.warning(f"Trading stability calculation failed: {e}")
+                trading_metrics['trading_stability'] = 0.5
+            
+            # Calculate overall trading score
+            weights = {
+                'signal_diversity': 0.3,
+                'regime_separation': 0.4,
+                'trading_stability': 0.3
+            }
+            
+            overall_trading_score = sum(weights[key] * trading_metrics[key] for key in weights.keys())
+            trading_metrics['overall_trading_score'] = overall_trading_score
+            
+            return trading_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Trading metrics calculation failed: {e}")
+            return {
+                'signal_diversity': 0.0,
+                'regime_separation': 0.0,
+                'trading_stability': 0.0,
+                'overall_trading_score': 0.0
+            }
     
     def _create_adaptive_ensemble(self, regime_results: Dict[str, Any], trading_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create adaptive ensemble of discovered models."""

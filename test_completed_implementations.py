@@ -218,6 +218,7 @@ def test_pure_tree_nas():
         logger.error(f"❌ Pure Tree NAS test failed: {e}")
         import traceback
         traceback.print_exc()
+
         return False
 
 def test_utility_integration():
@@ -249,6 +250,7 @@ def test_utility_integration():
         
     except Exception as e:
         logger.error(f"❌ Utility Integration test failed: {e}")
+
         return False
 
 def main():

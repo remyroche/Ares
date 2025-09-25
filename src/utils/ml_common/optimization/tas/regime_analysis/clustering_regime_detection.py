@@ -22,6 +22,12 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, Gradi
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +92,7 @@ class TreeBasedClusteringRegimeDetector:
             "agglomerative": AgglomerativeClustering(n_clusters=config.n_regimes)
         }
 
-        self.logger.info("✅ Tree-Based Clustering Regime Detector initialized")
+        tprint_success("✅ Tree-Based Clustering Regime Detector initialized")
 
     def detect_regimes(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -201,7 +207,8 @@ class TreeBasedClusteringRegimeDetector:
             tabular_features = sum(1 for corr in correlations if corr < 0.3)
             return tabular_features / len(correlations) if correlations else 0.5
 
-        except:
+        except Exception as e:
+            tprint_warning(f"Tabular data analysis failed: {e}. Using fallback value.")
             return 0.5
 
     def _calculate_sequential_ratio(self, market_data: pd.DataFrame) -> float:
@@ -215,7 +222,8 @@ class TreeBasedClusteringRegimeDetector:
             sequential_features = sum(1 for ac in [price_autocorr, volume_autocorr] if abs(ac) > 0.3)
             return sequential_features / 2.0
 
-        except:
+        except Exception as e:
+            tprint_warning(f"Sequential data analysis failed: {e}. Using fallback value.")
             return 0.3
 
     def _calculate_complexity_ratio(self, market_data: pd.DataFrame) -> float:
@@ -238,7 +246,8 @@ class TreeBasedClusteringRegimeDetector:
             complex_features = sum(1 for c in complexities if c > 0.5 * max_complexity)
             return complex_features / len(complexities) if complexities else 0.5
 
-        except:
+        except Exception as e:
+            tprint_warning(f"Complexity data analysis failed: {e}. Using fallback value.")
             return 0.5
 
     def _choose_clustering_strategy(self, data_characteristics: Dict[str, Any]) -> str:
@@ -312,7 +321,8 @@ class TreeBasedClusteringRegimeDetector:
                     model.fit(features, dummy_labels)
                     predictions = model.predict_proba(features)
                     ensemble_predictions.append(predictions)
-                except:
+                except Exception as e:
+                    tprint_warning(f"Model {model_name} prediction failed: {e}. Skipping.")
                     continue
 
             if not ensemble_predictions:
@@ -460,25 +470,31 @@ class TreeBasedClusteringRegimeDetector:
             # Silhouette score
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
-            except:
+                tprint_debug(f"Silhouette score: {metrics['silhouette_score']:.4f}")
+            except Exception as e:
+                tprint_warning(f"Silhouette score calculation failed: {e}. Using fallback value.")
                 metrics['silhouette_score'] = 0.0
 
             # Calinski-Harabasz score
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+                tprint_debug(f"Calinski-Harabasz score: {metrics['calinski_harabasz_score']:.4f}")
+            except Exception as e:
+                tprint_warning(f"Calinski-Harabasz score calculation failed: {e}. Using fallback value.")
                 metrics['calinski_harabasz_score'] = 0.0
 
             # Davies-Bouldin score
             try:
                 metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
-            except:
+                tprint_debug(f"Davies-Bouldin score: {metrics['davies_bouldin_score']:.4f}")
+            except Exception as e:
+                tprint_warning(f"Davies-Bouldin score calculation failed: {e}. Using fallback value.")
                 metrics['davies_bouldin_score'] = 0.0
 
             return metrics
 
         except Exception as e:
-            self.logger.warning(f"Clustering metrics calculation failed: {e}")
+            tprint_warning(f"Clustering metrics calculation failed: {e}")
             return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': 0.0}
 
 

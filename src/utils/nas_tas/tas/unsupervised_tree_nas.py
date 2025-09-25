@@ -104,7 +104,9 @@ class UnsupervisedTreeNASConfig:
     })
     
     # Tree-based model parameters
-    tree_models: List[str] = field(default_factory=lambda: ['random_forest', 'xgboost', 'lightgbm'])
+    tree_models: List[str] = field(default_factory=lambda: [
+        'random_forest', 'xgboost', 'lightgbm', 'extra_trees', 'gradient_boosting', 'adaboost', 'ngboost'
+    ])
     tree_params: Dict[str, Any] = field(default_factory=lambda: {
         'n_estimators': 100,
         'max_depth': 10,

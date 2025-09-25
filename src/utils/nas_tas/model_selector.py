@@ -42,6 +42,78 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class MixedModelEnsemble:
+    """Lightweight ensemble that blends heterogeneous models."""
+
+    def __init__(self, models: List[Any], weights: List[float]):
+        self.models = models
+        weight_array = np.array(weights, dtype=float)
+        if weight_array.sum() == 0:
+            weight_array = np.ones_like(weight_array)
+        self.weights = weight_array / weight_array.sum()
+        self.classes_: Optional[np.ndarray] = None
+
+    def _collect_classes(self) -> np.ndarray:
+        if self.classes_ is not None:
+            return self.classes_
+
+        class_set = set()
+        for model in self.models:
+            model_classes = getattr(model, 'classes_', None)
+            if model_classes is not None:
+                class_set.update(model_classes)
+
+        if not class_set:
+            class_set = {0, 1}
+
+        self.classes_ = np.array(sorted(class_set))
+        return self.classes_
+
+    def _align_probabilities(self, proba: np.ndarray, model_classes: Optional[np.ndarray], ensemble_classes: np.ndarray) -> np.ndarray:
+        if model_classes is None:
+            if proba.shape[1] == len(ensemble_classes):
+                return proba
+            if proba.shape[1] == 1:
+                proba = np.hstack([1 - proba, proba])
+            return proba
+
+        aligned = np.zeros((proba.shape[0], len(ensemble_classes)))
+        for idx, cls in enumerate(model_classes):
+            if cls in ensemble_classes:
+                ensemble_idx = int(np.where(ensemble_classes == cls)[0][0])
+                aligned[:, ensemble_idx] = proba[:, idx]
+        if aligned.sum(axis=1).min() == 0:
+            aligned += 1e-9
+        return aligned
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        ensemble_classes = self._collect_classes()
+        aggregated = None
+
+        for model, weight in zip(self.models, self.weights):
+            if hasattr(model, 'predict_proba'):
+                proba = model.predict_proba(X)
+                proba = self._align_probabilities(proba, getattr(model, 'classes_', None), ensemble_classes)
+            else:
+                preds = model.predict(X)
+                proba = np.zeros((len(X), len(ensemble_classes)))
+                for idx, cls in enumerate(ensemble_classes):
+                    proba[:, idx] = (preds == cls).astype(float)
+
+            if aggregated is None:
+                aggregated = weight * proba
+            else:
+                aggregated += weight * proba
+
+        aggregated = aggregated / aggregated.sum(axis=1, keepdims=True)
+        return aggregated
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        proba = self.predict_proba(X)
+        classes = self._collect_classes()
+        indices = np.argmax(proba, axis=1)
+        return classes[indices]
+
 class SelectionStrategy(Enum):
     """Model selection strategies."""
     BEST_PERFORMANCE = "best_performance"  # Select best performing model
@@ -160,6 +232,7 @@ class ModelSelector:
         self.selection_history = []
         self.model_rankings = {}
         self.ensemble_weights = {}
+        self.uncertainty_estimators: Dict[str, Any] = {}
         
         # Adaptive learning state
         self.adaptation_weights = {}
@@ -249,10 +322,13 @@ class ModelSelector:
                     'feature_importance': model_info.get('feature_importance', {}),
                     'hyperparameters': model_info.get('hyperparameters', {})
                 }
-                
+
                 # Initialize performance history
                 self.performance_history[model_id] = []
-                
+
+                if 'uncertainty_estimator' in model_info:
+                    self.uncertainty_estimators[model_id] = model_info['uncertainty_estimator']
+
                 self.logger.info(f"   ✅ Registered {model_type} for regime {regime_id}")
         
         # Register ensemble models
@@ -519,46 +595,37 @@ class ModelSelector:
             return self._select_best_performance_model(regime_models, market_data, context)
         
         try:
-            from sklearn.ensemble import VotingClassifier
-            
-            # Create ensemble from available models
             base_models = []
             model_weights = []
-            
+
             for model_type, model_info in regime_models.items():
-                base_models.append((model_type, model_info['model']))
-                # Weight by performance
+                base_models.append(model_info['model'])
                 performance = model_info['performance']
                 weight = performance.get(self.config.performance_metric, 0.5)
-                model_weights.append(weight)
-            
+                model_weights.append(max(weight, 1e-6))
+
             if len(base_models) < 2:
                 # Not enough models for ensemble, use best single model
                 return self._select_best_performance_model(regime_models, market_data, context)
-            
+
             # Normalize weights
             total_weight = sum(model_weights)
             model_weights = [w / total_weight for w in model_weights]
-            
-            # Create ensemble
-            ensemble = VotingClassifier(
-                estimators=base_models,
-                voting='soft',
-                weights=model_weights
-            )
-            
+
+            ensemble = MixedModelEnsemble(base_models, model_weights)
+
             # Calculate ensemble confidence
             ensemble_confidence = np.mean(model_weights)
-            
+
             return {
                 'model': ensemble,
                 'model_type': 'ensemble',
                 'model_id': 'ensemble_model',
                 'confidence': ensemble_confidence,
                 'reason': f"Ensemble of {len(base_models)} models",
-                'ensemble_weights': dict(zip([name for name, _ in base_models], model_weights))
+                'ensemble_weights': dict(zip(regime_models.keys(), model_weights))
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Ensemble selection failed: {e}")
             return self._select_best_performance_model(regime_models, market_data, context)
@@ -784,16 +851,29 @@ class ModelSelector:
         
         if len(recent_performance) < 2:
             return (0.0, 1.0)
-        
+
         f1_scores = [p.get('f1_score', 0.5) for p in recent_performance]
-        
+
         # Simple confidence interval calculation
         mean_f1 = np.mean(f1_scores)
         std_f1 = np.std(f1_scores)
-        
+
+        # Integrate uncertainty estimates when available
+        if model_id in self.uncertainty_estimators:
+            estimator = self.uncertainty_estimators[model_id]
+            mean_unc = estimator.performance_metrics.get('mean_uncertainty') if hasattr(estimator, 'performance_metrics') else None
+            std_unc = estimator.performance_metrics.get('std_uncertainty') if hasattr(estimator, 'performance_metrics') else None
+            if mean_unc is not None and std_unc is not None:
+                base_confidence = max(0.0, 1.0 - mean_unc)
+                margin_of_error = 1.96 * std_unc
+                return (
+                    max(0.0, base_confidence - margin_of_error),
+                    min(1.0, base_confidence + margin_of_error),
+                )
+
         # 95% confidence interval (approximate)
         margin_of_error = 1.96 * std_f1 / np.sqrt(len(f1_scores))
-        
+
         return (max(0.0, mean_f1 - margin_of_error), min(1.0, mean_f1 + margin_of_error))
     
     def _get_alternative_models(self, 

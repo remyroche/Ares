@@ -83,7 +83,7 @@ class PureTreeNASConfig:
     # Tree model types
     tree_models: List[str] = field(default_factory=lambda: [
         'decision_tree', 'random_forest', 'extra_trees', 'gradient_boosting',
-        'adaboost', 'bagging', 'xgboost', 'lightgbm', 'catboost',
+        'adaboost', 'bagging', 'xgboost', 'lightgbm', 'catboost', 'ngboost',
         'node', 'oblivious_tree', 'rotation_forest', 'isolation_forest',
         'histogram_gradient_boosting', 'voting_tree', 'stacking_tree'
     ])

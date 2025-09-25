@@ -16,14 +16,19 @@ except ImportError:  # pragma: no cover - optional dependency
     torch = None  # type: ignore[assignment]
     nn = None  # type: ignore[assignment]
     TORCH_AVAILABLE = False
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Set
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    GradientBoostingClassifier,
+    ExtraTreesClassifier,
+    AdaBoostClassifier,
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 import xgboost as xgb
@@ -34,9 +39,46 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     cb = None  # type: ignore[assignment]
     CATBOOST_AVAILABLE = False
+try:
+    from ngboost import NGBClassifier
+
+    NGBOOST_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    NGBClassifier = None  # type: ignore
+    NGBOOST_AVAILABLE = False
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
+
+from sklearn.base import BaseEstimator
+
+try:  # TensorFlow / deep learning stack for NAS models
+    import tensorflow as tf
+    from tensorflow.keras import callbacks, layers, models
+
+    TENSORFLOW_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    tf = None  # type: ignore
+    layers = None  # type: ignore
+    models = None  # type: ignore
+    callbacks = None  # type: ignore
+    TENSORFLOW_AVAILABLE = False
+
+try:
+    from keras_tuner import RandomSearch as KerasRandomSearch
+
+    KERAS_TUNER_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    KerasRandomSearch = None  # type: ignore
+    KERAS_TUNER_AVAILABLE = False
+
+try:
+    import autokeras as ak
+
+    AUTOKERAS_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    ak = None  # type: ignore
+    AUTOKERAS_AVAILABLE = False
 
 from src.utils.nas_tas.shared_logging import (
     TPRINT_AVAILABLE,
@@ -51,6 +93,14 @@ from src.utils.nas_tas.shared_logging import (
     tprint_warning,
 )
 from src.utils.nas_tas.shared_serialization import PickleSerializer
+from src.utils.ml_common.models.tree_clvsa_wrapper import (
+    create_tree_clvsa_config,
+    create_tree_clvsa_wrapper,
+)
+from src.utils.nas_tas.uncertainty_estimation import (
+    TreeUncertaintyEstimator,
+    UncertaintyConfig,
+)
 
 # Import regime detection systems
 try:
@@ -87,10 +137,38 @@ class ModelType(Enum):
     XGBOOST = "xgboost"
     LIGHTGBM = "lightgbm"
     CATBOOST = "catboost"
+    EXTRA_TREES = "extra_trees"
+    GRADIENT_BOOSTING = "gradient_boosting"
+    ADABOOST = "adaboost"
+    NGBOOST = "ngboost"
     LOGISTIC_REGRESSION = "logistic_regression"
     SVM = "svm"
     NEURAL_NETWORK = "neural_network"
+    CNN = "cnn"
+    RNN = "rnn"
+    TRANSFORMER = "transformer"
     ENSEMBLE = "ensemble"
+
+
+TREE_MODEL_TYPES: Tuple[ModelType, ...] = (
+    ModelType.RANDOM_FOREST,
+    ModelType.XGBOOST,
+    ModelType.LIGHTGBM,
+    ModelType.CATBOOST,
+    ModelType.EXTRA_TREES,
+    ModelType.GRADIENT_BOOSTING,
+    ModelType.ADABOOST,
+    ModelType.NGBOOST,
+)
+
+DEFAULT_NAS_MODEL_TYPES: Tuple[ModelType, ...] = (
+    ModelType.NEURAL_NETWORK,
+    ModelType.CNN,
+    ModelType.RNN,
+    ModelType.TRANSFORMER,
+    ModelType.LOGISTIC_REGRESSION,
+    ModelType.SVM,
+)
 
 
 class RegimeTrainingStrategy(Enum):
@@ -104,12 +182,12 @@ class RegimeTrainingStrategy(Enum):
 @dataclass
 class RegimeAwareTrainingConfig:
     """Configuration for regime-aware model training."""
-    
+
     # Training strategy
     training_strategy: RegimeTrainingStrategy = RegimeTrainingStrategy.SEPARATE_MODELS
-    model_types: List[ModelType] = field(default_factory=lambda: [
-        ModelType.XGBOOST, ModelType.LIGHTGBM, ModelType.CATBOOST
-    ])
+    model_types: List[ModelType] = field(default_factory=list)
+    nas_model_types: List[ModelType] = field(default_factory=lambda: list(DEFAULT_NAS_MODEL_TYPES))
+    tas_model_types: List[ModelType] = field(default_factory=lambda: list(TREE_MODEL_TYPES))
     
     # Data splitting
     train_ratio: float = 0.7
@@ -129,12 +207,23 @@ class RegimeAwareTrainingConfig:
     optimization_method: str = "grid_search"  # "grid_search", "random_search", "bayesian"
     n_trials: int = 50
     cv_folds: int = 5
-    
+    learning_rate: float = 0.001
+    batch_size: int = 64
+    dropout_rate: float = 0.1
+    regularization: float = 0.0001
+    hidden_units: int = 128
+    num_layers: int = 3
+    n_estimators: int = 200
+    max_depth: int = 6
+
     # Training parameters
     early_stopping_rounds: int = 50
     validation_metric: str = "f1_score"
     enable_class_weights: bool = True
     enable_feature_importance: bool = True
+    max_epochs: int = 40
+    early_stopping_patience: int = 5
+    validation_split: float = 0.2
     
     # Regime detection
     regime_detection_method: str = "hybrid"  # "tas", "nas", "hybrid"
@@ -153,11 +242,89 @@ class RegimeAwareTrainingConfig:
     enable_meta_features: bool = True
     enable_regime_transition_modeling: bool = True
 
+    # CLVSA / uncertainty configuration
+    enable_clvsa_wrapping: bool = True
+    tree_clvsa_params: Dict[str, Any] = field(default_factory=lambda: {
+        'attention_dim': 64,
+        'use_temporal_attention': True,
+        'regime_aware': True,
+        'attention_dropout': 0.1,
+        'temporal_window_size': 20,
+        'feature_selection_method': 'mutual_info',
+        'ensemble_attention': True,
+        'memory_efficient': True,
+    })
+    enable_uncertainty_quantification: bool = True
+    uncertainty_config: UncertaintyConfig = field(default_factory=UncertaintyConfig)
+
+    # Neural NAS integrations
+    enable_autokeras: bool = True
+    enable_keras_tuner: bool = True
+    autokeras_max_trials: int = 10
+    keras_tuner_max_trials: int = 20
+    keras_tuner_executions_per_trial: int = 1
+
+    def __post_init__(self) -> None:
+        """Sanitize model portfolios for NAS and TAS pipelines."""
+        if not self.nas_model_types:
+            self.nas_model_types = list(DEFAULT_NAS_MODEL_TYPES)
+        if not self.tas_model_types:
+            self.tas_model_types = list(TREE_MODEL_TYPES)
+
+        if self.model_types:
+            if self.regime_detection_method == "nas":
+                sanitized = [mt for mt in self.model_types if mt not in TREE_MODEL_TYPES]
+                if sanitized:
+                    self.nas_model_types = sanitized
+                else:
+                    sanitized = list(DEFAULT_NAS_MODEL_TYPES)
+                    self.nas_model_types = sanitized
+                self.model_types = list(sanitized)
+            elif self.regime_detection_method == "tas":
+                sanitized = [mt for mt in self.model_types if mt in TREE_MODEL_TYPES]
+                if sanitized:
+                    self.tas_model_types = sanitized
+                else:
+                    sanitized = list(TREE_MODEL_TYPES)
+                    self.tas_model_types = sanitized
+                self.model_types = list(sanitized)
+            else:
+                sanitized: List[ModelType] = []
+                seen: Set[ModelType] = set()
+                for mt in self.model_types:
+                    if mt in TREE_MODEL_TYPES or mt in DEFAULT_NAS_MODEL_TYPES or mt == ModelType.ENSEMBLE:
+                        if mt not in seen:
+                            sanitized.append(mt)
+                            seen.add(mt)
+                if not sanitized:
+                    sanitized = list(dict.fromkeys(list(self.tas_model_types) + list(self.nas_model_types)))
+                self.model_types = sanitized
+                self.tas_model_types = [mt for mt in sanitized if mt in TREE_MODEL_TYPES]
+                self.nas_model_types = [
+                    mt for mt in sanitized if mt not in TREE_MODEL_TYPES and mt != ModelType.ENSEMBLE
+                ]
+        else:
+            if self.regime_detection_method == "nas":
+                self.model_types = list(self.nas_model_types)
+            elif self.regime_detection_method == "tas":
+                self.model_types = list(self.tas_model_types)
+            else:
+                combined: List[ModelType] = []
+                seen: Set[ModelType] = set()
+                for mt in list(self.tas_model_types) + list(self.nas_model_types):
+                    if mt not in seen:
+                        combined.append(mt)
+                        seen.add(mt)
+                self.model_types = combined
+
+        if self.enable_ensemble_training and ModelType.ENSEMBLE not in self.model_types:
+            self.model_types.append(ModelType.ENSEMBLE)
+
 
 @dataclass
 class RegimeTrainingResult:
     """Result from regime-aware model training."""
-    
+
     # Training results
     success: bool
     training_time: float
@@ -183,6 +350,88 @@ class RegimeTrainingResult:
     error_message: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
 
+
+class KerasModelWrapper(BaseEstimator):
+    """scikit-learn compatible wrapper around Keras models."""
+
+    def __init__(self, build_fn: Callable[[int, int], Any], epochs: int = 50,
+                 batch_size: int = 32, patience: int = 5):
+        self.build_fn = build_fn
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.patience = patience
+        self.model = None
+        self.classes_: Optional[np.ndarray] = None
+
+    def _reshape_input(self, X: np.ndarray) -> np.ndarray:
+        if self.model is None:
+            return X
+        input_shape = getattr(self.model, 'input_shape', None)
+        if input_shape and len(input_shape) == 3:
+            return X.reshape((X.shape[0], X.shape[1], 1))
+        return X
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        if not TENSORFLOW_AVAILABLE:
+            raise RuntimeError("TensorFlow not available for Keras models")
+
+        X = np.asarray(X)
+        y = np.asarray(y)
+        self.classes_, y_indices = np.unique(y, return_inverse=True)
+        n_classes = len(self.classes_)
+
+        self.model = self.build_fn(X.shape[1], n_classes)
+
+        callback_list = []
+        if callbacks is not None:
+            callback_list.append(
+                callbacks.EarlyStopping(
+                    monitor='val_loss',
+                    patience=self.patience,
+                    restore_best_weights=True,
+                )
+            )
+
+        self.model.fit(
+            self._reshape_input(X),
+            y_indices,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_split=0.2,
+            verbose=0,
+            callbacks=callback_list,
+        )
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        proba = self.predict_proba(X)
+        if proba.shape[1] == 2:
+            return (proba[:, 1] >= 0.5).astype(int)
+        indices = np.argmax(proba, axis=1)
+        return self.classes_[indices]
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if self.model is None:
+            raise RuntimeError("Model has not been fitted")
+        X = np.asarray(X)
+        preds = self.model.predict(self._reshape_input(X), verbose=0)
+        if preds.ndim == 1 or preds.shape[1] == 1:
+            preds = preds.reshape(-1, 1)
+            preds = np.hstack([1 - preds, preds])
+        return preds
+
+    def get_params(self, deep: bool = True) -> Dict[str, Any]:  # pragma: no cover - simple pass through
+        return {
+            'epochs': self.epochs,
+            'batch_size': self.batch_size,
+            'patience': self.patience,
+        }
+
+    def set_params(self, **params: Any) -> 'KerasModelWrapper':  # pragma: no cover - simple setter
+        for key, value in params.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        return self
 
 class RegimeAwareTrainer:
     """
@@ -214,14 +463,16 @@ class RegimeAwareTrainer:
         # Initialize model factories
         tprint("🏭 Initializing model factories", color="yellow")
         self._initialize_model_factories()
-        
+
         # Training state
         tprint("📊 Initializing training state", color="yellow")
         self.trained_models = {}
+        self.tree_model_types = set(TREE_MODEL_TYPES)
+        self.auto_ml_search_results: List[Dict[str, Any]] = []
         self.regime_models = {}
         self.ensemble_models = {}
         self.performance_history = []
-        
+
         self.logger.info("✅ Regime-Aware Trainer initialized")
         self.logger.info(f"   Training strategy: {config.training_strategy.value}")
         self.logger.info(f"   Model types: {[mt.value for mt in config.model_types]}")
@@ -321,19 +572,73 @@ class RegimeAwareTrainer:
             ModelType.XGBOOST: self._create_xgboost,
             ModelType.LIGHTGBM: self._create_lightgbm,
             ModelType.CATBOOST: self._create_catboost,
+            ModelType.EXTRA_TREES: self._create_extra_trees,
+            ModelType.GRADIENT_BOOSTING: self._create_gradient_boosting,
+            ModelType.ADABOOST: self._create_adaboost,
+            ModelType.NGBOOST: self._create_ngboost,
             ModelType.LOGISTIC_REGRESSION: self._create_logistic_regression,
             ModelType.SVM: self._create_svm,
             ModelType.NEURAL_NETWORK: self._create_neural_network,
+            ModelType.CNN: self._create_cnn,
+            ModelType.RNN: self._create_rnn,
+            ModelType.TRANSFORMER: self._create_transformer,
             ModelType.ENSEMBLE: self._create_ensemble
         }
 
         if not CATBOOST_AVAILABLE:
             tprint_warning("⚠️ CatBoost not available - removing from model factories", color="red")
             self.model_factories.pop(ModelType.CATBOOST, None)
-            if ModelType.CATBOOST in self.config.model_types:
-                self.config.model_types = [
-                    mt for mt in self.config.model_types if mt != ModelType.CATBOOST
-                ]
+
+        if not NGBOOST_AVAILABLE:
+            tprint_warning("⚠️ NGBoost not available - removing from model factories", color="red")
+            self.model_factories.pop(ModelType.NGBOOST, None)
+
+        if not TENSORFLOW_AVAILABLE:
+            tprint_warning("⚠️ TensorFlow not available - removing deep neural models", color="red")
+            for model_type in [ModelType.CNN, ModelType.RNN, ModelType.TRANSFORMER]:
+                self.model_factories.pop(model_type, None)
+
+        self._refresh_model_type_configuration()
+
+    def _refresh_model_type_configuration(self) -> None:
+        """Align active model types with the selected NAS/TAS pipeline."""
+        available_types: Set[ModelType] = set(self.model_factories.keys())
+
+        nas_types = [mt for mt in self.config.nas_model_types if mt in available_types]
+        if not nas_types:
+            nas_types = [mt for mt in DEFAULT_NAS_MODEL_TYPES if mt in available_types]
+            self.config.nas_model_types = list(nas_types)
+
+        tas_types = [mt for mt in self.config.tas_model_types if mt in available_types]
+        if not tas_types:
+            tas_types = [mt for mt in TREE_MODEL_TYPES if mt in available_types]
+            self.config.tas_model_types = list(tas_types)
+
+        if self.config.regime_detection_method == "nas":
+            if tas_types:
+                tree_names = ", ".join(mt.value for mt in tas_types)
+                self.logger.info("🪵 Skipping tree-based models for NAS pipeline: %s", tree_names)
+                if TPRINT_AVAILABLE:
+                    tprint_warning(
+                        f"🪵 Skipping tree-based models for NAS pipeline: {tree_names}",
+                        color="yellow",
+                    )
+            active_types = list(nas_types)
+        elif self.config.regime_detection_method == "tas":
+            active_types = list(tas_types)
+        else:
+            active_types: List[ModelType] = []
+            seen: Set[ModelType] = set()
+            for candidate in list(tas_types) + list(nas_types):
+                if candidate in available_types and candidate not in seen:
+                    active_types.append(candidate)
+                    seen.add(candidate)
+
+        if self.config.enable_ensemble_training and ModelType.ENSEMBLE in self.model_factories:
+            if ModelType.ENSEMBLE not in active_types:
+                active_types.append(ModelType.ENSEMBLE)
+
+        self.config.model_types = list(active_types)
     
     def train_models(self, 
                     market_data: pd.DataFrame,
@@ -741,9 +1046,30 @@ class RegimeAwareTrainer:
                             'feature_importance': self._get_feature_importance(model, dataset['feature_names']),
                             'hyperparameters': self._get_model_hyperparameters(model)
                         }
-                        
+
+                        if (
+                            self.config.enable_uncertainty_quantification
+                            and model_type in self.tree_model_types
+                        ):
+                            try:
+                                estimator = TreeUncertaintyEstimator(self.config.uncertainty_config)
+                                estimator.fit(
+                                    dataset['X_val'],
+                                    dataset['y_val'],
+                                    {
+                                        'base_model': model,
+                                        'regime_id': regime_id,
+                                        'model_type': model_type.value,
+                                    }
+                                )
+                                regime_models[regime_id][model_type.value]['uncertainty_estimator'] = estimator
+                            except Exception as uncertainty_error:
+                                self.logger.warning(
+                                    f"   ⚠️ Uncertainty estimation failed for {model_type.value}: {uncertainty_error}"
+                                )
+
                         self.logger.info(f"   ✅ {model_type.value} trained - Val F1: {val_metrics['f1_score']:.3f}")
-                    
+
                 except (ValueError, TypeError, RuntimeError) as e:
                     self.logger.warning(f"   ⚠️ Failed to train {model_type.value} for regime {regime_id}: {e}")
                     self.logger.info(f"   Continuing with other models for regime {regime_id}")
@@ -973,59 +1299,114 @@ class RegimeAwareTrainer:
         except Exception as e:
             self.logger.error(f"❌ Unexpected error saving models: {e}")
             raise
-    
+
     # Model factory methods
+    def _wrap_with_clvsa(self, model: Any) -> Any:
+        if not self.config.enable_clvsa_wrapping:
+            return model
+
+        try:
+            clvsa_config = create_tree_clvsa_config(**self.config.tree_clvsa_params)
+            return create_tree_clvsa_wrapper(model, clvsa_config)
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to apply CLVSA wrapper: {exc}")
+            return model
+
     def _create_random_forest(self):
-        return RandomForestClassifier(
+        base_model = RandomForestClassifier(
             n_estimators=100,
             max_depth=10,
             random_state=42,
             class_weight='balanced' if self.config.enable_class_weights else None
         )
-    
+        return self._wrap_with_clvsa(base_model)
+
     def _create_xgboost(self):
-        return xgb.XGBClassifier(
+        base_model = xgb.XGBClassifier(
             n_estimators=100,
             max_depth=6,
             learning_rate=0.1,
             random_state=42,
             eval_metric='logloss'
         )
-    
+        return self._wrap_with_clvsa(base_model)
+
     def _create_lightgbm(self):
-        return lgb.LGBMClassifier(
+        base_model = lgb.LGBMClassifier(
             n_estimators=100,
             max_depth=6,
             learning_rate=0.1,
             random_state=42,
             class_weight='balanced' if self.config.enable_class_weights else None
         )
-    
+        return self._wrap_with_clvsa(base_model)
+
     def _create_catboost(self):
         if not CATBOOST_AVAILABLE:
             raise ImportError("catboost is not available - remove ModelType.CATBOOST from configuration or install catboost")
-        return cb.CatBoostClassifier(
+        base_model = cb.CatBoostClassifier(
             iterations=100,
             depth=6,
             learning_rate=0.1,
             random_state=42,
             verbose=False
         )
-    
+        return self._wrap_with_clvsa(base_model)
+
     def _create_logistic_regression(self):
         return LogisticRegression(
             random_state=42,
             class_weight='balanced' if self.config.enable_class_weights else None,
             max_iter=1000
         )
-    
+
     def _create_svm(self):
         return SVC(
             random_state=42,
             class_weight='balanced' if self.config.enable_class_weights else None,
             probability=True
         )
-    
+
+    def _create_extra_trees(self):
+        base_model = ExtraTreesClassifier(
+            n_estimators=300,
+            max_depth=None,
+            min_samples_split=2,
+            min_samples_leaf=1,
+            random_state=42,
+            n_jobs=-1
+        )
+        return self._wrap_with_clvsa(base_model)
+
+    def _create_gradient_boosting(self):
+        base_model = GradientBoostingClassifier(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=3,
+            subsample=0.8,
+            random_state=42
+        )
+        return self._wrap_with_clvsa(base_model)
+
+    def _create_adaboost(self):
+        base_model = AdaBoostClassifier(
+            n_estimators=200,
+            learning_rate=0.05,
+            random_state=42
+        )
+        return self._wrap_with_clvsa(base_model)
+
+    def _create_ngboost(self):
+        if not NGBOOST_AVAILABLE:
+            raise ImportError("NGBoost is not available - install ngboost or disable the model")
+        base_model = NGBClassifier(
+            n_estimators=500,
+            learning_rate=0.05,
+            verbose=False,
+            random_state=42
+        )
+        return self._wrap_with_clvsa(base_model)
+
     def _create_neural_network(self):
         # Simple neural network using sklearn's MLPClassifier
         from sklearn.neural_network import MLPClassifier
@@ -1034,7 +1415,80 @@ class RegimeAwareTrainer:
             max_iter=500,
             random_state=42
         )
-    
+
+    def _create_cnn(self):
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required to create CNN models")
+
+        def build_fn(input_dim: int, n_classes: int):
+            model = models.Sequential()
+            model.add(layers.Input(shape=(input_dim, 1)))
+            model.add(layers.Conv1D(filters=32, kernel_size=3, activation='relu', padding='same'))
+            model.add(layers.Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'))
+            model.add(layers.GlobalAveragePooling1D())
+            model.add(layers.Dropout(0.3))
+            if n_classes <= 2:
+                model.add(layers.Dense(1, activation='sigmoid'))
+                loss = 'binary_crossentropy'
+            else:
+                model.add(layers.Dense(n_classes, activation='softmax'))
+                loss = 'sparse_categorical_crossentropy'
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss=loss, metrics=['accuracy'])
+            return model
+
+        epochs = getattr(self.config, 'max_epochs', 40)
+        batch_size = getattr(self.config, 'batch_size', 32)
+        return KerasModelWrapper(build_fn, epochs=epochs, batch_size=batch_size, patience=5)
+
+    def _create_rnn(self):
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required to create RNN models")
+
+        def build_fn(input_dim: int, n_classes: int):
+            model = models.Sequential()
+            model.add(layers.Input(shape=(input_dim, 1)))
+            model.add(layers.LSTM(64, return_sequences=False))
+            model.add(layers.Dropout(0.3))
+            if n_classes <= 2:
+                model.add(layers.Dense(1, activation='sigmoid'))
+                loss = 'binary_crossentropy'
+            else:
+                model.add(layers.Dense(n_classes, activation='softmax'))
+                loss = 'sparse_categorical_crossentropy'
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss=loss, metrics=['accuracy'])
+            return model
+
+        epochs = getattr(self.config, 'max_epochs', 40)
+        batch_size = getattr(self.config, 'batch_size', 32)
+        return KerasModelWrapper(build_fn, epochs=epochs, batch_size=batch_size, patience=5)
+
+    def _create_transformer(self):
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required to create Transformer models")
+
+        def build_fn(input_dim: int, n_classes: int):
+            inputs = layers.Input(shape=(input_dim, 1))
+            x = layers.LayerNormalization()(inputs)
+            attention = layers.MultiHeadAttention(num_heads=4, key_dim=min(64, max(1, input_dim // 2)))(x, x)
+            x = layers.Add()([attention, inputs])
+            x = layers.LayerNormalization()(x)
+            x = layers.GlobalAveragePooling1D()(x)
+            x = layers.Dense(64, activation='relu')(x)
+            x = layers.Dropout(0.3)(x)
+            if n_classes <= 2:
+                outputs = layers.Dense(1, activation='sigmoid')(x)
+                loss = 'binary_crossentropy'
+            else:
+                outputs = layers.Dense(n_classes, activation='softmax')(x)
+                loss = 'sparse_categorical_crossentropy'
+            model = models.Model(inputs=inputs, outputs=outputs)
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss=loss, metrics=['accuracy'])
+            return model
+
+        epochs = getattr(self.config, 'max_epochs', 40)
+        batch_size = getattr(self.config, 'batch_size', 32)
+        return KerasModelWrapper(build_fn, epochs=epochs, batch_size=batch_size, patience=6)
+
     def _create_ensemble(self):
         # This will be handled in _train_ensemble_models
         return None
@@ -1103,62 +1557,95 @@ class RegimeAwareTrainer:
             raise
     
     def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        """Optimize hyperparameters using Bayesian TPE optimizer."""
-        if not hasattr(self, 'bayesian_tpe_optimizer') or not self.bayesian_tpe_optimizer:
-            tprint("⚠️ Bayesian TPE optimizer not available, skipping hyperparameter optimization", color="red")
-            self.logger.warning("Bayesian TPE optimizer not available, skipping hyperparameter optimization")
-            return {'success': False, 'error': 'Bayesian TPE optimizer not available'}
-        
-        tprint("🔧 Starting Bayesian TPE hyperparameter optimization", color="blue")
-        self.logger.info("🔧 Starting Bayesian TPE hyperparameter optimization")
-        
-        # Define hyperparameter search space for regime-aware training
-        search_space = {
-            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
-            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
-            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
-            'regularization': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
-            'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
-            'num_layers': {'type': 'int', 'low': 2, 'high': 6},
-            'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
-            'max_depth': {'type': 'int', 'low': 3, 'high': 15}
+        """Optimize hyperparameters using multiple search backends."""
+
+        optimization_results: List[Dict[str, Any]] = []
+
+        # Classical sklearn-based search
+        if self.config.optimization_method in {"grid_search", "random_search"}:
+            sklearn_result = self._run_sklearn_search(X, y, self.config.optimization_method)
+            optimization_results.append(sklearn_result)
+
+        # Neural architecture search helpers
+        if self._has_neural_models():
+            if self.config.enable_keras_tuner and KERAS_TUNER_AVAILABLE and TENSORFLOW_AVAILABLE:
+                optimization_results.append(self._run_keras_tuner_search(X, y))
+            elif self.config.enable_keras_tuner:
+                self.logger.warning("KerasTuner requested but not available")
+
+            if self.config.enable_autokeras and AUTOKERAS_AVAILABLE and TENSORFLOW_AVAILABLE:
+                optimization_results.append(self._run_autokeras_search(X, y))
+            elif self.config.enable_autokeras:
+                self.logger.warning("AutoKeras requested but not available")
+
+        # Bayesian TPE optimisation remains the default for the NAS pipeline
+        if hasattr(self, 'bayesian_tpe_optimizer') and self.bayesian_tpe_optimizer:
+            tprint("🔧 Starting Bayesian TPE hyperparameter optimization", color="blue")
+            self.logger.info("🔧 Starting Bayesian TPE hyperparameter optimization")
+
+            search_space = {
+                'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+                'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+                'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'regularization': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+                'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
+                'num_layers': {'type': 'int', 'low': 2, 'high': 6},
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15}
+            }
+
+            try:
+                result = self.bayesian_tpe_optimizer.optimize(
+                    objective_function=lambda params: self._evaluate_hyperparameters(X, y, regime_labels, params),
+                    search_space=search_space,
+                    X=X,
+                    y=y
+                )
+
+                if result.success:
+                    tprint(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}", color="green")
+                    self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+                    self.logger.info(f"   Best parameters: {result.best_params}")
+                    optimization_results.append({
+                        'success': True,
+                        'method': 'bayesian_tpe',
+                        'best_params': result.best_params,
+                        'best_score': result.best_score,
+                        'optimization_time': result.optimization_time,
+                        'n_trials': result.n_trials,
+                    })
+                else:
+                    message = result.error_message or 'Unknown error'
+                    self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {message}")
+                    optimization_results.append({'success': False, 'method': 'bayesian_tpe', 'error': message})
+
+            except Exception as exc:
+                tprint(f"⚠️ Bayesian TPE optimization failed: {exc}", color="red")
+                self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {exc}")
+                optimization_results.append({'success': False, 'method': 'bayesian_tpe', 'error': str(exc)})
+        else:
+            tprint("⚠️ Bayesian TPE optimizer not available, skipping Bayesian search", color="red")
+            self.logger.warning("Bayesian TPE optimizer not available, skipping Bayesian search")
+
+        successful_runs = [res for res in optimization_results if res.get('success')]
+        if successful_runs:
+            best_result = max(successful_runs, key=lambda r: r.get('best_score', 0.0))
+            best_params = best_result.get('best_params') or {}
+            if best_params:
+                self._update_config_with_optimized_params(best_params)
+
+            return {
+                'success': True,
+                'best_params': best_params,
+                'best_score': best_result.get('best_score', 0.0),
+                'results': optimization_results,
+            }
+
+        return {
+            'success': False,
+            'error': 'No optimization strategy succeeded',
+            'results': optimization_results,
         }
-        
-        try:
-            # Use Bayesian TPE optimizer with automatic grid search
-            result = self.bayesian_tpe_optimizer.optimize(
-                objective_function=lambda params: self._evaluate_hyperparameters(X, y, regime_labels, params),
-                search_space=search_space,
-                X=X,
-                y=y
-            )
-            
-            if result.success:
-                tprint(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}", color="green")
-                self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
-                self.logger.info(f"   Best parameters: {result.best_params}")
-                
-                # Update configuration with optimized parameters
-                self._update_config_with_optimized_params(result.best_params)
-                
-                return {
-                    'success': True,
-                    'best_params': result.best_params,
-                    'best_score': result.best_score,
-                    'optimization_time': result.optimization_time,
-                    'n_trials': result.n_trials,
-                    'grid_search_used': result.convergence_info.get('grid_search_used', False),
-                    'tpe_optimization_used': result.convergence_info.get('tpe_optimization_used', False)
-                }
-            else:
-                tprint(f"⚠️ Bayesian TPE optimization failed: {result.error_message}", color="red")
-                self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
-                return {'success': False, 'error': result.error_message}
-                
-        except Exception as e:
-            tprint(f"⚠️ Bayesian TPE optimization failed: {e}", color="red")
-            self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {e}")
-            return {'success': False, 'error': str(e)}
     
     def _evaluate_hyperparameters(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray], params: Dict[str, Any]) -> float:
         """Evaluate hyperparameters for Bayesian TPE optimization."""
@@ -1248,7 +1735,7 @@ class RegimeAwareTrainer:
         """Calculate a compatibility score for configuration."""
         try:
             score = 0.0
-            
+
             # Learning rate compatibility
             if 0.0001 <= config.learning_rate <= 0.01:
                 score += 0.2
@@ -1274,10 +1761,135 @@ class RegimeAwareTrainer:
                 score += 0.1
             
             return score
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Config compatibility calculation failed: {e}")
             return 0.0
+
+    def _has_neural_models(self) -> bool:
+        neural_types = {
+            ModelType.NEURAL_NETWORK,
+            ModelType.CNN,
+            ModelType.RNN,
+            ModelType.TRANSFORMER,
+        }
+        return any(model_type in neural_types for model_type in self.config.model_types)
+
+    def _run_sklearn_search(self, X: np.ndarray, y: np.ndarray, method: str) -> Dict[str, Any]:
+        try:
+            from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
+
+            estimator = RandomForestClassifier(random_state=42)
+            param_grid = {
+                'n_estimators': [100, 200, 400],
+                'max_depth': [5, 10, None],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4],
+            }
+
+            cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
+
+            if method == 'grid_search':
+                search = GridSearchCV(
+                    estimator,
+                    param_grid,
+                    scoring='f1_weighted',
+                    cv=cv,
+                    n_jobs=-1,
+                )
+            else:
+                search = RandomizedSearchCV(
+                    estimator,
+                    param_grid,
+                    n_iter=self.config.n_trials,
+                    scoring='f1_weighted',
+                    cv=cv,
+                    n_jobs=-1,
+                    random_state=42,
+                )
+
+            search.fit(X, y)
+            return {
+                'success': True,
+                'method': method,
+                'best_params': search.best_params_,
+                'best_score': float(search.best_score_),
+            }
+        except Exception as exc:
+            self.logger.warning(f"⚠️ {method} optimization failed: {exc}")
+            return {'success': False, 'method': method, 'error': str(exc)}
+
+    def _run_keras_tuner_search(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        if not (KERAS_TUNER_AVAILABLE and TENSORFLOW_AVAILABLE and KerasRandomSearch is not None):
+            return {'success': False, 'method': 'keras_tuner', 'error': 'KerasTuner unavailable'}
+
+        try:
+            def build_model(hp):
+                model = tf.keras.Sequential()
+                model.add(tf.keras.layers.Input(shape=(X.shape[1],)))
+                for i in range(hp.Int('num_layers', 1, 4)):
+                    units = hp.Int(f'units_{i}', min_value=32, max_value=256, step=32)
+                    model.add(tf.keras.layers.Dense(units, activation='relu'))
+                    dropout = hp.Float(f'dropout_{i}', 0.0, 0.5, step=0.1)
+                    if dropout > 0:
+                        model.add(tf.keras.layers.Dropout(dropout))
+                output_units = len(np.unique(y))
+                if output_units <= 2:
+                    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+                    loss = 'binary_crossentropy'
+                else:
+                    model.add(tf.keras.layers.Dense(output_units, activation='softmax'))
+                    loss = 'sparse_categorical_crossentropy'
+                lr = hp.Float('learning_rate', 1e-4, 1e-2, sampling='log')
+                model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr), loss=loss, metrics=['accuracy'])
+                return model
+
+            tuner = KerasRandomSearch(
+                build_model,
+                objective='val_accuracy',
+                max_trials=self.config.keras_tuner_max_trials,
+                executions_per_trial=self.config.keras_tuner_executions_per_trial,
+                directory='nas_hpo',
+                project_name='keras_tuner',
+                overwrite=True,
+            )
+            tuner.search(X, y, epochs=20, validation_split=0.2, verbose=0)
+            best_hp = tuner.get_best_hyperparameters(1)[0]
+            best_model = tuner.get_best_models(1)[0]
+            _, accuracy = best_model.evaluate(X, y, verbose=0)
+            return {
+                'success': True,
+                'method': 'keras_tuner',
+                'best_params': best_hp.values,
+                'best_score': float(accuracy),
+            }
+        except Exception as exc:
+            self.logger.warning(f"⚠️ KerasTuner search failed: {exc}")
+            return {'success': False, 'method': 'keras_tuner', 'error': str(exc)}
+
+    def _run_autokeras_search(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        if not (AUTOKERAS_AVAILABLE and TENSORFLOW_AVAILABLE and ak is not None):
+            return {'success': False, 'method': 'autokeras', 'error': 'AutoKeras unavailable'}
+
+        try:
+            X_df = pd.DataFrame(X)
+            clf = ak.StructuredDataClassifier(
+                max_trials=self.config.autokeras_max_trials,
+                overwrite=True,
+                seed=42,
+            )
+            clf.fit(X_df, y, epochs=20, verbose=0)
+            _, accuracy = clf.evaluate(X_df, y, verbose=0)
+            self.auto_ml_search_results.append({'model': clf, 'score': float(accuracy)})
+            return {
+                'success': True,
+                'method': 'autokeras',
+                'best_params': {},
+                'best_score': float(accuracy),
+            }
+        except Exception as exc:
+            self.logger.warning(f"⚠️ AutoKeras search failed: {exc}")
+            return {'success': False, 'method': 'autokeras', 'error': str(exc)}
     
     def _update_config_with_optimized_params(self, best_params: Dict[str, Any]):
         """Update the configuration with optimized parameters."""

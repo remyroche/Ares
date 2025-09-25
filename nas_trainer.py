@@ -41,7 +41,6 @@ from sklearn.model_selection import cross_val_score, StratifiedKFold, train_test
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neural_network import MLPClassifier
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 
 from src.utils.nas_tas.shared_logging import (
@@ -189,19 +188,17 @@ except ImportError as e:
             tprint_error(f"Cross-validation failed: {e}")
             return {'mean_score': 0.0, 'std_score': 0.0, 'scores': []}
     
-    def create_model(model_type='random_forest', **params):
+    def create_model(model_type='mlp', **params):
         try:
-            if model_type == 'random_forest':
-                return RandomForestClassifier(**params)
-            elif model_type == 'mlp':
+            if model_type == 'mlp':
                 return MLPClassifier(**params)
             elif model_type == 'logistic':
                 return LogisticRegression(**params)
             else:
-                return RandomForestClassifier(**params)
+                return MLPClassifier(**params)
         except Exception as e:
             tprint_error(f"Model creation failed: {e}")
-            return RandomForestClassifier()
+            return MLPClassifier()
     
     def train_model(model, X, y):
         try:
@@ -1050,44 +1047,84 @@ class NASTrainer:
             # Try to import TensorFlow/Keras
             import tensorflow as tf
             from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import Dense, Dropout
-            from tensorflow.keras.optimizers import Adam
-            
-            # Create model
-            model = Sequential()
-            
-            # Add input layer
-            model.add(Dense(
-                architecture['layers'][0]['neurons'],
-                activation=architecture['layers'][0]['activation'],
-                input_shape=(input_shape,)
-            ))
-            
-            if architecture['layers'][0]['dropout'] > 0:
-                model.add(Dropout(architecture['layers'][0]['dropout']))
-            
-            # Add hidden layers
-            for layer_config in architecture['layers'][1:-1]:
-                model.add(Dense(
-                    layer_config['neurons'],
-                    activation=layer_config['activation']
-                ))
-                if layer_config['dropout'] > 0:
-                    model.add(Dropout(layer_config['dropout']))
-            
-            # Add output layer
-            model.add(Dense(1, activation='sigmoid'))
-            
-            # Compile model
-            optimizer = Adam(learning_rate=architecture['learning_rate'])
-            model.compile(
-                optimizer=optimizer,
-                loss='binary_crossentropy',
-                metrics=['accuracy']
+            from tensorflow.keras.layers import (
+                Dense,
+                Dropout,
+                Conv1D,
+                GlobalAveragePooling1D,
+                LSTM,
+                Reshape,
+                MultiHeadAttention,
+                LayerNormalization,
+                Add,
             )
-            
+            from tensorflow.keras.optimizers import Adam
+
+            network_type = architecture.get('network_type', 'mlp').lower()
+            learning_rate = architecture.get('learning_rate', 0.001)
+            output_activation = architecture.get('output_activation', 'sigmoid')
+
+            if network_type == 'cnn':
+                model = Sequential([
+                    Reshape((input_shape, 1), input_shape=(input_shape,)),
+                    Conv1D(filters=architecture.get('conv_filters', 32), kernel_size=3, activation='relu', padding='same'),
+                    Conv1D(filters=architecture.get('conv_filters', 32), kernel_size=3, activation='relu', padding='same'),
+                    GlobalAveragePooling1D(),
+                    Dropout(architecture.get('dropout', 0.2)),
+                    Dense(architecture.get('dense_units', 64), activation='relu'),
+                    Dropout(architecture.get('dropout', 0.2)),
+                    Dense(1 if output_activation == 'sigmoid' else architecture.get('num_classes', 2), activation=output_activation),
+                ])
+                loss = 'binary_crossentropy' if output_activation == 'sigmoid' else 'sparse_categorical_crossentropy'
+            elif network_type == 'rnn':
+                model = Sequential([
+                    Reshape((input_shape, 1), input_shape=(input_shape,)),
+                    LSTM(architecture.get('lstm_units', 64)),
+                    Dropout(architecture.get('dropout', 0.2)),
+                    Dense(architecture.get('dense_units', 32), activation='relu'),
+                    Dense(1 if output_activation == 'sigmoid' else architecture.get('num_classes', 2), activation=output_activation),
+                ])
+                loss = 'binary_crossentropy' if output_activation == 'sigmoid' else 'sparse_categorical_crossentropy'
+            elif network_type == 'transformer':
+                inputs = tf.keras.layers.Input(shape=(input_shape,))
+                reshaped = Reshape((input_shape, 1))(inputs)
+                x = LayerNormalization()(reshaped)
+                attention = MultiHeadAttention(num_heads=4, key_dim=min(64, max(1, input_shape // 2)))(x, x)
+                x = Add()([attention, reshaped])
+                x = LayerNormalization()(x)
+                x = GlobalAveragePooling1D()(x)
+                x = Dense(architecture.get('dense_units', 64), activation='relu')(x)
+                x = Dropout(architecture.get('dropout', 0.2))(x)
+                outputs = Dense(1 if output_activation == 'sigmoid' else architecture.get('num_classes', 2), activation=output_activation)(x)
+                model = tf.keras.Model(inputs=inputs, outputs=outputs)
+                loss = 'binary_crossentropy' if output_activation == 'sigmoid' else 'sparse_categorical_crossentropy'
+            else:
+                model = Sequential()
+                model.add(Dense(
+                    architecture['layers'][0]['neurons'],
+                    activation=architecture['layers'][0]['activation'],
+                    input_shape=(input_shape,)
+                ))
+
+                if architecture['layers'][0]['dropout'] > 0:
+                    model.add(Dropout(architecture['layers'][0]['dropout']))
+
+                for layer_config in architecture['layers'][1:-1]:
+                    model.add(Dense(
+                        layer_config['neurons'],
+                        activation=layer_config['activation']
+                    ))
+                    if layer_config['dropout'] > 0:
+                        model.add(Dropout(layer_config['dropout']))
+
+                model.add(Dense(1, activation=output_activation))
+                loss = 'binary_crossentropy' if output_activation == 'sigmoid' else 'sparse_categorical_crossentropy'
+
+            optimizer = Adam(learning_rate=learning_rate)
+            model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+
             return model
-            
+
         except ImportError:
             # Fallback to sklearn MLPClassifier
             from sklearn.neural_network import MLPClassifier

@@ -83,7 +83,15 @@ class HybridRegimeConfig:
     # TAS (Tree Architecture Search) integration with adaptive weighting for short-term trading
     tas_config: Dict[str, Any] = field(default_factory=lambda: {
         "clustering_strategy": "auto",
-        "tree_models": ["random_forest", "xgboost", "lightgbm", "extra_trees"],
+        "tree_models": [
+            "random_forest",
+            "xgboost",
+            "lightgbm",
+            "extra_trees",
+            "gradient_boosting",
+            "adaboost",
+            "ngboost",
+        ],
         "max_features_per_model": 50,
         "min_feature_importance": 0.01,
         "base_weight": 0.4,  # Base weight in hybrid combination

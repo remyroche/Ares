@@ -60,6 +60,19 @@ from src.core.decorators import (
 from src.core.errors import (
     ValidationError, DataIntegrityError, TimeoutError
 )
+from src.utils.ml_common.models.tree_clvsa_wrapper import (
+    TreeCLVSAConfig,
+    create_tree_clvsa_config,
+    create_tree_clvsa_wrapper,
+)
+
+try:  # Optional dependency for probabilistic gradient boosting
+    from ngboost import NGBClassifier, NGBRegressor
+    NGBOOST_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    NGBClassifier = None  # type: ignore
+    NGBRegressor = None  # type: ignore
+    NGBOOST_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +94,8 @@ class ModelType(Enum):
     XGBOOST_CLASSIFIER = "XGBClassifier"
     XGBOOST_CUSTOM = "XGBoostCustom"
     XGBOOST_META = "XGBoostMeta"
+    NGBOOST = "NGBRegressor"
+    NGBOOST_CLASSIFIER = "NGBClassifier"
     
     # Neural network models
     TABNET = "TabNetRegressor"
@@ -242,7 +257,14 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['xgboost'] = False
             self.logger.warning("⚠️ XGBoost not available")
-        
+
+        # NGBoost
+        dependencies['ngboost'] = NGBOOST_AVAILABLE
+        if NGBOOST_AVAILABLE:
+            self.logger.debug("✅ NGBoost available")
+        else:
+            self.logger.warning("⚠️ NGBoost not available")
+
         # TabNet
         try:
             import pytorch_tabnet
@@ -324,6 +346,12 @@ class EnhancedModelFactory:
                 model = self._create_xgboost_meta_model(model_config)
             elif model_config.model_type in [ModelType.EXTRA_TREES, ModelType.EXTRA_TREES_CLASSIFIER]:
                 model = self._create_extra_trees_model(model_config)
+            elif model_config.model_type in [ModelType.GRADIENT_BOOSTING_REGRESSOR, ModelType.GRADIENT_BOOSTING_CLASSIFIER]:
+                model = self._create_gradient_boosting_model(model_config)
+            elif model_config.model_type in [ModelType.ADABOOST_REGRESSOR, ModelType.ADABOOST_CLASSIFIER]:
+                model = self._create_adaboost_model(model_config)
+            elif model_config.model_type in [ModelType.NGBOOST, ModelType.NGBOOST_CLASSIFIER]:
+                model = self._create_ngboost_model(model_config)
             elif model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
                 model = self._create_tabnet_model(model_config)
             elif model_config.model_type == ModelType.TIME_SERIES_TRANSFORMER:
@@ -409,10 +437,14 @@ class EnhancedModelFactory:
         if model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
             if not self.dependencies.get('catboost', False):
                 raise ValidationError("CatBoost not available")
-        
+
         if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM, ModelType.XGBOOST_META]:
             if not self.dependencies.get('xgboost', False):
                 raise ValidationError("XGBoost not available")
+
+        if model_config.model_type in [ModelType.NGBOOST, ModelType.NGBOOST_CLASSIFIER]:
+            if not self.dependencies.get('ngboost', False):
+                raise ValidationError("NGBoost not available")
         
         if model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
             if not self.dependencies.get('pytorch_tabnet', False):
@@ -1889,9 +1921,9 @@ class EnhancedModelFactory:
     
     def _create_extra_trees_model(self, model_config: ModelConfig) -> Any:
         """Create ExtraTrees model with CLVSA wrapper by default."""
-        
+
         from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
-        
+
         # Default parameters
         default_params = {
             'n_estimators': 100,
@@ -1901,19 +1933,19 @@ class EnhancedModelFactory:
             'random_state': 42,
             'n_jobs': -1
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.EXTRA_TREES:
             base_model = ExtraTreesRegressor(**params)
         else:
             base_model = ExtraTreesClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -1926,14 +1958,129 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ Extra Trees wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ Extra Trees created without CLVSA wrapper")
-        
+
+        return model
+
+    def _create_gradient_boosting_model(self, model_config: ModelConfig) -> Any:
+        """Create Gradient Boosting model with optional CLVSA wrapper."""
+
+        from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
+
+        default_params = {
+            'n_estimators': 300,
+            'learning_rate': 0.05,
+            'max_depth': 3,
+            'subsample': 0.8,
+            'random_state': model_config.random_state
+        }
+
+        params = {**default_params, **model_config.model_params}
+
+        if model_config.model_type == ModelType.GRADIENT_BOOSTING_REGRESSOR:
+            base_model = GradientBoostingRegressor(**params)
+        else:
+            base_model = GradientBoostingClassifier(**params)
+
+        if model_config.model_params.get('use_clvsa', True):
+            clvsa_config = create_tree_clvsa_config(
+                attention_dim=params.get('attention_dim', 64),
+                use_temporal_attention=params.get('use_temporal_attention', True),
+                regime_aware=params.get('regime_aware', True),
+                attention_dropout=params.get('attention_dropout', 0.1),
+                temporal_window_size=params.get('temporal_window_size', 20),
+                feature_selection_method=params.get('feature_selection_method', 'mutual_info'),
+                ensemble_attention=params.get('ensemble_attention', True),
+                memory_efficient=params.get('memory_efficient', True)
+            )
+            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
+            self.logger.info("✅ Gradient Boosting wrapped with Tree CLVSA attention architecture")
+        else:
+            model = base_model
+            self.logger.info("✅ Gradient Boosting created without CLVSA wrapper")
+
+        return model
+
+    def _create_adaboost_model(self, model_config: ModelConfig) -> Any:
+        """Create AdaBoost model with optional CLVSA wrapper."""
+
+        from sklearn.ensemble import AdaBoostRegressor, AdaBoostClassifier
+
+        default_params = {
+            'n_estimators': 200,
+            'learning_rate': 0.05,
+            'random_state': model_config.random_state
+        }
+
+        params = {**default_params, **model_config.model_params}
+
+        if model_config.model_type == ModelType.ADABOOST_REGRESSOR:
+            base_model = AdaBoostRegressor(**params)
+        else:
+            base_model = AdaBoostClassifier(**params)
+
+        if model_config.model_params.get('use_clvsa', True):
+            clvsa_config = create_tree_clvsa_config(
+                attention_dim=params.get('attention_dim', 64),
+                use_temporal_attention=params.get('use_temporal_attention', True),
+                regime_aware=params.get('regime_aware', True),
+                attention_dropout=params.get('attention_dropout', 0.1),
+                temporal_window_size=params.get('temporal_window_size', 20),
+                feature_selection_method=params.get('feature_selection_method', 'mutual_info'),
+                ensemble_attention=params.get('ensemble_attention', True),
+                memory_efficient=params.get('memory_efficient', True)
+            )
+            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
+            self.logger.info("✅ AdaBoost wrapped with Tree CLVSA attention architecture")
+        else:
+            model = base_model
+            self.logger.info("✅ AdaBoost created without CLVSA wrapper")
+
+        return model
+
+    def _create_ngboost_model(self, model_config: ModelConfig) -> Any:
+        """Create NGBoost model with optional CLVSA wrapper."""
+
+        if not NGBOOST_AVAILABLE:
+            raise ValidationError("NGBoost not available - install ngboost to enable this model")
+
+        default_params = {
+            'n_estimators': 500,
+            'learning_rate': 0.05,
+            'random_state': model_config.random_state,
+            'verbose': False
+        }
+
+        params = {**default_params, **model_config.model_params}
+
+        if model_config.model_type == ModelType.NGBOOST:
+            base_model = NGBRegressor(**params)
+        else:
+            base_model = NGBClassifier(**params)
+
+        if model_config.model_params.get('use_clvsa', True):
+            clvsa_config = create_tree_clvsa_config(
+                attention_dim=params.get('attention_dim', 64),
+                use_temporal_attention=params.get('use_temporal_attention', True),
+                regime_aware=params.get('regime_aware', True),
+                attention_dropout=params.get('attention_dropout', 0.1),
+                temporal_window_size=params.get('temporal_window_size', 20),
+                feature_selection_method=params.get('feature_selection_method', 'mutual_info'),
+                ensemble_attention=params.get('ensemble_attention', True),
+                memory_efficient=params.get('memory_efficient', True)
+            )
+            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
+            self.logger.info("✅ NGBoost wrapped with Tree CLVSA attention architecture")
+        else:
+            model = base_model
+            self.logger.info("✅ NGBoost created without CLVSA wrapper")
+
         return model
     
     def _create_xgboost_custom_model(self, model_config: ModelConfig) -> Any:

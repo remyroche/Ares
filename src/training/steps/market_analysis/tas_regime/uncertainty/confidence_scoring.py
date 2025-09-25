@@ -15,6 +15,7 @@ Key Features:
 
 Usage:
     from uncertainty.confidence_scoring import TreeConfidenceScorer, ConfidenceConfig
+    from src.utils.nas_tas.uncertainty_estimation import TreeUncertaintyEstimator, UncertaintyConfig
     
     config = ConfidenceConfig(method='calibration', confidence_threshold=0.8)
     scorer = TreeConfidenceScorer(config)

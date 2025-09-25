@@ -28,7 +28,7 @@ from ..search.evolutionary_search import EvolutionaryTreeSearch
 from ..search.bayesian_search import BayesianTreeSearch
 from ..search.rl_search import RLTreeSearch
 from ..optimization.hardware_optimization import TreeHardwareOptimizer
-from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
+from src.utils.nas_tas.uncertainty_estimation import TreeUncertaintyEstimator
 from ..regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
 from ..adaptation.real_time_adaptation import TreeRealTimeAdapter
 from ..evaluation.tree_evaluator import TreeEvaluator

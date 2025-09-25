@@ -42,6 +42,13 @@ from .search_space import (
     create_tree_search_space
 )
 
+from .risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -67,5 +74,9 @@ __all__ = [
     'SearchSpaceType',
     'OptimizationStrategy',
     'create_default_nas_search_space',
-    'create_tree_search_space'
+    'create_tree_search_space',
+    'RiskAnalyzer',
+    'RiskConfig',
+    'RiskResult',
+    'RiskMetric'
 ]

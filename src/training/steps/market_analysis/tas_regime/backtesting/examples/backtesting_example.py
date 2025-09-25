@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 from ..backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
 from src.utils.nas_tas.walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig, WalkForwardResult
 from src.utils.nas_tas.performance_attribution import PerformanceAttributor, AttributionConfig, AttributionResult
-from ..risk_analysis import RiskAnalyzer, RiskConfig, RiskResult
+from src.utils.nas_tas.risk_analysis import RiskAnalyzer, RiskConfig, RiskResult
 from ..scenario_testing import ScenarioTester, ScenarioConfig, ScenarioResult
 from ..monte_carlo import MonteCarloSimulator, MonteCarloConfig, MonteCarloResult
 from ..data_manager import BacktestingDataManager, DataConfig, DataResult

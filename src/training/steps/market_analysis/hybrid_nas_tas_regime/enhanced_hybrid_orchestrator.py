@@ -41,7 +41,8 @@ from .shared_utils.enhanced_ml_integration import (
 )
 
 # Import shared utilities
-from .shared_utils.unified_search_algorithms import UnifiedSearchManager, create_unified_search_manager
+# from .shared_utils.unified_search_algorithms import UnifiedSearchManager, create_unified_search_manager
+# REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
 from .shared_utils.unified_clustering_algorithms import UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
 
 # Import TAS and NAS components

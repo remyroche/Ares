@@ -339,45 +339,241 @@ class StandaloneTimeframeOptimizer:
             return 0.0
     
     def _calculate_performance_metrics(self, point: np.ndarray, data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate performance metrics for a given point."""
-        tprint_warning("⚠️ WARNING: Using simulated performance metrics")
-        tprint_warning("⚠️ These are not real calculations but illustrative values")
-        tprint_info("💡 Consider implementing real performance calculation for accurate optimization")
+        """Calculate real performance metrics for a given point."""
+        self.logger.info('📊 Calculating real performance metrics')
         
         try:
-            # Simple performance calculation based on data characteristics
             horizon, target = point[0], point[1]
             
-            # Calculate basic metrics
-            returns = data['close'].pct_change().dropna()
+            # Generate trading signals and calculate real metrics
+            trading_results = self._simulate_trading_strategy(data, horizon, target)
             
-            # Hit rate simulation
-            hit_rate = min(0.8, max(0.3, 0.5 + (target - 0.005) * 10))
+            # Calculate comprehensive performance metrics
+            metrics = self._calculate_comprehensive_metrics(trading_results, data)
             
-            # Sharpe ratio simulation
-            sharpe_ratio = min(2.0, max(0.1, 0.5 + (horizon - 8) * 0.1))
-            
-            # Information ratio simulation
-            information_ratio = min(1.5, max(0.1, 0.3 + (target - 0.005) * 20))
-            
-            # Max drawdown simulation
-            max_drawdown = min(0.3, max(0.05, 0.1 + (horizon - 8) * 0.01))
-            
-            return {
-                'hit_rate': hit_rate,
-                'sharpe_ratio': sharpe_ratio,
-                'information_ratio': information_ratio,
-                'max_drawdown': max_drawdown
-            }
+            return metrics
             
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating performance metrics: {e}')
-            return {
-                'hit_rate': 0.5,
-                'sharpe_ratio': 0.5,
-                'information_ratio': 0.5,
-                'max_drawdown': 0.1
-            }
+            return self._get_default_metrics()
+    
+    def _simulate_trading_strategy(self, data: pd.DataFrame, horizon: int, target: float) -> Dict[str, Any]:
+        """Simulate trading strategy with given parameters."""
+        self.logger.info(f'🎯 Simulating trading strategy: horizon={horizon}, target={target:.4f}')
+        
+        # Generate trading signals based on price movements
+        signals = self._generate_trading_signals(data, horizon, target)
+        
+        # Calculate returns for each trade
+        trade_results = self._calculate_trade_results(data, signals, horizon, target)
+        
+        return {
+            'signals': signals,
+            'trade_results': trade_results,
+            'horizon': horizon,
+            'target': target
+        }
+    
+    def _generate_trading_signals(self, data: pd.DataFrame, horizon: int, target: float) -> pd.DataFrame:
+        """Generate trading signals based on price movements and targets."""
+        signals = pd.DataFrame(index=data.index)
+        
+        # Calculate price momentum indicators
+        signals['price_change'] = data['close'].pct_change(horizon)
+        signals['volatility'] = data['close'].rolling(horizon).std()
+        signals['rsi'] = self._calculate_rsi(data['close'], 14)
+        
+        # Generate buy/sell signals based on target and momentum
+        signals['buy_signal'] = (
+            (signals['price_change'] > target * 0.5) &  # Positive momentum
+            (signals['rsi'] < 70) &  # Not overbought
+            (signals['volatility'] > signals['volatility'].quantile(0.3))  # Sufficient volatility
+        )
+        
+        signals['sell_signal'] = (
+            (signals['price_change'] < -target * 0.5) &  # Negative momentum
+            (signals['rsi'] > 30) &  # Not oversold
+            (signals['volatility'] > signals['volatility'].quantile(0.3))  # Sufficient volatility
+        )
+        
+        return signals
+    
+    def _calculate_trade_results(self, data: pd.DataFrame, signals: pd.DataFrame, 
+                                horizon: int, target: float) -> List[Dict[str, Any]]:
+        """Calculate results for each trade."""
+        trade_results = []
+        
+        for i in range(len(signals) - horizon):
+            if signals.iloc[i]['buy_signal']:
+                entry_price = data.iloc[i]['close']
+                exit_price = data.iloc[i + horizon]['close']
+                
+                # Calculate trade return
+                trade_return = (exit_price - entry_price) / entry_price
+                
+                # Determine if target was hit
+                target_hit = trade_return >= target
+                
+                trade_results.append({
+                    'entry_time': data.index[i],
+                    'exit_time': data.index[i + horizon],
+                    'entry_price': entry_price,
+                    'exit_price': exit_price,
+                    'return': trade_return,
+                    'target_hit': target_hit,
+                    'horizon': horizon
+                })
+        
+        return trade_results
+    
+    def _calculate_comprehensive_metrics(self, trading_results: Dict[str, Any], 
+                                       data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate comprehensive performance metrics."""
+        trade_results = trading_results['trade_results']
+        
+        if not trade_results:
+            return self._get_default_metrics()
+        
+        # Extract returns and target hits
+        returns = [trade['return'] for trade in trade_results]
+        target_hits = [trade['target_hit'] for trade in trade_results]
+        
+        # Calculate basic metrics
+        hit_rate = np.mean(target_hits) if target_hits else 0.0
+        avg_return = np.mean(returns) if returns else 0.0
+        return_std = np.std(returns) if len(returns) > 1 else 0.0
+        
+        # Calculate Sharpe ratio
+        sharpe_ratio = self._calculate_sharpe_ratio(returns)
+        
+        # Calculate Information ratio
+        information_ratio = self._calculate_information_ratio(returns, data)
+        
+        # Calculate Maximum Drawdown
+        max_drawdown = self._calculate_max_drawdown(returns)
+        
+        # Calculate additional metrics
+        win_rate = self._calculate_win_rate(returns)
+        profit_factor = self._calculate_profit_factor(returns)
+        calmar_ratio = self._calculate_calmar_ratio(returns, max_drawdown)
+        
+        return {
+            'hit_rate': hit_rate,
+            'sharpe_ratio': sharpe_ratio,
+            'information_ratio': information_ratio,
+            'max_drawdown': max_drawdown,
+            'win_rate': win_rate,
+            'profit_factor': profit_factor,
+            'calmar_ratio': calmar_ratio,
+            'avg_return': avg_return,
+            'return_std': return_std,
+            'total_trades': len(returns)
+        }
+    
+    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _calculate_sharpe_ratio(self, returns: List[float]) -> float:
+        """Calculate Sharpe ratio."""
+        if not returns or len(returns) < 2:
+            return 0.0
+        
+        returns_array = np.array(returns)
+        if np.std(returns_array) == 0:
+            return 0.0
+        
+        # Assume risk-free rate of 0.02 (2% annually)
+        risk_free_rate = 0.02 / 252  # Daily risk-free rate
+        excess_returns = returns_array - risk_free_rate
+        
+        return np.mean(excess_returns) / np.std(excess_returns)
+    
+    def _calculate_information_ratio(self, returns: List[float], data: pd.DataFrame) -> float:
+        """Calculate Information ratio."""
+        if not returns or len(returns) < 2:
+            return 0.0
+        
+        # Use market returns as benchmark
+        market_returns = data['close'].pct_change().dropna()
+        if len(market_returns) < len(returns):
+            return 0.0
+        
+        # Align returns with market returns
+        aligned_market_returns = market_returns.iloc[-len(returns):].values
+        
+        # Calculate excess returns
+        excess_returns = np.array(returns) - aligned_market_returns
+        
+        if np.std(excess_returns) == 0:
+            return 0.0
+        
+        return np.mean(excess_returns) / np.std(excess_returns)
+    
+    def _calculate_max_drawdown(self, returns: List[float]) -> float:
+        """Calculate maximum drawdown."""
+        if not returns:
+            return 0.0
+        
+        # Calculate cumulative returns
+        cumulative_returns = np.cumprod(1 + np.array(returns))
+        
+        # Calculate running maximum
+        running_max = np.maximum.accumulate(cumulative_returns)
+        
+        # Calculate drawdown
+        drawdown = (cumulative_returns - running_max) / running_max
+        
+        return abs(np.min(drawdown))
+    
+    def _calculate_win_rate(self, returns: List[float]) -> float:
+        """Calculate win rate (percentage of positive returns)."""
+        if not returns:
+            return 0.0
+        
+        positive_returns = sum(1 for r in returns if r > 0)
+        return positive_returns / len(returns)
+    
+    def _calculate_profit_factor(self, returns: List[float]) -> float:
+        """Calculate profit factor (gross profit / gross loss)."""
+        if not returns:
+            return 0.0
+        
+        gross_profit = sum(r for r in returns if r > 0)
+        gross_loss = abs(sum(r for r in returns if r < 0))
+        
+        if gross_loss == 0:
+            return float('inf') if gross_profit > 0 else 0.0
+        
+        return gross_profit / gross_loss
+    
+    def _calculate_calmar_ratio(self, returns: List[float], max_drawdown: float) -> float:
+        """Calculate Calmar ratio (annual return / max drawdown)."""
+        if not returns or max_drawdown == 0:
+            return 0.0
+        
+        annual_return = np.mean(returns) * 252  # Assume daily returns
+        return annual_return / max_drawdown
+    
+    def _get_default_metrics(self) -> Dict[str, float]:
+        """Get default metrics when calculation fails."""
+        return {
+            'hit_rate': 0.5,
+            'sharpe_ratio': 0.5,
+            'information_ratio': 0.5,
+            'max_drawdown': 0.1,
+            'win_rate': 0.5,
+            'profit_factor': 1.0,
+            'calmar_ratio': 0.5,
+            'avg_return': 0.0,
+            'return_std': 0.1,
+            'total_trades': 0
+        }
     
     def _extract_horizons(self, point: np.ndarray) -> Dict[str, int]:
         """Extract horizon configuration from optimization point."""

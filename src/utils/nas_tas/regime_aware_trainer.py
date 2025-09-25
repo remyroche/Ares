@@ -21,8 +21,6 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
-import pickle
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -40,34 +38,19 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import tprint for comprehensive logging
-try:
-    from src.utils.tprint import (
-        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-        tprint_success, tprint_progress, tprint_performance, tprint_timer
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    # Fallback function if tprint is not available
-    def tprint(message: str, color: str = "white", **kwargs):
-        print(f"[REGIME_AWARE_TRAINER] {message}")
-    def tprint_debug(message: str, **kwargs):
-        print(f"[DEBUG] {message}")
-    def tprint_info(message: str, **kwargs):
-        print(f"[INFO] {message}")
-    def tprint_warning(message: str, **kwargs):
-        print(f"[WARNING] {message}")
-    def tprint_error(message: str, **kwargs):
-        print(f"[ERROR] {message}")
-    def tprint_success(message: str, **kwargs):
-        print(f"[SUCCESS] {message}")
-    def tprint_progress(message: str, **kwargs):
-        print(f"[PROGRESS] {message}")
-    def tprint_performance(message: str, **kwargs):
-        print(f"[PERFORMANCE] {message}")
-    def tprint_timer(message: str, **kwargs):
-        print(f"[TIMER] {message}")
-    TPRINT_AVAILABLE = False
+from src.utils.nas_tas.shared_logging import (
+    TPRINT_AVAILABLE,
+    tprint,
+    tprint_debug,
+    tprint_error,
+    tprint_info,
+    tprint_performance,
+    tprint_progress,
+    tprint_success,
+    tprint_timer,
+    tprint_warning,
+)
+from src.utils.nas_tas.shared_serialization import PickleSerializer
 
 # Import regime detection systems
 try:
@@ -966,25 +949,25 @@ class RegimeAwareTrainer:
             for regime_id, models in regime_models.items():
                 regime_path = save_path / f"regime_{regime_id}"
                 regime_path.mkdir(exist_ok=True)
-                
+
                 for model_type, model_info in models.items():
                     model_file = regime_path / f"{model_type}.pkl"
-                    with open(model_file, 'wb') as f:
-                        pickle.dump(model_info['model'], f)
-            
+                    if not PickleSerializer.save(model_info['model'], model_file):
+                        raise IOError(f"Could not serialise {model_type} for regime {regime_id}")
+
             # Save ensemble models
             if ensemble_models:
                 ensemble_path = save_path / "ensemble"
                 ensemble_path.mkdir(exist_ok=True)
-                
+
                 for ensemble_name, ensemble_info in ensemble_models.items():
                     ensemble_file = ensemble_path / f"{ensemble_name}.pkl"
-                    with open(ensemble_file, 'wb') as f:
-                        pickle.dump(ensemble_info['model'], f)
-            
+                    if not PickleSerializer.save(ensemble_info['model'], ensemble_file):
+                        raise IOError(f"Could not serialise ensemble {ensemble_name}")
+
             self.logger.info(f"✅ Models saved to {save_path}")
-            
-        except (IOError, OSError, pickle.PicklingError) as e:
+
+        except (IOError, OSError) as e:
             self.logger.error(f"❌ Could not save models: {e}")
             raise
         except Exception as e:

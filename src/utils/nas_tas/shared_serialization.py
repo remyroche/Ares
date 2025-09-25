@@ -90,10 +90,20 @@ except Exception:  # pragma: no cover - executed only when dependency missing
         def load(filepath: str | Path) -> Any:
             raise NotImplementedError("Universal serialization requires serialization_utils")
 
+def estimate_pickle_size(data: Any) -> int:
+    """Estimate the size of an object when serialised with pickle."""
+
+    try:
+        return len(pickle.dumps(data))
+    except Exception:
+        return 0
+
+
 __all__ = [
     "SERIALIZATION_AVAILABLE",
     "JSONSerializer",
     "PickleSerializer",
     "ParquetSerializer",
     "UniversalSerializer",
+    "estimate_pickle_size",
 ]

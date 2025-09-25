@@ -44,142 +44,29 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 
-# Import utility modules with comprehensive error handling
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
-        tprint_progress, tprint_performance, tprint_structured,
-        tprint_timer, configure_tprint, TPrintConfig, LogLevel
-    )
-    TPRINT_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"tprint module not available: {e}")
-    TPRINT_AVAILABLE = False
-    # Define fallback functions with proper error handling
-    def tprint(*args, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]", *args, **kwargs)
-        except Exception:
-            print(*args, **kwargs)
-    
-    def tprint_info(*args, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO:", *args, **kwargs)
-        except Exception:
-            print("INFO:", *args, **kwargs)
-    
-    def tprint_warning(*args, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] WARNING:", *args, **kwargs)
-        except Exception:
-            print("WARNING:", *args, **kwargs)
-    
-    def tprint_error(*args, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR:", *args, **kwargs)
-        except Exception:
-            print("ERROR:", *args, **kwargs)
-    
-    def tprint_success(*args, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] SUCCESS:", *args, **kwargs)
-        except Exception:
-            print("SUCCESS:", *args, **kwargs)
-    
-    def tprint_progress(step, total, message="", **kwargs):
-        try:
-            percentage = (step / total) * 100 if total > 0 else 0
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] PROGRESS: {step}/{total} ({percentage:.1f}%) {message}")
-        except Exception:
-            print(f"PROGRESS: {step}/{total} {message}")
-    
-    def tprint_performance(operation, duration, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] PERFORMANCE: {operation} took {duration:.3f}s")
-        except Exception:
-            print(f"PERFORMANCE: {operation} took {duration:.3f}s")
-    
-    def tprint_structured(data, level=None, **kwargs):
-        try:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] STRUCTURED:", data)
-        except Exception:
-            print("STRUCTURED:", data)
-    
-    def tprint_timer(operation, level=None):
-        from contextlib import contextmanager
-        @contextmanager
-        def timer():
-            start = time.time()
-            try:
-                yield
-            finally:
-                duration = time.time() - start
-                tprint_performance(operation, duration)
-        return timer()
+from src.utils.nas_tas.shared_logging import (
+    TPRINT_AVAILABLE,
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_structured,
+    tprint_timer,
+    configure_tprint,
+    TPrintConfig,
+    LogLevel,
+)
 
-# Import serialization utilities with error handling
-try:
-    from src.utils.serialization_utils import (
-        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-    )
-    SERIALIZATION_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Serialization utilities not available: {e}")
-    SERIALIZATION_AVAILABLE = False
-    
-    # Fallback serialization classes
-    class JSONSerializer:
-        @staticmethod
-        def save(data, filepath):
-            try:
-                with open(filepath, 'w') as f:
-                    json.dump(data, f, indent=2, default=str)
-                return True
-            except Exception as e:
-                tprint_error(f"JSON save failed: {e}")
-                return False
-        
-        @staticmethod
-        def load(filepath):
-            try:
-                with open(filepath, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                tprint_error(f"JSON load failed: {e}")
-                return None
-    
-    class PickleSerializer:
-        @staticmethod
-        def save(data, filepath):
-            try:
-                with open(filepath, 'wb') as f:
-                    pickle.dump(data, f)
-                return True
-            except Exception as e:
-                tprint_error(f"Pickle save failed: {e}")
-                return False
-        
-        @staticmethod
-        def load(filepath):
-            try:
-                with open(filepath, 'rb') as f:
-                    return pickle.load(f)
-            except Exception as e:
-                tprint_error(f"Pickle load failed: {e}")
-                return None
-    
-    class UniversalSerializer:
-        def save(self, data, filepath, format='auto'):
-            if filepath.endswith('.json'):
-                return JSONSerializer.save(data, filepath)
-            else:
-                return PickleSerializer.save(data, filepath)
-        
-        def load(self, filepath):
-            if filepath.endswith('.json'):
-                return JSONSerializer.load(filepath)
-            else:
-                return PickleSerializer.load(filepath)
+from src.utils.nas_tas.shared_serialization import (
+    SERIALIZATION_AVAILABLE,
+    JSONSerializer,
+    PickleSerializer,
+    ParquetSerializer,
+    UniversalSerializer,
+)
 
 # Import unified components with error handling
 try:

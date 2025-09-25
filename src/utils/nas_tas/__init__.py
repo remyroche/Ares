@@ -204,6 +204,31 @@ from .unified_evaluator import (
     MetricType
 )
 
+# Shared helper utilities exposed for consumers that previously relied on
+# duplicated fallback implementations.
+from .shared_logging import (
+    TPRINT_AVAILABLE,
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+    TPrintConfig,
+    LogLevel,
+)
+
+from .shared_serialization import (
+    SERIALIZATION_AVAILABLE,
+    JSONSerializer,
+    PickleSerializer,
+    ParquetSerializer,
+    UniversalSerializer,
+)
+
 # Import unified hardware manager
 from .unified_hardware import (
     UnifiedHardwareManager,

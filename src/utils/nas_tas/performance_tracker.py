@@ -1,8 +1,8 @@
 """
-Advanced Performance Tracking for NAS and TAS
+Performance Tracker
 
-Comprehensive performance tracking and analytics capabilities for neural architecture search
-and tree architecture search including metrics collection, performance analysis, and reporting.
+Tracks and monitors model performance across different regimes and time periods
+for the NAS-TAS system.
 """
 
 import numpy as np
@@ -10,902 +10,800 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
-import time
 from datetime import datetime, timedelta
-from collections import defaultdict, deque
+from pathlib import Path
 import json
-import os
-
-# Import tprint for comprehensive logging
-from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
-)
-
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+import pickle
+from enum import Enum
+import warnings
+warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 
 
+class PerformanceMetric(Enum):
+    """Performance metrics to track."""
+    ACCURACY = "accuracy"
+    PRECISION = "precision"
+    RECALL = "recall"
+    F1_SCORE = "f1_score"
+    AUC = "auc"
+    CONFIDENCE = "confidence"
+    PREDICTION_TIME = "prediction_time"
+    THROUGHPUT = "throughput"
+
+
+class AlertType(Enum):
+    """Types of performance alerts."""
+    PERFORMANCE_DEGRADATION = "performance_degradation"
+    HIGH_ERROR_RATE = "high_error_rate"
+    LOW_CONFIDENCE = "low_confidence"
+    SLOW_PREDICTION = "slow_prediction"
+    MODEL_DRIFT = "model_drift"
+
+
 @dataclass
-class PerformanceSnapshot:
-    """Snapshot of model performance at a specific point in time."""
+class PerformanceConfig:
+    """Configuration for performance tracking."""
+    
+    # Tracking settings
+    enable_performance_tracking: bool = True
+    tracking_frequency: int = 100  # Track every N predictions
+    metrics_to_track: List[PerformanceMetric] = field(default_factory=lambda: [
+        PerformanceMetric.ACCURACY, PerformanceMetric.F1_SCORE, PerformanceMetric.CONFIDENCE
+    ])
+    
+    # Performance thresholds
+    performance_threshold: float = 0.6  # Minimum acceptable performance
+    degradation_threshold: float = 0.1  # Performance degradation threshold
+    confidence_threshold: float = 0.7  # Minimum confidence threshold
+    prediction_time_threshold: float = 1.0  # Maximum prediction time in seconds
+    
+    # Alerting
+    enable_alerts: bool = True
+    alert_frequency: int = 50  # Check alerts every N predictions
+    alert_cooldown: int = 300  # Seconds between same alerts
+    
+    # Data retention
+    max_history_length: int = 10000  # Maximum number of performance records
+    enable_data_compression: bool = True
+    compression_ratio: float = 0.1  # Keep 10% of data after compression
+    
+    # Reporting
+    enable_performance_reports: bool = True
+    report_frequency: int = 1000  # Generate reports every N predictions
+    report_format: str = "json"  # "json", "csv", "html"
+    
+    # Storage
+    performance_data_path: str = "performance_data"
+    report_path: str = "performance_reports"
+    alert_log_path: str = "performance_alerts.log"
+    
+    # Advanced features
+    enable_drift_detection: bool = True
+    drift_detection_window: int = 1000  # Window for drift detection
+    enable_anomaly_detection: bool = True
+    anomaly_threshold: float = 2.0  # Standard deviations for anomaly detection
+
+
+@dataclass
+class PerformanceRecord:
+    """Single performance record."""
+    
+    # Basic information
+    model_id: str
+    regime_id: int
     timestamp: datetime
-    model_type: str
-    architecture_params: Dict[str, Any]
-    metrics: Dict[str, float]
-    system_metrics: Dict[str, float]
-    data_characteristics: Dict[str, Any]
-    performance_score: float = 0.0
+    
+    # Performance metrics
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+    confidence: float
+    
+    # System metrics
+    prediction_time: float
+    throughput: float
+    
+    # Context
+    data_shape: Tuple[int, int]
+    feature_names: List[str]
+    
+    # Metadata
+    prediction_count: int
+    model_version: str
 
 
 @dataclass
-class AnalyticsReport:
-    """Analytics report with comprehensive performance analysis."""
+class PerformanceAlert:
+    """Performance alert."""
+    
+    alert_id: str
+    model_id: str
+    alert_type: AlertType
+    severity: str  # "low", "medium", "high", "critical"
+    message: str
+    timestamp: datetime
+    
+    # Alert details
+    current_value: float
+    threshold_value: float
+    trend: str  # "increasing", "decreasing", "stable"
+    
+    # Resolution
+    resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolution_notes: Optional[str] = None
+
+
+@dataclass
+class PerformanceReport:
+    """Performance report."""
+    
+    # Report metadata
     report_id: str
-    generation_time: datetime
-    time_range: Dict[str, datetime]
-    summary_statistics: Dict[str, Any]
-    trend_analysis: Dict[str, Any]
-    anomaly_detection: Dict[str, Any]
+    generated_at: datetime
+    time_period: Tuple[datetime, datetime]
+    
+    # Model performance
+    model_performance: Dict[str, Dict[str, float]]
+    regime_performance: Dict[int, Dict[str, float]]
+    overall_performance: Dict[str, float]
+    
+    # Trends and insights
+    performance_trends: Dict[str, str]  # metric -> trend
+    top_performing_models: List[str]
+    underperforming_models: List[str]
+    
+    # Alerts and issues
+    active_alerts: List[PerformanceAlert]
+    resolved_alerts: List[PerformanceAlert]
+    
+    # Recommendations
     recommendations: List[str]
-    visualizations: Dict[str, Any] = field(default_factory=dict)
 
 
-class AdvancedPerformanceTracker:
+class PerformanceTracker:
     """
-    Advanced Performance Tracker for NAS and TAS.
-
-    Tracks and analyzes performance of models across multiple dimensions
-    including accuracy, efficiency, robustness, and system impact.
+    Performance tracker for monitoring model performance across regimes.
+    
+    Tracks performance metrics, detects anomalies, generates alerts,
+    and provides comprehensive performance reporting.
     """
-
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    
+    def __init__(self, config: PerformanceConfig):
         """Initialize performance tracker.
-
+        
         Args:
-            config: Configuration dictionary
+            config: Performance tracking configuration
         """
-        self.config = config or {}
+        self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-
-        # Performance tracking
-        self.performance_history: List[PerformanceSnapshot] = []
-        self.current_session_id = self._generate_session_id()
-
-        # Tracking configuration
-        self.track_system_metrics = self.config.get('track_system_metrics', True)
-        self.track_data_characteristics = self.config.get('track_data_characteristics', True)
-        self.track_predictions = self.config.get('track_predictions', False)
-
-        # Analysis parameters
-        self.anomaly_threshold = self.config.get('anomaly_threshold', 2.0)
-        self.trend_window = self.config.get('trend_window', 20)
-        self.reporting_interval = timedelta(hours=self.config.get('reporting_interval_hours', 1))
-
-        # Storage
-        self.storage_path = self.config.get('storage_path', "performance_reports")
-        self._ensure_storage_path()
-
-        self.logger.info("✅ Advanced Performance Tracker initialized")
-        self.logger.info(f"📊 Session ID: {self.current_session_id}")
-        self.logger.info(f"📈 Anomaly threshold: {self.anomaly_threshold}σ")
-
-    def track_performance(self,
-                         model: Any,
-                         architecture_params: Dict[str, Any],
-                         train_data: Tuple[np.ndarray, np.ndarray],
-                         test_data: Tuple[np.ndarray, np.ndarray],
-                         training_time: float,
-                         inference_time: float,
-                         model_type: str = "unknown") -> PerformanceSnapshot:
-        """Track comprehensive performance of a model.
-
-        Args:
-            model: The trained model
-            architecture_params: Architecture parameters used
-            train_data: Training data
-            test_data: Test data
-            training_time: Training time in seconds
-            inference_time: Inference time in seconds
-            model_type: Type of model (e.g., 'tree', 'neural', 'ensemble')
-
-        Returns:
-            PerformanceSnapshot object
-        """
-        self.logger.debug("📊 Tracking model performance")
-
+        
+        # Initialize storage
+        self._initialize_storage()
+        
+        # Performance data
+        self.performance_history = {}  # model_id -> [PerformanceRecord]
+        self.regime_performance = {}  # regime_id -> [PerformanceRecord]
+        self.model_statistics = {}  # model_id -> statistics
+        
+        # Alerting system
+        self.active_alerts = {}  # model_id -> [PerformanceAlert]
+        self.alert_history = []
+        self.last_alert_time = {}  # model_id -> last_alert_time
+        
+        # Drift detection
+        self.baseline_performance = {}  # model_id -> baseline_metrics
+        self.drift_detectors = {}  # model_id -> drift_detector
+        
+        # Reporting
+        self.report_counter = 0
+        self.last_report_time = datetime.now()
+        
+        self.logger.info("✅ Performance Tracker initialized")
+        self.logger.info(f"   Tracking frequency: {config.tracking_frequency}")
+        self.logger.info(f"   Metrics tracked: {[m.value for m in config.metrics_to_track]}")
+        self.logger.info(f"   Alerts enabled: {config.enable_alerts}")
+        self.logger.info(f"   Drift detection: {config.enable_drift_detection}")
+    
+    def _initialize_storage(self):
+        """Initialize storage directories."""
         try:
-            # Get basic metrics
-            metrics = self._calculate_model_metrics(model, test_data)
-
-            # Get system metrics
-            system_metrics = self._get_system_metrics() if self.track_system_metrics else {}
-
-            # Get data characteristics
-            data_characteristics = self._analyze_data_characteristics(train_data, test_data) if self.track_data_characteristics else {}
-
-            # Calculate overall performance score
-            performance_score = self._calculate_performance_score(metrics, system_metrics)
-
-            # Create snapshot
-            snapshot = PerformanceSnapshot(
-                timestamp=datetime.now(),
-                model_type=model_type,
-                architecture_params=architecture_params,
-                metrics=metrics,
-                system_metrics=system_metrics,
-                data_characteristics=data_characteristics,
-                performance_score=performance_score
-            )
-
-            # Add to history
-            self.performance_history.append(snapshot)
-
-            # Limit history size
-            if len(self.performance_history) > 1000:
-                self.performance_history = self.performance_history[-1000:]
-
-            self.logger.debug(f"✅ Performance tracked: Score = {performance_score:.4f}")
-            return snapshot
-
+            Path(self.config.performance_data_path).mkdir(parents=True, exist_ok=True)
+            Path(self.config.report_path).mkdir(parents=True, exist_ok=True)
+            
+            if self.config.enable_alerts:
+                Path(self.config.alert_log_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            self.logger.info("✅ Performance storage initialized")
+            
         except Exception as e:
-            self.logger.error(f"❌ Performance tracking failed: {e}")
-            # Return minimal snapshot
-            return PerformanceSnapshot(
-                timestamp=datetime.now(),
-                model_type=model_type,
-                architecture_params=architecture_params,
-                metrics={'error': str(e)},
-                system_metrics={},
-                data_characteristics={}
-            )
-
-    def generate_analytics_report(self,
-                                 start_time: Optional[datetime] = None,
-                                 end_time: Optional[datetime] = None) -> AnalyticsReport:
-        """Generate comprehensive analytics report.
-
-        Args:
-            start_time: Start time for analysis period
-            end_time: End time for analysis period
-
-        Returns:
-            AnalyticsReport object
+            self.logger.error(f"❌ Storage initialization failed: {e}")
+            raise
+    
+    def setup_model_tracking(self, model_id: str, model_info: Dict[str, Any]) -> Dict[str, Any]:
         """
-        self.logger.info("📈 Generating analytics report")
-
+        Setup performance tracking for a model.
+        
+        Args:
+            model_id: Model identifier
+            model_info: Model information
+            
+        Returns:
+            Setup result
+        """
         try:
-            # Set default time range
-            if start_time is None:
-                start_time = datetime.now() - timedelta(days=1)
-            if end_time is None:
-                end_time = datetime.now()
-
-            # Filter relevant snapshots
-            relevant_snapshots = [s for s in self.performance_history
-                                if start_time <= s.timestamp <= end_time]
-
-            if not relevant_snapshots:
-                self.logger.warning("⚠️ No performance data available for report")
-                return AnalyticsReport(
-                    report_id=self._generate_report_id(),
-                    generation_time=datetime.now(),
-                    time_range={'start': start_time, 'end': end_time},
-                    summary_statistics={},
-                    trend_analysis={},
-                    anomaly_detection={},
-                    recommendations=["No performance data available"]
-                )
-
-            # Generate report components
-            summary_stats = self._calculate_summary_statistics(relevant_snapshots)
-            trend_analysis = self._analyze_trends(relevant_snapshots)
-            anomaly_detection = self._detect_anomalies(relevant_snapshots)
-            recommendations = self._generate_recommendations(relevant_snapshots, summary_stats)
-
-            report = AnalyticsReport(
-                report_id=self._generate_report_id(),
-                generation_time=datetime.now(),
-                time_range={'start': start_time, 'end': end_time},
-                summary_statistics=summary_stats,
-                trend_analysis=trend_analysis,
-                anomaly_detection=anomaly_detection,
-                recommendations=recommendations
+            # Initialize performance history
+            self.performance_history[model_id] = []
+            
+            # Initialize model statistics
+            self.model_statistics[model_id] = {
+                'total_predictions': 0,
+                'average_performance': {},
+                'performance_trend': 'stable',
+                'last_update': datetime.now()
+            }
+            
+            # Initialize baseline performance
+            if self.config.enable_drift_detection:
+                self.baseline_performance[model_id] = {
+                    'accuracy': model_info.get('val_metrics', {}).get('accuracy', 0.5),
+                    'f1_score': model_info.get('val_metrics', {}).get('f1_score', 0.5),
+                    'confidence': 0.7
+                }
+            
+            # Initialize drift detector
+            if self.config.enable_drift_detection:
+                self.drift_detectors[model_id] = self._create_drift_detector()
+            
+            self.logger.info(f"✅ Performance tracking setup for {model_id}")
+            return {'status': 'tracking_enabled', 'model_id': model_id}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Performance tracking setup failed for {model_id}: {e}")
+            return {'status': 'error', 'error': str(e)}
+    
+    def _create_drift_detector(self):
+        """Create drift detector for a model."""
+        # Simple drift detector implementation
+        return {
+            'baseline_metrics': {},
+            'recent_metrics': [],
+            'drift_threshold': 0.1,
+            'detected_drift': False
+        }
+    
+    def record_performance(self, 
+                         model_id: str,
+                         regime_id: int,
+                         performance_metrics: Dict[str, float],
+                         prediction_time: float = 0.0,
+                         data_shape: Tuple[int, int] = (0, 0),
+                         feature_names: List[str] = None,
+                         model_version: str = "1.0.0") -> bool:
+        """
+        Record performance metrics for a model.
+        
+        Args:
+            model_id: Model identifier
+            regime_id: Regime identifier
+            performance_metrics: Performance metrics dictionary
+            prediction_time: Time taken for prediction
+            data_shape: Shape of input data
+            feature_names: List of feature names
+            model_version: Model version
+            
+        Returns:
+            Success status
+        """
+        try:
+            # Create performance record
+            record = PerformanceRecord(
+                model_id=model_id,
+                regime_id=regime_id,
+                timestamp=datetime.now(),
+                accuracy=performance_metrics.get('accuracy', 0.0),
+                precision=performance_metrics.get('precision', 0.0),
+                recall=performance_metrics.get('recall', 0.0),
+                f1_score=performance_metrics.get('f1_score', 0.0),
+                confidence=performance_metrics.get('confidence', 0.0),
+                prediction_time=prediction_time,
+                throughput=1.0 / prediction_time if prediction_time > 0 else 0.0,
+                data_shape=data_shape,
+                feature_names=feature_names or [],
+                prediction_count=self.model_statistics.get(model_id, {}).get('total_predictions', 0) + 1,
+                model_version=model_version
             )
-
+            
+            # Add to performance history
+            if model_id not in self.performance_history:
+                self.performance_history[model_id] = []
+            
+            self.performance_history[model_id].append(record)
+            
+            # Add to regime performance
+            if regime_id not in self.regime_performance:
+                self.regime_performance[regime_id] = []
+            self.regime_performance[regime_id].append(record)
+            
+            # Update model statistics
+            self._update_model_statistics(model_id, record)
+            
+            # Check for alerts
+            if self.config.enable_alerts:
+                self._check_performance_alerts(model_id, record)
+            
+            # Check for drift
+            if self.config.enable_drift_detection:
+                self._check_model_drift(model_id, record)
+            
+            # Compress data if needed
+            if len(self.performance_history[model_id]) > self.config.max_history_length:
+                self._compress_performance_data(model_id)
+            
+            # Generate report if needed
+            if self._should_generate_report():
+                self._generate_performance_report()
+            
+            self.logger.debug(f"📊 Recorded performance for {model_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Performance recording failed for {model_id}: {e}")
+            return False
+    
+    def _update_model_statistics(self, model_id: str, record: PerformanceRecord):
+        """Update model statistics."""
+        try:
+            if model_id not in self.model_statistics:
+                self.model_statistics[model_id] = {
+                    'total_predictions': 0,
+                    'average_performance': {},
+                    'performance_trend': 'stable',
+                    'last_update': datetime.now()
+                }
+            
+            stats = self.model_statistics[model_id]
+            stats['total_predictions'] += 1
+            stats['last_update'] = datetime.now()
+            
+            # Update average performance
+            if 'average_performance' not in stats:
+                stats['average_performance'] = {}
+            
+            metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'confidence']
+            for metric in metrics:
+                current_avg = stats['average_performance'].get(metric, 0.0)
+                new_value = getattr(record, metric, 0.0)
+                n = stats['total_predictions']
+                
+                # Update running average
+                stats['average_performance'][metric] = (current_avg * (n - 1) + new_value) / n
+            
+            # Update performance trend
+            if len(self.performance_history[model_id]) >= 10:
+                recent_f1 = [r.f1_score for r in self.performance_history[model_id][-10:]]
+                if len(recent_f1) >= 2:
+                    trend = 'improving' if recent_f1[-1] > recent_f1[0] else 'declining'
+                    stats['performance_trend'] = trend
+            
+        except Exception as e:
+            self.logger.error(f"❌ Statistics update failed for {model_id}: {e}")
+    
+    def _check_performance_alerts(self, model_id: str, record: PerformanceRecord):
+        """Check for performance alerts."""
+        try:
+            # Check if enough time has passed since last alert
+            if model_id in self.last_alert_time:
+                time_since_last = (datetime.now() - self.last_alert_time[model_id]).total_seconds()
+                if time_since_last < self.config.alert_cooldown:
+                    return
+            
+            alerts_generated = []
+            
+            # Check performance degradation
+            if record.f1_score < self.config.performance_threshold:
+                alert = PerformanceAlert(
+                    alert_id=f"{model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    model_id=model_id,
+                    alert_type=AlertType.PERFORMANCE_DEGRADATION,
+                    severity='high',
+                    message=f"Performance below threshold: {record.f1_score:.3f} < {self.config.performance_threshold}",
+                    timestamp=datetime.now(),
+                    current_value=record.f1_score,
+                    threshold_value=self.config.performance_threshold,
+                    trend='declining'
+                )
+                alerts_generated.append(alert)
+            
+            # Check low confidence
+            if record.confidence < self.config.confidence_threshold:
+                alert = PerformanceAlert(
+                    alert_id=f"{model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_confidence",
+                    model_id=model_id,
+                    alert_type=AlertType.LOW_CONFIDENCE,
+                    severity='medium',
+                    message=f"Low confidence: {record.confidence:.3f} < {self.config.confidence_threshold}",
+                    timestamp=datetime.now(),
+                    current_value=record.confidence,
+                    threshold_value=self.config.confidence_threshold,
+                    trend='declining'
+                )
+                alerts_generated.append(alert)
+            
+            # Check slow prediction
+            if record.prediction_time > self.config.prediction_time_threshold:
+                alert = PerformanceAlert(
+                    alert_id=f"{model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_time",
+                    model_id=model_id,
+                    alert_type=AlertType.SLOW_PREDICTION,
+                    severity='low',
+                    message=f"Slow prediction: {record.prediction_time:.3f}s > {self.config.prediction_time_threshold}s",
+                    timestamp=datetime.now(),
+                    current_value=record.prediction_time,
+                    threshold_value=self.config.prediction_time_threshold,
+                    trend='declining'
+                )
+                alerts_generated.append(alert)
+            
+            # Add alerts to system
+            for alert in alerts_generated:
+                if model_id not in self.active_alerts:
+                    self.active_alerts[model_id] = []
+                self.active_alerts[model_id].append(alert)
+                self.alert_history.append(alert)
+                self.last_alert_time[model_id] = datetime.now()
+                
+                self.logger.warning(f"🚨 Alert generated for {model_id}: {alert.message}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Alert checking failed for {model_id}: {e}")
+    
+    def _check_model_drift(self, model_id: str, record: PerformanceRecord):
+        """Check for model drift."""
+        try:
+            if model_id not in self.drift_detectors:
+                return
+            
+            drift_detector = self.drift_detectors[model_id]
+            
+            # Update recent metrics
+            drift_detector['recent_metrics'].append({
+                'f1_score': record.f1_score,
+                'accuracy': record.accuracy,
+                'confidence': record.confidence,
+                'timestamp': record.timestamp
+            })
+            
+            # Keep only recent metrics
+            max_recent = 100
+            if len(drift_detector['recent_metrics']) > max_recent:
+                drift_detector['recent_metrics'] = drift_detector['recent_metrics'][-max_recent:]
+            
+            # Check for drift if we have enough data
+            if len(drift_detector['recent_metrics']) >= 20:
+                baseline = self.baseline_performance.get(model_id, {})
+                recent_f1 = [m['f1_score'] for m in drift_detector['recent_metrics'][-20:]]
+                baseline_f1 = baseline.get('f1_score', 0.5)
+                
+                # Simple drift detection: significant drop in performance
+                avg_recent_f1 = np.mean(recent_f1)
+                drift_magnitude = baseline_f1 - avg_recent_f1
+                
+                if drift_magnitude > drift_detector['drift_threshold']:
+                    if not drift_detector['detected_drift']:
+                        drift_detector['detected_drift'] = True
+                        
+                        # Generate drift alert
+                        alert = PerformanceAlert(
+                            alert_id=f"{model_id}_drift_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                            model_id=model_id,
+                            alert_type=AlertType.MODEL_DRIFT,
+                            severity='critical',
+                            message=f"Model drift detected: {drift_magnitude:.3f} drop in F1 score",
+                            timestamp=datetime.now(),
+                            current_value=avg_recent_f1,
+                            threshold_value=baseline_f1,
+                            trend='declining'
+                        )
+                        
+                        if model_id not in self.active_alerts:
+                            self.active_alerts[model_id] = []
+                        self.active_alerts[model_id].append(alert)
+                        self.alert_history.append(alert)
+                        
+                        self.logger.warning(f"🚨 Model drift detected for {model_id}: {drift_magnitude:.3f}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Drift detection failed for {model_id}: {e}")
+    
+    def _compress_performance_data(self, model_id: str):
+        """Compress performance data to save space."""
+        try:
+            if model_id not in self.performance_history:
+                return
+            
+            history = self.performance_history[model_id]
+            if len(history) <= self.config.max_history_length:
+                return
+            
+            # Keep only recent data based on compression ratio
+            keep_count = int(len(history) * self.config.compression_ratio)
+            self.performance_history[model_id] = history[-keep_count:]
+            
+            self.logger.info(f"📦 Compressed performance data for {model_id}: {len(history)} -> {keep_count} records")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Data compression failed for {model_id}: {e}")
+    
+    def _should_generate_report(self) -> bool:
+        """Check if performance report should be generated."""
+        if not self.config.enable_performance_reports:
+            return False
+        
+        self.report_counter += 1
+        return self.report_counter >= self.config.report_frequency
+    
+    def _generate_performance_report(self):
+        """Generate performance report."""
+        try:
+            self.logger.info("📊 Generating performance report...")
+            
+            # Create report
+            report = PerformanceReport(
+                report_id=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                generated_at=datetime.now(),
+                time_period=(self.last_report_time, datetime.now()),
+                model_performance=self._calculate_model_performance(),
+                regime_performance=self._calculate_regime_performance(),
+                overall_performance=self._calculate_overall_performance(),
+                performance_trends=self._calculate_performance_trends(),
+                top_performing_models=self._get_top_performing_models(),
+                underperforming_models=self._get_underperforming_models(),
+                active_alerts=self._get_active_alerts(),
+                resolved_alerts=self._get_resolved_alerts(),
+                recommendations=self._generate_recommendations()
+            )
+            
             # Save report
-            self._save_report(report)
-
-            self.logger.info(f"✅ Analytics report generated: {report.report_id}")
-            return report
-
+            self._save_performance_report(report)
+            
+            # Update counters
+            self.report_counter = 0
+            self.last_report_time = datetime.now()
+            
+            self.logger.info(f"✅ Performance report generated: {report.report_id}")
+            
         except Exception as e:
             self.logger.error(f"❌ Report generation failed: {e}")
-            return AnalyticsReport(
-                report_id=self._generate_report_id(),
-                generation_time=datetime.now(),
-                time_range={'start': start_time, 'end': end_time},
-                summary_statistics={},
-                trend_analysis={},
-                anomaly_detection={},
-                recommendations=[f"Report generation failed: {str(e)}"]
-            )
-
-    def _calculate_model_metrics(self,
-                                model: Any,
-                                data: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
-        """Calculate comprehensive model metrics."""
-        try:
-            X, y = data
-
-            # Basic metrics
-            predictions = model.predict(X)
-
-            metrics = {}
-
-            # Classification metrics
-            if hasattr(model, 'predict_proba'):
-                # Classification model
-                metrics['accuracy'] = accuracy_score(y, predictions)
-
-                if len(np.unique(y)) == 2:  # Binary classification
-                    metrics['precision'] = precision_score(y, predictions, average='binary', zero_division=0)
-                    metrics['recall'] = recall_score(y, predictions, average='binary', zero_division=0)
-                    metrics['f1'] = f1_score(y, predictions, average='binary', zero_division=0)
-                else:  # Multi-class classification
-                    metrics['precision'] = precision_score(y, predictions, average='weighted', zero_division=0)
-                    metrics['recall'] = recall_score(y, predictions, average='weighted', zero_division=0)
-                    metrics['f1'] = f1_score(y, predictions, average='weighted', zero_division=0)
-
-                # Probability metrics
-                proba = model.predict_proba(X)
-                metrics['confidence_mean'] = np.mean(np.max(proba, axis=1))
-                metrics['confidence_std'] = np.std(np.max(proba, axis=1))
-
-            else:
-                # Regression model
-                metrics['mse'] = mean_squared_error(y, predictions)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['mae'] = mean_absolute_error(y, predictions)
-                metrics['r2'] = r2_score(y, predictions)
-
-                # Prediction statistics
-                metrics['prediction_mean'] = np.mean(predictions)
-                metrics['prediction_std'] = np.std(predictions)
-
-            return metrics
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Model metrics calculation failed: {e}")
-            return {'error': str(e)}
-
-    def _get_system_metrics(self) -> Dict[str, float]:
-        """Get current system performance metrics."""
-        try:
-            import psutil
-
-            metrics = {}
-
-            # CPU metrics
-            metrics['cpu_percent'] = psutil.cpu_percent(interval=0.1)
-            metrics['cpu_count'] = psutil.cpu_count()
-
-            # Memory metrics
-            memory = psutil.virtual_memory()
-            metrics['memory_percent'] = memory.percent
-            metrics['memory_used_gb'] = memory.used / (1024**3)
-            metrics['memory_available_gb'] = memory.available / (1024**3)
-
-            # Disk metrics
-            disk = psutil.disk_usage('/')
-            metrics['disk_percent'] = disk.percent
-            metrics['disk_used_gb'] = disk.used / (1024**3)
-
-            # Network metrics (if available)
-            try:
-                network = psutil.net_io_counters()
-                if network:
-                    metrics['network_bytes_sent'] = network.bytes_sent
-                    metrics['network_bytes_recv'] = network.bytes_recv
-            except Exception as e:
-                tprint_debug(f"🔍 Failed to collect network metrics: {e}")
-                pass
-
-            return metrics
-
-        except ImportError:
-            self.logger.warning("⚠️ psutil not available for system metrics")
-            return {'note': 'psutil not available'}
-        except Exception as e:
-            self.logger.warning(f"⚠️ System metrics collection failed: {e}")
-            return {'error': str(e)}
-
-    def _analyze_data_characteristics(self,
-                                    train_data: Tuple[np.ndarray, np.ndarray],
-                                    test_data: Tuple[np.ndarray, np.ndarray]) -> Dict[str, Any]:
-        """Analyze characteristics of training and test data."""
-        try:
-            X_train, y_train = train_data
-            X_test, y_test = test_data
-
-            characteristics = {}
-
-            # Dataset sizes
-            characteristics['train_samples'] = len(X_train)
-            characteristics['test_samples'] = len(X_test)
-            characteristics['feature_count'] = X_train.shape[1]
-
-            # Label distribution (train)
-            unique_labels, label_counts = np.unique(y_train, return_counts=True)
-            characteristics['train_label_distribution'] = dict(zip(unique_labels, label_counts))
-            characteristics['train_class_balance'] = label_counts / len(y_train)
-
-            # Label distribution (test)
-            unique_labels_test, label_counts_test = np.unique(y_test, return_counts=True)
-            characteristics['test_label_distribution'] = dict(zip(unique_labels_test, label_counts_test))
-            characteristics['test_class_balance'] = label_counts_test / len(y_test)
-
-            # Feature statistics
-            characteristics['feature_means'] = np.mean(X_train, axis=0).tolist()
-            characteristics['feature_stds'] = np.std(X_train, axis=0).tolist()
-            characteristics['feature_ranges'] = (np.max(X_train, axis=0) - np.min(X_train, axis=0)).tolist()
-
-            # Data quality indicators
-            characteristics['train_missing_values'] = np.sum(np.isnan(X_train))
-            characteristics['test_missing_values'] = np.sum(np.isnan(X_test))
-
-            return characteristics
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Data characteristics analysis failed: {e}")
-            return {'error': str(e)}
-
-    def _calculate_performance_score(self,
-                                   metrics: Dict[str, float],
-                                   system_metrics: Dict[str, float]) -> float:
-        """Calculate overall performance score."""
-        try:
-            score_components = []
-
-            # Model performance (weight: 0.7)
-            if 'accuracy' in metrics:
-                score_components.append(('accuracy', metrics['accuracy'], 0.4))
-                score_components.append(('f1', metrics.get('f1', 0.0), 0.3))
-            elif 'r2' in metrics:
-                score_components.append(('r2', metrics['r2'], 0.4))
-                score_components.append(('rmse', 1.0 / (1.0 + metrics.get('rmse', 1.0)), 0.3))
-
-            # System efficiency (weight: 0.3)
-            if 'cpu_percent' in system_metrics:
-                cpu_efficiency = max(0.0, 1.0 - system_metrics['cpu_percent'] / 100.0)
-                score_components.append(('cpu_efficiency', cpu_efficiency, 0.15))
-
-            if 'memory_percent' in system_metrics:
-                memory_efficiency = max(0.0, 1.0 - system_metrics['memory_percent'] / 100.0)
-                score_components.append(('memory_efficiency', memory_efficiency, 0.15))
-
-            # Calculate weighted score
-            total_score = 0.0
-            total_weight = 0.0
-
-            for name, value, weight in score_components:
-                if 0.0 <= value <= 1.0:  # Valid range
-                    total_score += value * weight
-                    total_weight += weight
-
-            if total_weight > 0:
-                return total_score / total_weight
-            else:
-                return 0.5  # Default score
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Performance score calculation failed: {e}")
-            return 0.5
-
-    def _calculate_summary_statistics(self, snapshots: List[PerformanceSnapshot]) -> Dict[str, Any]:
-        """Calculate summary statistics from snapshots."""
-        try:
-            if not snapshots:
-                return {}
-
-            # Extract metrics
-            accuracies = [s.metrics.get('accuracy', 0.0) for s in snapshots]
-            performance_scores = [s.performance_score for s in snapshots]
-            system_metrics = [s.system_metrics for s in snapshots]
-
-            # Basic statistics
-            summary = {
-                'total_snapshots': len(snapshots),
-                'time_range': {
-                    'start': min(s.timestamp for s in snapshots),
-                    'end': max(s.timestamp for s in snapshots)
-                },
-                'model_performance': {
-                    'accuracy_mean': np.mean(accuracies),
-                    'accuracy_std': np.std(accuracies),
-                    'accuracy_min': np.min(accuracies),
-                    'accuracy_max': np.max(accuracies),
-                    'performance_score_mean': np.mean(performance_scores),
-                    'performance_score_std': np.std(performance_scores)
-                }
+    
+    def _calculate_model_performance(self) -> Dict[str, Dict[str, float]]:
+        """Calculate performance metrics for each model."""
+        model_performance = {}
+        
+        for model_id, history in self.performance_history.items():
+            if not history:
+                continue
+            
+            recent_history = history[-100:]  # Last 100 records
+            
+            model_performance[model_id] = {
+                'accuracy': np.mean([r.accuracy for r in recent_history]),
+                'precision': np.mean([r.precision for r in recent_history]),
+                'recall': np.mean([r.recall for r in recent_history]),
+                'f1_score': np.mean([r.f1_score for r in recent_history]),
+                'confidence': np.mean([r.confidence for r in recent_history]),
+                'prediction_time': np.mean([r.prediction_time for r in recent_history]),
+                'throughput': np.mean([r.throughput for r in recent_history])
             }
-
-            # System metrics summary
-            if system_metrics:
-                cpu_percents = [m.get('cpu_percent', 0.0) for m in system_metrics if m]
-                memory_percents = [m.get('memory_percent', 0.0) for m in system_metrics if m]
-
-                if cpu_percents:
-                    summary['system_metrics'] = {
-                        'cpu_percent_mean': np.mean(cpu_percents),
-                        'cpu_percent_std': np.std(cpu_percents),
-                        'memory_percent_mean': np.mean(memory_percents) if memory_percents else 0.0,
-                        'memory_percent_std': np.std(memory_percents) if memory_percents else 0.0
-                    }
-
-            return summary
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Summary statistics calculation failed: {e}")
+        
+        return model_performance
+    
+    def _calculate_regime_performance(self) -> Dict[int, Dict[str, float]]:
+        """Calculate performance metrics for each regime."""
+        regime_performance = {}
+        
+        for regime_id, history in self.regime_performance.items():
+            if not history:
+                continue
+            
+            recent_history = history[-100:]  # Last 100 records
+            
+            regime_performance[regime_id] = {
+                'accuracy': np.mean([r.accuracy for r in recent_history]),
+                'precision': np.mean([r.precision for r in recent_history]),
+                'recall': np.mean([r.recall for r in recent_history]),
+                'f1_score': np.mean([r.f1_score for r in recent_history]),
+                'confidence': np.mean([r.confidence for r in recent_history]),
+                'prediction_time': np.mean([r.prediction_time for r in recent_history])
+            }
+        
+        return regime_performance
+    
+    def _calculate_overall_performance(self) -> Dict[str, float]:
+        """Calculate overall performance metrics."""
+        all_records = []
+        for history in self.performance_history.values():
+            all_records.extend(history[-100:])  # Last 100 records per model
+        
+        if not all_records:
             return {}
-
-    def _analyze_trends(self, snapshots: List[PerformanceSnapshot]) -> Dict[str, Any]:
-        """Analyze performance trends."""
-        try:
-            if len(snapshots) < 10:
-                return {'note': 'Insufficient data for trend analysis'}
-
-            # Sort by timestamp
-            sorted_snapshots = sorted(snapshots, key=lambda x: x.timestamp)
-
-            # Extract time series data
-            timestamps = [s.timestamp for s in sorted_snapshots]
-            accuracies = [s.metrics.get('accuracy', 0.0) for s in sorted_snapshots]
-            performance_scores = [s.performance_score for s in sorted_snapshots]
-
-            # Calculate trends
-            trends = {}
-
-            # Accuracy trend
-            if len(accuracies) > 1:
-                accuracy_trend = np.polyfit(range(len(accuracies)), accuracies, 1)[0]
-                trends['accuracy_trend'] = 'increasing' if accuracy_trend > 0.001 else 'decreasing' if accuracy_trend < -0.001 else 'stable'
-
-            # Performance score trend
-            if len(performance_scores) > 1:
-                performance_trend = np.polyfit(range(len(performance_scores)), performance_scores, 1)[0]
-                trends['performance_trend'] = 'increasing' if performance_trend > 0.001 else 'decreasing' if performance_trend < -0.001 else 'stable'
-
-            # Volatility analysis
-            trends['accuracy_volatility'] = np.std(accuracies)
-            trends['performance_volatility'] = np.std(performance_scores)
-
-            return trends
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Trend analysis failed: {e}")
-            return {'error': str(e)}
-
-    def _detect_anomalies(self, snapshots: List[PerformanceSnapshot]) -> Dict[str, Any]:
-        """Detect performance anomalies."""
-        try:
-            if len(snapshots) < 10:
-                return {'note': 'Insufficient data for anomaly detection'}
-
-            # Extract performance scores
-            performance_scores = [s.performance_score for s in snapshots]
-
-            # Calculate statistics
-            mean_score = np.mean(performance_scores)
-            std_score = np.std(performance_scores)
-
-            if std_score == 0:
-                return {'note': 'No variation in performance scores'}
-
-            # Find anomalies
-            anomalies = []
-            threshold = mean_score - self.anomaly_threshold * std_score  # Lower threshold
-
-            for i, snapshot in enumerate(snapshots):
-                if snapshot.performance_score < threshold:
-                    anomalies.append({
-                        'index': i,
-                        'timestamp': snapshot.timestamp,
-                        'performance_score': snapshot.performance_score,
-                        'deviation': (mean_score - snapshot.performance_score) / std_score
-                    })
-
-            return {
-                'total_snapshots': len(snapshots),
-                'mean_score': mean_score,
-                'std_score': std_score,
-                'threshold': threshold,
-                'anomalies_count': len(anomalies),
-                'anomalies': anomalies[:10]  # Limit to 10 anomalies
-            }
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Anomaly detection failed: {e}")
-            return {'error': str(e)}
-
-    def _generate_recommendations(self,
-                                 snapshots: List[PerformanceSnapshot],
-                                 summary_stats: Dict[str, Any]) -> List[str]:
-        """Generate performance-based recommendations."""
-        recommendations = []
-
-        try:
-            # Performance-based recommendations
-            model_perf = summary_stats.get('model_performance', {})
-            system_metrics = summary_stats.get('system_metrics', {})
-
-            # Accuracy recommendations
-            accuracy_mean = model_perf.get('accuracy_mean', 0.0)
-            if accuracy_mean < 0.7:
-                recommendations.append("Consider improving model architecture or feature engineering")
-            elif accuracy_mean > 0.95:
-                recommendations.append("Model may be overfitting - consider regularization")
-
-            # System recommendations
-            cpu_mean = system_metrics.get('cpu_percent_mean', 0.0)
-            if cpu_mean > 80:
-                recommendations.append("High CPU usage detected - consider optimization or hardware upgrade")
-
-            memory_mean = system_metrics.get('memory_percent_mean', 0.0)
-            if memory_mean > 80:
-                recommendations.append("High memory usage detected - consider memory optimization")
-
-            # Trend-based recommendations
-            trend_analysis = self._analyze_trends(snapshots)
-            accuracy_trend = trend_analysis.get('accuracy_trend', 'stable')
-            if accuracy_trend == 'decreasing':
-                recommendations.append("Performance is declining - investigate recent changes")
-
-            # Anomaly-based recommendations
-            anomaly_detection = self._detect_anomalies(snapshots)
-            if anomaly_detection.get('anomalies_count', 0) > 0:
-                recommendations.append("Performance anomalies detected - review model stability")
-
-            return recommendations
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Recommendation generation failed: {e}")
-            return ["Unable to generate recommendations"]
-
-    def _generate_session_id(self) -> str:
-        """Generate unique session ID."""
-        return f"NAS_TAS_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{np.random.randint(1000, 9999)}"
-
-    def _generate_report_id(self) -> str:
-        """Generate unique report ID."""
-        return f"REPORT_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{np.random.randint(1000, 9999)}"
-
-    def _ensure_storage_path(self):
-        """Ensure storage path exists."""
-        try:
-            if not os.path.exists(self.storage_path):
-                os.makedirs(self.storage_path)
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not create storage path: {e}")
-
-    def _save_report(self, report: AnalyticsReport):
-        """Save analytics report to storage."""
-        try:
-            filename = f"{self.storage_path}/{report.report_id}.json"
-            with open(filename, 'w') as f:
-                json.dump({
-                    'report_id': report.report_id,
-                    'generation_time': report.generation_time.isoformat(),
-                    'time_range': {
-                        'start': report.time_range['start'].isoformat(),
-                        'end': report.time_range['end'].isoformat()
-                    },
-                    'summary_statistics': report.summary_statistics,
-                    'trend_analysis': report.trend_analysis,
-                    'anomaly_detection': report.anomaly_detection,
-                    'recommendations': report.recommendations
-                }, f, indent=2)
-
-            self.logger.debug(f"💾 Report saved: {filename}")
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Report saving failed: {e}")
-
-    def get_performance_history(self,
-                               limit: Optional[int] = None) -> List[PerformanceSnapshot]:
-        """Get performance history."""
-        if limit:
-            return self.performance_history[-limit:]
-        return self.performance_history
-
-
-class MetricsCollector:
-    """
-    Advanced Metrics Collector for NAS and TAS.
-
-    Collects and aggregates metrics from multiple sources for comprehensive analysis.
-    """
-
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize metrics collector.
-
-        Args:
-            config: Configuration dictionary
-        """
-        self.config = config or {}
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-        # Collection state
-        self.collected_metrics = defaultdict(list)
-        self.collection_intervals = {}
-        self.aggregation_functions = {}
-
-        # Default aggregation functions
-        self._setup_default_aggregations()
-
-        self.logger.info("✅ Metrics Collector initialized")
-
-    def collect_metrics(self,
-                       source: str,
-                       metrics: Dict[str, Any],
-                       timestamp: Optional[datetime] = None) -> Dict[str, Any]:
-        """Collect metrics from a source.
-
-        Args:
-            source: Source of metrics (e.g., 'model', 'system', 'data')
-            metrics: Dictionary of metric values
-            timestamp: Collection timestamp
-
-        Returns:
-            Collection summary
-        """
-        try:
-            timestamp = timestamp or datetime.now()
-
-            # Add metadata
-            metrics_with_meta = {
-                'source': source,
-                'timestamp': timestamp,
-                'session_id': self._get_session_id(),
-                **metrics
-            }
-
-            # Store metrics
-            for key, value in metrics.items():
-                self.collected_metrics[key].append({
-                    'value': value,
-                    'source': source,
-                    'timestamp': timestamp
-                })
-
-            # Update collection intervals
-            if source not in self.collection_intervals:
-                self.collection_intervals[source] = []
-
-            self.collection_intervals[source].append(timestamp)
-
-            self.logger.debug(f"📊 Collected {len(metrics)} metrics from {source}")
-            return {'collected': len(metrics), 'source': source}
-
-        except Exception as e:
-            self.logger.error(f"❌ Metrics collection failed: {e}")
-            return {'error': str(e)}
-
-    def get_aggregated_metrics(self, metric_name: str, aggregation: str = 'mean') -> Dict[str, Any]:
-        """Get aggregated metrics for a specific metric.
-
-        Args:
-            metric_name: Name of the metric
-            aggregation: Aggregation function ('mean', 'sum', 'max', 'min', 'std')
-
-        Returns:
-            Aggregated metric data
-        """
-        try:
-            if metric_name not in self.collected_metrics:
-                return {'error': f'Metric {metric_name} not found'}
-
-            values = [entry['value'] for entry in self.collected_metrics[metric_name]]
-
-            if not values:
-                return {'error': f'No values for metric {metric_name}'}
-
-            # Apply aggregation
-            if aggregation == 'mean':
-                result = np.mean(values)
-            elif aggregation == 'sum':
-                result = np.sum(values)
-            elif aggregation == 'max':
-                result = np.max(values)
-            elif aggregation == 'min':
-                result = np.min(values)
-            elif aggregation == 'std':
-                result = np.std(values)
-            else:
-                result = np.mean(values)  # Default to mean
-
-            return {
-                'metric': metric_name,
-                'aggregation': aggregation,
-                'value': result,
-                'count': len(values),
-                'values': values
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ Metric aggregation failed: {e}")
-            return {'error': str(e)}
-
-    def _setup_default_aggregations(self):
-        """Setup default aggregation functions."""
-        self.aggregation_functions = {
-            'accuracy': 'mean',
-            'precision': 'mean',
-            'recall': 'mean',
-            'f1': 'mean',
-            'cpu_percent': 'mean',
-            'memory_percent': 'mean',
-            'training_time': 'mean',
-            'inference_time': 'mean'
+        
+        return {
+            'accuracy': np.mean([r.accuracy for r in all_records]),
+            'precision': np.mean([r.precision for r in all_records]),
+            'recall': np.mean([r.recall for r in all_records]),
+            'f1_score': np.mean([r.f1_score for r in all_records]),
+            'confidence': np.mean([r.confidence for r in all_records]),
+            'prediction_time': np.mean([r.prediction_time for r in all_records]),
+            'throughput': np.mean([r.throughput for r in all_records])
         }
-
-    def _get_session_id(self) -> str:
-        """Get current session ID."""
-        return f"METRICS_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-    def clear_metrics(self, source: Optional[str] = None):
-        """Clear collected metrics."""
-        if source:
-            if source in self.collected_metrics:
-                del self.collected_metrics[source]
-            if source in self.collection_intervals:
-                del self.collection_intervals[source]
-        else:
-            self.collected_metrics.clear()
-            self.collection_intervals.clear()
-
-        self.logger.info(f"🧹 Cleared metrics for source: {source or 'all'}")
-
-
-class PerformanceAnalytics:
-    """
-    Advanced Analytics Engine for NAS and TAS.
-
-    Provides advanced analytics capabilities including statistical analysis,
-    correlation analysis, and predictive modeling of performance.
-    """
-
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize analytics engine.
-
-        Args:
-            config: Configuration dictionary
-        """
-        self.config = config or {}
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-        # Analytics state
-        self.correlation_cache = {}
-        self.prediction_models = {}
-        self.statistical_tests = {}
-
-        self.logger.info("✅ Performance Analytics Engine initialized")
-
-    def calculate_correlations(self, metrics_data: Dict[str, List[float]]) -> Dict[str, float]:
-        """Calculate correlations between metrics.
-
-        Args:
-            metrics_data: Dictionary of metric time series
-
-        Returns:
-            Correlation matrix as dictionary
-        """
+    
+    def _calculate_performance_trends(self) -> Dict[str, str]:
+        """Calculate performance trends."""
+        trends = {}
+        
+        for model_id, history in self.performance_history.items():
+            if len(history) < 20:
+                continue
+            
+            recent_f1 = [r.f1_score for r in history[-20:]]
+            older_f1 = [r.f1_score for r in history[-40:-20]] if len(history) >= 40 else recent_f1
+            
+            recent_avg = np.mean(recent_f1)
+            older_avg = np.mean(older_f1)
+            
+            if recent_avg > older_avg + 0.05:
+                trends[model_id] = 'improving'
+            elif recent_avg < older_avg - 0.05:
+                trends[model_id] = 'declining'
+            else:
+                trends[model_id] = 'stable'
+        
+        return trends
+    
+    def _get_top_performing_models(self) -> List[str]:
+        """Get top performing models."""
+        model_performance = self._calculate_model_performance()
+        
+        if not model_performance:
+            return []
+        
+        # Sort by F1 score
+        sorted_models = sorted(
+            model_performance.items(),
+            key=lambda x: x[1].get('f1_score', 0),
+            reverse=True
+        )
+        
+        return [model_id for model_id, _ in sorted_models[:5]]  # Top 5
+    
+    def _get_underperforming_models(self) -> List[str]:
+        """Get underperforming models."""
+        model_performance = self._calculate_model_performance()
+        
+        if not model_performance:
+            return []
+        
+        # Find models below threshold
+        underperforming = []
+        for model_id, metrics in model_performance.items():
+            f1_score = metrics.get('f1_score', 0)
+            if f1_score < self.config.performance_threshold:
+                underperforming.append(model_id)
+        
+        return underperforming
+    
+    def _get_active_alerts(self) -> List[PerformanceAlert]:
+        """Get active alerts."""
+        active_alerts = []
+        for model_alerts in self.active_alerts.values():
+            active_alerts.extend([alert for alert in model_alerts if not alert.resolved])
+        return active_alerts
+    
+    def _get_resolved_alerts(self) -> List[PerformanceAlert]:
+        """Get resolved alerts."""
+        return [alert for alert in self.alert_history if alert.resolved]
+    
+    def _generate_recommendations(self) -> List[str]:
+        """Generate performance recommendations."""
+        recommendations = []
+        
+        # Check for underperforming models
+        underperforming = self._get_underperforming_models()
+        if underperforming:
+            recommendations.append(f"Consider retraining or replacing underperforming models: {', '.join(underperforming)}")
+        
+        # Check for active alerts
+        active_alerts = self._get_active_alerts()
+        if len(active_alerts) > 5:
+            recommendations.append("High number of active alerts - investigate system health")
+        
+        # Check for performance trends
+        trends = self._calculate_performance_trends()
+        declining_models = [model_id for model_id, trend in trends.items() if trend == 'declining']
+        if declining_models:
+            recommendations.append(f"Models showing declining performance: {', '.join(declining_models)}")
+        
+        return recommendations
+    
+    def _save_performance_report(self, report: PerformanceReport):
+        """Save performance report to file."""
         try:
-            metric_names = list(metrics_data.keys())
+            report_path = Path(self.config.report_path) / f"{report.report_id}.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if len(metric_names) < 2:
-                return {}
-
-            correlations = {}
-
-            for i, name1 in enumerate(metric_names):
-                for j, name2 in enumerate(metric_names):
-                    if i < j:  # Avoid duplicate calculations
-                        key = f"{name1}_{name2}"
-
-                        if key not in self.correlation_cache:
-                            values1 = metrics_data[name1]
-                            values2 = metrics_data[name2]
-
-                            if len(values1) == len(values2) and len(values1) > 1:
-                                correlation = np.corrcoef(values1, values2)[0, 1]
-                                self.correlation_cache[key] = correlation
-                            else:
-                                self.correlation_cache[key] = 0.0
-
-                        correlations[key] = self.correlation_cache[key]
-
-            return correlations
-
-        except Exception as e:
-            self.logger.error(f"❌ Correlation calculation failed: {e}")
-            return {}
-
-    def predict_performance(self,
-                           historical_data: Dict[str, List[float]],
-                           target_metric: str,
-                           prediction_horizon: int = 5) -> Dict[str, Any]:
-        """Predict future performance based on historical data.
-
-        Args:
-            historical_data: Historical metric data
-            target_metric: Metric to predict
-            prediction_horizon: Number of steps to predict
-
-        Returns:
-            Prediction results
-        """
-        try:
-            if target_metric not in historical_data:
-                return {'error': f'Target metric {target_metric} not found'}
-
-            data = historical_data[target_metric]
-
-            if len(data) < 10:
-                return {'error': 'Insufficient data for prediction'}
-
-            # Simple linear trend prediction
-            x = np.arange(len(data))
-            y = np.array(data)
-
-            # Linear regression
-            slope, intercept = np.polyfit(x, y, 1)
-
-            # Generate predictions
-            future_x = np.arange(len(data), len(data) + prediction_horizon)
-            predictions = slope * future_x + intercept
-
-            # Calculate confidence intervals (simplified)
-            y_pred = slope * x + intercept
-            mse = np.mean((y - y_pred) ** 2)
-            std_error = np.sqrt(mse)
-
-            confidence_interval = 1.96 * std_error  # 95% confidence
-
-            return {
-                'target_metric': target_metric,
-                'predictions': predictions.tolist(),
-                'trend_slope': slope,
-                'trend_intercept': intercept,
-                'confidence_interval': confidence_interval,
-                'mse': mse,
-                'prediction_horizon': prediction_horizon
+            # Convert report to dictionary
+            report_dict = {
+                'report_id': report.report_id,
+                'generated_at': report.generated_at.isoformat(),
+                'time_period': [report.time_period[0].isoformat(), report.time_period[1].isoformat()],
+                'model_performance': report.model_performance,
+                'regime_performance': report.regime_performance,
+                'overall_performance': report.overall_performance,
+                'performance_trends': report.performance_trends,
+                'top_performing_models': report.top_performing_models,
+                'underperforming_models': report.underperforming_models,
+                'active_alerts': [
+                    {
+                        'alert_id': alert.alert_id,
+                        'model_id': alert.model_id,
+                        'alert_type': alert.alert_type.value,
+                        'severity': alert.severity,
+                        'message': alert.message,
+                        'timestamp': alert.timestamp.isoformat()
+                    } for alert in report.active_alerts
+                ],
+                'recommendations': report.recommendations
             }
 
+            with open(report_path, 'w') as f:
+                json.dump(report_dict, f, indent=2)
+
+            self.logger.info(f"💾 Performance report saved: {report_path}")
+
+        except (IOError, OSError, json.JSONEncodeError) as e:
+            self.logger.error(f"❌ Could not save performance report: {e}")
         except Exception as e:
-            self.logger.error(f"❌ Performance prediction failed: {e}")
-            return {'error': str(e)}
-
-
-# Convenience functions
-def create_performance_tracker(config: Optional[Dict[str, Any]] = None) -> AdvancedPerformanceTracker:
-    """Create a performance tracker with default configuration."""
-    return AdvancedPerformanceTracker(config)
-
-
-def create_metrics_collector(config: Optional[Dict[str, Any]] = None) -> MetricsCollector:
-    """Create a metrics collector with default configuration."""
-    return MetricsCollector(config)
-
-
-def create_analytics_engine(config: Optional[Dict[str, Any]] = None) -> PerformanceAnalytics:
-    """Create an analytics engine with default configuration."""
-    return PerformanceAnalytics(config)
-
-
-# Backward compatibility aliases
-TreePerformanceTracker = AdvancedPerformanceTracker
-TreeMetricsCollector = MetricsCollector
-TreeAnalytics = PerformanceAnalytics
+            self.logger.error(f"❌ Unexpected error saving performance report: {e}")
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary."""
+        return {
+            'total_models': len(self.performance_history),
+            'total_records': sum(len(history) for history in self.performance_history.values()),
+            'active_alerts': len(self._get_active_alerts()),
+            'resolved_alerts': len(self._get_resolved_alerts()),
+            'overall_performance': self._calculate_overall_performance(),
+            'top_performing_models': self._get_top_performing_models(),
+            'underperforming_models': self._get_underperforming_models(),
+            'performance_trends': self._calculate_performance_trends()
+        }
+    
+    def get_model_performance(self, model_id: str) -> Dict[str, Any]:
+        """Get performance for a specific model."""
+        if model_id not in self.performance_history:
+            return {'error': f'Model {model_id} not found'}
+        
+        history = self.performance_history[model_id]
+        if not history:
+            return {'error': f'No performance data for {model_id}'}
+        
+        recent_history = history[-100:]  # Last 100 records
+        
+        return {
+            'model_id': model_id,
+            'total_records': len(history),
+            'recent_performance': {
+                'accuracy': np.mean([r.accuracy for r in recent_history]),
+                'precision': np.mean([r.precision for r in recent_history]),
+                'recall': np.mean([r.recall for r in recent_history]),
+                'f1_score': np.mean([r.f1_score for r in recent_history]),
+                'confidence': np.mean([r.confidence for r in recent_history]),
+                'prediction_time': np.mean([r.prediction_time for r in recent_history])
+            },
+            'performance_trend': self.model_statistics.get(model_id, {}).get('performance_trend', 'unknown'),
+            'active_alerts': len([alert for alert in self.active_alerts.get(model_id, []) if not alert.resolved])
+        }

@@ -47,7 +47,7 @@ except ImportError:
 
 # Import unified utilities
 try:
-    from src.utils.ml_common.nas_tas_unified import (
+    from src.utils.nas_tas import (
         UnifiedRegimeDetector, UnifiedRegimeConfig, UnifiedRegimeResult,
         RegimeDetectionMethod
     )

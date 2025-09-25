@@ -33,7 +33,7 @@ Successfully consolidated 4 redundant evaluation engines into a single unified i
 - ✅ Maintains backward compatibility
 - ✅ Delegates to unified evaluator
 
-#### **Old Unified Evaluator** (`src/utils/ml_common/nas_tas_unified/evaluation.py`)
+#### **Old Unified Evaluator** (`src/utils/nas_tas/evaluation.py`)
 - ✅ Converted to redirect to new implementation
 - ✅ Maintains backward compatibility
 - ✅ Removed redundant code
@@ -67,7 +67,7 @@ Updated Files:
 ├── src/utils/ml_common/optimization/tas/evaluation/tas_evaluator.py
 ├── src/training/steps/market_analysis/tas_regime/evaluation/tree_evaluator.py  
 ├── src/training/steps/market_analysis/nas_modeling/core/nas_evaluator.py
-└── src/utils/ml_common/nas_tas_unified/evaluation.py (redirect)
+└── src/utils/nas_tas/evaluation.py (redirect)
 ```
 
 ## Usage Examples
@@ -99,7 +99,7 @@ results = evaluator.evaluate_tree_architecture(model, data)
 ### **Backward Compatibility**
 ```python
 # Old imports still work
-from src.utils.ml_common.nas_tas_unified import UnifiedEvaluator
+from src.utils.nas_tas import UnifiedEvaluator
 from src.training.steps.market_analysis.nas_modeling.core.nas_evaluator import NASEvaluator
 from src.utils.ml_common.optimization.tas.evaluation.tas_evaluator import TASEvaluator
 ```

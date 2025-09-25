@@ -217,21 +217,21 @@ class FibonacciLevelGenerator(FeatureGenerator):
             fibonacci_level = base_values.rolling(window=self.window).quantile(self.level)
         return fibonacci_level
 
-# Price Level Crossing Generator
-class PriceLevelCrossingGenerator(FeatureGenerator):
-    """Generator for price level crossing features."""
+# Historical Price Level Crossing Generator
+class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
+    """Generator for historical price level crossing counts - backward looking for ML training."""
 
     def __init__(self, level_pct: float = 0.2, window: int = 100):
-        """Initialize crossing generator.
+        """Initialize historical crossing generator.
 
         Args:
             level_pct: Price level percentage (e.g., 0.2 for 0.2%)
-            window: Lookback window for analysis
+            window: Lookback window for historical analysis
         """
         config = FeatureConfig(
-            name=f"price_level_crossings_{level_pct}_{window}",
+            name=f"historical_crossings_{level_pct}_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Price level crossings at {level_pct}% intervals over {window} periods",
+            description=f"Historical crossing counts at {level_pct}% levels over past {window} periods",
             required_columns=["close", "high", "low"],
             default_lookback=window,
             min_lookback=window,
@@ -243,47 +243,58 @@ class PriceLevelCrossingGenerator(FeatureGenerator):
         self.window = window
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate price level crossing counts."""
+        """Generate historical price level crossing counts (backward looking)."""
         close = data['close']
         high = data['high']
         low = data['low']
 
-        # Calculate price levels at specified percentage intervals
-        current_price = close.iloc[-1]
-        price_range = current_price * self.level_pct / 100
+        # Calculate historical crossings up to each point
+        crossings = pd.Series(index=data.index, dtype=float)
 
-        # Define price levels
-        levels_up = [current_price + (i + 1) * price_range for i in range(10)]
-        levels_down = [current_price - (i + 1) * price_range for i in range(10)]
+        for idx in range(self.window, len(data)):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
 
-        # Count crossings for each level
-        crossings = np.zeros(len(close))
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
 
-        for level in levels_up + levels_down:
-            # Count upward crossings
-            up_crossings = ((close.shift(1) <= level) & (close > level)).astype(int)
-            # Count downward crossings
-            down_crossings = ((close.shift(1) >= level) & (close < level)).astype(int)
-            crossings += up_crossings + down_crossings
+            # Define price levels
+            levels_up = [current_price + (i + 1) * price_range for i in range(10)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(10)]
 
-        return pd.Series(crossings, index=data.index, name=f'crossings_{self.level_pct}')
+            # Count crossings in the historical window
+            total_crossings = 0
+
+            for level in levels_up + levels_down:
+                # Count upward crossings in historical data
+                up_crossings = ((historical_close.shift(1) <= level) & (historical_close > level)).sum()
+                # Count downward crossings in historical data
+                down_crossings = ((historical_close.shift(1) >= level) & (historical_close < level)).sum()
+                total_crossings += up_crossings + down_crossings
+
+            crossings.iloc[idx] = total_crossings
+
+        return crossings.fillna(0).astype(int)
 
 
-# Price Level Bounce Generator
-class PriceLevelBounceGenerator(FeatureGenerator):
-    """Generator for price level bounce features."""
+# Historical Price Level Bounce Generator
+class HistoricalPriceLevelBounceGenerator(FeatureGenerator):
+    """Generator for historical price level bounce counts - backward looking for ML training."""
 
     def __init__(self, level_pct: float = 0.2, window: int = 100):
-        """Initialize bounce generator.
+        """Initialize historical bounce generator.
 
         Args:
             level_pct: Price level percentage
-            window: Lookback window for analysis
+            window: Lookback window for historical analysis
         """
         config = FeatureConfig(
-            name=f"price_level_bounces_{level_pct}_{window}",
+            name=f"historical_bounces_{level_pct}_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Price level bounces at {level_pct}% intervals over {window} periods",
+            description=f"Historical bounce counts at {level_pct}% levels over past {window} periods",
             required_columns=["close", "high", "low"],
             default_lookback=window,
             min_lookback=window,
@@ -295,49 +306,72 @@ class PriceLevelBounceGenerator(FeatureGenerator):
         self.window = window
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate price level bounce counts."""
+        """Generate historical price level bounce counts (backward looking)."""
         close = data['close']
         high = data['high']
         low = data['low']
 
-        current_price = close.iloc[-1]
-        price_range = current_price * self.level_pct / 100
+        # Calculate historical bounces up to each point
+        bounces = pd.Series(index=data.index, dtype=float)
 
-        # Define price levels
-        levels_up = [current_price + (i + 1) * price_range for i in range(10)]
-        levels_down = [current_price - (i + 1) * price_range for i in range(10)]
+        for idx in range(self.window, len(data)):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
 
-        bounces = np.zeros(len(close))
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
 
-        for level in levels_up + levels_down:
-            # Detect bounces: price touches level then reverses
-            touches_level = ((low <= level) & (high >= level))
-            reversal_up = ((close.shift(1) <= level) & (close > level))
-            reversal_down = ((close.shift(1) >= level) & (close < level))
+            # Define price levels
+            levels_up = [current_price + (i + 1) * price_range for i in range(10)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(10)]
 
-            # Count bounces (touches that result in reversal)
-            bounce_up = (touches_level & reversal_up.shift(1)).astype(int)
-            bounce_down = (touches_level & reversal_down.shift(1)).astype(int)
-            bounces += bounce_up + bounce_down
+            # Count bounces in the historical window
+            total_bounces = 0
 
-        return pd.Series(bounces, index=data.index, name=f'bounces_{self.level_pct}')
+            for level in levels_up + levels_down:
+                # Detect touches in historical data
+                touches_level = ((historical_low <= level) & (historical_high >= level))
+
+                # Find reversal points (touches followed by price movement away)
+                reversal_up = []
+                reversal_down = []
+
+                for i in range(1, len(historical_close)):
+                    if touches_level.iloc[i]:
+                        # Check if this touch was followed by reversal
+                        price_after = historical_close.iloc[i+1] if i+1 < len(historical_close) else historical_close.iloc[i]
+                        price_before = historical_close.iloc[i-1]
+
+                        if price_before <= level and price_after > level:
+                            reversal_up.append(1)
+                        elif price_before >= level and price_after < level:
+                            reversal_down.append(1)
+
+                total_bounces += len(reversal_up) + len(reversal_down)
+
+            bounces.iloc[idx] = total_bounces
+
+        return bounces.fillna(0).astype(int)
 
 
-# Volume at Price Level Generator
-class VolumeAtPriceLevelGenerator(FeatureGenerator):
-    """Generator for volume traded at price level features."""
+# Historical Volume at Price Level Generator
+class HistoricalVolumeAtPriceLevelGenerator(FeatureGenerator):
+    """Generator for historical volume traded at price levels - backward looking for ML training."""
 
     def __init__(self, level_pct: float = 0.2, window: int = 100):
-        """Initialize volume at price level generator.
+        """Initialize historical volume at price level generator.
 
         Args:
             level_pct: Price level percentage
-            window: Lookback window for analysis
+            window: Lookback window for historical analysis
         """
         config = FeatureConfig(
-            name=f"volume_at_price_levels_{level_pct}_{window}",
+            name=f"historical_volume_at_levels_{level_pct}_{window}",
             category=FeatureCategory.VOLUME,
-            description=f"Volume traded at {level_pct}% price levels over {window} periods",
+            description=f"Historical volume traded at {level_pct}% price levels over past {window} periods",
             required_columns=["close", "high", "low", "volume"],
             default_lookback=window,
             min_lookback=window,
@@ -349,29 +383,43 @@ class VolumeAtPriceLevelGenerator(FeatureGenerator):
         self.window = window
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate volume at price levels."""
+        """Generate historical volume at price levels (backward looking)."""
         close = data['close']
         high = data['high']
         low = data['low']
         volume = data['volume']
 
-        current_price = close.iloc[-1]
-        price_range = current_price * self.level_pct / 100
+        # Calculate historical volume at levels up to each point
+        volume_at_levels = pd.Series(index=data.index, dtype=float)
 
-        # Define price level bins
-        levels_up = [current_price + (i + 1) * price_range for i in range(10)]
-        levels_down = [current_price - (i + 1) * price_range for i in range(10)]
-        price_levels = levels_down[::-1] + [current_price] + levels_up
+        for idx in range(self.window, len(data)):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
+            historical_volume = volume.iloc[idx-self.window:idx]
 
-        # Calculate volume at each price level
-        volume_at_levels = np.zeros(len(close))
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
 
-        for i, level in enumerate(price_levels):
-            # Volume traded when price is at this level
-            at_level = ((low <= level) & (high >= level))
-            volume_at_levels += at_level.astype(int) * volume
+            # Define price level bins
+            levels_up = [current_price + (i + 1) * price_range for i in range(10)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(10)]
+            price_levels = levels_down[::-1] + [current_price] + levels_up
 
-        return pd.Series(volume_at_levels, index=data.index, name=f'volume_at_levels_{self.level_pct}')
+            # Calculate volume at each price level in historical window
+            total_volume_at_levels = 0
+
+            for level in price_levels:
+                # Volume traded when price was at this level in historical data
+                at_level = ((historical_low <= level) & (historical_high >= level))
+                volume_at_level = (at_level.astype(int) * historical_volume).sum()
+                total_volume_at_levels += volume_at_level
+
+            volume_at_levels.iloc[idx] = total_volume_at_levels
+
+        return volume_at_levels.fillna(0)
 
 
 # Price Level Strength Generator
@@ -620,6 +668,244 @@ class PriceLevelMomentumGenerator(FeatureGenerator):
         return pd.Series(momentum_scores, index=data.index, name=f'momentum_{self.level_pct}')
 
 
+# Historical Price Level Success Rate Generator
+class HistoricalPriceLevelSuccessRateGenerator(FeatureGenerator):
+    """Generator for historical success rate of price levels - perfect for ML training targets."""
+
+    def __init__(self, level_pct: float = 0.2, window: int = 100, forward_periods: int = 20):
+        """Initialize success rate generator.
+
+        Args:
+            level_pct: Price level percentage
+            window: Lookback window for historical analysis
+            forward_periods: How far forward to measure success
+        """
+        config = FeatureConfig(
+            name=f"historical_success_rate_{level_pct}_{window}_{forward_periods}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Historical success rate of {level_pct}% levels over {window} periods, measured {forward_periods} periods ahead",
+            required_columns=["close", "high", "low"],
+            default_lookback=window + forward_periods,
+            min_lookback=window + forward_periods,
+            max_lookback=window + forward_periods,
+            parameters={'level_pct': level_pct, 'window': window, 'forward_periods': forward_periods}
+        )
+        super().__init__(config)
+        self.level_pct = level_pct
+        self.window = window
+        self.forward_periods = forward_periods
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate historical success rates for ML training (includes forward-looking labels)."""
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # This includes some forward-looking for creating training labels
+        success_rates = pd.Series(index=data.index, dtype=float)
+
+        for idx in range(self.window, len(data) - self.forward_periods):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
+
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
+
+            # Define price levels
+            levels_up = [current_price + (i + 1) * price_range for i in range(5)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(5)]
+
+            # Count successful bounces/resistances in historical window
+            successful_levels = 0
+            total_levels = 0
+
+            for level in levels_up + levels_down:
+                # Check if this level was touched in historical data
+                touches = ((historical_low <= level) & (historical_high >= level))
+
+                if touches.sum() > 0:
+                    total_levels += 1
+
+                    # Check if it acted as support/resistance (price bounced)
+                    # Look at price action after touches
+                    bounce_count = 0
+
+                    for i in range(len(historical_close)):
+                        if touches.iloc[i]:
+                            # Check if price reversed after touching
+                            if i > 0 and i < len(historical_close) - 1:
+                                price_before = historical_close.iloc[i-1]
+                                price_at = historical_close.iloc[i]
+                                price_after = historical_close.iloc[i+1]
+
+                                # If price approached and then reversed
+                                if (price_before < level < price_at and price_after > level) or \
+                                   (price_before > level > price_at and price_after < level):
+                                    bounce_count += 1
+
+                    if bounce_count > 0:
+                        successful_levels += 1
+
+            # Calculate success rate
+            success_rate = successful_levels / max(total_levels, 1)
+            success_rates.iloc[idx] = success_rate
+
+        return success_rates.fillna(0)
+
+
+# Historical Price Level Touch Density Generator
+class HistoricalPriceLevelTouchDensityGenerator(FeatureGenerator):
+    """Generator for touch density analysis - how concentrated touches are around levels."""
+
+    def __init__(self, level_pct: float = 0.2, window: int = 100):
+        """Initialize touch density generator.
+
+        Args:
+            level_pct: Price level percentage
+            window: Lookback window for historical analysis
+        """
+        config = FeatureConfig(
+            name=f"historical_touch_density_{level_pct}_{window}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Historical touch density around {level_pct}% levels over past {window} periods",
+            required_columns=["close", "high", "low"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'level_pct': level_pct, 'window': window}
+        )
+        super().__init__(config)
+        self.level_pct = level_pct
+        self.window = window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate historical touch density scores."""
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # Calculate historical touch density up to each point
+        touch_densities = pd.Series(index=data.index, dtype=float)
+
+        for idx in range(self.window, len(data)):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
+
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
+
+            # Define price levels
+            levels_up = [current_price + (i + 1) * price_range for i in range(5)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(5)]
+
+            # Calculate touch density for each level
+            total_touch_density = 0
+            level_count = 0
+
+            for level in levels_up + levels_down:
+                level_count += 1
+
+                # Count touches around this level (± half the price range)
+                level_tolerance = price_range / 2
+                touches_around_level = ((historical_close >= level - level_tolerance) &
+                                      (historical_close <= level + level_tolerance)).sum()
+
+                # Normalize by window length and add to total
+                density = touches_around_level / self.window
+                total_touch_density += density
+
+            # Average density across all levels
+            avg_touch_density = total_touch_density / level_count
+            touch_densities.iloc[idx] = avg_touch_density
+
+        return touch_densities.fillna(0)
+
+
+# Historical Price Level Time Decay Generator
+class HistoricalPriceLevelTimeDecayGenerator(FeatureGenerator):
+    """Generator for time decay analysis - how recency affects level importance."""
+
+    def __init__(self, level_pct: float = 0.2, window: int = 100, decay_half_life: int = 20):
+        """Initialize time decay generator.
+
+        Args:
+            level_pct: Price level percentage
+            window: Lookback window for historical analysis
+            decay_half_life: Half-life for exponential decay of importance
+        """
+        config = FeatureConfig(
+            name=f"historical_time_decay_{level_pct}_{window}_{decay_half_life}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Historical time decay analysis for {level_pct}% levels over past {window} periods",
+            required_columns=["close", "high", "low"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'level_pct': level_pct, 'window': window, 'decay_half_life': decay_half_life}
+        )
+        super().__init__(config)
+        self.level_pct = level_pct
+        self.window = window
+        self.decay_half_life = decay_half_life
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate historical time decay scores."""
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # Calculate historical time decay up to each point
+        time_decay_scores = pd.Series(index=data.index, dtype=float)
+
+        for idx in range(self.window, len(data)):
+            # Get historical data up to current point
+            historical_close = close.iloc[idx-self.window:idx]
+            historical_high = high.iloc[idx-self.window:idx]
+            historical_low = low.iloc[idx-self.window:idx]
+
+            # Calculate price levels based on the current price at this historical point
+            current_price = close.iloc[idx]
+            price_range = current_price * self.level_pct / 100
+
+            # Define price levels
+            levels_up = [current_price + (i + 1) * price_range for i in range(3)]
+            levels_down = [current_price - (i + 1) * price_range for i in range(3)]
+
+            # Calculate time-decayed importance for each level
+            total_decayed_importance = 0
+            level_count = 0
+
+            for level in levels_up + levels_down:
+                level_count += 1
+
+                # Find all touches in the historical window
+                touches = ((historical_low <= level) & (historical_high >= level))
+
+                # Apply exponential time decay
+                decayed_touch_value = 0
+                for i, touch in enumerate(touches):
+                    if touch:
+                        # Time since touch (0 = most recent, window-1 = oldest)
+                        time_since_touch = self.window - 1 - i
+                        # Exponential decay
+                        decay_factor = 0.5 ** (time_since_touch / self.decay_half_life)
+                        decayed_touch_value += decay_factor
+
+                total_decayed_importance += decayed_touch_value
+
+            # Average decayed importance across all levels
+            avg_time_decay = total_decayed_importance / level_count
+            time_decay_scores.iloc[idx] = avg_time_decay
+
+        return time_decay_scores.fillna(0)
+
+
 def create_default_support_resistance_generators() -> List[FeatureGenerator]:
     """Create default support/resistance feature generators."""
     windows = [5, 10, 20]
@@ -649,17 +935,19 @@ def create_default_support_resistance_generators() -> List[FeatureGenerator]:
         for window in windows:
             generators.append(FibonacciLevelGenerator(level, window))
 
-    # Create price level analysis generators
+    # Create historical price level analysis generators (backward-looking for ML training)
     for level_pct in price_level_pcts:
         for window in [50, 100, 200]:
             generators.extend([
-                PriceLevelCrossingGenerator(level_pct, window),
-                PriceLevelBounceGenerator(level_pct, window),
-                VolumeAtPriceLevelGenerator(level_pct, window),
-                PriceLevelStrengthGenerator(level_pct, window),
-                PriceLevelRecencyGenerator(level_pct, window),
-                PriceLevelClusteringGenerator(level_pct, window),
-                PriceLevelMomentumGenerator(level_pct, window),
+                HistoricalPriceLevelCrossingGenerator(level_pct, window),
+                HistoricalPriceLevelBounceGenerator(level_pct, window),
+                HistoricalVolumeAtPriceLevelGenerator(level_pct, window),
+                HistoricalPriceLevelTouchDensityGenerator(level_pct, window),
+                HistoricalPriceLevelTimeDecayGenerator(level_pct, window, decay_half_life=20),
             ])
+
+        # Add success rate generators with different forward periods
+        for forward_periods in [10, 20, 50]:
+            generators.append(HistoricalPriceLevelSuccessRateGenerator(level_pct, 100, forward_periods))
 
     return generators

@@ -154,6 +154,44 @@ class PriceLevelBankQuery:
         """Get bank statistics."""
         return self.bank.get_statistics()
 
+    def get_situational_awareness(self,
+                                 symbol: str,
+                                 timeframe: str,
+                                 current_price: float,
+                                 include_all: bool = False) -> Dict[str, Any]:
+        """Get situational awareness data."""
+        return self.bank.get_situational_awareness(symbol, timeframe, current_price, include_all)
+
+    def get_closest_levels(self,
+                          symbol: str,
+                          timeframe: str,
+                          current_price: float,
+                          level_pcts: List[float] = None) -> Dict[str, List[Dict[str, Any]]]:
+        """Get closest levels by percentage."""
+        if level_pcts is None:
+            level_pcts = [0.2, 0.4, 1.0]
+
+        closest_levels = self.bank.get_closest_levels_by_percentage(
+            symbol, timeframe, current_price, level_pcts
+        )
+
+        # Convert to dictionaries for easy display
+        result = {'above': [], 'below': []}
+        for direction in ['above', 'below']:
+            for level in closest_levels[direction]:
+                level_dict = level.to_dict()
+                level_dict['distance'] = abs(level.price - current_price)
+                level_dict['distance_pct'] = abs(level.price - current_price) / current_price * 100
+                result[direction].append(level_dict)
+
+        return result
+
+    def get_default_situational_awareness(self,
+                                       symbol: str = 'BTCUSDT',
+                                       timeframe: str = '1h') -> Dict[str, Any]:
+        """Get default situational awareness data."""
+        return self.bank.get_default_situational_awareness(symbol, timeframe)
+
     def _get_current_price(self, symbol: str) -> Optional[float]:
         """
         Get current market price for a symbol.
@@ -224,6 +262,66 @@ class PriceLevelBankQuery:
 
         print("="*50 + "\n")
 
+    def display_situational_awareness(self, awareness: Dict[str, Any]):
+        """Display situational awareness data."""
+        print("\n" + "="*60)
+        print("SITUATIONAL AWARENESS")
+        print("="*60)
+
+        current_price = awareness['current_price']
+        print(f"Current Price: ${current_price",.2f"}")
+        print("-" * 60)
+
+        # Display closest levels
+        print("CLOSEST PRICE LEVELS:")
+        print("-" * 30)
+
+        for direction in ['above', 'below']:
+            print(f"\n{direction.upper()}:")
+            if awareness['closest_levels'][direction]:
+                for level in awareness['closest_levels'][direction]:
+                    distance_pct = abs(level.price - current_price) / current_price * 100
+                    print(f"  {level.level_pct".1f"}% level: ${level.price",.2f"} "
+                          f"({distance_pct".2f"}% {direction}) - "
+                          f"Significance: {level.significance_level".2f"}")
+            else:
+                print(f"  No {level_pct".1f"}% levels found {direction}")
+
+        # Display distances
+        print("
+DISTANCES TO NEAREST LEVELS:")
+        print("-" * 40)
+
+        distances = awareness['distances']
+        for pct in [0.2, 0.4, 1.0, 2.0]:
+            for direction in ['above', 'below']:
+                if pct in distances[direction]:
+                    dist = distances[direction][pct]
+                    print(f"  {pct".1f"}% {direction}: ${dist['price']",.2f"} "
+                          f"({dist['distance_pct']"+.2f"}%)")
+
+        # Display nearby levels summary
+        print("
+NEARBY LEVELS SUMMARY:")
+        print("-" * 30)
+
+        levels_in_ranges = awareness['levels_in_ranges']
+        for range_name, levels in levels_in_ranges.items():
+            print(f"  {range_name}: {len(levels)} levels")
+
+        # Display significant nearby levels
+        print("
+MOST SIGNIFICANT NEARBY LEVELS:")
+        print("-" * 35)
+
+        for level in awareness['significant_nearby'][:5]:  # Top 5
+            distance_pct = abs(level.price - current_price) / current_price * 100
+            direction = "above" if level.price > current_price else "below"
+            print(f"  ${level.price",.2f"} ({distance_pct"+.2f"}% {direction}) - "
+                  f"Significance: {level.significance_level".2f"}")
+
+        print("="*60 + "\n")
+
 def main():
     """Main function for command-line usage."""
     parser = argparse.ArgumentParser(description='Query Price Level Bank')
@@ -258,6 +356,14 @@ def main():
                        help='Export all levels to file')
     parser.add_argument('--export-file', type=str, default='price_levels.csv',
                        help='Export filename')
+    parser.add_argument('--situational-awareness', action='store_true',
+                       help='Show situational awareness around current price')
+    parser.add_argument('--current-price', type=float,
+                       help='Current market price for situational awareness')
+    parser.add_argument('--closest-levels', action='store_true',
+                       help='Show closest price levels by percentage')
+    parser.add_argument('--default-awareness', action='store_true',
+                       help='Show default situational awareness (no current price needed)')
 
     args = parser.parse_args()
 
@@ -318,6 +424,58 @@ def main():
             )
             query.display_levels(levels, args.format)
 
+        elif args.situational_awareness:
+            # Show situational awareness
+            if not args.current_price:
+                logger.error("Current price required for situational awareness. Use --current-price")
+                sys.exit(1)
+
+            awareness = query.get_situational_awareness(
+                args.symbol or 'BTCUSDT',
+                args.timeframe,
+                args.current_price
+            )
+            query.display_situational_awareness(awareness)
+
+        elif args.closest_levels:
+            # Show closest levels
+            if not args.current_price:
+                logger.error("Current price required for closest levels. Use --current-price")
+                sys.exit(1)
+
+            closest_levels = query.get_closest_levels(
+                args.symbol or 'BTCUSDT',
+                args.timeframe,
+                args.current_price
+            )
+
+            print(f"\nCLOSEST PRICE LEVELS AROUND ${args.current_price",.2f"}")
+            print("="*60)
+
+            for direction in ['above', 'below']:
+                print(f"\n{direction.upper()}:")
+                if closest_levels[direction]:
+                    for level in closest_levels[direction]:
+                        print(f"  {level['level_pct']".1f"}% level: ${level['price']",.2f"} "
+                              f"({level['distance_pct']"+.2f"}% {direction}) - "
+                              f"Significance: {level['significance_level']".2f"}")
+                else:
+                    print(f"  No levels found {direction}")
+
+        elif args.default_awareness:
+            # Show default situational awareness
+            awareness = query.get_default_situational_awareness(
+                args.symbol or 'BTCUSDT',
+                args.timeframe
+            )
+
+            if awareness['current_price'] is None:
+                print("No data available for default situational awareness.")
+                print("Please build the price level bank first:")
+                print("python build_price_level_bank.py --symbol BTCUSDT --timeframe 1h --start-date 2023-01-01 --end-date 2024-01-01")
+            else:
+                query.display_situational_awareness(awareness)
+
         else:
             # Show help
             parser.print_help()
@@ -326,6 +484,10 @@ def main():
             print("  python query_price_level_bank.py --symbol BTCUSDT --price-range 45000 55000")
             print("  python query_price_level_bank.py --stats")
             print("  python query_price_level_bank.py --export --output levels.csv")
+            print("  python query_price_level_bank.py --situational-awareness --current-price 50000")
+            print("  python query_price_level_bank.py --closest-levels --current-price 50000")
+            print("  python query_price_level_bank.py --default-awareness --symbol BTCUSDT")
+            print("  python query_price_level_bank.py --stats")
 
     except Exception as e:
         logger.error(f"Query failed: {e}")

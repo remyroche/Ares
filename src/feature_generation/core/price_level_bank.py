@@ -372,6 +372,178 @@ class PriceLevelBank:
         sorted_levels = sorted(levels, key=lambda x: x.significance_level, reverse=True)
         return sorted_levels[:top_k]
 
+    def get_closest_levels_by_percentage(self,
+                                       symbol: str,
+                                       timeframe: str,
+                                       current_price: float,
+                                       level_pcts: List[float] = None) -> Dict[str, List[PriceLevelData]]:
+        """
+        Get the closest price levels at specified percentages above and below current price.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe string
+            current_price: Current market price
+            level_pcts: List of percentages to find (e.g., [0.2, 0.4, 1.0])
+
+        Returns:
+            Dictionary with 'above' and 'below' keys containing lists of levels
+        """
+        if level_pcts is None:
+            level_pcts = [0.2, 0.4, 1.0]  # Default percentages
+
+        result = {'above': [], 'below': []}
+
+        # Get all levels for this symbol/timeframe
+        levels = self.get_levels_by_timeframe(symbol, timeframe)
+        if not levels:
+            return result
+
+        # Group levels by their percentage
+        levels_by_pct = {}
+        for pct in level_pcts:
+            levels_by_pct[pct] = [l for l in levels if abs(l.level_pct - pct) < 0.01]  # Allow small tolerance
+
+        # Find closest levels for each percentage
+        for pct in level_pcts:
+            if pct not in levels_by_pct:
+                continue
+
+            pct_levels = levels_by_pct[pct]
+            if not pct_levels:
+                continue
+
+            # Find closest above current price
+            above_levels = [l for l in pct_levels if l.price > current_price]
+            if above_levels:
+                closest_above = min(above_levels, key=lambda x: x.price - current_price)
+                result['above'].append(closest_above)
+
+            # Find closest below current price
+            below_levels = [l for l in pct_levels if l.price < current_price]
+            if below_levels:
+                closest_below = min(below_levels, key=lambda x: current_price - x.price)
+                result['below'].append(closest_below)
+
+        return result
+
+    def get_situational_awareness(self,
+                                 symbol: str,
+                                 timeframe: str,
+                                 current_price: float,
+                                 include_all: bool = False) -> Dict[str, Any]:
+        """
+        Get comprehensive situational awareness around current price.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe string
+            current_price: Current market price
+            include_all: Whether to include all nearby levels, not just closest
+
+        Returns:
+            Dictionary with situational awareness data
+        """
+        # Get closest levels by percentage
+        default_pcts = [0.2, 0.4, 1.0, 2.0]
+        closest_levels = self.get_closest_levels_by_percentage(
+            symbol, timeframe, current_price, default_pcts
+        )
+
+        # Get most significant levels nearby
+        all_levels = self.get_levels_by_timeframe(symbol, timeframe)
+        nearby_levels = [l for l in all_levels
+                        if abs(l.price - current_price) / current_price <= 0.05]  # Within 5%
+        significant_nearby = sorted(nearby_levels,
+                                  key=lambda x: x.significance_level, reverse=True)[:5]
+
+        # Calculate price ranges
+        price_range_02 = current_price * 0.002  # 0.2% range
+        price_range_04 = current_price * 0.004  # 0.4% range
+        price_range_10 = current_price * 0.01   # 1.0% range
+
+        # Find levels within specific percentage ranges
+        levels_in_ranges = {
+            'within_0.2%': [l for l in all_levels
+                          if abs(l.price - current_price) <= price_range_02],
+            'within_0.4%': [l for l in all_levels
+                          if abs(l.price - current_price) <= price_range_04],
+            'within_1.0%': [l for l in all_levels
+                          if abs(l.price - current_price) <= price_range_10]
+        }
+
+        # Calculate distances to nearest levels
+        distances = {'above': {}, 'below': {}}
+        for pct in default_pcts:
+            above_levels = [l for l in closest_levels['above'] if abs(l.level_pct - pct) < 0.01]
+            below_levels = [l for l in closest_levels['below'] if abs(l.level_pct - pct) < 0.01]
+
+            if above_levels:
+                closest_above = min(above_levels, key=lambda x: x.price - current_price)
+                distances['above'][pct] = {
+                    'price': closest_above.price,
+                    'distance': closest_above.price - current_price,
+                    'distance_pct': (closest_above.price - current_price) / current_price * 100
+                }
+
+            if below_levels:
+                closest_below = min(below_levels, key=lambda x: current_price - x.price)
+                distances['below'][pct] = {
+                    'price': closest_below.price,
+                    'distance': current_price - closest_below.price,
+                    'distance_pct': (current_price - closest_below.price) / current_price * 100
+                }
+
+        return {
+            'current_price': current_price,
+            'closest_levels': closest_levels,
+            'significant_nearby': significant_nearby,
+            'levels_in_ranges': levels_in_ranges,
+            'distances': distances,
+            'price_ranges': {
+                '0.2%': price_range_02,
+                '0.4%': price_range_04,
+                '1.0%': price_range_10
+            }
+        }
+
+    def get_default_situational_awareness(self,
+                                        symbol: str = 'BTCUSDT',
+                                        timeframe: str = '1h') -> Dict[str, Any]:
+        """
+        Get default situational awareness data for the most recent price.
+
+        This method provides immediate situational awareness without requiring
+        a current price parameter - it uses the latest available price data.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe string
+
+        Returns:
+            Dictionary with default situational awareness data
+        """
+        # Get all levels for this symbol/timeframe
+        levels = self.get_levels_by_timeframe(symbol, timeframe)
+
+        if not levels:
+            return {
+                'current_price': None,
+                'closest_levels': {'above': [], 'below': []},
+                'significant_nearby': [],
+                'levels_in_ranges': {'within_0.2%': [], 'within_0.4%': [], 'within_1.0%': []},
+                'distances': {'above': {}, 'below': {}},
+                'price_ranges': {'0.2%': 0, '0.4%': 0, '1.0%': 0}
+            }
+
+        # Find the most recent price from levels (use the price of the most recently updated level)
+        # In a real implementation, you'd get this from your market data feed
+        recent_levels = sorted(levels, key=lambda x: x.timestamp, reverse=True)
+        current_price = recent_levels[0].price  # Use most recent level's price as proxy
+
+        # Get situational awareness for this price
+        return self.get_situational_awareness(symbol, timeframe, current_price)
+
     def update_level_tags(self, level_id: str, **tag_updates) -> bool:
         """
         Update tags for a specific price level.

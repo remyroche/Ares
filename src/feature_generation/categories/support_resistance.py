@@ -993,6 +993,229 @@ class HistoricalPriceLevelTimeDecayGenerator(FeatureGenerator):
         return time_decay_scores.fillna(0)
 
 
+# Situational Awareness Feature Generator
+class SituationalAwarenessGenerator(FeatureGenerator):
+    """Generator for situational awareness features based on price level bank data."""
+
+    def __init__(self, current_price: float = None):
+        """Initialize situational awareness generator.
+
+        Args:
+            current_price: Current market price (can be None to use latest from data)
+        """
+        config = FeatureConfig(
+            name="situational_awareness",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description="Situational awareness features including closest price levels by percentage",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={'current_price': current_price}
+        )
+        super().__init__(config)
+        self.current_price = current_price
+
+        # Initialize price level bank
+        self.price_level_bank = None
+        try:
+            from ..core.price_level_bank import get_global_price_level_bank
+            self.price_level_bank = get_global_price_level_bank()
+        except ImportError:
+            pass
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate situational awareness features."""
+        if not self.price_level_bank or data.empty:
+            # Return empty features if bank not available
+            return {}
+
+        # Get current price (from parameter or latest data)
+        current_price = self.current_price
+        if current_price is None:
+            current_price = data['close'].iloc[-1]
+
+        # Get symbol and timeframe
+        symbol = kwargs.get('symbol', 'BTCUSDT')
+        timeframe = kwargs.get('timeframe', '1h')
+
+        # Get situational awareness data
+        awareness = self.price_level_bank.get_situational_awareness(
+            symbol, timeframe, current_price
+        )
+
+        # Convert to feature series
+        features = {}
+
+        # Distance to closest 0.2% levels
+        if 0.2 in awareness['distances']['above']:
+            features['closest_0.2pct_above'] = pd.Series(
+                [awareness['distances']['above'][0.2]['distance']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_above_pct'] = pd.Series(
+                [awareness['distances']['above'][0.2]['distance_pct']] * len(data),
+                index=data.index
+            )
+
+        if 0.2 in awareness['distances']['below']:
+            features['closest_0.2pct_below'] = pd.Series(
+                [awareness['distances']['below'][0.2]['distance']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_below_pct'] = pd.Series(
+                [awareness['distances']['below'][0.2]['distance_pct']] * len(data),
+                index=data.index
+            )
+
+        # Distance to closest 0.4% levels
+        if 0.4 in awareness['distances']['above']:
+            features['closest_0.4pct_above'] = pd.Series(
+                [awareness['distances']['above'][0.4]['distance']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_above_pct'] = pd.Series(
+                [awareness['distances']['above'][0.4]['distance_pct']] * len(data),
+                index=data.index
+            )
+
+        if 0.4 in awareness['distances']['below']:
+            features['closest_0.4pct_below'] = pd.Series(
+                [awareness['distances']['below'][0.4]['distance']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_below_pct'] = pd.Series(
+                [awareness['distances']['below'][0.4]['distance_pct']] * len(data),
+                index=data.index
+            )
+
+        # Number of significant levels nearby
+        features['significant_levels_nearby'] = pd.Series(
+            [len(awareness['significant_nearby'])] * len(data),
+            index=data.index
+        )
+
+        # Average significance of nearby levels
+        if awareness['significant_nearby']:
+            avg_significance = sum(l.significance_level for l in awareness['significant_nearby']) / len(awareness['significant_nearby'])
+            features['avg_significance_nearby'] = pd.Series(
+                [avg_significance] * len(data),
+                index=data.index
+            )
+
+        # Price ranges for context
+        features['price_range_0.2pct'] = pd.Series(
+            [awareness['price_ranges']['0.2%']] * len(data),
+            index=data.index
+        )
+        features['price_range_0.4pct'] = pd.Series(
+            [awareness['price_ranges']['0.4%']] * len(data),
+            index=data.index
+        )
+        features['price_range_1.0pct'] = pd.Series(
+            [awareness['price_ranges']['1.0%']] * len(data),
+            index=data.index
+        )
+
+        return features
+
+    def generate(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """Generate situational awareness features as DataFrame."""
+        features_dict = self._generate_feature(data, **kwargs)
+        return pd.DataFrame(features_dict)
+
+
+# Closest Price Level Generator
+class ClosestPriceLevelGenerator(FeatureGenerator):
+    """Generator for closest price level features by percentage."""
+
+    def __init__(self, level_pct: float = 0.2, direction: str = 'both'):
+        """Initialize closest level generator.
+
+        Args:
+            level_pct: Percentage for price level (0.2 for 0.2%)
+            direction: 'above', 'below', or 'both'
+        """
+        config = FeatureConfig(
+            name=f"closest_{level_pct}pct_levels_{direction}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Closest {level_pct}% price levels {direction}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={'level_pct': level_pct, 'direction': direction}
+        )
+        super().__init__(config)
+        self.level_pct = level_pct
+        self.direction = direction
+
+        # Initialize price level bank
+        self.price_level_bank = None
+        try:
+            from ..core.price_level_bank import get_global_price_level_bank
+            self.price_level_bank = get_global_price_level_bank()
+        except ImportError:
+            pass
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate closest price level features."""
+        if not self.price_level_bank or data.empty:
+            return {}
+
+        current_price = data['close'].iloc[-1]
+        symbol = kwargs.get('symbol', 'BTCUSDT')
+        timeframe = kwargs.get('timeframe', '1h')
+
+        # Get closest levels
+        closest_levels = self.price_level_bank.get_closest_levels_by_percentage(
+            symbol, timeframe, current_price, [self.level_pct]
+        )
+
+        features = {}
+
+        if self.direction in ['above', 'both']:
+            if closest_levels['above']:
+                closest_above = closest_levels['above'][0]  # First (closest) level
+                features[f'closest_{self.level_pct}pct_above'] = pd.Series(
+                    [closest_above.price] * len(data), index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_above_distance'] = pd.Series(
+                    [closest_above.price - current_price] * len(data), index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_above_distance_pct'] = pd.Series(
+                    [(closest_above.price - current_price) / current_price * 100] * len(data),
+                    index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_above_significance'] = pd.Series(
+                    [closest_above.significance_level] * len(data), index=data.index
+                )
+
+        if self.direction in ['below', 'both']:
+            if closest_levels['below']:
+                closest_below = closest_levels['below'][0]  # First (closest) level
+                features[f'closest_{self.level_pct}pct_below'] = pd.Series(
+                    [closest_below.price] * len(data), index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_below_distance'] = pd.Series(
+                    [current_price - closest_below.price] * len(data), index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_below_distance_pct'] = pd.Series(
+                    [(current_price - closest_below.price) / current_price * 100] * len(data),
+                    index=data.index
+                )
+                features[f'closest_{self.level_pct}pct_below_significance'] = pd.Series(
+                    [closest_below.significance_level] * len(data), index=data.index
+                )
+
+        return features
+
+    def generate(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """Generate closest price level features as DataFrame."""
+        features_dict = self._generate_feature(data, **kwargs)
+        return pd.DataFrame(features_dict)
+
+
 def create_default_support_resistance_generators() -> List[FeatureGenerator]:
     """Create default support/resistance feature generators."""
     windows = [5, 10, 20]
@@ -1036,5 +1259,14 @@ def create_default_support_resistance_generators() -> List[FeatureGenerator]:
         # Add success rate generators with different forward periods
         for forward_periods in [10, 20, 50]:
             generators.append(HistoricalPriceLevelSuccessRateGenerator(level_pct, 100, forward_periods))
+
+    # Add situational awareness generators (default features)
+    generators.extend([
+        SituationalAwarenessGenerator(),  # Provides comprehensive situational awareness
+        ClosestPriceLevelGenerator(0.2, 'both'),  # Closest 0.2% levels above/below
+        ClosestPriceLevelGenerator(0.4, 'both'),  # Closest 0.4% levels above/below
+        ClosestPriceLevelGenerator(1.0, 'above'), # Closest 1.0% level above
+        ClosestPriceLevelGenerator(1.0, 'below'), # Closest 1.0% level below
+    ])
 
     return generators

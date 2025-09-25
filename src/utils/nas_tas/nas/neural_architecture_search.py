@@ -800,7 +800,7 @@ class NeuralArchitectureSearch:
 
     def _create_architecture_search_space(self) -> Dict[str, Dict[str, Any]]:
         """Build generic search space for Bayesian optimization."""
-        return {
+        search_space = {
             'n_layers': {
                 'type': 'int',
                 'low': self.config.min_layers,
@@ -830,6 +830,15 @@ class NeuralArchitectureSearch:
                 'choices': self.config.dropout_rates
             }
         }
+
+        layer_choices = list(self.config.layer_types)
+        for layer_index in range(self.config.max_layers):
+            search_space[f'layer_type_{layer_index}'] = {
+                'type': 'categorical',
+                'choices': layer_choices
+            }
+
+        return search_space
     
     def _random_search(self,
                       X_train: np.ndarray,

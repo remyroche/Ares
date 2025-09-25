@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""
+Unified Component Manager
+
+This module provides a unified component manager that orchestrates all unified components,
+providing a single interface for managing evaluation, hardware optimization, search, and data processing.
+
+Key Features:
+- Unified component orchestration
+- Configuration management
+- Component lifecycle management
+- Performance monitoring
+- Resource cleanup
+"""
+
+import logging
+import time
+from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
+
+from .evaluation import UnifiedEvaluator
+from .hardware import UnifiedHardwareOptimizer
+from .search import UnifiedSearchEngine
+from .data_processing import UnifiedDataProcessor
+
+# Import utility modules
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+    )
+    UTILITY_MODULES_AVAILABLE = True
+except ImportError:
+    UTILITY_MODULES_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+    def tprint_info(*args, **kwargs):
+        print("INFO:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs):
+        print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs):
+        print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs):
+        print("SUCCESS:", *args, **kwargs)
+
+logger = logging.getLogger(__name__)
+
+
+class UnifiedComponentManager:
+    """Unified component manager orchestrating all unified components."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize unified component manager."""
+        self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize components
+        self.evaluator = None
+        self.hardware_optimizer = None
+        self.search_engine = None
+        self.data_processor = None
+        
+        # Performance tracking
+        self.performance_metrics = {}
+        self.start_time = None
+        
+        # Initialize all components
+        self._initialize_components()
+    
+    def _initialize_components(self):
+        """Initialize all unified components."""
+        tprint_info("Initializing unified components...")
+        
+        try:
+            # Initialize evaluator
+            if self.config.get('enable_evaluation', True):
+                self.evaluator = UnifiedEvaluator(self.config)
+                tprint_success("✅ UnifiedEvaluator initialized")
+            
+            # Initialize hardware optimizer
+            if self.config.get('enable_hardware_optimization', True):
+                self.hardware_optimizer = UnifiedHardwareOptimizer(self.config)
+                tprint_success("✅ UnifiedHardwareOptimizer initialized")
+            
+            # Initialize search engine
+            if self.config.get('enable_search', True):
+                self.search_engine = UnifiedSearchEngine(self.config)
+                tprint_success("✅ UnifiedSearchEngine initialized")
+            
+            # Initialize data processor
+            if self.config.get('enable_data_processing', True):
+                self.data_processor = UnifiedDataProcessor(self.config)
+                tprint_success("✅ UnifiedDataProcessor initialized")
+            
+            tprint_success("🎉 All unified components initialized successfully")
+            
+        except Exception as e:
+            tprint_error(f"Component initialization failed: {e}")
+            self.logger.error(f"Component initialization error: {e}")
+    
+    def get_component_status(self) -> Dict[str, bool]:
+        """Get status of all components."""
+        return {
+            'evaluator': self.evaluator is not None,
+            'hardware_optimizer': self.hardware_optimizer is not None,
+            'search_engine': self.search_engine is not None,
+            'data_processor': self.data_processor is not None
+        }
+    
+    def get_component_info(self) -> Dict[str, Any]:
+        """Get detailed information about all components."""
+        info = {
+            'component_status': self.get_component_status(),
+            'config': self.config,
+            'initialization_time': datetime.now().isoformat()
+        }
+        
+        # Add hardware info if available
+        if self.hardware_optimizer:
+            info['hardware_info'] = self.hardware_optimizer.get_hardware_info()
+        
+        # Add search strategies if available
+        if self.search_engine:
+            info['available_search_strategies'] = self.search_engine.get_available_strategies()
+        
+        return info
+    
+    def start_performance_monitoring(self):
+        """Start performance monitoring."""
+        self.start_time = time.time()
+        self.performance_metrics = {
+            'start_time': self.start_time,
+            'operations_count': 0,
+            'total_memory_usage': 0.0
+        }
+        
+        # Start hardware monitoring if available
+        if self.hardware_optimizer:
+            self.hardware_optimizer.start_monitoring()
+        
+        tprint_info("Performance monitoring started")
+    
+    def stop_performance_monitoring(self):
+        """Stop performance monitoring."""
+        if self.start_time:
+            total_time = time.time() - self.start_time
+            self.performance_metrics['total_time'] = total_time
+            
+            # Stop hardware monitoring if available
+            if self.hardware_optimizer:
+                self.hardware_optimizer.stop_monitoring()
+            
+            tprint_info(f"Performance monitoring stopped. Total time: {total_time:.2f}s")
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics."""
+        metrics = self.performance_metrics.copy()
+        
+        # Add current memory usage
+        if self.hardware_optimizer:
+            metrics['current_memory_usage'] = self.hardware_optimizer.get_memory_usage()
+        
+        return metrics
+    
+    def cleanup(self):
+        """Cleanup all components and resources."""
+        tprint_info("Cleaning up unified components...")
+        
+        try:
+            # Cleanup hardware optimizer
+            if self.hardware_optimizer:
+                self.hardware_optimizer.cleanup()
+            
+            # Stop performance monitoring
+            self.stop_performance_monitoring()
+            
+            # Reset components
+            self.evaluator = None
+            self.hardware_optimizer = None
+            self.search_engine = None
+            self.data_processor = None
+            
+            tprint_success("✅ All components cleaned up successfully")
+            
+        except Exception as e:
+            tprint_error(f"Cleanup failed: {e}")
+            self.logger.error(f"Cleanup error: {e}")
+    
+    def __enter__(self):
+        """Context manager entry."""
+        self.start_performance_monitoring()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.cleanup()
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except:
+            pass  # Ignore errors during cleanup in destructor
+
+
+# Convenience functions for easy access to unified components
+def create_unified_manager(config: Dict[str, Any]) -> UnifiedComponentManager:
+    """Create a unified component manager with given configuration."""
+    return UnifiedComponentManager(config)
+
+
+def get_default_config() -> Dict[str, Any]:
+    """Get default configuration for unified components."""
+    return {
+        # Component enablement
+        'enable_evaluation': True,
+        'enable_hardware_optimization': True,
+        'enable_search': True,
+        'enable_data_processing': True,
+        
+        # Hardware optimization
+        'enable_m1_optimization': True,
+        'memory_limit_gb': None,
+        
+        # Evaluation
+        'enable_trading_metrics': True,
+        'enable_economic_metrics': True,
+        'enable_complexity_metrics': True,
+        
+        # Data processing
+        'handle_missing_values': True,
+        'normalize_data': True,
+        'standardize_data': False,
+        'outlier_detection': True,
+        'enable_feature_selection': False,
+        'max_features': 100,
+        'validation_split': 0.2,
+        
+        # Search
+        'use_bayesian_optimization': True,
+        'n_trials': 50,
+        'timeout_seconds': None,
+        'enable_early_stopping': True,
+        'early_stopping_patience': 10
+    }
+
+
+def create_nas_config() -> Dict[str, Any]:
+    """Create configuration optimized for NAS."""
+    config = get_default_config()
+    config.update({
+        'enable_trading_metrics': False,  # NAS doesn't need trading metrics
+        'use_bayesian_optimization': True,
+        'search_strategy': 'neural_architecture_search'
+    })
+    return config
+
+
+def create_tas_config() -> Dict[str, Any]:
+    """Create configuration optimized for TAS."""
+    config = get_default_config()
+    config.update({
+        'enable_trading_metrics': True,  # TAS needs trading metrics
+        'enable_economic_metrics': True,
+        'use_bayesian_optimization': True,
+        'search_strategy': 'tree_search'
+    })
+    return config

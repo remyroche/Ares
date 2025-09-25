@@ -51,7 +51,6 @@ try:
         validate_finite, validate_positive, safe_divide, safe_log, safe_sqrt
     )
     from src.utils.serialization_utils import UniversalSerializer
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
     UTILS_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Warning: Some utilities not available: {e}")

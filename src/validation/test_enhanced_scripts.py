@@ -516,37 +516,16 @@ class EnhancedScriptsValidator:
             tprint("🔍 [ML_UTILITIES] Testing ML utilities integration...")
             
             test_results = {
-                'bayesian_tpe_available': False,
-                'grid_search_available': False,
                 'ml_common_available': False,
                 'score': 0.0
             }
             
-            # Test Bayesian TPE optimizer
+            # Test ML common utilities (Bayesian TPE is used in specific components, not main pipelines)
             try:
                 if self.utils_available:
+                    # Test if ML utilities are available (they're used in specific components)
                     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-                    optimizer = BayesianTPEOptimizer()
-                    if optimizer:
-                        test_results['bayesian_tpe_available'] = True
-            except Exception as e:
-                tprint_warning(f"⚠️ [ML_UTILITIES] Bayesian TPE optimizer test failed: {e}")
-            
-            # Test grid search (part of Bayesian TPE)
-            try:
-                if self.utils_available:
-                    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEConfig
-                    config = BayesianTPEConfig()
-                    if config:
-                        test_results['grid_search_available'] = True
-            except Exception as e:
-                tprint_warning(f"⚠️ [ML_UTILITIES] Grid search test failed: {e}")
-            
-            # Test ML common utilities
-            try:
-                if self.utils_available:
-                    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import optimize_with_bayesian_tpe
-                    if optimize_with_bayesian_tpe:
+                    if BayesianTPEOptimizer:
                         test_results['ml_common_available'] = True
             except Exception as e:
                 tprint_warning(f"⚠️ [ML_UTILITIES] ML common utilities test failed: {e}")

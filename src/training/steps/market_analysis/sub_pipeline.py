@@ -49,7 +49,6 @@ try:
         safe_correlation, safe_covariance, safe_mean, safe_std
     )
     from src.utils.serialization_utils import UniversalSerializer
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
     UTILS_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Warning: Some utilities not available: {e}")
@@ -209,7 +208,6 @@ class MarketAnalysisSubPipeline:
             self.utils_available = UTILS_AVAILABLE
             self.serializer = None
             self.m1_optimizers = None
-            self.bayesian_optimizer = None
             
             if self.utils_available:
                 try:
@@ -267,14 +265,6 @@ class MarketAnalysisSubPipeline:
                 tprint_warning(f"⚠️ M1 optimizers not available: {e}")
                 self.m1_optimizers = None
             
-            # Initialize Bayesian TPE optimizer
-            try:
-                if self.utils_available:
-                    self.bayesian_optimizer = BayesianTPEOptimizer()
-                    tprint_success("✅ Bayesian TPE optimizer initialized")
-            except Exception as e:
-                tprint_warning(f"⚠️ Bayesian TPE optimizer not available: {e}")
-                self.bayesian_optimizer = None
                 
         except Exception as e:
             tprint_error(f"❌ Utility initialization failed: {e}")

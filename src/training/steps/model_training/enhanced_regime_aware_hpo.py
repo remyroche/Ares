@@ -48,6 +48,13 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 
 class RegimeType(Enum):
     """Market regime types for adaptive HPO."""
@@ -542,46 +549,71 @@ class EnhancedRegimeAwareHPO:
     def _optimize_with_optuna(self, X: np.ndarray, y: np.ndarray, mask: np.ndarray,
                             model_factory: Callable, search_space: Dict[str, Any],
                             cv_strategy) -> Dict[str, Any]:
-        """Optimize using Optuna with enhanced features."""
+        """Optimize using new unified Bayesian TPE optimizer."""
 
-        # Create study with enhanced settings
-        sampler = TPESampler(n_startup_trials=10, multivariate=True)
-        pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
-
-        study = create_study(
-            direction='maximize',
-            sampler=sampler,
-            pruner=pruner
-        )
-
-        def objective(trial):
-            params = {}
-            for param, config in search_space.items():
-                if isinstance(config, dict):
-                    if 'scale' in config and config['scale'] == 'log':
-                        if 'min' in config and 'max' in config:
-                            params[param] = trial.suggest_float(param, config['min'], config['max'], log=True)
-                        else:
-                            params[param] = trial.suggest_float(param, 1e-6, 1.0, log=True)
-                    elif 'min' in config and 'max' in config:
-                        params[param] = trial.suggest_float(param, config['min'], config['max'])
-                    else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
-                elif isinstance(config, list):
-                    params[param] = trial.suggest_categorical(param, config)
+        # Convert search space to new format
+        new_search_space = {}
+        for param, config in search_space.items():
+            if isinstance(config, dict):
+                if 'scale' in config and config['scale'] == 'log':
+                    new_search_space[param] = {
+                        'type': 'float',
+                        'low': config.get('min', 1e-6),
+                        'high': config.get('max', 1.0),
+                        'log': True
+                    }
+                elif 'min' in config and 'max' in config:
+                    new_search_space[param] = {
+                        'type': 'float',
+                        'low': config['min'],
+                        'high': config['max']
+                    }
                 else:
-                    params[param] = trial.suggest_float(param, 0.0, 1.0)
+                    new_search_space[param] = {
+                        'type': 'float',
+                        'low': 0.0,
+                        'high': 1.0
+                    }
+            elif isinstance(config, list):
+                new_search_space[param] = {
+                    'type': 'categorical',
+                    'choices': config
+                }
+            else:
+                new_search_space[param] = {
+                    'type': 'float',
+                    'low': 0.0,
+                    'high': 1.0
+                }
 
+        # Define objective function for new optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
             return self._evaluate_multi_objective_score(X, y, mask, model_factory, params, cv_strategy)
 
-        # Optimize
-        study.optimize(objective, n_trials=self.config.n_trials, timeout=self.config.timeout)
+        # Configure new Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.n_trials,
+            timeout_seconds=self.config.timeout,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=self.config.n_jobs,
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
+        )
 
-        best_params = study.best_params
-        best_score = study.best_value
+        # Run optimization using new unified optimizer
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective_function, new_search_space)
 
-        self.logger.info(f"📊 Optuna optimization completed: best_score={best_score:.4f}")
-        return best_params
+        if not result.success:
+            raise RuntimeError(f"Bayesian TPE optimization failed: {result.error_message}")
+
+        self.logger.info(f"📊 Bayesian TPE optimization completed: best_score={result.best_score:.4f}")
+        return result.best_params
 
     def _evaluate_multi_objective_score(self, X: np.ndarray, y: np.ndarray, mask: np.ndarray,
                                       model_factory: Callable, params: Dict[str, Any],

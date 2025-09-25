@@ -34,6 +34,13 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     logging.warning("Optuna not available - using fallback optimization")
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 # Import mutual information utilities (sklearn)
 try:
     from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
@@ -429,14 +436,23 @@ class MRMRLookbackOptimizer:
         else:
             pruner = None
         
-        # Create study for multi-objective optimization
-        self.study = optuna.create_study(
-            directions=["maximize", "minimize"],  # Maximize MI, minimize correlation
-            sampler=sampler,
-            pruner=pruner
+        # Initialize new Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.tpe_trials,
+            timeout_seconds=self.config.tpe_timeout,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for lookback optimization
+            enable_early_stopping=self.config.enable_pruning,
+            early_stopping_patience=10,
+            log_level='INFO'
         )
         
-        self.logger.info("✅ Optuna study initialized with TPE sampler and intelligent pruning")
+        self.optimizer = BayesianTPEOptimizer(tpe_config)
+        
+        self.logger.info("✅ Bayesian TPE optimizer initialized with automatic grid search")
     
     def _initialize_performance_tracking(self):
         """Initialize performance tracking components."""
@@ -1522,28 +1538,24 @@ class MRMRLookbackOptimizer:
             self.config.fine_refinement_factor
         )
         
-        # Create TPE study with refined ranges
-        study = optuna.create_study(
-            sampler=TPESampler(
-                n_startup_trials=self.config.n_startup_trials,
-                n_ei_candidates=24,
-                gamma=lambda x: min(0.25, 1.0 / np.sqrt(x)),
-                prior_weight=1.0,
-                consider_magic_clip=True,
-                consider_endpoints=True
-            ),
-            pruner=MedianPruner(
-                n_startup_trials=self.config.n_startup_trials,
-                n_warmup_steps=self.config.n_warmup_steps,
-                interval_steps=self.config.interval_steps
-            ),
-            direction='maximize'
-        )
+        # Create search space for TPE optimization
+        search_space = {
+            'first_lookback': {
+                'type': 'int',
+                'low': int(first_range[0]),
+                'high': int(first_range[1])
+            },
+            'second_lookback': {
+                'type': 'int', 
+                'low': int(second_range[0]),
+                'high': int(second_range[1])
+            }
+        }
         
-        # Define objective function with refined ranges
-        def objective(trial):
-            first_lookback = trial.suggest_int('first_lookback', first_range[0], first_range[1])
-            second_lookback = trial.suggest_int('second_lookback', second_range[0], second_range[1])
+        # Define objective function for new optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
+            first_lookback = int(params['first_lookback'])
+            second_lookback = int(params['second_lookback'])
             
             if first_lookback == second_lookback:
                 return float('-inf')
@@ -1566,24 +1578,20 @@ class MRMRLookbackOptimizer:
                 self.config.correlation_weight * abs(correlation)
             )
             
-            # Set user attributes
-            trial.set_user_attr("first_lookback", first_lookback)
-            trial.set_user_attr("second_lookback", second_lookback)
-            trial.set_user_attr("first_mi_score", first_mi_score)
-            trial.set_user_attr("second_mi_score", second_mi_score)
-            trial.set_user_attr("correlation", correlation)
-            
             return combined_score
         
-        # Run TPE optimization
-        study.optimize(objective, n_trials=self.config.tpe_trials, timeout=self.config.tpe_timeout)
+        # Run TPE optimization using new optimizer
+        result = self.optimizer.optimize(objective_function, search_space)
         
         # Extract best result
-        best_trial = study.best_trial
-        best_params = best_trial.params
+        if result.success:
+            best_params = result.best_params
+            best_score = result.best_score
+        else:
+            raise RuntimeError(f"TPE optimization failed: {result.error_message}")
         
-        self.logger.info(f"📊 TPE fine-tuning completed: {len(study.trials)} trials")
-        self.logger.info(f"📊 Final result: {best_params['first_lookback']}, {best_params['second_lookback']} (score: {best_trial.value:.4f})")
+        self.logger.info(f"📊 TPE fine-tuning completed: {result.n_trials} trials")
+        self.logger.info(f"📊 Final result: {best_params['first_lookback']}, {best_params['second_lookback']} (score: {best_score:.4f})")
         
         # Create result object
         result = LookbackOptimizationResult(

@@ -22,6 +22,13 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import optuna
 import numpy as np
 import logging
+
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager

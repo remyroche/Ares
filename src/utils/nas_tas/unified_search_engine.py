@@ -18,6 +18,7 @@ Key Features:
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Protocol
+from typing import runtime_checkable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
@@ -28,6 +29,7 @@ import json
 import pickle
 from pathlib import Path
 import warnings
+import random
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
 
@@ -60,8 +62,19 @@ from src.utils.serialization_utils import (
 )
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+from .search_strategies import (
+    Candidate as StrategyCandidate,
+    Evaluation as StrategyEvaluation,
+    SearchState as StrategyState,
+    StrategyRegistry,
+    RandomSearchStrategy as PluginRandomStrategy,
+    GridSearchStrategy as PluginGridStrategy,
+    OptunaSearchStrategy as PluginOptunaStrategy,
+    HyperbandSearchStrategy as PluginHyperbandStrategy,
 )
 
 # Import ML common utilities
@@ -113,14 +126,17 @@ class OptimizationObjective(Enum):
 @dataclass
 class SearchConfig:
     """Unified configuration for search strategies."""
-    
+
     # Core search parameters
     architecture_type: ArchitectureType = ArchitectureType.HYBRID
     search_strategy: SearchStrategy = SearchStrategy.ENHANCED_BAYESIAN
     max_iterations: int = 100
     population_size: int = 50
     elite_size: int = 5
-    
+    max_candidates_per_batch: int = 1
+    random_seed: Optional[int] = None
+    cache_results: bool = True
+
     # Optimization objectives
     objectives: List[OptimizationObjective] = field(default_factory=lambda: [
         OptimizationObjective.ACCURACY,
@@ -128,7 +144,9 @@ class SearchConfig:
         OptimizationObjective.PROFITABILITY
     ])
     objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
-    
+    objective_names: List[str] = field(default_factory=list)
+    objective_directions: List[str] = field(default_factory=list)
+
     # Search strategy specific parameters
     bayesian_config: Dict[str, Any] = field(default_factory=lambda: {
         'n_initial_points': 10,
@@ -168,6 +186,20 @@ class SearchConfig:
     convergence_threshold: float = 0.01
     enable_adaptive_parameters: bool = True
 
+    # Constraint handling
+    enable_constraint_validation: bool = True
+    max_parameter_count: Optional[int] = None
+    max_flops: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not self.objective_names:
+            self.objective_names = [
+                obj.value if hasattr(obj, 'value') else str(obj)
+                for obj in self.objectives
+            ]
+        if not self.objective_directions:
+            self.objective_directions = ['maximize'] * len(self.objective_names)
+
 
 @dataclass
 class SearchResult:
@@ -200,6 +232,7 @@ class SearchResult:
     error_message: Optional[str] = None
 
 
+@runtime_checkable
 class SearchStrategyInterface(Protocol):
     """Protocol for search strategy implementations."""
     
@@ -617,30 +650,56 @@ class UnifiedSearchEngine:
         """Initialize unified search engine."""
         self.config = config or SearchConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Initialize search strategies
-        self.search_strategies = {
-            SearchStrategy.BAYESIAN: BayesianSearchStrategy(),
-            SearchStrategy.EVOLUTIONARY: EvolutionarySearchStrategy(),
-            SearchStrategy.RANDOM: RandomSearchStrategy(),
-            SearchStrategy.ENHANCED_BAYESIAN: BayesianSearchStrategy(),  # Same as Bayesian for now
-            SearchStrategy.ADAPTIVE_EVOLUTIONARY: EvolutionarySearchStrategy(),  # Same as Evolutionary for now
+
+        if self.config.random_seed is not None:
+            np.random.seed(self.config.random_seed)
+            random.seed(self.config.random_seed)
+            self.logger.info(
+                "Search engine random seed configured",
+                extra={"seed": self.config.random_seed},
+            )
+
+        # Initialize pluggable strategies
+        self.strategy_registry = StrategyRegistry()
+        self._register_default_strategies()
+        self.strategy_aliases = {
+            SearchStrategy.BAYESIAN: "optuna",
+            SearchStrategy.ENHANCED_BAYESIAN: "optuna",
+            SearchStrategy.NSGA2: "optuna",
+            SearchStrategy.SPEA2: "optuna",
+            SearchStrategy.RANDOM: "random",
+            SearchStrategy.HYBRID: "hyperband",
         }
-        
+        self.legacy_strategies = {
+            SearchStrategy.EVOLUTIONARY: EvolutionarySearchStrategy(),
+            SearchStrategy.ADAPTIVE_EVOLUTIONARY: EvolutionarySearchStrategy(),
+            SearchStrategy.REINFORCEMENT_LEARNING: EvolutionarySearchStrategy(),
+        }
+
         # Initialize hardware optimizers
         self.hardware_optimizers = {}
         if self.config.enable_parallel_processing:
             self._initialize_hardware_optimizers()
-        
+
         # Performance monitoring
         self.search_history = []
         self.performance_metrics = {}
-        
-        tprint_info(f"🚀 Unified Search Engine initialized")
+        self.evaluation_cache: Dict[Tuple, StrategyEvaluation] = {}
+
+        self.logger.info(
+            "Unified Search Engine initialised",
+            extra={
+                "architecture_type": self.config.architecture_type.value,
+                "default_strategy": self.config.search_strategy.value,
+                "available_plugins": self.strategy_registry.available(),
+            },
+        )
+
+        tprint_info("🚀 Unified Search Engine initialized")
         tprint_info(f"   Architecture type: {self.config.architecture_type.value}")
         tprint_info(f"   Search strategy: {self.config.search_strategy.value}")
-        tprint_info(f"   Available strategies: {list(self.search_strategies.keys())}")
-    
+        tprint_info(f"   Available strategies: {self.strategy_registry.available()}")
+
     def _initialize_hardware_optimizers(self):
         """Initialize hardware optimization components."""
         try:
@@ -657,74 +716,245 @@ class UnifiedSearchEngine:
         except Exception as e:
             tprint_warning(f"⚠️ Hardware optimization setup failed: {e}")
             self.hardware_optimizers = {}
+
+    def _register_default_strategies(self) -> None:
+        """Register built-in strategy plugins."""
+
+        def _wrap(factory):
+            return lambda random_seed=None, **kwargs: factory(random_seed=random_seed, **kwargs)
+
+        self.strategy_registry.register("random", _wrap(PluginRandomStrategy))
+        self.strategy_registry.register("grid", _wrap(PluginGridStrategy))
+        self.strategy_registry.register("optuna", _wrap(PluginOptunaStrategy))
+        self.strategy_registry.register("hyperband", _wrap(PluginHyperbandStrategy))
+
+    def _resolve_strategy(self, strategy: SearchStrategy) -> Any:
+        """Resolve an enum to either a plugin or legacy implementation."""
+
+        plugin_name = self.strategy_aliases.get(strategy)
+        if plugin_name is None and strategy.value in self.strategy_registry.available():
+            plugin_name = strategy.value
+
+        if plugin_name is not None:
+            return self.strategy_registry.create(plugin_name, random_seed=self.config.random_seed)
+
+        if strategy in self.legacy_strategies:
+            return self.legacy_strategies[strategy]
+
+        raise ValueError(f"Unsupported search strategy: {strategy}")
+
+    def _run_legacy_strategy(
+        self,
+        strategy_impl: SearchStrategyInterface,
+        search_space: Dict[str, Any],
+        objective_function: Callable[[Dict[str, Any]], Any],
+    ) -> SearchResult:
+        with memory_checkpoint("unified_search_legacy"):
+            return strategy_impl.search(
+                objective_function=objective_function,
+                search_space=search_space,
+                config=self.config,
+            )
+
+    def _run_plugin_strategy(
+        self,
+        strategy_impl: Any,
+        search_space: Dict[str, Any],
+        objective_function: Callable[[Dict[str, Any]], Any],
+        strategy: SearchStrategy,
+        start_time: float,
+    ) -> SearchResult:
+        state = StrategyState()
+        strategy_config = self._build_strategy_config()
+        strategy_impl.initialize(search_space, lambda params: {}, state, strategy_config)
+
+        with memory_checkpoint("unified_search_plugin"):
+            while strategy_impl.should_continue(state):
+                candidates = strategy_impl.sample_candidates(
+                    state, strategy_config.get("max_candidates_per_batch", 1)
+                )
+                if not candidates:
+                    state.terminated = True
+                    break
+
+                evaluations: List[StrategyEvaluation] = []
+                for candidate in candidates:
+                    evaluation = self._evaluate_candidate(candidate, objective_function)
+                    if evaluation is not None:
+                        evaluations.append(evaluation)
+
+                if not evaluations:
+                    # Prevent endless loops if everything violates constraints
+                    state.terminated = True
+                    break
+
+                strategy_impl.update_state(state, evaluations)
+
+        summary = strategy_impl.finalize(state)
+        execution_time = time.time() - start_time
+        return self._build_result_from_summary(
+            summary=summary,
+            search_strategy=strategy,
+            state=state,
+            execution_time=execution_time,
+        )
+
+    def _build_strategy_config(self) -> Dict[str, Any]:
+        config: Dict[str, Any] = {
+            "max_iterations": self.config.max_iterations,
+            "max_candidates_per_batch": self.config.max_candidates_per_batch,
+            "objective_names": self.config.objective_names,
+            "objective_directions": self.config.objective_directions,
+            "enable_pruning": self.config.enable_early_stopping,
+            "hyperband_min_resource": self.config.bayesian_config.get('min_resource', 1),
+            "hyperband_max_resource": self.config.max_iterations,
+            "max_trials": self.config.bayesian_config.get('n_trials'),
+        }
+        config.update(self.config.bayesian_config)
+        return config
+
+    def _evaluate_candidate(
+        self,
+        candidate: StrategyCandidate,
+        objective_function: Callable[[Dict[str, Any]], Any],
+    ) -> Optional[StrategyEvaluation]:
+        key = candidate.cache_key()
+        if self.config.cache_results and key in self.evaluation_cache:
+            self._cache_hits += 1
+            return self.evaluation_cache[key]
+
+        if self.config.enable_constraint_validation and not self._validate_candidate_constraints(candidate.params):
+            self.logger.debug(
+                "Candidate rejected by constraints", extra={"params": candidate.params}
+            )
+            return None
+
+        metrics = self._normalize_metrics(objective_function(candidate.params))
+        evaluation = StrategyEvaluation(candidate=candidate, metrics=metrics)
+        if self.config.cache_results:
+            self.evaluation_cache[key] = evaluation
+        return evaluation
+
+    def _normalize_metrics(self, raw_result: Any) -> Dict[str, float]:
+        if isinstance(raw_result, dict):
+            return {k: float(v) for k, v in raw_result.items()}
+        if isinstance(raw_result, (list, tuple)):
+            names = self.config.objective_names or ["score"]
+            return {
+                names[idx] if idx < len(names) else f"metric_{idx}": float(value)
+                for idx, value in enumerate(raw_result)
+            }
+        if isinstance(raw_result, (np.ndarray,)):
+            array = raw_result.tolist()
+            return self._normalize_metrics(array)
+        return {"score": float(raw_result)}
+
+    def _validate_candidate_constraints(self, params: Dict[str, Any]) -> bool:
+        if self.config.max_parameter_count is not None:
+            param_count = params.get("parameter_count") or params.get("n_parameters")
+            if param_count is not None and param_count > self.config.max_parameter_count:
+                return False
+        if self.config.max_flops is not None:
+            flops = params.get("flops") or params.get("estimated_flops")
+            if flops is not None and flops > self.config.max_flops:
+                return False
+        return True
+
+    def _build_result_from_summary(
+        self,
+        summary: Dict[str, Any],
+        search_strategy: SearchStrategy,
+        state: StrategyState,
+        execution_time: float,
+    ) -> SearchResult:
+        best_scores: Dict[OptimizationObjective, float] = {}
+        for objective, name in zip(self.config.objectives, self.config.objective_names):
+            if name in summary.get("best_metrics", {}):
+                best_scores[objective] = float(summary["best_metrics"][name])
+
+        optimization_history = []
+        primary_metric = self.config.objective_names[0] if self.config.objective_names else "score"
+        for idx, entry in enumerate(summary.get("history", [])):
+            metrics = entry.get("metrics", {})
+            optimization_history.append(
+                {
+                    "iteration": idx,
+                    "score": float(metrics.get(primary_metric, metrics.get("score", 0.0))),
+                }
+            )
+
+        return SearchResult(
+            best_architecture=summary.get("best_params", {}),
+            best_scores=best_scores,
+            pareto_frontier=summary.get("pareto_front", []),
+            search_strategy=search_strategy,
+            architecture_type=self.config.architecture_type,
+            total_iterations=state.iteration,
+            execution_time=execution_time,
+            convergence_achieved=state.terminated,
+            optimization_history=optimization_history,
+            search_statistics={
+                "evaluations": len(state.history),
+                "cache_hits": self._cache_hits,
+                "plugin_state": summary,
+            },
+            diversity_scores=[],
+            exploration_exploitation_ratio=0.0,
+            hardware_utilization={},
+        )
     
-    def search(self, 
-               search_space: Dict[str, Any], 
-               objective_function: Callable,
+    def search(self,
+               search_space: Dict[str, Any],
+               objective_function: Callable[[Dict[str, Any]], Any],
                strategy: Optional[SearchStrategy] = None) -> SearchResult:
-        """
-        Perform architecture search using the specified strategy.
-        
-        Args:
-            search_space: Dictionary defining the search space
-            objective_function: Function to evaluate architectures
-            strategy: Search strategy to use (defaults to config strategy)
-            
-        Returns:
-            SearchResult containing the best architecture and metrics
-        """
+        """Perform architecture search using the specified strategy."""
+
+        search_strategy = strategy or self.config.search_strategy
+        start_time = time.time()
+        self._cache_hits = 0
+        self.evaluation_cache.clear()
+
         try:
-            # Use specified strategy or default from config
-            search_strategy = strategy or self.config.search_strategy
-            
-            # Validate search space
             self._validate_search_space(search_space)
-            
-            # Get search strategy implementation
-            if search_strategy not in self.search_strategies:
-                raise ValueError(f"Unsupported search strategy: {search_strategy}")
-            
-            strategy_impl = self.search_strategies[search_strategy]
-            
+            strategy_impl = self._resolve_strategy(search_strategy)
+
             tprint_info(f"🔍 Starting {search_strategy.value} search...")
             tprint_info(f"   Search space size: {len(search_space)} parameters")
             tprint_info(f"   Max iterations: {self.config.max_iterations}")
-            
-            # Perform search with hardware optimization
-            with memory_checkpoint("unified_search"):
-                result = strategy_impl.search(
-                    search_space=search_space,
-                    objective_function=objective_function,
-                    config=self.config
+
+            if isinstance(strategy_impl, SearchStrategyInterface):
+                result = self._run_legacy_strategy(
+                    strategy_impl, search_space, objective_function
                 )
-            
-            # Update performance metrics
+            else:
+                result = self._run_plugin_strategy(
+                    strategy_impl, search_space, objective_function, search_strategy, start_time
+                )
+
             self._update_performance_metrics(result)
-            
-            # Save search history
             self.search_history.append(result)
-            
-            # Save intermediate results if enabled
             if self.config.save_intermediate_results:
                 self._save_intermediate_result(result)
-            
-            tprint_success(f"✅ Search completed successfully")
-            tprint_info(f"   Best score: {max(result.best_scores.values()) if result.best_scores else 0:.4f}")
+
+            tprint_success("✅ Search completed successfully")
+            tprint_info(
+                f"   Best score: {max(result.best_scores.values()) if result.best_scores else 0:.4f}"
+            )
             tprint_info(f"   Execution time: {result.execution_time:.2f}s")
             tprint_info(f"   Convergence: {'Yes' if result.convergence_achieved else 'No'}")
-            
             return result
-            
+
         except Exception as e:
+            self.logger.exception("Search failed", exc_info=e)
             tprint_error(f"❌ Search failed: {e}")
             return SearchResult(
                 best_architecture={},
                 best_scores={},
                 pareto_frontier=[],
-                search_strategy=search_strategy or self.config.search_strategy,
+                search_strategy=search_strategy,
                 architecture_type=self.config.architecture_type,
                 total_iterations=0,
-                execution_time=0.0,
+                execution_time=time.time() - start_time,
                 convergence_achieved=False,
                 optimization_history=[],
                 search_statistics={},
@@ -739,13 +969,30 @@ class UnifiedSearchEngine:
         """Validate search space definition."""
         if not search_space:
             raise ValueError("Search space cannot be empty")
-        
+
         for param, values in search_space.items():
-            if not isinstance(values, (list, tuple)):
-                raise ValueError(f"Parameter {param} must have list or tuple values")
-            
-            if isinstance(values, tuple) and len(values) != 2:
-                raise ValueError(f"Parameter {param} tuple must have exactly 2 values (min, max)")
+            if isinstance(values, dict):
+                if not ({'low', 'high'} <= values.keys() or 'choices' in values):
+                    raise ValueError(
+                        f"Parameter {param} dict must define either ['low', 'high'] or 'choices'"
+                    )
+                continue
+
+            if isinstance(values, tuple):
+                if len(values) != 2:
+                    raise ValueError(
+                        f"Parameter {param} tuple must have exactly 2 values (min, max)"
+                    )
+                continue
+
+            if isinstance(values, list):
+                if not values:
+                    raise ValueError(f"Parameter {param} list cannot be empty")
+                continue
+
+            raise ValueError(
+                f"Parameter {param} must be defined using a dict, tuple or list"
+            )
     
     def _update_performance_metrics(self, result: SearchResult):
         """Update performance metrics."""

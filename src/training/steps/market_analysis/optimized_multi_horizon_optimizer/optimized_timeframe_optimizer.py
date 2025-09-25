@@ -25,7 +25,7 @@ from src.utils.ml_common.optimization.grid_utils import (
 from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
 from src.utils.ml_common.validation.temporal_cross_validation import TemporalCrossValidator
 from src.utils.ml_common.validation.cv_utils import CrossValidationUtilities
-from src.utils.ml_common.validation.enhanced_overfitting_detection import EnhancedOverfittingDetector
+from src.utils.nas_tas.advanced_validation import UniversalOverfittingDetector as EnhancedOverfittingDetector
 from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention
 from src.utils.ml_common.validation.stability import StabilityValidator
 from src.utils.ml_common.utils.memory_optimization import MemoryOptimizer

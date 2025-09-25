@@ -97,6 +97,17 @@ except ImportError as e:
     TPRINT_AVAILABLE = False
 
 try:
+    from src.utils.nas_tas.advanced_validation import (
+        UniversalOverfittingDetector, OverfittingConfig, OverfittingReport,
+        ModelEnhancementDetector, UniversalMLValidationOrchestrator,
+        ValidationIntegrationManager, create_comprehensive_validation_suite
+    )
+    ADVANCED_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Advanced validation utilities not available: {e}")
+    ADVANCED_VALIDATION_AVAILABLE = False
+
+try:
     from src.utils.hardware.m1_gpu_utils import (
         get_m1_gpu_manager, is_m1_available, is_mps_available,
         M1GPUManager
@@ -318,6 +329,26 @@ class UnifiedEvaluator:
                 self.cv_manager = None
                 self.hpo_optimizer = None
             
+            # Initialize advanced validation
+            if ADVANCED_VALIDATION_AVAILABLE:
+                self.validation_suite = create_comprehensive_validation_suite()
+                self.overfitting_detector = self.validation_suite.get('overfitting_detector')
+                self.enhancement_detector = self.validation_suite.get('enhancement_detector')
+                self.validation_orchestrator = self.validation_suite.get('validation_orchestrator')
+                self.validation_manager = self.validation_suite.get('validation_manager')
+                self.enhancement_guide = self.validation_suite.get('enhancement_guide')
+                self.data_leakage_prevention = self.validation_suite.get('data_leakage_prevention')
+                self.complexity_analyzer = self.validation_suite.get('complexity_analyzer')
+            else:
+                self.validation_suite = None
+                self.overfitting_detector = None
+                self.enhancement_detector = None
+                self.validation_orchestrator = None
+                self.validation_manager = None
+                self.enhancement_guide = None
+                self.data_leakage_prevention = None
+                self.complexity_analyzer = None
+            
             # Initialize hybrid NAS-TAS shared utilities
             if HYBRID_NAS_TAS_AVAILABLE:
                 # Initialize enhanced utility integration
@@ -458,6 +489,141 @@ class UnifiedEvaluator:
             else:
                 self.logger.error(f"❌ Architecture evaluation failed: {e}")
             raise
+    
+    def validate_model_with_advanced_validation(self,
+                                              model: Any,
+                                              X_train: np.ndarray,
+                                              y_train: np.ndarray,
+                                              X_val: np.ndarray,
+                                              y_val: np.ndarray,
+                                              model_name: str = "unknown",
+                                              model_type: str = "unknown") -> Optional[Dict[str, Any]]:
+        """
+        Validate model using advanced validation capabilities.
+        
+        Args:
+            model: Trained model to validate
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            y_val: Validation targets
+            model_name: Name of the model
+            model_type: Type of model
+            
+        Returns:
+            Dict containing validation results or None if validation not available
+        """
+        if not ADVANCED_VALIDATION_AVAILABLE or not self.overfitting_detector:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ Advanced validation not available")
+            else:
+                self.logger.warning("⚠️ Advanced validation not available")
+            return None
+        
+        try:
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔍 Running advanced validation for {model_name}")
+            else:
+                self.logger.info(f"🔍 Running advanced validation for {model_name}")
+            
+            # Get predictions
+            train_predictions = model.predict(X_train)
+            val_predictions = model.predict(X_val)
+            
+            # Get probabilities if available
+            train_probabilities = None
+            val_probabilities = None
+            if hasattr(model, 'predict_proba'):
+                try:
+                    train_probabilities = model.predict_proba(X_train)
+                    val_probabilities = model.predict_proba(X_val)
+                except:
+                    pass
+            
+            # Get feature importance if available
+            feature_importance = None
+            if hasattr(model, 'feature_importances_'):
+                feature_importance = model.feature_importances_
+            
+            # Run overfitting detection
+            overfitting_report = self.overfitting_detector.detect_overfitting(
+                train_predictions=train_predictions,
+                val_predictions=val_predictions,
+                train_labels=y_train,
+                val_labels=y_val,
+                train_probabilities=train_probabilities,
+                val_probabilities=val_probabilities,
+                feature_importance=feature_importance,
+                model_name=model_name,
+                model_type=model_type
+            )
+            
+            # Run enhancement detection if available
+            enhancement_report = None
+            if self.enhancement_detector:
+                try:
+                    enhancement_report = self.enhancement_detector.analyze_model_enhancement(
+                        model=model,
+                        X_train=X_train,
+                        y_train=y_train,
+                        X_val=X_val,
+                        y_val=y_val,
+                        model_name=model_name,
+                        model_type=model_type
+                    )
+                except Exception as e:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Enhancement analysis failed: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ Enhancement analysis failed: {e}")
+            
+            # Create enhancement plan if enhancement guide is available
+            enhancement_plan = None
+            if self.enhancement_guide and overfitting_report:
+                try:
+                    enhancement_plan = self.enhancement_guide.create_enhancement_plan(
+                        model_name=model_name,
+                        model_type=model_type,
+                        overfitting_report=overfitting_report.__dict__ if hasattr(overfitting_report, '__dict__') else overfitting_report
+                    )
+                except Exception as e:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Enhancement plan creation failed: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ Enhancement plan creation failed: {e}")
+            
+            # Compile results
+            validation_results = {
+                'overfitting_report': overfitting_report,
+                'enhancement_report': enhancement_report,
+                'enhancement_plan': enhancement_plan,
+                'validation_timestamp': datetime.now().isoformat(),
+                'model_name': model_name,
+                'model_type': model_type
+            }
+            
+            # Log results
+            if TPRINT_AVAILABLE:
+                tprint_success(f"✅ Advanced validation completed for {model_name}")
+                tprint_structured({
+                    "overfitting_detected": overfitting_report.is_overfitting,
+                    "severity": overfitting_report.severity,
+                    "confidence_level": overfitting_report.confidence_level
+                })
+            else:
+                self.logger.info(f"✅ Advanced validation completed for {model_name}")
+                self.logger.info(f"  Overfitting detected: {overfitting_report.is_overfitting}")
+                self.logger.info(f"  Severity: {overfitting_report.severity}")
+                self.logger.info(f"  Confidence: {overfitting_report.confidence_level}")
+            
+            return validation_results
+            
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Advanced validation failed: {e}")
+            else:
+                self.logger.error(f"❌ Advanced validation failed: {e}")
+            return None
     
     def _validate_evaluation_inputs(self, 
                                    architecture: Dict[str, Any], 

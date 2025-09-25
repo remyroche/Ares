@@ -15,6 +15,7 @@ import asyncio
 from typing import Dict, Type, Any, Optional, List, Union, Callable
 from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime
 
 # Enhanced imports with comprehensive utility integration
 from src.utils.tprint import (
@@ -968,13 +969,13 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     'success': 'error' not in results
                 }
             }
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifact,
                 metadata={'component_type': 'hmm_ensemble_training', 'execution_time': results.get('training_time', 0)}
             )
-            
+
         except Exception as e:
             return ComponentResult(
                 success=False,
@@ -982,6 +983,159 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 error_message=str(e),
                 metadata={'component_type': 'hmm_ensemble_training'}
             )
+
+
+class SimpleRegimeMetaModelTrainer:
+    """Lightweight trainer that synthesizes regime-level meta-model information."""
+
+    def __init__(self):
+        self.logger = logging.getLogger('SimpleRegimeMetaModelTrainer')
+
+    def _prepare_base_models(self, base_hmm_models: Any) -> Dict[str, Dict[str, Any]]:
+        """Normalize base model structure into a regime keyed dictionary."""
+        normalized: Dict[str, Dict[str, Any]] = {}
+
+        if isinstance(base_hmm_models, dict):
+            for regime_key, models in base_hmm_models.items():
+                if isinstance(models, dict):
+                    normalized[str(regime_key)] = models
+        return normalized
+
+    def execute(
+        self,
+        X: Optional[np.ndarray],
+        y: Optional[np.ndarray],
+        regime_labels: Optional[np.ndarray],
+        feature_names: Optional[List[str]],
+        hmm_states: Optional[np.ndarray],
+        base_hmm_models: Optional[Dict[str, Any]],
+        hmm_training_metrics: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Create meta-model insights from base regime models."""
+        start_time = time.time()
+
+        normalized_models = self._prepare_base_models(base_hmm_models or {})
+        if not normalized_models:
+            raise ValueError("Base regime models are required for meta-model training")
+
+        meta_models: Dict[str, Any] = {}
+        ensemble_metrics: Dict[str, Any] = {}
+        total_models = 0
+
+        for regime, models in normalized_models.items():
+            model_names = list(models.keys())
+            model_count = len(model_names)
+            total_models += model_count
+
+            weights = {name: 1.0 / model_count for name in model_names} if model_names else {}
+
+            score_sources = hmm_training_metrics.get(regime, {}) if isinstance(hmm_training_metrics, dict) else {}
+            aggregated_score = 0.0
+            score_count = 0
+
+            if isinstance(score_sources, dict):
+                for metrics in score_sources.values():
+                    if isinstance(metrics, dict):
+                        if 'f1_score' in metrics:
+                            aggregated_score += float(metrics.get('f1_score', 0))
+                            score_count += 1
+                        elif 'accuracy' in metrics:
+                            aggregated_score += float(metrics.get('accuracy', 0))
+                            score_count += 1
+
+            average_score = aggregated_score / score_count if score_count else 0.0
+
+            meta_models[regime] = {
+                'base_models': model_names,
+                'stacking_weights': weights,
+                'average_source_score': average_score
+            }
+
+            ensemble_metrics[regime] = {
+                'model_count': model_count,
+                'average_source_score': average_score
+            }
+
+        total_regimes = len(meta_models)
+        performance_summary = {
+            'total_regimes': total_regimes,
+            'total_base_models': total_models,
+            'average_models_per_regime': (total_models / total_regimes) if total_regimes else 0.0
+        }
+
+        training_time = time.time() - start_time
+
+        metadata = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'meta_model_strategy': 'equal_weighted_ensemble',
+            'base_models_available': total_models,
+            'regime_labels_provided': regime_labels is not None,
+            'feature_context_available': feature_names is not None and len(feature_names) > 0
+        }
+
+        self.logger.info(
+            "✅ Generated regime meta-model insights for %d regimes in %.3fs",
+            total_regimes,
+            training_time
+        )
+
+        return {
+            'models': meta_models,
+            'comprehensive_report': {
+                'ensemble_metrics': ensemble_metrics,
+                'base_model_sources': list(normalized_models.keys())
+            },
+            'ensemble_metrics': ensemble_metrics,
+            'performance_summary': performance_summary,
+            'metadata': metadata,
+            'training_time': training_time
+        }
+
+
+class RegimeBaseTrainingComponent(HMMModelsTrainingComponentWrapper):
+    """Component wrapper for regime base model training."""
+
+    def __init__(self, config: Optional[ComponentConfig] = None):
+        from model_training.hmm_models_training_enhanced import StreamlinedHMMTrainingStep
+
+        super().__init__(StreamlinedHMMTrainingStep, config)
+
+    def get_required_artifacts(self) -> List[str]:
+        return ['regime_base_training_result']
+
+    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
+        result = await super().execute(data, pipeline_state)
+
+        if result.success and 'hmm_models_training_result' in result.artifacts:
+            artifact = result.artifacts.pop('hmm_models_training_result')
+            result.artifacts['regime_base_training_result'] = artifact
+
+        if result.metadata is not None:
+            result.metadata['component_type'] = 'regime_base_training'
+
+        return result
+
+
+class RegimeMetaModelTrainingComponent(HMMEnsembleTrainingComponentWrapper):
+    """Component wrapper for regime meta-model (stacked) training."""
+
+    def __init__(self, config: Optional[ComponentConfig] = None):
+        super().__init__(SimpleRegimeMetaModelTrainer, config)
+
+    def get_required_artifacts(self) -> List[str]:
+        return ['regime_metamodel_training_result']
+
+    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
+        result = await super().execute(data, pipeline_state)
+
+        if result.success and 'hmm_ensemble_training_result' in result.artifacts:
+            artifact = result.artifacts.pop('hmm_ensemble_training_result')
+            result.artifacts['regime_metamodel_training_result'] = artifact
+
+        if result.metadata is not None:
+            result.metadata['component_type'] = 'regime_metamodel_training'
+
+        return result
 
 
 class ComponentFactory:
@@ -1002,6 +1156,8 @@ class ComponentFactory:
         'nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
         'nas_tas_clustering': NASTASClusteringComponent,
         'nas_clustering': NASTASClusteringComponent,  # Backward-compatible alias
+        'regime_base_training': RegimeBaseTrainingComponent,
+        'regime_metamodel_training': RegimeMetaModelTrainingComponent,
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,
         'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent,

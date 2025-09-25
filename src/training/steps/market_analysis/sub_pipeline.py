@@ -539,16 +539,17 @@ class MarketAnalysisSubPipeline:
             nas_clustering_data = nas_clustering_result.artifacts.get('nas_tas_clustering_result', {})
             results['nas_clusters'] = nas_clustering_data.get('nas_clusters', {})
             results['nas_clustering_metrics'] = nas_clustering_data.get('nas_clustering_metrics', {})
-            
+
             # Update pipeline state for next components
             cluster_assignments = nas_clustering_data.get('cluster_assignments', [])
+            results['cluster_assignments'] = cluster_assignments
             self._current_pipeline_state.update({
                 'nas_clusters': nas_clustering_data,  # Store the full result
                 'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
             })
-            
-            # Prepare data for HMM Models Training
-            self.logger.info('📊 Preparing data for HMM Models Training...')
+
+            # Prepare NAS/TAS clustering outputs for downstream processing
+            self.logger.info('📊 Preparing NAS/TAS clustering outputs for downstream stages...')
             try:
                 # Extract features from optimized_features or pid_based_features
                 features = None
@@ -566,7 +567,7 @@ class MarketAnalysisSubPipeline:
                         features = pid_features['combined_features']
                         feature_names = pid_features.get('combined_feature_names', [])
                 
-                # Targets are not required: HMM training uses cluster_assignments as labels
+                # Targets are not required: downstream processing uses cluster_assignments as labels
                 targets = None
                 
                 # Extract regime labels from regime assignments
@@ -585,17 +586,17 @@ class MarketAnalysisSubPipeline:
                 })
                 
                 # Log data availability for debugging
-                self.logger.info(f"📊 Data prepared for HMM Models Training:")
+                self.logger.info("📊 NAS/TAS downstream preparation summary:")
                 self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
-                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (HMM uses cluster_assignments)")
+                self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (cluster_assignments drive labeling)")
                 self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
                 self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
-                
+
             except Exception as e:
-                error_msg = f"Failed to prepare data for HMM Models Training: {e}"
+                error_msg = f"Failed to prepare NAS/TAS downstream data: {e}"
                 tprint_error(error_msg)
                 self.logger.error(f"❌ {error_msg}")
-                return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
+                return self._create_error_result("NAS/TAS downstream data preparation failed", str(e))
             
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')

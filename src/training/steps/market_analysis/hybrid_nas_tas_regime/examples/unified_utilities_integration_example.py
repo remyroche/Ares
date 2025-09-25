@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 
 # Import unified utilities
-from ..shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     # Core evaluators
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,

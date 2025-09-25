@@ -11,7 +11,7 @@ import pandas as pd
 from typing import Dict, Any, Callable
 
 # Import unified system components
-from shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     create_unified_system, UnifiedConfig, ArchitectureType, SearchStrategy,
     OptimizationAlgorithm, EvaluationType, RegimeDetectionMethod,
     ConfigFormat, create_default_config

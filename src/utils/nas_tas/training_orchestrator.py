@@ -62,7 +62,10 @@ from src.utils.nas_tas.advanced_overfitting_detection import (
 
 # Import market analysis modules for enhanced compatibility
 try:
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
+    from src.utils.nas_tas.core.hybrid_regime_detector import (
+        HybridNASTASRegimeDetector,
+        HybridRegimeConfig,
+    )
     HYBRID_REGIME_AVAILABLE = True
 except ImportError:
     HYBRID_REGIME_AVAILABLE = False

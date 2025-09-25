@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 
 from .hybrid_orchestrator import HybridOrchestrator, HybridOrchestratorConfig
-from .shared_utils.metrics_reporting import MetricsReporter
+from src.utils.nas_tas.shared_utils.metrics_reporting import MetricsReporter
 
 # Configure logging
 logging.basicConfig(

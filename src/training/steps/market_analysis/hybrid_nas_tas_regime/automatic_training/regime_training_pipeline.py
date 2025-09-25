@@ -23,9 +23,12 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import regime detection and model selection
-from ..regime_model_mapping import DataDrivenModelSelector, ModelSelectorConfig
-from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector
-from ..config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.nas_tas.core.hybrid_regime_detector import HybridNASTASRegimeDetector
+from src.utils.nas_tas.regime_model_mapping import (
+    DataDrivenModelSelector,
+    ModelSelectorConfig,
+)
 
 # Import advanced tree models
 from ...tas_regime.components.advanced_tree_models import (

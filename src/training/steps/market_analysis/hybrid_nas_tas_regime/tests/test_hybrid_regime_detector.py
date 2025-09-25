@@ -12,8 +12,11 @@ import tempfile
 import json
 from pathlib import Path
 
-from ..config.hybrid_regime_config import HybridRegimeConfig
-from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeResult
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.nas_tas.core.hybrid_regime_detector import (
+    HybridNASTASRegimeDetector,
+    HybridRegimeResult,
+)
 
 
 class TestHybridRegimeDetector(unittest.TestCase):

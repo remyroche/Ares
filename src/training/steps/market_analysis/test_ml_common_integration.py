@@ -138,9 +138,7 @@ def test_unified_regime_detector_integration():
         from src.utils.nas_tas import (
             UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
         )
-        from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
-            RegimeCombinationStrategy
-        )
+        from src.utils.nas_tas.config.hybrid_regime_config import RegimeCombinationStrategy
 
         # Create unified config with hybrid detection
         config = UnifiedRegimeConfig(

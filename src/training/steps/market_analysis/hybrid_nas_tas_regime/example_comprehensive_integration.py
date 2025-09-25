@@ -19,7 +19,10 @@ from datetime import datetime, timedelta
 from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
 
 # Import configurations
-from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
+from src.utils.nas_tas.config.hybrid_regime_config import (
+    HybridRegimeConfig,
+    RegimeCombinationStrategy,
+)
 from .config.multi_timeframe_config import (
     create_default_multi_timeframe_config,
     create_high_frequency_config,
@@ -27,8 +30,10 @@ from .config.multi_timeframe_config import (
 )
 
 # Import shared utilities - Modern imports
-from src.utils.nas_tas import UnifiedSearchEngine, UnifiedComponentManager
-from .shared_utils.unified_clustering_algorithms import create_unified_clustering_algorithm
+from src.utils.nas_tas import UnifiedComponentManager, UnifiedSearchEngine
+from src.utils.nas_tas.shared_utils.unified_clustering_algorithms import (
+    create_unified_clustering_algorithm,
+)
 
 # Import TAS and NAS components (showing they access shared tools)
 from .components.tas_integration import TASIntegrationComponent

@@ -15,9 +15,12 @@ from pathlib import Path
 import json
 import pickle
 
-from ..config.hybrid_regime_config import HybridRegimeConfig
-from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeResult
-from ..tagging.regime_tagger import RegimeTagger
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
+from src.utils.nas_tas.core.hybrid_regime_detector import (
+    HybridNASTASRegimeDetector,
+    HybridRegimeResult,
+)
+from src.utils.nas_tas.tagging.regime_tagger import RegimeTagger
 
 logger = logging.getLogger(__name__)
 

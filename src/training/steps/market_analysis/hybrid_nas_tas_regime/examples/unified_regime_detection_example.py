@@ -25,7 +25,7 @@ from ...nas_regime.integration.nas_unified_integration import (
 )
 
 # Import unified utilities
-from ..shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     EconomicEvaluationConfig, TradingViabilityConfig,
     OptimizationConfig, RegimeAnalysisConfig,
     create_unified_economic_evaluator,

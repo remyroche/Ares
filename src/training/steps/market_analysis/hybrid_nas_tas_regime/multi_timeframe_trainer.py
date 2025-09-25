@@ -23,10 +23,16 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
-from .config.hybrid_regime_config import HybridRegimeConfig
-from .hybrid_orchestrator import HybridOrchestrator, HybridOrchestratorConfig
-from .shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
-from .shared_utils.analysis_components import SharedClusteringUtilities
+from src.utils.nas_tas.config.hybrid_regime_config import HybridRegimeConfig
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.hybrid_orchestrator import (
+    HybridOrchestrator,
+    HybridOrchestratorConfig,
+)
+from src.utils.nas_tas.shared_utils.search_strategies import (
+    SearchStrategyConfig,
+    SearchStrategyManager,
+)
+from src.utils.nas_tas.shared_utils.analysis_components import SharedClusteringUtilities
 
 logger = logging.getLogger(__name__)
 

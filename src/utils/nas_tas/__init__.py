@@ -50,6 +50,13 @@ from .search_space import (
     create_tree_search_space
 )
 
+from .risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
 from .backtesting_engine import (
     BacktestingEngine,
     BacktestingConfig,
@@ -88,6 +95,11 @@ __all__ = [
     'SearchSpaceType',
     'OptimizationStrategy',
     'create_default_nas_search_space',
+    'create_tree_search_space',
+    'RiskAnalyzer',
+    'RiskConfig',
+    'RiskResult',
+    'RiskMetric'
     'create_tree_search_space'
     'BacktestingEngine',
     'BacktestingConfig', 

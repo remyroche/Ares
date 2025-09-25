@@ -1,0 +1,190 @@
+{
+  "search_results": [
+    {
+      "architecture": {
+        "architecture_type": "ArchitectureType.CONV2D",
+        "hidden_layers": 2,
+        "hidden_units": 22,
+        "activation": "relu",
+        "dropout_rate": 0.09641478610176202,
+        "learning_rate": 0.01,
+        "batch_size": 16,
+        "sequence_length": 100,
+        "state_dim": 9,
+        "observation_dim": 8,
+        "use_attention": false,
+        "use_residual": true,
+        "regularization": 0.064437725846631
+      },
+      "metrics": {
+        "accuracy": 0.6794982404562127,
+        "loss": 0.9731175381661593,
+        "mse": 0.9517018353485175,
+        "mae": 0.7720198505809074,
+        "r2_score": 0.5794982404562127,
+        "training_time": 1.239776611328125e-05,
+        "inference_time": 1.239776611328125e-06,
+        "memory_usage": 605.4849481886897,
+        "model_size": 1.244,
+        "convergence_epoch": 20,
+        "stability_score": 0.22028417064946434
+      },
+      "trial_id": 0,
+      "timestamp": 1758782299.513394,
+      "search_time": 0.00011539459228515625,
+      "convergence_data": {},
+      "hardware_info": {
+        "gpu_available": false,
+        "memory_usage": 0.0,
+        "cpu_cores": 2,
+        "is_m1": false,
+        "mps_available": false,
+        "gpu_memory": null,
+        "gpu_name": null
+      }
+    },
+    {
+      "architecture": {
+        "architecture_type": "ArchitectureType.HYBRID",
+        "hidden_layers": 2,
+        "hidden_units": 39,
+        "activation": "relu",
+        "dropout_rate": 0.3180370202025508,
+        "learning_rate": 0.001,
+        "batch_size": 16,
+        "sequence_length": 500,
+        "state_dim": 45,
+        "observation_dim": 17,
+        "use_attention": true,
+        "use_residual": true,
+        "regularization": 0.04057289712487712
+      },
+      "metrics": {
+        "accuracy": 0.6269418129529715,
+        "loss": 1.3851775331406067,
+        "mse": 1.1319882479999477,
+        "mae": 0.9156694755008884,
+        "r2_score": 0.5269418129529715,
+        "training_time": 7.867813110351562e-06,
+        "inference_time": 7.867813110351563e-07,
+        "memory_usage": 604.6034768357068,
+        "model_size": 1.778,
+        "convergence_epoch": 43,
+        "stability_score": 0.289652479331857
+      },
+      "trial_id": 1,
+      "timestamp": 1758782299.513446,
+      "search_time": 0.0001671314239501953,
+      "convergence_data": {},
+      "hardware_info": {
+        "gpu_available": false,
+        "memory_usage": 0.0,
+        "cpu_cores": 2,
+        "is_m1": false,
+        "mps_available": false,
+        "gpu_memory": null,
+        "gpu_name": null
+      }
+    },
+    {
+      "architecture": {
+        "architecture_type": "ArchitectureType.CONV1D",
+        "hidden_layers": 1,
+        "hidden_units": 60,
+        "activation": "relu",
+        "dropout_rate": 0.15817593836613864,
+        "learning_rate": 0.1,
+        "batch_size": 16,
+        "sequence_length": 500,
+        "state_dim": 39,
+        "observation_dim": 9,
+        "use_attention": true,
+        "use_residual": true,
+        "regularization": 0.020286278932145033
+      },
+      "metrics": {
+        "accuracy": 0.5558824626712411,
+        "loss": 2.6887722728477885,
+        "mse": 2.321501729210444,
+        "mae": 1.7208421801219818,
+        "r2_score": 0.4558824626712411,
+        "training_time": 6.4373016357421875e-06,
+        "inference_time": 6.437301635742188e-07,
+        "memory_usage": 452.30792757914327,
+        "model_size": 1.76,
+        "convergence_epoch": 45,
+        "stability_score": 0.2446155543245709
+      },
+      "trial_id": 2,
+      "timestamp": 1758782299.5134761,
+      "search_time": 0.00019741058349609375,
+      "convergence_data": {},
+      "hardware_info": {
+        "gpu_available": false,
+        "memory_usage": 0.0,
+        "cpu_cores": 2,
+        "is_m1": false,
+        "mps_available": false,
+        "gpu_memory": null,
+        "gpu_name": null
+      }
+    }
+  ],
+  "best_architecture": {
+    "architecture": "ArchitectureConfig(architecture_type=<ArchitectureType.CONV2D: 'conv2d'>, hidden_layers=2, hidden_units=22, activation='relu', dropout_rate=0.09641478610176202, learning_rate=0.01, batch_size=16, sequence_length=100, state_dim=9, observation_dim=8, use_attention=False, use_residual=True, regularization=0.064437725846631)",
+    "metrics": "EvaluationMetrics(accuracy=0.6794982404562127, loss=0.9731175381661593, mse=0.9517018353485175, mae=0.7720198505809074, r2_score=0.5794982404562127, training_time=1.239776611328125e-05, inference_time=1.239776611328125e-06, memory_usage=605.4849481886897, model_size=1.244, convergence_epoch=20, stability_score=0.22028417064946434)",
+    "trial_id": 0,
+    "timestamp": 1758782299.513394,
+    "search_time": 0.00011539459228515625,
+    "convergence_data": {},
+    "hardware_info": {
+      "gpu_available": false,
+      "memory_usage": 0.0,
+      "cpu_cores": 2,
+      "is_m1": false,
+      "mps_available": false,
+      "gpu_memory": null,
+      "gpu_name": null
+    }
+  },
+  "search_summary": {
+    "total_trials": 3,
+    "best_accuracy": 0.6794982404562127,
+    "worst_accuracy": 0.5558824626712411,
+    "mean_accuracy": 0.6207741720268084,
+    "std_accuracy": 0.050654022382507984,
+    "best_loss": 0.9731175381661593,
+    "mean_loss": 1.6823557813848515,
+    "total_search_time": 0.00019741058349609375,
+    "mean_training_time": 8.900960286458334e-06,
+    "best_architecture": {
+      "architecture_type": "ArchitectureType.CONV2D",
+      "hidden_layers": 2,
+      "hidden_units": 22,
+      "activation": "relu",
+      "dropout_rate": 0.09641478610176202,
+      "learning_rate": 0.01,
+      "batch_size": 16,
+      "sequence_length": 100,
+      "state_dim": 9,
+      "observation_dim": 8,
+      "use_attention": false,
+      "use_residual": true,
+      "regularization": 0.064437725846631
+    }
+  },
+  "optimization_config": {
+    "strategy": "OptimizationStrategy.BAYESIAN",
+    "search_space": "SearchSpace.SMALL",
+    "max_trials": 3,
+    "max_epochs": 50,
+    "early_stopping_patience": 10,
+    "validation_split": 0.2,
+    "cv_folds": 5,
+    "lookahead_steps": 5,
+    "memory_limit_gb": null,
+    "use_hardware_optimization": false,
+    "parallel_trials": 4,
+    "timeout_seconds": null
+  }
+}

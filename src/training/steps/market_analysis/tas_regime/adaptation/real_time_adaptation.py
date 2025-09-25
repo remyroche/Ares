@@ -22,6 +22,21 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 
+# Import shared utilities
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+from src.utils.common_operations import (
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    validate_finite, validate_positive, validate_range, safe_correlation,
+    safe_covariance, safe_percentage_change, safe_weighted_average,
+    timed_operation, format_bytes, get_memory_usage
+)
+from src.utils.math_validation import (
+    MathValidation, validate_numeric_array, safe_matrix_inverse
+)
+
 from ..core.tas_config import TASConfig, TreeModelType
 from ..core.tree_architecture import TreeArchitectureCandidate
 from ..core.tas_result import TASResult
@@ -87,22 +102,25 @@ class TreePerformanceMonitor:
         # Optimization recommendations
         self.optimization_queue = deque(maxlen=50)
         self.last_optimization_time = datetime.now()
+        
+        # Math validation utilities
+        self.math_validator = MathValidation()
 
-        self.logger.info("✅ Tree Performance Monitor initialized")
-        self.logger.info(f"📊 Monitoring interval: {self.monitoring_interval}s")
-        self.logger.info(f"🔍 Anomaly detection: {self.anomaly_detection_enabled}")
+        tprint_success("✅ Tree Performance Monitor initialized")
+        tprint_info(f"📊 Monitoring interval: {self.monitoring_interval}s")
+        tprint_info(f"🔍 Anomaly detection: {self.anomaly_detection_enabled}")
 
     def start_monitoring(self):
         """Start real-time performance monitoring."""
         if self.monitoring_active:
-            self.logger.warning("⚠️ Monitoring already active")
+            tprint_warning("⚠️ Monitoring already active")
             return
 
         self.monitoring_active = True
         self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
         self.monitoring_thread.start()
 
-        self.logger.info("🚀 Performance monitoring started")
+        tprint_success("🚀 Performance monitoring started")
 
     def stop_monitoring(self):
         """Stop performance monitoring."""
@@ -113,7 +131,7 @@ class TreePerformanceMonitor:
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=5.0)
 
-        self.logger.info("🛑 Performance monitoring stopped")
+        tprint_info("🛑 Performance monitoring stopped")
 
     def record_metrics(self,
                       model: Any,
@@ -495,9 +513,9 @@ class TreeRealTimeAdapter:
         self.online_learning_enabled = True
         self.incremental_training_enabled = True
 
-        self.logger.info("✅ Tree Real-Time Adapter initialized")
-        self.logger.info(f"🔄 Adaptation threshold: {self.adaptation_threshold}")
-        self.logger.info(f"⏱️ Min adaptation interval: {self.min_adaptation_interval}")
+        tprint_success("✅ Tree Real-Time Adapter initialized")
+        tprint_info(f"🔄 Adaptation threshold: {self.adaptation_threshold}")
+        tprint_info(f"⏱️ Min adaptation interval: {self.min_adaptation_interval}")
 
     def adapt_architecture(self,
                           current_architecture: TreeArchitectureCandidate,
@@ -513,12 +531,12 @@ class TreeRealTimeAdapter:
         Returns:
             Adapted architecture
         """
-        self.logger.info(f"🔄 Adapting architecture using {adaptation_method}")
+        tprint_info(f"🔄 Adapting architecture using {adaptation_method}")
 
         try:
             # Check if adaptation is needed
             if not self._should_adapt(current_architecture, new_data):
-                self.logger.info("📊 No adaptation needed")
+                tprint_info("📊 No adaptation needed")
                 return current_architecture
 
             # Perform adaptation based on method
@@ -545,11 +563,11 @@ class TreeRealTimeAdapter:
             if len(self.adaptation_history) > 100:
                 self.adaptation_history = self.adaptation_history[-100:]
 
-            self.logger.info("✅ Architecture adaptation completed")
+            tprint_success("✅ Architecture adaptation completed")
             return adapted_architecture
 
         except Exception as e:
-            self.logger.error(f"❌ Architecture adaptation failed: {e}")
+            tprint_error(f"❌ Architecture adaptation failed: {e}")
             return current_architecture
 
     def real_time_search(self,
@@ -566,7 +584,7 @@ class TreeRealTimeAdapter:
         Returns:
             TAS search result
         """
-        self.logger.info("🔄 Starting real-time search")
+        tprint_info("🔄 Starting real-time search")
 
         try:
             # Initialize with basic architecture
@@ -625,12 +643,12 @@ class TreeRealTimeAdapter:
 
             if best_result:
                 best_result.execution_time = search_iterations * 0.1
-                self.logger.info(f"✅ Real-time search completed with best score: {best_result.best_score:.4f}")
+                tprint_success(f"✅ Real-time search completed with best score: {best_result.best_score:.4f}")
 
             return best_result or TASResult(success=False, error_message="No valid result")
 
         except Exception as e:
-            self.logger.error(f"❌ Real-time search failed: {e}")
+            tprint_error(f"❌ Real-time search failed: {e}")
             self.performance_monitor.stop_monitoring()
             return TASResult(success=False, error_message=str(e))
 
@@ -897,7 +915,7 @@ class TreeAdaptiveSearch:
         self.learning_rate = 0.1
         self.adaptation_frequency = 5
 
-        self.logger.info("✅ Tree Adaptive Search initialized")
+        tprint_success("✅ Tree Adaptive Search initialized")
 
     def adapt_search_strategy(self,
                              current_performance: float,

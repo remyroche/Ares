@@ -562,7 +562,8 @@ class TreeArchitectureEvaluator:
         try:
             import sys
             return sys.getsizeof(model) / (1024 * 1024)  # Convert to MB
-        except:
+        except Exception as e:
+            tprint_warning(f"Memory usage calculation failed: {e}. Returning 0.0.")
             return 0.0
     
     def _calculate_prediction_latency(self, model: Any, X: np.ndarray) -> float:
@@ -571,7 +572,8 @@ class TreeArchitectureEvaluator:
             start_time = time.time()
             model.predict(X[:100])  # Predict on subset
             return time.time() - start_time
-        except:
+        except Exception as e:
+            tprint_warning(f"Prediction latency calculation failed: {e}. Returning 0.0.")
             return 0.0
 
 

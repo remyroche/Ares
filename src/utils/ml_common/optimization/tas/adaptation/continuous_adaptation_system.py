@@ -513,7 +513,8 @@ class CLVSAAdaptationEngine:
             # Simple performance comparison
             # In practice, this would use proper evaluation metrics
             return 0.1  # Placeholder improvement
-        except:
+        except Exception as e:
+            tprint_warning(f"Adaptation improvement calculation failed: {e}. Returning 0.0.")
             return 0.0
 
 

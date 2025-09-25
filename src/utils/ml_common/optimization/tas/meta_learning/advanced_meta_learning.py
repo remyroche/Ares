@@ -470,7 +470,8 @@ class AdvancedMAML:
             model.fit(X_query, y_query)
             score = model.score(X_query, y_query)
             return 1.0 - score  # Convert to loss
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Model evaluation failed: {e}. Returning 1.0.")
             return 1.0
     
     def _evaluate_meta_validation(self, val_tasks: List[MetaTask]) -> float:

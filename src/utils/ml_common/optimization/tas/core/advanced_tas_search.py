@@ -664,7 +664,8 @@ class AdvancedTradingArchitectureSearch:
                                 'characteristics': self._extract_regime_characteristics(cluster_data),
                                 'transition_probability': 1.0 / n_regimes
                             }
-                except:
+                except Exception as e:
+                    tprint_warning(f"Regime detection failed for regime {i}: {e}. Skipping.")
                     continue
 
             return regimes

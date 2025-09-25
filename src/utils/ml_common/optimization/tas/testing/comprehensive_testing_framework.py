@@ -22,6 +22,12 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Testing imports
 try:
     import pytest
@@ -405,7 +411,8 @@ class UnitTestSuite:
             # Check if memory increase is within acceptable limits
             return memory_increase < 100 * 1024 * 1024  # 100MB limit
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Memory usage test failed: {e}. Returning False.")
             return False
     
     def _test_cvlsa_parallelization(self) -> bool:
@@ -436,7 +443,8 @@ class UnitTestSuite:
             # Check if parallel execution is faster than sequential
             return execution_time < 0.4  # Should be much faster than 4 * 0.1
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"CLVSA parallelization test failed: {e}. Returning False.")
             return False
     
     def _test_cvlsa_adaptation_speed(self) -> bool:
@@ -453,7 +461,8 @@ class UnitTestSuite:
             # Check if adaptation is fast enough
             return adaptation_time < 0.1  # Should be very fast
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"CLVSA adaptation speed test failed: {e}. Returning False.")
             return False
     
     def _run_test(self, 
@@ -617,7 +626,8 @@ class IntegrationTestSuite:
             
             return True
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Hardware acceleration test failed: {e}. Returning False.")
             return False
     
     def _test_hardware_integration_workflow(self) -> bool:
@@ -630,7 +640,8 @@ class IntegrationTestSuite:
                 return True
             return False
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Hardware integration workflow test failed: {e}. Returning False.")
             return False
     
     def _test_meta_learning_integration_workflow(self) -> bool:
@@ -643,7 +654,8 @@ class IntegrationTestSuite:
                 return True
             return False
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Meta-learning integration workflow test failed: {e}. Returning False.")
             return False
     
     def _test_adaptation_integration_workflow(self) -> bool:
@@ -656,7 +668,8 @@ class IntegrationTestSuite:
                 return True
             return False
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"Adaptation integration workflow test failed: {e}. Returning False.")
             return False
     
     def _run_test(self, 

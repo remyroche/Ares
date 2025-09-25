@@ -448,7 +448,8 @@ class UnsupervisedRegimeDetector:
                 labels = kmeans.fit_predict(features)
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
-            except:
+            except Exception as e:
+                tprint_warning(f"Silhouette score calculation failed: {e}. Using 0.")
                 silhouette_scores.append(0)
         
         if not silhouette_scores:

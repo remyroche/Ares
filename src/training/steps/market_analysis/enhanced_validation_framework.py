@@ -113,7 +113,9 @@ class EnhancedValidator:
             )
             
         except ImportError as e:
-            self.logger.warning(f"⚠️ Comprehensive quality tools not available, using fallback: {e}")
+            error_msg = f"Comprehensive quality tools not available, using fallback: {e}"
+            tprint_warning(error_msg)
+            self.logger.warning(f"⚠️ {error_msg}")
             # Fallback to basic validation
             return await self._fallback_validation(data, level, context)
         except Exception as e:
@@ -168,9 +170,12 @@ class EnhancedValidator:
             )
             
         except Exception as e:
+            error_msg = f"Fallback validation error: {str(e)}"
+            tprint_error(error_msg)
+            self.logger.error(f"❌ {error_msg}")
             return ValidationResult(
                 passed=False,
-                message=f"Fallback validation error: {str(e)}",
+                message=error_msg,
                 level=ValidationLevel.ERROR,
                 details={'error': str(e)}
             )

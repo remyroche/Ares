@@ -30,6 +30,11 @@ from .logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, 
+    tprint_error, tprint_success, tprint_progress, 
+    tprint_performance, tprint_timer
+)
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
@@ -215,21 +220,26 @@ class MarketAnalysisSubPipeline:
             Tuple of (is_success, error_dict_or_none)
         """
         if result.is_complete:
+            tprint_success(f"{stage_name} completed with complete report")
             log_success(f"{stage_name} completed with complete report")
             return True, None
         elif result.success:
-            log_warning(f"{stage_name} completed but report is incomplete")
+            error_msg = f"{stage_name} completed but report is incomplete - missing required artifacts"
+            tprint_warning(error_msg)
+            log_warning(error_msg)
             return False, {
                 'success': False,
-                'error': f"{stage_name} produced incomplete report - missing required artifacts",
+                'error': error_msg,
                 'stage': result.sub_pipeline_name,
                 'incomplete_artifacts': result.artifacts
             }
         else:
-            log_error(f"{stage_name} failed: {result.error_message}")
+            error_msg = f"{stage_name} failed: {result.error_message}"
+            tprint_error(error_msg)
+            log_error(error_msg)
             return False, {
                 'success': False,
-                'error': f"{stage_name} failed: {result.error_message}",
+                'error': error_msg,
                 'stage': result.sub_pipeline_name
             }
     
@@ -371,7 +381,9 @@ class MarketAnalysisSubPipeline:
             # Extract data from pipeline state
             data = pipeline_state.get('dataframe')
             if data is None:
-                raise ValueError("No dataframe found in pipeline state")
+                error_msg = "No dataframe found in pipeline state"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
             
             # Store data and pipeline state for component communication
             self._current_data = data
@@ -522,7 +534,9 @@ class MarketAnalysisSubPipeline:
                 self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
                 
             except Exception as e:
-                self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
+                error_msg = f"Failed to prepare data for HMM Models Training: {e}"
+                tprint_error(error_msg)
+                self.logger.error(f"❌ {error_msg}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
             
             # Stage 6: NAS Models Training
@@ -697,9 +711,13 @@ class MarketAnalysisSubPipeline:
             }
             
         except Exception as e:
-            self.logger.error(f'❌ Market Analysis Sub-Pipeline failed: {e}')
+            error_msg = f"Market Analysis Sub-Pipeline failed: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
             import traceback
-            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            traceback_msg = f"Error details: {traceback.format_exc()}"
+            tprint_error(traceback_msg)
+            self.logger.error(f'❌ {traceback_msg}')
             return {
                 'success': False,
                 'error': str(e),
@@ -709,12 +727,23 @@ class MarketAnalysisSubPipeline:
     
     def validate_config(self):
         """Validate the sub-pipeline configuration."""
-        if not self.config.symbol:
-            raise ValueError("Symbol is required")
-        if not self.config.exchange:
-            raise ValueError("Exchange is required")
-        if not self.config.timeframe:
-            raise ValueError("Timeframe is required")
+        try:
+            if not self.config.symbol:
+                error_msg = "Symbol is required"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            if not self.config.exchange:
+                error_msg = "Exchange is required"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            if not self.config.timeframe:
+                error_msg = "Timeframe is required"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            tprint_success("Configuration validation passed")
+        except Exception as e:
+            tprint_error(f"Configuration validation failed: {e}")
+            raise
     
     def get_status(self):
         """Get the current status of the sub-pipeline."""
@@ -783,7 +812,9 @@ class MarketAnalysisSubPipeline:
             component = self.component_factory.create_component(sub_pipeline_name, component_config)
             
             if component is None:
-                raise ValueError(f"Component '{sub_pipeline_name}' not found in factory")
+                error_msg = f"Component '{sub_pipeline_name}' not found in factory"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
             
             # Prepare pipeline state with accumulated artifacts
             pipeline_state_with_artifacts = self._current_pipeline_state.copy()
@@ -960,8 +991,10 @@ class MarketAnalysisSubPipeline:
         try:
             start_index = execution_sequence.index(sub_pipeline_name)
         except ValueError:
-            self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            error_msg = f"Unknown sub-pipeline: {sub_pipeline_name}"
+            tprint_error(error_msg)
+            self.logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
         
         # Determine which group we're starting from
         current_group = None
@@ -1082,7 +1115,9 @@ class MarketAnalysisSubPipeline:
             )
             
             if market_data is None or market_data.empty:
-                raise ValueError(f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})")
+                error_msg = f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
             
             self.logger.info(f'📊 Loaded full market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
             
@@ -1129,7 +1164,9 @@ class MarketAnalysisSubPipeline:
             }
             
         except Exception as e:
-            self.logger.error(f'❌ Failed to load market data: {e}')
+            error_msg = f"Failed to load market data: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
             raise
 
     def get_execution_summary(self) -> Dict[str, Any]:

@@ -309,15 +309,21 @@ class ComprehensiveLabeling:
                             self.logger.warning(f"⚠️ Regime column '{self.regime_aware_labeling.regime_col}' not found")
                             raise Exception('Regime column not found')
                     except Exception as e:
-                        self.logger.error(f'❌ Regime-aware labeling failed: {e}')
-                        self.logger.error('❌ No fallback labeling method available - regime-aware labeling is required')
+                        error_msg = f"Regime-aware labeling failed: {e}"
+                        tprint_error(error_msg)
+                        self.logger.error(f'❌ {error_msg}')
+                        no_fallback_msg = "No fallback labeling method available - regime-aware labeling is required"
+                        tprint_error(no_fallback_msg)
+                        self.logger.error(f'❌ {no_fallback_msg}')
                         return None
                 else:
                     if not self.auto_recalculate_hmm_barriers:
                         self.logger.error('❌ Auto-calculation disabled for regime-aware labeling')
                     if self.regime_aware_labeling.regime_barrier_optimizer is None:
                         self.logger.error('❌ Regime barrier optimizer not available')
-                    self.logger.error('❌ Regime-aware labeling is required - no fallback available')
+                    error_msg = "Regime-aware labeling is required - no fallback available"
+                    tprint_error(error_msg)
+                    self.logger.error(f'❌ {error_msg}')
                     return None
             
             # Step 2: Generate meta-labels (analyst and tactician)

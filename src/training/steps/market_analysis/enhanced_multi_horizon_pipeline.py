@@ -21,6 +21,11 @@ from datetime import datetime
 from pathlib import Path
 
 from src.utils.logger import get_logger
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, 
+    tprint_error, tprint_success, tprint_progress, 
+    tprint_performance, tprint_timer
+)
 from src.training.steps.market_analysis.multi_horizon_sub_pipeline_adapter import (
     MultiHorizonSubPipelineAdapter,
     execute_multi_horizon_labeling_step
@@ -189,7 +194,9 @@ class EnhancedMultiHorizonPipeline:
             return optimized_configs
             
         except Exception as e:
-            self.logger.error(f'❌ FAST FAIL: Automatic optimization failed: {e}')
+            error_msg = f"FAST FAIL: Automatic optimization failed: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
             raise RuntimeError(
                 f"❌ FAST FAIL: Automatic timeframe optimization failed. "
                 f"Error: {e}. Cannot proceed without optimal timeframe discovery. "
@@ -277,6 +284,9 @@ class EnhancedMultiHorizonPipeline:
     
     def _get_fallback_configurations(self, model_type: str) -> Dict[str, Any]:
         """Fast fail - no fallback configurations allowed."""
+        error_msg = f"FAST FAIL: Fallback configurations not allowed for {model_type} model"
+        tprint_error(error_msg)
+        self.logger.error(f"❌ {error_msg}")
         raise RuntimeError(
             f"❌ FAST FAIL: Fallback configurations not allowed. "
             f"Optimization must succeed for {model_type} model. "

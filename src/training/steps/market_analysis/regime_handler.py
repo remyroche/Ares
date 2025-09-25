@@ -5,6 +5,11 @@ from ...core.decorators import handles_errors, traced, cached
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from src.utils.logger import get_logger
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, 
+    tprint_error, tprint_success, tprint_progress, 
+    tprint_performance, tprint_timer
+)
 
 'Unified Regime Handler for Tagged Regime Data Processing.\n\nThis module provides a centralized way to handle TAGGED regime data across all training steps,\nensuring that steps 4-21 perform tasks on a per-HMM regime basis using the unified dataset\nwith regime tags (composite_cluster_id column) rather than split files.\n\nKEY BENEFITS:\n- Uses unified dataset with regime tags (not split files)\n- Preserves temporal continuity and lookback periods\n- Maintains context around regime transitions\n- 100% data retention (no boundary rows lost)\n'
 import asyncio
@@ -49,21 +54,47 @@ class RegimeHandler:
             DataFrame with unified regime data or None if not found
         """
         try:
+            tprint_progress(f"Loading unified regime data for {exchange}_{symbol}_{timeframe}")
             training_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'training'
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
+            
             if not unified_file.exists():
-                self.logger.error(f'❌ Unified regime data not found: {unified_file}')
-                return None
+                error_msg = f"Unified regime data not found: {unified_file}"
+                tprint_error(error_msg)
+                self.logger.error(f'❌ {error_msg}')
+                raise FileNotFoundError(error_msg)
+            
             data = standardized_parquet_handler.read_parquet_standardized(unified_file)
+            
+            if data is None or data.empty:
+                error_msg = f"Failed to read or empty data from {unified_file}"
+                tprint_error(error_msg)
+                self.logger.error(f'❌ {error_msg}')
+                raise ValueError(error_msg)
+            
+            tprint_success(f"Loaded unified regime data: {len(data)} rows from {unified_file}")
             self.logger.info(f'✅ Loaded unified regime data: {len(data)} rows from {unified_file}')
+            
             cache_key = f'{exchange}_{symbol}_{timeframe}'
             self._cached_regime_data[cache_key] = data
+            
             metadata_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_metadata.json'
             if metadata_file.exists():
-                self._regime_metadata[cache_key] = safe_json_load(metadata_file)
+                try:
+                    self._regime_metadata[cache_key] = safe_json_load(metadata_file)
+                    tprint_debug(f"Loaded regime metadata for {cache_key}")
+                except Exception as meta_e:
+                    tprint_warning(f"Failed to load metadata: {meta_e}")
+                    self.logger.warning(f'⚠️ Failed to load metadata: {meta_e}')
+            
             return data
-        except Exception as e:
+        except (FileNotFoundError, ValueError) as e:
+            tprint_error(f"Critical error loading unified regime data: {e}")
             self.logger.exception(f'❌ Error loading unified regime data: {e}')
+            raise  # Re-raise critical errors
+        except Exception as e:
+            tprint_error(f"Unexpected error loading unified regime data: {e}")
+            self.logger.exception(f'❌ Unexpected error loading unified regime data: {e}')
             return None
 
     @traced(span_name='get_regime_ids')
@@ -80,11 +111,21 @@ class RegimeHandler:
             List of unique regime IDs
         """
         if 'composite_cluster_id' not in data.columns:
-            self.logger.error('❌ No composite_cluster_id column found in data - this should be tagged regime data')
-            return []
-        regime_ids = sorted(data['composite_cluster_id'].unique())
-        self.logger.info(f'📊 Found {len(regime_ids)} unique regimes in tagged data: {regime_ids}')
-        return regime_ids
+            error_msg = "No composite_cluster_id column found in data - this should be tagged regime data"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
+            raise ValueError(error_msg)
+        
+        try:
+            regime_ids = sorted(data['composite_cluster_id'].unique())
+            tprint_info(f"Found {len(regime_ids)} unique regimes in tagged data: {regime_ids}")
+            self.logger.info(f'📊 Found {len(regime_ids)} unique regimes in tagged data: {regime_ids}')
+            return regime_ids
+        except Exception as e:
+            error_msg = f"Error extracting regime IDs: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
+            raise
 
     def show_tagging_benefits(self, data: pd.DataFrame, regime_id: int) -> Dict[str, Any]:
         """Show the benefits of using tagged data vs traditional splitting.
@@ -153,8 +194,10 @@ class RegimeHandler:
             Filtered DataFrame for the specified regime
         """
         if 'composite_cluster_id' not in data.columns:
-            self.logger.error('❌ No composite_cluster_id column found in data')
-            return pd.DataFrame()
+            error_msg = "No composite_cluster_id column found in data"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
+            raise ValueError(error_msg)
         if preserve_context:
             # Optimize context window based on regime characteristics if requested
             if optimize_lookback:
@@ -241,9 +284,17 @@ class RegimeHandler:
         Returns:
             Dictionary mapping regime IDs to processing results
         """
-        regime_ids = self.get_regime_ids(data)
-        if not regime_ids:
-            self.logger.error('❌ No regimes found in data')
+        try:
+            regime_ids = self.get_regime_ids(data)
+            if not regime_ids:
+                error_msg = "No regimes found in data"
+                tprint_error(error_msg)
+                self.logger.error(f'❌ {error_msg}')
+                return {}
+        except Exception as e:
+            error_msg = f"Error getting regime IDs: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
             return {}
         results = {}
         if parallel:
@@ -257,6 +308,7 @@ class RegimeHandler:
                     result = await task
                     results[regime_id] = result
                 except Exception as e:
+                    tprint_error(f"Error processing regime {regime_id}: {e}")
                     self.logger.error(f'❌ Error processing regime {regime_id}: {e}')
                     results[regime_id] = None
         else:
@@ -266,9 +318,11 @@ class RegimeHandler:
                     result = await self._process_single_regime(regime_id, regime_data, processing_func, symbol, exchange, timeframe, **kwargs)
                     results[regime_id] = result
                 except Exception as e:
+                    tprint_error(f"Error processing regime {regime_id}: {e}")
                     self.logger.error(f'❌ Error processing regime {regime_id}: {e}')
                     results[regime_id] = None
         successful_regimes = sum((1 for r in results.values() if r is not None))
+        tprint_success(f"Processed {successful_regimes}/{len(regime_ids)} regimes successfully")
         self.logger.info(f'✅ Processed {successful_regimes}/{len(regime_ids)} regimes successfully')
         return results
 
@@ -287,14 +341,23 @@ class RegimeHandler:
         Returns:
             Processing result
         """
+        tprint_progress(f"Processing regime {regime_id} with {len(regime_data)} rows")
         self.logger.info(f'🔄 Processing regime {regime_id} with {len(regime_data)} rows')
-        kwargs['regime_id'] = regime_id
-        kwargs['symbol'] = symbol
-        kwargs['exchange'] = exchange
-        kwargs['timeframe'] = timeframe
-        result = await processing_func(regime_data, **kwargs)
-        self.logger.info(f'✅ Completed processing for regime {regime_id}')
-        return result
+        
+        try:
+            kwargs['regime_id'] = regime_id
+            kwargs['symbol'] = symbol
+            kwargs['exchange'] = exchange
+            kwargs['timeframe'] = timeframe
+            result = await processing_func(regime_data, **kwargs)
+            tprint_success(f"Completed processing for regime {regime_id}")
+            self.logger.info(f'✅ Completed processing for regime {regime_id}')
+            return result
+        except Exception as e:
+            error_msg = f"Failed to process regime {regime_id}: {e}"
+            tprint_error(error_msg)
+            self.logger.error(f'❌ {error_msg}')
+            raise
 
     @traced(span_name='save_regime_results')
     async def save_regime_results(self, results: Dict[int, Any], step_name: str, symbol: str, exchange: str, timeframe: str, data_dir: str, result_type: str='generic') -> bool:
@@ -335,7 +398,9 @@ class RegimeHandler:
             self.logger.info(f'✅ Saved regime processing summary: {summary_file}')
             return True
         except Exception as e:
-            self.logger.exception(f'❌ Error saving regime results: {e}')
+            error_msg = f"Error saving regime results: {e}"
+            tprint_error(error_msg)
+            self.logger.exception(f'❌ {error_msg}')
             return False
 
     @traced(span_name='load_regime_results')
@@ -378,7 +443,9 @@ class RegimeHandler:
             self.logger.info(f'✅ Loaded results for {len(results)}/{len(regime_ids)} regimes')
             return results
         except Exception as e:
-            self.logger.exception(f'❌ Error loading regime results: {e}')
+            error_msg = f"Error loading regime results: {e}"
+            tprint_error(error_msg)
+            self.logger.exception(f'❌ {error_msg}')
             return {}
 
     def get_regime_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:

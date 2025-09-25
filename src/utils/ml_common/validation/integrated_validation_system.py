@@ -18,7 +18,7 @@ import warnings
 
 # Import existing modules
 from ..lookahead_bias_detector import LookaheadBiasDetector
-from ..validation.enhanced_overfitting_detection import (
+from src.utils.nas_tas.advanced_validation import (
     UniversalOverfittingDetector,
     OverfittingConfig,
     get_overfitting_detector

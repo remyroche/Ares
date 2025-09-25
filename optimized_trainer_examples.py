@@ -10,8 +10,12 @@ import pandas as pd
 from pathlib import Path
 import logging
 
-# Import the OptimizedTrainer
-from hardware_acceleration import OptimizedTrainer, TrainingConfig, create_optimized_trainer
+# Import the OptimizedTrainer from the consolidated location
+from src.utils.nas_tas.hardware_accelerator import (
+    NASHardwareAccelerator, TASHardwareAccelerator, CLVSAHardwareOptimizer,
+    HardwareAccelerationConfig, create_nas_hardware_accelerator,
+    create_tas_hardware_accelerator, create_cvlsa_hardware_optimizer
+)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

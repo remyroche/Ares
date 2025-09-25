@@ -8,7 +8,7 @@ This guide documents the comprehensive integration of enhanced validation compon
 
 ### **What Was Integrated**
 
-1. **Enhanced Overfitting Detection** → `src/utils/ml_common/validation/enhanced_overfitting_detection.py`
+1. **Advanced Validation** → `src/utils/nas_tas/advanced_validation.py`
 2. **Universal Temporal Validation** → `src/utils/ml_common/validation/universal_temporal_validation.py`
 3. **Universal Timeframe Configuration** → `src/utils/ml_common/config/universal_timeframe_config.py`
 4. **Comprehensive ML Validation** → `src/utils/ml_common/validation/universal_ml_validation.py`
@@ -49,7 +49,7 @@ This guide documents the comprehensive integration of enhanced validation compon
 ```
 src/utils/ml_common/
 ├── validation/
-│   ├── enhanced_overfitting_detection.py      # Universal overfitting detection
+│   └── advanced_validation.py                 # Advanced validation for NAS/TAS
 │   ├── universal_temporal_validation.py       # Universal temporal validation
 │   ├── universal_ml_validation.py             # Comprehensive ML validation
 │   └── __init__.py                            # Updated exports
@@ -98,7 +98,7 @@ print(f"Recommendations: {overfitting_report.recommendations}")
 
 ```python
 from catboost import CatBoostClassifier
-from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+from src.utils.nas_tas.advanced_validation import validate_and_report_model
 
 # Train CatBoost model
 catboost_model = CatBoostClassifier(
@@ -134,7 +134,7 @@ print(f"Priority Actions: {summary['priority_actions']}")
 ```python
 import torch
 import torch.nn as nn
-from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+from src.utils.nas_tas.advanced_validation import validate_and_report_model
 
 # Define DeepScaler model (example architecture)
 class DeepScalerModel(nn.Module):
@@ -175,7 +175,7 @@ print(f"DeepScaler Recommendations: {insights['monitoring_recommendations']}")
 ```python
 import torch
 import torch.nn as nn
-from src.utils.ml_common.validation.enhanced_overfitting_detection import validate_and_report_model
+from src.utils.nas_tas.advanced_validation import validate_and_report_model
 
 # Define Mamba Hybrid model (example architecture)
 class MambaHybridModel(nn.Module):

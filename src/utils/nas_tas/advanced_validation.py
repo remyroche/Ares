@@ -1,8 +1,10 @@
 """
-Enhanced Overfitting Detection for ML Common
+Advanced Validation for NAS/TAS
 
-Universal overfitting detection and reporting system that can be used across
-all ML models in the ml_common framework.
+Universal overfitting detection and reporting system optimized for Neural Architecture Search (NAS)
+and Tree Architecture Search (TAS) systems. This module provides comprehensive validation
+capabilities including overfitting detection, model complexity analysis, data leakage prevention,
+and enhancement recommendations.
 """
 
 import numpy as np
@@ -16,6 +18,17 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, log_loss, roc_auc_score
+
+# Import additional validation utilities
+try:
+    from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention, LeakageReport, DataLeakageConfig
+    DATA_LEAKAGE_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Data leakage prevention utilities not available: {e}")
+    DATA_LEAKAGE_AVAILABLE = False
+
+# Note: ModelEnhancementGuide and ModelComplexityAnalyzer functionality
+# has been integrated directly into this module to reduce dependencies
 
 logger = logging.getLogger(__name__)
 
@@ -2641,3 +2654,38 @@ class ModelEnhancementDetector:
                 recommendations.append("🔧 Increase regularization to prevent overfitting")
 
         return recommendations
+
+# Convenience functions for accessing additional validation utilities
+
+def get_data_leakage_prevention(config: Optional[DataLeakageConfig] = None) -> Optional[DataLeakagePrevention]:
+    """Get data leakage prevention instance if available."""
+    if DATA_LEAKAGE_AVAILABLE:
+        return DataLeakagePrevention(config)
+    return None
+
+def get_enhancement_detector():
+    """Get model enhancement detector instance."""
+    return ModelEnhancementDetector()
+
+def get_overfitting_detector(config: Optional[OverfittingConfig] = None):
+    """Get overfitting detector instance."""
+    return UniversalOverfittingDetector(config)
+
+def create_comprehensive_validation_suite():
+    """
+    Create a comprehensive validation suite with all available validation utilities.
+    
+    Returns:
+        Dict containing all available validation utilities
+    """
+    suite = {
+        "overfitting_detector": UniversalOverfittingDetector(),
+        "enhancement_detector": ModelEnhancementDetector(),
+        "validation_orchestrator": UniversalMLValidationOrchestrator(),
+        "validation_manager": ValidationIntegrationManager()
+    }
+    
+    if DATA_LEAKAGE_AVAILABLE:
+        suite["data_leakage_prevention"] = DataLeakagePrevention()
+    
+    return suite

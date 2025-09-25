@@ -58,7 +58,7 @@ from .stability import feature_selection_stability, aggregate_time_blocks, Stabi
 from .thresholding import optimize_threshold, calibrate_probabilities
 
 # Enhanced validation components (consolidated with unified CV)
-from .enhanced_overfitting_detection import (
+from src.utils.nas_tas.advanced_validation import (
     UniversalOverfittingDetector,
     OverfittingConfig,
     OverfittingReport,

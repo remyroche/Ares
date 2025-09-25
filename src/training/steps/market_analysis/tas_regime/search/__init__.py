@@ -10,7 +10,7 @@ Comprehensive search strategies for tree architecture search including:
 """
 
 from .evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm, TreeNSGA2
-from .bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer, TreeGaussianProcess
+from src.utils.nas_tas.bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer, TreeGaussianProcess
 from .rl_search import RLTreeSearch, TreeReinforcementLearner, TreePPO, TreeA2C
 from .multi_objective_search import MultiObjectiveTreeSearch, TreeMultiObjectiveOptimizer
 

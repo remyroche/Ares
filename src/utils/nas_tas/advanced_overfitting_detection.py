@@ -33,7 +33,7 @@ from scipy.spatial.distance import pdist, squareform
 import warnings
 
 # Import existing overfitting detection
-from src.utils.ml_common.validation.enhanced_overfitting_detection import (
+from src.utils.nas_tas.advanced_validation import (
     UniversalOverfittingDetector, 
     OverfittingConfig, 
     OverfittingReport

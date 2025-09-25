@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified Components Package
+NAS-TAS Unified Components Package
 
 This package provides unified components for both NAS and TAS systems,
 organized into logical modules for better maintainability and organization.

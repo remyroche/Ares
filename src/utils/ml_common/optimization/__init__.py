@@ -11,7 +11,7 @@ This module contains all optimization-related functionality including:
 from .hpo_utils import HyperparameterOptimization
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
-from .hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
+from src.utils.nas_tas.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 from .bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, 

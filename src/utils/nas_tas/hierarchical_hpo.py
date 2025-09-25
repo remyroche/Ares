@@ -133,7 +133,7 @@ class HierarchicalHPO:
         """Initialize universal validation integration for HPO."""
         try:
             # Lazy import to avoid circular dependency
-            from ..training.universal_validation_integration import (
+            from src.utils.ml_common.training.universal_validation_integration import (
                 get_validation_integrator,
                 ValidationIntegrationConfig
             )
@@ -335,7 +335,7 @@ class HierarchicalHPO:
                 )
             
             # Configure Bayesian TPE optimizer
-            from src.utils.nas_tas.bayesian_tpe_optimizer import (
+            from .bayesian_tpe_optimizer import (
                 BayesianTPEOptimizer,
                 BayesianTPEConfig
             )

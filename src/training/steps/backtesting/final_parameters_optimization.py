@@ -13,6 +13,7 @@ Key Features:
 - Automatic parameter updates
 """
 
+import copy
 import json
 import os
 import pickle
@@ -62,12 +63,17 @@ class FinalParametersOptimizer:
             'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl', 'exit_strategy',
             'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
-            'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization', 
+            'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization',
             'confidence_aware_ensemble', 'model_specific_parameters',
             # New directional categories
-            'long_specific_parameters', 'short_specific_parameters', 
+            'long_specific_parameters', 'short_specific_parameters',
             'directional_thresholds', 'asymmetric_risk_management'
         ]
+
+        # Categories that should be optimized together in a single search
+        self.grouped_categories = {
+            'exit_strategy': ['exit_strategy', 'tpsl']
+        }
         
         # Default search spaces for each category
         self.default_search_spaces = self._get_default_search_spaces()
@@ -774,7 +780,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
                 'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
-                
+                'trailing_reversal_pct': {'type': 'float', 'min': 0.005, 'max': 0.05},
+                'trailing_use_atr_log_scaling': {'type': 'bool'},
+                'trailing_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+
                 # Regime-aware parameters
                 'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
                 'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2}
@@ -915,20 +924,50 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info(f"🔄 Previous results available: {previous_results is not None}")
             
             optimization_results = {}
+            processed_categories = set()
             start_time = time.time()
-            
+
             for i, category in enumerate(self.categories, 1):
+                if category in processed_categories:
+                    self.logger.info(f"⏭️ Skipping {category} optimization (already handled)")
+                    continue
+
+                if category in self.grouped_categories:
+                    grouped = self.grouped_categories[category]
+                    self.logger.info(
+                        f"🔄 Optimizing grouped categories {grouped} ({i}/{len(self.categories)})..."
+                    )
+                    group_previous = {}
+                    if previous_results:
+                        group_previous = {
+                            name: previous_results.get(name)
+                            for name in grouped
+                            if previous_results.get(name)
+                        }
+
+                    group_results = await self._optimize_exit_bundle(
+                        calibration_results,
+                        group_previous
+                    )
+
+                    for name, result in group_results.items():
+                        optimization_results[name] = result
+                        processed_categories.add(name)
+
+                    continue
+
                 self.logger.info(f"🔄 Optimizing {category} parameters ({i}/{len(self.categories)})...")
                 category_start = time.time()
-                
+
                 category_results = await self._optimize_category(
-                    category, calibration_results, 
+                    category, calibration_results,
                     previous_results.get(category) if previous_results else None
                 )
-                
+
                 category_duration = time.time() - category_start
                 optimization_results[category] = category_results
-                
+                processed_categories.add(category)
+
                 if category_results and 'best_value' in category_results:
                     self.logger.info(f"✅ {category} optimization completed in {category_duration:.2f}s - Best value: {category_results['best_value']:.4f}")
                 else:
@@ -1078,6 +1117,161 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 }
         
         return tpe_space
+
+    def _get_search_space_for_category(self, category: str) -> Dict[str, Dict[str, Any]]:
+        """Return the active search space for a category, respecting non-linear settings."""
+        if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
+            return copy.deepcopy(self.enhanced_search_spaces[category])
+        return copy.deepcopy(self.default_search_spaces.get(category, {}))
+
+    async def _optimize_exit_bundle(self,
+                                    calibration_results: Dict[str, Any],
+                                    previous_group_results: Optional[Dict[str, Any]] = None
+                                    ) -> Dict[str, Any]:
+        """Jointly optimize exit-related parameters (TP/SL and trailing stop logic)."""
+
+        exit_space = self._get_search_space_for_category('exit_strategy')
+        tpsl_space = self._get_search_space_for_category('tpsl')
+
+        if not exit_space and not tpsl_space:
+            self.logger.warning("⚠️ No search spaces available for exit bundle optimization")
+            return {}
+
+        combined_space: Dict[str, Dict[str, Any]] = {}
+        for source_space in (exit_space, tpsl_space):
+            for key, value in source_space.items():
+                if key in combined_space:
+                    self.logger.warning(
+                        f"⚠️ Duplicate parameter '{key}' encountered when combining exit search spaces"
+                    )
+                combined_space[key] = value
+
+        exit_keys = set(exit_space.keys())
+        tpsl_keys = set(tpsl_space.keys())
+
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
+            exit_params = {key: params[key] for key in exit_keys if key in params}
+            tpsl_params = {key: params[key] for key in tpsl_keys if key in params}
+
+            component_scores: List[float] = []
+            if exit_params:
+                component_scores.append(
+                    self._evaluate_exit_strategy_params(exit_params, calibration_results)
+                )
+            if tpsl_params:
+                component_scores.append(
+                    self._evaluate_tpsl_params(tpsl_params, calibration_results)
+                )
+
+            if not component_scores:
+                return 0.0
+
+            combined_score = float(np.mean(component_scores))
+
+            if combined_score > 0.0:
+                turnover_penalty = self._calculate_turnover_penalty(
+                    {**exit_params, **tpsl_params},
+                    calibration_results
+                )
+                combined_score -= turnover_penalty
+
+            return combined_score
+
+        tpe_search_space = self._convert_to_tpe_search_space(combined_space)
+
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.n_trials,
+            timeout_seconds=self.timeout,
+            enable_grid_search=True,
+            coarse_grid_points=5,
+            fine_grid_points=8,
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=4,
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
+        )
+
+        self.logger.info("🎯 Starting Bayesian TPE optimization for exit bundle")
+        start_time = time.time()
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        optimization_result = optimizer.optimize(objective_function, tpe_search_space)
+        optimization_time = time.time() - start_time
+
+        if not optimization_result.success:
+            self.logger.error(
+                f"❌ Bayesian TPE optimization failed for exit bundle: {optimization_result.error_message}"
+            )
+            return {
+                'exit_strategy': self._create_fallback_result('exit_strategy'),
+                'tpsl': self._create_fallback_result('tpsl')
+            }
+
+        if self.use_nonlinear_optimization:
+            combined_best_params = convert_parameters_to_original_space(
+                optimization_result.best_params,
+                combined_space
+            )
+        else:
+            combined_best_params = optimization_result.best_params
+
+        exit_best_params = {
+            key: combined_best_params[key]
+            for key in exit_keys
+            if key in combined_best_params
+        }
+        tpsl_best_params = {
+            key: combined_best_params[key]
+            for key in tpsl_keys
+            if key in combined_best_params
+        }
+
+        exit_best_value = self._evaluate_exit_strategy_params(exit_best_params, calibration_results)
+        tpsl_best_value = self._evaluate_tpsl_params(tpsl_best_params, calibration_results)
+
+        bundle_results = {}
+
+        exit_result = {
+            'best_params': exit_best_params,
+            'best_value': exit_best_value,
+            'optimization_method': 'bayesian_tpe',
+            'optimization_time': optimization_time,
+            'n_trials': optimization_result.n_trials,
+            'convergence_info': optimization_result.convergence_info,
+            'grid_search_results': optimization_result.grid_search_results,
+            'optimization_history': optimization_result.optimization_history
+        }
+
+        if self.use_nonlinear_optimization:
+            exit_result['enhancement_methods_used'] = self._get_used_enhancement_methods(exit_space)
+            exit_result['nonlinear_optimization'] = True
+
+        bundle_results['exit_strategy'] = exit_result
+
+        tpsl_result = {
+            'best_params': tpsl_best_params,
+            'best_value': tpsl_best_value,
+            'optimization_method': 'bayesian_tpe',
+            'optimization_time': optimization_time,
+            'n_trials': optimization_result.n_trials,
+            'convergence_info': optimization_result.convergence_info,
+            'grid_search_results': optimization_result.grid_search_results,
+            'optimization_history': optimization_result.optimization_history
+        }
+
+        if self.use_nonlinear_optimization:
+            tpsl_result['enhancement_methods_used'] = self._get_used_enhancement_methods(tpsl_space)
+            tpsl_result['nonlinear_optimization'] = True
+
+        bundle_results['tpsl'] = tpsl_result
+
+        self.logger.info(
+            f"✅ Exit bundle optimization completed in {optimization_time:.2f}s - "
+            f"Exit score: {exit_best_value:.4f}, TP/SL score: {tpsl_best_value:.4f}"
+        )
+
+        return bundle_results
     
     def _objective_function_for_tpe(self, params: Dict[str, Any], category: str, 
                                    calibration_results: Dict[str, Any]) -> float:

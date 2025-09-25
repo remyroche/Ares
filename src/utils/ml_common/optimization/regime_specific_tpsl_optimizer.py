@@ -28,7 +28,7 @@ from pathlib import Path
 import optuna
 
 # Import new Bayesian TPE optimizer
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+from src.utils.nas_tas.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,
     BayesianTPEConfig,
     optimize_with_bayesian_tpe

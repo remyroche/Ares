@@ -72,7 +72,7 @@ try:
     from src.utils.ml_common.validation import get_validation_framework
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
     # Import Bayesian TPE optimizer
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer,
         BayesianTPEConfig,
         optimize_with_bayesian_tpe

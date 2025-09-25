@@ -524,7 +524,7 @@ class EnhancedScriptsValidator:
             try:
                 if self.utils_available:
                     # Test if ML utilities are available (they're used in specific components)
-                    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+                    from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer
                     if BayesianTPEOptimizer:
                         test_results['ml_common_available'] = True
             except Exception as e:

@@ -33,7 +33,7 @@ from src.utils.math_validation import (
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 from src.utils.serialization_utils import JSONSerializer, PickleSerializer, UniversalSerializer
 from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+from src.utils.nas_tas.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult
 )
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, is_m1_available, is_mps_available

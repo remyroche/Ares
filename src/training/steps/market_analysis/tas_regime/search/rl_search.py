@@ -76,7 +76,7 @@ from src.utils.tprint import (
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+    from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
     from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
     from src.utils.ml_common.validation.cv import CrossValidationManager
     ML_COMMON_AVAILABLE = True

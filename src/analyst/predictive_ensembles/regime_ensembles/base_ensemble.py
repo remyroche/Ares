@@ -511,7 +511,7 @@ class BaseEnsemble:
                 scores.append(model.score(X_val, y_val))
             return float(np.mean(scores))
         # Use new Bayesian TPE optimizer
-        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        from src.utils.nas_tas.bayesian_tpe_optimizer import (
             BayesianTPEOptimizer,
             BayesianTPEConfig
         )

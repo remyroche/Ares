@@ -15,7 +15,7 @@ Key Features:
 - Early stopping and convergence detection
 
 Usage:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer
     
     optimizer = BayesianTPEOptimizer(config)
     results = optimizer.optimize(objective_function, search_space)
@@ -34,8 +34,8 @@ import json
 import os
 
 # Import existing grid utilities
-from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
-from .hpo_utils import HyperparameterOptimization
+from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 
 # Optional dependencies with graceful fallback
 try:

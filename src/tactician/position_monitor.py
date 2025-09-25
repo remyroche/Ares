@@ -866,6 +866,11 @@ class PositionMonitor:
                 metadata["side"] = side
                 return PositionAction.STAY, "Unsupported position side for trailing stop", metadata
 
+
+            metadata.update({
+                "target_price": target_price,
+                "unrealized_target": dynamic_profit_target
+            })
             trailing_state = position_data.setdefault(
                 "trailing_state",
                 {
@@ -922,6 +927,24 @@ class PositionMonitor:
                 })
                 if atr_value is not None:
                     trailing_state["atr_at_activation"] = float(atr_value)
+                    "atr_at_activation": None
+                }
+            )
+
+            if not price_above_target:
+                # Reset trailing state if we fall back below the activation price
+                trailing_state.update({
+                    "activated": False,
+                    "target_price": target_price,
+                    "extreme_price": None,
+                    "atr_at_activation": None
+                })
+                metadata["status"] = "target_not_reached"
+                return (
+                    PositionAction.STAY,
+                    "Trailing stop inactive until dynamic target price is exceeded",
+                    metadata
+                )
 
             # Update the best favorable price since the target was reached
             extreme_price = trailing_state.get("extreme_price")
@@ -949,6 +972,12 @@ class PositionMonitor:
             reversal_pct = max(trailing_config.get("reversal_percentage", 0.02), 0.0)
             min_distance = max(trailing_config.get("min_distance", 0.0), 0.0)
 
+
+            atr_value = self._extract_atr_value(position_data)
+            if trailing_state.get("atr_at_activation") is None and atr_value is not None:
+                trailing_state["atr_at_activation"] = float(atr_value)
+            atr_for_calculation = trailing_state.get("atr_at_activation") or atr_value or 0.0
+
             if trailing_config.get("use_atr_log_scaling", False):
                 atr_log_multiplier = max(trailing_config.get("atr_log_multiplier", 0.0), 0.0)
                 if atr_for_calculation > 0 and atr_log_multiplier > 0:
@@ -964,6 +993,7 @@ class PositionMonitor:
 
             trailing_state.update({
                 "activated": True,
+                "target_price": target_price,
                 "trailing_pct": trailing_pct,
                 "last_update": time.time()
             })
@@ -1193,6 +1223,8 @@ class PositionMonitor:
             "use_log_atr_multiplier": False,
             "atr_log_multiplier": 0.0
         }))
+
+        config.setdefault("trailing_stop_enabled", True)
         return config
 
     def _get_optimized_stop_loss_config(self) -> Dict[str, Any]:
@@ -1242,6 +1274,10 @@ class PositionMonitor:
             "use_atr_log_scaling": False,
             "atr_log_multiplier": 0.0
         }))
+
+        config.setdefault("reversal_percentage", 0.02)
+        config.setdefault("use_atr_log_scaling", False)
+        config.setdefault("atr_log_multiplier", 0.0)
         return config
 
     def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:

@@ -19,25 +19,11 @@ from .gradient_flow_analysis import (
     GradientFlowAnalysis,
     analyze_gradient_flow_benefits,
 )
-from .regime_aware_triple_barrier_optimizer import (
-    RegimeAwareTripleBarrierOptimizer,
-    RegimeBarrierParams,
-    RegimePerformanceMetrics,
-    optimize_regime_barriers,
-    apply_optimized_regime_labeling,
-)
-from .triple_barrier_validator import (
-    TripleBarrierValidator,
-    ValidationResult,
-    ValidationReport,
-    validate_triple_barrier_implementation,
-    quick_validate_triple_barrier,
-)
-from .enhanced_market_analysis_with_triple_barrier import (
-    EnhancedMarketAnalysisWithTripleBarrier,
-    MarketAnalysisTripleBarrierConfig,
-    run_enhanced_market_analysis_with_triple_barrier,
-    quick_triple_barrier_analysis,
+from .enhanced_multi_horizon_pipeline import (
+    EnhancedMultiHorizonPipeline,
+    EnhancedPipelineConfig,
+    execute_enhanced_multi_horizon_labeling,
+    get_optimal_configurations_for_training,
 )
 from .pid_based_feature_generation import (
     PIDBasedFeatureOrchestrator,
@@ -69,20 +55,10 @@ _COMPONENT_EXPORTS = [
     "GradientFlowAnalyzer",
     "GradientFlowAnalysis",
     "analyze_gradient_flow_benefits",
-    "RegimeAwareTripleBarrierOptimizer",
-    "RegimeBarrierParams",
-    "RegimePerformanceMetrics",
-    "optimize_regime_barriers",
-    "apply_optimized_regime_labeling",
-    "TripleBarrierValidator",
-    "ValidationResult",
-    "ValidationReport",
-    "validate_triple_barrier_implementation",
-    "quick_validate_triple_barrier",
-    "EnhancedMarketAnalysisWithTripleBarrier",
-    "MarketAnalysisTripleBarrierConfig",
-    "run_enhanced_market_analysis_with_triple_barrier",
-    "quick_triple_barrier_analysis",
+    "EnhancedMultiHorizonPipeline",
+    "EnhancedPipelineConfig",
+    "execute_enhanced_multi_horizon_labeling",
+    "get_optimal_configurations_for_training",
     "PIDBasedFeatureOrchestrator",
     "OrchestratorConfig",
     "InteractionFeatureGenerator",

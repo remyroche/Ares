@@ -10,10 +10,15 @@ This document summarizes the cleanup of unused code after the refactoring of TAS
 1. **`signal_generation/analyst_signals.py`** - Replaced by `analyst_signals_refactored.py`
 2. **`signal_generation/tactician_signals.py`** - Replaced by `tactician_signals_refactored.py`  
 3. **`signal_generation/signal_combiner.py`** - Replaced by `signal_combiner_refactored.py`
+4. **`signal_generator.py`** - Standalone signal generator, replaced by refactored signal generation system
+5. **`performance_monitor.py`** - Standalone performance monitor, replaced by monitoring system
+6. **`position_manager.py`** - Standalone position manager, replaced by execution system
+7. **`risk_manager.py`** - Standalone risk manager, replaced by risk management system
+8. **`nas_tas_trading_main.py`** - Standalone entry point, replaced by trading orchestrator
 
 ### **Backup Created:**
 - **`backup_old_files/`** directory contains copies of all deleted files
-- Files backed up: `analyst_signals.py`, `tactician_signals.py`, `signal_combiner.py`
+- Files backed up: `analyst_signals.py`, `tactician_signals.py`, `signal_combiner.py`, `signal_generator.py`, `performance_monitor.py`, `position_manager.py`, `risk_manager.py`, `nas_tas_trading_main.py`
 
 ## 🔄 **Import Updates**
 
@@ -89,8 +94,8 @@ from ..signal_generation.signal_combiner_refactored import SignalCombiner
 ## 📊 **Cleanup Results**
 
 ### **Code Reduction:**
-- **3 original files deleted** (analyst_signals.py, tactician_signals.py, signal_combiner.py)
-- **~1,500 lines of duplicate code eliminated**
+- **8 original files deleted** (analyst_signals.py, tactician_signals.py, signal_combiner.py, signal_generator.py, performance_monitor.py, position_manager.py, risk_manager.py, nas_tas_trading_main.py)
+- **~3,000 lines of duplicate code eliminated**
 - **4 import statements updated** across multiple files
 - **2 documentation files updated**
 

@@ -24,26 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
 
-try:
-    from src.utils.nas_tas.tas.core.tas_config import MicroRegimeType, MarketRegime
-except ImportError:
-    # Fallback if core module is not available
-    from enum import Enum
-    
-    class MicroRegimeType(Enum):
-        BREAKOUT = "breakout"
-        CONSOLIDATION = "consolidation"
-        REVERSAL = "reversal"
-        ACCELERATION = "acceleration"
-        DECELERATION = "deceleration"
-        VOLUME_SPIKE = "volume_spike"
-        VOLATILITY_SPIKE = "volatility_spike"
-    
-    class MarketRegime(Enum):
-        TRENDING = "trending"
-        RANGING = "ranging"
-        VOLATILE = "volatile"
-        STABLE = "stable"
+from src.utils.nas_tas.tas.core.tas_config import MicroRegimeType, MarketRegime
 
 logger = logging.getLogger(__name__)
 

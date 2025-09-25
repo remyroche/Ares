@@ -19,32 +19,7 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime
 
-try:
-    from src.utils.nas_tas.tas.core.tas_config import TASConfig, TASArchitectureType, TradingObjective
-except ImportError:
-    # Fallback if core module is not available
-    from enum import Enum
-    class TASArchitectureType(Enum):
-        NEURAL_ONLY = "neural_only"
-        HYBRID_TREE_NEURAL = "hybrid_tree_neural"
-    
-    class TASConfig:
-        def __init__(self):
-            self.search_space_config = {}
-            self.regime_detection_window = 20
-        
-        def get_neural_search_space(self):
-            return {
-                'hidden_dims': [[64, 32]],
-                'activation': ['relu'],
-                'dropout_rates': [0.2],
-                'use_lstm': [False],
-                'use_attention': [False],
-                'use_batch_norm': [True]
-            }
-        
-        def get_tree_search_space(self):
-            return {}
+from src.utils.nas_tas.tas.core.tas_config import TASConfig, TASArchitectureType, TradingObjective
 
 logger = logging.getLogger(__name__)
 

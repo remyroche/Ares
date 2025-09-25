@@ -517,7 +517,7 @@ class HybridNASTASRegimeDetector:
             return performance
 
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _perform_clustering(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
@@ -558,7 +558,7 @@ class HybridNASTASRegimeDetector:
                             best_algorithm = name
 
                     except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                        tprint_warning(f"⚠️ Operation failed: {e}")
                         continue
 
                 if best_labels is None:
@@ -588,7 +588,7 @@ class HybridNASTASRegimeDetector:
                     metrics['silhouette_score'] = 0.0
                     metrics['calinski_harabasz_score'] = 0.0
             except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
 
@@ -729,7 +729,7 @@ class HybridNASTASRegimeDetector:
             return abs(drawdown.min())
 
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_regime_stability(self,
@@ -871,7 +871,7 @@ class HybridNASTASRegimeDetector:
                     metrics['silhouette_score'] = silhouette_score(features, labels)
                     metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
             except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
 

@@ -1,20 +1,32 @@
 """
-Meta-Learning Components for TAS
+Advanced Meta-Learning Module for CLVSA Architectures
 
-Advanced meta-learning capabilities for tree-based architecture search including:
-- Model-Agnostic Meta-Learning (MAML) for trees
-- Few-shot learning for regime adaptation
-- Continual learning for dynamic environments
-- Prototypical networks for regime classification
-- Uncertainty estimation and confidence scoring
+This module provides state-of-the-art meta-learning capabilities specifically
+designed for tree-based CLVSA models.
 """
 
-from .tree_meta_learning import TreeMetaLearning, TreeMAML, TreePrototypicalNetwork
-from .few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
-from .continual_learning import ContinualTreeLearner, TreeEpisodicMemory
+from .advanced_meta_learning import (
+    AdvancedMetaLearningSystem,
+    AdvancedMAML,
+    CrossDomainMetaLearning,
+    MetaLearningMethod,
+    AdvancedMetaLearningConfig,
+    MetaTask,
+    MetaLearningResult,
+    create_advanced_meta_learning_system,
+    create_advanced_maml,
+    create_cross_domain_meta_learning
+)
 
 __all__ = [
-    'TreeMetaLearning', 'TreeMAML', 'TreePrototypicalNetwork',
-    'FewShotTreeLearner', 'TreeFewShotAdapter',
-    'ContinualTreeLearner', 'TreeEpisodicMemory'
+    'AdvancedMetaLearningSystem',
+    'AdvancedMAML',
+    'CrossDomainMetaLearning',
+    'MetaLearningMethod',
+    'AdvancedMetaLearningConfig',
+    'MetaTask',
+    'MetaLearningResult',
+    'create_advanced_meta_learning_system',
+    'create_advanced_maml',
+    'create_cross_domain_meta_learning'
 ]

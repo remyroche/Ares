@@ -81,6 +81,26 @@ except ImportError:
     ML_COMMON_AVAILABLE = False
     tprint_warning("ML common utilities not available")
 
+# Import TPE optimization utilities
+try:
+    from src.utils.ml_common.optimization import (
+        TPEOptimizer, TPEConfig, TPESampler
+    )
+    TPE_AVAILABLE = True
+except ImportError:
+    TPE_AVAILABLE = False
+    tprint_warning("TPE optimization utilities not available")
+
+# Import grid search utilities
+try:
+    from src.utils.ml_common.optimization import (
+        GridSearchOptimizer, GridSearchConfig
+    )
+    GRID_AVAILABLE = True
+except ImportError:
+    GRID_AVAILABLE = False
+    tprint_warning("Grid search utilities not available")
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -99,6 +119,7 @@ class OptimizationStrategy(Enum):
     TPE = "tpe"
     EVOLUTIONARY = "evolutionary"
     HYPERBAND = "hyperband"
+    GRID_TPE = "grid_tpe"  # Combined grid + TPE strategy
 
 @dataclass
 class ParameterRange:
@@ -136,7 +157,7 @@ class SearchSpaceConfig:
     name: str
     description: str = ""
     max_iterations: int = 100
-    optimization_strategy: OptimizationStrategy = OptimizationStrategy.BAYESIAN
+    optimization_strategy: OptimizationStrategy = OptimizationStrategy.GRID_TPE
     early_stopping_patience: int = 10
     validation_split: float = 0.2
     cross_validation_folds: int = 5
@@ -147,6 +168,11 @@ class SearchSpaceConfig:
     max_parallel_jobs: int = 4
     save_intermediate_results: bool = True
     results_dir: str = "nas_results"
+    # Grid + TPE specific settings
+    grid_phase_iterations: int = 30  # Number of iterations for grid search phase
+    tpe_phase_iterations: int = 70   # Number of iterations for TPE phase
+    grid_sample_size: int = 5        # Sample size for grid search
+    tpe_n_trials: int = 20           # Number of trials for TPE
     
     def __post_init__(self):
         """Validate configuration."""
@@ -223,6 +249,33 @@ class SearchSpace:
             self.parallel_processor = None
             self.lookahead_protection = None
             self.training_safeguards = None
+        
+        # Setup TPE optimizer
+        if TPE_AVAILABLE:
+            tpe_config = TPEConfig(
+                n_trials=self.config.tpe_n_trials,
+                n_startup_trials=5,
+                n_ei_candidates=24,
+                gamma=0.25,
+                prior_weight=1.0
+            )
+            self.tpe_optimizer = TPEOptimizer(tpe_config)
+            tprint_info("TPE optimizer enabled")
+        else:
+            self.tpe_optimizer = None
+        
+        # Setup Grid search optimizer
+        if GRID_AVAILABLE:
+            grid_config = GridSearchConfig(
+                n_jobs=self.config.max_parallel_jobs,
+                cv=self.config.cross_validation_folds,
+                scoring='neg_mean_squared_error',
+                verbose=1
+            )
+            self.grid_optimizer = GridSearchOptimizer(grid_config)
+            tprint_info("Grid search optimizer enabled")
+        else:
+            self.grid_optimizer = None
     
     def add_parameter(self, param: ParameterRange) -> None:
         """Add a parameter to the search space."""
@@ -350,6 +403,11 @@ class SearchSpace:
         # Initialize optimization history
         self.optimization_history = []
         
+        # Handle Grid + TPE strategy
+        if self.config.optimization_strategy == OptimizationStrategy.GRID_TPE:
+            return self._optimize_grid_tpe(objective_function, data, start_time)
+        
+        # Standard optimization loop for other strategies
         for iteration in range(self.config.max_iterations):
             tprint_progress(iteration + 1, self.config.max_iterations, 
                           f"Optimization iteration {iteration + 1}")
@@ -361,6 +419,8 @@ class SearchSpace:
                 params = self._grid_search_sample(iteration)
             elif self.config.optimization_strategy == OptimizationStrategy.BAYESIAN:
                 params = self._bayesian_sample(iteration)
+            elif self.config.optimization_strategy == OptimizationStrategy.TPE:
+                params = self._tpe_sample(iteration)
             else:
                 params = self.sample_parameters(1)[0]
             
@@ -440,6 +500,216 @@ class SearchSpace:
                 params[name] = param.choices[iteration % len(param.choices)]
         
         return params
+    
+    def _optimize_grid_tpe(self, objective_function: Callable, 
+                          data: Optional[Any], start_time: float) -> Dict[str, Any]:
+        """
+        Optimize using Grid + TPE strategy.
+        
+        Phase 1: Grid search for exploration
+        Phase 2: TPE for exploitation
+        """
+        tprint_info("Starting Grid + TPE optimization")
+        
+        best_score = float('-inf')
+        best_params = None
+        
+        # Phase 1: Grid Search
+        tprint_info(f"Phase 1: Grid Search ({self.config.grid_phase_iterations} iterations)")
+        grid_results = self._run_grid_phase(objective_function, data)
+        
+        if grid_results['best_score'] > best_score:
+            best_score = grid_results['best_score']
+            best_params = grid_results['best_parameters']
+        
+        # Phase 2: TPE Optimization
+        tprint_info(f"Phase 2: TPE Optimization ({self.config.tpe_phase_iterations} iterations)")
+        tpe_results = self._run_tpe_phase(objective_function, data, grid_results['results'])
+        
+        if tpe_results['best_score'] > best_score:
+            best_score = tpe_results['best_score']
+            best_params = tpe_results['best_parameters']
+        
+        # Combine results
+        all_results = grid_results['results'] + tpe_results['results']
+        self.results.extend(all_results)
+        self.optimization_history.extend(all_results)
+        
+        # Update best result
+        if best_score > float('-inf'):
+            self.best_result = {
+                'parameters': best_params,
+                'score': best_score,
+                'timestamp': get_current_datetime().isoformat()
+            }
+        
+        # Save results
+        if self.config.save_intermediate_results:
+            self._save_results()
+        
+        optimization_time = time.time() - start_time
+        tprint_performance("Grid + TPE optimization", optimization_time)
+        
+        return {
+            'best_score': best_score,
+            'best_parameters': best_params,
+            'total_iterations': len(self.results),
+            'optimization_time': optimization_time,
+            'strategy': 'grid_tpe',
+            'grid_phase_results': grid_results,
+            'tpe_phase_results': tpe_results
+        }
+    
+    def _run_grid_phase(self, objective_function: Callable, data: Optional[Any]) -> Dict[str, Any]:
+        """Run grid search phase."""
+        grid_results = []
+        best_score = float('-inf')
+        best_params = None
+        
+        # Generate grid points
+        grid_points = self._generate_grid_points()
+        
+        for i, params in enumerate(grid_points[:self.config.grid_phase_iterations]):
+            tprint_progress(i + 1, self.config.grid_phase_iterations, 
+                          f"Grid search iteration {i + 1}")
+            
+            if not self.validate_parameters(params):
+                continue
+            
+            try:
+                if data is not None:
+                    score = objective_function(params, data)
+                else:
+                    score = objective_function(params)
+                
+                result = {
+                    'iteration': i + 1,
+                    'parameters': params.copy(),
+                    'score': score,
+                    'timestamp': get_current_datetime().isoformat(),
+                    'phase': 'grid'
+                }
+                
+                grid_results.append(result)
+                
+                if score > best_score:
+                    best_score = score
+                    best_params = params.copy()
+                    tprint_success(f"Grid phase - New best score: {score:.4f}")
+                    
+            except Exception as e:
+                tprint_error(f"Error in grid search objective function: {e}")
+                continue
+        
+        return {
+            'best_score': best_score,
+            'best_parameters': best_params,
+            'results': grid_results
+        }
+    
+    def _run_tpe_phase(self, objective_function: Callable, data: Optional[Any], 
+                      previous_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Run TPE optimization phase."""
+        tpe_results = []
+        best_score = float('-inf')
+        best_params = None
+        
+        # Initialize TPE with previous results
+        if self.tpe_optimizer and previous_results:
+            # Feed previous results to TPE
+            for result in previous_results:
+                self.tpe_optimizer.observe(result['parameters'], result['score'])
+        
+        for i in range(self.config.tpe_phase_iterations):
+            tprint_progress(i + 1, self.config.tpe_phase_iterations, 
+                          f"TPE iteration {i + 1}")
+            
+            # Sample parameters using TPE
+            if self.tpe_optimizer:
+                params = self._tpe_sample(i)
+            else:
+                # Fallback to Bayesian sampling
+                params = self._bayesian_sample(i)
+            
+            if not self.validate_parameters(params):
+                continue
+            
+            try:
+                if data is not None:
+                    score = objective_function(params, data)
+                else:
+                    score = objective_function(params)
+                
+                result = {
+                    'iteration': i + 1,
+                    'parameters': params.copy(),
+                    'score': score,
+                    'timestamp': get_current_datetime().isoformat(),
+                    'phase': 'tpe'
+                }
+                
+                tpe_results.append(result)
+                
+                # Update TPE with new observation
+                if self.tpe_optimizer:
+                    self.tpe_optimizer.observe(params, score)
+                
+                if score > best_score:
+                    best_score = score
+                    best_params = params.copy()
+                    tprint_success(f"TPE phase - New best score: {score:.4f}")
+                    
+            except Exception as e:
+                tprint_error(f"Error in TPE objective function: {e}")
+                continue
+        
+        return {
+            'best_score': best_score,
+            'best_parameters': best_params,
+            'results': tpe_results
+        }
+    
+    def _generate_grid_points(self) -> List[Dict[str, Any]]:
+        """Generate grid points for grid search."""
+        grid_points = []
+        
+        # Create parameter grids
+        param_grids = {}
+        for name, param in self.parameters.items():
+            if param.param_type == SearchSpaceType.CONTINUOUS:
+                if param.step:
+                    values = np.arange(param.min_value, param.max_value + param.step, param.step)
+                else:
+                    values = np.linspace(param.min_value, param.max_value, self.config.grid_sample_size)
+                param_grids[name] = values
+            elif param.param_type == SearchSpaceType.DISCRETE:
+                values = list(range(param.min_value, param.max_value + 1, param.step))
+                param_grids[name] = values
+            elif param.param_type == SearchSpaceType.CATEGORICAL:
+                param_grids[name] = param.choices
+        
+        # Generate all combinations
+        import itertools
+        param_names = list(param_grids.keys())
+        param_values = list(param_grids.values())
+        
+        for combination in itertools.product(*param_values):
+            params = dict(zip(param_names, combination))
+            grid_points.append(params)
+        
+        return grid_points
+    
+    def _tpe_sample(self, iteration: int) -> Dict[str, Any]:
+        """Sample parameters using TPE."""
+        if self.tpe_optimizer:
+            try:
+                return self.tpe_optimizer.suggest()
+            except Exception as e:
+                tprint_warning(f"TPE sampling failed: {e}, falling back to random")
+                return self.sample_parameters(1)[0]
+        else:
+            # Fallback to Bayesian sampling
+            return self._bayesian_sample(iteration)
     
     def _bayesian_sample(self, iteration: int) -> Dict[str, Any]:
         """Sample parameters for Bayesian optimization."""
@@ -547,12 +817,12 @@ def get_default_search_space() -> SearchSpace:
     Returns:
         SearchSpace instance with default parameters
     """
-    # Create default configuration
+    # Create default configuration with Grid + TPE strategy
     config = SearchSpaceConfig(
         name="default_nas_search_space",
-        description="Default neural architecture search space",
+        description="Default neural architecture search space with Grid + TPE optimization",
         max_iterations=100,
-        optimization_strategy=OptimizationStrategy.BAYESIAN,
+        optimization_strategy=OptimizationStrategy.GRID_TPE,
         early_stopping_patience=10,
         validation_split=0.2,
         cross_validation_folds=5,
@@ -562,7 +832,12 @@ def get_default_search_space() -> SearchSpace:
         parallel_processing=True,
         max_parallel_jobs=4,
         save_intermediate_results=True,
-        results_dir="nas_results"
+        results_dir="nas_results",
+        # Grid + TPE specific settings
+        grid_phase_iterations=30,  # 30% grid search for exploration
+        tpe_phase_iterations=70,   # 70% TPE for exploitation
+        grid_sample_size=5,        # Sample size for grid search
+        tpe_n_trials=20            # Number of trials for TPE
     )
     
     # Create search space
@@ -580,7 +855,9 @@ def get_default_search_space() -> SearchSpace:
     search_space.add_continuous_parameter("l1_alpha", 1e-6, 1e-2, 1e-4)
     search_space.add_continuous_parameter("l2_alpha", 1e-6, 1e-2, 1e-4)
     
-    tprint_info("Created default search space with common neural architecture parameters")
+    tprint_info("Created default search space with Grid + TPE optimization strategy")
+    tprint_info(f"Grid phase: {config.grid_phase_iterations} iterations for exploration")
+    tprint_info(f"TPE phase: {config.tpe_phase_iterations} iterations for exploitation")
     
     return search_space
 
@@ -620,8 +897,23 @@ if __name__ == "__main__":
         
         return score
     
-    # Run optimization
-    tprint_info("Running example optimization...")
+    # Run optimization with Grid + TPE strategy
+    tprint_info("Running example optimization with Grid + TPE strategy...")
     results = search_space.optimize(example_objective)
     
     tprint_structured(results)
+    
+    # Show phase-specific results if available
+    if 'grid_phase_results' in results:
+        tprint_info("Grid Phase Results:")
+        tprint_structured({
+            'best_score': results['grid_phase_results']['best_score'],
+            'iterations': len(results['grid_phase_results']['results'])
+        })
+    
+    if 'tpe_phase_results' in results:
+        tprint_info("TPE Phase Results:")
+        tprint_structured({
+            'best_score': results['tpe_phase_results']['best_score'],
+            'iterations': len(results['tpe_phase_results']['results'])
+        })

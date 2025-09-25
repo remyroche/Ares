@@ -707,10 +707,10 @@ class EnhancedNASEngine:
         except Exception as e:
             tprint_error(f"Architecture evaluation with shared utilities failed: {e}")
             tprint_debug(f"Architecture evaluation error context: {locals()}")
-            tprint_warning("Falling back to simple evaluation")
+            tprint_error("CRITICAL: Architecture evaluation with shared utilities is required for NAS analysis")
+            tprint_error("Cannot proceed without proper architecture evaluation")
             self.logger.error(f"Architecture evaluation with shared utilities failed: {e}")
-            # Fallback to simple evaluation
-            return self._evaluate_architecture_fallback(architecture, validation_data, regime_data)
+            raise ValueError(f"Architecture evaluation with shared utilities failed: {e}") from e
 
     def _evaluate_architecture(self, architecture, validation_data, regime_data=None) -> float:
         """Evaluate an architecture's performance."""
@@ -730,11 +730,13 @@ class EnhancedNASEngine:
 
                     self.logger.debug(f"Architecture evaluated with estimator: {estimated_score:.4f}")
                     return estimated_score
-                except Exception as e:
-                    tprint_error(f"Performance estimator failed: {e}")
-                    tprint_debug(f"Performance estimator error context: {locals()}")
-                    tprint_warning("Falling back to simplified evaluation")
-                    self.logger.warning(f"Performance estimator failed: {e}")
+        except Exception as e:
+            tprint_error(f"Performance estimator failed: {e}")
+            tprint_debug(f"Performance estimator error context: {locals()}")
+            tprint_error("CRITICAL: Performance estimator is required for NAS analysis")
+            tprint_error("Cannot proceed without proper performance estimation")
+            self.logger.error(f"Performance estimator failed: {e}")
+            raise ValueError(f"Performance estimator failed: {e}") from e
 
             # Fallback to actual evaluation (simplified)
             # In practice, this would involve training and validating the architecture
@@ -764,9 +766,10 @@ class EnhancedNASEngine:
         except Exception as e:
             tprint_error(f"Architecture evaluation failed: {e}")
             tprint_debug(f"Architecture evaluation error context: {locals()}")
-            tprint_warning("Returning low score for failed architecture")
+            tprint_error("CRITICAL: Architecture evaluation is required for NAS analysis")
+            tprint_error("Cannot proceed without proper architecture evaluation")
             self.logger.error(f"Architecture evaluation failed: {e}")
-            return 0.1  # Low score for failed architectures
+            raise ValueError(f"Architecture evaluation failed: {e}") from e
 
     def _evaluate_architecture_fallback(self, architecture, validation_data, regime_data=None) -> float:
         """Fallback evaluation when shared utilities fail."""
@@ -790,9 +793,10 @@ class EnhancedNASEngine:
         except Exception as e:
             tprint_error(f"NAS architecture fallback evaluation failed: {e}")
             tprint_debug(f"Fallback evaluation error context: {locals()}")
-            tprint_warning("Returning low score for failed fallback evaluation")
+            tprint_error("CRITICAL: NAS architecture fallback evaluation is required for NAS analysis")
+            tprint_error("Cannot proceed without proper fallback evaluation")
             self.logger.error(f"NAS architecture fallback evaluation failed: {e}")
-            return 0.1  # Low score for failed architectures
+            raise ValueError(f"NAS architecture fallback evaluation failed: {e}") from e
 
     def _random_search(self, objective_function: Callable) -> Dict[str, Any]:
         """Perform random search."""
@@ -999,9 +1003,10 @@ class EnhancedNASEngine:
         except Exception as e:
             tprint_error(f"NAS Cross-validation with shared utilities failed: {e}")
             tprint_debug(f"Cross-validation error context: {locals()}")
-            tprint_warning("Cross-validation failed - returning error result")
-            self.logger.warning(f"NAS Cross-validation with shared utilities failed: {e}")
-            return {'error': str(e), 'success': False}
+            tprint_error("CRITICAL: NAS Cross-validation is required for NAS analysis")
+            tprint_error("Cannot proceed without proper cross-validation")
+            self.logger.error(f"NAS Cross-validation with shared utilities failed: {e}")
+            raise ValueError(f"NAS Cross-validation failed: {e}") from e
 
     def _optimize_model_thresholds_shared(self, architecture, test_data) -> Dict[str, Any]:
         """Optimize model thresholds using shared ML utilities."""
@@ -1027,9 +1032,10 @@ class EnhancedNASEngine:
         except Exception as e:
             tprint_error(f"NAS Threshold optimization with shared utilities failed: {e}")
             tprint_debug(f"Threshold optimization error context: {locals()}")
-            tprint_warning("Threshold optimization failed - returning error result")
-            self.logger.warning(f"NAS Threshold optimization with shared utilities failed: {e}")
-            return {'success': False, 'error': str(e)}
+            tprint_error("CRITICAL: NAS Threshold optimization is required for NAS analysis")
+            tprint_error("Cannot proceed without proper threshold optimization")
+            self.logger.error(f"NAS Threshold optimization with shared utilities failed: {e}")
+            raise ValueError(f"NAS Threshold optimization failed: {e}") from e
 
 
     def save_search_state(self, filepath: str) -> bool:

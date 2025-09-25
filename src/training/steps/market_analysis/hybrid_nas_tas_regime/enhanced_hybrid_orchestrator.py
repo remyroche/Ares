@@ -866,24 +866,27 @@ class EnhancedHybridOrchestrator:
                 tprint_success(f"Economic significance calculated: {len(economic_scores)} scores, mean: {np.mean(economic_scores):.3f}")
             except Exception as e:
                 tprint_error(f"Economic significance calculation failed: {e}")
-                tprint_warning("Using fallback economic scores")
-                economic_scores = np.full(n_regimes, 0.5)  # Conservative fallback
+                tprint_error("CRITICAL: Economic significance calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper economic significance scores")
+                raise ValueError(f"Economic significance calculation failed: {e}") from e
             
             try:
                 trading_scores = self._calculate_trading_viability_scores(clustering_result.labels, market_data)
                 tprint_success(f"Trading viability calculated: {len(trading_scores)} scores, mean: {np.mean(trading_scores):.3f}")
             except Exception as e:
                 tprint_error(f"Trading viability calculation failed: {e}")
-                tprint_warning("Using fallback trading scores")
-                trading_scores = np.full(n_regimes, 0.4)  # Conservative fallback
+                tprint_error("CRITICAL: Trading viability calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper trading viability scores")
+                raise ValueError(f"Trading viability calculation failed: {e}") from e
             
             try:
                 stability_scores = self._calculate_regime_stability_scores(clustering_result.labels, clustering_result.probabilities)
                 tprint_success(f"Regime stability calculated: {len(stability_scores)} scores, mean: {np.mean(stability_scores):.3f}")
             except Exception as e:
                 tprint_error(f"Regime stability calculation failed: {e}")
-                tprint_warning("Using fallback stability scores")
-                stability_scores = np.full(n_regimes, 0.6)  # Conservative fallback
+                tprint_error("CRITICAL: Regime stability calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper regime stability scores")
+                raise ValueError(f"Regime stability calculation failed: {e}") from e
             
             # Calculate transition probabilities
             transition_probs = self._calculate_transition_probabilities(clustering_result.labels, clustering_result.probabilities)
@@ -1093,9 +1096,9 @@ class EnhancedHybridOrchestrator:
             
         except Exception as e:
             tprint_error(f"Transition probability calculation failed: {e}")
-            tprint_warning("Using uniform transition probabilities as fallback")
-            n_regimes = len(set(labels))
-            return np.full((n_regimes, n_regimes), 1.0 / n_regimes)
+            tprint_error("CRITICAL: Transition probability calculation is required for regime analysis")
+            tprint_error("Cannot proceed without proper transition probabilities")
+            raise ValueError(f"Transition probability calculation failed: {e}") from e
     
     def _perform_multi_timeframe_analysis(self, market_data: pd.DataFrame, hybrid_regimes: Dict[str, Any]) -> Dict[str, Any]:
         """Perform multi-timeframe analysis for trading."""

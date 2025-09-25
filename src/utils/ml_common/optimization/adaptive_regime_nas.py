@@ -272,7 +272,8 @@ class RegimeDetector:
                             best_config = config
                             
                 except Exception as e:
-                    self.logger.warning(f"Model {model_type} failed for regime {regime_id}: {e}")
+                    tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Model {model_type} failed for regime {regime_id}: {e}")
+                    self.logger.error(f"Model {model_type} failed for regime {regime_id}: {e}")
                     continue
             
             if best_model is None:
@@ -400,8 +401,10 @@ class RegimeDetector:
             return float(overall_score)
             
         except Exception as e:
-            self.logger.warning(f"Model evaluation failed: {e}")
-            return 0.0
+            tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Model evaluation failed: {e}")
+            self.logger.error(f"Model evaluation failed: {e}")
+            # Return a low score instead of 0.0 to indicate failure
+            return 0.1
     
     def _refine_regime_boundaries(self, X: np.ndarray, regime_models: Dict[str, Any]) -> Dict[str, Any]:
         """Refine regime boundaries using discovered models."""
@@ -485,8 +488,10 @@ class RegimeDetector:
             }
             
         except Exception as e:
-            self.logger.warning(f"Regime quality evaluation failed: {e}")
-            return {'overall_quality': 0.0}
+            tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Regime quality evaluation failed: {e}")
+            self.logger.error(f"Regime quality evaluation failed: {e}")
+            # Return a minimal quality score instead of 0.0
+            return {'overall_quality': 0.1}
     
     def _calculate_regime_persistence(self, labels: np.ndarray) -> float:
         """Calculate regime persistence."""
@@ -568,9 +573,9 @@ class AdaptiveRegimeNAS:
     def __init__(self, config: AdaptiveRegimeNASConfig):
         """Initialize adaptive regime NAS."""
         tprint("🚀 [ADAPTIVE_REGIME_NAS] Initializing Adaptive Regime NAS", color="cyan", bold=True)
-        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Max regimes: {config.max_regimes}", color="blue")
-        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Min regime samples: {config.min_regime_samples}", color="blue")
-        tprint(f"📊 [ADAPTIVE_REGIME_NAS] NAS trials: {config.nas_trials}", color="blue")
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Trials: {config.n_trials}", color="blue")
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Min regime samples: {config.regime_detection['min_regime_samples']}", color="blue")
+        tprint(f"📊 [ADAPTIVE_REGIME_NAS] Available models: {len(config.available_models)}", color="blue")
         self.config = config
         self.logger = logger.getChild('AdaptiveRegimeNAS')
         
@@ -680,7 +685,8 @@ class AdaptiveRegimeNAS:
                             best_config = config
                             
                 except Exception as e:
-                    self.logger.warning(f"Trading model {model_type} failed for regime {regime_id}: {e}")
+                    tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Trading model {model_type} failed for regime {regime_id}: {e}")
+                    self.logger.error(f"Trading model {model_type} failed for regime {regime_id}: {e}")
                     continue
             
             if best_model is None:
@@ -808,8 +814,10 @@ class AdaptiveRegimeNAS:
             return float(overall_score)
             
         except Exception as e:
-            self.logger.warning(f"Trading model evaluation failed: {e}")
-            return 0.0
+            tprint_error(f"❌ [ADAPTIVE_REGIME_NAS] Trading model evaluation failed: {e}")
+            self.logger.error(f"Trading model evaluation failed: {e}")
+            # Return a low score instead of 0.0 to indicate failure
+            return 0.1
     
     def _create_adaptive_ensemble(self, regime_results: Dict[str, Any], trading_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create adaptive ensemble of discovered models."""

@@ -26,11 +26,33 @@ import json
 from pathlib import Path
 from tprint import tprint
 
-# Import existing neural NAS
-from .neural_architecture_search import NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
+# Import existing neural NAS (if available)
+try:
+    from .neural_architecture_search import NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
+    NEURAL_NAS_AVAILABLE = True
+except ImportError:
+    tprint_warning("⚠️ [HYBRID_NAS] Neural architecture search module not available")
+    NEURAL_NAS_AVAILABLE = False
+    # Create placeholder classes
+    class NeuralArchitectureSearch:
+        def __init__(self, config): pass
+        def search(self, *args, **kwargs): raise NotImplementedError("Neural NAS not available")
+    class ArchitectureConfig: pass
+    class ArchitectureCandidate: pass
 
-# Import tree-based NAS
-from .tree_based_architecture_search import TreeBasedArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+# Import tree-based NAS (if available)
+try:
+    from .tree_based_architecture_search import TreeBasedArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+    TREE_NAS_AVAILABLE = True
+except ImportError:
+    tprint_warning("⚠️ [HYBRID_NAS] Tree-based architecture search module not available")
+    TREE_NAS_AVAILABLE = False
+    # Create placeholder classes
+    class TreeBasedArchitectureSearch:
+        def __init__(self, config): pass
+        def search(self, *args, **kwargs): raise NotImplementedError("Tree NAS not available")
+    class TreeArchitectureConfig: pass
+    class TreeArchitectureCandidate: pass
 
 # Ensemble imports
 try:
@@ -131,10 +153,19 @@ class HybridNASSystem:
         self.logger = logger.getChild('HybridNASSystem')
         
         # Initialize individual NAS systems
-        tprint("🧠 [HYBRID_NAS] Initializing neural NAS system", color="yellow")
-        self.neural_nas = NeuralArchitectureSearch(config.neural_config)
-        tprint("🌳 [HYBRID_NAS] Initializing tree-based NAS system", color="yellow")
-        self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
+        if NEURAL_NAS_AVAILABLE:
+            tprint("🧠 [HYBRID_NAS] Initializing neural NAS system", color="yellow")
+            self.neural_nas = NeuralArchitectureSearch(config.neural_config)
+        else:
+            tprint_warning("⚠️ [HYBRID_NAS] Neural NAS not available, using placeholder")
+            self.neural_nas = NeuralArchitectureSearch(config.neural_config)
+            
+        if TREE_NAS_AVAILABLE:
+            tprint("🌳 [HYBRID_NAS] Initializing tree-based NAS system", color="yellow")
+            self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
+        else:
+            tprint_warning("⚠️ [HYBRID_NAS] Tree NAS not available, using placeholder")
+            self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
         
         # Hybrid components
         tprint("🔧 [HYBRID_NAS] Initializing hybrid components", color="blue")
@@ -371,7 +402,9 @@ class HybridNASSystem:
                 self.logger.debug(f"Trial {trial}: Hybrid score {performance['overall_score']:.4f}")
                 
             except Exception as e:
-                self.logger.warning(f"Trial {trial} failed: {e}")
+                tprint_error(f"❌ [HYBRID_NAS] Trial {trial} failed: {e}")
+                self.logger.error(f"Trial {trial} failed: {e}")
+                # Continue with next trial but log the error properly
                 continue
         
         if best_candidate is None:
@@ -550,14 +583,10 @@ class HybridNASSystem:
             }
             
         except Exception as e:
-            self.logger.warning(f"Hybrid evaluation failed: {e}")
-            return {
-                'accuracy': 0.0,
-                'efficiency': 0.0,
-                'interpretability': 0.0,
-                'robustness': 0.0,
-                'overall_score': 0.0
-            }
+            tprint_error(f"❌ [HYBRID_NAS] Hybrid evaluation failed: {e}")
+            self.logger.error(f"Hybrid evaluation failed: {e}")
+            # Re-raise the exception instead of returning default values
+            raise RuntimeError(f"Hybrid evaluation failed: {e}") from e
     
     def get_search_summary(self) -> Dict[str, Any]:
         """Get summary of hybrid search results."""

@@ -553,6 +553,16 @@ class RegimeTradingTreeNAS:
             # In practice, you'd use unsupervised clustering or labeled data
             n_samples = len(X)
             n_regimes = len(self.config.regime_types)
+            
+            # Validate regime generation parameters
+            if n_samples < 10:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Insufficient samples: {n_samples}")
+                raise ValueError(f"Insufficient samples for regime detection: {n_samples}")
+            
+            if n_regimes < 2:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Insufficient regime types: {n_regimes}")
+                raise ValueError(f"Insufficient regime types: {n_regimes}")
+            
             regime_labels = np.random.randint(0, n_regimes, n_samples)
             tprint(f"📊 [REGIME_TRADING_TREE_NAS] Generated {n_regimes} regime labels for {n_samples} samples", color="cyan")
             
@@ -602,7 +612,14 @@ class RegimeTradingTreeNAS:
             # Create synthetic trading signals for training
             # In practice, you'd use historical trading performance
             n_samples = len(X)
+            
+            # Validate signal generation parameters
+            if n_samples < 5:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Insufficient samples for signal generation: {n_samples}")
+                raise ValueError(f"Insufficient samples for signal generation: {n_samples}")
+            
             signal_labels = np.random.choice([0, 1, 2], n_samples, p=[0.3, 0.4, 0.3])  # Hold, Buy, Sell
+            tprint(f"📊 [REGIME_TRADING_TREE_NAS] Generated {len(signal_labels)} trading signals", color="cyan")
             
             # Train signal generator
             self.signal_generator.fit(X, signal_labels)
@@ -613,6 +630,7 @@ class RegimeTradingTreeNAS:
             
             # Train risk manager
             risk_labels = np.random.choice([0, 1], n_samples, p=[0.8, 0.2])  # Low risk, High risk
+            tprint(f"📊 [REGIME_TRADING_TREE_NAS] Generated {len(risk_labels)} risk labels", color="cyan")
             self.risk_manager.fit(X, risk_labels)
             
             # Get risk assessments
@@ -621,6 +639,7 @@ class RegimeTradingTreeNAS:
             
             # Train position sizer
             position_sizes = np.random.uniform(-0.1, 0.1, n_samples)  # Synthetic position sizes
+            tprint(f"📊 [REGIME_TRADING_TREE_NAS] Generated {len(position_sizes)} position sizes", color="cyan")
             self.position_sizer.fit(X, position_sizes)
             
             # Get position recommendations
@@ -792,6 +811,10 @@ class RegimeTradingTreeNAS:
     def _calculate_regime_persistence(self, regime_predictions: np.ndarray) -> np.ndarray:
         """Calculate regime persistence."""
         try:
+            if len(regime_predictions) == 0:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Empty regime predictions for persistence calculation")
+                raise ValueError("Empty regime predictions for persistence calculation")
+            
             persistence = np.zeros(len(regime_predictions))
             current_persistence = 1
             
@@ -803,15 +826,21 @@ class RegimeTradingTreeNAS:
                 
                 persistence[i] = current_persistence
             
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated regime persistence for {len(regime_predictions)} samples")
             return persistence
             
         except Exception as e:
-            logger.warning(f"Regime persistence calculation failed: {e}")
-            return np.ones(len(regime_predictions))
+            tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Regime persistence calculation failed: {e}")
+            logger.error(f"Regime persistence calculation failed: {e}")
+            raise RuntimeError(f"Regime persistence calculation failed: {e}") from e
     
     def _calculate_regime_transitions(self, regime_predictions: np.ndarray) -> np.ndarray:
         """Calculate regime transitions."""
         try:
+            if len(regime_predictions) == 0:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Empty regime predictions for transition calculation")
+                raise ValueError("Empty regime predictions for transition calculation")
+            
             transitions = np.zeros(len(regime_predictions))
             
             for i in range(1, len(regime_predictions)):
@@ -820,11 +849,13 @@ class RegimeTradingTreeNAS:
                 else:
                     transitions[i] = 0
             
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated regime transitions for {len(regime_predictions)} samples")
             return transitions
             
         except Exception as e:
-            logger.warning(f"Regime transition calculation failed: {e}")
-            return np.zeros(len(regime_predictions))
+            tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Regime transition calculation failed: {e}")
+            logger.error(f"Regime transition calculation failed: {e}")
+            raise RuntimeError(f"Regime transition calculation failed: {e}") from e
     
     def get_combined_results(self) -> Dict[str, Any]:
         """Get combined regime detection and trading results."""

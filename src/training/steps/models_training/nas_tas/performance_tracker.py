@@ -240,15 +240,41 @@ class PerformanceTracker:
     def _initialize_storage(self):
         """Initialize storage directories."""
         try:
-            Path(self.config.performance_data_path).mkdir(parents=True, exist_ok=True)
-            Path(self.config.report_path).mkdir(parents=True, exist_ok=True)
+            tprint_info("📁 Initializing performance storage directories")
             
+            # Create performance data directory
+            try:
+                Path(self.config.performance_data_path).mkdir(parents=True, exist_ok=True)
+                tprint_success(f"✅ Created performance data directory: {self.config.performance_data_path}")
+            except (OSError, PermissionError) as e:
+                tprint_error(f"❌ Failed to create performance data directory: {e}")
+                self.logger.error(f"❌ Failed to create performance data directory: {e}")
+                raise RuntimeError(f"Failed to create performance data directory: {e}") from e
+            
+            # Create report directory
+            try:
+                Path(self.config.report_path).mkdir(parents=True, exist_ok=True)
+                tprint_success(f"✅ Created report directory: {self.config.report_path}")
+            except (OSError, PermissionError) as e:
+                tprint_error(f"❌ Failed to create report directory: {e}")
+                self.logger.error(f"❌ Failed to create report directory: {e}")
+                raise RuntimeError(f"Failed to create report directory: {e}") from e
+            
+            # Create alert log directory if needed
             if self.config.enable_alerts:
-                Path(self.config.alert_log_path).parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    Path(self.config.alert_log_path).parent.mkdir(parents=True, exist_ok=True)
+                    tprint_success(f"✅ Created alert log directory: {Path(self.config.alert_log_path).parent}")
+                except (OSError, PermissionError) as e:
+                    tprint_warning(f"⚠️ Failed to create alert log directory: {e}")
+                    self.logger.warning(f"⚠️ Failed to create alert log directory: {e}")
+                    # Continue without alert logging
             
+            tprint_success("✅ Performance storage initialized successfully")
             self.logger.info("✅ Performance storage initialized")
             
         except Exception as e:
+            tprint_error(f"❌ Storage initialization failed: {e}")
             self.logger.error(f"❌ Storage initialization failed: {e}")
             raise
     

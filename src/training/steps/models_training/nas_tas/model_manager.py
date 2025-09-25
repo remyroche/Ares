@@ -226,20 +226,41 @@ class ModelManager:
     def _initialize_storage(self):
         """Initialize storage directories."""
         try:
-            # Create storage directories
-            Path(self.config.model_storage_path).mkdir(parents=True, exist_ok=True)
-            Path(self.config.model_versions_path).mkdir(parents=True, exist_ok=True)
-            Path(self.config.model_metadata_path).mkdir(parents=True, exist_ok=True)
+            tprint_info("📁 Initializing storage directories")
             
-            # Create log directories
+            # Create storage directories with enhanced error handling
+            directories_to_create = [
+                self.config.model_storage_path,
+                self.config.model_versions_path,
+                self.config.model_metadata_path
+            ]
+            
+            # Add log directories if needed
             if self.config.enable_audit_logging:
-                Path(self.config.audit_log_path).parent.mkdir(parents=True, exist_ok=True)
+                directories_to_create.append(str(Path(self.config.audit_log_path).parent))
             if self.config.enable_performance_logging:
-                Path(self.config.performance_log_path).parent.mkdir(parents=True, exist_ok=True)
+                directories_to_create.append(str(Path(self.config.performance_log_path).parent))
             
+            for directory in directories_to_create:
+                try:
+                    Path(directory).mkdir(parents=True, exist_ok=True)
+                    tprint_success(f"✅ Created directory: {directory}")
+                except (OSError, PermissionError) as e:
+                    tprint_error(f"❌ Failed to create directory {directory}: {e}")
+                    self.logger.error(f"❌ Failed to create directory {directory}: {e}")
+                    # Try to create with different permissions
+                    try:
+                        Path(directory).mkdir(parents=True, exist_ok=True, mode=0o755)
+                        tprint_warning(f"⚠️ Created directory with fallback permissions: {directory}")
+                    except Exception as e2:
+                        tprint_error(f"❌ Fallback directory creation failed: {e2}")
+                        raise RuntimeError(f"Failed to create storage directory {directory}: {e}") from e
+            
+            tprint_success("✅ Storage directories initialized successfully")
             self.logger.info("✅ Storage directories initialized")
             
         except Exception as e:
+            tprint_error(f"❌ Storage initialization failed: {e}")
             self.logger.error(f"❌ Storage initialization failed: {e}")
             raise
     
@@ -272,6 +293,7 @@ class ModelManager:
         Returns:
             Dictionary of model_id -> version mapping
         """
+        tprint_info("📝 Registering models with manager")
         self.logger.info("📝 Registering models with manager")
         registration_results = {}
         
@@ -310,12 +332,15 @@ class ModelManager:
                     
                     registration_results[model_id] = version
                     
+                    tprint_success(f"   ✅ Registered {model_id} v{version}")
                     self.logger.info(f"   ✅ Registered {model_id} v{version}")
             
+            tprint_success(f"📊 Total models registered: {len(registration_results)}")
             self.logger.info(f"📊 Total models registered: {len(registration_results)}")
             return registration_results
             
         except Exception as e:
+            tprint_error(f"❌ Model registration failed: {e}")
             self.logger.error(f"❌ Model registration failed: {e}")
             raise
     

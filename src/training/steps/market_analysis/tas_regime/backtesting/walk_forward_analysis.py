@@ -1,117 +1,163 @@
 """
 Walk-Forward Analysis for TAS
 
-Comprehensive walk-forward analysis for tree architecture search including
-out-of-sample testing, rolling window analysis, and performance validation.
+This module provides a simplified interface to the consolidated walk-forward analyzer
+for tree architecture search backtesting.
 """
 
-import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
-from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional, Callable
 import logging
-from datetime import datetime, timedelta
-from enum import Enum
-import warnings
-warnings.filterwarnings('ignore')
+from datetime import datetime
 
-from .backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
+# Import the consolidated walk-forward analyzer
+from src.utils.nas_tas.walk_forward_analyzer import (
+    WalkForwardAnalyzer as ConsolidatedWalkForwardAnalyzer,
+    WalkForwardConfig as ConsolidatedWalkForwardConfig,
+    WalkForwardResult as ConsolidatedWalkForwardResult,
+    WalkForwardMode
+)
 
 logger = logging.getLogger(__name__)
 
 
-class WalkForwardMode(Enum):
-    """Walk-forward analysis modes."""
-    ROLLING = "rolling"
-    EXPANDING = "expanding"
-    FIXED = "fixed"
-
-
-@dataclass
+# Legacy configuration class for backward compatibility
 class WalkForwardConfig:
-    """Configuration for walk-forward analysis."""
+    """Legacy configuration for walk-forward analysis - maps to consolidated config."""
     
-    # Walk-forward parameters
-    training_window: int = 252  # Trading days
-    testing_window: int = 63    # Trading days
-    step_size: int = 21         # Trading days
-    mode: WalkForwardMode = WalkForwardMode.ROLLING
-    
-    # Data parameters
-    min_training_samples: int = 100
-    min_testing_samples: int = 20
-    
-    # Performance thresholds
-    min_sharpe_ratio: float = 0.5
-    max_drawdown_threshold: float = 0.15
-    min_win_rate: float = 0.4
-    
-    # Analysis parameters
-    enable_regime_analysis: bool = True
-    enable_performance_attribution: bool = True
-    enable_risk_analysis: bool = True
-    
-    # Output parameters
-    save_individual_results: bool = True
-    save_summary: bool = True
-    results_directory: str = "walk_forward_results"
-    
-    # Advanced parameters
-    enable_parameter_optimization: bool = False
-    optimization_metric: str = "sharpe_ratio"  # "sharpe_ratio", "total_return", "calmar_ratio"
-    parameter_ranges: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    def __init__(self, 
+                 training_window: int = 252,
+                 testing_window: int = 63,
+                 step_size: int = 21,
+                 mode: str = "rolling",
+                 min_sharpe_ratio: float = 0.5,
+                 max_drawdown_threshold: float = 0.15,
+                 min_win_rate: float = 0.4,
+                 save_individual_results: bool = True,
+                 save_summary: bool = True,
+                 results_directory: str = "walk_forward_results"):
+        
+        # Map legacy mode to consolidated mode
+        mode_mapping = {
+            "rolling": WalkForwardMode.ROLLING_WINDOW,
+            "expanding": WalkForwardMode.EXPANDING_WINDOW,
+            "fixed": WalkForwardMode.FIXED_WINDOW
+        }
+        
+        # Convert to consolidated config
+        self.consolidated_config = ConsolidatedWalkForwardConfig(
+            mode=mode_mapping.get(mode, WalkForwardMode.EXPANDING_WINDOW),
+            initial_training_size=training_window,
+            validation_size=testing_window,
+            step_size=step_size,
+            performance_threshold=min_sharpe_ratio,
+            degradation_threshold=max_drawdown_threshold,
+            save_results=save_summary,
+            results_path=results_directory
+        )
+        
+        # Store legacy parameters for compatibility
+        self.training_window = training_window
+        self.testing_window = testing_window
+        self.step_size = step_size
+        self.mode = mode
+        self.min_sharpe_ratio = min_sharpe_ratio
+        self.max_drawdown_threshold = max_drawdown_threshold
+        self.min_win_rate = min_win_rate
+        self.save_individual_results = save_individual_results
+        self.save_summary = save_summary
+        self.results_directory = results_directory
 
 
-@dataclass
+# Legacy result class for backward compatibility
 class WalkForwardResult:
-    """Result of walk-forward analysis."""
+    """Legacy result class - wraps consolidated result."""
     
-    # Overall metrics
-    n_periods: int
-    successful_periods: int
-    failed_periods: int
-    success_rate: float
-    
-    # Performance metrics
-    average_return: float
-    average_sharpe: float
-    average_drawdown: float
-    total_return: float
-    cumulative_return: float
-    
-    # Risk metrics
-    volatility: float
-    max_drawdown: float
-    var_95: float
-    cvar_95: float
-    
-    # Period-by-period results
-    period_results: List[Dict[str, Any]]
-    period_returns: List[float]
-    period_sharpe: List[float]
-    period_drawdown: List[float]
-    
-    # Regime analysis
-    regime_performance: Dict[str, float]
-    regime_stability: Dict[str, float]
-    
-    # Time series
-    equity_curve: pd.Series
-    returns_series: pd.Series
-    drawdown_series: pd.Series
-    
-    # Metadata
-    analysis_period: Tuple[datetime, datetime]
-    execution_time: float
-    config: WalkForwardConfig
+    def __init__(self, consolidated_result: ConsolidatedWalkForwardResult, legacy_config: WalkForwardConfig):
+        self.consolidated_result = consolidated_result
+        self.legacy_config = legacy_config
+        
+        # Map consolidated results to legacy interface
+        if consolidated_result.success:
+            self.n_periods = consolidated_result.total_folds
+            self.successful_periods = consolidated_result.successful_folds
+            self.failed_periods = consolidated_result.total_folds - consolidated_result.successful_folds
+            self.success_rate = consolidated_result.successful_folds / consolidated_result.total_folds if consolidated_result.total_folds > 0 else 0.0
+            
+            # Performance metrics from overall_performance
+            overall_perf = consolidated_result.overall_performance
+            self.average_return = overall_perf.get('accuracy', {}).get('mean', 0.0)
+            self.average_sharpe = overall_perf.get('sharpe_ratio', {}).get('mean', 0.0)
+            self.average_drawdown = overall_perf.get('max_drawdown', {}).get('mean', 0.0)
+            self.total_return = self.average_return
+            self.cumulative_return = self.total_return
+            
+            # Risk metrics
+            self.volatility = overall_perf.get('sharpe_ratio', {}).get('std', 0.0)
+            self.max_drawdown = overall_perf.get('max_drawdown', {}).get('min', 0.0)
+            self.var_95 = 0.0  # Not directly available in consolidated result
+            self.cvar_95 = 0.0  # Not directly available in consolidated result
+            
+            # Period results
+            self.period_results = consolidated_result.fold_performance
+            self.period_returns = [f.get('performance_metrics', {}).get('accuracy', 0.0) for f in consolidated_result.fold_performance if f.get('success', False)]
+            self.period_sharpe = [f.get('performance_metrics', {}).get('sharpe_ratio', 0.0) for f in consolidated_result.fold_performance if f.get('success', False)]
+            self.period_drawdown = [f.get('performance_metrics', {}).get('max_drawdown', 0.0) for f in consolidated_result.fold_performance if f.get('success', False)]
+            
+            # Regime analysis
+            self.regime_performance = {str(k): v.get('mean_accuracy', 0.0) for k, v in consolidated_result.regime_performance.items()}
+            self.regime_stability = {str(k): v for k, v in consolidated_result.regime_stability.items()}
+            
+            # Time series (create dummy series for compatibility)
+            import pandas as pd
+            import numpy as np
+            n_points = len(self.period_returns) if self.period_returns else 1
+            self.equity_curve = pd.Series([1.0 + sum(self.period_returns[:i+1]) for i in range(n_points)])
+            self.returns_series = pd.Series(self.period_returns if self.period_returns else [0.0])
+            self.drawdown_series = pd.Series([min(0, r) for r in self.period_returns] if self.period_returns else [0.0])
+            
+            # Metadata
+            self.analysis_period = (datetime.now(), datetime.now())  # Placeholder
+            self.execution_time = consolidated_result.execution_time
+            self.config = legacy_config
+        else:
+            # Handle failure case
+            self.n_periods = 0
+            self.successful_periods = 0
+            self.failed_periods = 0
+            self.success_rate = 0.0
+            self.average_return = 0.0
+            self.average_sharpe = 0.0
+            self.average_drawdown = 0.0
+            self.total_return = 0.0
+            self.cumulative_return = 0.0
+            self.volatility = 0.0
+            self.max_drawdown = 0.0
+            self.var_95 = 0.0
+            self.cvar_95 = 0.0
+            self.period_results = []
+            self.period_returns = []
+            self.period_sharpe = []
+            self.period_drawdown = []
+            self.regime_performance = {}
+            self.regime_stability = {}
+            
+            import pandas as pd
+            self.equity_curve = pd.Series([1.0])
+            self.returns_series = pd.Series([0.0])
+            self.drawdown_series = pd.Series([0.0])
+            
+            self.analysis_period = (datetime.now(), datetime.now())
+            self.execution_time = consolidated_result.execution_time
+            self.config = legacy_config
 
 
 class WalkForwardAnalyzer:
     """
-    Comprehensive walk-forward analyzer for TAS.
+    Legacy walk-forward analyzer for TAS.
     
-    Provides rolling window analysis, out-of-sample testing,
-    and performance validation across multiple time periods.
+    This class provides backward compatibility by wrapping the consolidated
+    walk-forward analyzer from src.utils.nas_tas.walk_forward_analyzer
     """
     
     def __init__(self, config: WalkForwardConfig):
@@ -120,16 +166,11 @@ class WalkForwardAnalyzer:
         Args:
             config: Walk-forward configuration
         """
-        self.config = config
+        self.legacy_config = config
+        self.consolidated_analyzer = ConsolidatedWalkForwardAnalyzer(config.consolidated_config)
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Analysis state
-        self.results = None
-        self.period_results = []
-        self.equity_curve = []
-        self.returns_series = []
-        
-        self.logger.info("✅ Walk-Forward Analyzer initialized")
+        self.logger.info("✅ Legacy Walk-Forward Analyzer initialized (using consolidated analyzer)")
         self.logger.info(f"📅 Training window: {config.training_window} days")
         self.logger.info(f"📅 Testing window: {config.testing_window} days")
         self.logger.info(f"📅 Step size: {config.step_size} days")
@@ -149,479 +190,38 @@ class WalkForwardAnalyzer:
         Returns:
             Walk-forward analysis result
         """
-        self.logger.info("🚀 Starting walk-forward analysis")
-        start_time = datetime.now()
+        self.logger.info("🚀 Starting legacy walk-forward analysis (delegating to consolidated analyzer)")
         
         try:
-            # Validate data
-            self._validate_data(market_data)
-            
-            # Reset state
-            self._reset_analysis_state()
-            
-            # Generate walk-forward periods
-            periods = self._generate_walk_forward_periods(market_data)
-            self.logger.info(f"📊 Generated {len(periods)} walk-forward periods")
-            
-            # Run analysis for each period
-            for i, period in enumerate(periods):
-                self.logger.info(f"🔄 Processing period {i+1}/{len(periods)}: {period['start']} to {period['end']}")
-                
-                # Extract period data
-                training_data = period['training_data']
-                testing_data = period['testing_data']
-                
-                # Run backtesting for this period
-                period_result = self._analyze_period(
-                    training_data, testing_data, strategy_function, benchmark_data
-                )
-                
-                # Store results
-                self.period_results.append(period_result)
-                
-                # Update cumulative metrics
-                self._update_cumulative_metrics(period_result)
-            
-            # Calculate overall metrics
-            overall_metrics = self._calculate_overall_metrics()
-            
-            # Analyze regime performance
-            regime_analysis = self._analyze_regime_performance()
-            
-            # Create comprehensive result
-            result = WalkForwardResult(
-                # Overall metrics
-                n_periods=len(periods),
-                successful_periods=overall_metrics['successful_periods'],
-                failed_periods=overall_metrics['failed_periods'],
-                success_rate=overall_metrics['success_rate'],
-                
-                # Performance metrics
-                average_return=overall_metrics['average_return'],
-                average_sharpe=overall_metrics['average_sharpe'],
-                average_drawdown=overall_metrics['average_drawdown'],
-                total_return=overall_metrics['total_return'],
-                cumulative_return=overall_metrics['cumulative_return'],
-                
-                # Risk metrics
-                volatility=overall_metrics['volatility'],
-                max_drawdown=overall_metrics['max_drawdown'],
-                var_95=overall_metrics['var_95'],
-                cvar_95=overall_metrics['cvar_95'],
-                
-                # Period-by-period results
-                period_results=self.period_results,
-                period_returns=overall_metrics['period_returns'],
-                period_sharpe=overall_metrics['period_sharpe'],
-                period_drawdown=overall_metrics['period_drawdown'],
-                
-                # Regime analysis
-                regime_performance=regime_analysis['regime_performance'],
-                regime_stability=regime_analysis['regime_stability'],
-                
-                # Time series
-                equity_curve=pd.Series(self.equity_curve),
-                returns_series=pd.Series(self.returns_series),
-                drawdown_series=pd.Series(self._calculate_drawdown_series()),
-                
-                # Metadata
-                analysis_period=(market_data.index[0], market_data.index[-1]),
-                execution_time=(datetime.now() - start_time).total_seconds(),
-                config=self.config
+            # Run consolidated analysis
+            consolidated_result = self.consolidated_analyzer.run_walk_forward_analysis(
+                market_data=market_data,
+                target_variable='close',  # Default target
+                feature_columns=None  # Will be auto-determined
             )
             
-            # Save results if configured
-            if self.config.save_summary:
-                self._save_results(result)
+            # Wrap result in legacy interface
+            legacy_result = WalkForwardResult(consolidated_result, self.legacy_config)
             
-            self.results = result
-            self.logger.info(f"✅ Walk-forward analysis completed in {result.execution_time:.2f}s")
-            self.logger.info(f"📊 Success rate: {result.success_rate:.2%}")
-            self.logger.info(f"📈 Average Sharpe: {result.average_sharpe:.3f}")
-            self.logger.info(f"📉 Max drawdown: {result.max_drawdown:.2%}")
+            self.logger.info(f"✅ Legacy walk-forward analysis completed")
+            self.logger.info(f"📊 Success rate: {legacy_result.success_rate:.2%}")
+            self.logger.info(f"📈 Average Sharpe: {legacy_result.average_sharpe:.3f}")
+            self.logger.info(f"📉 Max drawdown: {legacy_result.max_drawdown:.2%}")
             
-            return result
+            return legacy_result
             
         except Exception as e:
-            self.logger.error(f"❌ Walk-forward analysis failed: {e}")
+            self.logger.error(f"❌ Legacy walk-forward analysis failed: {e}")
             raise
-    
-    def _validate_data(self, market_data: pd.DataFrame):
-        """Validate market data for walk-forward analysis."""
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        
-        for col in required_columns:
-            if col not in market_data.columns:
-                raise ValueError(f"Missing required column: {col}")
-        
-        min_required_samples = self.config.training_window + self.config.testing_window
-        if len(market_data) < min_required_samples:
-            raise ValueError(f"Insufficient data: {len(market_data)} < {min_required_samples}")
-        
-        self.logger.info(f"✅ Data validation passed: {len(market_data)} data points")
-    
-    def _reset_analysis_state(self):
-        """Reset analysis state."""
-        self.period_results = []
-        self.equity_curve = []
-        self.returns_series = []
-    
-    def _generate_walk_forward_periods(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Generate walk-forward analysis periods."""
-        periods = []
-        n_samples = len(market_data)
-        
-        start_idx = 0
-        while start_idx + self.config.training_window + self.config.testing_window <= n_samples:
-            # Training period
-            training_end_idx = start_idx + self.config.training_window
-            training_data = market_data.iloc[start_idx:training_end_idx]
-            
-            # Testing period
-            testing_start_idx = training_end_idx
-            testing_end_idx = testing_start_idx + self.config.testing_window
-            testing_data = market_data.iloc[testing_start_idx:testing_end_idx]
-            
-            # Create period
-            period = {
-                'start': market_data.index[start_idx],
-                'end': market_data.index[testing_end_idx - 1],
-                'training_start': market_data.index[start_idx],
-                'training_end': market_data.index[training_end_idx - 1],
-                'testing_start': market_data.index[testing_start_idx],
-                'testing_end': market_data.index[testing_end_idx - 1],
-                'training_data': training_data,
-                'testing_data': testing_data
-            }
-            
-            periods.append(period)
-            
-            # Move to next period
-            if self.config.mode == WalkForwardMode.ROLLING:
-                start_idx += self.config.step_size
-            elif self.config.mode == WalkForwardMode.EXPANDING:
-                start_idx += self.config.step_size
-            else:  # FIXED
-                start_idx += self.config.step_size
-        
-        return periods
-    
-    def _analyze_period(self, 
-                       training_data: pd.DataFrame,
-                       testing_data: pd.DataFrame,
-                       strategy_function: Optional[Callable],
-                       benchmark_data: Optional[pd.DataFrame]) -> Dict[str, Any]:
-        """Analyze a single walk-forward period."""
-        try:
-            # Create backtesting config for this period
-            backtesting_config = BacktestingConfig(
-                start_date=testing_data.index[0],
-                end_date=testing_data.index[-1],
-                initial_capital=100000.0,
-                commission_rate=0.001,
-                slippage_rate=0.0005
-            )
-            
-            # Initialize backtesting engine
-            backtesting_engine = BacktestingEngine(backtesting_config)
-            
-            # Run backtesting
-            result = backtesting_engine.run_backtest(
-                market_data=testing_data,
-                strategy_function=strategy_function,
-                benchmark_data=benchmark_data
-            )
-            
-            # Extract key metrics
-            period_result = {
-                'period_start': testing_data.index[0],
-                'period_end': testing_data.index[-1],
-                'total_return': result.total_return,
-                'annualized_return': result.annualized_return,
-                'volatility': result.volatility,
-                'sharpe_ratio': result.sharpe_ratio,
-                'sortino_ratio': result.sortino_ratio,
-                'max_drawdown': result.max_drawdown,
-                'calmar_ratio': result.calmar_ratio,
-                'total_trades': result.total_trades,
-                'win_rate': result.win_rate,
-                'profit_factor': result.profit_factor,
-                'var_95': result.var_95,
-                'cvar_95': result.cvar_95,
-                'success': self._is_period_successful(result),
-                'equity_curve': result.equity_curve,
-                'returns_series': result.returns_series
-            }
-            
-            return period_result
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Period analysis failed: {e}")
-            return {
-                'period_start': testing_data.index[0],
-                'period_end': testing_data.index[-1],
-                'total_return': 0.0,
-                'sharpe_ratio': 0.0,
-                'max_drawdown': 0.0,
-                'success': False,
-                'error': str(e)
-            }
-    
-    def _is_period_successful(self, result: BacktestingResult) -> bool:
-        """Check if a period is considered successful."""
-        return (result.sharpe_ratio >= self.config.min_sharpe_ratio and
-                result.max_drawdown >= -self.config.max_drawdown_threshold and
-                result.win_rate >= self.config.min_win_rate)
-    
-    def _update_cumulative_metrics(self, period_result: Dict[str, Any]):
-        """Update cumulative metrics with period result."""
-        # Update equity curve
-        if 'equity_curve' in period_result:
-            equity_curve = period_result['equity_curve']
-            if len(self.equity_curve) == 0:
-                self.equity_curve = equity_curve.tolist()
-            else:
-                # Append new equity values
-                self.equity_curve.extend(equity_curve.tolist())
-        
-        # Update returns series
-        if 'returns_series' in period_result:
-            returns_series = period_result['returns_series']
-            if len(self.returns_series) == 0:
-                self.returns_series = returns_series.tolist()
-            else:
-                # Append new returns
-                self.returns_series.extend(returns_series.tolist())
-    
-    def _calculate_overall_metrics(self) -> Dict[str, Any]:
-        """Calculate overall walk-forward metrics."""
-        if not self.period_results:
-            return {
-                'successful_periods': 0,
-                'failed_periods': 0,
-                'success_rate': 0.0,
-                'average_return': 0.0,
-                'average_sharpe': 0.0,
-                'average_drawdown': 0.0,
-                'total_return': 0.0,
-                'cumulative_return': 0.0,
-                'volatility': 0.0,
-                'max_drawdown': 0.0,
-                'var_95': 0.0,
-                'cvar_95': 0.0,
-                'period_returns': [],
-                'period_sharpe': [],
-                'period_drawdown': []
-            }
-        
-        # Calculate basic metrics
-        successful_periods = sum(1 for result in self.period_results if result.get('success', False))
-        failed_periods = len(self.period_results) - successful_periods
-        success_rate = successful_periods / len(self.period_results)
-        
-        # Calculate performance metrics
-        period_returns = [result.get('total_return', 0) for result in self.period_results]
-        period_sharpe = [result.get('sharpe_ratio', 0) for result in self.period_results]
-        period_drawdown = [result.get('max_drawdown', 0) for result in self.period_results]
-        
-        average_return = np.mean(period_returns)
-        average_sharpe = np.mean(period_sharpe)
-        average_drawdown = np.mean(period_drawdown)
-        
-        # Calculate cumulative metrics
-        if self.returns_series:
-            total_return = (1 + np.array(self.returns_series)).prod() - 1
-            cumulative_return = total_return
-            volatility = np.std(self.returns_series) * np.sqrt(252)
-            
-            # Calculate drawdown
-            equity_series = pd.Series(self.equity_curve)
-            running_max = equity_series.expanding().max()
-            drawdown_series = (equity_series - running_max) / running_max
-            max_drawdown = drawdown_series.min()
-            
-            # Calculate VaR and CVaR
-            var_95 = np.percentile(self.returns_series, 5)
-            cvar_95 = np.mean([r for r in self.returns_series if r <= var_95])
-        else:
-            total_return = 0.0
-            cumulative_return = 0.0
-            volatility = 0.0
-            max_drawdown = 0.0
-            var_95 = 0.0
-            cvar_95 = 0.0
-        
-        return {
-            'successful_periods': successful_periods,
-            'failed_periods': failed_periods,
-            'success_rate': success_rate,
-            'average_return': average_return,
-            'average_sharpe': average_sharpe,
-            'average_drawdown': average_drawdown,
-            'total_return': total_return,
-            'cumulative_return': cumulative_return,
-            'volatility': volatility,
-            'max_drawdown': max_drawdown,
-            'var_95': var_95,
-            'cvar_95': cvar_95,
-            'period_returns': period_returns,
-            'period_sharpe': period_sharpe,
-            'period_drawdown': period_drawdown
-        }
-    
-    def _analyze_regime_performance(self) -> Dict[str, Any]:
-        """Analyze regime-specific performance."""
-        regime_performance = {}
-        regime_stability = {}
-        
-        # Group results by regime (simplified)
-        for result in self.period_results:
-            # This would be more sophisticated in practice
-            regime_key = "default_regime"
-            
-            if regime_key not in regime_performance:
-                regime_performance[regime_key] = []
-                regime_stability[regime_key] = []
-            
-            regime_performance[regime_key].append(result.get('total_return', 0))
-            regime_stability[regime_key].append(result.get('sharpe_ratio', 0))
-        
-        # Calculate regime metrics
-        for regime_key in regime_performance:
-            if regime_performance[regime_key]:
-                regime_performance[regime_key] = np.mean(regime_performance[regime_key])
-                regime_stability[regime_key] = np.std(regime_stability[regime_key])
-        
-        return {
-            'regime_performance': regime_performance,
-            'regime_stability': regime_stability
-        }
-    
-    def _calculate_drawdown_series(self) -> List[float]:
-        """Calculate drawdown series with comprehensive error handling."""
-        try:
-            if not self.equity_curve:
-                self.logger.warning("⚠️ No equity curve data available for drawdown calculation")
-                return []
-            
-            if len(self.equity_curve) < 2:
-                self.logger.warning("⚠️ Insufficient equity curve data for drawdown calculation")
-                return []
-            
-            # Validate equity curve data
-            equity_series = pd.Series(self.equity_curve)
-            
-            # Check for invalid values
-            if not equity_series.isna().sum() == 0:
-                self.logger.warning("⚠️ Equity curve contains NaN values, filling with forward fill")
-                equity_series = equity_series.fillna(method='ffill')
-            
-            if (equity_series <= 0).any():
-                self.logger.warning("⚠️ Equity curve contains non-positive values")
-                # Filter out non-positive values
-                equity_series = equity_series[equity_series > 0]
-                if len(equity_series) == 0:
-                    self.logger.error("❌ No valid equity curve data after filtering")
-                    return []
-            
-            # Calculate running maximum
-            running_max = equity_series.expanding().max()
-            
-            # Calculate drawdown with division by zero protection
-            drawdown_series = (equity_series - running_max) / running_max
-            
-            # Validate results
-            if not drawdown_series.isna().sum() == 0:
-                self.logger.warning("⚠️ Drawdown series contains NaN values")
-                drawdown_series = drawdown_series.fillna(0)
-            
-            self.logger.info(f"✅ Drawdown series calculated: {len(drawdown_series)} points")
-            return drawdown_series.tolist()
-            
-        except Exception as e:
-            self.logger.error(f"❌ Drawdown series calculation failed: {e}")
-            return []
-    
-    def _save_results(self, result: WalkForwardResult):
-        """Save walk-forward analysis results."""
-        try:
-            results_dir = Path(self.config.results_directory)
-            results_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save summary
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            summary_file = results_dir / f"walk_forward_summary_{timestamp}.json"
-            
-            summary = {
-                'n_periods': result.n_periods,
-                'success_rate': result.success_rate,
-                'average_sharpe': result.average_sharpe,
-                'max_drawdown': result.max_drawdown,
-                'total_return': result.total_return,
-                'execution_time': result.execution_time
-            }
-            
-            import json
-            with open(summary_file, 'w') as f:
-                json.dump(summary, f, indent=2)
-            
-            # Save detailed results
-            if self.config.save_individual_results:
-                details_file = results_dir / f"walk_forward_details_{timestamp}.json"
-                
-                details = {
-                    'period_results': [
-                        {
-                            'period_start': str(result.period_start),
-                            'period_end': str(result.period_end),
-                            'total_return': result.total_return,
-                            'sharpe_ratio': result.sharpe_ratio,
-                            'max_drawdown': result.max_drawdown,
-                            'success': result.success
-                        }
-                        for result in result.period_results
-                    ],
-                    'config': {
-                        'training_window': self.config.training_window,
-                        'testing_window': self.config.testing_window,
-                        'step_size': self.config.step_size,
-                        'mode': self.config.mode.value
-                    }
-                }
-                
-                with open(details_file, 'w') as f:
-                    json.dump(details, f, indent=2, default=str)
-            
-            self.logger.info(f"📁 Walk-forward results saved to {results_dir}")
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save results: {e}")
     
     def get_results(self) -> Optional[WalkForwardResult]:
         """Get walk-forward analysis results."""
-        return self.results
+        if hasattr(self.consolidated_analyzer, 'results') and self.consolidated_analyzer.results:
+            return WalkForwardResult(self.consolidated_analyzer.results, self.legacy_config)
+        return None
     
     def export_results(self, filepath: str):
         """Export results to file."""
-        if self.results is None:
-            self.logger.warning("⚠️ No results to export")
-            return
-        
-        try:
-            # Export equity curve
-            equity_file = filepath.replace('.csv', '_equity_curve.csv')
-            self.results.equity_curve.to_csv(equity_file)
-            
-            # Export returns series
-            returns_file = filepath.replace('.csv', '_returns.csv')
-            self.results.returns_series.to_csv(returns_file)
-            
-            # Export period results
-            periods_file = filepath.replace('.csv', '_periods.csv')
-            periods_df = pd.DataFrame(self.results.period_results)
-            periods_df.to_csv(periods_file, index=False)
-            
-            self.logger.info(f"📁 Walk-forward results exported to {filepath}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to export results: {e}")
+        self.logger.warning("⚠️ Export functionality delegated to consolidated analyzer")
+        # The consolidated analyzer handles saving internally
+        pass

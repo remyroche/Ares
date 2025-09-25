@@ -16,7 +16,7 @@ from typing import Dict, List, Any, Optional
 
 # Import unified backtesting framework
 try:
-    from src.utils.common_backtesting import (
+    from src.utils.nas_tas import (
         BacktestingEngine,
         BacktestingConfig,
         BacktestingMode,
@@ -453,7 +453,7 @@ class TestUnifiedBacktestingIntegration:
     def test_backward_compatibility(self, sample_data):
         """Test backward compatibility with existing systems."""
         # Test that existing systems can still work
-        from src.utils.common_backtesting import create_backtesting_engine, run_quick_backtest
+        from src.utils.nas_tas import create_backtesting_engine, run_quick_backtest
         
         # Test quick backtest function
         class SimpleModel:
@@ -469,7 +469,7 @@ class TestUnifiedBacktestingIntegration:
     @pytest.mark.skipif(not UNIFIED_BACKTESTING_AVAILABLE, reason="Unified backtesting framework not available")
     def test_configuration_compatibility(self):
         """Test configuration compatibility."""
-        from src.utils.common_backtesting import create_quick_config, create_full_config
+        from src.utils.nas_tas import create_quick_config, create_full_config
         
         quick_config = create_quick_config()
         assert quick_config is not None

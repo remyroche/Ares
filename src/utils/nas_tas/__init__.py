@@ -1,8 +1,8 @@
 """
-Unified Backtesting Framework
+NAS-TAS Common Utilities
 
-This module provides a unified backtesting framework that consolidates all
-backtesting functionality from TAS, NAS, and hybrid systems.
+This module provides common utilities and unified backtesting framework that
+consolidates all functionality from TAS, NAS, and hybrid systems.
 
 Components:
 - BacktestingEngine: Core backtesting functionality

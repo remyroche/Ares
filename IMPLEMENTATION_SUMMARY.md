@@ -8,7 +8,7 @@ I have successfully implemented **Phase 1: Backtesting Consolidation** of the NA
 
 ### ✅ **Completed Components**
 
-#### 1. **Core Unified Framework** (`src/utils/common_backtesting/`)
+#### 1. **Core Unified Framework** (`src/utils/nas_tas/`)
 - **BacktestingEngine**: Unified core backtesting functionality
 - **MonteCarloEngine**: Monte Carlo simulation capabilities
 - **PerformanceAttribution**: Comprehensive performance analysis
@@ -67,7 +67,7 @@ I have successfully implemented **Phase 1: Backtesting Consolidation** of the NA
 
 ### **Architecture**
 ```
-src/utils/common_backtesting/
+src/utils/nas_tas/
 ├── __init__.py                    # Main exports
 ├── backtesting_engine.py          # Core backtesting
 ├── monte_carlo_engine.py          # Monte Carlo simulation
@@ -97,7 +97,7 @@ tests/unified_backtesting/
 
 ### **Quick Start**
 ```python
-from src.utils.common_backtesting import run_quick_backtest
+from src.utils.nas_tas import run_quick_backtest
 
 # Simple backtesting
 result = run_quick_backtest(model, data)
@@ -106,7 +106,7 @@ print(f"Return: {result.total_return:.2%}")
 
 ### **Comprehensive Analysis**
 ```python
-from src.utils.common_backtesting import UnifiedBacktestingOrchestrator, OrchestratorConfig
+from src.utils.nas_tas import UnifiedBacktestingOrchestrator, OrchestratorConfig
 
 # Full analysis
 config = OrchestratorConfig(
@@ -206,7 +206,7 @@ result = nas_integration.run_nas_backtest(model, data)
 ## 📋 **Files Created/Modified**
 
 ### **New Files**
-- `src/utils/common_backtesting/` (8 files)
+- `src/utils/nas_tas/` (8 files)
 - `src/training/steps/market_analysis/tas_regime/backtesting/unified_backtesting_integration.py`
 - `src/training/steps/market_analysis/nas_regime/backtesting/unified_backtesting_integration.py`
 - `tests/unified_backtesting/test_unified_backtesting_framework.py`

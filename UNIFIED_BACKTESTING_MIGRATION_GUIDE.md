@@ -26,7 +26,7 @@ from src.training.steps.market_analysis.tas_regime.backtesting.backtesting_engin
 
 #### After (Unified Framework):
 ```python
-from src.utils.common_backtesting import (
+from src.utils.nas_tas import (
     UnifiedBacktestingOrchestrator,
     OrchestratorConfig,
     BacktestingConfig,
@@ -43,7 +43,7 @@ from src.training.steps.backtesting.nas_tas.backtesting_engine import (
 
 #### After (Unified Framework):
 ```python
-from src.utils.common_backtesting import (
+from src.utils.nas_tas import (
     UnifiedBacktestingOrchestrator,
     OrchestratorConfig
 )
@@ -331,18 +331,18 @@ python -m pytest tests/unified_backtesting/test_performance.py -v
 ### Common Commands
 ```bash
 # Test unified framework availability
-python -c "from src.utils.common_backtesting import UnifiedBacktestingOrchestrator; print('Framework available')"
+python -c "from src.utils.nas_tas import UnifiedBacktestingOrchestrator; print('Framework available')"
 
 # Run quick backtest
 python -c "
-from src.utils.common_backtesting import run_quick_backtest
+from src.utils.nas_tas import run_quick_backtest
 result = run_quick_backtest(model, data)
 print(f'Quick test passed: {result.total_return:.2%}')
 "
 
 # Run comprehensive analysis
 python -c "
-from src.utils.common_backtesting import run_unified_backtest
+from src.utils.nas_tas import run_unified_backtest
 result = run_unified_backtest(model, data)
 print(f'Comprehensive test passed: {result.overall_score:.3f}')
 "

@@ -26,7 +26,20 @@ try:
 except ImportError:
     ML_COMMON_AVAILABLE = False
 
-# Import general ML pipeline optimization tools
+# Import unified NAS-TAS backtesting framework
+try:
+    from src.utils.nas_tas import (
+        UnifiedBacktestingOrchestrator,
+        OrchestratorConfig,
+        BacktestingEngine as UnifiedBacktestingEngine,
+        BacktestingConfig as UnifiedBacktestingConfig,
+        BacktestingMode
+    )
+    UNIFIED_NAS_TAS_AVAILABLE = True
+except ImportError:
+    UNIFIED_NAS_TAS_AVAILABLE = False
+
+# Import legacy tools for fallback
 try:
     from src.utils.common_ml.backtesting.backtesting_engine import (
         BacktestingEngine as CommonBacktestingEngine,
@@ -933,6 +946,59 @@ class BacktestingEngine:
         except Exception as e:
             self.logger.error(f"❌ Regime analysis failed: {e}")
             return {'regime_performance': {}, 'transitions': []}
+    
+    def run_with_unified_framework(
+        self,
+        model: Any,
+        data: Optional[pd.DataFrame] = None,
+        regime_detector: Optional[Any] = None
+    ) -> Any:
+        """
+        Run backtesting using the unified NAS-TAS framework.
+        
+        This method provides a bridge to the new unified framework while
+        maintaining backward compatibility with existing code.
+        
+        Args:
+            model: Trading model or strategy
+            data: Market data (optional)
+            regime_detector: Regime detection system (optional)
+            
+        Returns:
+            UnifiedBacktestingResult or legacy result based on availability
+        """
+        if UNIFIED_NAS_TAS_AVAILABLE:
+            self.logger.info("🚀 Using unified NAS-TAS backtesting framework")
+            
+            # Create unified configuration
+            unified_config = OrchestratorConfig(
+                backtesting_config=UnifiedBacktestingConfig(
+                    start_date=self.config.start_date,
+                    end_date=self.config.end_date,
+                    initial_capital=self.config.initial_capital,
+                    commission_rate=self.config.commission_rate,
+                    slippage_rate=self.config.slippage_rate,
+                    mode=BacktestingMode.HISTORICAL,
+                    enable_regime_detection=True,
+                    regime_detection_method="hybrid"
+                ),
+                enable_monte_carlo=True,
+                enable_walk_forward=True,
+                enable_performance_attribution=True,
+                enable_risk_analysis=True,
+                save_all_results=True,
+                results_directory="nas_tas_backtesting_results"
+            )
+            
+            # Initialize unified orchestrator
+            orchestrator = UnifiedBacktestingOrchestrator(unified_config)
+            
+            # Run comprehensive analysis
+            return orchestrator.run_comprehensive_analysis(model, data, regime_detector)
+            
+        else:
+            self.logger.warning("⚠️ Unified framework not available, falling back to legacy implementation")
+            return self.run_backtest(model, data, regime_detector)
     
     def _analyze_model_performance(self) -> Dict[str, Any]:
         """Analyze model performance."""

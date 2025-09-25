@@ -311,29 +311,13 @@ class NeuralArchitectureSearch:
                       X_val: np.ndarray, 
                       y_val: np.ndarray,
                       regime_labels: Optional[np.ndarray] = None) -> ArchitectureCandidate:
-        """Perform architecture search using Optuna."""
-        self.logger.info("🔍 Starting Optuna-based architecture search...")
-        
-        def objective(trial):
-            try:
-                # Sample architecture
-                candidate = self._sample_architecture_from_trial(trial)
-                
-                # Train and evaluate
-                performance = self._train_and_evaluate_architecture(
-                    candidate, X_train, y_train, X_val, y_val, regime_labels
-                )
-                
-                return performance['overall_score']
-                
-            except Exception as e:
-                self.logger.warning(f"Trial failed: {e}")
-                return 0.0
+        """Perform architecture search using Bayesian TPE optimizer."""
+        self.logger.info("🔍 Starting Bayesian TPE architecture search...")
         
         # Create search space for architecture optimization
         search_space = self._create_architecture_search_space()
         
-        # Define objective function for new optimizer
+        # Define objective function for Bayesian TPE optimizer
         def objective_function(params: Dict[str, Any], **kwargs) -> float:
             try:
                 candidate = self._sample_architecture_from_params(params)
@@ -349,7 +333,7 @@ class NeuralArchitectureSearch:
                 self.logger.warning(f"Trial failed: {e}")
                 return 0.0
         
-        # Configure new Bayesian TPE optimizer
+        # Configure Bayesian TPE optimizer
         tpe_config = BayesianTPEConfig(
             n_trials=self.config.n_trials,
             timeout_seconds=self.config.timeout_seconds,
@@ -364,6 +348,7 @@ class NeuralArchitectureSearch:
         )
         
         # Run optimization using new unified optimizer
+        self.logger.info("🎯 Starting Bayesian TPE optimization for neural architecture search")
         optimizer = BayesianTPEOptimizer(tpe_config)
         result = optimizer.optimize(objective_function, search_space)
         
@@ -382,6 +367,11 @@ class NeuralArchitectureSearch:
         best_candidate.efficiency_score = performance['efficiency_score']
         best_candidate.robustness_score = performance['robustness_score']
         best_candidate.overall_score = performance['overall_score']
+        
+        self.logger.info(f"✅ Neural Architecture Search completed")
+        self.logger.info(f"📊 Best score: {result.best_score:.4f}")
+        self.logger.info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+        self.logger.info(f"📊 Trials: {result.n_trials}")
         
         return best_candidate
     

@@ -692,7 +692,7 @@ class HyperparameterOptimization:
                             timeout: Optional[int] = None,
                             use_enhanced_search_space: bool = True) -> Dict[str, Any]:
         """
-        Perform enhanced Bayesian hyperparameter optimization with non-linear transformations.
+        Perform enhanced Bayesian hyperparameter optimization using Bayesian TPE optimizer.
 
         Args:
             model_factory: Function that creates model with given parameters
@@ -707,12 +707,15 @@ class HyperparameterOptimization:
             Enhanced Bayesian optimization results
         """
         try:
-            self.logger.info(f"🎲 Starting enhanced Bayesian optimization with {acquisition_function} acquisition")
+            self.logger.info(f"🎲 Starting enhanced Bayesian optimization using Bayesian TPE optimizer")
             if use_enhanced_search_space and self.use_nonlinear_optimization:
                 self.logger.info("🚀 Using enhanced non-linear search space")
 
-            if not OPTUNA_AVAILABLE:
-                raise ImportError("Optuna required for Bayesian optimization")
+            # Import Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
+            )
 
             # Use enhanced search space if requested and available
             if use_enhanced_search_space and self.use_nonlinear_optimization:
@@ -721,32 +724,34 @@ class HyperparameterOptimization:
             else:
                 actual_search_space = search_space
 
-            def objective(trial):
-                # Use enhanced parameter sampling
-                params = self._sample_hyperparameters(trial, model_factory, actual_search_space)
+            # Convert search space to Bayesian TPE format
+            tpe_search_space = self._convert_to_tpe_search_space(actual_search_space)
 
-                # Create and evaluate model
-                model = model_factory(**params)
-                # Cap per-trial parallelism if supported
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
                 try:
-                    if hasattr(model, 'set_params'):
-                        model.set_params(**{k: v for k, v in {'n_jobs': 1}.items() if k in getattr(model, 'get_params')().keys()})
-                except Exception as e:
-                    self.logger.warning(f"Could not set model parameters: {e}, continuing with default parameters")
+                    # Create and evaluate model
+                    model = model_factory(**params)
+                    
+                    # Cap per-trial parallelism if supported
+                    try:
+                        if hasattr(model, 'set_params'):
+                            model.set_params(**{k: v for k, v in {'n_jobs': 1}.items() if k in getattr(model, 'get_params')().keys()})
+                    except Exception as e:
+                        self.logger.warning(f"Could not set model parameters: {e}, continuing with default parameters")
 
-                # Prepare CV and fit params
-                cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
+                    # Prepare CV and fit params
+                    cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
 
-                # Compute sample weights if classification and estimator supports it
-                fp = dict(fit_params or {})
-                try:
-                    if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
-                        fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
-                except Exception as e:
-                    self.logger.warning(f"Could not compute sample weights: {e}, continuing without sample weights")
+                    # Compute sample weights if classification and estimator supports it
+                    fp = dict(fit_params or {})
+                    try:
+                        if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
+                            fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
+                    except Exception as e:
+                        self.logger.warning(f"Could not compute sample weights: {e}, continuing without sample weights")
 
-                # Manual CV loop to support sample_weight without passing fit_params
-                try:
+                    # Manual CV loop to support sample_weight without passing fit_params
                     fold_scores: list[float] = []
                     for i, (train_idx, test_idx) in enumerate(cv_obj.split(X, y)):
                         X_tr, X_te = X[train_idx], X[test_idx]
@@ -767,51 +772,105 @@ class HyperparameterOptimization:
                         except Exception:
                             score = mdl.score(X_te, y_te) if hasattr(mdl, 'score') else 0.0
                         fold_scores.append(float(score))
-                        trial.report(float(score), step=i)
-                        if trial.should_prune():
-                            raise optuna.TrialPruned()
+                    
                     if fold_scores:
                         return float(np.mean(fold_scores))
+                    else:
+                        return 0.0
+                        
                 except Exception as e:
-                    self.logger.warning(f"CV loop failed: {e}, returning worst possible score")
-                    return 999.0  # Return worst possible score
+                    self.logger.warning(f"Model evaluation failed: {e}, returning worst possible score")
+                    return 0.0
 
-            # Create study with TPE sampler (Bayesian optimization) and pruner/storage
-            sampler = TPESampler()
-            pruner_obj = None
-            if pruner == 'median':
-                pruner_obj = MedianPruner()
-            elif pruner == 'hyperband':
-                pruner_obj = HyperbandPruner()
-
-            study = optuna.create_study(
-                direction='maximize',
-                sampler=sampler,
-                pruner=pruner_obj,
-                study_name=study_name,
-                storage=storage,
-                load_if_exists=bool(storage and study_name)
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=n_trials,
+                timeout_seconds=timeout,
+                enable_grid_search=True,
+                coarse_grid_points=5,
+                fine_grid_points=8,
+                backend='optuna',
+                enable_parallel=self.enable_parallel,
+                max_workers=self.max_workers,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
             )
 
-            study.optimize(objective, n_trials=n_trials, timeout=timeout)
+            # Run optimization using new unified optimizer
+            self.logger.info(f"🎯 Starting Bayesian TPE optimization with {n_trials} trials")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, tpe_search_space)
 
+            if not optimization_result.success:
+                self.logger.error(f"❌ Bayesian TPE optimization failed: {optimization_result.error_message}")
+                return {'error': optimization_result.error_message, 'best_params': {}, 'best_score': 0.0}
+
+            # Extract results
             results = {
-                'best_params': study.best_params,
-                'best_score': study.best_value,
-                'n_trials': len(study.trials),
-                'optimization_curve': [t.value for t in study.trials],
-                'parameter_importance': self._calculate_parameter_importance(study)
+                'best_params': optimization_result.best_params,
+                'best_score': optimization_result.best_score,
+                'n_trials': optimization_result.n_trials,
+                'optimization_time': optimization_result.optimization_time,
+                'convergence_info': optimization_result.convergence_info,
+                'grid_search_results': optimization_result.grid_search_results,
+                'optimization_history': optimization_result.optimization_history
             }
 
             best_val2 = results.get('best_score')
             best_str2 = f"{best_val2:.4f}" if isinstance(best_val2, (int, float, np.floating)) else str(best_val2)
-            self.logger.info(f"✅ Bayesian optimization completed - Best score: {best_str2}")
+            self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {best_str2}")
             return results
 
         except Exception as e:
             self.logger.error(f"❌ Bayesian optimization failed: {e}")
             self.logger.warning("⚠️ Bayesian optimization failed - returning error result")
             return {'error': str(e), 'best_params': {}, 'best_score': 0.0}
+
+    def _convert_to_tpe_search_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert search space to Bayesian TPE format."""
+        tpe_space = {}
+        
+        for param_name, param_config in search_space.items():
+            if isinstance(param_config, dict):
+                if param_config.get('type') == 'float':
+                    tpe_space[param_name] = {
+                        'type': 'float',
+                        'low': param_config.get('min', 0.0),
+                        'high': param_config.get('max', 1.0),
+                        'log': param_config.get('log', False)
+                    }
+                elif param_config.get('type') == 'int':
+                    tpe_space[param_name] = {
+                        'type': 'int',
+                        'low': param_config.get('min', 0),
+                        'high': param_config.get('max', 100)
+                    }
+                elif param_config.get('type') == 'categorical':
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': param_config.get('choices', [])
+                    }
+                elif param_config.get('type') == 'bool':
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': [True, False]
+                    }
+            else:
+                # Handle simple cases
+                if isinstance(param_config, list):
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': param_config
+                    }
+                else:
+                    tpe_space[param_name] = {
+                        'type': 'float',
+                        'low': 0.0,
+                        'high': 1.0
+                    }
+        
+        return tpe_space
 
     def staged_hpo(self, model_factory: Callable,
                    X: np.ndarray, y: np.ndarray,

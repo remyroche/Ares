@@ -528,30 +528,79 @@ def create_financial_features(df):
 """
     
     def _get_hpo_improvement_code(self) -> str:
-        """Get HPO improvement code example."""
+        """Get HPO improvement code example using unified Bayesian TPE optimizer."""
         return """
-# Bayesian Optimization with Optuna
-import optuna
+# Bayesian Optimization with Unified Bayesian TPE Optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig
+)
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestRegressor
 
-def objective(trial):
-    params = {
-        'n_estimators': trial.suggest_int('n_estimators', 50, 500),
-        'max_depth': trial.suggest_int('max_depth', 3, 15),
-        'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
-        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+# Define search space for hyperparameter optimization
+search_space = {
+    'n_estimators': {
+        'type': 'int',
+        'low': 50,
+        'high': 500
+    },
+    'max_depth': {
+        'type': 'int',
+        'low': 3,
+        'high': 15
+    },
+    'min_samples_split': {
+        'type': 'int',
+        'low': 2,
+        'high': 10
+    },
+    'min_samples_leaf': {
+        'type': 'int',
+        'low': 1,
+        'high': 5
+    },
+    'max_features': {
+        'type': 'categorical',
+        'choices': ['sqrt', 'log2', None]
     }
-    
-    model = RandomForestRegressor(**params, random_state=42)
-    scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
-    return scores.mean()
+}
 
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=100)
+# Define objective function for Bayesian TPE optimizer
+def objective_function(params: Dict[str, Any], **kwargs) -> float:
+    try:
+        model = RandomForestRegressor(**params, random_state=42)
+        scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
+        return scores.mean()
+    except Exception as e:
+        return -np.inf
+
+# Configure Bayesian TPE optimizer
+tpe_config = BayesianTPEConfig(
+    n_trials=100,
+    timeout_seconds=3600,
+    enable_grid_search=True,
+    coarse_grid_points=3,
+    fine_grid_points=5,
+    backend='optuna',
+    enable_parallel=True,
+    max_workers=4,
+    enable_early_stopping=True,
+    early_stopping_patience=10,
+    log_level='INFO'
+)
+
+# Run optimization using new unified optimizer
+optimizer = BayesianTPEOptimizer(tpe_config)
+result = optimizer.optimize(objective_function, search_space)
 
 # Get best parameters
-best_params = study.best_params
+best_params = result.best_params
 model = RandomForestRegressor(**best_params, random_state=42)
+
+print(f"Best score: {result.best_score:.4f}")
+print(f"Optimization time: {result.optimization_time:.2f}s")
+print(f"Trials: {result.n_trials}")
 """
     
     def _get_algorithm_change_code(self, model_type: str) -> str:

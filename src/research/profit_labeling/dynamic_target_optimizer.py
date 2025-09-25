@@ -800,29 +800,28 @@ class JointTargetHorizonOptimizer:
                            candidate_targets: List[float],
                            train_data: pd.DataFrame,
                            val_data: pd.DataFrame) -> OptimizationResult:
-        """Perform Optuna TPE optimization."""
-        self.logger.info('🎯 Running Optuna TPE optimization')
+        """Perform Bayesian TPE optimization using unified optimizer."""
+        # Import Bayesian TPE optimizer
+        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+            BayesianTPEOptimizer,
+            BayesianTPEConfig
+        )
+        
+        self.logger.info('🎯 Running Bayesian TPE optimization')
         
         try:
-            # Create study
-            study = optuna.create_study(
-                direction='maximize',
-                sampler=optuna.samplers.TPESampler(seed=42)
-            )
+            # Create search space for target-horizon optimization
+            search_space = self._create_target_horizon_search_space(candidate_targets)
             
-            # Define objective function
-            def objective(trial):
-                # Suggest parameters
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                # Extract parameters
                 targets = {}
                 horizons = {}
                 
-                for i, target in enumerate(candidate_targets[:5]):
-                    targets[f'target_{i}'] = trial.suggest_float(
-                        f'target_{i}', target * 0.8, target * 1.2
-                    )
-                    horizons[f'target_{i}'] = trial.suggest_int(
-                        f'horizon_{i}', self.config.min_horizon, self.config.max_horizon
-                    )
+                for i in range(len(candidate_targets[:5])):
+                    targets[f'target_{i}'] = params[f'target_{i}']
+                    horizons[f'target_{i}'] = params[f'horizon_{i}']
                 
                 # Evaluate configuration
                 score = self._evaluate_configuration(targets, horizons, train_data)
@@ -837,34 +836,84 @@ class JointTargetHorizonOptimizer:
                 
                 return score
             
-            # Run optimization
-            study.optimize(objective, n_trials=self.config.n_optimization_trials)
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.n_optimization_trials,
+                timeout_seconds=self.config.timeout_seconds,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=2,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info("🎯 Starting Bayesian TPE optimization for target-horizon optimization")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Target-horizon optimization failed: {result.error_message}")
             
             # Extract best parameters
-            best_targets = {k: v for k, v in study.best_params.items() if k.startswith('target_')}
-            best_horizons = {k: v for k, v in study.best_params.items() if k.startswith('horizon_')}
+            best_targets = {k: v for k, v in result.best_params.items() if k.startswith('target_')}
+            best_horizons = {k: v for k, v in result.best_params.items() if k.startswith('horizon_')}
             
             # Validate on validation data
             validation_scores = self._validate_configuration(best_targets, best_horizons, val_data)
             
+            self.logger.info(f"✅ Target-horizon optimization completed")
+            self.logger.info(f"📊 Best score: {result.best_score:.4f}")
+            self.logger.info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+            self.logger.info(f"📊 Trials: {result.n_trials}")
+            
             return OptimizationResult(
                 optimal_targets=best_targets,
                 optimal_horizons=best_horizons,
-                objective_score=study.best_value,
+                objective_score=result.best_score,
                 performance_metrics=validation_scores,
                 validation_scores=validation_scores,
                 candidate_results=[],
                 optimization_history=self.optimization_history,
                 metadata={
-                    'method': 'optuna_tpe',
-                    'n_trials': len(study.trials),
-                    'best_trial': study.best_trial.number
+                    'method': 'bayesian_tpe',
+                    'n_trials': result.n_trials,
+                    'optimization_time': result.optimization_time,
+                    'convergence_info': result.convergence_info,
+                    'grid_search_results': result.grid_search_results
                 }
             )
             
         except Exception as e:
-            self.logger.error(f'Optuna optimization failed: {e}')
+            self.logger.error(f'Bayesian TPE optimization failed: {e}')
             return self._create_default_result()
+    
+    def _create_target_horizon_search_space(self, candidate_targets: List[float]) -> Dict[str, Any]:
+        """Create search space for target-horizon optimization."""
+        search_space = {}
+        
+        # Target parameters
+        for i, target in enumerate(candidate_targets[:5]):  # Limit to top 5 targets
+            search_space[f'target_{i}'] = {
+                'type': 'float',
+                'low': target * 0.8,
+                'high': target * 1.2,
+                'log': True  # Log scale for targets
+            }
+        
+        # Horizon parameters
+        for i in range(len(candidate_targets[:5])):
+            search_space[f'horizon_{i}'] = {
+                'type': 'int',
+                'low': self.config.min_horizon,
+                'high': self.config.max_horizon
+            }
+        
+        return search_space
     
     def _differential_evolution_optimization(self,
                                            candidate_targets: List[float],

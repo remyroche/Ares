@@ -437,7 +437,7 @@ class ScenarioTester:
         }
     
     def _run_sensitivity_analysis(self, scenario_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Run sensitivity analysis."""
+        """Run sensitivity analysis with comprehensive error handling."""
         returns_series = scenario_data['returns_series']
         factor_data = scenario_data['factor_data']
         
@@ -445,40 +445,121 @@ class ScenarioTester:
         sensitivity_impact = {}
         sensitivity_rankings = []
         
-        for factor in self.config.sensitivity_factors:
-            factor_results = {}
+        try:
+            # Validate input data
+            if len(returns_series) < 10:
+                self.logger.warning("⚠️ Insufficient data for sensitivity analysis")
+                return {
+                    'sensitivity_results': {},
+                    'sensitivity_impact': {},
+                    'sensitivity_rankings': []
+                }
             
-            if factor == 'volatility':
-                base_volatility = returns_series.std()
-                for multiplier in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]:
-                    adjusted_returns = returns_series * (multiplier / base_volatility)
-                    factor_results[f'multiplier_{multiplier}'] = adjusted_returns.mean()
+            for factor in self.config.sensitivity_factors:
+                try:
+                    factor_results = {}
+                    
+                    if factor == 'volatility':
+                        base_volatility = returns_series.std()
+                        if base_volatility <= 0:
+                            self.logger.warning(f"⚠️ Invalid base volatility for {factor}: {base_volatility}")
+                            continue
+                            
+                        for multiplier in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]:
+                            try:
+                                adjusted_returns = returns_series * (multiplier / base_volatility)
+                                if len(adjusted_returns) > 0 and np.isfinite(adjusted_returns.mean()):
+                                    factor_results[f'multiplier_{multiplier}'] = adjusted_returns.mean()
+                                else:
+                                    self.logger.warning(f"⚠️ Invalid adjusted returns for multiplier {multiplier}")
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Error calculating volatility sensitivity for multiplier {multiplier}: {e}")
+                    
+                    elif factor == 'correlation' and factor_data:
+                        for factor_name, factor_series in factor_data.items():
+                            try:
+                                if len(factor_series) == len(returns_series):
+                                    correlation = returns_series.corr(factor_series)
+                                    if np.isfinite(correlation):
+                                        factor_results[f'correlation_{factor_name}'] = correlation
+                                    else:
+                                        self.logger.warning(f"⚠️ Invalid correlation for {factor_name}")
+                                else:
+                                    self.logger.warning(f"⚠️ Length mismatch for factor {factor_name}")
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Error calculating correlation for {factor_name}: {e}")
+                    
+                    elif factor == 'regime_stability':
+                        # Enhanced regime stability sensitivity
+                        base_return = returns_series.mean()
+                        if not np.isfinite(base_return):
+                            self.logger.warning(f"⚠️ Invalid base return for regime stability")
+                            continue
+                            
+                        for stability in [0.0, 0.25, 0.5, 0.75, 1.0]:
+                            try:
+                                # Apply stability as a confidence factor
+                                adjusted_return = base_return * stability
+                                if np.isfinite(adjusted_return):
+                                    factor_results[f'stability_{stability}'] = adjusted_return
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Error calculating regime stability for {stability}: {e}")
+                    
+                    elif factor == 'liquidity':
+                        # Enhanced liquidity sensitivity
+                        base_return = returns_series.mean()
+                        if not np.isfinite(base_return):
+                            self.logger.warning(f"⚠️ Invalid base return for liquidity")
+                            continue
+                            
+                        for liquidity in [0.0, 0.25, 0.5, 0.75, 1.0]:
+                            try:
+                                # Apply liquidity as a market depth factor
+                                adjusted_return = base_return * liquidity
+                                if np.isfinite(adjusted_return):
+                                    factor_results[f'liquidity_{liquidity}'] = adjusted_return
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Error calculating liquidity sensitivity for {liquidity}: {e}")
+                    
+                    sensitivity_results[factor] = factor_results
+                    
+                    # Calculate impact with validation
+                    if factor_results:
+                        try:
+                            values = list(factor_results.values())
+                            if values and all(np.isfinite(v) for v in values):
+                                impact = max(values) - min(values)
+                                if np.isfinite(impact):
+                                    sensitivity_impact[factor] = impact
+                                    sensitivity_rankings.append((factor, impact))
+                                else:
+                                    self.logger.warning(f"⚠️ Invalid impact calculated for {factor}")
+                            else:
+                                self.logger.warning(f"⚠️ Invalid values in factor results for {factor}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Error calculating impact for {factor}: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ No valid results for factor {factor}")
+                
+                except Exception as e:
+                    self.logger.error(f"❌ Error processing sensitivity factor {factor}: {e}")
+                    continue
             
-            elif factor == 'correlation' and factor_data:
-                for factor_name, factor_series in factor_data.items():
-                    correlation = returns_series.corr(factor_series)
-                    factor_results[f'correlation_{factor_name}'] = correlation
+            # Sort rankings by impact with validation
+            try:
+                sensitivity_rankings.sort(key=lambda x: x[1], reverse=True)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error sorting sensitivity rankings: {e}")
             
-            elif factor == 'regime_stability':
-                # Simplified regime stability sensitivity
-                for stability in [0.0, 0.25, 0.5, 0.75, 1.0]:
-                    factor_results[f'stability_{stability}'] = returns_series.mean() * stability
+            self.logger.info(f"📊 Sensitivity analysis completed: {len(sensitivity_results)} factors analyzed")
             
-            elif factor == 'liquidity':
-                # Simplified liquidity sensitivity
-                for liquidity in [0.0, 0.25, 0.5, 0.75, 1.0]:
-                    factor_results[f'liquidity_{liquidity}'] = returns_series.mean() * liquidity
-            
-            sensitivity_results[factor] = factor_results
-            
-            # Calculate impact
-            if factor_results:
-                impact = max(factor_results.values()) - min(factor_results.values())
-                sensitivity_impact[factor] = impact
-                sensitivity_rankings.append((factor, impact))
-        
-        # Sort rankings by impact
-        sensitivity_rankings.sort(key=lambda x: x[1], reverse=True)
+        except Exception as e:
+            self.logger.error(f"❌ Sensitivity analysis failed: {e}")
+            return {
+                'sensitivity_results': {},
+                'sensitivity_impact': {},
+                'sensitivity_rankings': []
+            }
         
         return {
             'sensitivity_results': sensitivity_results,

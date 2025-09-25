@@ -281,20 +281,54 @@ class MonteCarloSimulator:
         return simulation_data
     
     def _run_historical_simulation(self, simulation_data: Dict[str, Any]) -> np.ndarray:
-        """Run historical Monte Carlo simulation."""
+        """Run historical Monte Carlo simulation with comprehensive error handling."""
         returns_series = simulation_data['returns_series']
         n_simulations = self.config.n_simulations
         horizon = self.config.simulation_horizon
         
-        # Bootstrap from historical data
-        simulated_returns = np.zeros((n_simulations, horizon))
-        
-        for i in range(n_simulations):
-            # Randomly sample from historical returns
-            bootstrap_indices = np.random.choice(len(returns_series), size=horizon, replace=True)
-            simulated_returns[i] = returns_series.iloc[bootstrap_indices].values
-        
-        return simulated_returns
+        try:
+            # Validate input data
+            if len(returns_series) < 10:
+                self.logger.warning("⚠️ Insufficient historical data for simulation")
+                return np.zeros((n_simulations, horizon))
+            
+            if n_simulations <= 0 or horizon <= 0:
+                self.logger.error("❌ Invalid simulation parameters")
+                return np.zeros((n_simulations, horizon))
+            
+            # Bootstrap from historical data with error handling
+            simulated_returns = np.zeros((n_simulations, horizon))
+            
+            for i in range(n_simulations):
+                try:
+                    # Randomly sample from historical returns
+                    bootstrap_indices = np.random.choice(len(returns_series), size=horizon, replace=True)
+                    sampled_returns = returns_series.iloc[bootstrap_indices].values
+                    
+                    # Validate sampled returns
+                    if len(sampled_returns) == horizon and np.all(np.isfinite(sampled_returns)):
+                        simulated_returns[i] = sampled_returns
+                    else:
+                        self.logger.warning(f"⚠️ Invalid sampled returns for simulation {i}")
+                        # Use mean return as fallback
+                        simulated_returns[i] = np.full(horizon, returns_series.mean())
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error in simulation {i}: {e}")
+                    # Use mean return as fallback
+                    simulated_returns[i] = np.full(horizon, returns_series.mean())
+            
+            # Validate final results
+            if np.all(np.isfinite(simulated_returns)):
+                self.logger.info(f"✅ Historical simulation completed: {n_simulations} simulations, {horizon} horizon")
+            else:
+                self.logger.warning("⚠️ Some simulation results contain invalid values")
+            
+            return simulated_returns
+            
+        except Exception as e:
+            self.logger.error(f"❌ Historical simulation failed: {e}")
+            return np.zeros((n_simulations, horizon))
     
     def _run_parametric_simulation(self, simulation_data: Dict[str, Any]) -> np.ndarray:
         """Run parametric Monte Carlo simulation."""

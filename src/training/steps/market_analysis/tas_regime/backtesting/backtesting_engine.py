@@ -547,27 +547,61 @@ class BacktestingEngine:
         return signals
     
     def _execute_trade(self, signal: Dict[str, Any], current_price: float, timestamp: int) -> Optional[Dict[str, Any]]:
-        """Execute a trade signal."""
+        """Execute a trade signal with comprehensive error handling and logging."""
         try:
+            # Validate signal data
+            if not signal or 'side' not in signal or 'quantity' not in signal:
+                self.logger.error("❌ Invalid trade signal: missing required fields")
+                return None
+            
             # Convert signal to trade execution
             side = signal['side']
             quantity = signal['quantity']
             price = signal.get('price', current_price)
             regime_info = signal.get('regime_info')
+            symbol = signal.get('symbol', 'BTC')
+            
+            # Validate trade parameters
+            if quantity <= 0:
+                self.logger.warning(f"⚠️ Invalid trade quantity: {quantity}")
+                return None
+            
+            if price <= 0:
+                self.logger.warning(f"⚠️ Invalid trade price: {price}")
+                return None
+            
+            if side not in ['buy', 'sell']:
+                self.logger.error(f"❌ Invalid trade side: {side}")
+                return None
             
             # Execute trade through trading engine
             trade_result = self.trading_engine.execute_trade(
-                symbol=signal.get('symbol', 'BTC'),
+                symbol=symbol,
                 side=side,
                 quantity=quantity,
                 price=price,
                 regime_info=regime_info
             )
             
+            if trade_result:
+                self.logger.debug(f"✅ Trade executed: {side} {quantity} {symbol} at {price}")
+            else:
+                self.logger.warning(f"⚠️ Trade execution returned no result")
+            
             return trade_result
             
+        except KeyError as e:
+            self.logger.error(f"❌ Trade signal missing required field: {e}")
+            return None
+        except ValueError as e:
+            self.logger.error(f"❌ Invalid trade signal value: {e}")
+            return None
         except Exception as e:
-            self.logger.warning(f"⚠️ Trade execution failed: {e}")
+            self.logger.error(f"❌ Trade execution failed: {e}")
+            # Log additional context for debugging
+            self.logger.debug(f"Trade signal: {signal}")
+            self.logger.debug(f"Current price: {current_price}")
+            self.logger.debug(f"Timestamp: {timestamp}")
             return None
     
     def _calculate_trading_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -656,36 +690,99 @@ class BacktestingEngine:
         }
     
     def _calculate_risk_metrics(self, simulation_results: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate comprehensive risk metrics."""
+        """Calculate comprehensive risk metrics using enhanced utilities."""
         returns_series = simulation_results['returns_series']
         
         if len(returns_series) == 0:
+            self.logger.warning("⚠️ No returns data available for risk calculation")
             return {
                 'var_95': 0.0, 'var_99': 0.0,
                 'cvar_95': 0.0, 'cvar_99': 0.0,
                 'beta': 0.0, 'alpha': 0.0
             }
         
-        # Value at Risk (VaR)
-        var_95 = np.percentile(returns_series, 5)
-        var_99 = np.percentile(returns_series, 1)
-        
-        # Conditional Value at Risk (CVaR)
-        cvar_95 = returns_series[returns_series <= var_95].mean() if len(returns_series[returns_series <= var_95]) > 0 else var_95
-        cvar_99 = returns_series[returns_series <= var_99].mean() if len(returns_series[returns_series <= var_99]) > 0 else var_99
-        
-        # Beta and Alpha (simplified - would need benchmark data for proper calculation)
-        beta = 1.0  # Placeholder
-        alpha = 0.0  # Placeholder
-        
-        return {
-            'var_95': var_95,
-            'var_99': var_99,
-            'cvar_95': cvar_95,
-            'cvar_99': cvar_99,
-            'beta': beta,
-            'alpha': alpha
-        }
+        try:
+            # Use math validation for safe calculations
+            if self.math_validator:
+                # Validate returns data
+                validated_returns = self.math_validator.validate_finite(returns_series)
+                if validated_returns is None:
+                    self.logger.warning("⚠️ Invalid returns data detected, using original data")
+                    validated_returns = returns_series
+            else:
+                validated_returns = returns_series
+            
+            # Value at Risk (VaR) with proper error handling
+            var_95 = np.percentile(validated_returns, 5)
+            var_99 = np.percentile(validated_returns, 1)
+            
+            # Conditional Value at Risk (CVaR) with validation
+            tail_95 = validated_returns[validated_returns <= var_95]
+            tail_99 = validated_returns[validated_returns <= var_99]
+            
+            cvar_95 = tail_95.mean() if len(tail_95) > 0 else var_95
+            cvar_99 = tail_99.mean() if len(tail_99) > 0 else var_99
+            
+            # Calculate Beta and Alpha using benchmark data if available
+            beta, alpha = self._calculate_beta_alpha(validated_returns, simulation_results.get('benchmark_returns'))
+            
+            self.logger.info(f"📊 Risk metrics calculated: VaR 95%: {var_95:.4f}, CVaR 95%: {cvar_95:.4f}")
+            
+            return {
+                'var_95': var_95,
+                'var_99': var_99,
+                'cvar_95': cvar_95,
+                'cvar_99': cvar_99,
+                'beta': beta,
+                'alpha': alpha
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk metrics calculation failed: {e}")
+            # Return safe defaults
+            return {
+                'var_95': 0.0, 'var_99': 0.0,
+                'cvar_95': 0.0, 'cvar_99': 0.0,
+                'beta': 1.0, 'alpha': 0.0
+            }
+    
+    def _calculate_beta_alpha(self, returns_series: pd.Series, benchmark_returns: Optional[pd.Series] = None) -> Tuple[float, float]:
+        """Calculate Beta and Alpha using proper statistical methods."""
+        try:
+            if benchmark_returns is None or len(benchmark_returns) == 0:
+                self.logger.warning("⚠️ No benchmark data available, using market beta assumption")
+                return 1.0, 0.0
+            
+            # Align data lengths
+            min_length = min(len(returns_series), len(benchmark_returns))
+            if min_length < 30:
+                self.logger.warning(f"⚠️ Insufficient data for beta calculation: {min_length} < 30")
+                return 1.0, 0.0
+            
+            # Use aligned data
+            aligned_returns = returns_series.iloc[:min_length]
+            aligned_benchmark = benchmark_returns.iloc[:min_length]
+            
+            # Calculate covariance and variance
+            covariance = np.cov(aligned_returns, aligned_benchmark)[0, 1]
+            benchmark_variance = np.var(aligned_benchmark)
+            
+            if benchmark_variance == 0:
+                self.logger.warning("⚠️ Benchmark variance is zero, using default beta")
+                return 1.0, 0.0
+            
+            # Calculate beta
+            beta = covariance / benchmark_variance
+            
+            # Calculate alpha (risk-free rate assumed to be 0 for simplicity)
+            alpha = aligned_returns.mean() - beta * aligned_benchmark.mean()
+            
+            self.logger.info(f"📊 Beta: {beta:.4f}, Alpha: {alpha:.4f}")
+            return beta, alpha
+            
+        except Exception as e:
+            self.logger.error(f"❌ Beta/Alpha calculation failed: {e}")
+            return 1.0, 0.0
     
     def _analyze_regime_performance(self, 
                                   simulation_results: Dict[str, Any],

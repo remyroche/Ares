@@ -794,19 +794,222 @@ class PositionMonitor:
             tuple: (PositionAction, reason)
         """
         try:
-            # This is a placeholder for trailing stop logic
-            # In a full implementation, you would:
-            # 1. Calculate ATR-based trailing stop distance
-            # 2. Check if current price has moved against the position
-            # 3. Update trailing stop level if price moves favorably
-            # 4. Trigger exit if trailing stop is hit
-            
-            # For now, return STAY to indicate no trailing stop action needed
-            metadata = {
+            metadata: Dict[str, Any] = {
                 "exit_type": "trailing_stop",
                 "confidence": combined_confidence
             }
-            return PositionAction.STAY, "Trailing stop evaluation (placeholder)", metadata
+
+            trailing_config = dict(self.trailing_stop_config or {})
+            profit_config = dict(self.profit_taking_config or {})
+            metadata["trailing_config"] = trailing_config
+
+            # Ensure trailing stop is enabled in the configurations
+            if not profit_config.get("trailing_stop_enabled", False):
+                metadata["status"] = "disabled"
+                return PositionAction.STAY, "Trailing stop disabled", metadata
+
+            if not trailing_config.get("enabled", True):
+                metadata["status"] = "disabled"
+                return PositionAction.STAY, "Trailing stop disabled in configuration", metadata
+
+            high_conf_threshold = self.confidence_thresholds.get("high", 0.8)
+            confidence_activation = trailing_config.get("confidence_activation", 0.7)
+
+            # Trailing stop is only active when confidence is below the high threshold
+            if combined_confidence >= high_conf_threshold:
+                metadata["status"] = "confidence_above_high_threshold"
+                metadata["high_threshold"] = high_conf_threshold
+                return (
+                    PositionAction.STAY,
+                    "Confidence above high threshold; trailing stop inactive",
+                    metadata
+                )
+
+            # Require a minimum confidence to avoid activating during panic exits
+            if combined_confidence < confidence_activation:
+                metadata["status"] = "confidence_below_activation"
+                metadata["activation_threshold"] = confidence_activation
+                return (
+                    PositionAction.STAY,
+                    "Confidence below trailing activation threshold",
+                    metadata
+                )
+
+            entry_price = float(position_data.get("entry_price", 0.0) or 0.0)
+            current_price = float(position_data.get("current_price", 0.0) or 0.0)
+            quantity = abs(float(position_data.get("quantity", 0.0) or 0.0))
+            side = str(position_data.get("side", "LONG")).upper()
+
+            if entry_price <= 0 or current_price <= 0 or quantity <= 0:
+                metadata["status"] = "insufficient_market_data"
+                return (
+                    PositionAction.STAY,
+                    "Insufficient data for trailing stop evaluation",
+                    metadata
+                )
+
+            # Determine the dynamically scaled profit target used for activation
+            dynamic_profit_target = self._calculate_profit_target_threshold(
+                combined_confidence,
+                position_data
+            )
+            profit_per_unit = dynamic_profit_target / max(quantity, 1e-8)
+
+            if side == "LONG":
+                target_price = entry_price + profit_per_unit
+                price_above_target = current_price >= target_price
+            elif side == "SHORT":
+                target_price = entry_price - profit_per_unit
+                price_above_target = current_price <= target_price
+            else:
+                metadata["status"] = "unsupported_side"
+                metadata["side"] = side
+                return PositionAction.STAY, "Unsupported position side for trailing stop", metadata
+
+            trailing_state = position_data.setdefault(
+                "trailing_state",
+                {
+                    "activated": False,
+                    "target_price": target_price,
+                    "extreme_price": None,
+                    "atr_at_activation": None,
+                    "activation_price": None,
+                    "activation_time": None
+                }
+            )
+
+            atr_value = self._extract_atr_value(position_data)
+
+            stored_target_price = trailing_state.get("target_price")
+            if stored_target_price is None:
+                activation_target_price = target_price
+            elif side == "LONG":
+                activation_target_price = max(stored_target_price, target_price)
+            else:
+                activation_target_price = min(stored_target_price, target_price)
+            trailing_state["target_price"] = activation_target_price
+
+            if side == "LONG":
+                price_above_target = current_price >= activation_target_price
+            else:
+                price_above_target = current_price <= activation_target_price
+
+            if not trailing_state.get("activated", False):
+                if not price_above_target:
+                    trailing_state.update({
+                        "activated": False,
+                        "extreme_price": None,
+                        "atr_at_activation": None,
+                        "activation_price": None,
+                        "activation_time": None
+                    })
+                    metadata.update({
+                        "status": "target_not_reached",
+                        "target_price": activation_target_price,
+                        "unrealized_target": dynamic_profit_target
+                    })
+                    return (
+                        PositionAction.STAY,
+                        "Trailing stop inactive until dynamic target price is exceeded",
+                        metadata
+                    )
+
+                trailing_state.update({
+                    "activated": True,
+                    "activation_price": current_price,
+                    "activation_time": time.time(),
+                    "extreme_price": current_price
+                })
+                if atr_value is not None:
+                    trailing_state["atr_at_activation"] = float(atr_value)
+
+            # Update the best favorable price since the target was reached
+            extreme_price = trailing_state.get("extreme_price")
+            if extreme_price is None:
+                extreme_price = current_price
+            if side == "LONG":
+                extreme_price = max(extreme_price, current_price)
+            else:  # SHORT
+                extreme_price = min(extreme_price, current_price)
+            trailing_state["extreme_price"] = extreme_price
+
+            if trailing_state.get("atr_at_activation") is None and atr_value is not None:
+                trailing_state["atr_at_activation"] = float(atr_value)
+
+            atr_for_calculation = trailing_state.get("atr_at_activation") or atr_value or 0.0
+
+            metadata.update({
+                "target_price": trailing_state.get("target_price", target_price),
+                "unrealized_target": dynamic_profit_target,
+                "activation_price": trailing_state.get("activation_price"),
+                "activated": trailing_state.get("activated", False)
+            })
+
+            # Configure trailing reversal percentage and volatility modulation
+            reversal_pct = max(trailing_config.get("reversal_percentage", 0.02), 0.0)
+            min_distance = max(trailing_config.get("min_distance", 0.0), 0.0)
+
+            if trailing_config.get("use_atr_log_scaling", False):
+                atr_log_multiplier = max(trailing_config.get("atr_log_multiplier", 0.0), 0.0)
+                if atr_for_calculation > 0 and atr_log_multiplier > 0:
+                    reversal_pct *= math.log1p(atr_for_calculation * atr_log_multiplier)
+
+            atr_multiplier = max(trailing_config.get("atr_multiplier", 0.0), 0.0)
+            atr_pct = 0.0
+            if atr_for_calculation > 0 and atr_multiplier > 0 and current_price > 0:
+                atr_pct = (atr_for_calculation / current_price) * atr_multiplier
+
+            trailing_pct = max(reversal_pct, atr_pct, min_distance)
+            trailing_pct = min(max(trailing_pct, 0.0005), 0.5)
+
+            trailing_state.update({
+                "activated": True,
+                "trailing_pct": trailing_pct,
+                "last_update": time.time()
+            })
+
+            if side == "LONG":
+                trigger_price = extreme_price * (1.0 - trailing_pct)
+                reversal_amount = (extreme_price - current_price) / max(extreme_price, 1e-8)
+                triggered = current_price <= trigger_price
+            else:  # SHORT
+                trigger_price = extreme_price * (1.0 + trailing_pct)
+                reversal_amount = (current_price - extreme_price) / max(abs(extreme_price), 1e-8)
+                triggered = current_price >= trigger_price
+
+            metadata.update({
+                "extreme_price": extreme_price,
+                "trigger_price": trigger_price,
+                "trailing_pct": trailing_pct,
+                "reversal_observed": reversal_amount
+            })
+
+            if not triggered:
+                metadata["status"] = "armed"
+                return (
+                    PositionAction.STAY,
+                    "Trailing stop armed and monitoring price reversal",
+                    metadata
+                )
+
+            exit_percentage = max(0.0, min(1.0, profit_config.get("exit_percentage", 1.0)))
+            metadata.update({
+                "status": "triggered",
+                "exit_percentage": exit_percentage
+            })
+
+            if side == "LONG":
+                reason = (
+                    f"Trailing stop hit: price {current_price:.4f} fell "
+                    f"{trailing_pct:.2%} from peak {extreme_price:.4f}"
+                )
+            else:
+                reason = (
+                    f"Trailing stop hit: price {current_price:.4f} rebounded "
+                    f"{trailing_pct:.2%} from trough {extreme_price:.4f}"
+                )
+
+            return PositionAction.TRAILING_STOP, reason, metadata
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
@@ -900,6 +1103,7 @@ class PositionMonitor:
                     ],
                     "confidence_exit_threshold": exit_strategy_params.get("tp_confidence_threshold", 0.55),
                     "exit_percentage": exit_strategy_params.get("tp_exit_percentage", 1.0),
+                    "trailing_stop_enabled": exit_strategy_params.get("trailing_stop_enabled", True),
                     "use_log_atr_multiplier": exit_strategy_params.get("use_tp_atr_log_scaling", False),
                     "atr_log_multiplier": exit_strategy_params.get("tp_atr_log_multiplier", 0.0)
                 },
@@ -920,7 +1124,10 @@ class PositionMonitor:
                 "trailing_stop": {
                     "atr_multiplier": exit_strategy_params.get("trailing_atr_multiplier", 1.5),
                     "min_distance": exit_strategy_params.get("trailing_min_distance", 0.01),
-                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7)
+                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7),
+                    "reversal_percentage": exit_strategy_params.get("trailing_reversal_pct", 0.02),
+                    "use_atr_log_scaling": exit_strategy_params.get("trailing_use_atr_log_scaling", False),
+                    "atr_log_multiplier": exit_strategy_params.get("trailing_atr_log_multiplier", 0.0)
                 },
                 "regime_aware": {
                     "transition_penalty": exit_strategy_params.get("regime_transition_penalty", 0.1),
@@ -971,10 +1178,10 @@ class PositionMonitor:
     def _get_optimized_profit_taking_config(self) -> Dict[str, Any]:
         """Get optimized profit-taking configuration."""
         if self.optimized_parameters and "profit_taking" in self.optimized_parameters:
-            return self.optimized_parameters["profit_taking"]
-        
+            return dict(self.optimized_parameters["profit_taking"])
+
         # Fallback to config or defaults
-        return self.monitor_config.get("profit_taking", {
+        config = dict(self.monitor_config.get("profit_taking", {
             "confidence_scaling": True,
             "min_confidence_for_profit": 0.6,
             "confidence_profit_multiplier": 0.5,
@@ -985,7 +1192,8 @@ class PositionMonitor:
             "exit_percentage": 1.0,
             "use_log_atr_multiplier": False,
             "atr_log_multiplier": 0.0
-        })
+        }))
+        return config
 
     def _get_optimized_stop_loss_config(self) -> Dict[str, Any]:
         """Get optimized stop-loss configuration."""
@@ -1022,15 +1230,19 @@ class PositionMonitor:
     def _get_optimized_trailing_stop_config(self) -> Dict[str, Any]:
         """Get optimized trailing stop configuration."""
         if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
-            return self.optimized_parameters["trailing_stop"]
-        
+            return dict(self.optimized_parameters["trailing_stop"])
+
         # Fallback to config or defaults
-        return self.monitor_config.get("trailing_stop", {
+        config = dict(self.monitor_config.get("trailing_stop", {
             "enabled": True,
             "atr_multiplier": 1.5,
             "min_distance": 0.01,
-            "confidence_activation": 0.7
-        })
+            "confidence_activation": 0.7,
+            "reversal_percentage": 0.02,
+            "use_atr_log_scaling": False,
+            "atr_log_multiplier": 0.0
+        }))
+        return config
 
     def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:
         """Get optimized regime-aware configuration."""

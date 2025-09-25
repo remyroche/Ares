@@ -44,9 +44,9 @@ from .optimization import TreeHardwareOptimizer, TreeMatrixOperations
 from .optimization import TreeMemoryOptimizer, TreeCacheManager
 from .optimization import TreeParallelOptimizer, TreeDistributedSearch
 
-# Uncertainty estimation
-from .uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty
-from .uncertainty.confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator
+# Uncertainty estimation - now using consolidated utilities
+from src.utils.nas_tas.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty, UncertaintyConfig
+from src.utils.nas_tas.confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator, ConfidenceConfig
 from .uncertainty.robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting
 
 # Regime analysis

@@ -151,7 +151,7 @@ except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
 
 try:
-    from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
+    from src.utils.nas_tas.uncertainty_estimation import TreeUncertaintyEstimator
     UNCERTAINTY_ESTIMATION_AVAILABLE = True
 except ImportError:
     UNCERTAINTY_ESTIMATION_AVAILABLE = False

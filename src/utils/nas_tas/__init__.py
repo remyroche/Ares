@@ -71,6 +71,20 @@ from .evolutionary_search import (
     EvolutionaryConfig
 )
 
+from .uncertainty_estimation import (
+    TreeUncertaintyEstimator,
+    TreeEnsembleUncertainty,
+    TreeBayesianUncertainty,
+    UncertaintyConfig
+)
+
+from .confidence_scoring import (
+    TreeConfidenceScorer,
+    TreeReliabilityEstimator,
+    TreeCalibrationScorer,
+    ConfidenceConfig
+)
+
 
 __all__ = [
     'UnifiedEvaluator',
@@ -114,5 +128,13 @@ __all__ = [
     'EvolutionaryTreeSearch',
     'TreeGeneticAlgorithm',
     'TreeNSGA2',
-    'EvolutionaryConfig'
+    'EvolutionaryConfig',
+    'TreeUncertaintyEstimator',
+    'TreeEnsembleUncertainty',
+    'TreeBayesianUncertainty',
+    'UncertaintyConfig',
+    'TreeConfidenceScorer',
+    'TreeReliabilityEstimator',
+    'TreeCalibrationScorer',
+    'ConfidenceConfig'
 ]

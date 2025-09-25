@@ -19,10 +19,10 @@ This document summarizes the complete real implementation of all backtesting com
   - `RealBacktestingConfig`: Configuration management
   - `execute_real_backtest()`: Convenience function
 
-### 2. **Real Monte Carlo Engine** (`real_monte_carlo_engine.py`)
-- **Purpose**: Monte Carlo simulation for risk analysis
+### 2. **Unified Monte Carlo Engine** (`src/utils/nas_tas/monte_carlo_engine.py`)
+- **Purpose**: Monte Carlo simulation for risk analysis (unified for NAS and TAS)
 - **Features**:
-  - Multiple simulation methods (bootstrap, parametric, historical, hybrid)
+  - Multiple simulation methods (bootstrap, parametric, historical, regime-based, factor-based)
   - GPU acceleration for M1/M2/M3 Macs
   - Memory optimization for large simulations
   - Risk metrics calculation (VaR, Expected Shortfall, etc.)
@@ -157,7 +157,7 @@ results = await execute_real_backtest(
 
 ### **Monte Carlo Simulation**
 ```python
-from src.training.steps.backtesting.real_monte_carlo_engine import run_monte_carlo_simulation
+from src.utils.nas_tas.monte_carlo_engine import run_monte_carlo_simulation
 
 # Run Monte Carlo simulation
 results = await run_monte_carlo_simulation(

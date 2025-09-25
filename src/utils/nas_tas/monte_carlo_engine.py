@@ -1,8 +1,9 @@
 """
-Monte Carlo Simulation for TAS
+Unified Monte Carlo Simulation Engine for NAS and TAS
 
-Comprehensive Monte Carlo simulation for tree architecture search including
-portfolio simulation, risk analysis, and scenario generation.
+This module provides a comprehensive Monte Carlo simulation engine that consolidates
+all Monte Carlo functionality for Neural Architecture Search (NAS) and Tree Architecture Search (TAS).
+It includes portfolio simulation, risk analysis, and scenario generation.
 """
 
 import numpy as np
@@ -13,6 +14,8 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 import warnings
+from pathlib import Path
+import json
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -96,12 +99,12 @@ class MonteCarloResult:
     config: MonteCarloConfig
 
 
-class MonteCarloSimulator:
+class UnifiedMonteCarloEngine:
     """
-    Comprehensive Monte Carlo simulator for TAS.
+    Unified Monte Carlo simulator for NAS and TAS.
     
     Provides portfolio simulation, risk analysis, and scenario generation
-    for tree architecture search using various Monte Carlo methods.
+    for both Neural Architecture Search and Tree Architecture Search using various Monte Carlo methods.
     """
     
     def __init__(self, config: MonteCarloConfig):
@@ -117,7 +120,7 @@ class MonteCarloSimulator:
         self.results = None
         self.simulation_data = None
         
-        self.logger.info("✅ Monte Carlo Simulator initialized")
+        self.logger.info("✅ Unified Monte Carlo Engine initialized")
         self.logger.info(f"📊 Simulations: {config.n_simulations}")
         self.logger.info(f"📊 Horizon: {config.simulation_horizon} days")
         self.logger.info(f"📊 Method: {config.method.value}")
@@ -612,7 +615,6 @@ class MonteCarloSimulator:
                 'execution_time': result.execution_time
             }
             
-            import json
             with open(summary_file, 'w') as f:
                 json.dump(summary, f, indent=2)
             
@@ -662,3 +664,24 @@ class MonteCarloSimulator:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to export results: {e}")
+
+
+# Convenience functions for backward compatibility
+def create_monte_carlo_engine(config: MonteCarloConfig) -> UnifiedMonteCarloEngine:
+    """Create a Monte Carlo engine with the given configuration."""
+    return UnifiedMonteCarloEngine(config)
+
+
+def run_monte_carlo_simulation(returns_series: pd.Series, 
+                              n_simulations: int = 10000,
+                              method: MonteCarloMethod = MonteCarloMethod.PARAMETRIC,
+                              **kwargs) -> MonteCarloResult:
+    """Run Monte Carlo simulation with default parameters."""
+    config = MonteCarloConfig(
+        n_simulations=n_simulations,
+        method=method,
+        **kwargs
+    )
+    
+    engine = UnifiedMonteCarloEngine(config)
+    return engine.run_simulation(returns_series)

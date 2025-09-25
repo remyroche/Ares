@@ -1,22 +1,16 @@
 """
-Advanced Tree Evaluator for TAS Regime Analysis
+Tree Evaluator for TAS Regime Analysis
 
-This module provides comprehensive tree evaluation capabilities for TAS (Technical Analysis Signals)
-regime analysis, integrating with the unified evaluation framework and leveraging various
-utility modules for enhanced performance and functionality.
+This module provides TAS-specific tree evaluation capabilities using
+the unified evaluation framework.
 
 Key Features:
-- Advanced tree model evaluation with multiple metrics
-- Integration with M1 hardware optimizations
-- Cross-validation and hyperparameter optimization
-- Performance monitoring and memory optimization
+- Tree model evaluation with multiple metrics
+- Integration with unified evaluation framework
+- TAS-specific regime analysis
+- Performance monitoring and optimization
 - Comprehensive reporting and visualization
 - Support for ensemble methods and model comparison
-- Real-time evaluation capabilities
-- Integration with ML common utilities
-
-Author: AI Assistant
-Date: 2025-01-11
 """
 
 import logging
@@ -39,6 +33,13 @@ from sklearn.metrics import (
     roc_auc_score, mean_squared_error, mean_absolute_error, r2_score,
     classification_report, confusion_matrix
 )
+
+# Import unified evaluator
+try:
+    from src.utils.nas_tas import UnifiedEvaluator, EvaluationConfig, EvaluationResult
+    UNIFIED_EVALUATOR_AVAILABLE = True
+except ImportError:
+    UNIFIED_EVALUATOR_AVAILABLE = False
 
 # Import utility modules with fallback implementations
 try:

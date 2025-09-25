@@ -1,8 +1,8 @@
 """
-Advanced TAS Evaluator - Updated to use Unified Components
+TAS Evaluator - Updated to use Unified Evaluator
 
-This module provides comprehensive evaluation capabilities for TAS using
-the unified evaluation framework from merged_unified_components.
+This module provides TAS-specific evaluation capabilities using
+the unified evaluation framework.
 """
 
 import numpy as np
@@ -19,9 +19,9 @@ import torch
 
 from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
 
-# Import unified components
+# Import unified evaluator
 try:
-    from src.utils.ml_common.nas_tas_unified import UnifiedEvaluator
+    from src.utils.nas_tas import UnifiedEvaluator, EvaluationConfig, EvaluationResult
     UNIFIED_EVALUATOR_AVAILABLE = True
 except ImportError:
     UNIFIED_EVALUATOR_AVAILABLE = False
@@ -94,7 +94,7 @@ class EvaluationResult:
 
 
 class TASEvaluator:
-    """Advanced evaluator for Trading Architecture Search using unified components."""
+    """TAS-specific evaluator using unified components."""
 
     def __init__(self, config: TASConfig):
         """Initialize TAS evaluator with unified components.

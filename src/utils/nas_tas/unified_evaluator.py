@@ -1,8 +1,20 @@
 """
-NAS Evaluator - Updated to use Unified Evaluator
+Unified NAS/TAS Evaluator
 
-This module provides NAS-specific evaluation capabilities using
-the unified evaluation framework.
+This module provides a comprehensive unified evaluator for both Neural Architecture Search (NAS)
+and Tree Architecture Search (TAS) systems, combining evaluation capabilities with advanced
+ML optimization, hardware acceleration, and data processing.
+
+Features:
+- Unified architecture evaluation for both NAS and TAS
+- Performance metrics for neural networks and tree models
+- Cross-validation and hyperparameter optimization
+- M1 hardware optimization integration
+- Advanced data processing and validation
+- Matrix operations and mathematical validation
+- Comprehensive logging and monitoring
+- Serialization and persistence utilities
+- Trading-specific metrics and economic significance validation
 """
 
 import logging
@@ -16,13 +28,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import numpy as np
 import pandas as pd
-
-# Import unified evaluator
-try:
-    from src.utils.nas_tas import UnifiedEvaluator, EvaluationConfig, EvaluationResult
-    UNIFIED_EVALUATOR_AVAILABLE = True
-except ImportError:
-    UNIFIED_EVALUATOR_AVAILABLE = False
 
 # Import utility modules with comprehensive error handling
 try:
@@ -233,32 +238,18 @@ class EvaluationConfig:
     batch_size: int = 32
     cache_results: bool = True
 
-class NASEvaluator:
-    """NAS-specific evaluator using unified components."""
-    
-    def __init__(self, config: Optional[EvaluationConfig] = None):
-        """Initialize NAS evaluator with unified components."""
-        if UNIFIED_EVALUATOR_AVAILABLE:
-            self.unified_evaluator = UnifiedEvaluator(config)
-        else:
-            raise ImportError("Unified evaluator not available")
-    
-    def __getattr__(self, name):
-        """Delegate to unified evaluator."""
-        return getattr(self.unified_evaluator, name)
-
-
-class LegacyNASEvaluator:
+class UnifiedEvaluator:
     """
-    Comprehensive Neural Architecture Search Evaluator.
+    Comprehensive Unified Evaluator for NAS and TAS.
     
-    This class provides advanced evaluation capabilities for neural architectures
-    with integration of hardware optimizations, data processing, and ML utilities.
+    This class provides advanced evaluation capabilities for both neural architectures
+    and tree architectures with integration of hardware optimizations, data processing,
+    and ML utilities.
     """
     
     def __init__(self, config: Optional[EvaluationConfig] = None):
         """
-        Initialize NASEvaluator.
+        Initialize UnifiedEvaluator.
         
         Args:
             config: Evaluation configuration

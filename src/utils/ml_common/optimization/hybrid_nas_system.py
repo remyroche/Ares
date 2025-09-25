@@ -24,7 +24,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
-from tprint import tprint
+from tprint import tprint, tprint_warning
 
 # Import existing neural NAS (if available)
 try:
@@ -54,6 +54,18 @@ except ImportError:
     class TreeArchitectureConfig: pass
     class TreeArchitectureCandidate: pass
 
+# Import pure tree NAS as fallback
+try:
+    from .pure_tree_nas import PureTreeNAS, PureTreeNASConfig, TreeArchitectureCandidate as PureTreeArchitectureCandidate
+    PURE_TREE_NAS_AVAILABLE = True
+except ImportError:
+    PURE_TREE_NAS_AVAILABLE = False
+    class PureTreeNAS:
+        def __init__(self, config): pass
+        def search(self, *args, **kwargs): raise NotImplementedError("Pure Tree NAS not available")
+    class PureTreeNASConfig: pass
+    class PureTreeArchitectureCandidate: pass
+
 # Ensemble imports
 try:
     from sklearn.ensemble import VotingRegressor, VotingClassifier, StackingRegressor, StackingClassifier
@@ -74,6 +86,9 @@ class HybridNASConfig:
     
     # Tree-based NAS configuration
     tree_config: TreeArchitectureConfig = field(default_factory=TreeArchitectureConfig)
+    
+    # Pure tree NAS configuration (fallback)
+    pure_tree_config: PureTreeNASConfig = field(default_factory=PureTreeNASConfig)
     
     # Hybrid strategy
     hybrid_strategy: str = 'complementary'  # 'complementary', 'ensemble', 'routing', 'sequential'
@@ -163,6 +178,9 @@ class HybridNASSystem:
         if TREE_NAS_AVAILABLE:
             tprint("🌳 [HYBRID_NAS] Initializing tree-based NAS system", color="yellow")
             self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
+        elif PURE_TREE_NAS_AVAILABLE:
+            tprint("🌳 [HYBRID_NAS] Using pure tree NAS system as fallback", color="yellow")
+            self.tree_nas = PureTreeNAS(config.pure_tree_config)
         else:
             tprint_warning("⚠️ [HYBRID_NAS] Tree NAS not available, using placeholder")
             self.tree_nas = TreeBasedArchitectureSearch(config.tree_config)
@@ -641,3 +659,60 @@ def search_hybrid_architecture(X_train: np.ndarray,
     
     hybrid_nas = HybridNASSystem(config)
     return hybrid_nas.search(X_train, y_train, X_val, y_val, regime_labels, data_characteristics)
+
+
+# Additional convenience functions for specific use cases
+def search_tree_only_architecture(X_train: np.ndarray, 
+                                 y_train: np.ndarray,
+                                 X_val: Optional[np.ndarray] = None,
+                                 y_val: Optional[np.ndarray] = None,
+                                 config: Optional[PureTreeNASConfig] = None) -> TreeArchitectureCandidate:
+    """
+    Convenience function to perform tree-only architecture search.
+    
+    Args:
+        X_train: Training features
+        y_train: Training labels
+        X_val: Validation features (optional)
+        y_val: Validation labels (optional)
+        config: Pure tree NAS configuration
+        
+    Returns:
+        Best tree architecture candidate
+    """
+    if config is None:
+        config = PureTreeNASConfig()
+    
+    if PURE_TREE_NAS_AVAILABLE:
+        pure_tree_nas = PureTreeNAS(config)
+        return pure_tree_nas.search(X_train, y_train, X_val, y_val)
+    else:
+        raise ImportError("Pure Tree NAS not available")
+
+
+def search_neural_only_architecture(X_train: np.ndarray, 
+                                  y_train: np.ndarray,
+                                  X_val: Optional[np.ndarray] = None,
+                                  y_val: Optional[np.ndarray] = None,
+                                  config: Optional[ArchitectureConfig] = None) -> ArchitectureCandidate:
+    """
+    Convenience function to perform neural-only architecture search.
+    
+    Args:
+        X_train: Training features
+        y_train: Training labels
+        X_val: Validation features (optional)
+        y_val: Validation labels (optional)
+        config: Neural architecture configuration
+        
+    Returns:
+        Best neural architecture candidate
+    """
+    if config is None:
+        config = ArchitectureConfig()
+    
+    if NEURAL_NAS_AVAILABLE:
+        neural_nas = NeuralArchitectureSearch(config)
+        return neural_nas.search(X_train, y_train, X_val, y_val)
+    else:
+        raise ImportError("Neural NAS not available")

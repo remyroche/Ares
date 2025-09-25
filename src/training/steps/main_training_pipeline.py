@@ -10,9 +10,11 @@ Key Features:
 - Granular control at sub-pipeline level
 - Multiple execution modes (full, light, blank)
 - Comprehensive monitoring and reporting
-- Error handling and recovery
-- Performance tracking
-- Artifact management
+- Enhanced error handling and recovery
+- Performance tracking with M1 optimization
+- Artifact management with serialization utilities
+- ML utilities integration (Bayesian TPE, grid search)
+- Hardware optimization integration
 """
 
 import asyncio
@@ -23,6 +25,27 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
+
+# Import utilities with error handling
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_info
+    from src.utils.common_operations import (
+        safe_json_dump, safe_json_load, ensure_directory,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        safe_dataframe_operation, validate_dataframe_columns, optimize_dataframe_dtypes
+    )
+    from src.utils.math_validation import (
+        validate_finite, validate_positive, safe_divide, safe_log, safe_sqrt,
+        safe_correlation, safe_covariance, safe_mean, safe_std
+    )
+    from src.utils.serialization_utils import UniversalSerializer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+    UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: Some utilities not available: {e}")
+    UTILS_AVAILABLE = False
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_info
 
 # Define ExecutionMode locally as fallback
 class ExecutionMode(Enum):
@@ -225,30 +248,92 @@ class MainTrainingPipeline:
     """
     
     def __init__(self, config: Optional[MainPipelineConfig] = None):
-        """Initialize the main training pipeline."""
-        self.config = config or MainPipelineConfig()
-        # Use standardized logging if available
-        if STANDARDIZED_LOGGING_AVAILABLE:
-            self.logger = get_logger('MainTrainingPipeline')
-        else:
-            self.logger = logger.getChild('MainTrainingPipeline')
-        
-        # Initialize sub-pipeline managers (only if available)
-        self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
-        self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
-        self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
-        self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
-        
-        # Pipeline state
-        self.current_stage: Optional[PipelineStage] = None
-        self.pipeline_results: List[MainPipelineResult] = []
+        """Initialize the main training pipeline with enhanced error handling and utility integration."""
+        try:
+            tprint("🚀 [INIT] Starting MainTrainingPipeline initialization...")
+            self.config = config or MainPipelineConfig()
+            
+            # Use standardized logging if available
+            if STANDARDIZED_LOGGING_AVAILABLE:
+                self.logger = get_logger('MainTrainingPipeline')
+            else:
+                self.logger = logger.getChild('MainTrainingPipeline')
+            
+            # Initialize utility systems
+            self.utils_available = UTILS_AVAILABLE
+            self.serializer = None
+            self.m1_optimizers = None
+            self.bayesian_optimizer = None
+            
+            if self.utils_available:
+                try:
+                    tprint("🚀 [INIT] Initializing utility systems...")
+                    self._initialize_utilities()
+                    tprint_success("✅ [INIT] Utility systems initialized successfully")
+                except Exception as e:
+                    tprint_warning(f"⚠️ [INIT] Utility systems initialization failed: {e}")
+                    self.utils_available = False
+            
+            # Initialize sub-pipeline managers (only if available) with error handling
+            try:
+                tprint("🚀 [INIT] Initializing sub-pipeline managers...")
+                self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
+                self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
+                self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
+                self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
+                tprint_success("✅ [INIT] Sub-pipeline managers initialized successfully")
+            except Exception as e:
+                tprint_error(f"❌ [INIT] Sub-pipeline managers initialization failed: {e}")
+                raise
+            
+            # Pipeline state
+            self.current_stage: Optional[PipelineStage] = None
+            self.pipeline_results: List[MainPipelineResult] = []
+            
+            tprint_success("✅ [INIT] MainTrainingPipeline initialized successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ [INIT] MainTrainingPipeline initialization failed: {e}")
+            raise
+    
+    def _initialize_utilities(self):
+        """Initialize utility systems including serialization, M1 optimizers, and ML utilities."""
+        try:
+            # Initialize serialization utilities
+            if self.utils_available:
+                self.serializer = UniversalSerializer()
+                tprint_info("✅ Serialization utilities initialized")
+            
+            # Initialize M1 optimizers
+            try:
+                self.m1_optimizers = integrate_with_m1_optimizers()
+                if self.m1_optimizers.get('success', False):
+                    tprint_success("✅ M1 optimizers integrated successfully")
+                else:
+                    tprint_warning("⚠️ M1 optimizers integration failed")
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 optimizers not available: {e}")
+                self.m1_optimizers = None
+            
+            # Initialize Bayesian TPE optimizer
+            try:
+                if self.utils_available:
+                    self.bayesian_optimizer = BayesianTPEOptimizer()
+                    tprint_success("✅ Bayesian TPE optimizer initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Bayesian TPE optimizer not available: {e}")
+                self.bayesian_optimizer = None
+                
+        except Exception as e:
+            tprint_error(f"❌ Utility initialization failed: {e}")
+            raise
     
     async def execute_pipeline(
         self,
         config: Optional[MainPipelineConfig] = None
     ) -> MainPipelineResult:
         """
-        Execute the complete training pipeline.
+        Execute the complete training pipeline with enhanced error handling and utility integration.
         
         Args:
             config: Optional configuration override
@@ -256,78 +341,126 @@ class MainTrainingPipeline:
         Returns:
             MainPipelineResult with execution details
         """
-        config = config or self.config
-        pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        if STANDARDIZED_LOGGING_AVAILABLE:
-            log_info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
-        else:
-            self.logger.info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
-        
-        start_time = datetime.now()
-        result = MainPipelineResult(
-            pipeline_id=pipeline_id,
-            status=SubPipelineStatus.RUNNING,
-            start_time=start_time
-        )
-        
         try:
-            # Execute each enabled stage
-            for stage in config.enabled_stages:
-                if STANDARDIZED_LOGGING_AVAILABLE:
-                    log_info(f"📋 Executing stage: {stage.value}")
-                else:
-                    self.logger.info(f"📋 Executing stage: {stage.value}")
-                self.current_stage = stage
-                
-                stage_result = await self._execute_stage(stage, config)
-                result.stage_results[stage] = stage_result
-                
-                # Check if stage failed and handle accordingly
-                failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
-                if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
-                    if STANDARDIZED_LOGGING_AVAILABLE:
-                        log_warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
-                    else:
-                        self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
-                    result.failed_stages.append(stage)
+            tprint("🚀 [EXECUTE_PIPELINE] Starting main training pipeline execution...")
+            config = config or self.config
+            pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
-            # Calculate overall metrics
-            self._calculate_pipeline_metrics(result)
-            
-            # Update result status
-            end_time = datetime.now()
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            
-            if result.failed_sub_pipelines == 0:
-                result.status = SubPipelineStatus.COMPLETED
-                if STANDARDIZED_LOGGING_AVAILABLE:
-                    log_success(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
-                else:
-                    self.logger.info(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
-            else:
-                result.status = SubPipelineStatus.FAILED
-                result.error_message = f"Pipeline failed with {result.failed_sub_pipelines} failed sub-pipelines"
-                if STANDARDIZED_LOGGING_AVAILABLE:
-                    log_error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
-                else:
-                    self.logger.error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
-            
-        except Exception as e:
-            end_time = datetime.now()
-            result.status = SubPipelineStatus.FAILED
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            result.error_message = str(e)
+            # Input validation
+            if self.utils_available:
+                try:
+                    validate_positive(len(config.symbol), "symbol length")
+                    validate_positive(len(config.exchange), "exchange length")
+                    validate_positive(len(config.timeframe), "timeframe length")
+                    validate_positive(len(config.data_dir), "data_dir length")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Input validation warning: {e}")
             
             if STANDARDIZED_LOGGING_AVAILABLE:
-                log_error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+                log_info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
             else:
-                self.logger.error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+                self.logger.info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
+            
+            start_time = datetime.now()
+            result = MainPipelineResult(
+                pipeline_id=pipeline_id,
+                status=SubPipelineStatus.RUNNING,
+                start_time=start_time
+            )
         
-        self.pipeline_results.append(result)
-        return result
+            try:
+                # Execute each enabled stage
+                for stage in config.enabled_stages:
+                    try:
+                        tprint(f"📋 [EXECUTE_PIPELINE] Executing stage: {stage.value}")
+                        if STANDARDIZED_LOGGING_AVAILABLE:
+                            log_info(f"📋 Executing stage: {stage.value}")
+                        else:
+                            self.logger.info(f"📋 Executing stage: {stage.value}")
+                        self.current_stage = stage
+                        
+                        stage_result = await self._execute_stage(stage, config)
+                        result.stage_results[stage] = stage_result
+                        
+                        # Check if stage failed and handle accordingly
+                        failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
+                        if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
+                            tprint_warning(f"⚠️ [EXECUTE_PIPELINE] Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                            if STANDARDIZED_LOGGING_AVAILABLE:
+                                log_warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                            else:
+                                self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                            result.failed_stages.append(stage)
+                        else:
+                            tprint_success(f"✅ [EXECUTE_PIPELINE] Stage {stage.value} completed successfully")
+                            
+                    except Exception as e:
+                        tprint_error(f"❌ [EXECUTE_PIPELINE] Stage {stage.value} execution failed: {e}")
+                        if STANDARDIZED_LOGGING_AVAILABLE:
+                            log_error(f"❌ Stage {stage.value} execution failed: {e}")
+                        else:
+                            self.logger.error(f"❌ Stage {stage.value} execution failed: {e}")
+                        result.failed_stages.append(stage)
+                        continue
+            
+                # Calculate overall metrics
+                try:
+                    self._calculate_pipeline_metrics(result)
+                    tprint_success("✅ [EXECUTE_PIPELINE] Pipeline metrics calculated successfully")
+                except Exception as e:
+                    tprint_warning(f"⚠️ [EXECUTE_PIPELINE] Pipeline metrics calculation failed: {e}")
+                
+                # Update result status
+                end_time = datetime.now()
+                result.end_time = end_time
+                result.duration_seconds = (end_time - start_time).total_seconds()
+                
+                if result.failed_sub_pipelines == 0:
+                    result.status = SubPipelineStatus.COMPLETED
+                    tprint_success(f"✅ [EXECUTE_PIPELINE] Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                    if STANDARDIZED_LOGGING_AVAILABLE:
+                        log_success(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                    else:
+                        self.logger.info(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                else:
+                    result.status = SubPipelineStatus.FAILED
+                    result.error_message = f"Pipeline failed with {result.failed_sub_pipelines} failed sub-pipelines"
+                    tprint_error(f"❌ [EXECUTE_PIPELINE] Main training pipeline {pipeline_id} failed: {result.error_message}")
+                    if STANDARDIZED_LOGGING_AVAILABLE:
+                        log_error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
+                    else:
+                        self.logger.error(f"❌ Main training pipeline {pipeline_id} failed: {result.error_message}")
+                
+            except Exception as e:
+                end_time = datetime.now()
+                result.status = SubPipelineStatus.FAILED
+                result.end_time = end_time
+                result.duration_seconds = (end_time - start_time).total_seconds()
+                result.error_message = str(e)
+                
+                tprint_error(f"❌ [EXECUTE_PIPELINE] Main training pipeline {pipeline_id} failed with exception: {e}")
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+                else:
+                    self.logger.error(f"❌ Main training pipeline {pipeline_id} failed with exception: {e}")
+            
+            self.pipeline_results.append(result)
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ [EXECUTE_PIPELINE] Critical error in pipeline execution: {e}")
+            # Create a failed result
+            end_time = datetime.now()
+            failed_result = MainPipelineResult(
+                pipeline_id=f"failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.FAILED,
+                start_time=start_time,
+                end_time=end_time,
+                duration_seconds=(end_time - start_time).total_seconds(),
+                error_message=str(e)
+            )
+            self.pipeline_results.append(failed_result)
+            return failed_result
     
     async def execute_sub_pipeline_with_chain(
         self,

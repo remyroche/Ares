@@ -857,11 +857,36 @@ class EnhancedHybridOrchestrator:
             if not clustering_result.success:
                 raise ValueError("Clustering failed")
             
-            # Calculate economic significance and trading viability (simplified)
+            # Calculate economic significance and trading viability with proper error handling
             n_regimes = len(set(clustering_result.labels))
-            economic_scores = np.random.uniform(0.3, 0.9, n_regimes)  # Placeholder
-            trading_scores = np.random.uniform(0.2, 0.8, n_regimes)  # Placeholder
-            stability_scores = np.random.uniform(0.4, 0.9, n_regimes)  # Placeholder
+            tprint_info(f"Calculating economic significance for {n_regimes} regimes")
+            
+            try:
+                economic_scores = self._calculate_economic_significance_scores(clustering_result.labels, market_data)
+                tprint_success(f"Economic significance calculated: {len(economic_scores)} scores, mean: {np.mean(economic_scores):.3f}")
+            except Exception as e:
+                tprint_error(f"Economic significance calculation failed: {e}")
+                tprint_error("CRITICAL: Economic significance calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper economic significance scores")
+                raise ValueError(f"Economic significance calculation failed: {e}") from e
+            
+            try:
+                trading_scores = self._calculate_trading_viability_scores(clustering_result.labels, market_data)
+                tprint_success(f"Trading viability calculated: {len(trading_scores)} scores, mean: {np.mean(trading_scores):.3f}")
+            except Exception as e:
+                tprint_error(f"Trading viability calculation failed: {e}")
+                tprint_error("CRITICAL: Trading viability calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper trading viability scores")
+                raise ValueError(f"Trading viability calculation failed: {e}") from e
+            
+            try:
+                stability_scores = self._calculate_regime_stability_scores(clustering_result.labels, clustering_result.probabilities)
+                tprint_success(f"Regime stability calculated: {len(stability_scores)} scores, mean: {np.mean(stability_scores):.3f}")
+            except Exception as e:
+                tprint_error(f"Regime stability calculation failed: {e}")
+                tprint_error("CRITICAL: Regime stability calculation is required for regime analysis")
+                tprint_error("Cannot proceed without proper regime stability scores")
+                raise ValueError(f"Regime stability calculation failed: {e}") from e
             
             # Calculate transition probabilities
             transition_probs = self._calculate_transition_probabilities(clustering_result.labels, clustering_result.probabilities)
@@ -937,9 +962,122 @@ class EnhancedHybridOrchestrator:
             else:
                 raise ValueError("No features available for combination")
     
+    def _calculate_economic_significance_scores(self, labels: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate economic significance scores for each regime."""
+        try:
+            tprint_debug("Calculating economic significance scores")
+            n_regimes = len(set(labels))
+            economic_scores = np.zeros(n_regimes)
+            
+            for regime_id in range(n_regimes):
+                regime_mask = labels == regime_id
+                if np.sum(regime_mask) > 0:
+                    # Calculate regime-specific economic metrics
+                    regime_data = market_data[regime_mask]
+                    
+                    # Price volatility as economic significance indicator
+                    if 'close' in regime_data.columns:
+                        returns = regime_data['close'].pct_change().dropna()
+                        if len(returns) > 0:
+                            volatility = returns.std()
+                            mean_return = returns.mean()
+                            # Economic significance based on volatility and return magnitude
+                            economic_scores[regime_id] = min(abs(mean_return) / (volatility + 1e-8), 1.0)
+                        else:
+                            economic_scores[regime_id] = 0.3
+                    else:
+                        economic_scores[regime_id] = 0.3
+                else:
+                    economic_scores[regime_id] = 0.3
+            
+            tprint_debug(f"Economic significance scores calculated: {economic_scores}")
+            return economic_scores
+            
+        except Exception as e:
+            tprint_error(f"Economic significance calculation failed: {e}")
+            raise
+    
+    def _calculate_trading_viability_scores(self, labels: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate trading viability scores for each regime."""
+        try:
+            tprint_debug("Calculating trading viability scores")
+            n_regimes = len(set(labels))
+            trading_scores = np.zeros(n_regimes)
+            
+            for regime_id in range(n_regimes):
+                regime_mask = labels == regime_id
+                if np.sum(regime_mask) > 0:
+                    regime_data = market_data[regime_mask]
+                    
+                    # Volume and price movement indicators for trading viability
+                    volume_score = 0.5
+                    price_movement_score = 0.5
+                    
+                    if 'volume' in regime_data.columns:
+                        avg_volume = regime_data['volume'].mean()
+                        volume_score = min(avg_volume / regime_data['volume'].max(), 1.0) if regime_data['volume'].max() > 0 else 0.5
+                    
+                    if 'close' in regime_data.columns and 'open' in regime_data.columns:
+                        price_changes = (regime_data['close'] - regime_data['open']).abs()
+                        price_movement_score = min(price_changes.mean() / regime_data['close'].mean(), 1.0) if regime_data['close'].mean() > 0 else 0.5
+                    
+                    trading_scores[regime_id] = (volume_score + price_movement_score) / 2.0
+                else:
+                    trading_scores[regime_id] = 0.4
+            
+            tprint_debug(f"Trading viability scores calculated: {trading_scores}")
+            return trading_scores
+            
+        except Exception as e:
+            tprint_error(f"Trading viability calculation failed: {e}")
+            raise
+    
+    def _calculate_regime_stability_scores(self, labels: np.ndarray, probabilities: np.ndarray) -> np.ndarray:
+        """Calculate regime stability scores based on label consistency and probability confidence."""
+        try:
+            tprint_debug("Calculating regime stability scores")
+            n_regimes = len(set(labels))
+            stability_scores = np.zeros(n_regimes)
+            
+            for regime_id in range(n_regimes):
+                regime_mask = labels == regime_id
+                if np.sum(regime_mask) > 0:
+                    # Calculate stability based on regime duration and probability confidence
+                    regime_durations = []
+                    current_duration = 0
+                    
+                    for i, label in enumerate(labels):
+                        if label == regime_id:
+                            current_duration += 1
+                        else:
+                            if current_duration > 0:
+                                regime_durations.append(current_duration)
+                            current_duration = 0
+                    
+                    if current_duration > 0:
+                        regime_durations.append(current_duration)
+                    
+                    # Stability based on average duration and consistency
+                    if regime_durations:
+                        avg_duration = np.mean(regime_durations)
+                        duration_consistency = 1.0 - (np.std(regime_durations) / (np.mean(regime_durations) + 1e-8))
+                        stability_scores[regime_id] = min(avg_duration / 100.0 + duration_consistency * 0.5, 1.0)
+                    else:
+                        stability_scores[regime_id] = 0.6
+                else:
+                    stability_scores[regime_id] = 0.6
+            
+            tprint_debug(f"Regime stability scores calculated: {stability_scores}")
+            return stability_scores
+            
+        except Exception as e:
+            tprint_error(f"Regime stability calculation failed: {e}")
+            raise
+
     def _calculate_transition_probabilities(self, labels: np.ndarray, probabilities: np.ndarray) -> np.ndarray:
         """Calculate transition probabilities between regimes."""
         try:
+            tprint_debug("Calculating transition probabilities")
             n_regimes = len(set(labels))
             transition_matrix = np.zeros((n_regimes, n_regimes))
             
@@ -953,12 +1091,14 @@ class EnhancedHybridOrchestrator:
             row_sums = np.where(row_sums == 0, 1, row_sums)
             transition_matrix = transition_matrix / row_sums
             
+            tprint_debug(f"Transition probabilities calculated: {transition_matrix.shape}")
             return transition_matrix
             
         except Exception as e:
-            self.logger.warning(f"Transition probability calculation failed: {e}")
-            n_regimes = len(set(labels))
-            return np.full((n_regimes, n_regimes), 1.0 / n_regimes)
+            tprint_error(f"Transition probability calculation failed: {e}")
+            tprint_error("CRITICAL: Transition probability calculation is required for regime analysis")
+            tprint_error("Cannot proceed without proper transition probabilities")
+            raise ValueError(f"Transition probability calculation failed: {e}") from e
     
     def _perform_multi_timeframe_analysis(self, market_data: pd.DataFrame, hybrid_regimes: Dict[str, Any]) -> Dict[str, Any]:
         """Perform multi-timeframe analysis for trading."""

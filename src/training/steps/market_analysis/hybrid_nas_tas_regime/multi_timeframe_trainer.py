@@ -17,6 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 from .config.hybrid_regime_config import HybridRegimeConfig
 from .hybrid_orchestrator import HybridOrchestrator, HybridOrchestratorConfig
 from .shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
@@ -268,8 +274,12 @@ class MultiTimeframeTrainer:
             return market_data
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Timeframe data preparation failed: {e}")
-            return market_data
+            tprint_error(f"⚠️ Timeframe data preparation failed: {e}")
+            tprint_debug(f"Timeframe data preparation error context: {locals()}")
+            tprint_error("CRITICAL: Timeframe data preparation is required for multi-timeframe training")
+            tprint_error("Cannot proceed without proper timeframe data preparation")
+            self.logger.error(f"⚠️ Timeframe data preparation failed: {e}")
+            raise ValueError(f"Timeframe data preparation failed: {e}") from e
 
     def _train_on_timeframe(self, market_data: Union[pd.DataFrame, np.ndarray],
                            timestamps: Optional[np.ndarray],
@@ -310,12 +320,12 @@ class MultiTimeframeTrainer:
                 }
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Training failed for {timeframe}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'timeframe': timeframe
-            }
+            tprint_error(f"⚠️ Training failed for {timeframe}: {e}")
+            tprint_debug(f"Training error context for {timeframe}: {locals()}")
+            tprint_error(f"CRITICAL: Training on {timeframe} is required for multi-timeframe training")
+            tprint_error(f"Cannot proceed without proper training on {timeframe}")
+            self.logger.error(f"⚠️ Training failed for {timeframe}: {e}")
+            raise ValueError(f"Training failed for {timeframe}: {e}") from e
 
     def _detect_primary_regimes(self, market_data: Union[pd.DataFrame, np.ndarray],
                                timestamps: Optional[np.ndarray]) -> Dict[str, Any]:
@@ -346,11 +356,12 @@ class MultiTimeframeTrainer:
                 }
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Primary regime detection failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            tprint_error(f"⚠️ Primary regime detection failed: {e}")
+            tprint_debug(f"Primary regime detection error context: {locals()}")
+            tprint_error("CRITICAL: Primary regime detection is required for multi-timeframe training")
+            tprint_error("Cannot proceed without proper primary regime detection")
+            self.logger.error(f"⚠️ Primary regime detection failed: {e}")
+            raise ValueError(f"Primary regime detection failed: {e}") from e
 
     def _analyze_cross_timeframe(self, training_results: Dict[str, Dict[str, Any]],
                                 primary_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -409,8 +420,12 @@ class MultiTimeframeTrainer:
             }
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Cross-timeframe analysis failed: {e}")
-            return {'error': str(e)}
+            tprint_error(f"⚠️ Cross-timeframe analysis failed: {e}")
+            tprint_debug(f"Cross-timeframe analysis error context: {locals()}")
+            tprint_error("CRITICAL: Cross-timeframe analysis is required for multi-timeframe training")
+            tprint_error("Cannot proceed without proper cross-timeframe analysis")
+            self.logger.error(f"⚠️ Cross-timeframe analysis failed: {e}")
+            raise ValueError(f"Cross-timeframe analysis failed: {e}") from e
 
     def _calculate_regime_consistency(self, training_results: Dict[str, Dict[str, Any]],
                                     primary_result: Dict[str, Any]) -> Dict[str, float]:
@@ -467,8 +482,12 @@ class MultiTimeframeTrainer:
             return consistency_scores
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Regime consistency calculation failed: {e}")
-            return {'error': str(e)}
+            tprint_error(f"⚠️ Regime consistency calculation failed: {e}")
+            tprint_debug(f"Regime consistency calculation error context: {locals()}")
+            tprint_error("CRITICAL: Regime consistency calculation is required for multi-timeframe training")
+            tprint_error("Cannot proceed without proper regime consistency calculation")
+            self.logger.error(f"⚠️ Regime consistency calculation failed: {e}")
+            raise ValueError(f"Regime consistency calculation failed: {e}") from e
 
     def _apply_transfer_learning(self, training_results: Dict[str, Dict[str, Any]],
                                 primary_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -528,8 +547,12 @@ class MultiTimeframeTrainer:
             }
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Transfer learning failed: {e}")
-            return {'error': str(e), 'transfer_learning_applied': False}
+            tprint_error(f"⚠️ Transfer learning failed: {e}")
+            tprint_debug(f"Transfer learning error context: {locals()}")
+            tprint_error("CRITICAL: Transfer learning is required for multi-timeframe training")
+            tprint_error("Cannot proceed without proper transfer learning")
+            self.logger.error(f"⚠️ Transfer learning failed: {e}")
+            raise ValueError(f"Transfer learning failed: {e}") from e
 
 
 # Convenience functions

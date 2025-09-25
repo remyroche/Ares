@@ -78,8 +78,12 @@ class NASIntegrationComponent:
             self.logger.info("✅ NAS components initialized successfully")
 
         except ImportError as e:
-            self.logger.warning(f"NAS components not available: {e}, using fallback")
-            self.nas_detector = None
+            tprint_error(f"NAS components not available: {e}")
+            tprint_debug(f"NAS components import error context: {locals()}")
+            tprint_error("CRITICAL: NAS components are required for NAS integration")
+            tprint_error("Cannot proceed without proper NAS components")
+            self.logger.error(f"NAS components not available: {e}")
+            raise ImportError(f"NAS components not available: {e}") from e
 
     def extract_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -121,8 +125,12 @@ class NASIntegrationComponent:
                 return self._extract_nas_features_fallback(market_data)
 
         except Exception as e:
-            self.logger.warning(f"NAS feature extraction failed: {e}, using fallback")
-            return self._extract_nas_features_fallback(market_data)
+            tprint_error(f"NAS feature extraction failed: {e}")
+            tprint_debug(f"NAS feature extraction error context: {locals()}")
+            tprint_error("CRITICAL: NAS feature extraction is required for NAS integration")
+            tprint_error("Cannot proceed without proper NAS feature extraction")
+            self.logger.error(f"NAS feature extraction failed: {e}")
+            raise ValueError(f"NAS feature extraction failed: {e}") from e
 
     def _extract_features_from_nas_results(self, nas_results) -> np.ndarray:
         """Extract features from NAS detector results."""
@@ -169,8 +177,12 @@ class NASIntegrationComponent:
             return min(confidence, 1.0)
 
         except Exception as e:
-            self.logger.warning(f"NAS confidence calculation failed: {e}")
-            return 0.5
+            tprint_error(f"NAS confidence calculation failed: {e}")
+            tprint_debug(f"NAS confidence calculation error context: {locals()}")
+            tprint_error("CRITICAL: NAS confidence calculation is required for NAS integration")
+            tprint_error("Cannot proceed without proper NAS confidence calculation")
+            self.logger.error(f"NAS confidence calculation failed: {e}")
+            raise ValueError(f"NAS confidence calculation failed: {e}") from e
 
     def _extract_nas_features_fallback(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Fallback NAS feature extraction."""
@@ -194,8 +206,12 @@ class NASIntegrationComponent:
             return features, metadata
 
         except Exception as e:
+            tprint_error(f"Fallback NAS feature extraction failed: {e}")
+            tprint_debug(f"Fallback NAS feature extraction error context: {locals()}")
+            tprint_error("CRITICAL: Fallback NAS feature extraction is required for NAS integration")
+            tprint_error("Cannot proceed without proper fallback NAS feature extraction")
             self.logger.error(f"Fallback NAS feature extraction failed: {e}")
-            # Return minimal features
+            raise ValueError(f"Fallback NAS feature extraction failed: {e}") from e
             basic_features = market_data['close'].values.reshape(-1, 1)
             return basic_features, {
                 'method': 'minimal',
@@ -345,8 +361,12 @@ class NASIntegrationComponent:
             return min(confidence, 1.0)
 
         except Exception as e:
-            self.logger.warning(f"Feature confidence calculation failed: {e}")
-            return 0.5
+            tprint_error(f"Feature confidence calculation failed: {e}")
+            tprint_debug(f"Feature confidence calculation error context: {locals()}")
+            tprint_error("CRITICAL: Feature confidence calculation is required for NAS integration")
+            tprint_error("Cannot proceed without proper feature confidence calculation")
+            self.logger.error(f"Feature confidence calculation failed: {e}")
+            raise ValueError(f"Feature confidence calculation failed: {e}") from e
 
     def _calculate_adaptive_weight(self, nas_results) -> float:
         """Calculate adaptive weight based on NAS performance."""
@@ -381,8 +401,12 @@ class NASIntegrationComponent:
             return max(min_weight, min(max_weight, adaptive_weight))
 
         except Exception as e:
-            self.logger.warning(f"Adaptive weight calculation failed: {e}")
-            return self.config.get('base_weight', 0.6)
+            tprint_error(f"Adaptive weight calculation failed: {e}")
+            tprint_debug(f"Adaptive weight calculation error context: {locals()}")
+            tprint_error("CRITICAL: Adaptive weight calculation is required for NAS integration")
+            tprint_error("Cannot proceed without proper adaptive weight calculation")
+            self.logger.error(f"Adaptive weight calculation failed: {e}")
+            raise ValueError(f"Adaptive weight calculation failed: {e}") from e
 
     def _extract_performance_metrics(self, nas_results) -> Dict[str, float]:
         """Extract performance metrics from NAS results."""
@@ -414,8 +438,12 @@ class NASIntegrationComponent:
             return metrics
 
         except Exception as e:
-            self.logger.warning(f"Performance metrics extraction failed: {e}")
-            return {}
+            tprint_error(f"Performance metrics extraction failed: {e}")
+            tprint_debug(f"Performance metrics extraction error context: {locals()}")
+            tprint_error("CRITICAL: Performance metrics extraction is required for NAS integration")
+            tprint_error("Cannot proceed without proper performance metrics extraction")
+            self.logger.error(f"Performance metrics extraction failed: {e}")
+            raise ValueError(f"Performance metrics extraction failed: {e}") from e
 
     def _calculate_feature_quality(self, features: np.ndarray) -> Dict[str, float]:
         """Calculate feature quality metrics for NAS features."""
@@ -473,8 +501,12 @@ class NASIntegrationComponent:
             return quality
 
         except Exception as e:
-            self.logger.warning(f"Feature quality calculation failed: {e}")
-            return {'quality_score': 0.5}
+            tprint_error(f"Feature quality calculation failed: {e}")
+            tprint_debug(f"Feature quality calculation error context: {locals()}")
+            tprint_error("CRITICAL: Feature quality calculation is required for NAS integration")
+            tprint_error("Cannot proceed without proper feature quality calculation")
+            self.logger.error(f"Feature quality calculation failed: {e}")
+            raise ValueError(f"Feature quality calculation failed: {e}") from e
 
 
 def create_nas_integration(config: Dict[str, Any]) -> NASIntegrationComponent:

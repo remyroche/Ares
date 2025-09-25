@@ -146,7 +146,11 @@ class MetaNAS_Optimizer:
                 tprint_success("M1 hardware optimization enabled")
             except Exception as e:
                 tprint_error(f"M1 optimization setup failed: {e}")
-                self.config.enable_m1_optimization = False
+                tprint_debug(f"M1 optimization setup error context: {locals()}")
+                tprint_error("CRITICAL: M1 optimization setup is required for meta learning")
+                tprint_error("Cannot proceed without proper M1 optimization setup")
+                tprint_error(f"M1 optimization setup failed: {e}")
+                raise ValueError(f"M1 optimization setup failed: {e}") from e
         
         # Initialize NAS and HPO components
         try:

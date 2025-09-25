@@ -705,6 +705,9 @@ class TASRegimeDetector:
 
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ TAS regime detection failed: {e}")
+            tprint_debug(f"Error context: {locals()}")
+            tprint_warning(f"Execution time before failure: {execution_time:.2f}s")
             self.logger.error(f"❌ TAS regime detection failed: {e}")
 
             return TASRegimeResult(
@@ -773,6 +776,9 @@ class TASRegimeDetector:
             return enhanced_data
 
         except Exception as e:
+            tprint_error(f"CLVSA feature enhancement failed: {e}")
+            tprint_debug(f"CLVSA error context: {locals()}")
+            tprint_warning("Returning original data without CLVSA enhancement")
             self.logger.warning(f"CLVSA feature enhancement failed: {e}")
             return data
 
@@ -805,6 +811,9 @@ class TASRegimeDetector:
                 return self._fallback_regime_discovery(data)
 
         except Exception as e:
+            tprint_error(f"Tree regime discovery failed: {e}")
+            tprint_debug(f"Tree discovery error context: {locals()}")
+            tprint_warning("Falling back to basic regime discovery")
             self.logger.warning(f"Tree regime discovery failed: {e}")
             return self._fallback_regime_discovery(data)
     
@@ -841,7 +850,11 @@ class TASRegimeDetector:
                     self.logger.debug(f"Advanced tree model {i} trained successfully")
                     
                 except Exception as e:
+                    tprint_error(f"Advanced tree model {i} training failed: {e}")
+                    tprint_debug(f"Model {i} error context: {locals()}")
                     self.logger.warning(f"Advanced tree model {i} training failed: {e}")
+                    # Log the specific error details for debugging
+                    tprint_warning(f"Skipping model {i} due to training failure")
                     continue
             
             # Combine ensemble predictions
@@ -878,6 +891,9 @@ class TASRegimeDetector:
             }
             
         except Exception as e:
+            tprint_error(f"Advanced tree regime discovery failed: {e}")
+            tprint_debug(f"Advanced tree discovery error context: {locals()}")
+            tprint_warning("Falling back to basic clustering")
             self.logger.error(f"Advanced tree regime discovery failed: {e}")
             # Fallback to basic clustering
             return self._fallback_regime_discovery(data)
@@ -901,6 +917,9 @@ class TASRegimeDetector:
             }
 
         except Exception as e:
+            tprint_error(f"Fallback regime discovery failed: {e}")
+            tprint_debug(f"Fallback discovery error context: {locals()}")
+            tprint_error("All regime discovery methods failed - critical error")
             self.logger.error(f"Fallback regime discovery failed: {e}")
             raise
 
@@ -979,8 +998,11 @@ class TASRegimeDetector:
             return stability_scores
 
         except Exception as e:
-            self.logger.warning(f"Regime stability calculation failed: {e}")
-            return np.ones(len(regime_results.get('regime_predictions', np.array([])))) * 0.5
+            tprint_error(f"Regime stability calculation failed: {e}")
+            tprint_error("CRITICAL: Regime stability calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper regime stability scores")
+            self.logger.error(f"Regime stability calculation failed: {e}")
+            raise ValueError(f"Regime stability calculation failed: {e}") from e
 
     def _evaluate_economic_significance(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Evaluate economic significance of detected regimes using position-aware analysis."""
@@ -1019,8 +1041,11 @@ class TASRegimeDetector:
             return significance_scores
 
         except Exception as e:
-            self.logger.warning(f"Position-aware economic significance evaluation failed: {e}")
-            return self._evaluate_economic_significance_fallback(data, regime_results)
+            tprint_error(f"Position-aware economic significance evaluation failed: {e}")
+            tprint_error("CRITICAL: Economic significance evaluation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper economic significance scores")
+            self.logger.error(f"Position-aware economic significance evaluation failed: {e}")
+            raise ValueError(f"Position-aware economic significance evaluation failed: {e}") from e
 
     def _evaluate_economic_significance_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Fallback economic significance evaluation for TAS system."""
@@ -1042,8 +1067,11 @@ class TASRegimeDetector:
             return significance_scores
 
         except Exception as e:
-            self.logger.warning(f"Economic significance evaluation failed: {e}")
-            return np.ones(len(data)) * self.config.economic_significance_threshold
+            tprint_error(f"Economic significance evaluation failed: {e}")
+            tprint_error("CRITICAL: Economic significance evaluation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper economic significance scores")
+            self.logger.error(f"Economic significance evaluation failed: {e}")
+            raise ValueError(f"Economic significance evaluation failed: {e}") from e
 
     def _evaluate_trading_viability(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Evaluate trading viability of detected regimes using position-aware analysis."""
@@ -1103,8 +1131,11 @@ class TASRegimeDetector:
             return viability_scores
 
         except Exception as e:
-            self.logger.warning(f"Position-aware trading viability evaluation failed: {e}")
-            return self._evaluate_trading_viability_fallback(data, regime_results)
+            tprint_error(f"Position-aware trading viability evaluation failed: {e}")
+            tprint_error("CRITICAL: Trading viability evaluation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper trading viability scores")
+            self.logger.error(f"Position-aware trading viability evaluation failed: {e}")
+            raise ValueError(f"Position-aware trading viability evaluation failed: {e}") from e
 
     def _evaluate_trading_viability_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Fallback trading viability evaluation for TAS system."""
@@ -1128,8 +1159,11 @@ class TASRegimeDetector:
             return viability_scores
 
         except Exception as e:
-            self.logger.warning(f"Trading viability evaluation failed: {e}")
-            return np.ones(len(data)) * self.config.trading_viability_threshold
+            tprint_error(f"Trading viability evaluation failed: {e}")
+            tprint_error("CRITICAL: Trading viability evaluation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper trading viability scores")
+            self.logger.error(f"Trading viability evaluation failed: {e}")
+            raise ValueError(f"Trading viability evaluation failed: {e}") from e
 
     def _calculate_transition_probabilities(self, regime_results: Dict[str, Any]) -> np.ndarray:
         """Calculate regime transition probabilities."""
@@ -1149,8 +1183,11 @@ class TASRegimeDetector:
             return transition_matrix
 
         except Exception as e:
-            self.logger.warning(f"Transition probability calculation failed: {e}")
-            return np.eye(self.config.n_regimes) / self.config.n_regimes
+            tprint_error(f"Transition probability calculation failed: {e}")
+            tprint_error("CRITICAL: Transition probability calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper transition probabilities")
+            self.logger.error(f"Transition probability calculation failed: {e}")
+            raise ValueError(f"Transition probability calculation failed: {e}") from e
 
     def _quantify_uncertainty(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Quantify uncertainty in regime predictions."""
@@ -1164,8 +1201,11 @@ class TASRegimeDetector:
             return uncertainty
 
         except Exception as e:
-            self.logger.warning(f"Uncertainty quantification failed: {e}")
-            return np.ones(len(data)) * 0.5
+            tprint_error(f"Uncertainty quantification failed: {e}")
+            tprint_error("CRITICAL: Uncertainty quantification is required for TAS analysis")
+            tprint_error("Cannot proceed without proper uncertainty scores")
+            self.logger.error(f"Uncertainty quantification failed: {e}")
+            raise ValueError(f"Uncertainty quantification failed: {e}") from e
 
     def _perform_meta_learning_adaptation(self, data: np.ndarray, regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform meta-learning adaptation of regime predictions."""
@@ -1189,8 +1229,11 @@ class TASRegimeDetector:
             return regime_results
 
         except Exception as e:
-            self.logger.warning(f"Meta-learning adaptation failed: {e}")
-            return regime_results
+            tprint_error(f"Meta-learning adaptation failed: {e}")
+            tprint_error("CRITICAL: Meta-learning adaptation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper meta-learning adaptation")
+            self.logger.error(f"Meta-learning adaptation failed: {e}")
+            raise ValueError(f"Meta-learning adaptation failed: {e}") from e
 
     def _calculate_tree_probabilities(self, data: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Calculate probabilities from tree-based predictions."""
@@ -1211,8 +1254,11 @@ class TASRegimeDetector:
             return probabilities
 
         except Exception as e:
-            self.logger.warning(f"Tree probability calculation failed: {e}")
-            return np.random.dirichlet(np.ones(self.config.n_regimes), len(data))
+            tprint_error(f"Tree probability calculation failed: {e}")
+            tprint_error("CRITICAL: Tree probability calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper tree probabilities")
+            self.logger.error(f"Tree probability calculation failed: {e}")
+            raise ValueError(f"Tree probability calculation failed: {e}") from e
 
     def _combine_tree_clvsa_results(self, tree_predictions: np.ndarray, clvsa_predictions: np.ndarray) -> np.ndarray:
         """Combine tree and CLVSA predictions."""
@@ -1224,8 +1270,11 @@ class TASRegimeDetector:
             return np.round(combined).astype(int)
 
         except Exception as e:
-            self.logger.warning(f"Tree-CLVSA combination failed: {e}")
-            return tree_predictions
+            tprint_error(f"Tree-CLVSA combination failed: {e}")
+            tprint_error("CRITICAL: Tree-CLVSA combination is required for TAS analysis")
+            tprint_error("Cannot proceed without proper tree-CLVSA combination")
+            self.logger.error(f"Tree-CLVSA combination failed: {e}")
+            raise ValueError(f"Tree-CLVSA combination failed: {e}") from e
 
     def _combine_tree_clvsa_probabilities(self, tree_probs: np.ndarray, clvsa_probs: np.ndarray) -> np.ndarray:
         """Combine tree and CLVSA probabilities."""
@@ -1237,8 +1286,11 @@ class TASRegimeDetector:
             return combined
 
         except Exception as e:
-            self.logger.warning(f"Tree-CLVSA probability combination failed: {e}")
-            return tree_probs
+            tprint_error(f"Tree-CLVSA probability combination failed: {e}")
+            tprint_error("CRITICAL: Tree-CLVSA probability combination is required for TAS analysis")
+            tprint_error("Cannot proceed without proper tree-CLVSA probability combination")
+            self.logger.error(f"Tree-CLVSA probability combination failed: {e}")
+            raise ValueError(f"Tree-CLVSA probability combination failed: {e}") from e
 
     def _bootstrap_regime_validation(self, data: np.ndarray, regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform bootstrap validation of regime predictions."""
@@ -1266,8 +1318,11 @@ class TASRegimeDetector:
             }
 
         except Exception as e:
-            self.logger.warning(f"Bootstrap validation failed: {e}")
-            return {}
+            tprint_error(f"Bootstrap validation failed: {e}")
+            tprint_error("CRITICAL: Bootstrap validation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper bootstrap validation")
+            self.logger.error(f"Bootstrap validation failed: {e}")
+            raise ValueError(f"Bootstrap validation failed: {e}") from e
 
     def _calculate_bootstrap_stability(self, predictions: np.ndarray) -> float:
         """Calculate stability metric for bootstrap sample."""
@@ -1282,11 +1337,17 @@ class TASRegimeDetector:
             return stability
 
         except (ValueError, TypeError, ZeroDivisionError) as e:
-            self.logger.warning(f"Could not calculate bootstrap stability: {e}")
-            return 0.0
+            tprint_error(f"Could not calculate bootstrap stability: {e}")
+            tprint_error("CRITICAL: Bootstrap stability calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper bootstrap stability")
+            self.logger.error(f"Could not calculate bootstrap stability: {e}")
+            raise ValueError(f"Bootstrap stability calculation failed: {e}") from e
         except Exception as e:
+            tprint_error(f"Unexpected error calculating bootstrap stability: {e}")
+            tprint_error("CRITICAL: Bootstrap stability calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper bootstrap stability")
             self.logger.error(f"Unexpected error calculating bootstrap stability: {e}")
-            return 0.0
+            raise ValueError(f"Bootstrap stability calculation failed: {e}") from e
 
     def _calculate_statistical_significance(self, data: np.ndarray, regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate statistical significance of regime differences."""
@@ -1310,8 +1371,11 @@ class TASRegimeDetector:
             return significance
 
         except Exception as e:
-            self.logger.warning(f"Statistical significance calculation failed: {e}")
-            return {}
+            tprint_error(f"Statistical significance calculation failed: {e}")
+            tprint_error("CRITICAL: Statistical significance calculation is required for TAS analysis")
+            tprint_error("Cannot proceed without proper statistical significance")
+            self.logger.error(f"Statistical significance calculation failed: {e}")
+            raise ValueError(f"Statistical significance calculation failed: {e}") from e
 
     def _log_tas_results_summary(self, result: TASRegimeResult):
         """Log summary of TAS results."""

@@ -256,8 +256,12 @@ class BayesianOptimizerWrapper(BaseOptimizer):
                         self.best_params = dict(zip(self.config.search_space.keys(), params))
                     return -score  # Minimize negative score
                 except Exception as e:
-                    self.logger.warning(f"Objective function failed: {e}")
-                    return np.inf
+                    tprint_error(f"Objective function failed: {e}")
+                    tprint_debug(f"Objective function error context: {locals()}")
+                    tprint_error("CRITICAL: Objective function is required for NAS regime optimization")
+                    tprint_error("Cannot proceed without proper objective function")
+                    self.logger.error(f"Objective function failed: {e}")
+                    raise ValueError(f"Objective function failed: {e}") from e
             
             # Run optimization
             result = self.gp_minimize(
@@ -282,8 +286,12 @@ class BayesianOptimizerWrapper(BaseOptimizer):
             )
             
         except Exception as e:
+            tprint_error(f"Bayesian optimization failed: {e}")
+            tprint_debug(f"Bayesian optimization error context: {locals()}")
+            tprint_error("CRITICAL: Bayesian optimization is required for NAS regime optimization")
+            tprint_error("Cannot proceed without proper Bayesian optimization")
             self.logger.error(f"Bayesian optimization failed: {e}")
-            return self._fallback_optimization(objective, X, y)
+            raise ValueError(f"Bayesian optimization failed: {e}") from e
     
     def _create_search_space(self):
         """Create search space from config."""
@@ -322,7 +330,12 @@ class BayesianOptimizerWrapper(BaseOptimizer):
                     self.best_score = score
                     self.best_params = params
             except Exception as e:
-                self.logger.warning(f"Random search trial failed: {e}")
+                tprint_error(f"Random search trial failed: {e}")
+                tprint_debug(f"Random search trial error context: {locals()}")
+                tprint_error("CRITICAL: Random search trial is required for NAS regime optimization")
+                tprint_error("Cannot proceed without proper random search trial")
+                self.logger.error(f"Random search trial failed: {e}")
+                raise ValueError(f"Random search trial failed: {e}") from e
         
         return OptimizationResult(
             best_params=self.best_params,

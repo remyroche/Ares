@@ -55,7 +55,8 @@ from .performance_tracker import PerformanceTracker, PerformanceConfig
 
 # Import market analysis modules for enhanced compatibility
 try:
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
+    # from src.utils.nas_tas.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig  # DELETED
+    from src.utils.nas_tas.regime_detector import create_hybrid_regime_detector, UnifiedRegimeConfig  # Use unified system
     HYBRID_REGIME_AVAILABLE = True
 except ImportError:
     HYBRID_REGIME_AVAILABLE = False

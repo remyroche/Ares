@@ -17,8 +17,8 @@ from .sr_clustering import SRClusteringComponent
 # from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
 from .nas_regime_discovery import NASRegimeDiscoveryComponent
 from .tas_regime_discovery import TASRegimeDiscoveryComponent
-from .hybrid_nas_tas_regime_discovery import HybridNASTASRegimeDiscoveryComponent
-from .nas_tas_clustering import NASTASClusteringComponent
+# from .hybrid_nas_tas_regime_discovery import HybridNASTASRegimeDiscoveryComponent  # DELETED - use unified regime detector
+# from .nas_tas_clustering import NASTASClusteringComponent  # DELETED - use unified regime detector
 # from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
@@ -621,8 +621,8 @@ class ComponentFactory:
         'sr_clustering': SRClusteringComponent,
         'nas_regime_discovery': NASRegimeDiscoveryComponent,
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
-        'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
-        'nas_tas_clustering': NASTASClusteringComponent,  # NAS-TAS combined clustering
+        # 'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,  # DELETED - use unified regime detector
+        # 'nas_tas_clustering': NASTASClusteringComponent,  # DELETED - use unified regime detector
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports

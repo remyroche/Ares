@@ -6,7 +6,7 @@ including meta-learning, hardware optimization, and regime-aware search.
 """
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,
@@ -17,7 +17,7 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils impor
 
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,
@@ -52,7 +52,7 @@ from .tree_architecture import TreeArchitecture, TreeArchitectureCandidate
 from .search_space import TreeSearchSpace
 
 # Import unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
     UnifiedMultiObjectiveOptimizer, OptimizationConfig,

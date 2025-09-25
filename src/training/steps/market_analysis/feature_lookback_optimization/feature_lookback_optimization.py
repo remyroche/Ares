@@ -43,9 +43,10 @@ try:
         FeatureOptimizationConfig,
         OptimizationConfigManager
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_multi_objective_optimizer import (
-        OptimizationConfig  # noqa: E402
-    )
+    # from src.utils.nas_tas.shared_utils.unified_multi_objective_optimizer import (
+    #     OptimizationConfig  # noqa: E402
+    # )  # DELETED - use unified regime detector
+    from src.utils.nas_tas.unified_multi_objective import OptimizationConfig  # Use unified system
 except ImportError as e:
     tprint(f"⚠️ Optimization config imports not available: {e}")
     # Define fallback classes

@@ -139,10 +139,10 @@ except ImportError:
 
 # Unified evaluation framework (if available)
 try:
-    from ...hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import (
+    from src.utils.nas_tas.unified_evaluator import (
         UnifiedEvaluationFramework, EvaluationConfig
     )
-    from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_config import ArchitectureType
+    from src.utils.nas_tas.unified_regime_config import ArchitectureType
     UNIFIED_FRAMEWORK_AVAILABLE = True
 except ImportError:
     UNIFIED_FRAMEWORK_AVAILABLE = False

@@ -6,7 +6,7 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
 3. sr_clustering - Generate SR clusters
-4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
+4. unified_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
 5. nas_clustering - NAS-based regime clustering
 6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
 7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
@@ -151,7 +151,7 @@ class SubPipelineResult:
             'sr_parameter_optimization': ['sr_parameter_optimization_result'],
             'sr_detection': ['sr_detection_result'],
             'sr_clustering': ['sr_clustering_result'],
-            'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_regime_discovery_result'],
+            'unified_regime_discovery': ['unified_regime_discovery_result'],
             'nas_clustering': ['optimal_regime_clustering_result'],
             'nas_models_training': ['nas_models_training_result'],
             'nas_ensemble_training': ['nas_ensemble_training_result'],
@@ -385,7 +385,7 @@ class MarketAnalysisSubPipeline:
         log_info('   1. sr_parameter_optimization - Optimize SR detection levels')
         log_info('   2. sr_detection - Detect Support/Resistance levels')
         log_info('   3. sr_clustering - Generate SR clusters')
-        log_info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
+        log_info('   4. unified_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
         log_info('   5. nas_clustering - NAS-based regime clustering')
         log_info('   6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics')
         log_info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
@@ -516,13 +516,13 @@ class MarketAnalysisSubPipeline:
             
             # Stage 4: Hybrid NAS-TAS Regime Discovery
             self.logger.info('🔍 Executing Stage 4: Hybrid NAS-TAS Regime Discovery')
-            hybrid_nas_tas_regime_discovery_result = await self.execute_sub_pipeline('hybrid_nas_tas_regime_discovery', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hybrid_nas_tas_regime_discovery_result, "Hybrid NAS-TAS Regime Discovery")
+            unified_regime_discovery_result = await self.execute_sub_pipeline('unified_regime_discovery', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(unified_regime_discovery_result, "Hybrid NAS-TAS Regime Discovery")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_regime_data = hybrid_nas_tas_regime_discovery_result.artifacts.get('hybrid_nas_tas_regime_discovery_result', {})
+            nas_regime_data = unified_regime_discovery_result.artifacts.get('unified_regime_discovery_result', {})
             results['regime_models'] = nas_regime_data.get('regime_models', {})
             results['regime_assignments'] = nas_regime_data.get('regime_assignments', {})
             results['regime_metrics'] = nas_regime_data.get('regime_metrics', {})
@@ -983,7 +983,7 @@ class MarketAnalysisSubPipeline:
         1. sr_parameter_optimization - Optimize SR detection levels
         2. sr_detection - Detect Support/Resistance levels
         3. sr_clustering - Generate SR clusters
-        4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
+        4. unified_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
         5. nas_clustering - NAS-based regime clustering
         6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
         7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
@@ -1028,7 +1028,7 @@ class MarketAnalysisSubPipeline:
         ]
         
         hmm_steps = [
-            'hybrid_nas_tas_regime_discovery',
+            'unified_regime_discovery',
             'nas_clustering',
             'nas_models_training',
             'nas_ensemble_training'

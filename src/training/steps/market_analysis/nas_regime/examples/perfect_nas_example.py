@@ -16,8 +16,8 @@ import seaborn as sns
 # Import Perfect NAS components
 from ..core.perfect_nas_config import PerfectNASConfig, NeuralArchitectureType
 from ..core.perfect_nas_regime_detector import PerfectNASRegimeDetector
-from ...hybrid_nas_tas_regime.shared_utils.unified_economic_evaluator import UnifiedEconomicSignificanceEvaluator as EconomicSignificanceEvaluator
-from ...hybrid_nas_tas_regime.shared_utils.unified_trading_viability_evaluator import UnifiedTradingViabilityEvaluator as TradingViabilityEvaluator
+from src.utils.nas_tas.unified_evaluator import UnifiedEconomicSignificanceEvaluator as EconomicSignificanceEvaluator
+from src.utils.nas_tas.unified_evaluator import UnifiedTradingViabilityEvaluator as TradingViabilityEvaluator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

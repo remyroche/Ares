@@ -61,7 +61,8 @@ except ImportError:
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
     from src.training.steps.market_analysis.nas_regime.core.perfect_nas_regime_detector import PerfectNASRegimeDetector, PerfectNASConfig
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig
+    # from src.utils.nas_tas.core.hybrid_regime_detector import HybridNASTASRegimeDetector, HybridRegimeConfig  # DELETED
+    from src.utils.nas_tas.regime_detector import create_hybrid_regime_detector, UnifiedRegimeConfig  # Use unified system
     REGIME_DETECTION_AVAILABLE = True
 except ImportError:
     REGIME_DETECTION_AVAILABLE = False

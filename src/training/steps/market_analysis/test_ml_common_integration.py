@@ -135,10 +135,10 @@ def test_hybrid_orchestrator_integration():
     print("\n🧪 Testing Hybrid Orchestrator ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.hybrid_nas_tas_regime.enhanced_hybrid_orchestrator import (
+        from src.utils.nas_tas.enhanced_hybrid_orchestrator import (
             EnhancedHybridOrchestrator, HybridRegimeConfig, create_enhanced_hybrid_orchestrator
         )
-        from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
+        from src.utils.nas_tas.config.hybrid_regime_config import (
             RegimeCombinationStrategy
         )
 

@@ -26,7 +26,7 @@ import os
 from pathlib import Path
 
 # Import unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
     UnifiedMultiObjectiveOptimizer, OptimizationConfig,

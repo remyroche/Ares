@@ -7,7 +7,7 @@ while leveraging the consolidated functionality.
 """
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,
@@ -129,28 +129,49 @@ from src.utils.ml_common import (
 # from ...hybrid_nas_tas_regime.core.advanced_search_strategies import (
 #     AdvancedSearchStrategies, SearchStrategyType
 # )
-from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
+# from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
+#     TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
+# )  # DELETED - use unified system
+# from ...hybrid_nas_tas_regime.core.architecture_encoder import (
+#     UnifiedArchitectureEncoder, create_unified_architecture_encoder
+# )  # DELETED - use unified system
+# from ...hybrid_nas_tas_regime.shared_utils.unified_ensemble_search_space import (
+#     UnifiedEnsembleSearchSpace, EnsembleArchitecture, EnsembleSearchResult,
+#     EnsembleMethod, EnsembleCombinationStrategy, EnsembleSearchSpaceConfig,
+#     create_unified_ensemble_search_space
+# )  # DELETED - use unified system
+# from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_compression import (
+#     UnifiedArchitectureCompressor, CompressionResult, CompressionMethod, CompressionLevel, CompressionConfig,
+#     create_unified_architecture_compressor
+# )  # DELETED - use unified system
+# from ...hybrid_nas_tas_regime.shared_utils.unified_search_space_evolution import (
+#     UnifiedSearchSpaceEvolutionManager, EvolutionTrigger, EvolutionAction, UnifiedEvolutionConfig,
+#     create_unified_evolution_manager
+# )  # DELETED - use unified system
+
+# Use unified system instead
+from src.utils.nas_tas.unified_multi_objective import (
     TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
 )
-from ...hybrid_nas_tas_regime.core.architecture_encoder import (
+from src.utils.nas_tas.unified_evaluator import (
     UnifiedArchitectureEncoder, create_unified_architecture_encoder
 )
-from ...hybrid_nas_tas_regime.shared_utils.unified_ensemble_search_space import (
+from src.utils.nas_tas.unified_evaluator import (
     UnifiedEnsembleSearchSpace, EnsembleArchitecture, EnsembleSearchResult,
     EnsembleMethod, EnsembleCombinationStrategy, EnsembleSearchSpaceConfig,
     create_unified_ensemble_search_space
 )
-from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_compression import (
+from src.utils.nas_tas.unified_evaluator import (
     UnifiedArchitectureCompressor, CompressionResult, CompressionMethod, CompressionLevel, CompressionConfig,
     create_unified_architecture_compressor
 )
-from ...hybrid_nas_tas_regime.shared_utils.unified_search_space_evolution import (
+from src.utils.nas_tas.unified_evaluator import (
     UnifiedSearchSpaceEvolutionManager, EvolutionTrigger, EvolutionAction, UnifiedEvolutionConfig,
     create_unified_evolution_manager
 )
 
 # Import unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
     UnifiedMultiObjectiveOptimizer, OptimizationConfig,
@@ -267,7 +288,7 @@ class EnhancedNASEngine:
         self.klines_manager = get_klines_manager()
         tprint("✅ [NAS_ENGINE] Utility managers initialized", color="green")
 
-        # Initialize shared ML utilities from hybrid_nas_tas_regime
+        # Initialize shared ML utilities from unified system
         tprint("🧠 [NAS_ENGINE] Initializing shared ML utilities", color="yellow")
         self._initialize_shared_ml_utilities()
 
@@ -305,7 +326,7 @@ class EnhancedNASEngine:
         self.logger.info(f"   Data Quality Validation: {'✅ Enabled' if hasattr(self, 'data_quality_validator') else '❌ Disabled'}")
 
     def _initialize_shared_ml_utilities(self):
-        """Initialize shared ML utilities from hybrid_nas_tas_regime."""
+        """Initialize shared ML utilities from unified system."""
         try:
             # Create shared ML utilities manager for NAS
             ml_config = MLUtilityConfig(
@@ -510,7 +531,7 @@ class EnhancedNASEngine:
 
     def _create_architecture_constraints(self):
         """Create architecture constraints from config."""
-        from ...hybrid_nas_tas_regime.shared_utils.constraint_systems import ArchitectureConstraints
+        from src.utils.nas_tas.unified_evaluator import ArchitectureConstraints
 
         return ArchitectureConstraints(
             max_layers=self.config.max_layers,

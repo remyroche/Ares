@@ -22,7 +22,7 @@ from src.utils.tprint import (
 
 # Import all regime detection systems
 try:
-    from src.utils.ml_common.nas_tas_unified import (
+    from src.utils.nas_tas import (
         UnifiedRegimeDetector, UnifiedRegimeConfig, 
         PerformanceOptimizer, get_performance_optimizer
     )

@@ -127,7 +127,7 @@ else:
 ## Unified Components Created
 
 ### 1. Unified Regime Detector
-- **Location**: `src/utils/ml_common/nas_tas_unified/unified_regime_detector.py`
+- **Location**: `src/utils/nas_tas/unified_regime_detector.py`
 - **Features**:
   - Single interface for both TAS and NAS systems
   - Hybrid mode combining both systems
@@ -135,7 +135,7 @@ else:
   - Hardware optimization integration
 
 ### 2. Unified Regime Config
-- **Location**: `src/utils/ml_common/nas_tas_unified/unified_regime_config.py`
+- **Location**: `src/utils/nas_tas/unified_regime_config.py`
 - **Features**:
   - Unified configuration for both systems
   - Factory methods for different use cases
@@ -143,7 +143,7 @@ else:
   - Easy switching between TAS, NAS, and hybrid modes
 
 ### 3. Unified Result
-- **Location**: `src/utils/ml_common/nas_tas_unified/unified_result.py`
+- **Location**: `src/utils/nas_tas/unified_result.py`
 - **Features**:
   - Consistent result structure
   - Quality metrics calculation
@@ -208,7 +208,7 @@ Both TAS and NAS detectors follow similar initialization:
 ### Using Unified Regime Detector
 
 ```python
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig
 
 # Create configuration
 config = UnifiedRegimeConfig.create_hybrid_config()

@@ -80,9 +80,9 @@ Successfully resolved all merge conflicts between the unified regime detection s
 ## 📊 **Files Resolved**
 
 ### **Core Unified System Files (3 files)**
-1. `src/utils/ml_common/nas_tas_unified/__init__.py` - Enhanced with performance optimizer
-2. `src/utils/ml_common/nas_tas_unified/unified_regime_config.py` - Comprehensive configuration
-3. `src/utils/ml_common/nas_tas_unified/unified_regime_detector.py` - Full unified implementation
+1. `src/utils/nas_tas/__init__.py` - Enhanced with performance optimizer
+2. `src/utils/nas_tas/unified_regime_config.py` - Comprehensive configuration
+3. `src/utils/nas_tas/unified_regime_detector.py` - Full unified implementation
 
 ### **Component Detector Files (2 files)**
 1. `src/training/steps/market_analysis/nas_regime/core/perfect_nas_regime_detector.py` - Simplified wrapper

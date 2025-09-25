@@ -46,7 +46,7 @@ This document summarizes the comprehensive improvements made to the regime detec
 - Added type hints and return type specifications
 
 ### 4. Unified Regime Detection System ✅
-Created a comprehensive unified regime detection system in `src/utils/ml_common/nas_tas_unified/`:
+Created a comprehensive unified regime detection system in `src/utils/nas_tas/`:
 
 #### Files Created:
 - **`unified_regime_config.py`** - Unified configuration system
@@ -109,7 +109,7 @@ Created integration layer in `src/training/steps/market_analysis/hybrid_nas_tas_
 
 ### Unified System Architecture
 ```
-src/utils/ml_common/nas_tas_unified/
+src/utils/nas_tas/
 ├── unified_regime_config.py      # Configuration system
 ├── unified_regime_detector.py    # Main detector implementation
 └── __init__.py                   # Module exports
@@ -155,7 +155,7 @@ src/training/steps/market_analysis/hybrid_nas_tas_regime/
 
 ### Basic Usage
 ```python
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig
 
 # Create configuration
 config = UnifiedRegimeConfig.create_production_config()

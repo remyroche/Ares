@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-Based on my analysis of the codebase, I've identified numerous files that contain duplicate functionality that should be replaced by the new unified components in `src/utils/ml_common/nas_tas_unified/`. This analysis categorizes files by their functionality and provides a replacement strategy.
+Based on my analysis of the codebase, I've identified numerous files that contain duplicate functionality that should be replaced by the new unified components in `src/utils/nas_tas/`. This analysis categorizes files by their functionality and provides a replacement strategy.
 
 ## 📊 **Analysis Summary**
 

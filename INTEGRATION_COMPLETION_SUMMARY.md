@@ -69,7 +69,7 @@ I have successfully integrated the comprehensive hardware manager and merged the
 
 ### **Enhanced Exports:**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     # Main components
     UnifiedEvaluator,
     UnifiedHardwareOptimizer, 
@@ -98,7 +98,7 @@ from src.utils.ml_common.nas_tas_unified import (
 
 ### **Enhanced Hardware Optimization**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedHardwareOptimizer, HardwareConfig, WorkloadType, OptimizationLevel
 )
 
@@ -125,7 +125,7 @@ summary = hardware_optimizer.get_performance_summary()
 
 ### **Enhanced Evaluation**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedEvaluator, compute_classification_metrics, compute_regression_metrics
 )
 
@@ -142,7 +142,7 @@ regression_metrics = compute_regression_metrics(y_true, y_pred)
 
 ### **Configuration-Specific Usage**
 ```python
-from src.utils.ml_common.nas_tas_unified.manager import create_nas_config, create_tas_config
+from src.utils.nas_tas.manager import create_nas_config, create_tas_config
 
 # NAS-optimized configuration
 nas_config = create_nas_config()  # Returns HardwareConfig with NAS optimizations

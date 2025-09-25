@@ -181,15 +181,13 @@ class MarketAnalysisSubPipeline:
     def __init__(self, config: Optional[SubPipelineConfig] = None):
         """Initialize the market analysis sub-pipeline with enhanced error handling and utility integration."""
         try:
-            tprint("🚀 [INIT] Starting MarketAnalysisSubPipeline initialization...")
+            tprint("🚀 Starting MarketAnalysisSubPipeline initialization...")
             
             # Handle both old dict config and new SubPipelineConfig
             if isinstance(config, dict):
-                # Convert old config format to SubPipelineConfig
                 self.original_config = config
                 self.config = self._convert_old_config(config)
             else:
-                # Use provided SubPipelineConfig or create default
                 self.config = config or SubPipelineConfig()
                 self.original_config = {}
             
@@ -200,9 +198,8 @@ class MarketAnalysisSubPipeline:
             # Apply logging configuration
             try:
                 self._apply_logging_config(self.config.logging)
-                tprint_success("✅ [INIT] Logging configuration applied successfully")
             except Exception as e:
-                tprint_warning(f"⚠️ [INIT] Logging configuration failed: {e}")
+                tprint_warning(f"⚠️ Logging configuration failed: {e}")
             
             # Initialize utility systems
             self.utils_available = UTILS_AVAILABLE
@@ -211,39 +208,26 @@ class MarketAnalysisSubPipeline:
             
             if self.utils_available:
                 try:
-                    tprint("🚀 [INIT] Initializing utility systems...")
                     self._initialize_utilities()
-                    tprint_success("✅ [INIT] Utility systems initialized successfully")
+                    tprint_success("✅ Utilities initialized")
                 except Exception as e:
-                    tprint_warning(f"⚠️ [INIT] Utility systems initialization failed: {e}")
+                    tprint_warning(f"⚠️ Utilities initialization failed: {e}")
                     self.utils_available = False
             
-            # Initialize artifact and version managers
-            try:
-                self.artifact_manager = get_artifact_manager()
-                self.version_manager = get_version_manager()
-                tprint_success("✅ [INIT] Artifact and version managers initialized")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Artifact and version managers initialization failed: {e}")
-                raise
+            # Initialize managers
+            self.artifact_manager = get_artifact_manager()
+            self.version_manager = get_version_manager()
+            self.component_factory = ComponentFactory()
             
-            # Initialize component factory
-            try:
-                self.component_factory = ComponentFactory()
-                tprint_success("✅ [INIT] Component factory initialized")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Component factory initialization failed: {e}")
-                raise
-            
-            # Initialize pipeline state for component communication
+            # Initialize pipeline state
             self._current_data = None
             self._current_pipeline_state = {}
             self._accumulated_artifacts = {}
             
-            tprint_success("✅ [INIT] MarketAnalysisSubPipeline initialized successfully")
+            tprint_success("✅ MarketAnalysisSubPipeline initialized successfully")
             
         except Exception as e:
-            tprint_error(f"❌ [INIT] MarketAnalysisSubPipeline initialization failed: {e}")
+            tprint_error(f"❌ MarketAnalysisSubPipeline initialization failed: {e}")
             raise
     
     def _initialize_utilities(self):

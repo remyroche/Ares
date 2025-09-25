@@ -249,7 +249,7 @@ class MainTrainingPipeline:
     def __init__(self, config: Optional[MainPipelineConfig] = None):
         """Initialize the main training pipeline with enhanced error handling and utility integration."""
         try:
-            tprint("🚀 [INIT] Starting MainTrainingPipeline initialization...")
+            tprint("🚀 Starting MainTrainingPipeline initialization...")
             self.config = config or MainPipelineConfig()
             
             # Use standardized logging if available
@@ -265,33 +265,26 @@ class MainTrainingPipeline:
             
             if self.utils_available:
                 try:
-                    tprint("🚀 [INIT] Initializing utility systems...")
                     self._initialize_utilities()
-                    tprint_success("✅ [INIT] Utility systems initialized successfully")
+                    tprint_success("✅ Utilities initialized")
                 except Exception as e:
-                    tprint_warning(f"⚠️ [INIT] Utility systems initialization failed: {e}")
+                    tprint_warning(f"⚠️ Utilities initialization failed: {e}")
                     self.utils_available = False
             
-            # Initialize sub-pipeline managers (only if available) with error handling
-            try:
-                tprint("🚀 [INIT] Initializing sub-pipeline managers...")
-                self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
-                self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
-                self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
-                self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
-                tprint_success("✅ [INIT] Sub-pipeline managers initialized successfully")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Sub-pipeline managers initialization failed: {e}")
-                raise
+            # Initialize sub-pipeline managers
+            self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
+            self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
+            self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
+            self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
             
             # Pipeline state
             self.current_stage: Optional[PipelineStage] = None
             self.pipeline_results: List[MainPipelineResult] = []
             
-            tprint_success("✅ [INIT] MainTrainingPipeline initialized successfully")
+            tprint_success("✅ MainTrainingPipeline initialized successfully")
             
         except Exception as e:
-            tprint_error(f"❌ [INIT] MainTrainingPipeline initialization failed: {e}")
+            tprint_error(f"❌ MainTrainingPipeline initialization failed: {e}")
             raise
     
     def _initialize_utilities(self):

@@ -59,28 +59,17 @@ except ImportError as e:
     from src.utils.logger import system_logger
     from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_info
 
-tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
-tprint("✅ [IMPORTS] Core decorators imported")
-
-
-tprint("🔧 [IMPORTS] Importing main training pipeline components...")
 from src.training.steps.main_training_pipeline import (
     MainTrainingPipeline, MainPipelineConfig, MainPipelineResult,
     PipelineStage, ExecutionMode, get_full_pipeline_config,
     get_light_pipeline_config, get_blank_pipeline_config, SubPipelineStatus
 )
-tprint("✅ [IMPORTS] Main training pipeline components imported")
 
-tprint("🔧 [IMPORTS] Creating AresLauncher logger...")
 logger = system_logger.getChild('AresLauncher')
-# Ensure single emission via root 'AresSimple' only; do not add handlers here
 logger.propagate = True
 if logger.handlers:
     logger.handlers.clear()
-tprint("✅ [IMPORTS] AresLauncher logger created")
-tprint("✅ [IMPORTS] All imports completed successfully")
-tprint("=" * 60)
 
 class LauncherMode(Enum):
     """Launcher execution modes."""
@@ -107,172 +96,58 @@ class AresLauncher:
     def __init__(self):
         """Initialize the Ares launcher with enhanced error handling and utilities."""
         try:
-            tprint("🚀 [INIT] Starting AresLauncher initialization...")
+            tprint("🚀 Starting AresLauncher initialization...")
             
-            # Initialize logger with error handling
-            try:
-                self.logger = logger.getChild('AresLauncher')
-                tprint_success("✅ [INIT] Logger created successfully")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Logger creation failed: {e}")
-                raise
+            # Initialize core components
+            self.logger = logger.getChild('AresLauncher')
+            self.pipeline = MainTrainingPipeline()
+            self.current_execution: Optional[MainPipelineResult] = None
+            self.execution_history: List[MainPipelineResult] = []
             
-            # Initialize pipeline with error handling
-            try:
-                tprint("🚀 [INIT] Initializing MainTrainingPipeline...")
-                self.pipeline = MainTrainingPipeline()
-                tprint_success("✅ [INIT] MainTrainingPipeline initialized successfully")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] MainTrainingPipeline initialization failed: {e}")
-                raise
-            
-            # Initialize execution tracking
-            try:
-                tprint("🚀 [INIT] Setting up execution tracking...")
-                self.current_execution: Optional[MainPipelineResult] = None
-                self.execution_history: List[MainPipelineResult] = []
-                tprint_success("✅ [INIT] Execution tracking setup complete")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Execution tracking setup failed: {e}")
-                raise
-            
-            # Initialize utilities if available
+            # Initialize utility systems
             self.utils_available = UTILS_AVAILABLE
             self.serializer = None
             self.m1_optimizers = None
             
             if self.utils_available:
                 try:
-                    tprint("🚀 [INIT] Initializing utilities...")
                     self._initialize_utilities()
-                    tprint_success("✅ [INIT] Utilities initialized successfully")
+                    tprint_success("✅ Utilities initialized")
                 except Exception as e:
-                    tprint_warning(f"⚠️ [INIT] Utilities initialization failed: {e}")
+                    tprint_warning(f"⚠️ Utilities initialization failed: {e}")
                     self.utils_available = False
             
-            # Initialize monitoring
-            try:
-                tprint("🚀 [INIT] Starting logging setup...")
-                self._setup_logging()
-                tprint_success("✅ [INIT] Logging setup complete")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Logging setup failed: {e}")
-                raise
+            # Setup systems
+            self._setup_logging()
+            self._setup_monitoring()
             
-            try:
-                tprint("🚀 [INIT] Starting monitoring setup...")
-                self._setup_monitoring()
-                tprint_success("✅ [INIT] Monitoring setup complete")
-            except Exception as e:
-                tprint_error(f"❌ [INIT] Monitoring setup failed: {e}")
-                raise
-            
-            tprint_success("🎯 [INIT] AresLauncher initialization completed successfully!")
-            tprint("=" * 80)
+            tprint_success("✅ AresLauncher initialized successfully")
             
         except Exception as e:
-            tprint_error(f"❌ [INIT] AresLauncher initialization failed: {e}")
+            tprint_error(f"❌ AresLauncher initialization failed: {e}")
             raise
     
     def _initialize_utilities(self):
-        """Initialize utility systems with error handling."""
+        """Initialize utility systems."""
         try:
-            # Initialize serialization utilities
             self.serializer = UniversalSerializer()
-            tprint_info("✅ Serialization utilities initialized")
-            
-            # Initialize M1 optimizers if available
-            try:
-                self.m1_optimizers = integrate_with_m1_optimizers()
-                if self.m1_optimizers.get('success', False):
-                    tprint_success("✅ M1 optimizers integrated successfully")
-                else:
-                    tprint_warning("⚠️ M1 optimizers integration failed")
-            except Exception as e:
-                tprint_warning(f"⚠️ M1 optimizers not available: {e}")
-                self.m1_optimizers = None
-                
+            self.m1_optimizers = integrate_with_m1_optimizers()
         except Exception as e:
-            tprint_error(f"❌ Utility initialization failed: {e}")
-            raise
+            tprint_warning(f"⚠️ Utility initialization failed: {e}")
+            self.utils_available = False
     
     def _setup_logging(self):
-        """Setup comprehensive logging with error handling."""
-        try:
-            tprint("🔧 [SETUP_LOGGING] Starting logging configuration...")
-            
-            # Configure logger with validation
-            if not hasattr(self, 'logger') or self.logger is None:
-                raise ValueError("Logger not initialized")
-            
-            # Keep light verbosity in LIGHT mode
-            self.logger.info("🚀 Ares Launcher Initialized")
-            self.logger.info("🎯 Granular Sub-Pipeline Control Enabled")
-            
-            # Log utility availability
-            if self.utils_available:
-                self.logger.info("🔧 Utilities: Available")
-                if self.m1_optimizers and self.m1_optimizers.get('success', False):
-                    self.logger.info("🧠 M1 Optimizers: Active")
-                else:
-                    self.logger.info("🧠 M1 Optimizers: Not available")
-            else:
-                self.logger.warning("⚠️ Utilities: Limited availability")
-            
-            tprint_success("✅ [SETUP_LOGGING] Comprehensive logging setup completed")
-            
-        except Exception as e:
-            tprint_error(f"❌ [SETUP_LOGGING] Logging setup failed: {e}")
-            raise
+        """Setup logging."""
+        self.logger.info("🚀 Ares Launcher Initialized")
+        if self.utils_available:
+            self.logger.info("🔧 Utilities: Available")
     
     def _setup_monitoring(self):
-        """Setup monitoring and progress tracking with error handling."""
-        try:
-            tprint("📊 [SETUP_MONITORING] Starting monitoring configuration...")
-            
-            # Enable monitoring system
-            self.monitoring_enabled = True
-            tprint_success("✅ [SETUP_MONITORING] Monitoring system enabled")
-            
-            # Initialize progress callbacks
-            self.progress_callbacks: List[callable] = []
-            tprint_success("✅ [SETUP_MONITORING] Progress callbacks list initialized")
-            
-            # Register default progress callback
-            self.register_progress_callback(self._default_progress_callback)
-            tprint_success("✅ [SETUP_MONITORING] Default progress callback registered")
-            
-            # Initialize performance monitoring if utilities available
-            if self.utils_available and self.m1_optimizers:
-                try:
-                    self._setup_performance_monitoring()
-                    tprint_success("✅ [SETUP_MONITORING] Performance monitoring enabled")
-                except Exception as e:
-                    tprint_warning(f"⚠️ [SETUP_MONITORING] Performance monitoring setup failed: {e}")
-            
-            tprint_success("✅ [SETUP_MONITORING] Monitoring setup completed successfully")
-            
-        except Exception as e:
-            tprint_error(f"❌ [SETUP_MONITORING] Monitoring setup failed: {e}")
-            raise
+        """Setup monitoring."""
+        self.monitoring_enabled = True
+        self.progress_callbacks: List[callable] = []
+        self.register_progress_callback(self._default_progress_callback)
     
-    def _setup_performance_monitoring(self):
-        """Setup performance monitoring with M1 optimizers."""
-        try:
-            if self.m1_optimizers and self.m1_optimizers.get('success', False):
-                # Initialize performance metrics tracking
-                self.performance_metrics = {
-                    'memory_usage': [],
-                    'execution_times': [],
-                    'gpu_utilization': [],
-                    'optimization_benefits': []
-                }
-                tprint_info("📊 Performance monitoring initialized with M1 optimizers")
-            else:
-                tprint_warning("⚠️ M1 optimizers not available for performance monitoring")
-        except Exception as e:
-            tprint_warning(f"⚠️ Performance monitoring setup failed: {e}")
-            raise
     
     def register_progress_callback(self, callback: callable):
         """Register a progress callback function."""

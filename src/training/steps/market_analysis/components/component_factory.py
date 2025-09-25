@@ -999,6 +999,7 @@ class ComponentFactory:
         'nas_regime_discovery': NASRegimeDiscoveryComponent,
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
         'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
+        'nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
         'nas_tas_clustering': NASTASClusteringComponent,
         'nas_clustering': NASTASClusteringComponent,  # Backward-compatible alias
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,

@@ -86,7 +86,54 @@ from ..components.tas_integration import TASIntegrationComponent
 from ..components.nas_integration import NASIntegrationComponent
 from ..evaluation.economic_evaluator import EconomicRegimeEvaluator
 from .economic_clustering import EconomicClusterer
-from .coherent_regime_modeling import CoherentRegimeModeler
+
+try:
+    from .coherent_regime_modeling import CoherentRegimeModeler
+except ImportError:  # pragma: no cover - fallback when optional module missing
+    @dataclass
+    class _FallbackCoherentResult:
+        success: bool
+        economic_analysis: Dict[str, Any]
+        metadata: Dict[str, Any]
+
+    class CoherentRegimeModeler:  # type: ignore[override]
+        """Lightweight fallback when the full coherent regime modeler is absent."""
+
+        def __init__(self, config: Dict[str, Any]):
+            self.config = config
+            self.logger = logging.getLogger("CoherentRegimeModelerFallback")
+            self.logger.warning(
+                "Coherent regime modeling module missing - using simplified fallback implementation"
+            )
+
+        def model_regimes(
+            self,
+            market_data: pd.DataFrame,
+            regime_predictions: np.ndarray,
+            regime_probabilities: np.ndarray,
+        ) -> _FallbackCoherentResult:
+            if len(regime_predictions) == 0:
+                return _FallbackCoherentResult(
+                    success=False,
+                    economic_analysis={"regime_significance_scores": np.array([])},
+                    metadata={"fallback": True},
+                )
+
+            n_regimes = int(np.max(regime_predictions) + 1)
+            regime_scores = np.zeros(n_regimes, dtype=float)
+            for regime_index in range(n_regimes):
+                mask = regime_predictions == regime_index
+                if np.any(mask):
+                    regime_scores[regime_index] = float(np.mean(regime_probabilities[mask]))
+
+            self.logger.info(
+                "Generated fallback coherent regime significance scores for %d regimes", n_regimes
+            )
+            return _FallbackCoherentResult(
+                success=True,
+                economic_analysis={"regime_significance_scores": regime_scores},
+                metadata={"fallback": True, "n_regimes": n_regimes},
+            )
 from ..shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
 
 logger = logging.getLogger(__name__)

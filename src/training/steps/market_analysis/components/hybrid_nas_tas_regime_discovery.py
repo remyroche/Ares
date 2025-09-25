@@ -967,8 +967,9 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     HybridOrchestrator, HybridOrchestratorConfig
                 )
                 tprint_success("✅ [HYBRID_NAS_TAS] Hybrid components imported successfully")
-            except ImportError as e:
+            except Exception as e:
                 tprint_warning(f"⚠️ [HYBRID_NAS_TAS] Hybrid orchestrator not available: {e}")
+                self.logger.warning("Hybrid orchestrator unavailable, switching to fallback implementation", exc_info=e)
                 # Use fallback implementation
                 return await self._fallback_regime_discovery(market_data, hybrid_config)
             
@@ -1029,13 +1030,7 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tprint_error(f"❌ [HYBRID_NAS_TAS] Discovery failed: {e}")
             self.logger.error(f"Hybrid regime discovery failed: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return {
-                'success': False,
-                'error': str(e),
-                'consolidated_assignments': [],
-                'nas_assignments': [],
-                'tas_assignments': []
-            }
+            return await self._fallback_regime_discovery(market_data, hybrid_config)
     
     async def _fallback_regime_discovery(self, market_data: pd.DataFrame, hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback regime discovery implementation using available utilities."""
@@ -1096,176 +1091,6 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             tprint_error(f"❌ [HYBRID_NAS_TAS] Fallback discovery failed: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'consolidated_assignments': [],
-                'nas_assignments': [],
-                'tas_assignments': []
-            }
-            
-            # Determine configuration based on data characteristics
-            if data_size < 1000:
-                n_regimes = 5
-                population_size = 20
-                generations = 50
-                tree_depth = 4
-                n_estimators = 100
-                tprint("📊 [HYBRID_NAS_TAS] Using small dataset configuration", color="yellow")
-            elif data_size < 5000:
-                n_regimes = 8
-                population_size = 50
-                generations = 100
-                tree_depth = 6
-                n_estimators = 500
-                tprint("📊 [HYBRID_NAS_TAS] Using medium dataset configuration", color="yellow")
-            else:
-                n_regimes = 10
-                population_size = 100
-                generations = 200
-                tree_depth = 8
-                n_estimators = 1000
-                tprint("📊 [HYBRID_NAS_TAS] Using large dataset configuration", color="yellow")
-            
-            hybrid_config = {
-                # Hybrid orchestration settings
-                'combination_strategy': 'ensemble',  # ensemble, weighted, consensus
-                'enable_nas': True,
-                'enable_tas': True,
-                'enable_consensus_analysis': True,
-                'enable_economic_evaluation': True,
-                'enable_trading_viability': True,
-                
-                # NAS configuration
-                'nas_config': {
-                    'primary_architecture': 'hybrid',
-                    'search_strategy': 'evolutionary',
-                    'population_size': population_size,
-                    'generations': generations,
-                    'enable_neural_odes': True,
-                    'enable_vision_transformers': True,
-                    'enable_meta_learning': True,
-                    'n_regimes': n_regimes,
-                    'primary_timeframe': getattr(self.config, 'timeframe', '15m'),
-                    'enable_economic_evaluation': True,
-                    'enable_trading_viability': True
-                },
-                
-                # TAS configuration
-                'tas_config': {
-                    'n_regimes': n_regimes,
-                    'primary_timeframe': getattr(self.config, 'timeframe', '15m'),
-                    'tree_depth': tree_depth,
-                    'n_estimators': n_estimators,
-                    'min_samples_split': 10,
-                    'min_samples_leaf': 5,
-                    'max_features': 'sqrt',
-                    'enable_clvsa_enhancement': True,
-                    'enable_statistical_methods': True,
-                    'enable_economic_evaluation': True,
-                    'enable_meta_learning': True
-                },
-                
-                # Hybrid-specific settings
-                'consensus_threshold': 0.6,
-                'disagreement_tolerance': 0.3,
-                'economic_weight': 0.4,
-                'trading_weight': 0.3,
-                'stability_weight': 0.3
-            }
-            
-            tprint(f"⚙️ [HYBRID_NAS_TAS] Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})", color="cyan")
-            log_info(f"📊 Hybrid Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})")
-            return hybrid_config
-            
-        except Exception as e:
-            tprint(f"⚠️ [HYBRID_NAS_TAS] Config creation failed: {e}, using defaults", color="yellow")
-            log_warning(f"Failed to create hybrid config: {e}, using defaults")
-            return {
-                'combination_strategy': 'ensemble',
-                'enable_nas': True,
-                'enable_tas': True,
-                'enable_consensus_analysis': True,
-                'enable_economic_evaluation': True,
-                'enable_trading_viability': True,
-                'nas_config': {
-                    'primary_architecture': 'hybrid',
-                    'search_strategy': 'evolutionary',
-                    'population_size': 50,
-                    'generations': 100,
-                    'n_regimes': 8
-                },
-                'tas_config': {
-                    'n_regimes': 8,
-                    'tree_depth': 6,
-                    'n_estimators': 1000
-                }
-            }
-    
-    async def _perform_hybrid_regime_discovery(self, market_data: pd.DataFrame, hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform hybrid regime discovery using the advanced hybrid system."""
-        try:
-            tprint("🔧 [HYBRID_NAS_TAS] Importing hybrid components", color="blue")
-            # Import hybrid components
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.hybrid_orchestrator import (
-                HybridOrchestrator, HybridOrchestratorConfig
-            )
-            tprint("✅ [HYBRID_NAS_TAS] Hybrid components imported successfully", color="green")
-            
-            tprint("⚙️ [HYBRID_NAS_TAS] Creating orchestrator configuration", color="magenta")
-            # Create hybrid orchestrator configuration
-            orchestrator_config = HybridOrchestratorConfig(
-                symbol=getattr(self.config, 'symbol', 'UNKNOWN'),
-                timeframe=getattr(self.config, 'timeframe', '15m'),
-                start_date=getattr(self.config, 'start_date', None),
-                end_date=getattr(self.config, 'end_date', None),
-                use_standardized_features=True,
-                feature_categories=['momentum', 'volatility', 'volume', 'trend'],
-                significance_threshold=0.5,
-                min_regime_duration=10,
-                viability_threshold=0.5,
-                minimum_regime_duration=5,
-                max_iterations=100,
-                use_bayesian_optimization=True,
-                population_size=hybrid_config['nas_config']['population_size'],
-                max_generations=hybrid_config['nas_config']['generations'],
-                use_nsga2=True,
-                use_spea2=True,
-                use_gpu_acceleration=True,
-                memory_limit_gb=8.0,
-                include_detailed_metrics=True,
-                save_to_file=False
-            )
-            tprint("✅ [HYBRID_NAS_TAS] Orchestrator configuration created", color="green")
-            
-            tprint("🚀 [HYBRID_NAS_TAS] Initializing hybrid orchestrator", color="cyan")
-            # Initialize hybrid orchestrator
-            hybrid_orchestrator = HybridOrchestrator(orchestrator_config)
-            tprint("✅ [HYBRID_NAS_TAS] Hybrid orchestrator initialized", color="green")
-            
-            tprint("🧠 [HYBRID_NAS_TAS] Starting TAS-NAS orchestrated detection", color="cyan", bold=True)
-            # Perform hybrid regime detection
-            hybrid_result = hybrid_orchestrator.orchestrate_tas_nas_detection(
-                market_data,
-                timeframes=[getattr(self.config, 'timeframe', '15m')]
-            )
-            tprint("✅ [HYBRID_NAS_TAS] TAS-NAS detection completed", color="green")
-            
-            tprint("🔬 [HYBRID_NAS_TAS] Enhancing hybrid results", color="blue")
-            # Process and enhance the result
-            enhanced_result = self._enhance_hybrid_result(hybrid_result, hybrid_config)
-            tprint("✅ [HYBRID_NAS_TAS] Results enhanced successfully", color="green")
-            
-            return enhanced_result
-            
-        except ImportError as e:
-            tprint(f"❌ [HYBRID_NAS_TAS] Import failed: {e}", color="red", bold=True)
-            self.logger.error(f"Failed to import hybrid components: {e}")
-            raise e
-        except Exception as e:
-            tprint(f"❌ [HYBRID_NAS_TAS] Discovery failed: {e}", color="red", bold=True)
-            self.logger.error(f"Hybrid regime discovery failed: {e}")
-            raise e
     
     def _enhance_hybrid_result(self, hybrid_result: Dict[str, Any], hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
         """Enhance hybrid result with additional analysis and metrics."""

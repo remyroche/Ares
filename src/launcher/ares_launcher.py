@@ -88,11 +88,20 @@ class ExecutionModeType(Enum):
 class AresLauncher:
     """
     Ares Launcher with Granular Sub-Pipeline Control.
-    
+
     Provides comprehensive control over training pipeline execution with
     granular sub-pipeline management and real-time monitoring.
     """
-    
+
+    _SUB_PIPELINE_ALIASES: Dict[str, str] = {
+        'nas_tas_regime_discovery': 'hybrid_nas_tas_regime_discovery',
+    }
+
+    @classmethod
+    def _resolve_sub_pipeline_alias(cls, sub_pipeline: str) -> str:
+        """Map backward-compatible sub-pipeline aliases to canonical names."""
+        return cls._SUB_PIPELINE_ALIASES.get(sub_pipeline, sub_pipeline)
+
     def __init__(self):
         """Initialize the Ares launcher with enhanced error handling and utilities."""
         try:
@@ -413,7 +422,13 @@ class AresLauncher:
         """Create configuration for a specific sub-pipeline."""
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Creating sub-pipeline configuration for: {sub_pipeline}")
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Execution mode: {execution_mode.value}")
-        
+
+        resolved_sub_pipeline = self._resolve_sub_pipeline_alias(sub_pipeline)
+        if resolved_sub_pipeline != sub_pipeline:
+            tprint_info(
+                f"🔁 [SUB_PIPELINE_CONFIG] Resolved alias '{sub_pipeline}' → '{resolved_sub_pipeline}'"
+            )
+
         # Set the execution mode in base config
         tprint("🔧 [SUB_PIPELINE_CONFIG] Setting execution mode in base config...")
         base_config['mode'] = ExecutionMode(execution_mode.value)
@@ -427,6 +442,8 @@ class AresLauncher:
         # SET 15M AS DEFAULT TIMEFRAME FOR NAS-RELATED SUB-PIPELINES
         nas_sub_pipelines = [
             'nas_regime_discovery',     # Discover market regimes using NAS
+            'hybrid_nas_tas_regime_discovery',  # Canonical hybrid NAS-TAS regime discovery
+            'nas_tas_regime_discovery', # Backward-compatible alias for hybrid NAS-TAS regime discovery
             # 'nas_clustering',           # DEPRECATED - use nas_tas_clustering instead
             # 'nas_models_training',      # REMOVED - moved to models_training/
             # 'nas_ensemble_training',    # REMOVED - moved to models_training/
@@ -434,7 +451,7 @@ class AresLauncher:
         ]
         
         # Set 15m as default for NAS sub-pipelines
-        if sub_pipeline in nas_sub_pipelines:
+        if resolved_sub_pipeline in nas_sub_pipelines:
             original_timeframe = filtered_config.get('timeframe', '1m')
             if original_timeframe == '1m':  # Only override if using default
                 filtered_config['timeframe'] = '15m'
@@ -468,11 +485,11 @@ class AresLauncher:
         target_stage = None
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
-            if sub_pipeline in available_sub_pipelines:
+            if resolved_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 tprint(f"🔧 [SUB_PIPELINE_CONFIG] Found sub-pipeline in stage: {stage.value}")
                 break
-        
+
         if not target_stage:
             tprint(f"❌ [SUB_PIPELINE_CONFIG] Sub-pipeline '{sub_pipeline}' not found in any stage")
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
@@ -480,8 +497,8 @@ class AresLauncher:
         # Enable only the target stage and sub-pipeline
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling stage: {target_stage.value}")
         config.enabled_stages = [target_stage]
-        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipeline: {sub_pipeline}")
-        config.enabled_sub_pipelines[target_stage] = [sub_pipeline]
+        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipeline: {resolved_sub_pipeline}")
+        config.enabled_sub_pipelines[target_stage] = [resolved_sub_pipeline]
         tprint("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
         
         # Set single stage execution mode for individual sub-pipeline execution
@@ -639,14 +656,20 @@ class AresLauncher:
     
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
+        resolved_sub_pipeline = self._resolve_sub_pipeline_alias(sub_pipeline)
+        if resolved_sub_pipeline != sub_pipeline:
+            self.logger.info(
+                f"🔁 Using canonical sub-pipeline '{resolved_sub_pipeline}' for alias '{sub_pipeline}'"
+            )
+
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
-            if sub_pipeline in available_sub_pipelines:
+            if resolved_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 break
-        
+
         if not target_stage:
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
         
@@ -654,16 +677,16 @@ class AresLauncher:
         self._log_sub_pipeline_transition(None, sub_pipeline, target_stage.value)
         
         # Check for existing outcome files
-        outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
+        outcome_data = await self._check_outcome_files(target_stage.value, resolved_sub_pipeline)
         if outcome_data:
             self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
-        
+
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
         
         # Execute only the specified sub-pipeline with automatic chaining
         # Use execute_sub_pipeline_with_chain for automatic sequential execution
-        sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, sub_pipeline, config)
+        sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, resolved_sub_pipeline, config)
         
         # Create a MainPipelineResult to maintain compatibility
         result = MainPipelineResult(
@@ -686,7 +709,7 @@ class AresLauncher:
         if result.stage_results and target_stage in result.stage_results:
             stage_results = result.stage_results[target_stage]
             for sub_result in stage_results:
-                if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
+                if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name in {sub_pipeline, resolved_sub_pipeline}:
                     # Outcome file creation handled by MainTrainingPipeline
                     pass
                     break
@@ -703,7 +726,7 @@ class AresLauncher:
     async def _create_mid_function_artifacts(self, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for full pipeline execution."""
         self.logger.info("🔧 Creating mid-function artifacts for full pipeline")
-        
+
         artifacts = {
             'pipeline_config': {
                 'mode': config.mode.value,
@@ -730,9 +753,15 @@ class AresLauncher:
         
         # Save artifacts - DISABLED: Only outcome file should be created
         # await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json')
-        
+
         return artifacts
-    
+
+    async def _check_outcome_files(self, stage: str, sub_pipeline: str) -> Optional[Dict[str, Any]]:
+        """Delegate outcome lookup to the main pipeline when available."""
+        if hasattr(self.pipeline, "_check_outcome_files"):
+            return await self.pipeline._check_outcome_files(stage, sub_pipeline)
+        return None
+
     async def _create_stage_artifacts(self, stage: PipelineStage, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for stage execution."""
         self.logger.info(f"🔧 Creating mid-function artifacts for stage: {stage.value}")
@@ -765,17 +794,20 @@ class AresLauncher:
     async def _create_sub_pipeline_artifacts(self, sub_pipeline: str, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for sub-pipeline execution."""
         self.logger.info(f"🔧 Creating mid-function artifacts for sub-pipeline: {sub_pipeline}")
-        
+
+        resolved_sub_pipeline = self._resolve_sub_pipeline_alias(sub_pipeline)
+
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
-            if sub_pipeline in config.enabled_sub_pipelines.get(stage, []):
+            if resolved_sub_pipeline in enabled_sub_pipelines:
                 target_stage = stage
                 break
-        
+
         artifacts = {
             'sub_pipeline_config': {
                 'sub_pipeline': sub_pipeline,
+                'canonical_sub_pipeline': resolved_sub_pipeline,
                 'stage': target_stage.value if target_stage else 'unknown',
                 'mode': config.mode.value,
                 'symbol': config.symbol,
@@ -841,6 +873,7 @@ class AresLauncher:
             # 'nas_clustering': "NAS-based regime clustering (DEPRECATED - use nas_tas_clustering instead)",
             'nas_tas_clustering': "Advanced regime clustering using combined NAS-TAS approaches with economic awareness and ensemble methods",
             'hybrid_nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
+            'nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (alias for hybrid_nas_tas_regime_discovery)",
             'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
             # 'nas_models_training': "Train regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
             # 'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
@@ -898,10 +931,11 @@ class AresLauncher:
             # 'nas_clustering': ['sr_clustering'],  # DEPRECATED - use nas_tas_clustering instead
             'nas_tas_clustering': ['sr_clustering'],
             'hybrid_nas_tas_regime_discovery': ['sr_clustering'],
+            'nas_tas_regime_discovery': ['sr_clustering'],
             'nas_regime_discovery': ['nas_tas_clustering'],  # DEPRECATED - use hybrid_nas_tas_regime_discovery instead
-            # 'nas_models_training': ['hybrid_nas_tas_regime_discovery'],  # REMOVED - moved to models_training/
-            # 'nas_ensemble_training': ['nas_models_training'],  # REMOVED - moved to models_training/
-            'feature_lookback_optimization': ['hmm_regime_discovery', 'hybrid_nas_tas_regime_discovery'],
+            'nas_models_training': ['hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery'],  # Updated to use hybrid discovery
+            'nas_ensemble_training': ['nas_models_training'],
+            'feature_lookback_optimization': ['hmm_regime_discovery', 'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
             'triple_barrier_labeling': ['hmm_regime_discovery'],
@@ -954,6 +988,7 @@ class AresLauncher:
             # 'nas_clustering': ['nas_clusters.json'],  # DEPRECATED
             'nas_tas_clustering': ['nas_tas_clustering_report.json', 'nas_tas_regime_assignments.parquet'],
             'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
+            'nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
             'nas_regime_discovery': ['nas_regime_assignments.parquet'],
             # 'nas_models_training': ['nas_models_training_result.json'],  # REMOVED - moved to models_training/
             # 'nas_ensemble_training': ['nas_ensemble_training_result.json'],  # REMOVED - moved to models_training/

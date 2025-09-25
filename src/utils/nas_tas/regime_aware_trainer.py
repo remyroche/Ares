@@ -7,8 +7,15 @@ Provides comprehensive training pipeline with regime-specific optimization.
 
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
+# Optional PyTorch import for neural network support
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    TORCH_AVAILABLE = False
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
@@ -23,7 +30,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 import xgboost as xgb
 import lightgbm as lgb
-import catboost as cb
+try:
+    import catboost as cb
+    CATBOOST_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    cb = None  # type: ignore[assignment]
+    CATBOOST_AVAILABLE = False
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
@@ -333,6 +345,14 @@ class RegimeAwareTrainer:
             ModelType.NEURAL_NETWORK: self._create_neural_network,
             ModelType.ENSEMBLE: self._create_ensemble
         }
+
+        if not CATBOOST_AVAILABLE:
+            tprint_warning("⚠️ CatBoost not available - removing from model factories", color="red")
+            self.model_factories.pop(ModelType.CATBOOST, None)
+            if ModelType.CATBOOST in self.config.model_types:
+                self.config.model_types = [
+                    mt for mt in self.config.model_types if mt != ModelType.CATBOOST
+                ]
     
     def train_models(self, 
                     market_data: pd.DataFrame,
@@ -1001,6 +1021,8 @@ class RegimeAwareTrainer:
         )
     
     def _create_catboost(self):
+        if not CATBOOST_AVAILABLE:
+            raise ImportError("catboost is not available - remove ModelType.CATBOOST from configuration or install catboost")
         return cb.CatBoostClassifier(
             iterations=100,
             depth=6,

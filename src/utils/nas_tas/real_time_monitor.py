@@ -10,7 +10,7 @@ import pandas as pd
 import time
 import threading
 import queue
-from typing import Dict, List, Any, Optional, Callable, Union
+from typing import Dict, List, Any, Optional, Callable, Union, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging

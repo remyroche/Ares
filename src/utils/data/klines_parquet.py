@@ -309,11 +309,11 @@ class KlinesParquetManager:
             
             self.logger.info(f"📊 Loaded {len(combined_df)} records for {symbol} {interval}")
             return combined_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to read data: {e}")
             return None
-    
+
     def write_data(
         self,
         df: pd.DataFrame,

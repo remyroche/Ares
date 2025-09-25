@@ -24,6 +24,82 @@ import concurrent.futures
 # Import core utilities
 from .core.common import create_fallback_logger, create_fallback_decorator
 
+# Import math validation helpers when available
+try:
+    from .math_validation import (
+        safe_correlation,
+        safe_covariance,
+        safe_percentile,
+        validate_correlation_matrix,
+        safe_matrix_inverse,
+        math_safe,
+    )
+except ImportError:  # pragma: no cover - fallback implementations
+    def safe_correlation(x, y, default: float = 0.0):
+        try:
+            x_arr = np.asarray(x, dtype=float)
+            y_arr = np.asarray(y, dtype=float)
+            if x_arr.size == 0 or y_arr.size == 0:
+                return default
+            if np.allclose(np.std(x_arr), 0) or np.allclose(np.std(y_arr), 0):
+                return default
+            return float(np.corrcoef(x_arr, y_arr)[0, 1])
+        except Exception:
+            logger.warning("⚠️ Failed to compute correlation; returning default")
+            return default
+
+    def safe_covariance(x, y, default: float = 0.0):
+        try:
+            x_arr = np.asarray(x, dtype=float)
+            y_arr = np.asarray(y, dtype=float)
+            if x_arr.size == 0 or y_arr.size == 0:
+                return default
+            return float(np.cov(x_arr, y_arr, ddof=1)[0, 1])
+        except Exception:
+            logger.warning("⚠️ Failed to compute covariance; returning default")
+            return default
+
+    def safe_percentile(values, q: float, default: float = 0.0):
+        try:
+            values_arr = np.asarray(values, dtype=float)
+            if values_arr.size == 0:
+                return default
+            return float(np.nanpercentile(values_arr, q))
+        except Exception:
+            logger.warning("⚠️ Failed to compute percentile; returning default")
+            return default
+
+    def validate_correlation_matrix(matrix, tol: float = 1e-8) -> bool:
+        try:
+            arr = np.asarray(matrix, dtype=float)
+            if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+                return False
+            if not np.allclose(arr, arr.T, atol=tol):
+                return False
+            if np.any(np.isnan(arr)):
+                return False
+            if np.any(np.abs(arr) > 1 + tol):
+                return False
+            return True
+        except Exception:
+            return False
+
+    def safe_matrix_inverse(matrix, default: Optional[np.ndarray] = None):
+        try:
+            arr = np.asarray(matrix, dtype=float)
+            return np.linalg.inv(arr)
+        except Exception:
+            logger.warning("⚠️ Failed to invert matrix; returning default")
+            if default is not None:
+                return default
+            raise
+
+    def math_safe(func, *args, default=0.0, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            return default
+
 # Import M1 utilities
 try:
     from .hardware.m1_gpu_utils import is_m1_available, is_mps_available

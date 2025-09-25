@@ -5,6 +5,8 @@ This module provides performance optimization capabilities including caching,
 GPU acceleration, and memory optimization for regime detection operations.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
@@ -26,7 +28,9 @@ try:
     import torch
     import torch.nn.functional as F
     TORCH_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None  # type: ignore[assignment]
+    F = None  # type: ignore[assignment]
     TORCH_AVAILABLE = False
 
 try:
@@ -165,28 +169,37 @@ class GPUAccelerator:
         else:
             tprint_info("💻 GPU acceleration disabled")
     
-    def to_tensor(self, data: Union[np.ndarray, pd.DataFrame]) -> torch.Tensor:
+    def to_tensor(
+        self, data: Union[np.ndarray, pd.DataFrame]
+    ) -> Union["torch.Tensor", np.ndarray]:
         """Convert data to GPU tensor if available."""
+        array = data.values if isinstance(data, pd.DataFrame) else data
+
+        if not TORCH_AVAILABLE or torch is None:
+            return np.asarray(array)
+
         if not self.enable_gpu or not self.gpu_available:
-            return torch.tensor(data.values if isinstance(data, pd.DataFrame) else data)
-        
+            return torch.tensor(array)
+
         try:
             tensor = torch.tensor(
-                data.values if isinstance(data, pd.DataFrame) else data,
+                array,
                 dtype=torch.float32,
                 device=self.device
             )
             return tensor
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - defensive branch
             tprint_warning(f"⚠️ GPU tensor conversion failed: {e}")
-            return torch.tensor(data.values if isinstance(data, pd.DataFrame) else data)
-    
-    def to_numpy(self, tensor: torch.Tensor) -> np.ndarray:
+            return torch.tensor(array)
+
+    def to_numpy(self, tensor: Union["torch.Tensor", np.ndarray]) -> np.ndarray:
         """Convert GPU tensor back to numpy array."""
-        if tensor.is_cuda:
-            return tensor.detach().cpu().numpy()
-        else:
+        if TORCH_AVAILABLE and torch is not None and isinstance(tensor, torch.Tensor):
+            if tensor.is_cuda:
+                return tensor.detach().cpu().numpy()
             return tensor.detach().numpy()
+
+        return np.asarray(tensor)
     
     def accelerate_matrix_operations(self, func: Callable) -> Callable:
         """Decorator to accelerate matrix operations with GPU."""
@@ -208,10 +221,15 @@ class GPUAccelerator:
                 result = func(*gpu_args, **kwargs)
                 
                 # Convert result back to numpy
-                if isinstance(result, torch.Tensor):
+                if TORCH_AVAILABLE and torch is not None and isinstance(result, torch.Tensor):
                     return self.to_numpy(result)
                 elif isinstance(result, tuple):
-                    return tuple(self.to_numpy(r) if isinstance(r, torch.Tensor) else r for r in result)
+                    return tuple(
+                        self.to_numpy(r)
+                        if TORCH_AVAILABLE and torch is not None and isinstance(r, torch.Tensor)
+                        else r
+                        for r in result
+                    )
                 else:
                     return result
                     

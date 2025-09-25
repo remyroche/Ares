@@ -552,7 +552,7 @@ class AttentionNetworkOptimizer:
             raise ImportError("Either scikit-optimize or Optuna must be installed for Bayesian optimization")
 
     def optimize(self, X: np.ndarray, y: np.ndarray, base_model: Any) -> Dict[str, Any]:
-        """Optimize attention network parameters.
+        """Optimize attention network parameters using Bayesian TPE optimizer.
 
         Args:
             X: Training features
@@ -563,12 +563,59 @@ class AttentionNetworkOptimizer:
             Dictionary with optimization results
         """
         try:
-            if SKOPT_AVAILABLE:
-                return self._optimize_skopt(X, y, base_model)
-            elif OPTUNA_AVAILABLE:
-                return self._optimize_optuna(X, y, base_model)
-            else:
-                raise RuntimeError("Neither scikit-optimize nor Optuna is available")
+            # Create search space for attention network parameters
+            search_space = {
+                'attention_dim': {'type': 'int', 'low': 16, 'high': 256},
+                'attention_heads': {'type': 'int', 'low': 2, 'high': 16},
+                'learning_rate': {'type': 'float', 'low': 1e-5, 'high': 1e-2, 'log': True},
+                'weight_decay': {'type': 'float', 'low': 1e-6, 'high': 1e-3, 'log': True},
+                'dropout': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'use_temporal_attention': {'type': 'categorical', 'choices': [True, False]}
+            }
+            
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._evaluate_attention_params(X, y, base_model, params)
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.get('n_trials', 30),
+                timeout_seconds=self.config.get('timeout', 300),
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=2,
+                enable_early_stopping=True,
+                early_stopping_patience=5,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info(f"🎯 Starting Bayesian TPE optimization for attention network")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, search_space)
+            
+            if not optimization_result.success:
+                self.logger.error(f"❌ Bayesian TPE optimization failed: {optimization_result.error_message}")
+                return {
+                    'success': False,
+                    'error': optimization_result.error_message,
+                    'best_params': None,
+                    'best_score': None
+                }
+            
+            return {
+                'success': True,
+                'best_score': optimization_result.best_score,
+                'best_params': optimization_result.best_params,
+                'optimization_time': optimization_result.optimization_time,
+                'n_trials': optimization_result.n_trials,
+                'convergence_info': optimization_result.convergence_info,
+                'grid_search_results': optimization_result.grid_search_results,
+                'optimization_history': optimization_result.optimization_history
+            }
 
         except Exception as e:
             self.logger.error(f"❌ Attention network optimization failed: {e}")
@@ -694,7 +741,7 @@ class MetaLearnerOptimizer:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def optimize(self, base_models: List[Any], X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Optimize meta-learner hyperparameters.
+        """Optimize meta-learner hyperparameters using Bayesian TPE optimizer.
 
         Args:
             base_models: List of base models for stacking
@@ -705,12 +752,61 @@ class MetaLearnerOptimizer:
             Dictionary with optimization results
         """
         try:
-            if SKOPT_AVAILABLE:
-                return self._optimize_skopt(base_models, X, y)
-            elif OPTUNA_AVAILABLE:
-                return self._optimize_optuna(base_models, X, y)
-            else:
-                raise RuntimeError("Neither scikit-optimize nor Optuna is available")
+            # Create search space for meta-learner parameters
+            search_space = {
+                'meta_learner_type': {'type': 'categorical', 'choices': ['advanced_mamba_hybrid', 'financial_resnet']},
+                'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
+                'num_layers': {'type': 'int', 'low': 2, 'high': 8},
+                'learning_rate': {'type': 'float', 'low': 1e-4, 'high': 1e-2, 'log': True},
+                'weight_decay': {'type': 'float', 'low': 1e-6, 'high': 1e-3, 'log': True},
+                'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'attention_dim': {'type': 'int', 'low': 16, 'high': 128},
+                'attention_heads': {'type': 'int', 'low': 2, 'high': 16}
+            }
+            
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._evaluate_meta_learner(base_models, X, y, params)
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.get('n_trials', 30),
+                timeout_seconds=self.config.get('timeout', 300),
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=2,
+                enable_early_stopping=True,
+                early_stopping_patience=5,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info(f"🎯 Starting Bayesian TPE optimization for meta-learner")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, search_space)
+            
+            if not optimization_result.success:
+                self.logger.error(f"❌ Bayesian TPE optimization failed: {optimization_result.error_message}")
+                return {
+                    'success': False,
+                    'error': optimization_result.error_message,
+                    'best_params': None,
+                    'best_score': None
+                }
+            
+            return {
+                'success': True,
+                'best_score': optimization_result.best_score,
+                'best_params': optimization_result.best_params,
+                'optimization_time': optimization_result.optimization_time,
+                'n_trials': optimization_result.n_trials,
+                'convergence_info': optimization_result.convergence_info,
+                'grid_search_results': optimization_result.grid_search_results,
+                'optimization_history': optimization_result.optimization_history
+            }
 
         except Exception as e:
             self.logger.error(f"❌ Meta-learner optimization failed: {e}")
@@ -1008,7 +1104,7 @@ class DeepScalerOptimizer:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def optimize(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Optimize DeepScaler parameters.
+        """Optimize DeepScaler parameters using Bayesian TPE optimizer.
 
         Args:
             X: Training features
@@ -1018,12 +1114,60 @@ class DeepScalerOptimizer:
             Dictionary with optimization results
         """
         try:
-            if SKOPT_AVAILABLE:
-                return self._optimize_skopt(X, y)
-            elif OPTUNA_AVAILABLE:
-                return self._optimize_optuna(X, y)
-            else:
-                raise RuntimeError("Neither scikit-optimize nor Optuna is available")
+            # Create search space for DeepScaler parameters
+            search_space = {
+                'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
+                'num_layers': {'type': 'int', 'low': 2, 'high': 10},
+                'learning_rate': {'type': 'float', 'low': 1e-4, 'high': 1e-2, 'log': True},
+                'weight_decay': {'type': 'float', 'low': 1e-6, 'high': 1e-3, 'log': True},
+                'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+                'optimizer': {'type': 'categorical', 'choices': ['adam', 'adamw', 'sgd']},
+                'feature_dropout': {'type': 'float', 'low': 0.1, 'high': 1.0}
+            }
+            
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._evaluate_deepscaler_params(X, y, params)
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.get('n_trials', 30),
+                timeout_seconds=self.config.get('timeout', 300),
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=2,
+                enable_early_stopping=True,
+                early_stopping_patience=5,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info(f"🎯 Starting Bayesian TPE optimization for DeepScaler")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, search_space)
+            
+            if not optimization_result.success:
+                self.logger.error(f"❌ Bayesian TPE optimization failed: {optimization_result.error_message}")
+                return {
+                    'success': False,
+                    'error': optimization_result.error_message,
+                    'best_params': None,
+                    'best_score': None
+                }
+            
+            return {
+                'success': True,
+                'best_score': optimization_result.best_score,
+                'best_params': optimization_result.best_params,
+                'optimization_time': optimization_result.optimization_time,
+                'n_trials': optimization_result.n_trials,
+                'convergence_info': optimization_result.convergence_info,
+                'grid_search_results': optimization_result.grid_search_results,
+                'optimization_history': optimization_result.optimization_history
+            }
 
         except Exception as e:
             self.logger.error(f"❌ DeepScaler optimization failed: {e}")

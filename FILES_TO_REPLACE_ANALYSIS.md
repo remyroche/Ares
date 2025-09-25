@@ -178,11 +178,11 @@ Based on my analysis of the codebase, I've identified numerous files that contai
    - **Replacement**: Use `UnifiedSearchEngine` Bayesian strategy
    - **Status**: Can be replaced
 
-6. **`src/training/steps/market_analysis/tas_regime/search/evolutionary_search.py`**
+6. **`src/training/steps/market_analysis/tas_regime/search/evolutionary_search.py`** ✅ **CONSOLIDATED**
    - **Size**: Unknown
    - **Functionality**: Evolutionary search for TAS
-   - **Replacement**: Use `UnifiedSearchEngine` evolutionary strategy
-   - **Status**: Can be replaced
+   - **Replacement**: Consolidated into `src/utils/nas_tas/evolutionary_algorithms.py`
+   - **Status**: ✅ **COMPLETED** - Moved to consolidated location
 
 7. **`src/training/steps/market_analysis/tas_regime/search/multi_objective_search.py`**
    - **Size**: Unknown
@@ -203,11 +203,11 @@ Based on my analysis of the codebase, I've identified numerous files that contai
    - **Status**: Can be replaced
 
 #### **NAS-Specific Search**
-10. **`src/training/steps/market_analysis/nas_clustering/core/nas_search/evolutionary_search.py`**
+10. **`src/training/steps/market_analysis/nas_clustering/core/nas_search/evolutionary_search.py`** ✅ **CONSOLIDATED**
     - **Size**: Unknown
     - **Functionality**: Evolutionary search for NAS
-    - **Replacement**: Use `UnifiedSearchEngine` NAS strategies
-    - **Status**: Can be replaced
+    - **Replacement**: Consolidated into `src/utils/nas_tas/evolutionary_algorithms.py`
+    - **Status**: ✅ **COMPLETED** - Moved to consolidated location
 
 11. **`src/training/steps/market_analysis/nas_clustering/core/nas_search/search_space.py`**
     - **Size**: Unknown

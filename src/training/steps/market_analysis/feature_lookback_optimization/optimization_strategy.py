@@ -45,7 +45,7 @@ except ImportError:
             corr = np.corrcoef(x, y)[0, 1]
             return corr if np.isfinite(corr) else default
         except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+            tprint_debug(f"🔍 Operation failed: {e}")
             return default
 
 

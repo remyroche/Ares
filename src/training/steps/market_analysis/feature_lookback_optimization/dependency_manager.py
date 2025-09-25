@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_warning
 
 logger = system_logger.getChild('DependencyManager')
 
@@ -206,12 +206,12 @@ class DependencyManager:
             import importlib.metadata
             return importlib.metadata.version(package_name)
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             try:
                 import pkg_resources
                 return pkg_resources.get_distribution(package_name).version
             except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 return None
     
     def _create_fallback(self, dep_name: str) -> None:

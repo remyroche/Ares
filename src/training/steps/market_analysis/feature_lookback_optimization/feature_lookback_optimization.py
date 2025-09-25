@@ -283,7 +283,7 @@ except ImportError as e:
 # Import Bayesian lookback optimizer
 try:
     from .mrmr_lookback_optimizer import (
-        MRMRLookbackOptimizer, LookbackOptimizationConfig, LookbackOptimizationResult,
+        MRMRLookbackOptimizer, OptimizationConfig, LookbackOptimizationResult,
         optimize_lookback_periods
     )
     MRMR_OPTIMIZER_AVAILABLE = True
@@ -2412,7 +2412,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                                      data: pd.DataFrame,
                                                      feature_columns: List[str],
                                                      target_column: str = 'returns',
-                                                     optimization_config: Optional[LookbackOptimizationConfig] = None,
+                                                     optimization_config: Optional[OptimizationConfig] = None,
                                                      enable_directional: bool = True) -> Dict[str, Any]:
         """
         Optimize lookback periods using MRMR approach with directional differentiation (longs vs shorts).
@@ -2438,7 +2438,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         try:
             # Create optimization config if not provided
             if optimization_config is None:
-                optimization_config = LookbackOptimizationConfig(
+                optimization_config = OptimizationConfig(
                     n_trials=50,  # Reduced for faster execution
                     min_lookback=5,
                     max_lookback=50,
@@ -2535,7 +2535,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                          data: pd.DataFrame,
                                          feature_columns: List[str],
                                          target_column: str = 'returns',
-                                         optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
+                                         optimization_config: Optional[OptimizationConfig] = None) -> Dict[str, Any]:
         """
         Optimize lookback periods using MRMR approach (MI + mRMR).
         
@@ -2559,7 +2559,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         try:
             # Create optimization config if not provided
             if optimization_config is None:
-                optimization_config = LookbackOptimizationConfig(
+                optimization_config = OptimizationConfig(
                     n_trials=50,  # Reduced for faster execution
                     min_lookback=5,
                     max_lookback=50,
@@ -2940,7 +2940,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                                data: pd.DataFrame,
                                                feature_columns: List[str],
                                                multi_targets: Optional[List[str]] = None,
-                                               optimization_config: Optional[LookbackOptimizationConfig] = None) -> Dict[str, Any]:
+                                               optimization_config: Optional[OptimizationConfig] = None) -> Dict[str, Any]:
         """
         Optimize lookback periods against multiple multi-horizon targets simultaneously.
         
@@ -2972,7 +2972,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
             # Create optimization config if not provided
             if optimization_config is None:
-                optimization_config = LookbackOptimizationConfig(
+                optimization_config = OptimizationConfig(
                     n_trials=30,  # Reduced for multi-target efficiency
                     min_lookback=5,
                     max_lookback=50,
@@ -3441,7 +3441,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Error generating directional optimization summary: {e}")
             return {'error': str(e)}
     
-    def _convert_new_directional_to_standard_format(self, directional_result: DirectionalOptimizationResult) -> Dict[str, Any]:
+    def _convert_new_directional_to_standard_format(self, directional_result: Dict[str, Any]) -> Dict[str, Any]:
         """Convert new directional optimization result to standard format."""
         try:
             # Get all selected features

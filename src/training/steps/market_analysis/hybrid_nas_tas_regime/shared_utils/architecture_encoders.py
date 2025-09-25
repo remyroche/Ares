@@ -617,7 +617,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
             else:
                 return False
         except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+            tprint_debug(f"🔍 Operation failed: {e}")
             return False
 
 
@@ -999,7 +999,7 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
             else:
                 return False
         except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+            tprint_debug(f"🔍 Operation failed: {e}")
             return False
 
 

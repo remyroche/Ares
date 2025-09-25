@@ -103,7 +103,8 @@ except ImportError as e:
                 return default
             corr = np.corrcoef(x, y)[0, 1]
             return corr if np.isfinite(corr) else default
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate correlation: {e}")
             return default
 
 # Import matrix operations for advanced computations

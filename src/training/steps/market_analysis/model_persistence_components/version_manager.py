@@ -212,7 +212,8 @@ class VersionManager:
             t2 = datetime.fromisoformat(v2_info['timestamp'])
             comparison['timestamp_diff'] = str(t2 - t1)
             comparison['is_newer'] = version2 if t2 > t1 else version1
-        except:
+        except Exception as e:
+            tprint_debug(f"⚠️ Failed to compare timestamps: {e}")
             pass
         for key in ['symbol', 'exchange', 'scheme']:
             if v1_info.get(key) != v2_info.get(key):

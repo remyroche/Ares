@@ -448,7 +448,8 @@ class UnsupervisedRegimeDetector:
                 labels = kmeans.fit_predict(features)
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                 silhouette_scores.append(0)
         
         if not silhouette_scores:
@@ -649,7 +650,8 @@ class UnsupervisedRegimeDetector:
                 if score > best_score:
                     best_score = score
                     best_method = method
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to process clustering method: {e}")
                 continue
         
         return best_method

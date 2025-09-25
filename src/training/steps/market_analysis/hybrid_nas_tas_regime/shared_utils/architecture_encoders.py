@@ -347,7 +347,8 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 return isinstance(encoding, dict) and len(encoding) > 0
             else:
                 return False
-        except:
+        except Exception as e:
+            tprint_debug(f"⚠️ Failed to validate architecture: {e}")
             return False
 
 
@@ -548,7 +549,8 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 return isinstance(encoding, dict) and len(encoding) > 0
             else:
                 return False
-        except:
+        except Exception as e:
+            tprint_debug(f"⚠️ Failed to validate architecture: {e}")
             return False
 
 

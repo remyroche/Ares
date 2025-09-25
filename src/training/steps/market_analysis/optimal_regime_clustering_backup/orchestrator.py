@@ -2411,7 +2411,8 @@ class OptimalRegimeClusteringOrchestrator:
                 try:
                     correlation_matrix = np.corrcoef([cluster_returns])
                     avg_correlation = np.mean(correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)])
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate correlation matrix: {e}")
                     avg_correlation = 0.0
 
             return {
@@ -2930,7 +2931,8 @@ class OptimalRegimeClusteringOrchestrator:
                     size_performance_correlation = np.corrcoef(sizes, returns)[0, 1]
                 else:
                     size_performance_correlation = 0.0
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate size-performance correlation: {e}")
                 size_performance_correlation = 0.0
 
             return {
@@ -3348,7 +3350,8 @@ class OptimalRegimeClusteringOrchestrator:
                 try:
                     sizes_returns_corr = np.corrcoef(sizes, returns)[0, 1]
                     metric_correlations['size_vs_returns'] = float(sizes_returns_corr)
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ Failed to calculate size-returns correlation: {e}")
                     pass
 
             # Volume vs Returns correlation
@@ -3357,7 +3360,8 @@ class OptimalRegimeClusteringOrchestrator:
                 try:
                     volumes_returns_corr = np.corrcoef(volumes, returns)[0, 1]
                     metric_correlations['volume_vs_returns'] = float(volumes_returns_corr)
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ Failed to calculate size-returns correlation: {e}")
                     pass
 
             # Volatility vs Returns correlation
@@ -3366,7 +3370,8 @@ class OptimalRegimeClusteringOrchestrator:
                 try:
                     vol_returns_corr = np.corrcoef(volatilities, returns)[0, 1]
                     metric_correlations['volatility_vs_returns'] = float(vol_returns_corr)
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ Failed to calculate size-returns correlation: {e}")
                     pass
 
             # Cross-cluster correlation analysis
@@ -3378,7 +3383,8 @@ class OptimalRegimeClusteringOrchestrator:
                         'average_inter_cluster_correlation': float(np.mean([np.corrcoef(returns_array, np.roll(returns_array, i))[0, 1] for i in range(1, len(returns_array))])),
                         'maximum_inter_cluster_correlation': float(np.max([np.corrcoef(returns_array, np.roll(returns_array, i))[0, 1] for i in range(1, len(returns_array))]))
                     }
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate cross-cluster correlations: {e}")
                     cross_cluster_correlations = {
                         'average_inter_cluster_correlation': 0.0,
                         'maximum_inter_cluster_correlation': 0.0

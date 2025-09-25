@@ -171,7 +171,8 @@ class ModelSerializer:
             if hasattr(model, 'get_params'):
                 try:
                     model_info['parameters'] = model.get_params()
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ Failed to get model parameters: {e}")
                     pass
             if hasattr(model, 'feature_importances_'):
                 model_info['feature_importances'] = model.feature_importances_.tolist()

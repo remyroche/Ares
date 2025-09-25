@@ -238,7 +238,8 @@ class AdvancedHybridClusterer:
                 try:
                     result = self._single_algorithm_clustering(features, algorithm)
                     predictions.append(result.labels)
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process clustering algorithm: {e}")
                     continue
 
             if not predictions:
@@ -312,13 +313,15 @@ class AdvancedHybridClusterer:
             # Silhouette score (higher is better)
             try:
                 silhouette = silhouette_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                 silhouette = 0.0
 
             # Calinski-Harabasz score (higher is better)
             try:
                 ch_score = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate Calinski-Harabasz score: {e}")
                 ch_score = 0.0
 
             # Combine scores (normalize to 0-1 range)
@@ -349,17 +352,20 @@ class AdvancedHybridClusterer:
             # Standard clustering metrics
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                 metrics['silhouette_score'] = 0.0
 
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate Calinski-Harabasz score: {e}")
                 metrics['calinski_harabasz_score'] = 0.0
 
             try:
                 metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate Davies-Bouldin score: {e}")
                 metrics['davies_bouldin_score'] = 0.0
 
             # Regime-specific metrics

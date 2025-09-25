@@ -201,7 +201,8 @@ class TreeBasedClusteringRegimeDetector:
             tabular_features = sum(1 for corr in correlations if corr < 0.3)
             return tabular_features / len(correlations) if correlations else 0.5
 
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate tabular feature score: {e}")
             return 0.5
 
     def _calculate_sequential_ratio(self, market_data: pd.DataFrame) -> float:
@@ -215,7 +216,8 @@ class TreeBasedClusteringRegimeDetector:
             sequential_features = sum(1 for ac in [price_autocorr, volume_autocorr] if abs(ac) > 0.3)
             return sequential_features / 2.0
 
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate sequential feature score: {e}")
             return 0.3
 
     def _calculate_complexity_ratio(self, market_data: pd.DataFrame) -> float:
@@ -238,7 +240,8 @@ class TreeBasedClusteringRegimeDetector:
             complex_features = sum(1 for c in complexities if c > 0.5 * max_complexity)
             return complex_features / len(complexities) if complexities else 0.5
 
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate tabular feature score: {e}")
             return 0.5
 
     def _choose_clustering_strategy(self, data_characteristics: Dict[str, Any]) -> str:
@@ -312,7 +315,8 @@ class TreeBasedClusteringRegimeDetector:
                     model.fit(features, dummy_labels)
                     predictions = model.predict_proba(features)
                     ensemble_predictions.append(predictions)
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to predict with model: {e}")
                     continue
 
             if not ensemble_predictions:
@@ -460,19 +464,22 @@ class TreeBasedClusteringRegimeDetector:
             # Silhouette score
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                 metrics['silhouette_score'] = 0.0
 
             # Calinski-Harabasz score
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate Calinski-Harabasz score: {e}")
                 metrics['calinski_harabasz_score'] = 0.0
 
             # Davies-Bouldin score
             try:
                 metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate Davies-Bouldin score: {e}")
                 metrics['davies_bouldin_score'] = 0.0
 
             return metrics

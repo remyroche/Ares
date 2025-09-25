@@ -305,7 +305,8 @@ class TreePerformanceTracker:
                 if network:
                     metrics['network_bytes_sent'] = network.bytes_sent
                     metrics['network_bytes_recv'] = network.bytes_recv
-            except:
+            except Exception as e:
+                tprint_debug(f"⚠️ Failed to collect network metrics: {e}")
                 pass
 
             return metrics

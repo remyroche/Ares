@@ -310,7 +310,8 @@ class AdvancedQualityEvaluator:
                     try:
                         score = silhouette_score(sample_features, sample_labels)
                         stability_scores.append(score)
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                         continue
 
             if not stability_scores:
@@ -386,7 +387,8 @@ class AdvancedQualityEvaluator:
                             cluster_features[:, i]
                         )[0]
                         cluster_preservation += mi
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                         continue
 
                 preservation_scores.append(cluster_preservation)
@@ -1006,7 +1008,8 @@ class AdvancedMultiObjectiveOptimizer:
                         # Calculate silhouette on bootstrap sample
                         score = silhouette_score(sample_features, sample_labels)
                         stability_scores.append(score)
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to calculate silhouette score: {e}")
                         continue
 
             if not stability_scores:

@@ -485,7 +485,8 @@ class RegimeQualifier:
             jb_stat, jb_pvalue = jarque_bera(returns)
             jb_passed = jb_pvalue > self.config.significance_level
             jb_score = jb_pvalue  # Higher p-value = more normal
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to perform Jarque-Bera test: {e}")
             jb_passed = True
             jb_score = 1.0
             jb_stat = 0
@@ -515,7 +516,8 @@ class RegimeQualifier:
                 'pvalue': jb_pvalue,
                 'passed': jb_pvalue > self.config.significance_level
             }
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to perform Jarque-Bera test: {e}")
             tests['jarque_bera'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 2. Kolmogorov-Smirnov test
@@ -526,7 +528,8 @@ class RegimeQualifier:
                 'pvalue': ks_pvalue,
                 'passed': ks_pvalue > self.config.significance_level
             }
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to perform Kolmogorov-Smirnov test: {e}")
             tests['kolmogorov_smirnov'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 3. Anderson-Darling test
@@ -538,7 +541,8 @@ class RegimeQualifier:
                 'significance_levels': ad_significance,
                 'passed': ad_stat < ad_critical[2]  # 5% significance level
             }
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to perform Anderson-Darling test: {e}")
             tests['anderson_darling'] = {'statistic': 0, 'critical_values': [0, 0, 0], 'passed': True}
         
         # 4. Shapiro-Wilk test (for small samples)
@@ -551,7 +555,8 @@ class RegimeQualifier:
                     'pvalue': sw_pvalue,
                     'passed': sw_pvalue > self.config.significance_level
                 }
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to perform Shapiro-Wilk test: {e}")
                 tests['shapiro_wilk'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 5. Visual normality tests
@@ -595,7 +600,8 @@ class RegimeQualifier:
                 'passed': r_value ** 2 > 0.95,
                 'score': r_value ** 2
             }
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to perform Q-Q plot test: {e}")
             tests['qq_plot'] = {'r_squared': 0.5, 'passed': False, 'score': 0.5}
         
         return tests
@@ -650,7 +656,8 @@ class RegimeQualifier:
             autocorr_score = 1.0 - abs(autocorr)
             passed = autocorr_score >= 0.5
             
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate autocorrelation: {e}")
             autocorr = 0
             autocorr_score = 1.0
             passed = True
@@ -1239,7 +1246,8 @@ class RegimeQualifier:
             jb_stat, jb_pvalue = jarque_bera(returns)
             normality_score = jb_pvalue  # Higher p-value = more normal
             factors.append(normality_score)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate normality factor: {e}")
             factors.append(0.5)
         
         # 2. Stationarity
@@ -1247,7 +1255,8 @@ class RegimeQualifier:
             adf_stat, adf_pvalue, _, _, _, _ = adfuller(returns)
             stationarity_score = adf_pvalue  # Higher p-value = more stationary
             factors.append(stationarity_score)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate normality factor: {e}")
             factors.append(0.5)
         
         # 3. Autocorrelation
@@ -1256,7 +1265,8 @@ class RegimeQualifier:
             autocorr = 0 if np.isnan(autocorr) else autocorr
             autocorr_score = 1.0 - abs(autocorr)  # Lower autocorrelation = better
             factors.append(autocorr_score)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate normality factor: {e}")
             factors.append(0.5)
         
         return np.mean(factors)

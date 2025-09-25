@@ -218,7 +218,8 @@ class TreeCVLSASearch:
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ NAS clustering failed, falling back to tree models: {e}")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)

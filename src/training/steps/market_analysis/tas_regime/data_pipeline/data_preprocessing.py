@@ -408,7 +408,8 @@ class DataPreprocessor:
                 if cleaned_data[col].dtype == 'object':
                     try:
                         cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to convert column {col} to numeric: {e}")
                         pass
             metadata['steps_applied'].append('convert_data_types')
         

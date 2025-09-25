@@ -516,7 +516,8 @@ class HybridNASTASRegimeDetector:
 
             return performance
 
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate performance: {e}")
             return 0.5
 
     def _perform_clustering(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
@@ -556,7 +557,8 @@ class HybridNASTASRegimeDetector:
                             best_labels = labels
                             best_algorithm = name
 
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to process clustering algorithm: {e}")
                         continue
 
                 if best_labels is None:
@@ -585,7 +587,8 @@ class HybridNASTASRegimeDetector:
                 else:
                     metrics['silhouette_score'] = 0.0
                     metrics['calinski_harabasz_score'] = 0.0
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate clustering metrics: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
 
@@ -725,7 +728,8 @@ class HybridNASTASRegimeDetector:
             drawdown = (price_series - peak) / peak
             return abs(drawdown.min())
 
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate maximum drawdown: {e}")
             return 0.0
 
     def _calculate_regime_stability(self,
@@ -866,7 +870,8 @@ class HybridNASTASRegimeDetector:
                 if len(set(labels)) > 1:
                     metrics['silhouette_score'] = silhouette_score(features, labels)
                     metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate clustering metrics: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
 

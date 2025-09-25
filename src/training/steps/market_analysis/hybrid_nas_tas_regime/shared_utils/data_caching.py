@@ -510,7 +510,8 @@ class DataCache:
             # Load data
             try:
                 data = load_dataframe(str(cache_file))
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load dataframe, trying object load: {e}")
                 data = load_object(str(cache_file))
             
             return CacheResult(

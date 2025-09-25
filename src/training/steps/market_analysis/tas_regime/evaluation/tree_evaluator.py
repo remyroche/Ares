@@ -136,7 +136,8 @@ except ImportError as e:
     def math_safe(func, *args, default=0.0, **kwargs):
         try:
             return func(*args, **kwargs)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to execute function safely: {e}")
             return default
     class CommonUtilities:
         def __init__(self):
@@ -622,7 +623,8 @@ class AdvancedTreeEvaluator:
                     results.roc_auc = safe_divide(
                         roc_auc_score(y_test, y_pred_proba), 1.0, 0.0
                     )
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate ROC AUC: {e}")
                     results.roc_auc = 0.0
             
             # Confusion matrix

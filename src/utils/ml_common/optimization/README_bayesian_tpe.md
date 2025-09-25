@@ -32,7 +32,7 @@ scikit-optimize>=0.9.0
 ### Basic Usage
 
 ```python
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
 
 # Define your objective function
 def objective_function(params, **kwargs):
@@ -64,7 +64,7 @@ print(f"Best score: {result.best_score:.4f}")
 ### Convenience Function
 
 ```python
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import optimize_with_bayesian_tpe
+from src.utils.nas_tas.bayesian_tpe_optimizer import optimize_with_bayesian_tpe
 
 result = optimize_with_bayesian_tpe(
     objective_function=objective_function,
@@ -129,7 +129,7 @@ result = optimize_with_bayesian_tpe(
 ### Creating Search Space from Bounds
 
 ```python
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import create_search_space_from_bounds
+from src.utils.nas_tas.bayesian_tpe_optimizer import create_search_space_from_bounds
 
 bounds = {
     'x': (-5.0, 5.0),
@@ -315,7 +315,7 @@ if hasattr(optimizer, 'performance_metrics'):
 Run the comprehensive test suite:
 
 ```python
-from src.utils.ml_common.optimization.test_bayesian_tpe_optimizer import run_tests
+# Note: Test file has been removed as part of reorganization
 
 success = run_tests()
 if success:
@@ -324,7 +324,7 @@ if success:
 
 ## 📚 Examples
 
-See `bayesian_tpe_examples.py` for comprehensive examples:
+See the moved optimizer in `src/utils/nas_tas/bayesian_tpe_optimizer.py` for comprehensive functionality:
 
 - Simple function optimization
 - Machine learning hyperparameter optimization

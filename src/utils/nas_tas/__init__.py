@@ -32,6 +32,16 @@ from .bayesian_search import (
     BayesianConfig
 )
 
+from .search_space import (
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy,
+    create_default_nas_search_space,
+    create_tree_search_space
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -50,5 +60,12 @@ __all__ = [
     'BayesianTreeSearch',
     'TreeBayesianOptimizer',
     'TreeGaussianProcess',
-    'BayesianConfig'
+    'BayesianConfig',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
+    'OptimizationStrategy',
+    'create_default_nas_search_space',
+    'create_tree_search_space'
 ]

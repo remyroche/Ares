@@ -38,7 +38,7 @@ All shared tools are now centralized in `hybrid_nas_tas_regime/shared_utils/`:
 
 ### 3. Hybrid Orchestrator Implementation
 
-The `enhanced_hybrid_orchestrator.py` provides:
+The unified regime detection system provides:
 
 **Core Functionality:**
 - Initializes both TAS and NAS systems
@@ -86,7 +86,7 @@ hybrid_nas_tas_regime/
 ├── config/                         # Configuration files
 │   ├── hybrid_regime_config.py     # Main configuration
 │   └── multi_timeframe_config.py   # Multi-timeframe config (NEW)
-├── enhanced_hybrid_orchestrator.py # Main orchestrator (NEW)
+├── unified_regime_detector.py # Main unified detector (NEW)
 ├── example_comprehensive_integration.py # Integration example (NEW)
 └── INTEGRATION_SUMMARY.md          # This file
 ```
@@ -99,7 +99,7 @@ The orchestrator coordinates the entire system:
 
 ```python
 # Initialize orchestrator
-orchestrator = create_enhanced_hybrid_orchestrator(config)
+orchestrator = UnifiedRegimeDetector(config)
 
 # Run analysis
 result = orchestrator.analyze_market_regimes(
@@ -187,7 +187,7 @@ The `example_comprehensive_integration.py` provides comprehensive testing:
 ### Basic Usage
 
 ```python
-from hybrid_nas_tas_regime.enhanced_hybrid_orchestrator import create_enhanced_hybrid_orchestrator
+from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
 from hybrid_nas_tas_regime.config.hybrid_regime_config import HybridRegimeConfig
 
 # Create configuration
@@ -197,7 +197,7 @@ config = HybridRegimeConfig(
 )
 
 # Create orchestrator
-orchestrator = create_enhanced_hybrid_orchestrator(config)
+orchestrator = UnifiedRegimeDetector(config)
 
 # Analyze market data
 result = orchestrator.analyze_market_regimes(market_data)
@@ -235,7 +235,7 @@ from hybrid_nas_tas_regime.config.multi_timeframe_config import create_high_freq
 config = create_high_frequency_config()
 
 # Create orchestrator with custom config
-orchestrator = create_enhanced_hybrid_orchestrator(config)
+orchestrator = UnifiedRegimeDetector(config)
 ```
 
 ## 📈 Performance Benefits

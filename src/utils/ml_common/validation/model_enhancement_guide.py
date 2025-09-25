@@ -531,7 +531,7 @@ def create_financial_features(df):
         """Get HPO improvement code example using unified Bayesian TPE optimizer."""
         return """
 # Bayesian Optimization with Unified Bayesian TPE Optimizer
-from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+from src.utils.nas_tas.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,
     BayesianTPEConfig
 )

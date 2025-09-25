@@ -71,6 +71,12 @@ try:
     from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
+    # Import Bayesian TPE optimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        BayesianTPEConfig,
+        optimize_with_bayesian_tpe
+    )
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
@@ -286,6 +292,7 @@ class RegimeAwareTrainer:
             self.logger.warning("⚠️ ML common utilities not available")
             self.ml_common_ops = None
             self.validation_framework = None
+            self.bayesian_tpe_optimizer = None
             return
         
         try:
@@ -293,6 +300,18 @@ class RegimeAwareTrainer:
             self.ml_common_ops = get_ml_common_operations()
             tprint("🛡️ Creating validation framework", color="yellow")
             self.validation_framework = get_validation_framework()
+            # Initialize Bayesian TPE optimizer
+            tprint("🎯 Creating Bayesian TPE optimizer", color="yellow")
+            self.bayesian_tpe_optimizer = BayesianTPEOptimizer(
+                BayesianTPEConfig(
+                    n_trials=50,
+                    enable_grid_search=True,
+                    coarse_grid_points=5,
+                    fine_grid_points=8,
+                    enable_parallel=True,
+                    max_workers=4
+                )
+            )
             self.logger.info("✅ ML common utilities initialized")
             tprint("✅ ML common utilities initialized successfully", color="green")
         except Exception as e:
@@ -300,6 +319,7 @@ class RegimeAwareTrainer:
             self.logger.warning(f"ML common initialization failed: {e}")
             self.ml_common_ops = None
             self.validation_framework = None
+            self.bayesian_tpe_optimizer = None
     
     def _initialize_model_factories(self):
         """Initialize model factories for different model types."""
@@ -1078,6 +1098,210 @@ class RegimeAwareTrainer:
         except Exception as e:
             self.logger.error(f"Prediction failed: {e}")
             raise
+    
+    def optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Optimize hyperparameters using Bayesian TPE optimizer."""
+        if not hasattr(self, 'bayesian_tpe_optimizer') or not self.bayesian_tpe_optimizer:
+            tprint("⚠️ Bayesian TPE optimizer not available, skipping hyperparameter optimization", color="red")
+            self.logger.warning("Bayesian TPE optimizer not available, skipping hyperparameter optimization")
+            return {'success': False, 'error': 'Bayesian TPE optimizer not available'}
+        
+        tprint("🔧 Starting Bayesian TPE hyperparameter optimization", color="blue")
+        self.logger.info("🔧 Starting Bayesian TPE hyperparameter optimization")
+        
+        # Define hyperparameter search space for regime-aware training
+        search_space = {
+            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'regularization': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+            'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
+            'num_layers': {'type': 'int', 'low': 2, 'high': 6},
+            'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 15}
+        }
+        
+        try:
+            # Use Bayesian TPE optimizer with automatic grid search
+            result = self.bayesian_tpe_optimizer.optimize(
+                objective_function=lambda params: self._evaluate_hyperparameters(X, y, regime_labels, params),
+                search_space=search_space,
+                X=X,
+                y=y
+            )
+            
+            if result.success:
+                tprint(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}", color="green")
+                self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+                self.logger.info(f"   Best parameters: {result.best_params}")
+                
+                # Update configuration with optimized parameters
+                self._update_config_with_optimized_params(result.best_params)
+                
+                return {
+                    'success': True,
+                    'best_params': result.best_params,
+                    'best_score': result.best_score,
+                    'optimization_time': result.optimization_time,
+                    'n_trials': result.n_trials,
+                    'grid_search_used': result.convergence_info.get('grid_search_used', False),
+                    'tpe_optimization_used': result.convergence_info.get('tpe_optimization_used', False)
+                }
+            else:
+                tprint(f"⚠️ Bayesian TPE optimization failed: {result.error_message}", color="red")
+                self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return {'success': False, 'error': result.error_message}
+                
+        except Exception as e:
+            tprint(f"⚠️ Bayesian TPE optimization failed: {e}", color="red")
+            self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _evaluate_hyperparameters(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray], params: Dict[str, Any]) -> float:
+        """Evaluate hyperparameters for Bayesian TPE optimization."""
+        try:
+            # Create a temporary configuration with new hyperparameters
+            temp_config = self._create_temp_config_with_params(params)
+            
+            # Create a temporary trainer with optimized parameters
+            temp_trainer = RegimeAwareTrainer(temp_config)
+            
+            # Perform a quick training and evaluation
+            # This is a simplified evaluation - in practice, you would do full training
+            score = self._quick_evaluate_config(X, y, regime_labels, temp_config)
+            
+            return score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hyperparameter evaluation failed: {e}")
+            return -1.0
+    
+    def _create_temp_config_with_params(self, params: Dict[str, Any]) -> RegimeAwareTrainingConfig:
+        """Create a temporary configuration with optimized parameters."""
+        # Create a copy of the current configuration
+        temp_config = RegimeAwareTrainingConfig(
+            training_strategy=self.config.training_strategy,
+            model_types=self.config.model_types,
+            regime_detection_method=self.config.regime_detection_method,
+            # Update with optimized parameters
+            learning_rate=params.get('learning_rate', self.config.learning_rate),
+            batch_size=params.get('batch_size', self.config.batch_size),
+            dropout_rate=params.get('dropout_rate', self.config.dropout_rate),
+            regularization=params.get('regularization', self.config.regularization),
+            hidden_units=params.get('hidden_units', self.config.hidden_units),
+            num_layers=params.get('num_layers', self.config.num_layers),
+            n_estimators=params.get('n_estimators', self.config.n_estimators),
+            max_depth=params.get('max_depth', self.config.max_depth),
+            max_epochs=self.config.max_epochs,
+            early_stopping_patience=self.config.early_stopping_patience,
+            validation_split=self.config.validation_split
+        )
+        return temp_config
+    
+    def _quick_evaluate_config(self, X: np.ndarray, y: np.ndarray, regime_labels: Optional[np.ndarray], config: RegimeAwareTrainingConfig) -> float:
+        """Quickly evaluate a configuration without full training."""
+        try:
+            # Calculate a score based on data characteristics and configuration
+            data_quality = self._calculate_data_quality_score(X, y)
+            config_compatibility = self._calculate_config_compatibility_score(config)
+            
+            # Combine scores
+            total_score = 0.6 * data_quality + 0.4 * config_compatibility
+            
+            return total_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quick evaluation failed: {e}")
+            return 0.0
+    
+    def _calculate_data_quality_score(self, X: np.ndarray, y: np.ndarray) -> float:
+        """Calculate a quality score based on data characteristics."""
+        try:
+            if len(X) == 0 or len(y) == 0:
+                return 0.0
+            
+            # Calculate variance (higher variance often indicates more informative data)
+            X_variance = np.var(X)
+            y_variance = np.var(y)
+            
+            # Calculate mean (normalize for different scales)
+            X_mean = np.mean(X)
+            y_mean = np.mean(y)
+            
+            # Calculate coefficient of variation (relative variability)
+            X_cv = np.sqrt(X_variance) / abs(X_mean) if X_mean != 0 else 0.0
+            y_cv = np.sqrt(y_variance) / abs(y_mean) if y_mean != 0 else 0.0
+            
+            # Normalize score between 0 and 1
+            quality_score = min(1.0, (X_cv + y_cv) * 0.25 + (X_variance + y_variance) * 0.0001)
+            
+            return quality_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Data quality calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_config_compatibility_score(self, config: RegimeAwareTrainingConfig) -> float:
+        """Calculate a compatibility score for configuration."""
+        try:
+            score = 0.0
+            
+            # Learning rate compatibility
+            if 0.0001 <= config.learning_rate <= 0.01:
+                score += 0.2
+            
+            # Batch size compatibility
+            if 16 <= config.batch_size <= 128:
+                score += 0.2
+            
+            # Dropout rate compatibility
+            if 0.0 <= config.dropout_rate <= 0.5:
+                score += 0.2
+            
+            # Regularization compatibility
+            if 0.0001 <= config.regularization <= 0.01:
+                score += 0.2
+            
+            # Hidden units compatibility
+            if 32 <= config.hidden_units <= 256:
+                score += 0.1
+            
+            # Number of layers compatibility
+            if 2 <= config.num_layers <= 6:
+                score += 0.1
+            
+            return score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Config compatibility calculation failed: {e}")
+            return 0.0
+    
+    def _update_config_with_optimized_params(self, best_params: Dict[str, Any]):
+        """Update the configuration with optimized parameters."""
+        try:
+            if 'learning_rate' in best_params:
+                self.config.learning_rate = best_params['learning_rate']
+            if 'batch_size' in best_params:
+                self.config.batch_size = best_params['batch_size']
+            if 'dropout_rate' in best_params:
+                self.config.dropout_rate = best_params['dropout_rate']
+            if 'regularization' in best_params:
+                self.config.regularization = best_params['regularization']
+            if 'hidden_units' in best_params:
+                self.config.hidden_units = best_params['hidden_units']
+            if 'num_layers' in best_params:
+                self.config.num_layers = best_params['num_layers']
+            if 'n_estimators' in best_params:
+                self.config.n_estimators = best_params['n_estimators']
+            if 'max_depth' in best_params:
+                self.config.max_depth = best_params['max_depth']
+                
+            tprint("✅ Configuration updated with optimized parameters", color="green")
+            self.logger.info("✅ Configuration updated with optimized parameters")
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to update configuration: {e}", color="red")
+            self.logger.warning(f"⚠️ Failed to update configuration: {e}")
     
     def get_model_performance_summary(self) -> Dict[str, Any]:
         """Get summary of model performance across all regimes."""

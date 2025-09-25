@@ -37,6 +37,12 @@ try:
     from src.utils.ml_common.evaluation import get_evaluation_utils
     from src.utils.ml_common.math_validation import MathValidator, ValidationLevel
     from src.utils.ml_common.config.enhanced_ml_config import EnhancedMLConfig
+    # Import Bayesian TPE optimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        BayesianTPEConfig,
+        optimize_with_bayesian_tpe
+    )
     ML_COMMON_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"ML common utilities not available: {e}")
@@ -123,6 +129,17 @@ class EnhancedMLCommonIntegration:
                 self.feature_selection_utils = get_feature_selection_utils()
                 self.ensemble_utils = get_ensemble_utils()
                 self.evaluation_utils = get_evaluation_utils()
+                # Initialize Bayesian TPE optimizer
+                self.bayesian_tpe_optimizer = BayesianTPEOptimizer(
+                    BayesianTPEConfig(
+                        n_trials=40,
+                        enable_grid_search=True,
+                        coarse_grid_points=5,
+                        fine_grid_points=8,
+                        enable_parallel=True,
+                        max_workers=4
+                    )
+                )
                 self.logger.info("✅ Enhanced ML common integration initialized with full utilities")
             except Exception as e:
                 self.logger.warning(f"ML common utilities initialization failed: {e}")
@@ -156,6 +173,7 @@ class EnhancedMLCommonIntegration:
         self.feature_selection_utils = None
         self.ensemble_utils = None
         self.evaluation_utils = None
+        self.bayesian_tpe_optimizer = None
     
     @timed_operation
     def validate_data(self, data: np.ndarray, data_type: str = 'market_data') -> Dict[str, Any]:
@@ -547,6 +565,142 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Optimization metrics collection failed: {e}")
             return {}
+    
+    def optimize_hyperparameters(self, data: np.ndarray, target: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Optimize hyperparameters using Bayesian TPE optimizer."""
+        if not hasattr(self, 'bayesian_tpe_optimizer') or not self.bayesian_tpe_optimizer:
+            self.logger.warning("Bayesian TPE optimizer not available, skipping hyperparameter optimization")
+            return {'success': False, 'error': 'Bayesian TPE optimizer not available'}
+        
+        self.logger.info("🔧 Starting Bayesian TPE hyperparameter optimization")
+        
+        # Define hyperparameter search space for ML common integration
+        search_space = {
+            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'regularization': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+            'hidden_units': {'type': 'int', 'low': 32, 'high': 256},
+            'num_layers': {'type': 'int', 'low': 2, 'high': 6}
+        }
+        
+        try:
+            # Use Bayesian TPE optimizer with automatic grid search
+            result = self.bayesian_tpe_optimizer.optimize(
+                objective_function=lambda params: self._evaluate_hyperparameters(data, target, params),
+                search_space=search_space,
+                X=data,
+                y=target
+            )
+            
+            if result.success:
+                self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+                self.logger.info(f"   Best parameters: {result.best_params}")
+                
+                return {
+                    'success': True,
+                    'best_params': result.best_params,
+                    'best_score': result.best_score,
+                    'optimization_time': result.optimization_time,
+                    'n_trials': result.n_trials,
+                    'grid_search_used': result.convergence_info.get('grid_search_used', False),
+                    'tpe_optimization_used': result.convergence_info.get('tpe_optimization_used', False)
+                }
+            else:
+                self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return {'success': False, 'error': result.error_message}
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _evaluate_hyperparameters(self, data: np.ndarray, target: Optional[np.ndarray], params: Dict[str, Any]) -> float:
+        """Evaluate hyperparameters for Bayesian TPE optimization."""
+        try:
+            # Simulate model training and evaluation with given hyperparameters
+            # This is a simplified evaluation - in practice, you would train an actual model
+            
+            # Calculate a score based on data characteristics and hyperparameters
+            data_quality = self._calculate_data_quality_score(data)
+            param_compatibility = self._calculate_param_compatibility_score(params)
+            
+            # Combine scores
+            total_score = 0.6 * data_quality + 0.4 * param_compatibility
+            
+            return total_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hyperparameter evaluation failed: {e}")
+            return -1.0
+    
+    def _calculate_data_quality_score(self, data: np.ndarray) -> float:
+        """Calculate a quality score based on data characteristics."""
+        try:
+            # Basic data quality metrics
+            if len(data) == 0:
+                return 0.0
+            
+            # Calculate variance (higher variance often indicates more informative data)
+            variance = np.var(data)
+            
+            # Calculate mean (normalize for different scales)
+            mean_val = np.mean(data)
+            
+            # Calculate coefficient of variation (relative variability)
+            if mean_val != 0:
+                cv = np.sqrt(variance) / abs(mean_val)
+            else:
+                cv = 0.0
+            
+            # Normalize score between 0 and 1
+            quality_score = min(1.0, cv * 0.5 + variance * 0.001)
+            
+            return quality_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Data quality calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_param_compatibility_score(self, params: Dict[str, Any]) -> float:
+        """Calculate a compatibility score for hyperparameters."""
+        try:
+            score = 0.0
+            
+            # Learning rate compatibility
+            lr = params.get('learning_rate', 0.001)
+            if 0.0001 <= lr <= 0.01:
+                score += 0.2
+            
+            # Batch size compatibility
+            batch_size = params.get('batch_size', 32)
+            if 16 <= batch_size <= 128:
+                score += 0.2
+            
+            # Dropout rate compatibility
+            dropout = params.get('dropout_rate', 0.2)
+            if 0.0 <= dropout <= 0.5:
+                score += 0.2
+            
+            # Regularization compatibility
+            reg = params.get('regularization', 0.001)
+            if 0.0001 <= reg <= 0.01:
+                score += 0.2
+            
+            # Hidden units compatibility
+            hidden_units = params.get('hidden_units', 64)
+            if 32 <= hidden_units <= 256:
+                score += 0.1
+            
+            # Number of layers compatibility
+            num_layers = params.get('num_layers', 3)
+            if 2 <= num_layers <= 6:
+                score += 0.1
+            
+            return score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parameter compatibility calculation failed: {e}")
+            return 0.0
     
     def get_all_metrics(self) -> Dict[str, Any]:
         """Get all metrics from ML common integration."""

@@ -692,42 +692,74 @@ class AdvancedTreeEvaluator:
         y_train: np.ndarray, 
         results: TreeEvaluationResults
     ) -> TreeEvaluationResults:
-        """Perform hyperparameter optimization."""
-        tprint_info("Performing hyperparameter optimization")
+        """Perform hyperparameter optimization using Bayesian TPE optimizer."""
+        tprint_info("Performing hyperparameter optimization with Bayesian TPE")
         
         try:
-            # Define parameter grid based on model type
-            param_grid = self._get_parameter_grid(model)
+            # Import Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
+            )
             
-            # Choose optimization method
-            if self.config.optimization_method == "grid":
-                optimizer = GridSearchCV(
-                    model, param_grid, 
-                    cv=self.config.cv_folds,
-                    n_jobs=self.config.n_jobs,
-                    scoring='accuracy' if self.config.evaluation_type == EvaluationType.CLASSIFICATION else 'neg_mean_squared_error'
-                )
-            elif self.config.optimization_method == "random":
-                optimizer = RandomizedSearchCV(
-                    model, param_grid,
-                    n_iter=self.config.n_iter,
-                    cv=self.config.cv_folds,
-                    n_jobs=self.config.n_jobs,
-                    scoring='accuracy' if self.config.evaluation_type == EvaluationType.CLASSIFICATION else 'neg_mean_squared_error'
-                )
-            else:
-                tprint_warning(f"Unknown optimization method: {self.config.optimization_method}")
-                return results
+            # Create search space for tree model optimization
+            search_space = self._create_tree_search_space(model)
             
-            # Perform optimization
-            start_time = time.time()
-            optimizer.fit(X_train, y_train)
-            optimization_time = time.time() - start_time
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                try:
+                    # Create model with sampled parameters
+                    optimized_model = self._create_optimized_model(model, params)
+                    
+                    # Perform cross-validation
+                    if self.config.cv_folds > 1:
+                        scores = cross_val_score(
+                            optimized_model, X_train, y_train, 
+                            cv=self.config.cv_folds,
+                            scoring='accuracy' if self.config.evaluation_type == EvaluationType.CLASSIFICATION else 'neg_mean_squared_error'
+                        )
+                        return np.mean(scores)
+                    else:
+                        # Single validation
+                        optimized_model.fit(X_train, y_train)
+                        y_pred = optimized_model.predict(X_train)
+                        
+                        if self.config.evaluation_type == EvaluationType.CLASSIFICATION:
+                            return accuracy_score(y_train, y_pred)
+                        else:
+                            return -mean_squared_error(y_train, y_pred)
+                            
+                except Exception as e:
+                    tprint_warning(f"Objective function failed: {e}")
+                    return -np.inf
             
-            results.best_params = optimizer.best_params_
-            results.best_score = optimizer.best_score_
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.n_iter if hasattr(self.config, 'n_iter') else 50,
+                timeout_seconds=300,  # 5 minutes timeout
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=self.config.n_jobs,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
             
-            tprint_success(f"Hyperparameter optimization completed in {optimization_time:.2f}s")
+            # Run optimization using new unified optimizer
+            tprint_info("🎯 Starting Bayesian TPE optimization for tree model")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Tree model optimization failed: {result.error_message}")
+            
+            results.best_params = result.best_params
+            results.best_score = result.best_score
+            
+            tprint_success(f"Hyperparameter optimization completed in {result.optimization_time:.2f}s")
             tprint_info(f"Best score: {results.best_score:.4f}")
             tprint_structured({"best_params": results.best_params})
             
@@ -737,6 +769,117 @@ class AdvancedTreeEvaluator:
             results.best_score = 0.0
         
         return results
+    
+    def _create_tree_search_space(self, model) -> Dict[str, Any]:
+        """Create search space for tree model optimization."""
+        model_type = type(model).__name__.lower()
+        
+        if 'decisiontree' in model_type:
+            return {
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 20
+                },
+                'min_samples_split': {
+                    'type': 'int',
+                    'low': 2,
+                    'high': 20
+                },
+                'min_samples_leaf': {
+                    'type': 'int',
+                    'low': 1,
+                    'high': 10
+                },
+                'criterion': {
+                    'type': 'categorical',
+                    'choices': ['gini', 'entropy']
+                }
+            }
+        elif 'randomforest' in model_type:
+            return {
+                'n_estimators': {
+                    'type': 'int',
+                    'low': 50,
+                    'high': 300
+                },
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 15
+                },
+                'min_samples_split': {
+                    'type': 'int',
+                    'low': 2,
+                    'high': 10
+                },
+                'min_samples_leaf': {
+                    'type': 'int',
+                    'low': 1,
+                    'high': 5
+                },
+                'bootstrap': {
+                    'type': 'categorical',
+                    'choices': [True, False]
+                }
+            }
+        elif 'gradientboosting' in model_type:
+            return {
+                'n_estimators': {
+                    'type': 'int',
+                    'low': 50,
+                    'high': 200
+                },
+                'learning_rate': {
+                    'type': 'float',
+                    'low': 0.01,
+                    'high': 0.2,
+                    'log': True
+                },
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 10
+                },
+                'min_samples_split': {
+                    'type': 'int',
+                    'low': 2,
+                    'high': 10
+                },
+                'min_samples_leaf': {
+                    'type': 'int',
+                    'low': 1,
+                    'high': 5
+                }
+            }
+        else:
+            return {}
+    
+    def _create_optimized_model(self, model, params: Dict[str, Any]):
+        """Create optimized model with given parameters."""
+        model_type = type(model).__name__
+        
+        if 'DecisionTree' in model_type:
+            from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+            if self.config.evaluation_type == EvaluationType.CLASSIFICATION:
+                return DecisionTreeClassifier(**params)
+            else:
+                return DecisionTreeRegressor(**params)
+        elif 'RandomForest' in model_type:
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            if self.config.evaluation_type == EvaluationType.CLASSIFICATION:
+                return RandomForestClassifier(**params)
+            else:
+                return RandomForestRegressor(**params)
+        elif 'GradientBoosting' in model_type:
+            from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+            if self.config.evaluation_type == EvaluationType.CLASSIFICATION:
+                return GradientBoostingClassifier(**params)
+            else:
+                return GradientBoostingRegressor(**params)
+        else:
+            # Fallback to original model with parameters
+            return type(model)(**params)
     
     def _get_parameter_grid(self, model) -> Dict[str, List]:
         """Get parameter grid for hyperparameter optimization."""

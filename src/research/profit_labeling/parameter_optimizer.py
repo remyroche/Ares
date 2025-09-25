@@ -482,51 +482,112 @@ class ParameterOptimizer:
     def _optuna_optimization(self,
                            train_data: pd.DataFrame,
                            val_data: pd.DataFrame) -> OptimizationResult:
-        """Optuna TPE optimization."""
-        if not OPTUNA_AVAILABLE:
-            raise RuntimeError("Optuna not available. Install with: pip install optuna")
-        
-        self.logger.info('🎯 Running Optuna TPE optimization')
-        
-        # Create study
-        study = optuna.create_study(
-            direction='maximize',
-            sampler=optuna.samplers.TPESampler(seed=self.config.random_seed)
+        """Bayesian TPE optimization using unified optimizer."""
+        # Import Bayesian TPE optimizer
+        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+            BayesianTPEOptimizer,
+            BayesianTPEConfig
         )
         
-        # Objective function for optuna
-        def objective(trial):
-            params = self._suggest_optuna_parameters(trial)
+        self.logger.info('🎯 Running Bayesian TPE optimization')
+        
+        # Create search space for parameter optimization
+        search_space = self._create_parameter_search_space()
+        
+        # Define objective function for Bayesian TPE optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
             try:
-                return self._evaluate_parameters(params, train_data, val_data)
+                # Normalize quality weights if present
+                normalized_params = self._normalize_quality_weights(params)
+                return self._evaluate_parameters(normalized_params, train_data, val_data)
             except Exception as e:
                 self.logger.warning(f'Evaluation failed: {e}')
                 return 0.0
         
-        # Run optimization
-        study.optimize(objective, n_trials=self.config.bayesian_iterations)
+        # Configure Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.bayesian_iterations,
+            timeout_seconds=self.config.timeout_seconds,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=self.config.n_jobs,
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
+        )
+        
+        # Run optimization using new unified optimizer
+        self.logger.info("🎯 Starting Bayesian TPE optimization for parameter optimization")
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective_function, search_space)
+        
+        if not result.success:
+            raise RuntimeError(f"Parameter optimization failed: {result.error_message}")
         
         # Convert results
         results = []
-        for i, trial in enumerate(study.trials):
+        for i, params in enumerate(result.optimization_history):
             results.append({
-                'params': trial.params,
-                'score': trial.value if trial.value is not None else 0.0,
+                'params': params,
+                'score': result.optimization_history[i].get('score', 0.0),
                 'iteration': i
             })
+        
+        self.logger.info(f"✅ Parameter optimization completed")
+        self.logger.info(f"📊 Best score: {result.best_score:.4f}")
+        self.logger.info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+        self.logger.info(f"📊 Trials: {result.n_trials}")
         
         return OptimizationResult(
             method=OptimizationMethod.OPTUNA_TPE,
             objective=self.config.objective,
-            best_params=study.best_params,
-            best_score=study.best_value,
+            best_params=result.best_params,
+            best_score=result.best_score,
             optimization_history=results,
             validation_scores=self._calculate_validation_scores(
-                study.best_params, train_data, val_data
+                result.best_params, train_data, val_data
             ),
-            convergence_info={'iterations': len(results)},
-            metadata={'optuna_trials': len(study.trials)}
+            convergence_info={'iterations': result.n_trials, 'convergence_info': result.convergence_info},
+            metadata={
+                'optimization_time': result.optimization_time,
+                'n_trials': result.n_trials,
+                'grid_search_results': result.grid_search_results
+            }
         )
+    
+    def _create_parameter_search_space(self) -> Dict[str, Any]:
+        """Create search space for Bayesian TPE optimizer."""
+        search_space = {}
+        
+        # Profit targets
+        for target, (min_val, max_val) in self.config.profit_targets_range.items():
+            search_space[f'profit_target_{target}'] = {
+                'type': 'float',
+                'low': min_val,
+                'high': max_val,
+                'log': True  # Log scale for profit targets
+            }
+        
+        # Time horizons
+        for horizon, (min_val, max_val) in self.config.time_horizons_range.items():
+            search_space[f'time_horizon_{horizon}'] = {
+                'type': 'int',
+                'low': min_val,
+                'high': max_val
+            }
+        
+        # Quality weights
+        for weight, (min_val, max_val) in self.config.quality_weights_range.items():
+            search_space[weight] = {
+                'type': 'float',
+                'low': min_val,
+                'high': max_val
+            }
+        
+        return search_space
     
     def _generate_parameter_grid(self) -> List[Dict[str, Any]]:
         """Generate parameter grid for grid search."""

@@ -307,8 +307,8 @@ class HierarchicalHPO:
                 best_score_grid = fine_result.get('best_score', 0)
                 grid_stage = 'fine'
             
-            # Stage 3: Optuna TPE Optimization around best grid parameters
-            self.logger.info(f"🎯 Stage 3: Optuna TPE optimization for {model_name}")
+            # Stage 3: Bayesian TPE Optimization around best grid parameters
+            self.logger.info(f"🎯 Stage 3: Bayesian TPE optimization for {model_name}")
             optuna_start = time.time()
             
             # Create narrowed search space around best grid parameters
@@ -316,32 +316,15 @@ class HierarchicalHPO:
                 phase_config.search_spaces[model_name], best_params_grid
             )
             
-            # Create Optuna study with TPE sampler
-            study = optuna.create_study(
-                direction=phase_config.direction,
-                sampler=TPESampler(
-                    n_startup_trials=5,  # Fewer startup trials since we have good starting point
-                    n_ei_candidates=24,
-                    gamma=lambda x: min(int(0.25 * x), 25),
-                    prior_weight=1.0,
-                    consider_magic_clip=True,
-                    consider_endpoints=True,
-                    seed=self.config.random_state
-                ),
-                pruner=MedianPruner() if phase_config.enable_pruning else None
-            )
+            # Convert search space to Bayesian TPE format
+            tpe_search_space = self._convert_to_tpe_search_space(narrowed_space)
             
-            # Use fewer trials since we're fine-tuning around good parameters
-            n_trials = min(phase_config.n_trials // 3, 30)
-            timeout = min(phase_config.timeout_seconds // 3, 120) if phase_config.timeout_seconds else None
-            
-            # Define objective function
-            def objective(trial):
-                return self._objective_function(
-                    trial=trial,
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._objective_function_for_tpe(
+                    params=params,
                     model=model,
                     model_name=model_name,
-                    search_space=narrowed_space,
                     X_train=X_train,
                     y_train=y_train,
                     X_val=X_val,
@@ -351,26 +334,47 @@ class HierarchicalHPO:
                     base_models=base_models
                 )
             
-            # Optimize
-            study.optimize(
-                objective,
-                n_trials=n_trials,
-                timeout=timeout
+            # Configure Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
             )
+            
+            tpe_config = BayesianTPEConfig(
+                n_trials=min(phase_config.n_trials // 3, 30),
+                timeout_seconds=min(phase_config.timeout_seconds // 3, 120) if phase_config.timeout_seconds else None,
+                enable_grid_search=False,  # Grid search already done in previous stages
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=2,
+                enable_early_stopping=True,
+                early_stopping_patience=5,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info("🎯 Starting Bayesian TPE optimization for hierarchical HPO")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, tpe_search_space)
             
             optuna_time = time.time() - optuna_start
             
-            # Get best result
-            best_trial = study.best_trial
-            final_score = best_trial.value
-            final_params = best_trial.params
-            final_stage = 'optuna'
-            
-            if final_score <= best_score_grid:
-                self.logger.info(f"ℹ️ Optuna TPE did not improve results for {model_name}, using grid search results")
+            if not result.success:
+                self.logger.warning(f"⚠️ Bayesian TPE optimization failed for {model_name}, using grid search results")
                 final_score = best_score_grid
                 final_params = best_params_grid
                 final_stage = grid_stage
+            else:
+                # Get best result
+                final_score = result.best_score
+                final_params = result.best_params
+                final_stage = 'bayesian_tpe'
+                
+                if final_score <= best_score_grid:
+                    self.logger.info(f"ℹ️ Bayesian TPE did not improve results for {model_name}, using grid search results")
+                    final_score = best_score_grid
+                    final_params = best_params_grid
+                    final_stage = grid_stage
             
             best_models[model_name] = self._create_optimized_model(
                 model, final_params, base_models
@@ -405,6 +409,89 @@ class HierarchicalHPO:
             best_params=best_params,
             optimization_history=optimization_history
         )
+    
+    def _convert_to_tpe_search_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert search space to Bayesian TPE format."""
+        tpe_space = {}
+        
+        for param_name, param_config in search_space.items():
+            if isinstance(param_config, dict):
+                if param_config.get('type') == 'float':
+                    tpe_space[param_name] = {
+                        'type': 'float',
+                        'low': param_config.get('min', 0.0),
+                        'high': param_config.get('max', 1.0),
+                        'log': param_config.get('log', False)
+                    }
+                elif param_config.get('type') == 'int':
+                    tpe_space[param_name] = {
+                        'type': 'int',
+                        'low': param_config.get('min', 0),
+                        'high': param_config.get('max', 100)
+                    }
+                elif param_config.get('type') == 'categorical':
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': param_config.get('choices', [])
+                    }
+                elif param_config.get('type') == 'bool':
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': [True, False]
+                    }
+            else:
+                # Handle simple cases
+                if isinstance(param_config, list):
+                    tpe_space[param_name] = {
+                        'type': 'categorical',
+                        'choices': param_config
+                    }
+                else:
+                    tpe_space[param_name] = {
+                        'type': 'float',
+                        'low': 0.0,
+                        'high': 1.0
+                    }
+        
+        return tpe_space
+    
+    def _objective_function_for_tpe(self, params: Dict[str, Any], model: Any, model_name: str,
+                                 X_train: np.ndarray, y_train: np.ndarray,
+                                 X_val: np.ndarray, y_val: np.ndarray,
+                                 cv_folds: int, scoring_metric: str,
+                                 base_models: Optional[Dict[str, Any]] = None) -> float:
+        """Objective function for Bayesian TPE optimizer."""
+        try:
+            # Create model with sampled parameters
+            optimized_model = self._create_optimized_model(model, params, base_models)
+            
+            # Perform cross-validation
+            if cv_folds > 1:
+                scores = self._cross_validate_model(
+                    optimized_model, X_train, y_train, cv_folds, scoring_metric
+                )
+                return np.mean(scores)
+            else:
+                # Single validation
+                optimized_model.fit(X_train, y_train)
+                y_pred = optimized_model.predict(X_val)
+                
+                if scoring_metric == 'neg_mean_squared_error':
+                    from sklearn.metrics import mean_squared_error
+                    return -mean_squared_error(y_val, y_pred)
+                elif scoring_metric == 'neg_mean_absolute_error':
+                    from sklearn.metrics import mean_absolute_error
+                    return -mean_absolute_error(y_val, y_pred)
+                elif scoring_metric == 'r2':
+                    from sklearn.metrics import r2_score
+                    return r2_score(y_val, y_pred)
+                else:
+                    from sklearn.metrics import accuracy_score
+                    return accuracy_score(y_val, y_pred)
+                    
+        except Exception as e:
+            self.logger.warning(f"Objective function failed: {e}")
+            return -np.inf
     
     def _objective_function(
         self,

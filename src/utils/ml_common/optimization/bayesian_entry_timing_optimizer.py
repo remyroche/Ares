@@ -207,50 +207,16 @@ class BayesianEntryTimingOptimizer:
                             hmm_regime_probs: Optional[np.ndarray] = None,
                             timestamps: Optional[np.ndarray] = None,
                             model_name: str = "model") -> EntryTimingResult:
-        """Optimize using new unified Bayesian TPE optimizer."""
+        """Optimize using unified Bayesian TPE optimizer."""
         start_time = datetime.now()
         
         # Create search space for entry timing optimization
         search_space = self._create_entry_timing_search_space()
         
-        # Define objective function
-        def objective(trial):
-            # Sample parameters
-            params = {
-                'entry_threshold': trial.suggest_float(
-                    'entry_threshold',
-                    self.config.entry_threshold_min,
-                    self.config.entry_threshold_max
-                ),
-                'exit_threshold': trial.suggest_float(
-                    'exit_threshold',
-                    self.config.exit_threshold_min,
-                    self.config.exit_threshold_max
-                ),
-                'stop_loss': trial.suggest_float(
-                    'stop_loss',
-                    self.config.stop_loss_min,
-                    self.config.stop_loss_max
-                ),
-                'take_profit': trial.suggest_float(
-                    'take_profit',
-                    self.config.take_profit_min,
-                    self.config.take_profit_max
-                ),
-                'timing_window': trial.suggest_int(
-                    'timing_window',
-                    self.config.timing_window_min,
-                    self.config.timing_window_max
-                ),
-                'confidence_threshold': trial.suggest_float(
-                    'confidence_threshold',
-                    self.config.confidence_threshold_min,
-                    self.config.confidence_threshold_max
-                )
-            }
-            
-            # Simulate trading with these parameters
+        # Define objective function for Bayesian TPE optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
             try:
+                # Simulate trading with these parameters
                 results = self._simulate_trading_with_params(
                     model, X, y, analyst_signals, hmm_regime_probs, timestamps, params
                 )
@@ -270,16 +236,32 @@ class BayesianEntryTimingOptimizer:
                 logger.warning(f"Trial failed: {e}")
                 return -np.inf
         
-        # Run optimization
-        study.optimize(
-            objective,
+        # Configure Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
             n_trials=self.config.n_trials,
-            timeout=self.config.timeout_minutes * 60
+            timeout_seconds=self.config.timeout_minutes * 60,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=2,
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
         )
         
+        # Run optimization using new unified optimizer
+        logger.info("🎯 Starting Bayesian TPE optimization for entry timing")
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective_function, search_space)
+        
+        if not result.success:
+            raise RuntimeError(f"Entry timing optimization failed: {result.error_message}")
+        
         # Get best parameters
-        best_params = study.best_params
-        best_score = study.best_value
+        best_params = result.best_params
+        best_score = result.best_score
         
         # Simulate with best parameters
         best_results = self._simulate_trading_with_params(
@@ -288,28 +270,32 @@ class BayesianEntryTimingOptimizer:
         
         # Create trial history
         trial_history = []
-        for trial in study.trials:
-            if trial.value is not None:
-                trial_history.append({
-                    'params': trial.params,
-                    'value': trial.value,
-                    'state': trial.state.name
-                })
+        for i, params in enumerate(result.optimization_history):
+            trial_history.append({
+                'params': params,
+                'value': result.optimization_history[i].get('score', 0.0),
+                'state': 'COMPLETE'
+            })
         
         # Calculate convergence
-        convergence_history = [trial.value for trial in study.trials if trial.value is not None]
-        convergence_achieved = len(convergence_history) > 10 and abs(convergence_history[-1] - convergence_history[-10]) < 0.01
+        convergence_history = [h.get('score', 0.0) for h in result.optimization_history]
+        convergence_achieved = result.convergence_info.get('converged', False)
         
         # Generate recommendations
         recommendations = self._generate_recommendations(best_results, best_params)
         risk_assessment = self._assess_risk(best_results)
         
-        optimization_time = (datetime.now() - start_time).total_seconds()
+        optimization_time = result.optimization_time
+        
+        logger.info(f"✅ Entry timing optimization completed")
+        logger.info(f"📊 Best score: {best_score:.4f}")
+        logger.info(f"📊 Optimization time: {optimization_time:.2f}s")
+        logger.info(f"📊 Trials: {result.n_trials}")
         
         return EntryTimingResult(
             best_params=best_params,
             best_score=best_score,
-            n_trials=len(study.trials),
+            n_trials=result.n_trials,
             optimization_time=optimization_time,
             convergence_achieved=convergence_achieved,
             profit=best_results['profit'],
@@ -323,6 +309,47 @@ class BayesianEntryTimingOptimizer:
             risk_assessment=risk_assessment,
             model_name=model_name
         )
+    
+    def _create_entry_timing_search_space(self) -> Dict[str, Any]:
+        """Create search space for entry timing optimization."""
+        search_space = {
+            'entry_threshold': {
+                'type': 'float',
+                'low': self.config.entry_threshold_min,
+                'high': self.config.entry_threshold_max,
+                'log': True  # Log scale for thresholds
+            },
+            'exit_threshold': {
+                'type': 'float',
+                'low': self.config.exit_threshold_min,
+                'high': self.config.exit_threshold_max,
+                'log': True
+            },
+            'stop_loss': {
+                'type': 'float',
+                'low': self.config.stop_loss_min,
+                'high': self.config.stop_loss_max,
+                'log': True
+            },
+            'take_profit': {
+                'type': 'float',
+                'low': self.config.take_profit_min,
+                'high': self.config.take_profit_max,
+                'log': True
+            },
+            'timing_window': {
+                'type': 'int',
+                'low': self.config.timing_window_min,
+                'high': self.config.timing_window_max
+            },
+            'confidence_threshold': {
+                'type': 'float',
+                'low': self.config.confidence_threshold_min,
+                'high': self.config.confidence_threshold_max
+            }
+        }
+        
+        return search_space
     
     def _optimize_with_skopt(self, model: Any, X: np.ndarray, y: np.ndarray,
                             analyst_signals: Optional[np.ndarray] = None,

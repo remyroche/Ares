@@ -149,6 +149,28 @@ except ImportError as e:
     logging.warning(f"⚠️ ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
 
+# Import hybrid NAS-TAS shared utilities
+try:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_utility_integration import (
+        EnhancedUtilityIntegration, UtilityIntegrationConfig
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import (
+        UnifiedEvaluationFramework, EvaluationType, EvaluationMetric, EvaluationResult
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_architecture_config import (
+        ArchitectureType, SearchStrategy, OptimizationObjective, MarketRegime
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_hardware_manager import (
+        UnifiedHardwareManager, HardwareType, WorkloadType, HardwareMetrics
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_ml_integration import (
+        EnhancedMLIntegration, MLIntegrationConfig
+    )
+    HYBRID_NAS_TAS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Hybrid NAS-TAS shared utilities not available: {e}")
+    HYBRID_NAS_TAS_AVAILABLE = False
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -292,6 +314,27 @@ class NASEvaluator:
                 self.ml_ops = None
                 self.cv_manager = None
                 self.hpo_optimizer = None
+            
+            # Initialize hybrid NAS-TAS shared utilities
+            if HYBRID_NAS_TAS_AVAILABLE:
+                # Initialize enhanced utility integration
+                utility_config = UtilityIntegrationConfig()
+                self.enhanced_utils = EnhancedUtilityIntegration(utility_config)
+                
+                # Initialize unified evaluation framework
+                self.unified_evaluator = UnifiedEvaluationFramework()
+                
+                # Initialize enhanced ML integration
+                ml_config = MLIntegrationConfig()
+                self.enhanced_ml = EnhancedMLIntegration(ml_config)
+                
+                # Initialize unified hardware manager
+                self.unified_hardware = UnifiedHardwareManager()
+            else:
+                self.enhanced_utils = None
+                self.unified_evaluator = None
+                self.enhanced_ml = None
+                self.unified_hardware = None
                 
         except Exception as e:
             self.logger.error(f"❌ Error initializing utilities: {e}")
@@ -568,17 +611,21 @@ class NASEvaluator:
             X = data['X']
             y = data.get('y')
             
-            # Perform cross-validation if target is available
-            if y is not None and self.cv_manager is not None:
-                cv_scores = self._perform_cross_validation(architecture, X, y)
-                metrics.accuracy = np.mean(cv_scores['accuracy'])
-                metrics.precision = np.mean(cv_scores['precision'])
-                metrics.recall = np.mean(cv_scores['recall'])
-                metrics.f1_score = np.mean(cv_scores['f1_score'])
-                metrics.auc_roc = np.mean(cv_scores['auc_roc'])
+            # Use enhanced evaluation if available
+            if HYBRID_NAS_TAS_AVAILABLE and self.unified_evaluator:
+                metrics = self._perform_enhanced_evaluation(architecture, data, **kwargs)
             else:
-                # Unsupervised evaluation
-                metrics = self._perform_unsupervised_evaluation(architecture, X)
+                # Fallback to standard evaluation
+                if y is not None and self.cv_manager is not None:
+                    cv_scores = self._perform_cross_validation(architecture, X, y)
+                    metrics.accuracy = np.mean(cv_scores['accuracy'])
+                    metrics.precision = np.mean(cv_scores['precision'])
+                    metrics.recall = np.mean(cv_scores['recall'])
+                    metrics.f1_score = np.mean(cv_scores['f1_score'])
+                    metrics.auc_roc = np.mean(cv_scores['auc_roc'])
+                else:
+                    # Unsupervised evaluation
+                    metrics = self._perform_unsupervised_evaluation(architecture, X)
             
             # Calculate additional metrics
             metrics = self._calculate_additional_metrics(metrics, architecture, X, y)
@@ -588,6 +635,66 @@ class NASEvaluator:
         except Exception as e:
             self.logger.error(f"❌ Architecture evaluation failed: {e}")
             raise
+    
+    def _perform_enhanced_evaluation(self, 
+                                   architecture: Dict[str, Any],
+                                   data: Dict[str, Any],
+                                   **kwargs) -> ArchitectureMetrics:
+        """Perform enhanced evaluation using hybrid NAS-TAS utilities."""
+        try:
+            if not self.unified_evaluator:
+                raise ValueError("Unified evaluator not available")
+            
+            # Create evaluation result using unified framework
+            evaluation_result = self.unified_evaluator.evaluate_architecture(
+                architecture=architecture,
+                data=data,
+                evaluation_type=EvaluationType.COMPREHENSIVE,
+                architecture_type=ArchitectureType.NAS
+            )
+            
+            # Convert to ArchitectureMetrics
+            metrics = ArchitectureMetrics()
+            
+            # Basic metrics
+            if EvaluationMetric.ACCURACY in evaluation_result.basic_metrics:
+                metrics.accuracy = evaluation_result.basic_metrics[EvaluationMetric.ACCURACY]
+            if EvaluationMetric.PRECISION in evaluation_result.basic_metrics:
+                metrics.precision = evaluation_result.basic_metrics[EvaluationMetric.PRECISION]
+            if EvaluationMetric.RECALL in evaluation_result.basic_metrics:
+                metrics.recall = evaluation_result.basic_metrics[EvaluationMetric.RECALL]
+            if EvaluationMetric.F1_SCORE in evaluation_result.basic_metrics:
+                metrics.f1_score = evaluation_result.basic_metrics[EvaluationMetric.F1_SCORE]
+            if EvaluationMetric.ROC_AUC in evaluation_result.basic_metrics:
+                metrics.auc_roc = evaluation_result.basic_metrics[EvaluationMetric.ROC_AUC]
+            
+            # Trading metrics (if available)
+            if evaluation_result.trading_metrics:
+                # Extract trading performance metrics
+                if EvaluationMetric.SHARPE_RATIO in evaluation_result.trading_metrics:
+                    # Use Sharpe ratio as efficiency score
+                    metrics.efficiency_score = evaluation_result.trading_metrics[EvaluationMetric.SHARPE_RATIO]
+            
+            # Economic metrics (if available)
+            if evaluation_result.economic_metrics:
+                # Extract economic significance
+                if EvaluationMetric.ECONOMIC_SIGNIFICANCE in evaluation_result.economic_metrics:
+                    metrics.stability_score = evaluation_result.economic_metrics[EvaluationMetric.ECONOMIC_SIGNIFICANCE]
+            
+            # Risk metrics (if available)
+            if evaluation_result.risk_metrics:
+                # Extract risk metrics
+                if EvaluationMetric.VOLATILITY in evaluation_result.risk_metrics:
+                    # Use inverse volatility as stability
+                    volatility = evaluation_result.risk_metrics[EvaluationMetric.VOLATILITY]
+                    metrics.stability_score = 1.0 / (1.0 + volatility) if volatility > 0 else 0.5
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced evaluation failed: {e}")
+            # Fallback to standard evaluation
+            return self._perform_unsupervised_evaluation(architecture, data.get('X'))
     
     def _perform_cross_validation(self, 
                                  architecture: Dict[str, Any],
@@ -977,3 +1084,176 @@ class NASEvaluator:
             self.cleanup()
         except:
             pass  # Ignore errors during destruction
+    
+    def evaluate_with_enhanced_utilities(self, 
+                                       architecture: Dict[str, Any], 
+                                       data: Union[pd.DataFrame, np.ndarray, Dict[str, Any]],
+                                       target: Optional[Union[pd.Series, np.ndarray]] = None,
+                                       evaluation_type: str = "comprehensive",
+                                       **kwargs) -> Dict[str, Any]:
+        """
+        Evaluate architecture using enhanced hybrid NAS-TAS utilities.
+        
+        Args:
+            architecture: Architecture definition
+            data: Training data
+            target: Target values (for supervised learning)
+            evaluation_type: Type of evaluation (basic, trading, economic, comprehensive)
+            **kwargs: Additional evaluation parameters
+            
+        Returns:
+            Dict containing enhanced evaluation results
+        """
+        try:
+            if not HYBRID_NAS_TAS_AVAILABLE:
+                raise ValueError("Hybrid NAS-TAS utilities not available")
+            
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔍 Enhanced evaluation: {evaluation_type}")
+            else:
+                self.logger.info(f"🔍 Enhanced evaluation: {evaluation_type}")
+            
+            # Use enhanced utility integration
+            if self.enhanced_utils:
+                enhanced_data = self.enhanced_utils.preprocess_data(data, target)
+            else:
+                enhanced_data = self._preprocess_data(data, target)
+            
+            # Use unified hardware manager for optimization
+            if self.unified_hardware:
+                with self.unified_hardware.get_optimization_context(WorkloadType.EVALUATION):
+                    result = self._perform_enhanced_evaluation(architecture, enhanced_data, **kwargs)
+            else:
+                result = self._perform_enhanced_evaluation(architecture, enhanced_data, **kwargs)
+            
+            # Add enhanced metrics using ML integration
+            if self.enhanced_ml:
+                enhanced_metrics = self.enhanced_ml.analyze_performance(
+                    architecture, enhanced_data, result
+                )
+                result.update(enhanced_metrics)
+            
+            if TPRINT_AVAILABLE:
+                tprint_success("✅ Enhanced evaluation completed")
+            else:
+                self.logger.info("✅ Enhanced evaluation completed")
+            
+            return result
+            
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Enhanced evaluation failed: {e}")
+            else:
+                self.logger.error(f"❌ Enhanced evaluation failed: {e}")
+            raise
+    
+    def get_enhanced_hardware_metrics(self) -> Optional[HardwareMetrics]:
+        """Get enhanced hardware metrics using unified hardware manager."""
+        try:
+            if not HYBRID_NAS_TAS_AVAILABLE or not self.unified_hardware:
+                return None
+            
+            return self.unified_hardware.get_current_metrics()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error getting hardware metrics: {e}")
+            return None
+    
+    def optimize_with_enhanced_utilities(self, 
+                                      architecture: Dict[str, Any],
+                                      data: Union[pd.DataFrame, np.ndarray, Dict[str, Any]],
+                                      target: Optional[Union[pd.Series, np.ndarray]] = None,
+                                      optimization_objective: str = "accuracy",
+                                      **kwargs) -> Dict[str, Any]:
+        """
+        Optimize architecture using enhanced hybrid NAS-TAS utilities.
+        
+        Args:
+            architecture: Architecture definition
+            data: Training data
+            target: Target values
+            optimization_objective: Objective for optimization
+            **kwargs: Additional optimization parameters
+            
+        Returns:
+            Dict containing optimization results
+        """
+        try:
+            if not HYBRID_NAS_TAS_AVAILABLE:
+                raise ValueError("Hybrid NAS-TAS utilities not available")
+            
+            if TPRINT_AVAILABLE:
+                tprint_info(f"🔧 Enhanced optimization: {optimization_objective}")
+            else:
+                self.logger.info(f"🔧 Enhanced optimization: {optimization_objective}")
+            
+            # Use enhanced ML integration for optimization
+            if self.enhanced_ml:
+                optimization_result = self.enhanced_ml.optimize_architecture(
+                    architecture=architecture,
+                    data=data,
+                    target=target,
+                    objective=optimization_objective,
+                    **kwargs
+                )
+            else:
+                # Fallback to standard optimization
+                optimization_result = self._standard_optimization(architecture, data, target, **kwargs)
+            
+            if TPRINT_AVAILABLE:
+                tprint_success("✅ Enhanced optimization completed")
+            else:
+                self.logger.info("✅ Enhanced optimization completed")
+            
+            return optimization_result
+            
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Enhanced optimization failed: {e}")
+            else:
+                self.logger.error(f"❌ Enhanced optimization failed: {e}")
+            raise
+    
+    def _standard_optimization(self, 
+                             architecture: Dict[str, Any],
+                             data: Union[pd.DataFrame, np.ndarray, Dict[str, Any]],
+                             target: Optional[Union[pd.Series, np.ndarray]] = None,
+                             **kwargs) -> Dict[str, Any]:
+        """Standard optimization fallback."""
+        try:
+            # Simple optimization using existing methods
+            metrics = self.evaluate_architecture(architecture, data, target, **kwargs)
+            
+            return {
+                'optimized_architecture': architecture,
+                'metrics': metrics.__dict__,
+                'optimization_success': True,
+                'method': 'standard_fallback'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Standard optimization failed: {e}")
+            return {
+                'optimized_architecture': architecture,
+                'metrics': {},
+                'optimization_success': False,
+                'error': str(e),
+                'method': 'standard_fallback'
+            }
+    
+    def get_utility_integration_status(self) -> Dict[str, bool]:
+        """Get status of utility integrations."""
+        return {
+            'common_operations': COMMON_OPERATIONS_AVAILABLE,
+            'common_utilities': COMMON_UTILITIES_AVAILABLE,
+            'math_validation': MATH_VALIDATION_AVAILABLE,
+            'serialization': SERIALIZATION_AVAILABLE,
+            'tprint': TPRINT_AVAILABLE,
+            'm1_gpu': M1_GPU_AVAILABLE,
+            'm1_memory': M1_MEMORY_AVAILABLE,
+            'm1_cpu': M1_CPU_AVAILABLE,
+            'klines_parquet': KLINES_PARQUET_AVAILABLE,
+            'matrix_operations': MATRIX_OPERATIONS_AVAILABLE,
+            'ml_common': ML_COMMON_AVAILABLE,
+            'hybrid_nas_tas': HYBRID_NAS_TAS_AVAILABLE
+        }

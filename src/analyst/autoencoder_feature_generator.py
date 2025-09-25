@@ -1463,23 +1463,78 @@ class AutoencoderFeatureGenerator:
             except Exception as e:
                 self.logger.warning(f'⚠️ Trial failed: {str(e)}')
                 return float('inf')
-        self.logger.info('🔧 Creating Optuna study for hyperparameter optimization...')
-        study = optuna.create_study(direction='minimize', pruner = optuna.pruners.MedianPruner())
+        # Use new Bayesian TPE optimizer
+        from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+            BayesianTPEOptimizer,
+            BayesianTPEConfig
+        )
+        
+        # Create search space for autoencoder parameters
+        search_space = {
+            'encoding_dim': {'type': 'int', 'low': 8, 'high': 64},
+            'hidden_layers': {'type': 'int', 'low': 1, 'high': 4},
+            'learning_rate': {'type': 'float', 'low': 1e-5, 'high': 1e-2, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'l2_regularization': {'type': 'float', 'low': 1e-6, 'high': 1e-3, 'log': True}
+        }
+        
+        # Define objective function for new optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
+            try:
+                autoencoder = AutoencoderFeatureGenerator(self.config)
+                autoencoder.build_model(X_train.shape[1:], params)
+                history = autoencoder.fit(X_train, y_train, X_val, y_val, params)
+                return min(history.history['val_loss'])
+            except Exception as e:
+                self.logger.warning(f'⚠️ Trial failed: {str(e)}')
+                return float('inf')
+        
         n_trials = self.config.get('training.n_trials', 50)
         n_jobs = self.config.get('training.n_jobs', 1)
-        self.logger.info(f'🚀 Starting Optuna optimization with {n_trials} trials...')
+        
+        # Configure optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=n_trials,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=(n_jobs > 1),
+            max_workers=n_jobs,
+            enable_early_stopping=True,
+            early_stopping_patience=10,
+            log_level='INFO'
+        )
+        
+        self.logger.info(f'🚀 Starting Bayesian TPE optimization with {n_trials} trials...')
         self.logger.info(f'📊 Parallel jobs: {n_jobs} (1 recommended for GPU compatibility)')
         start_time = time.time()
-        study.optimize(objective, n_trials = n_trials, n_jobs = n_jobs)
+        
+        # Run optimization
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective_function, search_space)
+        
         optimization_time = time.time() - start_time
-        self.logger.info('✅ Optuna optimization completed successfully!')
-        self.logger.info(f'📊 Optimization time: {optimization_time:.2f} seconds')
-        self.logger.info(f'📊 Trials completed: {len(study.trials)}')
-        self.logger.info(f'📊 Successful trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}')
-        self.logger.info(f'📊 Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}')
-        self.logger.info(f'🏆 Best validation loss: {study.best_value:.6f}')
-        self.logger.info(f'🏆 Best trial number: {study.best_trial.number}')
-        return study.best_params
+        
+        if result.success:
+            self.logger.info('✅ Bayesian TPE optimization completed successfully!')
+            self.logger.info(f'📊 Optimization time: {optimization_time:.2f} seconds')
+            self.logger.info(f'📊 Best score: {result.best_score:.4f}')
+            self.logger.info(f'📊 Best parameters: {result.best_params}')
+        else:
+            self.logger.error(f'❌ Bayesian TPE optimization failed: {result.error_message}')
+            # Fallback to default parameters
+            result.best_params = {
+                'encoding_dim': 32,
+                'hidden_layers': 2,
+                'learning_rate': 0.001,
+                'batch_size': 32,
+                'dropout_rate': 0.2,
+                'l2_regularization': 1e-4
+            }
+        self.logger.info(f'🏆 Best validation loss: {result.best_score:.6f}')
+        return result.best_params
 
     def get_last_analysis_results(self) -> dict[str, Any] | None:
         """Get the results from the last feature importance analysis."""

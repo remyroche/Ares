@@ -32,6 +32,13 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 from src.training.steps.market_analysis.hmm_clustering.core.msm_clustering import MSMClusterer, MSMConfig
 
 logger = logging.getLogger(__name__)
@@ -99,7 +106,7 @@ class MSMBayesianOptimizer:
 
     def optimize(self, X: np.ndarray, y: Optional[np.ndarray] = None,
                 evaluation_function: Optional[Callable] = None) -> Dict[str, Any]:
-        """Perform two-step optimization: grid search first, then Bayesian optimization.
+        """Perform optimization using new unified Bayesian TPE optimizer.
 
         Args:
             X: Feature matrix
@@ -119,15 +126,41 @@ class MSMBayesianOptimizer:
             else:
                 X_sampled, y_sampled = X, y
 
-            # Two-step optimization: grid search first, then Bayesian
-            if self.config.use_two_step_optimization:
-                results = self._optimize_two_step(X_sampled, y_sampled, evaluation_function)
-            elif self.config.use_skopt and SKOPT_AVAILABLE:
-                results = self._optimize_skopt(X_sampled, y_sampled, evaluation_function)
-            elif OPTUNA_AVAILABLE:
-                results = self._optimize_optuna(X_sampled, y_sampled, evaluation_function)
-            else:
-                raise RuntimeError("Neither scikit-optimize nor Optuna is available")
+            # Create search space for MSM parameters
+            search_space = {
+                'n_states': {'type': 'int', 'low': self.config.n_states_min, 'high': self.config.n_states_max},
+                'lag_time': {'type': 'int', 'low': self.config.lag_time_min, 'high': self.config.lag_time_max},
+                'clustering_method': {'type': 'categorical', 'choices': ['kmeans', 'agglomerative']},
+                'distance_metric': {'type': 'categorical', 'choices': ['euclidean', 'mahalanobis', 'correlation']},
+                'connectivity_threshold': {'type': 'float', 'low': self.config.connectivity_threshold_min, 'high': self.config.connectivity_threshold_max},
+                'ergodic_cutoff': {'type': 'float', 'low': self.config.ergodic_cutoff_min, 'high': self.config.ergodic_cutoff_max}
+            }
+
+            # Define objective function for new optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._evaluate_msm_params(X_sampled, y_sampled, params, evaluation_function)
+
+            # Configure new Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.n_trials,
+                timeout_seconds=self.config.timeout,
+                enable_grid_search=self.config.use_two_step_optimization,
+                coarse_grid_points=self.config.grid_search_n_points,
+                fine_grid_points=self.config.grid_search_n_points,
+                backend='skopt' if self.config.use_skopt else 'optuna',
+                enable_parallel=True,
+                max_workers=self.config.n_jobs,
+                enable_early_stopping=True,
+                early_stopping_patience=self.config.early_stopping_patience,
+                log_level='INFO'
+            )
+
+            # Run optimization using new unified optimizer
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, search_space)
+
+            if not optimization_result.success:
+                raise RuntimeError(f"MSM optimization failed: {optimization_result.error_message}")
 
             execution_time = time.time() - start_time
 
@@ -135,8 +168,15 @@ class MSMBayesianOptimizer:
             if len(self.optimization_history) > 100:
                 self.optimization_history = self.optimization_history[-50:]  # Keep last 50
 
-            results['execution_time'] = execution_time
-            results['optimization_history'] = self.optimization_history
+            results = {
+                'success': True,
+                'best_score': optimization_result.best_score,
+                'best_params': optimization_result.best_params,
+                'execution_time': execution_time,
+                'optimization_history': self.optimization_history,
+                'convergence_info': optimization_result.convergence_info,
+                'n_trials': optimization_result.n_trials
+            }
 
             self.logger.info(f"✅ MSM optimization completed in {execution_time:.2f}s")
             self.logger.info(f"📊 Best score: {results['best_score']:.4f}")

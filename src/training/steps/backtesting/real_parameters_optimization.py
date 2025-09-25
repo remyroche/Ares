@@ -48,6 +48,13 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     optuna = None
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 logger = logging.getLogger(__name__)
 
 class OptimizationMethod(Enum):
@@ -294,56 +301,77 @@ class RealParametersOptimizer:
             raise
     
     async def _bayesian_optimization(self, objective_function: Callable) -> Dict[str, Any]:
-        """Bayesian optimization using Optuna."""
+        """Bayesian optimization using new unified optimizer."""
         self.logger.info("🧠 Running Bayesian optimization")
         
         try:
-            if not OPTUNA_AVAILABLE:
-                raise ImportError("Optuna not available for Bayesian optimization")
+            # Create search space for new optimizer
+            search_space = {}
+            for param in self.parameter_space:
+                if param.param_type == 'float':
+                    search_space[param.name] = {
+                        'type': 'float',
+                        'low': param.bounds[0],
+                        'high': param.bounds[1]
+                    }
+                elif param.param_type == 'int':
+                    search_space[param.name] = {
+                        'type': 'int',
+                        'low': int(param.bounds[0]),
+                        'high': int(param.bounds[1])
+                    }
+                elif param.param_type == 'categorical':
+                    search_space[param.name] = {
+                        'type': 'categorical',
+                        'choices': param.choices
+                    }
+                elif param.param_type == 'boolean':
+                    search_space[param.name] = {
+                        'type': 'categorical',
+                        'choices': [True, False]
+                    }
             
-            # Create Optuna study
-            direction = 'minimize' if self.config.minimize_objective else 'maximize'
-            study = optuna.create_study(direction=direction)
-            
-            def objective(trial):
-                # Generate parameters using Optuna
-                params = {}
-                for param in self.parameter_space:
-                    if param.param_type == 'float':
-                        params[param.name] = trial.suggest_float(
-                            param.name, param.bounds[0], param.bounds[1]
-                        )
-                    elif param.param_type == 'int':
-                        params[param.name] = trial.suggest_int(
-                            param.name, int(param.bounds[0]), int(param.bounds[1])
-                        )
-                    elif param.param_type == 'categorical':
-                        params[param.name] = trial.suggest_categorical(
-                            param.name, param.choices
-                        )
-                    elif param.param_type == 'boolean':
-                        params[param.name] = trial.suggest_categorical(
-                            param.name, [True, False]
-                        )
-                
-                # Evaluate objective function
+            # Define objective function for new optimizer
+            def objective_function_wrapper(params: Dict[str, Any], **kwargs) -> float:
                 return asyncio.run(self._evaluate_parameters(objective_function, params))
             
-            # Optimize
-            study.optimize(objective, n_trials=self.config.n_trials)
+            # Configure new Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.n_trials,
+                timeout_seconds=self.config.timeout_seconds,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=self.config.enable_parallel_processing,
+                max_workers=self.config.n_jobs if self.config.n_jobs > 0 else 1,
+                enable_early_stopping=True,
+                early_stopping_patience=self.config.early_stopping_patience,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function_wrapper, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Bayesian optimization failed: {result.error_message}")
             
             # Extract results
-            best_params = study.best_params
-            best_score = study.best_value
+            best_params = result.best_params
+            best_score = result.best_score
             
             # Convert optimization history
             optimization_history = []
-            for trial in study.trials:
+            if hasattr(result, 'optimization_history'):
+                optimization_history = result.optimization_history
+            else:
+                # Create basic optimization history
                 optimization_history.append({
-                    'iteration': trial.number + 1,
-                    'parameters': trial.params,
-                    'score': trial.value,
-                    'timestamp': datetime.fromtimestamp(trial.datetime_start).isoformat()
+                    'iteration': 1,
+                    'parameters': best_params,
+                    'score': best_score,
+                    'timestamp': datetime.now().isoformat()
                 })
             
             return {

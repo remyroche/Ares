@@ -23,6 +23,12 @@ from src.utils.ml_common.optimization.grid_utils import (
     build_fine_grid_around_best
 )
 from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
 from src.utils.ml_common.validation.cv_utils import CrossValidationUtilities
 from src.utils.ml_common.validation.temporal_cross_validation import TemporalCrossValidator
 from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
@@ -276,27 +282,14 @@ class GridBayesianOptimizer:
         return result
     
     def _bayesian_tpe_optimization(self, market_data: pd.DataFrame, model_type: ModelType) -> OptimizationResult:
-        """Run Bayesian TPE optimization using ml_commons HPO utilities."""
+        """Run Bayesian TPE optimization using new unified optimizer."""
         self.logger.info('   → Running Bayesian TPE optimization...')
         
         # Create search space for HPO
         search_space = self._create_hpo_search_space(model_type)
         
-        # Define objective function
-        def objective(trial):
-            # Sample parameters from trial
-            params = {}
-            for name, config in search_space.items():
-                if config['type'] == 'int':
-                    params[name] = trial.suggest_int(name, config['low'], config['high'])
-                elif config['type'] == 'float':
-                    if config.get('log', False):
-                        params[name] = trial.suggest_float(name, config['low'], config['high'], log=True)
-                    else:
-                        params[name] = trial.suggest_float(name, config['low'], config['high'])
-                elif config['type'] == 'categorical':
-                    params[name] = trial.suggest_categorical(name, config['choices'])
-            
+        # Define objective function for new optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
             # Convert to MultiHorizonConfig
             config = self._params_to_config(params, model_type)
             
@@ -305,18 +298,30 @@ class GridBayesianOptimizer:
             
             return score
         
-        # Run optimization using ml_commons HPO
+        # Configure new Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.bayesian_tpe_config.n_trials,
+            timeout_seconds=self.config.bayesian_tpe_config.timeout_seconds,
+            enable_grid_search=False,  # Grid search already done in previous stages
+            backend='optuna',
+            enable_parallel=self.config.bayesian_tpe_config.enable_parallel,
+            max_workers=self.config.bayesian_tpe_config.max_workers,
+            enable_early_stopping=True,
+            early_stopping_patience=5,
+            log_level='INFO'
+        )
+        
+        # Run optimization using new unified optimizer
         try:
-            optimization_result = self.hpo_optimizer.optimize_hyperparameters(
-                objective=objective,
-                search_space=search_space,
-                n_trials=self.config.bayesian_tpe_config.n_trials,
-                timeout=self.config.bayesian_tpe_config.timeout_seconds
-            )
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            optimization_result = optimizer.optimize(objective_function, search_space)
+            
+            if not optimization_result.success:
+                raise RuntimeError(f"Bayesian TPE optimization failed: {optimization_result.error_message}")
             
             # Extract best parameters
             best_params = optimization_result.best_params
-            best_score = optimization_result.best_value
+            best_score = optimization_result.best_score
             
             # Create result
             result = OptimizationResult(
@@ -325,9 +330,9 @@ class GridBayesianOptimizer:
                 optimization_score=best_score,
                 validation_score=0.0,  # Will be calculated separately
                 performance_metrics={},
-                optimization_time=0.0,  # Will be set by caller
+                optimization_time=optimization_result.optimization_time,
                 optimization_method='bayesian_tpe',
-                n_trials=self.config.bayesian_tpe_config.n_trials,
+                n_trials=optimization_result.n_trials,
                 convergence_info=optimization_result.convergence_info
             )
             

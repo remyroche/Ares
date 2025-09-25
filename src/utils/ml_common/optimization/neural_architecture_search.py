@@ -60,6 +60,13 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -323,23 +330,48 @@ class NeuralArchitectureSearch:
                 self.logger.warning(f"Trial failed: {e}")
                 return 0.0
         
-        # Create Optuna study
-        study = optuna.create_study(
-            direction='maximize',
-            sampler=TPESampler(seed=42),
-            pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+        # Create search space for architecture optimization
+        search_space = self._create_architecture_search_space()
+        
+        # Define objective function for new optimizer
+        def objective_function(params: Dict[str, Any], **kwargs) -> float:
+            try:
+                candidate = self._sample_architecture_from_params(params)
+                
+                # Train and evaluate
+                performance = self._train_and_evaluate_architecture(
+                    candidate, X_train, y_train, X_val, y_val, regime_labels
+                )
+                
+                return performance['overall_score']
+                
+            except Exception as e:
+                self.logger.warning(f"Trial failed: {e}")
+                return 0.0
+        
+        # Configure new Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.n_trials,
+            timeout_seconds=self.config.timeout_seconds,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for architecture search
+            enable_early_stopping=True,
+            early_stopping_patience=self.config.early_stopping_patience,
+            log_level='INFO'
         )
         
-        # Run optimization
-        study.optimize(
-            objective, 
-            n_trials=self.config.n_trials,
-            timeout=self.config.timeout_seconds
-        )
+        # Run optimization using new unified optimizer
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        result = optimizer.optimize(objective_function, search_space)
+        
+        if not result.success:
+            raise RuntimeError(f"Architecture search failed: {result.error_message}")
         
         # Get best candidate
-        best_trial = study.best_trial
-        best_candidate = self._sample_architecture_from_trial(best_trial)
+        best_candidate = self._sample_architecture_from_params(result.best_params)
         
         # Train final model
         performance = self._train_and_evaluate_architecture(

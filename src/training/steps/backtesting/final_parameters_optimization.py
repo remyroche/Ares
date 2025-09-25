@@ -22,6 +22,13 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import optuna
 import numpy as np
 import logging
+
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
@@ -195,44 +202,80 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         long_mask = directions > 0
         short_mask = directions < 0
         
-        # Optimize long parameters
+        # Optimize long parameters using new unified optimizer
         long_data = self._filter_data_by_mask(regime_data, long_mask)
         
-        long_study = optuna.create_study(
-            direction='maximize',
-            study_name=f'{self.study_name}_regime_{regime_id}_long',
-            sampler=optuna.samplers.TPESampler(seed=42)
+        # Create search space for long parameters
+        long_search_space = self._create_directional_search_space('long')
+        
+        # Define objective function for new optimizer
+        def long_objective_function(params: Dict[str, Any], **kwargs) -> float:
+            return self._create_directional_objective(long_data, 'long', regime_id)(params)
+        
+        # Configure new Bayesian TPE optimizer for long parameters
+        long_tpe_config = BayesianTPEConfig(
+            n_trials=self.n_trials // 2,
+            timeout_seconds=self.timeout // 2,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for parameter optimization
+            enable_early_stopping=True,
+            early_stopping_patience=5,
+            log_level='INFO'
         )
         
-        long_objective = self._create_directional_objective(long_data, 'long', regime_id)
-        
         try:
-            long_study.optimize(long_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
-            results['long_parameters'] = long_study.best_params
-            results['long_score'] = long_study.best_value
-            results['long_trials'] = len(long_study.trials)
+            long_optimizer = BayesianTPEOptimizer(long_tpe_config)
+            long_result = long_optimizer.optimize(long_objective_function, long_search_space)
+            
+            if long_result.success:
+                results['long_parameters'] = long_result.best_params
+                results['long_score'] = long_result.best_score
+                results['long_trials'] = long_result.n_trials
+            else:
+                raise RuntimeError(f"Long optimization failed: {long_result.error_message}")
         except Exception as e:
             self.logger.error(f"❌ Long parameter optimization failed for regime {regime_id}: {e}")
             results['long_parameters'] = {}
             results['long_score'] = 0.0
             results['long_trials'] = 0
         
-        # Optimize short parameters
+        # Optimize short parameters using new unified optimizer
         short_data = self._filter_data_by_mask(regime_data, short_mask)
         
-        short_study = optuna.create_study(
-            direction='maximize',
-            study_name=f'{self.study_name}_regime_{regime_id}_short',
-            sampler=optuna.samplers.TPESampler(seed=43)
+        # Create search space for short parameters
+        short_search_space = self._create_directional_search_space('short')
+        
+        # Define objective function for new optimizer
+        def short_objective_function(params: Dict[str, Any], **kwargs) -> float:
+            return self._create_directional_objective(short_data, 'short', regime_id)(params)
+        
+        # Configure new Bayesian TPE optimizer for short parameters
+        short_tpe_config = BayesianTPEConfig(
+            n_trials=self.n_trials // 2,
+            timeout_seconds=self.timeout // 2,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for parameter optimization
+            enable_early_stopping=True,
+            early_stopping_patience=5,
+            log_level='INFO'
         )
         
-        short_objective = self._create_directional_objective(short_data, 'short', regime_id)
-        
         try:
-            short_study.optimize(short_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
-            results['short_parameters'] = short_study.best_params
-            results['short_score'] = short_study.best_value
-            results['short_trials'] = len(short_study.trials)
+            short_optimizer = BayesianTPEOptimizer(short_tpe_config)
+            short_result = short_optimizer.optimize(short_objective_function, short_search_space)
+            
+            if short_result.success:
+                results['short_parameters'] = short_result.best_params
+                results['short_score'] = short_result.best_score
+                results['short_trials'] = short_result.n_trials
+            else:
+                raise RuntimeError(f"Short optimization failed: {short_result.error_message}")
         except Exception as e:
             self.logger.error(f"❌ Short parameter optimization failed for regime {regime_id}: {e}")
             results['short_parameters'] = {}
@@ -275,22 +318,39 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         self.logger.info(f"   Directional bias: {directional_bias} (strength: {bias_strength:.2f})")
         self.logger.info(f"   Long ratio: {long_ratio:.1%}, Short ratio: {short_ratio:.1%}")
         
-        # Create biased objective function
-        study = optuna.create_study(
-            direction='maximize',
-            study_name=f'{self.study_name}_regime_{regime_id}_averaged',
-            sampler=optuna.samplers.TPESampler(seed=42)
-        )
+        # Create biased objective function using new unified optimizer
+        biased_search_space = self._create_biased_search_space(directional_bias)
         
-        biased_objective = self._create_biased_objective(
-            regime_data, directional_bias, long_ratio, short_ratio, regime_id
+        # Define objective function for new optimizer
+        def biased_objective_function(params: Dict[str, Any], **kwargs) -> float:
+            return self._create_biased_objective(
+                regime_data, directional_bias, long_ratio, short_ratio, regime_id
+            )(params)
+        
+        # Configure new Bayesian TPE optimizer for biased parameters
+        biased_tpe_config = BayesianTPEConfig(
+            n_trials=self.n_trials,
+            timeout_seconds=self.timeout,
+            enable_grid_search=True,
+            coarse_grid_points=3,
+            fine_grid_points=5,
+            backend='optuna',
+            enable_parallel=False,  # Sequential for parameter optimization
+            enable_early_stopping=True,
+            early_stopping_patience=5,
+            log_level='INFO'
         )
         
         try:
-            study.optimize(biased_objective, n_trials=self.n_trials, timeout=self.timeout)
-            base_parameters = study.best_params
-            base_score = study.best_value
-            trials_completed = len(study.trials)
+            biased_optimizer = BayesianTPEOptimizer(biased_tpe_config)
+            biased_result = biased_optimizer.optimize(biased_objective_function, biased_search_space)
+            
+            if biased_result.success:
+                base_parameters = biased_result.best_params
+                base_score = biased_result.best_score
+                trials_completed = biased_result.n_trials
+            else:
+                raise RuntimeError(f"Biased optimization failed: {biased_result.error_message}")
         except Exception as e:
             self.logger.error(f"❌ Biased parameter optimization failed for regime {regime_id}: {e}")
             base_parameters = {}

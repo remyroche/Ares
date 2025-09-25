@@ -32,7 +32,7 @@ from src.utils.math_validation import (
 from src.utils.serialization_utils import JSONSerializer, PickleSerializer
 
 # Import unified economic evaluator from shared utils
-from ...hybrid_nas_tas_regime.shared_utils.unified_economic_evaluator import (
+from src.utils.nas_tas.shared_utils.unified_economic_evaluator import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     EconomicSignificanceResult, create_unified_economic_evaluator,
     quick_economic_evaluation

@@ -187,19 +187,19 @@ except ImportError as e:
 
 # Import hybrid NAS-TAS shared utilities
 try:
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_utility_integration import (
+    from src.utils.nas_tas.shared_utils.enhanced_utility_integration import (
         EnhancedUtilityIntegration, UtilityIntegrationConfig
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import (
+    from src.utils.nas_tas.shared_utils.unified_evaluation_framework import (
         UnifiedEvaluationFramework, EvaluationType, EvaluationMetric, EvaluationResult
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_architecture_config import (
+    from src.utils.nas_tas.shared_utils.unified_architecture_config import (
         ArchitectureType, SearchStrategy, OptimizationObjective, MarketRegime
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_hardware_manager import (
+    from src.utils.nas_tas.shared_utils.unified_hardware_manager import (
         UnifiedHardwareManager, HardwareType, WorkloadType, HardwareMetrics
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_ml_integration import (
+    from src.utils.nas_tas.shared_utils.enhanced_ml_integration import (
         EnhancedMLIntegration, MLIntegrationConfig
     )
     HYBRID_NAS_TAS_AVAILABLE = True

@@ -312,154 +312,8 @@ class AresLauncher:
             self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
             self.logger.info("=" * 60)
     
-    async def _create_outcome_file(self, stage: str, sub_pipeline: str, result: Any, config: MainPipelineConfig) -> str:
-        """Create outcome file for stage/sub-pipeline completion with enhanced error handling."""
-        try:
-            # Ensure directory exists with proper error handling
-            outcome_dir = Path("outcomes")
-            if not outcome_dir.exists():
-                try:
-                    outcome_dir.mkdir(exist_ok=True)
-                    tprint_info(f"📁 Created outcomes directory: {outcome_dir}")
-                except Exception as e:
-                    tprint_error(f"❌ Failed to create outcomes directory: {e}")
-                    raise
-            
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
-            outcome_file = outcome_dir / filename
-            
-            # Create outcome data with validation
-            outcome_data = {
-                'stage': stage,
-                'sub_pipeline': sub_pipeline,
-                'timestamp': datetime.now().isoformat(),
-                'status': result.status.value if hasattr(result, 'status') else 'completed',
-                'output_files': result.output_files if hasattr(result, 'output_files') else [],
-                'metadata': result.metadata if hasattr(result, 'metadata') else {},
-                'artifacts': result.artifacts if hasattr(result, 'artifacts') else {},
-                'config': {
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'mode': config.mode.value,
-                    'intensity_percentage': config.intensity_percentage,
-                    'training_mode_config': config.training_mode_config
-                },
-                'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline),
-                'utility_integration': {
-                    'utils_available': self.utils_available,
-                    'm1_optimizers_active': self.m1_optimizers.get('success', False) if self.m1_optimizers else False,
-                    'serialization_available': self.serializer is not None
-                }
-            }
-            
-            # Save outcome file with proper error handling
-            if self.utils_available and self.serializer:
-                try:
-                    # Use universal serializer for better error handling
-                    success = self.serializer.save(outcome_data, str(outcome_file), format='json')
-                    if not success:
-                        raise Exception("Serialization failed")
-                    tprint_success(f"💾 Outcome file created with serializer: {outcome_file}")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Serializer failed, falling back to standard JSON: {e}")
-                    # Fallback to standard JSON
-                    with open(outcome_file, 'w') as f:
-                        json.dump(outcome_data, f, indent=2, default=str)
-                    tprint_success(f"💾 Outcome file created with fallback: {outcome_file}")
-            else:
-                # Standard JSON save
-                with open(outcome_file, 'w') as f:
-                    json.dump(outcome_data, f, indent=2, default=str)
-                tprint_success(f"💾 Outcome file created: {outcome_file}")
-            
-            self.logger.info(f"💾 Outcome file created: {outcome_file}")
-            return str(outcome_file)
-            
-        except Exception as e:
-            tprint_error(f"❌ Failed to create outcome file: {e}")
-            self.logger.error(f"❌ Outcome file creation failed: {e}")
-            # Return a placeholder path to prevent further errors
-            return f"failed_outcome_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     
-    def _get_next_stage_requirements(self, current_stage: str, current_sub_pipeline: str) -> Dict[str, Any]:
-        """Get requirements for the next stage/sub-pipeline."""
-        requirements = {
-            'required_files': [],
-            'required_artifacts': [],
-            'data_dependencies': []
-        }
-        
-        # Define stage dependencies and requirements
-        stage_requirements = {
-            'data_collection': {
-                'next_stage': 'market_analysis',
-                'required_files': ['processed_data.parquet', 'data_quality_report.json', 'exported_data.parquet'],
-                'required_artifacts': ['data_metadata', 'quality_metrics', 'integration_results'],
-                'sub_pipelines': ['data_download', 'data_conversion', 'data_validation', 'data_preparation', 
-                                'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
-                                'data_integration', 'data_export']
-            },
-            'market_analysis': {
-                'next_stage': 'model_training',
-                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
-                                'hmm_models_training', 'hmm_ensemble_training',
-                                'feature_lookback_optimization', 'pid_based_feature_generation',
-                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
-                                'sr_feature_integration']
-            },
-            'model_training': {
-                'next_stage': 'backtesting',
-                'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
-                'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
-                'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training',
-                                'tactician_pre_ml_orchestration', 'tactician_dual_training',
-                                'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
-            },
-            'backtesting': {
-                'next_stage': 'reporting',
-                'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
-                'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
-                'sub_pipelines': ['basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
-                                'model_persistence', 'performance_analytics',
-                                'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
-            }
-        }
-        
-        if current_stage in stage_requirements:
-            requirements.update(stage_requirements[current_stage])
-        
-        return requirements
     
-    async def _check_outcome_files(self, stage: str, sub_pipeline: str) -> Optional[Dict[str, Any]]:
-        """Check for existing outcome files from previous stages."""
-        outcome_dir = Path("outcomes")
-        if not outcome_dir.exists():
-            return None
-        
-        # Look for the most recent outcome file for this stage/sub-pipeline
-        pattern = f"{stage}_{sub_pipeline}_outcome_*.json"
-        outcome_files = list(outcome_dir.glob(pattern))
-        
-        if not outcome_files:
-            return None
-        
-        # Get the most recent file
-        latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-        
-        try:
-            with open(latest_file, 'r') as f:
-                outcome_data = json.load(f)
-            
-            self.logger.info(f"📂 Found existing outcome file: {latest_file}")
-            return outcome_data
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not read outcome file {latest_file}: {e}")
-            return None
     
     async def execute_pipeline(
         self,
@@ -836,7 +690,7 @@ class AresLauncher:
                 # Create outcome files for each sub-pipeline in the stage
                 for sub_result in stage_result:
                     if hasattr(sub_result, 'sub_pipeline_name'):
-                        await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
+                        # Outcome file creation handled by MainTrainingPipeline
                 
                 # Check if stage failed
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
@@ -897,7 +751,7 @@ class AresLauncher:
             stage_results = result.stage_results[stage]
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name'):
-                    await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
+                    # Outcome file creation handled by MainTrainingPipeline
         
         # Store execution
         self.current_execution = result
@@ -958,7 +812,7 @@ class AresLauncher:
             stage_results = result.stage_results[target_stage]
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
-                    await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
+                    # Outcome file creation handled by MainTrainingPipeline
                     break
         
         # Store execution

@@ -39,6 +39,7 @@ except ImportError:
             return {}
 
 from src.utils.logger import system_logger
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('SRDetection')

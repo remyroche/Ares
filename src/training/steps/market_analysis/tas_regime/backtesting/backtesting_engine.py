@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import TAS components
-from ..regime_analysis.unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
+from src.utils.nas_tas.unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
 from ..regime_analysis.regime_qualification import RegimeQualifier, RegimeQualificationConfig
 from ..trading.trading_engine import TradingEngine, TradingConfig, TradingResult
 

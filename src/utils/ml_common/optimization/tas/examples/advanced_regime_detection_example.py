@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import logging
 
 # Import the implemented systems
-from src.utils.ml_common.optimization.tas.regime_analysis.unsupervised_regime_detection import (
+from src.utils.nas_tas.unsupervised_regime_detection import (
     UnsupervisedRegimeDetector, RegimeDetectionConfig
 )
 from src.utils.ml_common.optimization.tas.regime_analysis.regime_qualification import (

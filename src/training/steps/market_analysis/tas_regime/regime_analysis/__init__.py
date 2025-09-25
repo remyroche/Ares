@@ -17,7 +17,7 @@ from .clustering_regime_detection import (
     ClusteringRegimeConfig,
     quick_clustering_detection
 )
-from .unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
+from src.utils.nas_tas.unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
 
 __all__ = [
     'TreeRegimeAnalyzer', 'TreeRegimeDetector', 'TreeRegimeClassifier',

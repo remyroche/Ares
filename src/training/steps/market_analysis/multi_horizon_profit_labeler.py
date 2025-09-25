@@ -17,17 +17,8 @@ FIXED VERSION: Addresses critical bugs and performance issues
 
 import numpy as np
 import pandas as pd
-import time
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
-
-# Import utilities from src level
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../..'))
-
-from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 from src.utils.math_validation import safe_divide, validate_finite
@@ -1907,8 +1898,9 @@ def apply_multi_horizon_labeling(data: pd.DataFrame,
     labeler = MultiHorizonProfitLabeler(config)
     return labeler.generate_labels(data)
 
-# Test function
 if __name__ == '__main__':
+    from src.utils.tprint import tprint
+
     # Test the labeler
     tprint('🧪 Testing Multi-Horizon Profit Labeler')
     

@@ -186,27 +186,43 @@ def integrate_with_m1_optimizers() -> dict:
         memory_optimizer = get_m1_memory_optimizer()
         cpu_optimizer = get_m1_cpu_optimizer()
 
-        # Start memory monitoring
-        memory_optimizer.start_monitoring()
+        memory_monitoring_active = False
+        if memory_optimizer and hasattr(memory_optimizer, "start_monitoring"):
+            memory_optimizer.start_monitoring()
+            memory_monitoring_active = True
+        elif memory_optimizer:
+            logger.warning("⚠️ Memory optimizer does not support monitoring")
 
-        # Optimize numpy for M1
-        cpu_optimizer.optimize_numpy_operations()
+        cpu_optimizer_active = False
+        if cpu_optimizer and hasattr(cpu_optimizer, "optimize_numpy_operations"):
+            cpu_optimizer.optimize_numpy_operations()
+            cpu_optimizer_active = True
+        elif cpu_optimizer:
+            logger.warning("⚠️ CPU optimizer missing numpy optimization capability")
 
-        # Log integration status
-        gpu_info = gpu_manager.get_gpu_info()
-        cpu_info = cpu_optimizer.get_cpu_info()
+        gpu_info: dict[str, Any] = {}
+        if gpu_manager and hasattr(gpu_manager, "get_gpu_info"):
+            gpu_info = gpu_manager.get_gpu_info()
+        elif gpu_manager:
+            logger.warning("⚠️ GPU manager does not expose get_gpu_info")
+
+        cpu_info: dict[str, Any] = {}
+        if cpu_optimizer and hasattr(cpu_optimizer, "get_cpu_info"):
+            cpu_info = cpu_optimizer.get_cpu_info()
 
         logger.info("🧠 M1 Integration Status:")
         logger.info(f"   - M1 Hardware: {'✅ Available' if is_m1_available() else '❌ Not available'}")
         logger.info(f"   - MPS (GPU): {'✅ Available' if is_mps_available() else '❌ Not available'}")
         logger.info(f"   - Performance Cores: {cpu_info.get('performance_cores', 'Unknown')}")
-        logger.info(f"   - Memory Monitoring: ✅ Active")
+        logger.info(
+            f"   - Memory Monitoring: {'✅ Active' if memory_monitoring_active else '⚠️ Inactive'}"
+        )
 
         return {
             'integration_status': 'success',
-            'gpu_manager': is_mps_available(),
-            'memory_optimizer': True,
-            'cpu_optimizer': True,
+            'gpu_manager': bool(gpu_manager),
+            'memory_optimizer': memory_monitoring_active,
+            'cpu_optimizer': cpu_optimizer_active,
             'gpu_info': gpu_info,
             'cpu_info': cpu_info,
             'success': True

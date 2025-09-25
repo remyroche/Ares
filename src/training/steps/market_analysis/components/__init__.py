@@ -39,5 +39,7 @@ __all__ = [
     # 'RegimeDataSplittingComponent',  # Imported lazily to avoid circular imports
     # 'TripleBarrierLabelingComponent',  # Moved to triple_barrier_labeling package
     'FeatureLookbackOptimizationComponent',
-    'CrossTimeframeAnalysisComponent'
+    'CrossTimeframeAnalysisComponent',
+    'RegimeBaseTrainingComponent',
+    'RegimeMetaModelTrainingComponent'
 ]

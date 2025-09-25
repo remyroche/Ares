@@ -95,6 +95,8 @@ class AresLauncher:
 
     _SUB_PIPELINE_ALIASES: Dict[str, str] = {
         'nas_tas_regime_discovery': 'hybrid_nas_tas_regime_discovery',
+        'hmm_models_training': 'regime_base_training',
+        'hmm_ensemble_training': 'regime_metamodel_training',
     }
 
     @classmethod
@@ -867,7 +869,7 @@ class AresLauncher:
             'data_integration': "Integrate multiple data sources",
             'data_export': "Export data in various formats",
             
-            # Market Analysis (10 sub-pipelines)
+            # Market Analysis (12 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
             # 'nas_clustering': "NAS-based regime clustering (DEPRECATED - use nas_tas_clustering instead)",
@@ -875,6 +877,8 @@ class AresLauncher:
             'hybrid_nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
             'nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (alias for hybrid_nas_tas_regime_discovery)",
             'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
+            'regime_base_training': "Train per-regime base models using discovered regimes",
+            'regime_metamodel_training': "Train stacked or ensemble meta-models for regimes",
             # 'nas_models_training': "Train regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
             # 'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
             'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
@@ -935,6 +939,9 @@ class AresLauncher:
             'nas_regime_discovery': ['nas_tas_clustering'],  # DEPRECATED - use hybrid_nas_tas_regime_discovery instead
             'nas_models_training': ['hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery'],  # Updated to use hybrid discovery
             'nas_ensemble_training': ['nas_models_training'],
+            'regime_base_training': ['nas_tas_clustering'],
+            'regime_metamodel_training': ['regime_base_training'],
+            'regime_data_splitting': ['regime_metamodel_training'],
             'feature_lookback_optimization': ['hmm_regime_discovery', 'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
@@ -990,6 +997,9 @@ class AresLauncher:
             'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
             'nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
             'nas_regime_discovery': ['nas_regime_assignments.parquet'],
+            'regime_base_training': ['regime_base_models.pkl', 'regime_base_metrics.json'],
+            'regime_metamodel_training': ['regime_meta_models.json'],
+            'regime_data_splitting': ['regime_tagged_data.parquet'],
             # 'nas_models_training': ['nas_models_training_result.json'],  # REMOVED - moved to models_training/
             # 'nas_ensemble_training': ['nas_ensemble_training_result.json'],  # REMOVED - moved to models_training/
             'feature_lookback_optimization': ['optimized_features.parquet'],

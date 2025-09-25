@@ -9,11 +9,13 @@ are currently implemented and wired:
 3. sr_clustering - Generate SR clusters
 4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
 5. nas_tas_clustering - Consolidated NAS/TAS clustering stage
-6. regime_data_splitting - Tag data by regimes
-7. feature_lookback_optimization - Optimize feature lookback periods
-8. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-9. multi_horizon_labeling - Apply multi-horizon profit labeling
-10. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+6. regime_base_training - Train per-regime base models
+7. regime_metamodel_training - Train stacked/ensemble meta-models per regime
+8. regime_data_splitting - Tag data by regimes
+9. feature_lookback_optimization - Optimize feature lookback periods
+10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+11. multi_horizon_labeling - Apply multi-horizon profit labeling
+12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -154,6 +156,8 @@ class SubPipelineResult:
             'nas_tas_clustering': ['nas_tas_clustering_result'],
             # Backward-compatible alias for legacy component name
             'nas_clustering': ['nas_tas_clustering_result'],
+            'regime_base_training': ['regime_base_training_result'],
+            'regime_metamodel_training': ['regime_metamodel_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
             # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
@@ -601,51 +605,79 @@ class MarketAnalysisSubPipeline:
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
 
-            # Stage 6: Regime Data Splitting
-            self.logger.info('✂️ Executing Stage 6: Regime Data Splitting')
+            # Stage 6: Regime Base Training
+            self.logger.info('🤖 Executing Stage 6: Regime Base Training')
+            regime_base_training_result = await self.execute_sub_pipeline('regime_base_training', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(regime_base_training_result, "Regime Base Training")
+            if not is_success:
+                return error_info
+
+            base_training_data = regime_base_training_result.artifacts.get('regime_base_training_result', {})
+            results['regime_base_models'] = base_training_data.get('hmm_models', {})
+            results['regime_base_metrics'] = base_training_data.get('hmm_training_metrics', {})
+
+            self._current_pipeline_state.update({
+                'hmm_models': results['regime_base_models'],
+                'hmm_training_metrics': results['regime_base_metrics'],
+                'regime_base_training_metadata': base_training_data.get('metadata', {})
+            })
+
+            # Stage 7: Regime Meta-Model Training
+            self.logger.info('🧠 Executing Stage 7: Regime Meta-Model Training')
+            regime_meta_training_result = await self.execute_sub_pipeline('regime_metamodel_training', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(regime_meta_training_result, "Regime Meta-Model Training")
+            if not is_success:
+                return error_info
+
+            meta_training_data = regime_meta_training_result.artifacts.get('regime_metamodel_training_result', {})
+            results['regime_meta_models'] = meta_training_data.get('models', {})
+            results['regime_meta_metrics'] = meta_training_data.get('ensemble_metrics', {})
+
+            self._current_pipeline_state.update({
+                'hmm_ensemble': results['regime_meta_models'],
+                'hmm_ensemble_metrics': results['regime_meta_metrics'],
+                'regime_meta_training_metadata': meta_training_data.get('metadata', {})
+            })
+
+            # Stage 8: Regime Data Splitting
+            self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
             regime_data_splitting_result = await self.execute_sub_pipeline('regime_data_splitting', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(regime_data_splitting_result, "Regime Data Splitting")
             if not is_success:
                 return error_info
 
-            # Extract data from consolidated artifact
             regime_splitting_data = regime_data_splitting_result.artifacts.get('regime_data_splitting_result', {})
             results['regime_data'] = regime_splitting_data.get('regime_data', {})
             results['regime_stats'] = regime_splitting_data.get('regime_stats', {})
 
-            # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_data': results['regime_data']
             })
 
-            # Stage 7: Feature Lookback Optimization
-            self.logger.info('⚙️ Executing Stage 7: Feature Lookback Optimization')
+            # Stage 9: Feature Lookback Optimization
+            self.logger.info('⚙️ Executing Stage 9: Feature Lookback Optimization')
             feature_lookback_optimization_result = await self.execute_sub_pipeline('feature_lookback_optimization', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(feature_lookback_optimization_result, "Feature Lookback Optimization")
             if not is_success:
                 return error_info
 
-            # Extract data from consolidated artifact
             feature_optimization_data = feature_lookback_optimization_result.artifacts.get('feature_lookback_optimization_result', {})
             results['optimized_features'] = feature_optimization_data.get('optimized_features', {})
             results['optimization_metrics'] = feature_optimization_data.get('optimization_metrics', {})
 
-            # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'optimized_features': results['optimized_features']
             })
 
-            # Stage 8: PID-Based Feature Generation
-            self.logger.info('🔧 Executing Stage 8: PID-Based Feature Generation')
+            # Stage 10: PID-Based Feature Generation
+            self.logger.info('🔧 Executing Stage 10: PID-Based Feature Generation')
             pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
             if not is_success:
                 return error_info
 
-            # Extract data from consolidated artifact
             pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
 
-            # Extract comprehensive PID-based feature generation results
             results['pid_based_features'] = {
                 'combined_features': pid_feature_data.get('combined_features', {}),
                 'combined_feature_names': pid_feature_data.get('combined_feature_names', []),
@@ -673,23 +705,21 @@ class MarketAnalysisSubPipeline:
                 'generation_status': pid_feature_data.get('generation_status', 'unknown')
             }
 
-            # Update pipeline state with features for labeling
             self._current_pipeline_state.update({
                 'pid_based_features': results['pid_based_features']
             })
 
-            # Stage 9: Multi-Horizon Profit Labeler (moved here to use optimized features)
-            self.logger.info('💰 Executing Stage 9: Multi-Horizon Profit Labeler')
+            # Stage 11: Multi-Horizon Profit Labeler
+            self.logger.info('💰 Executing Stage 11: Multi-Horizon Profit Labeler')
             mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Profit Labeler")
             if not is_success:
                 return error_info
-            # Extract data from consolidated artifact using dict-safe access
-            mh_result_dict = mh_component_result.artifacts
-            multi_horizon_data = mh_result_dict.get('multi_horizon_labeling_result', {})
+
+            multi_horizon_data = mh_component_result.artifacts.get('multi_horizon_labeling_result', {})
             results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
             results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
-            # Update pipeline state for next components
+
             self._current_pipeline_state.update({
                 'labeled_data': results['labeled_data'],
                 'multi_horizon_labeling_result': multi_horizon_data
@@ -698,8 +728,8 @@ class MarketAnalysisSubPipeline:
             # ===== FINAL FEATURE SELECTION STEP =====
             self.logger.info('🏁 ===== STARTING FINAL FEATURE SELECTION =====')
 
-            # Stage 10: Final Feature Selection
-            self.logger.info('🏁 Executing Stage 10: Final Feature Selection')
+            # Stage 12: Final Feature Selection
+            self.logger.info('🏁 Executing Stage 12: Final Feature Selection')
             final_feature_selection_result = await self.execute_sub_pipeline('final_feature_selection', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(final_feature_selection_result, "Final Feature Selection")
             if not is_success:
@@ -731,7 +761,7 @@ class MarketAnalysisSubPipeline:
                 'success': True,
                 'results': results,
                 'execution_time': sum(result.execution_time for result in self.results),
-                'total_stages': 10,
+                'total_stages': 12,
                 'completed_stages': len(self.results)
             }
             
@@ -828,7 +858,7 @@ class MarketAnalysisSubPipeline:
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
             # Enforce 15m timeframe for HMM components only (log warning if overriding)
-            if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+            if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training', 'regime_base_training', 'regime_metamodel_training'):
                 if component_config.timeframe != '15m':
                     self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
                 component_config.timeframe = '15m'
@@ -947,11 +977,13 @@ class MarketAnalysisSubPipeline:
         3. sr_clustering - Generate SR clusters
         4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
         5. nas_tas_clustering - Consolidated NAS/TAS clustering stage
-        6. regime_data_splitting - Tag data by regimes
-        7. feature_lookback_optimization - Optimize feature lookback periods
-        8. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
-        10. final_feature_selection - Final feature selection (120→100→80→60)
+        6. regime_base_training - Train per-regime base models
+        7. regime_metamodel_training - Train stacked/ensemble meta-models per regime
+        8. regime_data_splitting - Tag data by regimes
+        9. feature_lookback_optimization - Optimize feature lookback periods
+        10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+        11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+        12. final_feature_selection - Final feature selection (120→100→80→60)
 
         When one step completes successfully, it automatically triggers the next step.
         
@@ -991,11 +1023,16 @@ class MarketAnalysisSubPipeline:
             'hybrid_nas_tas_regime_discovery',
             'nas_tas_clustering'
         ]
-        
+
+        regime_training_steps = [
+            'regime_base_training',
+            'regime_metamodel_training'
+        ]
+
         data_processing_steps = [
             'regime_data_splitting',
             'feature_lookback_optimization',
-            'pid_based_feature_generation',
+            'pid_based_feature_generation',  # Uses regime-tagged data and generated features
             'multi_horizon_profit_labeler',  # Uses regime-tagged data and generated features
             'final_feature_selection'
         ]
@@ -1006,7 +1043,7 @@ class MarketAnalysisSubPipeline:
         ]
         
         # Complete execution sequence - ALL sub-pipelines in market_analysis stage
-        execution_sequence = sr_steps + hmm_steps + data_processing_steps + additional_steps
+        execution_sequence = sr_steps + hmm_steps + regime_training_steps + data_processing_steps + additional_steps
         
         # Find the starting index
         try:
@@ -1025,6 +1062,9 @@ class MarketAnalysisSubPipeline:
         elif sub_pipeline_name in hmm_steps:
             current_group = "HMM Steps"
             self.logger.info('🎯 Starting from HMM steps group - will complete all HMM steps before moving to data processing')
+        elif sub_pipeline_name in regime_training_steps:
+            current_group = "Regime Training Steps"
+            self.logger.info('🎯 Starting from regime training steps group')
         elif sub_pipeline_name in data_processing_steps:
             current_group = "Data Processing Steps"
             self.logger.info('🎯 Starting from data processing steps group')

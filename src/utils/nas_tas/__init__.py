@@ -15,16 +15,7 @@ Modules:
 - regime_detector: Unified regime detection interface
 """
 
-from .evaluation import UnifiedEvaluator, compute_classification_metrics, compute_regression_metrics
-from .hardware import (
-    UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics, 
-    HardwarePerformanceMonitor, WorkloadType, OptimizationLevel
-)
-from .search import UnifiedSearchEngine
-from .data_processing import UnifiedDataProcessor
-from .manager import UnifiedComponentManager
-
-# Unified regime detection components
+# Unified regime detection components (primary focus)
 from .unified_regime_detector import UnifiedRegimeDetector
 from .unified_regime_config import UnifiedRegimeConfig, RegimeSystemType, ArchitectureType
 from .unified_result import UnifiedRegimeResult
@@ -36,26 +27,42 @@ from .regime_detector import (
     create_unified_regime_detector
 )
 
+# Other components (imported conditionally to avoid circular imports)
+try:
+    from .evaluation import UnifiedEvaluator, compute_classification_metrics, compute_regression_metrics
+    EVALUATION_AVAILABLE = True
+except ImportError:
+    EVALUATION_AVAILABLE = False
+
+try:
+    from .hardware import (
+        UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics, 
+        HardwarePerformanceMonitor, WorkloadType, OptimizationLevel
+    )
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+
+try:
+    from .search import UnifiedSearchEngine
+    SEARCH_AVAILABLE = True
+except ImportError:
+    SEARCH_AVAILABLE = False
+
+try:
+    from .data_processing import UnifiedDataProcessor
+    DATA_PROCESSING_AVAILABLE = True
+except ImportError:
+    DATA_PROCESSING_AVAILABLE = False
+
+try:
+    from .manager import UnifiedComponentManager
+    MANAGER_AVAILABLE = True
+except ImportError:
+    MANAGER_AVAILABLE = False
+
 __all__ = [
-    # Main components
-    'UnifiedEvaluator',
-    'UnifiedHardwareOptimizer', 
-    'UnifiedSearchEngine',
-    'UnifiedDataProcessor',
-    'UnifiedComponentManager',
-    
-    # Enhanced evaluation functions
-    'compute_classification_metrics',
-    'compute_regression_metrics',
-    
-    # Hardware management classes
-    'HardwareConfig',
-    'PerformanceMetrics',
-    'HardwarePerformanceMonitor',
-    'WorkloadType',
-    'OptimizationLevel',
-    
-    # Unified regime detection
+    # Unified regime detection (always available)
     'UnifiedRegimeDetector',
     'UnifiedRegimeConfig', 
     'RegimeSystemType',
@@ -67,6 +74,23 @@ __all__ = [
     'create_hybrid_regime_detector',
     'create_unified_regime_detector'
 ]
+
+# Add other components if available
+if EVALUATION_AVAILABLE:
+    __all__.extend(['UnifiedEvaluator', 'compute_classification_metrics', 'compute_regression_metrics'])
+
+if HARDWARE_AVAILABLE:
+    __all__.extend(['UnifiedHardwareOptimizer', 'HardwareConfig', 'PerformanceMetrics', 
+                   'HardwarePerformanceMonitor', 'WorkloadType', 'OptimizationLevel'])
+
+if SEARCH_AVAILABLE:
+    __all__.append('UnifiedSearchEngine')
+
+if DATA_PROCESSING_AVAILABLE:
+    __all__.append('UnifiedDataProcessor')
+
+if MANAGER_AVAILABLE:
+    __all__.append('UnifiedComponentManager')
 
 __version__ = "2.1.0"
 __author__ = "AI Assistant"

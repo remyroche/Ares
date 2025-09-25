@@ -115,7 +115,7 @@ def calculate_multi_output_calibration_metrics(y_true: np.ndarray, y_pred_proba:
         if len(y_true.shape) != 2 or len(y_pred_proba.shape) != 2:
             _LOGGER.error("❌ Multi-output calibration requires 2D arrays")
             return {'error': 'Invalid input shape for multi-output calibration'}
-        
+
         n_outputs = y_true.shape[1]
         if output_names is None:
             output_names = [f"output_{i+1}" for i in range(n_outputs)]
@@ -127,11 +127,10 @@ def calculate_multi_output_calibration_metrics(y_true: np.ndarray, y_pred_proba:
         for i in range(n_outputs):
             y_true_output = y_true[:, i]
             y_pred_proba_output = y_pred_proba[:, i]
-            
-            # Calculate calibration metrics for this output
+
             output_calibration = calculate_calibration_metrics(
-                y_true_output.reshape(-1, 1), 
-                y_pred_proba_output.reshape(-1, 1)
+                y_true_output,
+                y_pred_proba_output
             )
             
             per_output_calibration[output_names[i]] = output_calibration
@@ -179,9 +178,18 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
     """
     _LOGGER.debug("🔄 Starting calibration metrics calculation...")
     
+    if y_true.ndim == 2 and y_true.shape[1] == 1:
+        y_true = y_true.ravel()
+
+    if y_pred_proba.ndim == 1:
+        y_pred_proba = y_pred_proba.reshape(-1, 1)
+
+    if y_pred_proba.shape[1] == 1:
+        complement = 1.0 - np.clip(y_pred_proba[:, 0], 0.0, 1.0)
+        y_pred_proba = np.column_stack([complement, np.clip(y_pred_proba[:, 0], 0.0, 1.0)])
+
     try:
         if y_pred_proba.shape[1] == 2:
-            # Binary classification
             _LOGGER.debug("📊 Processing binary classification calibration...")
             brier_score = brier_score_loss(y_true, y_pred_proba[:, 1])
             
@@ -195,7 +203,9 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
             
             calibration_quality = _assess_calibration_quality(brier_score, ece)
             
-            _LOGGER.info(f"📈 Binary calibration - Brier: {brier_score:.4f}, ECE: {ece:.4f}, Quality: {calibration_quality}")
+            _LOGGER.info(
+                f"📈 Binary calibration - Brier: {brier_score:.4f}, ECE: {ece:.4f}, Quality: {calibration_quality}"
+            )
             
             return {
                 'brier_score': float(brier_score),

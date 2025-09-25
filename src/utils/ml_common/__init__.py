@@ -31,7 +31,6 @@ _PIPELINE = "src.utils.ml_common.pipeline_orchestrator"
 _FEATURE_IMPORTANCE = "src.utils.feature_selection.feature_importance_analyzer"
 _DATA_DRIFT = "src.utils.ml_common.data_drift_detector"
 _MATRIX_OPERATIONS = "src.utils.matrix_operations"
-_HMM = "src.utils.ml_common.hmm_regime_detection"
 
 _EXPORT_MAP: Dict[str, Tuple[str, str]] = {}
 
@@ -162,14 +161,6 @@ _register(
         'FeatureSelectionConfig': 'FeatureSelectionConfig',
         'LegacyFeatureSelector': 'FeatureSelector',
     },
-)
-
-_register(
-    _HMM,
-    [
-        'HMMRegimeDetector',
-        'RegimeConfig',
-    ],
 )
 
 _register(

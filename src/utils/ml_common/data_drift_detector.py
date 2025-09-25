@@ -20,6 +20,7 @@ import logging
 import time
 from pathlib import Path
 import warnings
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy import stats
 from scipy.stats import ks_2samp, chi2_contingency, wasserstein_distance
@@ -154,7 +155,7 @@ class DataDriftDetector:
         
         self.logger.info("🚀 DataDriftDetector initialized")
     
-    def detect_drift(self, 
+    def detect_drift(self,
                     reference_data: pd.DataFrame,
                     current_data: pd.DataFrame,
                     feature_names: Optional[List[str]] = None,
@@ -203,12 +204,13 @@ class DataDriftDetector:
         self.logger.info(f"✅ Drift detection completed in {time.time() - start_time:.3f}s")
         return report
     
-    def _detect_drift_parallel(self, features: List[str], reference_data: pd.DataFrame, 
+    def _detect_drift_parallel(self, features: List[str], reference_data: pd.DataFrame,
                               current_data: pd.DataFrame, regime_labels: Optional[pd.Series]) -> List[DriftResult]:
         """Detect drift using parallel processing."""
         drift_results = []
-        
-        with ThreadPoolExecutor(max_workers=self.config.n_jobs) as executor:
+
+        max_workers = min(len(features), self._resolve_worker_count())
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(self._detect_feature_drift, feature, reference_data, current_data, regime_labels): feature
                 for feature in features
@@ -235,8 +237,24 @@ class DataDriftDetector:
                 drift_results.extend(results)
             except Exception as e:
                 self.logger.error(f"❌ Error detecting drift for feature {feature}: {e}")
-        
+
         return drift_results
+
+    def _resolve_worker_count(self) -> int:
+        """Translate the ``n_jobs`` setting into a valid worker count."""
+
+        n_jobs = self.config.n_jobs
+        cpu_count = os.cpu_count() or 1
+
+        if n_jobs is None:
+            return cpu_count
+
+        if n_jobs > 0:
+            return n_jobs
+
+        # Interpret negative values following joblib/sklearn semantics
+        desired = cpu_count + n_jobs + 1
+        return max(1, desired)
     
     def _detect_feature_drift(self, feature: str, reference_data: pd.DataFrame, 
                              current_data: pd.DataFrame, regime_labels: Optional[pd.Series]) -> List[DriftResult]:

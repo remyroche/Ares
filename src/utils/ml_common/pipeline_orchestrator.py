@@ -20,6 +20,7 @@ Built on existing utilities:
 """
 
 import asyncio
+import inspect
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Iterator
 from datetime import datetime, timedelta
@@ -30,9 +31,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import threading
 
-from ..common_operations import create_fallback_logger
-from src.utils.ml_common.utils import ParallelProcessor
-from src.utils.common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)
 
@@ -129,13 +127,11 @@ class MLPipelineOrchestrator:
         # Monitoring
         self.monitoring_queue = queue.Queue()
         self.monitoring_thread = None
+        self._monitoring_stop_event = threading.Event()
         self.logger.debug("✅ Monitoring system initialized")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ MLPipelineOrchestrator initialized in {init_time:.3f}s")
-
-        # Initialize utilities
-        self.parallel_processor = ParallelProcessor() if self.enable_parallel else None
 
         # Start monitoring if enabled
         if self.enable_monitoring:
@@ -559,11 +555,17 @@ class MLPipelineOrchestrator:
                                     pending_steps.put(dep_step_name)
 
                         if progress_callback:
-                            await progress_callback({
+                            progress_payload = {
                                 'pipeline_id': pipeline.pipeline_id,
                                 'completed_steps': len(completed_steps),
                                 'total_steps': len(pipeline.steps)
-                            })
+                            }
+                            try:
+                                maybe_coro = progress_callback(progress_payload)
+                                if inspect.isawaitable(maybe_coro):
+                                    await maybe_coro
+                            except Exception as exc:
+                                self.logger.warning("Progress callback failed: %s", exc)
                     else:
                         # Put back in queue if dependencies not satisfied
                         pending_steps.put(step_name)
@@ -751,13 +753,19 @@ class MLPipelineOrchestrator:
             metric_names.update(metrics.keys())
 
         for metric_name in metric_names:
-            values = [m.get(metric_name) for m in all_metrics if metric_name in m]
-            if values:
+            raw_values = [m.get(metric_name) for m in all_metrics if metric_name in m]
+            numeric_values = [float(v) for v in raw_values if isinstance(v, (int, float))]
+            if numeric_values:
+                count = len(numeric_values)
+                total = sum(numeric_values)
+                mean = total / count
+                variance = sum((v - mean) ** 2 for v in numeric_values) / count if count > 1 else 0.0
                 summary[metric_name] = {
-                    'mean': sum(values) / len(values),
-                    'min': min(values),
-                    'max': max(values),
-                    'std': (sum((v - sum(values)/len(values))**2 for v in values) / len(values))**0.5
+                    'mean': mean,
+                    'min': min(numeric_values),
+                    'max': max(numeric_values),
+                    'std': variance ** 0.5,
+                    'count': count,
                 }
 
         return summary
@@ -765,23 +773,24 @@ class MLPipelineOrchestrator:
     def _start_monitoring(self) -> None:
         """Start monitoring thread."""
         if self.monitoring_thread is None:
+            self._monitoring_stop_event.clear()
             self.monitoring_thread = threading.Thread(target=self._monitoring_worker, daemon=True)
             self.monitoring_thread.start()
 
     def _monitoring_worker(self) -> None:
         """Monitoring worker thread."""
-        while True:
+        while not self._monitoring_stop_event.is_set():
             try:
                 # Process monitoring queue
                 while not self.monitoring_queue.empty():
                     monitoring_data = self.monitoring_queue.get()
                     self._process_monitoring_data(monitoring_data)
 
-                time.sleep(5)  # Check every 5 seconds
+                self._monitoring_stop_event.wait(5)
 
             except Exception as e:
                 self.logger.error(f"Monitoring worker error: {e}")
-                time.sleep(10)
+                self._monitoring_stop_event.wait(10)
 
     def _process_monitoring_data(self, data: Dict[str, Any]) -> None:
         """Process monitoring data."""
@@ -819,3 +828,11 @@ class MLPipelineOrchestrator:
             return True
 
         return False
+
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Stop background threads gracefully."""
+
+        if self.monitoring_thread and self.monitoring_thread.is_alive():
+            self._monitoring_stop_event.set()
+            self.monitoring_thread.join(timeout=timeout)
+            self.monitoring_thread = None

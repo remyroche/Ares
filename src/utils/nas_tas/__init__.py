@@ -143,9 +143,82 @@ from .dynamic_ensemble_manager import (
     EnsembleResult
 )
 
+# Import search space utilities
+from .search_space import (
+    create_default_nas_search_space,
+    create_tree_search_space,
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy
+)
+
+# Import risk analysis
+from .risk_analysis.risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
+# Import backtesting engine
+from .backtesting_engine import (
+    BacktestingEngine,
+    BacktestingConfig,
+    BacktestingResult,
+    BacktestingMode
+)
+
+# Import evolutionary search
+from .evolutionary_search import (
+    EvolutionaryTreeSearch,
+    TreeGeneticAlgorithm,
+    TreeNSGA2,
+    EvolutionaryConfig
+)
+
+# Import uncertainty estimation
+from .uncertainty_estimation import (
+    TreeUncertaintyEstimator,
+    TreeEnsembleUncertainty,
+    TreeBayesianUncertainty,
+    UncertaintyConfig
+)
+
+# Import unified evaluator
+from .unified_evaluator import (
+    UnifiedEvaluator,
+    EvaluationConfig,
+    EvaluationResult,
+    ModelType,
+    EvaluationMode,
+    MetricType
+)
+
+# Import unified hardware manager
+from .unified_hardware import (
+    UnifiedHardwareManager,
+    HardwareAccelerationConfig,
+    WorkloadType,
+    OptimizationLevel,
+    PerformanceMetrics,
+    create_unified_hardware_manager,
+    get_hardware_manager
+)
+
+# Import Hybrid NAS System
+from .hybrid_nas_system import (
+    HybridNASSystem,
+    HybridNASConfig,
+    HybridArchitectureCandidate,
+    optimize_hybrid_architecture,
+    analyze_data_characteristics
+  
 from .ensemble_optimizer import (
     EnsembleOptimizer,
     OptimizationConfig
+
 )
 
 from .evolutionary_algorithms import (
@@ -161,11 +234,50 @@ __all__ = [
     'UnifiedRegimeConfig',
     'RegimeDetectionMethod',
     'OptimizationStrategy',
+    'create_default_nas_search_space',
+    'create_tree_search_space',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
+    'RiskAnalyzer',
+    'RiskConfig',
+    'RiskResult',
+    'RiskMetric',
+    'BacktestingEngine',
+    'BacktestingConfig', 
+    'BacktestingResult',
+    'BacktestingMode',
+    'EvolutionaryTreeSearch',
+    'TreeGeneticAlgorithm',
+    'TreeNSGA2',
+    'EvolutionaryConfig',
+    'TreeUncertaintyEstimator',
+    'TreeEnsembleUncertainty',
+    'TreeBayesianUncertainty',
+    'UncertaintyConfig',
+    'TreeConfidenceScorer',
+    'TreeReliabilityEstimator',
+    'TreeCalibrationScorer',
+    'ConfidenceConfig',
+    'UnifiedEvaluator',
+    'EvaluationConfig',
+    'EvaluationResult',
+    'ModelType',
+    'EvaluationMode',
+    'MetricType',
+    'UnifiedHardwareManager',
+    'HardwareAccelerationConfig',
+    'WorkloadType',
+    'OptimizationLevel',
+    'PerformanceMetrics',
+    'create_unified_hardware_manager',
+    'get_hardware_manager',
     'EconomicEvaluationMode',
     'UnifiedRegimeDetector',
     'UnifiedRegimeResult',
     'UnifiedResult',
-    
+  
     # Core search and optimization
     'UnifiedSearchEngine',
     'SearchConfig',

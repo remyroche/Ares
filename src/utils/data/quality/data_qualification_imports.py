@@ -208,7 +208,7 @@ class DataQualificationImportManager:
                 if self.enable_fallbacks:
                     ml_commons['data_labeling'] = self._get_fallback_data_labeling()
             
-            # HMM Regime Detection
+            # Legacy HMM Regime Detection (deprecated)
             try:
                 from src.utils.ml_common.hmm_regime_detection import (
                     HMMRegimeDetector, HMMRegimeConfig, RegimeDetectionMethod
@@ -217,8 +217,10 @@ class DataQualificationImportManager:
                 ml_commons['hmm_regime_config'] = HMMRegimeConfig
                 ml_commons['regime_detection_method'] = RegimeDetectionMethod
                 self.logger.debug("✅ HMMRegimeDetector imported")
-            except ImportError as e:
-                self.logger.warning(f"⚠️ HMMRegimeDetector not available: {e}")
+            except ImportError:
+                self.logger.info(
+                    "ℹ️ Legacy HMM regime detection has been removed; use NAS/TAS pipelines"
+                )
                 if self.enable_fallbacks:
                     ml_commons['hmm_regime_detector'] = self._get_fallback_hmm_detector()
             
@@ -608,15 +610,17 @@ class DataQualificationImportManager:
         class FallbackHMMDetector:
             def __init__(self, *args, **kwargs):
                 self.logger = logger.getChild('FallbackHMMDetector')
-                self.logger.warning("⚠️ Using fallback HMM detector")
-            
+                self.logger.warning(
+                    "⚠️ HMM regime detection has been deprecated. "
+                    "Use NAS/TAS pipelines for regime insights."
+                )
+
             def detect_regimes(self, data, *args, **kwargs):
-                n_samples = len(data)
-                return type('RegimeResult', (), {
-                    'regime_ids': np.zeros(n_samples, dtype=int),
-                    'regime_probabilities': np.ones((n_samples, 1))
-                })()
-        
+                raise NotImplementedError(
+                    "HMM regime detection has been removed. "
+                    "Please migrate to NAS/TAS regime workflows."
+                )
+
         return FallbackHMMDetector
     
     def _get_fallback_regime_processor(self) -> Any:

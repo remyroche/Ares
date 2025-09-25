@@ -25,7 +25,7 @@ from .search_space import TreeSearchSpace
 # Import advanced components
 from ..meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML
 from ..search.evolutionary_search import EvolutionaryTreeSearch
-from ..search.bayesian_search import BayesianTreeSearch
+from src.utils.nas_tas.bayesian_search import BayesianTreeSearch
 from ..search.rl_search import RLTreeSearch
 from ..optimization.hardware_optimization import TreeHardwareOptimizer
 from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator

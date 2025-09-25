@@ -60,7 +60,7 @@ The following files had their import paths updated:
 - ✅ `examples/advanced_regime_detection_example.py`
 - ✅ `tree_cvlSA_demo.py`
 
-**Old Import Path**: `from src.utils.ml_common.optimization.tas`
+**Old Import Path**: `from src.utils.nas_tas.tas`
 **New Import Path**: `from src.training.steps.market_analysis.tas_regime`
 
 ## 🎯 **Key Features Available**

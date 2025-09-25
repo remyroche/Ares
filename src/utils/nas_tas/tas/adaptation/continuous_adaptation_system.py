@@ -34,7 +34,7 @@ except ImportError:
     TPRINT_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.meta_learning import (
+    from src.utils.nas_tas.tas.meta_learning import (
         AdvancedMetaLearningSystem, MetaTask
     )
     META_LEARNING_AVAILABLE = True
@@ -42,7 +42,7 @@ except ImportError:
     META_LEARNING_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.realtime import (
+    from src.utils.nas_tas.tas.realtime import (
         RealTimeOptimizationEngine, PerformanceMonitor
     )
     REALTIME_OPTIMIZATION_AVAILABLE = True

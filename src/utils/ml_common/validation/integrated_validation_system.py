@@ -66,10 +66,10 @@ except ImportError:
     ENHANCED_VALIDATION_AVAILABLE = False
 
 try:
-    from .hpo_overfitting_prevention import (
-        get_hpo_with_overfitting_prevention,
-        HPOOverfittingPreventionConfig,
-        optimize_hyperparameters_safely
+    from src.utils.nas_tas.advanced_overfitting_detection import (
+        EnhancedOverfittingDetectorWithLearningCurves,
+        OverfittingConfig,
+        OverfittingReport
     )
     HPO_PREVENTION_AVAILABLE = True
 except ImportError:

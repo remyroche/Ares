@@ -17,9 +17,11 @@ from datetime import datetime
 import pickle
 import os
 from pathlib import Path
-# from tprint import tprint  # Not available, using print instead
-def tprint(*args, **kwargs):
-    print(*args, **kwargs)
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import enhanced utility tools
 from src.utils.common_operations import (
@@ -703,6 +705,9 @@ class EnhancedNASEngine:
             return result
 
         except Exception as e:
+            tprint_error(f"Architecture evaluation with shared utilities failed: {e}")
+            tprint_debug(f"Architecture evaluation error context: {locals()}")
+            tprint_warning("Falling back to simple evaluation")
             self.logger.error(f"Architecture evaluation with shared utilities failed: {e}")
             # Fallback to simple evaluation
             return self._evaluate_architecture_fallback(architecture, validation_data, regime_data)
@@ -726,6 +731,9 @@ class EnhancedNASEngine:
                     self.logger.debug(f"Architecture evaluated with estimator: {estimated_score:.4f}")
                     return estimated_score
                 except Exception as e:
+                    tprint_error(f"Performance estimator failed: {e}")
+                    tprint_debug(f"Performance estimator error context: {locals()}")
+                    tprint_warning("Falling back to simplified evaluation")
                     self.logger.warning(f"Performance estimator failed: {e}")
 
             # Fallback to actual evaluation (simplified)
@@ -754,6 +762,9 @@ class EnhancedNASEngine:
             return score
 
         except Exception as e:
+            tprint_error(f"Architecture evaluation failed: {e}")
+            tprint_debug(f"Architecture evaluation error context: {locals()}")
+            tprint_warning("Returning low score for failed architecture")
             self.logger.error(f"Architecture evaluation failed: {e}")
             return 0.1  # Low score for failed architectures
 
@@ -777,6 +788,9 @@ class EnhancedNASEngine:
             return score
 
         except Exception as e:
+            tprint_error(f"NAS architecture fallback evaluation failed: {e}")
+            tprint_debug(f"Fallback evaluation error context: {locals()}")
+            tprint_warning("Returning low score for failed fallback evaluation")
             self.logger.error(f"NAS architecture fallback evaluation failed: {e}")
             return 0.1  # Low score for failed architectures
 
@@ -983,6 +997,9 @@ class EnhancedNASEngine:
             )
 
         except Exception as e:
+            tprint_error(f"NAS Cross-validation with shared utilities failed: {e}")
+            tprint_debug(f"Cross-validation error context: {locals()}")
+            tprint_warning("Cross-validation failed - returning error result")
             self.logger.warning(f"NAS Cross-validation with shared utilities failed: {e}")
             return {'error': str(e), 'success': False}
 
@@ -1008,6 +1025,9 @@ class EnhancedNASEngine:
                 return {'success': False, 'error': 'No probability predictions available'}
 
         except Exception as e:
+            tprint_error(f"NAS Threshold optimization with shared utilities failed: {e}")
+            tprint_debug(f"Threshold optimization error context: {locals()}")
+            tprint_warning("Threshold optimization failed - returning error result")
             self.logger.warning(f"NAS Threshold optimization with shared utilities failed: {e}")
             return {'success': False, 'error': str(e)}
 

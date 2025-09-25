@@ -705,6 +705,9 @@ class TASRegimeDetector:
 
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ TAS regime detection failed: {e}")
+            tprint_debug(f"Error context: {locals()}")
+            tprint_warning(f"Execution time before failure: {execution_time:.2f}s")
             self.logger.error(f"❌ TAS regime detection failed: {e}")
 
             return TASRegimeResult(
@@ -773,6 +776,9 @@ class TASRegimeDetector:
             return enhanced_data
 
         except Exception as e:
+            tprint_error(f"CLVSA feature enhancement failed: {e}")
+            tprint_debug(f"CLVSA error context: {locals()}")
+            tprint_warning("Returning original data without CLVSA enhancement")
             self.logger.warning(f"CLVSA feature enhancement failed: {e}")
             return data
 
@@ -805,6 +811,9 @@ class TASRegimeDetector:
                 return self._fallback_regime_discovery(data)
 
         except Exception as e:
+            tprint_error(f"Tree regime discovery failed: {e}")
+            tprint_debug(f"Tree discovery error context: {locals()}")
+            tprint_warning("Falling back to basic regime discovery")
             self.logger.warning(f"Tree regime discovery failed: {e}")
             return self._fallback_regime_discovery(data)
     
@@ -841,7 +850,11 @@ class TASRegimeDetector:
                     self.logger.debug(f"Advanced tree model {i} trained successfully")
                     
                 except Exception as e:
+                    tprint_error(f"Advanced tree model {i} training failed: {e}")
+                    tprint_debug(f"Model {i} error context: {locals()}")
                     self.logger.warning(f"Advanced tree model {i} training failed: {e}")
+                    # Log the specific error details for debugging
+                    tprint_warning(f"Skipping model {i} due to training failure")
                     continue
             
             # Combine ensemble predictions
@@ -878,6 +891,9 @@ class TASRegimeDetector:
             }
             
         except Exception as e:
+            tprint_error(f"Advanced tree regime discovery failed: {e}")
+            tprint_debug(f"Advanced tree discovery error context: {locals()}")
+            tprint_warning("Falling back to basic clustering")
             self.logger.error(f"Advanced tree regime discovery failed: {e}")
             # Fallback to basic clustering
             return self._fallback_regime_discovery(data)
@@ -901,6 +917,9 @@ class TASRegimeDetector:
             }
 
         except Exception as e:
+            tprint_error(f"Fallback regime discovery failed: {e}")
+            tprint_debug(f"Fallback discovery error context: {locals()}")
+            tprint_error("All regime discovery methods failed - critical error")
             self.logger.error(f"Fallback regime discovery failed: {e}")
             raise
 

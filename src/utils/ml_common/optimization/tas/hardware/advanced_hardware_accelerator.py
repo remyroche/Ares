@@ -22,6 +22,12 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Hardware optimization imports
 try:
     import torch
@@ -423,7 +429,8 @@ class TreeHardwareAccelerator:
                 # This would require nvidia-ml-py or similar
                 return 0.0  # Placeholder
             return 0.0
-        except:
+        except Exception as e:
+            tprint_warning(f"Hardware acceleration benchmark failed: {e}. Returning 0.0.")
             return 0.0
     
     def _get_memory_usage(self) -> Dict[str, float]:
@@ -467,7 +474,8 @@ class TreeHardwareAccelerator:
         # CLVSA-specific optimizations
         if 'cvlsa_parameters' in clvsa_config:
             # Apply CLVSA parameters
-            pass
+            tprint_debug("Applying CLVSA parameters to tree model")
+            # TODO: Implement CLVSA parameter application
         return tree_model
     
     def _apply_memory_pooling(self, tree_model: Any) -> Any:
@@ -542,7 +550,8 @@ class CLVSAHardwareOptimizer:
         # CLVSA-specific optimizations
         if 'cvlsa_parameters' in config:
             # Apply CLVSA parameters
-            pass
+            tprint_debug("Applying CLVSA parameters to model")
+            # TODO: Implement CLVSA parameter application
         
         return model
     

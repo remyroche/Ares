@@ -17,6 +17,12 @@ from scipy.stats import kstest, jarque_bera
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,7 +82,7 @@ class RegimeQualifier:
         self.qualification_history = []
         self.regime_scores = {}
         
-        self.logger.info("✅ Regime Qualifier initialized")
+        tprint_success("✅ Regime Qualifier initialized")
     
     def qualify_regimes(self, 
                        regime_results: Dict[str, Any],
@@ -93,7 +99,7 @@ class RegimeQualifier:
         Returns:
             Qualification results
         """
-        self.logger.info("🔍 Starting regime qualification")
+        tprint_info("🔍 Starting regime qualification")
         start_time = datetime.now()
         
         try:
@@ -101,7 +107,7 @@ class RegimeQualifier:
             regime_labels = regime_results.get('regime_labels', np.array([]))
             
             if not regimes:
-                self.logger.warning("⚠️ No regimes to qualify")
+                tprint_warning("⚠️ No regimes to qualify")
                 return self._create_empty_qualification_result()
             
             # Qualify each regime
@@ -156,13 +162,13 @@ class RegimeQualifier:
             self.qualified_regimes = qualified_regimes
             self.regime_scores = qualification_scores
             
-            self.logger.info(f"✅ Regime qualification completed in {results['execution_time']:.2f}s")
-            self.logger.info(f"📊 Qualified {len(qualified_regimes)}/{len(regimes)} regimes")
+            tprint_success(f"✅ Regime qualification completed in {results['execution_time']:.2f}s")
+            tprint_info(f"📊 Qualified {len(qualified_regimes)}/{len(regimes)} regimes")
             
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Regime qualification failed: {e}")
+            tprint_error(f"❌ Regime qualification failed: {e}")
             raise
     
     def _qualify_single_regime(self, 
@@ -485,7 +491,9 @@ class RegimeQualifier:
             jb_stat, jb_pvalue = jarque_bera(returns)
             jb_passed = jb_pvalue > self.config.significance_level
             jb_score = jb_pvalue  # Higher p-value = more normal
-        except:
+            tprint_debug(f"Jarque-Bera test: stat={jb_stat:.4f}, p-value={jb_pvalue:.4f}, passed={jb_passed}")
+        except Exception as e:
+            tprint_warning(f"Jarque-Bera normality test failed: {e}. Using fallback values.")
             jb_passed = True
             jb_score = 1.0
             jb_stat = 0
@@ -515,7 +523,9 @@ class RegimeQualifier:
                 'pvalue': jb_pvalue,
                 'passed': jb_pvalue > self.config.significance_level
             }
-        except:
+            tprint_debug(f"Comprehensive Jarque-Bera test: stat={jb_stat:.4f}, p-value={jb_pvalue:.4f}")
+        except Exception as e:
+            tprint_warning(f"Comprehensive Jarque-Bera test failed: {e}. Using fallback values.")
             tests['jarque_bera'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 2. Kolmogorov-Smirnov test
@@ -526,7 +536,9 @@ class RegimeQualifier:
                 'pvalue': ks_pvalue,
                 'passed': ks_pvalue > self.config.significance_level
             }
-        except:
+            tprint_debug(f"Kolmogorov-Smirnov test: stat={ks_stat:.4f}, p-value={ks_pvalue:.4f}")
+        except Exception as e:
+            tprint_warning(f"Kolmogorov-Smirnov test failed: {e}. Using fallback values.")
             tests['kolmogorov_smirnov'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 3. Anderson-Darling test
@@ -538,7 +550,9 @@ class RegimeQualifier:
                 'significance_levels': ad_significance,
                 'passed': ad_stat < ad_critical[2]  # 5% significance level
             }
-        except:
+            tprint_debug(f"Anderson-Darling test: stat={ad_stat:.4f}, passed={tests['anderson_darling']['passed']}")
+        except Exception as e:
+            tprint_warning(f"Anderson-Darling test failed: {e}. Using fallback values.")
             tests['anderson_darling'] = {'statistic': 0, 'critical_values': [0, 0, 0], 'passed': True}
         
         # 4. Shapiro-Wilk test (for small samples)
@@ -551,7 +565,9 @@ class RegimeQualifier:
                     'pvalue': sw_pvalue,
                     'passed': sw_pvalue > self.config.significance_level
                 }
-            except:
+                tprint_debug(f"Shapiro-Wilk test: stat={sw_stat:.4f}, p-value={sw_pvalue:.4f}")
+            except Exception as e:
+                tprint_warning(f"Shapiro-Wilk test failed: {e}. Using fallback values.")
                 tests['shapiro_wilk'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 5. Visual normality tests
@@ -595,7 +611,9 @@ class RegimeQualifier:
                 'passed': r_value ** 2 > 0.95,
                 'score': r_value ** 2
             }
-        except:
+            tprint_debug(f"Q-Q plot test: r_squared={r_value**2:.4f}, passed={tests['qq_plot']['passed']}")
+        except Exception as e:
+            tprint_warning(f"Q-Q plot test failed: {e}. Using fallback values.")
             tests['qq_plot'] = {'r_squared': 0.5, 'passed': False, 'score': 0.5}
         
         return tests
@@ -649,8 +667,10 @@ class RegimeQualifier:
             # Low autocorrelation is good (closer to 0)
             autocorr_score = 1.0 - abs(autocorr)
             passed = autocorr_score >= 0.5
+            tprint_debug(f"Autocorrelation test: autocorr={autocorr:.4f}, score={autocorr_score:.4f}, passed={passed}")
             
-        except:
+        except Exception as e:
+            tprint_warning(f"Autocorrelation calculation failed: {e}. Using fallback values.")
             autocorr = 0
             autocorr_score = 1.0
             passed = True
@@ -837,14 +857,19 @@ class RegimeQualifier:
             return 0.5
         
         # Test for autocorrelation (efficiency indicator)
-        autocorr_1 = np.corrcoef(returns[:-1], returns[1:])[0, 1]
-        autocorr_1 = 0 if np.isnan(autocorr_1) else autocorr_1
-        
-        # Test for momentum (inefficiency indicator)
-        momentum = np.mean(returns[1:] * returns[:-1])
-        
-        # Efficiency score (lower autocorrelation and momentum = more efficient)
-        efficiency_score = 1.0 - (abs(autocorr_1) + abs(momentum)) / 2.0
+        try:
+            autocorr_1 = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+            autocorr_1 = 0 if np.isnan(autocorr_1) else autocorr_1
+            
+            # Test for momentum (inefficiency indicator)
+            momentum = np.mean(returns[1:] * returns[:-1])
+            
+            # Efficiency score (lower autocorrelation and momentum = more efficient)
+            efficiency_score = 1.0 - (abs(autocorr_1) + abs(momentum)) / 2.0
+            tprint_debug(f"Market efficiency test: autocorr={autocorr_1:.4f}, momentum={momentum:.4f}, efficiency={efficiency_score:.4f}")
+        except Exception as e:
+            tprint_warning(f"Market efficiency calculation failed: {e}. Using fallback value.")
+            efficiency_score = 0.5
         
         return max(efficiency_score, 0.0)
     
@@ -1018,13 +1043,18 @@ class RegimeQualifier:
         
         # Test for temporal patterns
         if len(close_prices) > 10:
-            # Calculate autocorrelation
-            returns = np.diff(close_prices) / close_prices[:-1]
-            autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
-            autocorr = 0 if np.isnan(autocorr) else autocorr
-            
-            # Temporal stability (lower autocorrelation = more stable)
-            temporal_score = 1.0 - abs(autocorr)
+            try:
+                # Calculate autocorrelation
+                returns = np.diff(close_prices) / close_prices[:-1]
+                autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+                autocorr = 0 if np.isnan(autocorr) else autocorr
+                
+                # Temporal stability (lower autocorrelation = more stable)
+                temporal_score = 1.0 - abs(autocorr)
+                tprint_debug(f"Temporal stability test: autocorr={autocorr:.4f}, temporal_score={temporal_score:.4f}")
+            except Exception as e:
+                tprint_warning(f"Temporal stability calculation failed: {e}. Using fallback value.")
+                temporal_score = 0.5
         else:
             temporal_score = 0.5
         
@@ -1239,7 +1269,9 @@ class RegimeQualifier:
             jb_stat, jb_pvalue = jarque_bera(returns)
             normality_score = jb_pvalue  # Higher p-value = more normal
             factors.append(normality_score)
-        except:
+            tprint_debug(f"Statistical quality normality: jb_pvalue={jb_pvalue:.4f}")
+        except Exception as e:
+            tprint_warning(f"Statistical quality normality test failed: {e}. Using fallback value.")
             factors.append(0.5)
         
         # 2. Stationarity
@@ -1247,7 +1279,9 @@ class RegimeQualifier:
             adf_stat, adf_pvalue, _, _, _, _ = adfuller(returns)
             stationarity_score = adf_pvalue  # Higher p-value = more stationary
             factors.append(stationarity_score)
-        except:
+            tprint_debug(f"Statistical quality stationarity: adf_pvalue={adf_pvalue:.4f}")
+        except Exception as e:
+            tprint_warning(f"Statistical quality stationarity test failed: {e}. Using fallback value.")
             factors.append(0.5)
         
         # 3. Autocorrelation
@@ -1256,7 +1290,9 @@ class RegimeQualifier:
             autocorr = 0 if np.isnan(autocorr) else autocorr
             autocorr_score = 1.0 - abs(autocorr)  # Lower autocorrelation = better
             factors.append(autocorr_score)
-        except:
+            tprint_debug(f"Statistical quality autocorrelation: autocorr={autocorr:.4f}, score={autocorr_score:.4f}")
+        except Exception as e:
+            tprint_warning(f"Statistical quality autocorrelation test failed: {e}. Using fallback value.")
             factors.append(0.5)
         
         return np.mean(factors)

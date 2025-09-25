@@ -138,7 +138,7 @@ class UnsupervisedRegimeDetector:
         self.stability_metrics = {}
         self.regime_persistence = {}
         
-        self.logger.info("✅ Unsupervised Regime Detector initialized")
+        tprint_success("✅ Unsupervised Regime Detector initialized")
     
     def detect_regimes(self, 
                       market_data: pd.DataFrame,
@@ -155,7 +155,7 @@ class UnsupervisedRegimeDetector:
         Returns:
             Regime detection results
         """
-        self.logger.info("🔍 Starting unsupervised regime detection")
+        tprint_info("🔍 Starting unsupervised regime detection")
         start_time = datetime.now()
         
         try:
@@ -195,18 +195,18 @@ class UnsupervisedRegimeDetector:
             self.current_regimes = validated_regimes
             self.regime_history.append(results)
             
-            self.logger.info(f"✅ Regime detection completed in {results['execution_time']:.2f}s")
-            self.logger.info(f"📊 Detected {len(validated_regimes)} regimes")
+            tprint_success(f"✅ Regime detection completed in {results['execution_time']:.2f}s")
+            tprint_info(f"📊 Detected {len(validated_regimes)} regimes")
             
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Regime detection failed: {e}")
+            tprint_error(f"❌ Regime detection failed: {e}")
             raise
     
     def _engineer_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """Engineer features for regime detection."""
-        self.logger.info("🔧 Engineering features for regime detection")
+        tprint_info("🔧 Engineering features for regime detection")
         
         features = []
         feature_names = []
@@ -283,7 +283,7 @@ class UnsupervisedRegimeDetector:
                         features.append(mom)
                         feature_names.append('MOM')
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to calculate {indicator}: {e}")
+                    tprint_warning(f"⚠️ Failed to calculate {indicator}: {e}")
                     continue
         
         # Volume features
@@ -324,13 +324,13 @@ class UnsupervisedRegimeDetector:
         feature_matrix_scaled = self.feature_scaler.fit_transform(feature_matrix)
         
         self.feature_names = feature_names
-        self.logger.info(f"✅ Engineered {len(feature_names)} features")
+        tprint_success(f"✅ Engineered {len(feature_names)} features")
         
         return feature_matrix_scaled
     
     def _hybrid_regime_detection(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Hybrid regime detection using multiple methods."""
-        self.logger.info("🔄 Using hybrid regime detection")
+        tprint_info("🔄 Using hybrid regime detection")
         
         # Try multiple methods
         methods = ['kmeans', 'gmm', 'dbscan']
@@ -348,7 +348,7 @@ class UnsupervisedRegimeDetector:
                 results[method] = result
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ {method} detection failed: {e}")
+                tprint_warning(f"⚠️ {method} detection failed: {e}")
                 continue
         
         # Select best method based on quality metrics
@@ -448,7 +448,8 @@ class UnsupervisedRegimeDetector:
                 labels = kmeans.fit_predict(features)
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
-            except:
+            except Exception as e:
+                tprint_warning(f"Silhouette score calculation failed: {e}. Using 0.")
                 silhouette_scores.append(0)
         
         if not silhouette_scores:
@@ -459,7 +460,7 @@ class UnsupervisedRegimeDetector:
     
     def _validate_regimes(self, regime_results: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
         """Validate detected regimes."""
-        self.logger.info("✅ Validating detected regimes")
+        tprint_info("✅ Validating detected regimes")
         
         labels = regime_results['labels']
         unique_labels = np.unique(labels)
@@ -475,7 +476,7 @@ class UnsupervisedRegimeDetector:
             
             # Check minimum duration
             if len(regime_data) < self.config.min_regime_duration:
-                self.logger.warning(f"⚠️ Regime {label} too short: {len(regime_data)} samples")
+                tprint_warning(f"⚠️ Regime {label} too short: {len(regime_data)} samples")
                 continue
             
             # Calculate regime characteristics
@@ -485,7 +486,7 @@ class UnsupervisedRegimeDetector:
             if self._is_regime_valid(regime_chars):
                 validated_regimes[f'regime_{label}'] = regime_chars
             else:
-                self.logger.warning(f"⚠️ Regime {label} failed validation")
+                tprint_warning(f"⚠️ Regime {label} failed validation")
         
         return validated_regimes
     
@@ -650,7 +651,7 @@ class UnsupervisedRegimeDetector:
                     best_score = score
                     best_method = method
             except Exception as e:
-                self.logger.debug(f"⚠️ Method {method} evaluation failed: {e}, skipping")
+                tprint_debug(f"⚠️ Method {method} evaluation failed: {e}, skipping")
                 continue
         
         return best_method
@@ -658,14 +659,14 @@ class UnsupervisedRegimeDetector:
     def start_streaming_detection(self):
         """Start real-time streaming regime detection."""
         if self.streaming_active:
-            self.logger.warning("⚠️ Streaming already active")
+            tprint_warning("⚠️ Streaming already active")
             return
         
         self.streaming_active = True
         self.streaming_thread = threading.Thread(target=self._streaming_loop, daemon=True)
         self.streaming_thread.start()
         
-        self.logger.info("🚀 Real-time streaming regime detection started")
+        tprint_info("🚀 Real-time streaming regime detection started")
     
     def stop_streaming_detection(self):
         """Stop real-time streaming regime detection."""
@@ -673,12 +674,12 @@ class UnsupervisedRegimeDetector:
         if self.streaming_thread:
             self.streaming_thread.join(timeout=5)
         
-        self.logger.info("🛑 Real-time streaming regime detection stopped")
+        tprint_info("🛑 Real-time streaming regime detection stopped")
     
     def add_streaming_data(self, data: pd.DataFrame):
         """Add new data to streaming buffer."""
         if not self.streaming_active:
-            self.logger.warning("⚠️ Streaming not active")
+            tprint_warning("⚠️ Streaming not active")
             return
         
         self.data_queue.put(data)
@@ -704,7 +705,7 @@ class UnsupervisedRegimeDetector:
             except queue.Empty:
                 continue
             except Exception as e:
-                self.logger.error(f"❌ Streaming loop error: {e}")
+                tprint_error(f"❌ Streaming loop error: {e}")
                 threading.Event().wait(1)
     
     def _process_streaming_data(self):
@@ -740,7 +741,7 @@ class UnsupervisedRegimeDetector:
         Returns:
             Multi-timeframe regime detection results
         """
-        self.logger.info("🔄 Starting multi-timeframe regime detection")
+        tprint_info("🔄 Starting multi-timeframe regime detection")
         
         timeframe_results = {}
         combined_regimes = {}
@@ -749,7 +750,7 @@ class UnsupervisedRegimeDetector:
             if timeframe not in self.timeframe_weights:
                 continue
             
-            self.logger.info(f"📊 Processing timeframe: {timeframe}")
+            tprint_info(f"📊 Processing timeframe: {timeframe}")
             
             # Detect regimes for this timeframe
             results = self.detect_regimes(data, timestamps.get(timeframe) if timestamps else None)
@@ -943,7 +944,7 @@ class UnsupervisedRegimeDetector:
             
             # Check if transition is significant
             if self._is_transition_significant(latest_transition):
-                self.logger.info(f"🔄 Significant regime transition detected: {latest_transition}")
+                tprint_info(f"🔄 Significant regime transition detected: {latest_transition}")
                 
                 # Update transition tracking
                 self.regime_transitions.append(latest_transition)
@@ -998,7 +999,7 @@ class UnsupervisedRegimeDetector:
         
         # Check for stability alerts
         if stability_metrics.get('stability_score', 0) < self.config.stability_threshold:
-            self.logger.warning(f"⚠️ Low regime stability detected: {stability_metrics}")
+            tprint_warning(f"⚠️ Low regime stability detected: {stability_metrics}")
     
     def _calculate_stability_metrics(self, results: Dict[str, Any]) -> Dict[str, float]:
         """Calculate regime stability metrics."""
@@ -1028,7 +1029,7 @@ class UnsupervisedRegimeDetector:
     
     def update_regimes_real_time(self, new_data: pd.DataFrame) -> Dict[str, Any]:
         """Update regime detection in real-time."""
-        self.logger.info("🔄 Updating regimes in real-time")
+        tprint_info("🔄 Updating regimes in real-time")
         
         # Combine with recent history
         if hasattr(self, 'recent_data'):

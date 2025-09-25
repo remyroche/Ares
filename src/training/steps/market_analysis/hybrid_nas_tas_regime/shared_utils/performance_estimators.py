@@ -288,8 +288,9 @@ class BasePerformanceEstimator:
             if hasattr(self.feature_scaler, 'transform'):
                 try:
                     feature_array = self.feature_scaler.transform(feature_array)
-                except:
-                    pass  # Use unscaled features if scaling fails
+                except Exception as e:
+                    tprint_debug(f"🔍 Feature scaling failed, using unscaled features: {e}")
+                    # Use unscaled features if scaling fails
             
             # Make prediction
             start_time = time.time()
@@ -302,12 +303,14 @@ class BasePerformanceEstimator:
                 try:
                     proba = self.model.predict_proba(feature_array)[0]
                     confidence = max(proba) if len(proba) > 1 else proba[0]
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Failed to calculate confidence using predict_proba: {e}")
                     pass
             elif hasattr(self.model, 'score'):
                 try:
                     confidence = min(0.9, max(0.1, self.model.score(feature_array, [predicted_value])))
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Failed to calculate confidence using score method: {e}")
                     pass
             
             return PerformancePrediction(
@@ -410,7 +413,8 @@ class BasePerformanceEstimator:
             if len(X_scaled) >= 5:
                 try:
                     cv_scores = cross_val_score(self.model, X_scaled, y, cv=min(5, len(X_scaled)), scoring='r2')
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Cross-validation failed, skipping CV scoring: {e}")
                     pass
             
             # Update training history

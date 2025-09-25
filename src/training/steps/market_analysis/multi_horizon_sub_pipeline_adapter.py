@@ -499,13 +499,53 @@ except ImportError:
     # Fallback implementation
     class UniversalSerializer:
         def __init__(self):
-            pass
-        
-        def serialize(self, data):
-            return data
-        
-        def deserialize(self, data):
-            return data
+            self.supported_formats = ['json', 'parquet', 'csv', 'pickle']
+
+        def serialize(self, data, format_type='json'):
+            """Serialize data to specified format."""
+            try:
+                if format_type == 'json':
+                    import json
+                    return json.dumps(data, default=str)
+                elif format_type == 'parquet':
+                    import pandas as pd
+                    if isinstance(data, pd.DataFrame):
+                        return data.to_parquet()
+                    else:
+                        tprint_warning(f"⚠️ Cannot serialize {type(data)} to parquet, using JSON fallback")
+                        return json.dumps(data, default=str)
+                elif format_type == 'csv':
+                    import pandas as pd
+                    if isinstance(data, pd.DataFrame):
+                        return data.to_csv(index=False)
+                    else:
+                        tprint_warning(f"⚠️ Cannot serialize {type(data)} to CSV, using JSON fallback")
+                        return json.dumps(data, default=str)
+                else:
+                    tprint_warning(f"⚠️ Unsupported format {format_type}, returning data as-is")
+                    return data
+            except Exception as e:
+                tprint_error(f"❌ Serialization failed: {e}")
+                return data
+
+        def deserialize(self, data, format_type='json'):
+            """Deserialize data from specified format."""
+            try:
+                if format_type == 'json':
+                    import json
+                    return json.loads(data)
+                elif format_type == 'parquet':
+                    import pandas as pd
+                    return pd.read_parquet(data)
+                elif format_type == 'csv':
+                    import pandas as pd
+                    return pd.read_csv(data)
+                else:
+                    tprint_warning(f"⚠️ Unsupported format {format_type}, returning data as-is")
+                    return data
+            except Exception as e:
+                tprint_error(f"❌ Deserialization failed: {e}")
+                return data
 
 # Fallback implementations for missing functions
 def validate_dataframe(df):

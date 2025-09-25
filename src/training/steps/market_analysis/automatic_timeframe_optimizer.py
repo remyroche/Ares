@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 
 from src.utils.logger import get_logger
+from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
 
 # Import optimization components

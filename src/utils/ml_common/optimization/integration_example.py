@@ -21,6 +21,7 @@ from .bayesian_tpe_optimizer import (
 # Import existing utilities (these are automatically used by the optimizer)
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 from .hpo_utils import HyperparameterOptimization
+from src.utils.nas_tas.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

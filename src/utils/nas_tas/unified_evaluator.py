@@ -151,6 +151,17 @@ except ImportError as e:
     logging.warning(f"⚠️ ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
 
+# Import hierarchical HPO for advanced optimization
+try:
+    from .hierarchical_hpo import (
+        HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig,
+        create_hierarchical_hpo_config, optimize_stacking_ensemble
+    )
+    HIERARCHICAL_HPO_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Hierarchical HPO not available: {e}")
+    HIERARCHICAL_HPO_AVAILABLE = False
+
 # Import advanced overfitting detection
 try:
     from src.utils.nas_tas.advanced_overfitting_detection import (
@@ -335,6 +346,16 @@ class UnifiedEvaluator:
                 self.ml_ops = None
                 self.cv_manager = None
                 self.hpo_optimizer = None
+            
+            # Initialize hierarchical HPO for advanced optimization
+            if HIERARCHICAL_HPO_AVAILABLE:
+                self.hierarchical_hpo = HierarchicalHPO
+                self.hierarchical_hpo_config = HierarchicalHPOConfig
+                self.hpo_phase_config = HPOPhaseConfig
+            else:
+                self.hierarchical_hpo = None
+                self.hierarchical_hpo_config = None
+                self.hpo_phase_config = None
             
             # Initialize hybrid NAS-TAS shared utilities
             if HYBRID_NAS_TAS_AVAILABLE:
@@ -1297,6 +1318,7 @@ class UnifiedEvaluator:
             'klines_parquet': KLINES_PARQUET_AVAILABLE,
             'matrix_operations': MATRIX_OPERATIONS_AVAILABLE,
             'ml_common': ML_COMMON_AVAILABLE,
+            'hierarchical_hpo': HIERARCHICAL_HPO_AVAILABLE,
             'hybrid_nas_tas': HYBRID_NAS_TAS_AVAILABLE,
             'overfitting_detection': OVERFITTING_DETECTION_AVAILABLE
         }

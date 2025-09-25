@@ -25,6 +25,13 @@ from .unified_multi_objective import (
     MultiObjectiveResult
 )
 
+from .bayesian_search import (
+    BayesianTreeSearch,
+    TreeBayesianOptimizer,
+    TreeGaussianProcess,
+    BayesianConfig
+)
+
 from .search_space import (
     SearchSpace,
     SearchSpaceConfig,
@@ -50,6 +57,10 @@ __all__ = [
     'EstimatorType',
     'OptimizationConfig',
     'MultiObjectiveResult',
+    'BayesianTreeSearch',
+    'TreeBayesianOptimizer',
+    'TreeGaussianProcess',
+    'BayesianConfig',
     'SearchSpace',
     'SearchSpaceConfig',
     'ParameterRange',

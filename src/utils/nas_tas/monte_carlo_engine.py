@@ -18,6 +18,17 @@ from pathlib import Path
 import json
 warnings.filterwarnings('ignore')
 
+# Import advanced validation
+try:
+    from src.utils.nas_tas.advanced_validation import (
+        UniversalOverfittingDetector, OverfittingConfig, OverfittingReport,
+        ModelEnhancementDetector, UniversalMLValidationOrchestrator
+    )
+    ADVANCED_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Advanced validation utilities not available: {e}")
+    ADVANCED_VALIDATION_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 

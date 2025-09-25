@@ -9,7 +9,7 @@ I have successfully implemented comprehensive unified utilities that **leverage 
 ### 1. **ML Common Integration** (`ml_common_integration.py`)
 - **Leverages existing utilities**: Uses proven tools from `utils/ml_commons/`
 - **Lookahead Protection**: Integrates `src.utils.ml_common.utils.lookahead_protection.LookaheadProtection`
-- **Overfitting Detection**: Uses `src.utils.ml_common.validation.enhanced_overfitting_detection.EnhancedOverfittingDetector`
+- **Overfitting Detection**: Uses `src.utils.nas_tas.advanced_validation.UniversalOverfittingDetector`
 - **HPO Optimization**: Integrates `src.utils.ml_common.utils.hpo_utils.HyperparameterOptimization`
 - **Data Leakage Prevention**: Uses `src.utils.ml_common.validation.data_leakage_prevention.DataLeakagePrevention`
 - **Unified Validation**: Integrates `src.utils.ml_common.validation.unified_validation_system.UnifiedValidationSystem`

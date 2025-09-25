@@ -15,7 +15,7 @@ from pathlib import Path
 import json
 
 # Import universal validation components
-from .enhanced_overfitting_detection import (
+from src.utils.nas_tas.advanced_validation import (
     UniversalOverfittingDetector,
     OverfittingConfig,
     OverfittingReport,

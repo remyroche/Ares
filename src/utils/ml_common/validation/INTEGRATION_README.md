@@ -12,7 +12,7 @@ This document explains how the new validation utilities integrate with existing 
 - **Enhancement**: New data leakage prevention complements this with additional temporal checks
 
 ### 2. **Enhanced Overfitting Detection** (Existing)
-- **Location**: `/src/utils/ml_common/validation/enhanced_overfitting_detection.py`
+- **Location**: `/src/utils/nas_tas/advanced_validation.py`
 - **Integration**: Primary overfitting detection system
 - **Enhancement**: New overfitting monitoring provides real-time monitoring during training
 

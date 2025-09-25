@@ -143,6 +143,7 @@ class OrchestrationResult:
     selection_result: Optional[ModelSelectionResult] = None
     management_result: Optional[Dict[str, Any]] = None
     performance_result: Optional[Dict[str, Any]] = None
+    overfitting_results: Optional[Dict[str, Any]] = None
     
     # Pipeline metrics
     n_regimes_detected: int = 0
@@ -182,11 +183,13 @@ class TrainingOrchestrator:
         self.last_feature_engineering: Optional[FeatureEngineeringResult] = None
         tprint(f"📊 Config: mode={config.mode.value}, regime_detection={config.enable_regime_detection}", color="cyan")
 
+        self._validate_configuration()
+
         # Set up logging
         tprint("📝 Setting up logging", color="yellow")
         if config.enable_logging:
             self._setup_logging()
-        
+
         # Initialize components
         tprint("🔧 Initializing components", color="yellow")
         self._initialize_components()
@@ -222,15 +225,27 @@ class TrainingOrchestrator:
     
     def _setup_logging(self):
         """Set up logging configuration."""
-        logging.basicConfig(
-            level=getattr(logging, self.config.log_level.upper()),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(f"{self.config.output_directory}/orchestrator.log")
-            ]
+        log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        output_dir = Path(self.config.output_directory)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-    
+
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+
+        file_handler = logging.FileHandler(output_dir / "orchestrator.log")
+        file_handler.setFormatter(formatter)
+
+        logger = self.logger
+        logger.setLevel(log_level)
+        logger.propagate = False
+        logger.handlers.clear()
+        logger.addHandler(stream_handler)
+        logger.addHandler(file_handler)
+
     def _initialize_components(self):
         """Initialize orchestration components."""
         tprint("🔧 Starting component initialization", color="yellow")
@@ -305,7 +320,9 @@ class TrainingOrchestrator:
         """
         start_time = datetime.now()
         self.logger.info("🚀 Starting orchestration pipeline")
-        
+
+        active_feature_columns = list(feature_columns) if feature_columns else None
+
         try:
             # Initialize result
             result = OrchestrationResult(
@@ -321,20 +338,35 @@ class TrainingOrchestrator:
                 processed_data = self._validate_and_preprocess_data(
                     market_data, target_variable, feature_columns, timestamps
                 )
+                if self.last_data_validation:
+                    active_feature_columns = self.last_data_validation.feature_columns
             else:
                 processed_data = market_data
-            
+
             # Step 2: Feature engineering
             if self.config.feature_engineering:
                 self.logger.info("🔧 Performing feature engineering...")
                 processed_data = self._perform_feature_engineering(processed_data, target_variable)
-            
+                if self.last_feature_engineering:
+                    engineered = self.last_feature_engineering.added_features
+                    if active_feature_columns is None:
+                        active_feature_columns = [
+                            col for col in processed_data.columns if col != target_variable
+                        ]
+                    else:
+                        merged = list(dict.fromkeys(active_feature_columns + engineered))
+                        active_feature_columns = [
+                            col
+                            for col in merged
+                            if col in processed_data.columns and col != target_variable
+                        ]
+
             # Step 3: Model training
             training_result = None
             if self.config.enable_model_training and self.services.trainer:
                 self.logger.info("🤖 Training regime-aware models...")
                 training_result = self._orchestrate_training(
-                    processed_data, target_variable, feature_columns, timestamps
+                    processed_data, target_variable, active_feature_columns, timestamps
                 )
                 result.training_result = training_result
                 
@@ -349,7 +381,10 @@ class TrainingOrchestrator:
                 if self.config.enable_overfitting_detection and self.overfitting_detector:
                     self.logger.info("🔍 Performing overfitting detection...")
                     overfitting_results = self._detect_overfitting_in_training_result(
-                        training_result, processed_data, target_variable, feature_columns
+                        training_result,
+                        processed_data,
+                        target_variable,
+                        active_feature_columns,
                     )
                     result.overfitting_results = overfitting_results
             
@@ -414,8 +449,33 @@ class TrainingOrchestrator:
                 start_time=start_time,
                 end_time=datetime.now()
             )
-    
-    def _validate_and_preprocess_data(self, 
+
+    def _validate_configuration(self) -> None:
+        """Ensure incompatible configuration options are rejected early."""
+
+        errors: List[str] = []
+
+        if self.config.enable_model_selection and not self.config.enable_model_training:
+            errors.append("Model selection requires model training to be enabled")
+        if self.config.enable_model_management and not self.config.enable_model_training:
+            errors.append("Model management requires model training to be enabled")
+        if self.config.enable_performance_tracking and not self.config.enable_model_training:
+            errors.append("Performance tracking requires model training to be enabled")
+        if self.config.enable_backtesting and not self.config.enable_model_training:
+            errors.append("Backtesting requires model training to be enabled")
+        if (
+            self.config.enable_hybrid_regime_detection
+            and not self.config.enable_regime_detection
+        ):
+            errors.append(
+                "Hybrid regime detection cannot be enabled when regime detection is disabled"
+            )
+
+        if errors:
+            message = "Invalid orchestrator configuration:\n - " + "\n - ".join(errors)
+            raise ValueError(message)
+
+    def _validate_and_preprocess_data(self,
                                     market_data: pd.DataFrame,
                                     target_variable: str,
                                     feature_columns: Optional[List[str]],
@@ -463,34 +523,76 @@ class TrainingOrchestrator:
             
             # Prepare data for overfitting detection
             if feature_columns is None:
-                feature_columns = [col for col in market_data.columns if col != target_variable]
-            
-            X = market_data[feature_columns].values
-            y = market_data[target_variable].values
-            
+                feature_columns = [
+                    col for col in market_data.columns if col != target_variable
+                ]
+            else:
+                feature_columns = [
+                    col
+                    for col in feature_columns
+                    if col in market_data.columns and col != target_variable
+                ]
+
+            if not feature_columns:
+                raise ValueError("No feature columns available for overfitting detection")
+
+            X = market_data[feature_columns].to_numpy()
+            y = market_data[target_variable].to_numpy()
+
+            n_samples = len(market_data)
+            split_issue: Optional[str] = None
+            X_train = X_val = y_train = y_val = None  # type: ignore[assignment]
+
+            if n_samples < 5:
+                split_issue = "insufficient_samples"
+                self.logger.warning(
+                    "⚠️ Insufficient samples (%d) for overfitting detection", n_samples
+                )
+            else:
+                split_index = max(int(n_samples * 0.8), 1)
+                if split_index >= n_samples:
+                    split_index = n_samples - 1
+
+                if split_index <= 0 or split_index >= n_samples:
+                    split_issue = "split_failed"
+                    self.logger.warning(
+                        "⚠️ Unable to determine a stable validation split for overfitting detection"
+                    )
+                else:
+                    X_train, X_val = X[:split_index], X[split_index:]
+                    y_train, y_val = y[:split_index], y[split_index:]
+                    if len(X_val) == 0 or len(X_train) == 0:
+                        split_issue = "split_failed"
+                        self.logger.warning(
+                            "⚠️ Validation split produced empty training or validation data"
+                        )
+
             # Check each regime's models for overfitting
             for regime_id, models in training_result.models_trained.items():
                 regime_overfitting = {}
-                
+
                 for model_type, model_info in models.items():
                     if not isinstance(model_info, dict) or 'model' not in model_info:
                         continue
-                    
+
                     model = model_info['model']
-                    
+
                     # Perform overfitting detection
                     try:
+                        if split_issue:
+                            raise RuntimeError(split_issue)
+
                         overfitting_report = self.overfitting_detector.detect_overfitting_with_learning_curves(
                             model=model,
-                            X_train=X,
-                            X_val=X,  # Using same data for simplicity
-                            y_train=y,
-                            y_val=y,
+                            X_train=X_train,
+                            X_val=X_val,
+                            y_train=y_train,
+                            y_val=y_val,
                             model_name=f"regime_{regime_id}_{model_type}",
                             model_type=model_type,
                             fold_number=regime_id
                         )
-                        
+
                         regime_overfitting[model_type] = {
                             'overfitting_detected': overfitting_report.overfitting_detected,
                             'severity': overfitting_report.severity,
@@ -498,17 +600,37 @@ class TrainingOrchestrator:
                             'warnings': overfitting_report.warnings,
                             'recommendations': overfitting_report.recommendations
                         }
-                        
+
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Overfitting detection failed for {model_type} in regime {regime_id}: {e}")
+                        if split_issue and isinstance(e, RuntimeError):
+                            if split_issue == "insufficient_samples":
+                                message = (
+                                    "Not enough samples to perform hold-out overfitting detection"
+                                )
+                            elif split_issue == "split_failed":
+                                message = (
+                                    "Unable to produce a reliable validation split for overfitting detection"
+                                )
+                            else:
+                                message = (
+                                    "Hold-out split unavailable; overfitting detection skipped"
+                                )
+                        else:
+                            message = str(e)
+                        self.logger.warning(
+                            "⚠️ Overfitting detection failed for %s in regime %s: %s",
+                            model_type,
+                            regime_id,
+                            message,
+                        )
                         regime_overfitting[model_type] = {
                             'overfitting_detected': False,
                             'severity': 'unknown',
-                            'error': str(e)
+                            'error': message,
                         }
-                
+
                 overfitting_results[f'regime_{regime_id}'] = regime_overfitting
-            
+
             self.logger.info(f"✅ Overfitting detection completed for {len(overfitting_results)} regimes")
             return overfitting_results
             

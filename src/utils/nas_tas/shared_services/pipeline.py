@@ -16,6 +16,19 @@ from src.utils.nas_tas.risk_analysis.risk_analysis import (
 from src.utils.validation.unified_framework import UnifiedValidationFramework
 
 
+def _impute_numeric_series(series: pd.Series) -> pd.Series:
+    """Forward-fill numeric data and backfill remaining gaps conservatively."""
+
+    series = series.replace([np.inf, -np.inf], np.nan)
+    series = series.ffill()
+    if series.isna().any():
+        median = series.dropna().median()
+        if pd.isna(median):
+            median = 0.0
+        series = series.fillna(median)
+    return series
+
+
 @dataclass
 class DataValidationResult:
     """Outcome of shared market data validation."""
@@ -73,9 +86,10 @@ def validate_market_data(
                 len(missing_summary),
                 missing_summary,
             )
-        working_data = working_data.ffill().bfill()
         if logger:
-            logger.info("✅ Filled missing values using forward/backward fill")
+            logger.info(
+                "✅ Applying forward-fill and median imputation for missing values"
+            )
     metadata["missing_values"] = missing_summary
 
     # Infinite value handling
@@ -95,10 +109,19 @@ def validate_market_data(
                 inf_summary,
             )
         working_data = working_data.replace([np.inf, -np.inf], np.nan)
-        working_data = working_data.ffill().bfill()
         if logger:
-            logger.info("✅ Replaced infinite values and filled using forward/backward fill")
+            logger.info(
+                "✅ Replaced infinite values and will re-impute affected columns"
+            )
     metadata["infinite_values"] = inf_summary
+
+    if missing_summary or inf_summary:
+        numeric_columns = working_data.select_dtypes(include=[np.number]).columns
+        if len(numeric_columns) > 0:
+            working_data.loc[:, numeric_columns] = working_data.loc[
+                :, numeric_columns
+            ].apply(_impute_numeric_series)
+    metadata["imputation_strategy"] = "forward_fill_with_median_backfill"
 
     # Non-numeric feature detection
     numeric_columns = set(numeric_data.columns)
@@ -144,46 +167,77 @@ def engineer_core_features(
     original_columns = set(data.columns)
     warnings: List[str] = []
 
+    filled_features: List[str] = []
+
     if "close" in data.columns:
-        data["price_change"] = data["close"].pct_change()
-        data["price_volatility"] = data["price_change"].rolling(window=20).std()
-        data["price_momentum"] = data["close"] / data["close"].shift(20)
-        data["ma_5"] = data["close"].rolling(window=5).mean()
-        data["ma_20"] = data["close"].rolling(window=20).mean()
-        data["ma_50"] = data["close"].rolling(window=50).mean()
-        rolling_min = data["close"].rolling(window=20).min()
-        rolling_max = data["close"].rolling(window=20).max()
-        data["price_position_20"] = (data["close"] - rolling_min) / (rolling_max - rolling_min)
+        close = data["close"].astype(float)
+        price_change = close.pct_change().replace([np.inf, -np.inf], np.nan)
+        data["price_change"] = price_change
+        data["price_volatility"] = (
+            price_change.rolling(window=20, min_periods=5).std()
+        )
+        data["price_momentum"] = close.pct_change(periods=20).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        data["ma_5"] = close.rolling(window=5, min_periods=1).mean()
+        data["ma_20"] = close.rolling(window=20, min_periods=1).mean()
+        data["ma_50"] = close.rolling(window=50, min_periods=1).mean()
+        rolling_min = close.rolling(window=20, min_periods=1).min()
+        rolling_max = close.rolling(window=20, min_periods=1).max()
+        denom = (rolling_max - rolling_min).replace(0, np.nan)
+        data["price_position_20"] = ((close - rolling_min) / denom).clip(0.0, 1.0)
 
     if "volume" in data.columns:
-        data["volume_change"] = data["volume"].pct_change()
-        data["volume_ma"] = data["volume"].rolling(window=20).mean()
-        data["volume_ratio"] = data["volume"] / data["volume_ma"]
+        volume = data["volume"].astype(float)
+        data["volume_change"] = volume.pct_change().replace([np.inf, -np.inf], np.nan)
+        volume_ma = volume.rolling(window=20, min_periods=5).mean()
+        data["volume_ma"] = volume_ma
+        data["volume_ratio"] = np.divide(
+            volume,
+            volume_ma.replace(0, np.nan),
+        )
 
     if "high" in data.columns and "low" in data.columns and "close" in data.columns:
-        data["price_range"] = (data["high"] - data["low"]) / data["close"]
-        data["range_volatility"] = data["price_range"].rolling(window=20).std()
+        close = data["close"].replace(0, np.nan)
+        data["price_range"] = (data["high"] - data["low"]) / close
+        data["range_volatility"] = (
+            data["price_range"].rolling(window=20, min_periods=5).std()
+        )
 
     if isinstance(data.index, pd.DatetimeIndex):
         data["hour"] = data.index.hour
         data["day_of_week"] = data.index.dayofweek
         data["month"] = data.index.month
 
-    pre_drop_shape = data.shape
-    data = data.dropna()
-    dropped_rows = pre_drop_shape[0] - data.shape[0]
-    if dropped_rows > 0:
-        warnings.append(f"Dropped {dropped_rows} rows due to rolling calculations")
+    added_features = sorted(set(data.columns) - original_columns)
+    for feature in added_features:
+        series = data[feature]
+        if series.isna().any() or np.isinf(series).any():
+            filled_features.append(feature)
+
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    if len(numeric_columns) > 0:
+        data.loc[:, numeric_columns] = data.loc[:, numeric_columns].apply(
+            _impute_numeric_series
+        )
+
+    if filled_features:
+        warnings.append(
+            f"Imputed warm-up values for {len(filled_features)} engineered features"
+        )
         if logger:
-            logger.warning(
-                "⚠️ Dropped %d rows during feature engineering due to NaNs", dropped_rows
+            logger.info(
+                "ℹ️ Imputed initial values for engineered features: %s",
+                filled_features,
             )
 
-    added_features = sorted(set(data.columns) - original_columns)
     if logger:
-        logger.info("✅ Feature engineering completed - New shape: %s", data.shape)
+        logger.info("✅ Feature engineering completed - Shape unchanged: %s", data.shape)
 
-    metadata = {"dropped_rows": dropped_rows}
+    metadata = {
+        "imputed_features": filled_features,
+        "dropped_rows": 0,
+    }
     return FeatureEngineeringResult(
         data=data,
         added_features=added_features,

@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Any, List, Optional, Callable
 
 # Re-export canonical implementation for new code paths
-from src.utils.ml_common.optimization.hpo_utils import (
+from src.utils.nas_tas.advanced_hpo_utils import (
     HyperparameterOptimization as CanonicalHyperparameterOptimization,
     optimize_hyperparameters,
     create_search_space,

@@ -23,7 +23,7 @@ from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePr
 # from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
 
 # Import existing optimization utilities
-from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization as CanonicalHPO
+from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization as CanonicalHPO
 
 from .unified_architecture_config import ArchitectureType, OptimizationObjective
 

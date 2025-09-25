@@ -137,7 +137,7 @@ except ImportError:
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.optimization.hpo_utils import HPOOptimizer
+    from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization as HPOOptimizer
     from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
     from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import BayesianOptimizer
     from src.utils.ml_common.optimization.enhanced_hpo_monitor import HPOMonitor

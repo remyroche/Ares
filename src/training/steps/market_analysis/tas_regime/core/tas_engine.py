@@ -114,7 +114,7 @@ try:
     from src.utils.lookahead_bias_detector import LookaheadBiasDetector
     from src.utils.ml_common.optimization.overfitting_prevention import OverfittingDetector
     from src.utils.ml_common.validation.cv import CrossValidationManager
-    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
+    from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization as HyperparameterOptimizer
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False

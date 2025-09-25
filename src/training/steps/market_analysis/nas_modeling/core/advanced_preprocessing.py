@@ -91,7 +91,7 @@ except ImportError:
     tprint_warning("ML validation utilities not available")
 
 try:
-    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
+    from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization as HyperparameterOptimizer
     from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
     ML_OPTIMIZATION_AVAILABLE = True
 except ImportError:

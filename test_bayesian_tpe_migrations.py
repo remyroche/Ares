@@ -83,7 +83,7 @@ def test_bayesian_tpe_optimizer():
 def test_hpo_utils_migration():
     """Test the migrated HPO utils."""
     try:
-        from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+        from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization
         
         logger.info("🧪 Testing HPO Utils migration...")
         

@@ -437,7 +437,7 @@ try:
     from src.utils.ml_common.validation.validation_utils import (
         validate_input_data, validate_model_config, validate_training_data
     )
-    from src.utils.ml_common.optimization.hpo_utils import (
+    from src.utils.nas_tas.advanced_hpo_utils import (
         optimize_hyperparameters, create_search_space, validate_hpo_config
     )
     from src.utils.ml_common.evaluation.evaluation_utils import (

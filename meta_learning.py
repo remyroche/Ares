@@ -58,7 +58,7 @@ from src.utils.hardware.m1_cpu_optimizer import (
 from src.utils.ml_common.optimization.neural_architecture_search import (
     NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
 )
-from src.utils.ml_common.optimization.hpo_utils import (
+from src.utils.nas_tas.advanced_hpo_utils import (
     HyperparameterOptimization, optimize_hyperparameters, create_search_space
 )
 from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (

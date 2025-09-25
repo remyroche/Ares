@@ -415,7 +415,7 @@ except ImportError:
 
 # Import ML utilities
 try:
-    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+    from src.utils.nas_tas.advanced_hpo_utils import HyperparameterOptimization
     from src.utils.ml_common.optimization.pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
     from src.utils.ml_common.optimization.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space

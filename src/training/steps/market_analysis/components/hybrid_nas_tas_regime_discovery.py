@@ -17,6 +17,7 @@ Features:
 import asyncio
 import json
 import logging
+import math
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -126,20 +127,14 @@ except ImportError as e:
     def validate_matrix(*args, **kwargs): return True
     def optimize_matrix_operations(*args, **kwargs): return None
 
-# NAS-TAS utilities
-try:
-    from src.utils.nas_tas.bayesian_tpe_optimizer import (
-        BayesianTPEOptimizer as NastaBayesianTPE
-    )
-    from src.utils.nas_tas.evolutionary_search import EvolutionarySearch
-    from src.utils.nas_tas.unified_evaluator import UnifiedEvaluator
-    NAS_TAS_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"⚠️ NAS-TAS utilities not available: {e}")
-    NAS_TAS_AVAILABLE = False
-    def NastaBayesianTPE(): return None
-    def EvolutionarySearch(): return None
-    def UnifiedEvaluator(): return None
+from .nas_tas_regime_utils import (
+    NASRegimeSearch,
+    TASRegimeSearch,
+    adaptive_regime_count,
+    calculate_regime_distribution,
+    compute_market_features,
+    compute_transition_statistics,
+)
 
 
 class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
@@ -283,23 +278,17 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Initialize NAS-TAS utilities."""
         try:
             tprint_info("🔬 Initializing NAS-TAS utilities")
-            
-            if NAS_TAS_AVAILABLE:
-                self.nasta_bayesian_tpe = NastaBayesianTPE()
-                self.evolutionary_search = EvolutionarySearch()
-                self.unified_evaluator = UnifiedEvaluator()
-                tprint_success("✅ NAS-TAS utilities initialized")
-            else:
-                self.nasta_bayesian_tpe = None
-                self.evolutionary_search = None
-                self.unified_evaluator = None
-                tprint_warning("⚠️ NAS-TAS utilities not available")
-                
+            # The shared NAS/TAS search utilities live alongside this component
+            # and are always available.  We keep references on ``self`` so other
+            # methods can inject alternative implementations for testing.
+            self.nas_search_class = NASRegimeSearch
+            self.tas_search_class = TASRegimeSearch
+            tprint_success("✅ NAS-TAS utilities initialized")
+
         except Exception as e:
             tprint_warning(f"⚠️ NAS-TAS utilities initialization failed: {e}")
-            self.nasta_bayesian_tpe = None
-            self.evolutionary_search = None
-            self.unified_evaluator = None
+            self.nas_search_class = NASRegimeSearch
+            self.tas_search_class = TASRegimeSearch
     
     def _initialize_data_validators(self):
         """Initialize data validation utilities."""
@@ -670,15 +659,24 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     
                     execution_context['data_validated'] = True
                     
+                    # Build technical feature set shared by NAS/TAS
+                    tprint("🧮 [HYBRID_NAS_TAS] Engineering technical features", color="magenta")
+                    feature_matrix = compute_market_features(market_data)
+                    tprint(f"✅ [HYBRID_NAS_TAS] Feature matrix created with {feature_matrix.shape[1]} features", color="green")
+
                     # Configure hybrid regime detection
                     tprint("⚙️ [HYBRID_NAS_TAS] Creating hybrid configuration", color="magenta")
-                    hybrid_config = self._create_hybrid_config(market_data, pipeline_state)
+                    hybrid_config = self._create_hybrid_config(market_data, feature_matrix, pipeline_state)
                     tprint("✅ [HYBRID_NAS_TAS] Hybrid configuration created successfully", color="green")
-                    
+
                     # Perform hybrid regime discovery
                     tprint("🧠 [HYBRID_NAS_TAS] Starting hybrid regime discovery process", color="cyan", bold=True)
                     discovery_start_time = time.time()
-                    hybrid_result = await self._perform_hybrid_regime_discovery(market_data, hybrid_config)
+                    hybrid_result = await self._perform_hybrid_regime_discovery(
+                        market_data,
+                        feature_matrix,
+                        hybrid_config,
+                    )
                     discovery_time = time.time() - discovery_start_time
                     tprint(f"⏱️ [HYBRID_NAS_TAS] Discovery process completed in {discovery_time:.2f}s", color="blue")
                     
@@ -788,6 +786,10 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'combination_strategy': hybrid_result.get('combination_strategy', 'ensemble'),
                         'nas_contribution': hybrid_result.get('nas_contribution', {}),
                         'tas_contribution': hybrid_result.get('tas_contribution', {}),
+                        'nas_metrics': hybrid_result.get('nas_metrics', {}),
+                        'tas_metrics': hybrid_result.get('tas_metrics', {}),
+                        'nas_search_history': hybrid_result.get('nas_history', []),
+                        'tas_search_history': hybrid_result.get('tas_history', []),
                         'consensus_metrics': hybrid_result.get('consensus_metrics', {}),
                         'disagreement_metrics': hybrid_result.get('disagreement_metrics', {}),
                         'consolidated_regime_count': hybrid_result.get('consolidated_regime_count', unique_regimes),
@@ -834,8 +836,14 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tprint_error(f"❌ [HYBRID_NAS_TAS] Artifact creation failed: {e}")
             self.logger.error(f"❌ Artifact creation failed: {e}")
             return {}
+
     
-    def _create_hybrid_config(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_hybrid_config(
+        self,
+        market_data: pd.DataFrame,
+        feature_matrix: pd.DataFrame,
+        pipeline_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """Create hybrid configuration based on data and pipeline state with enhanced error handling."""
         try:
             tprint_info("⚙️ [HYBRID_NAS_TAS] Creating hybrid configuration")
@@ -844,34 +852,43 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             data_size = len(market_data)
             tprint(f"🔧 [HYBRID_NAS_TAS] Analyzing data size: {data_size} rows", color="blue")
             
-            # Determine configuration based on data characteristics
+            volatility = float(feature_matrix["realized_vol"].mean()) if "realized_vol" in feature_matrix else 0.0
+            consensus_proxy = 0.5
+            if {"return", "macd"}.issubset(feature_matrix.columns):
+                consensus_proxy = float(feature_matrix[["return", "macd"]].corr().iloc[0, 1])
+                if math.isnan(consensus_proxy):
+                    consensus_proxy = 0.5
+
             if data_size < 1000:
-                n_regimes = 5
+                nas_base = 5
+                tas_base = 6
                 population_size = 20
-                generations = 50
-                tree_depth = 4
-                n_estimators = 100
+                generations = 40
+                tas_generations = 20
                 tprint("📊 [HYBRID_NAS_TAS] Using small dataset configuration", color="yellow")
             elif data_size < 5000:
-                n_regimes = 8
-                population_size = 50
-                generations = 100
-                tree_depth = 6
-                n_estimators = 500
+                nas_base = 7
+                tas_base = 9
+                population_size = 40
+                generations = 80
+                tas_generations = 40
                 tprint("📊 [HYBRID_NAS_TAS] Using medium dataset configuration", color="yellow")
             else:
-                n_regimes = 10
-                population_size = 100
-                generations = 200
-                tree_depth = 8
-                n_estimators = 1000
+                nas_base = 9
+                tas_base = 11
+                population_size = 80
+                generations = 120
+                tas_generations = 60
                 tprint("📊 [HYBRID_NAS_TAS] Using large dataset configuration", color="yellow")
-            
+
+            nas_regime_count = adaptive_regime_count(nas_base, volatility, consensus_proxy)
+            tas_regime_count = adaptive_regime_count(tas_base, volatility * 1.2, consensus_proxy)
+
             # Hardware-specific optimizations
             if self.m1_available:
-                population_size = min(population_size * 2, 200)  # Increase for M1
+                population_size = min(population_size * 2, 200)
                 tprint("🚀 [HYBRID_NAS_TAS] M1 optimization: increased population size", color="green")
-            
+
             hybrid_config = {
                 # Hybrid orchestration settings
                 'combination_strategy': 'ensemble',  # ensemble, weighted, consensus
@@ -890,22 +907,21 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'enable_neural_odes': True,
                     'enable_vision_transformers': True,
                     'enable_meta_learning': True,
-                    'n_regimes': n_regimes,
+                    'n_regimes': nas_regime_count,
                     'primary_timeframe': getattr(self.config, 'timeframe', '15m'),
                     'enable_economic_evaluation': True,
                     'enable_trading_viability': True,
                     'use_m1_optimization': self.m1_available
                 },
-                
+
                 # TAS configuration
                 'tas_config': {
-                    'n_regimes': n_regimes,
+                    'n_regimes': tas_regime_count,
                     'primary_timeframe': getattr(self.config, 'timeframe', '15m'),
-                    'tree_depth': tree_depth,
-                    'n_estimators': n_estimators,
+                    'population_size': population_size,
+                    'generations': tas_generations,
                     'min_samples_split': 10,
                     'min_samples_leaf': 5,
-                    'max_features': 'sqrt',
                     'enable_clvsa_enhancement': True,
                     'enable_statistical_methods': True,
                     'enable_economic_evaluation': True,
@@ -922,8 +938,13 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'hardware_acceleration': self.m1_available
             }
             
-            tprint(f"⚙️ [HYBRID_NAS_TAS] Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})", color="cyan")
-            log_info(f"📊 Hybrid Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})")
+            tprint(
+                f"⚙️ [HYBRID_NAS_TAS] Configuration: NAS={nas_regime_count} regimes, TAS={tas_regime_count} regimes",
+                color="cyan",
+            )
+            log_info(
+                f"📊 Hybrid Configuration: NAS={nas_regime_count} regimes, TAS={tas_regime_count} regimes, pop={population_size}"
+            )
             return hybrid_config
             
         except Exception as e:
@@ -956,141 +977,92 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'hardware_acceleration': self.m1_available
             }
     
-    async def _perform_hybrid_regime_discovery(self, market_data: pd.DataFrame, hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform hybrid regime discovery using the advanced hybrid system with full error handling."""
+    async def _perform_hybrid_regime_discovery(
+        self,
+        market_data: pd.DataFrame,
+        feature_matrix: pd.DataFrame,
+        hybrid_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run NAS and TAS searches with shared feature engineering."""
+
         try:
-            tprint_info("🔧 [HYBRID_NAS_TAS] Importing hybrid components")
-            
-            # Try to import hybrid components with fallback
-            try:
-                from src.training.steps.market_analysis.hybrid_nas_tas_regime.hybrid_orchestrator import (
-                    HybridOrchestrator, HybridOrchestratorConfig
-                )
-                tprint_success("✅ [HYBRID_NAS_TAS] Hybrid components imported successfully")
-            except Exception as e:
-                tprint_warning(f"⚠️ [HYBRID_NAS_TAS] Hybrid orchestrator not available: {e}")
-                self.logger.warning("Hybrid orchestrator unavailable, switching to fallback implementation", exc_info=e)
-                # Use fallback implementation
-                return await self._fallback_regime_discovery(market_data, hybrid_config)
-            
-            tprint_info("⚙️ [HYBRID_NAS_TAS] Creating orchestrator configuration")
-            
-            # Create hybrid orchestrator configuration
-            orchestrator_config = HybridOrchestratorConfig(
-                symbol=getattr(self.config, 'symbol', 'UNKNOWN'),
-                timeframe=getattr(self.config, 'timeframe', '15m'),
-                start_date=getattr(self.config, 'start_date', None),
-                end_date=getattr(self.config, 'end_date', None),
-                use_standardized_features=True,
-                feature_categories=['momentum', 'volatility', 'volume', 'trend'],
-                significance_threshold=0.5,
-                min_regime_duration=10,
-                viability_threshold=0.5,
-                minimum_regime_duration=5,
-                max_iterations=100,
-                use_bayesian_optimization=True,
-                population_size=hybrid_config['nas_config']['population_size'],
-                max_generations=hybrid_config['nas_config']['generations'],
-                use_nsga2=True,
-                use_spea2=True,
-                use_gpu_acceleration=self.mps_available,
-                memory_limit_gb=8.0,
-                include_detailed_metrics=True,
-                save_to_file=False
-            )
-            tprint_success("✅ [HYBRID_NAS_TAS] Orchestrator configuration created")
-            
-            tprint_info("🚀 [HYBRID_NAS_TAS] Initializing hybrid orchestrator")
-            # Initialize hybrid orchestrator
-            hybrid_orchestrator = HybridOrchestrator(orchestrator_config)
-            self._resources_to_cleanup.append(hybrid_orchestrator)
-            tprint_success("✅ [HYBRID_NAS_TAS] Hybrid orchestrator initialized")
-            
-            tprint("🧠 [HYBRID_NAS_TAS] Starting TAS-NAS orchestrated detection", color="cyan", bold=True)
-            # Perform hybrid regime detection
-            hybrid_result = hybrid_orchestrator.orchestrate_tas_nas_detection(
+            timeframe = getattr(self.config, 'timeframe', '15m')
+
+            tprint("🤖 [HYBRID_NAS_TAS] Running NAS search", color="blue")
+            nas_start = time.time()
+            nas_search = self.nas_search_class(
                 market_data,
-                timeframes=[getattr(self.config, 'timeframe', '15m')]
+                feature_matrix,
+                {
+                    **hybrid_config['nas_config'],
+                    'economic_weight': hybrid_config.get('economic_weight', 0.4),
+                    'trading_weight': hybrid_config.get('trading_weight', 0.3),
+                    'stability_weight': hybrid_config.get('stability_weight', 0.3),
+                },
             )
-            tprint_success("✅ [HYBRID_NAS_TAS] TAS-NAS detection completed")
-            
-            tprint_info("🔬 [HYBRID_NAS_TAS] Enhancing hybrid results")
-            # Process and enhance the result
-            enhanced_result = self._enhance_hybrid_result(hybrid_result, hybrid_config)
-            tprint_success("✅ [HYBRID_NAS_TAS] Results enhanced successfully")
-            
-            return enhanced_result
-            
-        except ImportError as e:
-            tprint_error(f"❌ [HYBRID_NAS_TAS] Import failed: {e}")
-            self.logger.error(f"Failed to import hybrid components: {e}")
-            # Use fallback implementation
-            return await self._fallback_regime_discovery(market_data, hybrid_config)
-        except Exception as e:
-            tprint_error(f"❌ [HYBRID_NAS_TAS] Discovery failed: {e}")
-            self.logger.error(f"Hybrid regime discovery failed: {e}")
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return await self._fallback_regime_discovery(market_data, hybrid_config)
-    
-    async def _fallback_regime_discovery(self, market_data: pd.DataFrame, hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback regime discovery implementation using available utilities."""
-        try:
-            tprint_warning("⚠️ [HYBRID_NAS_TAS] Using fallback regime discovery")
-            
-            # Simple clustering-based regime discovery
-            import numpy as np
-            from sklearn.cluster import KMeans
-            from sklearn.preprocessing import StandardScaler
-            
-            # Prepare features
-            features = []
-            if 'close' in market_data.columns:
-                # Price features
-                features.append(market_data['close'].pct_change().fillna(0))
-                features.append(market_data['close'].rolling(20).std().fillna(0))
-                
-            if 'volume' in market_data.columns:
-                # Volume features
-                features.append(market_data['volume'].pct_change().fillna(0))
-                
-            if len(features) == 0:
-                raise ValueError("No suitable features found for regime discovery")
-            
-            # Create feature matrix
-            feature_matrix = np.column_stack(features)
-            
-            # Handle infinite and NaN values
-            feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
-            
-            # Standardize features
-            scaler = StandardScaler()
-            feature_matrix_scaled = scaler.fit_transform(feature_matrix)
-            
-            # Perform clustering
-            n_regimes = hybrid_config.get('nas_config', {}).get('n_regimes', 8)
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
-            regime_assignments = kmeans.fit_predict(feature_matrix_scaled)
-            
-            tprint_success(f"✅ [HYBRID_NAS_TAS] Fallback discovery completed: {n_regimes} regimes")
-            
-            return {
-                'success': True,
-                'consolidated_assignments': regime_assignments.tolist(),
-                'nas_assignments': regime_assignments.tolist(),
-                'tas_assignments': regime_assignments.tolist(),
-                'combination_strategy': 'fallback_clustering',
-                'consensus_metrics': {'consensus_score': 1.0, 'agreement_rate': 1.0},
-                'disagreement_metrics': {'disagreement_score': 0.0, 'disagreement_rate': 0.0},
-                'economic_significance_scores': [0.7] * len(regime_assignments),
-                'trading_viability_scores': [0.6] * len(regime_assignments),
-                'regime_stability_scores': [0.8] * len(regime_assignments),
-                'nas_execution_time': 0,
-                'tas_execution_time': 0,
-                'consolidation_time': 0
+            nas_output = nas_search.run()
+            nas_execution_time = time.time() - nas_start
+            tprint(f"✅ [HYBRID_NAS_TAS] NAS search completed in {nas_execution_time:.2f}s", color="green")
+
+            tprint("🌳 [HYBRID_NAS_TAS] Running TAS search", color="blue")
+            tas_start = time.time()
+            volatility_estimate = float(feature_matrix['realized_vol'].mean()) if 'realized_vol' in feature_matrix else 0.0
+            tas_search = self.tas_search_class(
+                market_data,
+                feature_matrix,
+                {
+                    **hybrid_config['tas_config'],
+                    'economic_weight': hybrid_config.get('economic_weight', 0.4),
+                    'trading_weight': hybrid_config.get('trading_weight', 0.3),
+                    'stability_weight': hybrid_config.get('stability_weight', 0.3),
+                },
+                volatility_estimate,
+            )
+            tas_output = tas_search.run()
+            tas_execution_time = time.time() - tas_start
+            tprint(f"✅ [HYBRID_NAS_TAS] TAS search completed in {tas_execution_time:.2f}s", color="green")
+
+            nas_result_payload = {
+                'timeframe': timeframe,
+                'regime_predictions': nas_output['assignments'],
+                'execution_time': nas_execution_time,
+                'architecture': nas_output['best_candidate'],
+                'score': nas_output['score'],
+                'metrics': nas_output['metrics'].to_dict(),
+                'search_history': nas_output['history'],
             }
-            
+
+            tas_result_payload = {
+                'timeframe': timeframe,
+                'regime_predictions': tas_output['assignments'],
+                'execution_time': tas_execution_time,
+                'configuration': tas_output['best_candidate'],
+                'score': tas_output['score'],
+                'metrics': tas_output['metrics'].to_dict(),
+                'search_history': tas_output['history'],
+            }
+
+            raw_result = {
+                'success': True,
+                'nas_results': {timeframe: nas_result_payload},
+                'tas_results': {timeframe: tas_result_payload},
+                'nas_execution_time': nas_execution_time,
+                'tas_execution_time': tas_execution_time,
+                'feature_columns': list(feature_matrix.columns),
+            }
+
+            enhanced_result = self._enhance_hybrid_result(raw_result, hybrid_config)
+            enhanced_result['nas_metrics'] = nas_result_payload['metrics']
+            enhanced_result['tas_metrics'] = tas_result_payload['metrics']
+            enhanced_result['nas_history'] = nas_result_payload['search_history']
+            enhanced_result['tas_history'] = tas_result_payload['search_history']
+
+            return enhanced_result
+
         except Exception as e:
-            tprint_error(f"❌ [HYBRID_NAS_TAS] Fallback discovery failed: {e}")
+            tprint(f"❌ [HYBRID_NAS_TAS] Hybrid regime discovery failed: {e}", color="red", bold=True)
+            self.logger.error("Hybrid regime discovery failed", exc_info=e)
+            return {'success': False, 'error': str(e)}
     
     def _enhance_hybrid_result(self, hybrid_result: Dict[str, Any], hybrid_config: Dict[str, Any]) -> Dict[str, Any]:
         """Enhance hybrid result with additional analysis and metrics."""
@@ -1207,6 +1179,20 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.warning(f"⚠️ Falling back to TAS assignments only - NAS integration failed")
             return tas_assignments[:min_length] if 'tas_assignments' in locals() else []
     
+    @staticmethod
+    def _normalise_score(value: float, default: float = 0.5) -> float:
+        """Map an arbitrary numeric input onto [0, 1] with graceful fallbacks."""
+
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return default
+
+        if not math.isfinite(numeric):
+            return default
+
+        return (math.tanh(numeric) + 1) / 2
+
     def _calculate_consensus_metrics(self, hybrid_result: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate consensus metrics between NAS and TAS."""
         try:
@@ -1269,84 +1255,181 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Calculate economic significance scores."""
         try:
             tprint("💰 [HYBRID_NAS_TAS] Calculating economic significance scores", color="blue")
-            # Use consolidated assignments to create economic scores
-            consolidated_assignments = hybrid_result.get('consolidated_assignments', [])
-            if not consolidated_assignments:
-                tprint("⚠️ [HYBRID_NAS_TAS] No consolidated assignments, using default economic scores", color="yellow")
-                return [0.7] * 100  # Default scores
-            
-            # Create economic scores based on regime characteristics
-            economic_scores = []
-            for assignment in consolidated_assignments:
-                # Simple economic scoring based on regime ID
-                try:
-                    base_score = 0.5 + (assignment % 5) * 0.1  # Range: 0.5-0.9
-                    economic_scores.append(min(max(base_score, 0.0), 1.0))
-                except (ZeroDivisionError, ValueError):
-                    economic_scores.append(0.7)  # Default fallback score
-            
-            avg_score = sum(economic_scores) / len(economic_scores) if economic_scores else 0.7
-            tprint(f"💰 [HYBRID_NAS_TAS] Economic scores: {len(economic_scores)} scores, avg={avg_score:.3f}", color="green")
+            metrics_sources = [hybrid_result.get('nas_metrics'), hybrid_result.get('tas_metrics')]
+            aggregated: Dict[int, Dict[str, List[float]]] = {}
+            pipeline_economic: List[float] = []
+
+            for metrics in metrics_sources:
+                if not metrics:
+                    continue
+                pipeline_economic.append(metrics.get('economic_score', 0.0))
+                for regime, stats in metrics.get('regime_statistics', {}).items():
+                    regime_key = int(regime)
+                    bucket = aggregated.setdefault(
+                        regime_key,
+                        {'returns': [], 'sharpe': [], 'drawdown': [], 'volatility': []},
+                    )
+                    bucket['returns'].append(stats.get('mean_return', 0.0))
+                    bucket['sharpe'].append(stats.get('sharpe', 0.0))
+                    bucket['drawdown'].append(abs(stats.get('max_drawdown', 0.0)))
+                    bucket['volatility'].append(stats.get('volatility', 0.0))
+
+            if not aggregated:
+                tprint("⚠️ [HYBRID_NAS_TAS] No regime statistics available, using defaults", color="yellow")
+                return [0.7]
+
+            distribution = hybrid_result.get('hybrid_regime_metrics', {}).get('regime_distribution', {}) or {}
+            global_component = self._normalise_score(np.mean(pipeline_economic)) if pipeline_economic else 0.5
+
+            economic_scores: List[float] = []
+            for regime in sorted(aggregated):
+                bucket = aggregated[regime]
+                avg_return = float(np.mean(bucket['returns'])) if bucket['returns'] else 0.0
+                avg_sharpe = float(np.mean(bucket['sharpe'])) if bucket['sharpe'] else 0.0
+                avg_drawdown = float(np.mean(bucket['drawdown'])) if bucket['drawdown'] else 0.0
+                avg_volatility = float(np.mean(bucket['volatility'])) if bucket['volatility'] else 0.0
+
+                risk_adjusted = avg_return / max(avg_volatility, 1e-8) if avg_volatility > 0 else avg_return
+                calmar_ratio = avg_return / max(avg_drawdown, 1e-8) if avg_drawdown > 0 else avg_return
+
+                sharpe_component = self._normalise_score(avg_sharpe)
+                return_component = self._normalise_score(avg_return * 252)
+                risk_component = self._normalise_score(risk_adjusted)
+                calmar_component = self._normalise_score(calmar_ratio)
+                drawdown_penalty = max(0.0, 1 - self._normalise_score(avg_drawdown * 100))
+                volatility_penalty = max(0.0, 1 - self._normalise_score(avg_volatility * 100))
+
+                base_score = (
+                    0.3 * sharpe_component
+                    + 0.2 * return_component
+                    + 0.2 * risk_component
+                    + 0.15 * calmar_component
+                    + 0.075 * drawdown_penalty
+                    + 0.075 * volatility_penalty
+                )
+
+                weight = float(distribution.get(regime, 0.0))
+                weighted_score = base_score * (0.7 + 0.3 * weight)
+                final_score = max(0.0, min(1.0, 0.85 * weighted_score + 0.15 * global_component))
+                economic_scores.append(final_score)
+                tprint(
+                    "💹 [HYBRID_NAS_TAS] Regime {regime}: "
+                    f"mean_ret={avg_return:.5f}, sharpe={avg_sharpe:.2f}, vol={avg_volatility:.4f}, "
+                    f"drawdown={avg_drawdown:.4f}, score={final_score:.3f}",
+                    color="green",
+                )
+
             return economic_scores
-            
+
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Economic score calculation failed: {e}", color="yellow")
             self.logger.warning(f"Failed to calculate economic significance scores for hybrid regime discovery: {e}. Using default scores of 0.7")
             return [0.7] * 100
-    
+
     def _calculate_trading_scores(self, hybrid_result: Dict[str, Any]) -> List[float]:
         """Calculate trading viability scores."""
         try:
             tprint("📈 [HYBRID_NAS_TAS] Calculating trading viability scores", color="blue")
-            # Use consolidated assignments to create trading scores
             consolidated_assignments = hybrid_result.get('consolidated_assignments', [])
-            if not consolidated_assignments:
-                tprint("⚠️ [HYBRID_NAS_TAS] No consolidated assignments, using default trading scores", color="yellow")
-                return [0.6] * 100  # Default scores
-            
-            # Create trading scores based on regime characteristics
-            trading_scores = []
-            for assignment in consolidated_assignments:
-                # Simple trading scoring based on regime ID
-                try:
-                    base_score = 0.4 + (assignment % 4) * 0.15  # Range: 0.4-0.85
-                    trading_scores.append(min(max(base_score, 0.0), 1.0))
-                except (ZeroDivisionError, ValueError):
-                    trading_scores.append(0.6)  # Default fallback score
-            
-            avg_score = sum(trading_scores) / len(trading_scores) if trading_scores else 0.6
-            tprint(f"📈 [HYBRID_NAS_TAS] Trading scores: {len(trading_scores)} scores, avg={avg_score:.3f}", color="green")
+            transition_stats = compute_transition_statistics(consolidated_assignments)
+
+            trading_scores: List[float] = []
+            pipeline_trading: List[float] = []
+            total_points = len(consolidated_assignments)
+            avg_duration_ratio = 0.0
+            if total_points > 0:
+                avg_duration_ratio = transition_stats.get('avg_duration', 0.0) / max(total_points, 1)
+            duration_component = self._normalise_score(avg_duration_ratio) if total_points else 0.5
+
+            for metrics in [hybrid_result.get('nas_metrics'), hybrid_result.get('tas_metrics')]:
+                if not metrics:
+                    continue
+
+                pipeline_trading.append(metrics.get('trading_score', 0.0))
+                stats_values = list(metrics.get('regime_statistics', {}).values())
+                avg_return = float(np.mean([s.get('mean_return', 0.0) for s in stats_values])) if stats_values else 0.0
+                avg_sharpe = float(np.mean([s.get('sharpe', 0.0) for s in stats_values])) if stats_values else 0.0
+                avg_drawdown = float(np.mean([abs(s.get('max_drawdown', 0.0)) for s in stats_values])) if stats_values else 0.0
+                avg_volatility = float(np.mean([s.get('volatility', 0.0) for s in stats_values])) if stats_values else 0.0
+                base_component = self._normalise_score(metrics.get('trading_score', 0.0))
+                sharpe_component = self._normalise_score(avg_sharpe)
+                risk_component = self._normalise_score(
+                    avg_return / max(avg_volatility, 1e-8) if avg_volatility > 0 else avg_return
+                )
+                calmar_component = self._normalise_score(
+                    avg_return / max(avg_drawdown, 1e-8) if avg_drawdown > 0 else avg_return
+                )
+                stability_component = self._normalise_score(metrics.get('stability_score', 0.0))
+
+                turnover_penalty = transition_stats.get('transition_rate', 0.0)
+                persistence_bonus = transition_stats.get('persistence', 0.0)
+
+                score = (
+                    0.3 * base_component
+                    + 0.25 * sharpe_component
+                    + 0.2 * risk_component
+                    + 0.15 * calmar_component
+                    + 0.1 * stability_component
+                )
+
+                structural_factor = 0.6 + 0.25 * persistence_bonus + 0.15 * duration_component
+                score *= max(0.0, min(1.0, structural_factor))
+                score *= max(0.0, 1 - 0.4 * turnover_penalty)
+                score = max(0.0, min(1.0, score))
+
+                trading_scores.append(score)
+                tprint(
+                    "📊 [HYBRID_NAS_TAS] Trading metrics: "
+                    f"mean_ret={avg_return:.5f}, sharpe={avg_sharpe:.2f}, drawdown={avg_drawdown:.4f}, "
+                    f"turnover={turnover_penalty:.3f}, score={score:.3f}",
+                    color="green",
+                )
+
+            if not trading_scores:
+                return [0.6]
+
+            if pipeline_trading:
+                global_component = self._normalise_score(np.mean(pipeline_trading))
+                trading_scores = [max(0.0, min(1.0, 0.85 * score + 0.15 * global_component)) for score in trading_scores]
+
             return trading_scores
-            
+
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Trading score calculation failed: {e}", color="yellow")
             self.logger.warning(f"Failed to calculate trading viability scores for hybrid regime discovery: {e}. Using default scores of 0.6")
             return [0.6] * 100
-    
+
     def _calculate_stability_scores(self, hybrid_result: Dict[str, Any]) -> List[float]:
         """Calculate regime stability scores."""
         try:
             tprint("⚖️ [HYBRID_NAS_TAS] Calculating regime stability scores", color="blue")
-            # Use consolidated assignments to create stability scores
+            stability_scores: List[float] = []
+
+            for metrics in [hybrid_result.get('nas_metrics'), hybrid_result.get('tas_metrics')]:
+                if not metrics:
+                    continue
+                transition_matrix = metrics.get('transition_matrix')
+                persistence = 0.0
+                if transition_matrix:
+                    matrix = np.array(transition_matrix)
+                    if matrix.size > 0:
+                        persistence = float(np.trace(matrix) / max(len(matrix), 1))
+                stability = metrics.get('stability_score', persistence)
+                stability_scores.append(max(0.0, min(1.0, (math.tanh(stability) + 1) / 2)))
+
             consolidated_assignments = hybrid_result.get('consolidated_assignments', [])
-            if not consolidated_assignments:
-                tprint("⚠️ [HYBRID_NAS_TAS] No consolidated assignments, using default stability scores", color="yellow")
-                return [0.8] * 100  # Default scores
-            
-            # Create stability scores based on regime characteristics
-            stability_scores = []
-            for assignment in consolidated_assignments:
-                # Simple stability scoring based on regime ID
-                try:
-                    base_score = 0.6 + (assignment % 3) * 0.2  # Range: 0.6-1.0
-                    stability_scores.append(min(max(base_score, 0.0), 1.0))
-                except (ZeroDivisionError, ValueError):
-                    stability_scores.append(0.8)  # Default fallback score
-            
-            avg_score = sum(stability_scores) / len(stability_scores) if stability_scores else 0.8
-            tprint(f"⚖️ [HYBRID_NAS_TAS] Stability scores: {len(stability_scores)} scores, avg={avg_score:.3f}", color="green")
+            if consolidated_assignments:
+                stats = compute_transition_statistics(consolidated_assignments)
+                duration_component = (math.tanh(stats.get('avg_duration', 0.0) / max(len(consolidated_assignments), 1)) + 1) / 2
+                persistence_component = stats.get('persistence', 0.0)
+                aggregate = max(0.0, min(1.0, 0.5 * duration_component + 0.5 * persistence_component))
+                stability_scores.append(aggregate)
+
+            if not stability_scores:
+                return [0.8]
+
             return stability_scores
-            
+
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Stability score calculation failed: {e}", color="yellow")
             self.logger.warning(f"Failed to calculate regime stability scores for hybrid regime discovery: {e}. Using default scores of 0.8")
@@ -1531,16 +1614,14 @@ class HybridNASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 regime_counts[assignment] = regime_counts.get(assignment, 0) + 1
             
             # Convert to percentages
-            regime_distribution = {}
-            for regime, count in regime_counts.items():
-                key = f'regime_{regime}'
-                percentage = (count / total_assignments) * 100
-                regime_distribution[key] = percentage
-                tprint(f"📈 [HYBRID_NAS_TAS] {key}: {count} samples ({percentage:.1f}%)", color="cyan")
-            
+            distribution = calculate_regime_distribution(regime_assignments)
+            regime_distribution = {f'regime_{k}': v * 100 for k, v in distribution.items()}
+            for key, percentage in regime_distribution.items():
+                tprint(f"📈 [HYBRID_NAS_TAS] {key}: {percentage:.1f}%", color="cyan")
+
             tprint(f"✅ [HYBRID_NAS_TAS] Distribution calculated for {len(regime_distribution)} regimes", color="green")
             return regime_distribution
-            
+
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Distribution calculation failed: {e}", color="yellow")
             return {}

@@ -37,10 +37,110 @@ from .real_time_monitor import (
     create_real_time_monitor
 )
 
+from .confidence_scoring import (
+    TreeConfidenceScorer,
+    TreeReliabilityEstimator,
+    TreeCalibrationScorer,
+    ConfidenceConfig
+)
+
+# Training-related utilities
+from .regime_aware_trainer import (
+    RegimeAwareTrainer,
+    RegimeAwareTrainingConfig,
+    RegimeTrainingResult,
+    ModelType,
+    RegimeTrainingStrategy
+)
+
+from .training_orchestrator import (
+    TrainingOrchestrator,
+    OrchestratorConfig,
+    OrchestrationResult,
+    OrchestrationMode
+)
+
+from .model_selector import (
+    ModelSelector,
+    ModelSelectionConfig,
+    ModelSelectionResult,
+    SelectionStrategy,
+    RoutingMethod
+)
+
+from .model_manager import (
+    ModelManager,
+    ModelManagerConfig,
+    ModelMetadata,
+    ModelDeploymentResult,
+    ModelStatus,
+    DeploymentStrategy
+)
+
+from .performance_tracker import (
+    PerformanceTracker,
+    PerformanceConfig,
+    PerformanceRecord,
+    PerformanceAlert,
+    PerformanceReport,
+    PerformanceMetric,
+    AlertType
+)
+
 __all__ = [
     'UnifiedRegimeConfig',
     'RegimeDetectionMethod',
     'OptimizationStrategy',
+    'create_default_nas_search_space',
+    'create_tree_search_space',
+    'RiskAnalyzer',
+    'RiskConfig',
+    'RiskResult',
+    'RiskMetric',
+    'BacktestingEngine',
+    'BacktestingConfig', 
+    'BacktestingResult',
+    'BacktestingMode',
+    'EvolutionaryTreeSearch',
+    'TreeGeneticAlgorithm',
+    'TreeNSGA2',
+    'EvolutionaryConfig',
+    'TreeUncertaintyEstimator',
+    'TreeEnsembleUncertainty',
+    'TreeBayesianUncertainty',
+    'UncertaintyConfig',
+    'TreeConfidenceScorer',
+    'TreeReliabilityEstimator',
+    'TreeCalibrationScorer',
+    'ConfidenceConfig',
+    # Training-related utilities
+    'RegimeAwareTrainer',
+    'RegimeAwareTrainingConfig',
+    'RegimeTrainingResult',
+    'ModelType',
+    'RegimeTrainingStrategy',
+    'TrainingOrchestrator',
+    'OrchestratorConfig',
+    'OrchestrationResult',
+    'OrchestrationMode',
+    'ModelSelector',
+    'ModelSelectionConfig',
+    'ModelSelectionResult',
+    'SelectionStrategy',
+    'RoutingMethod',
+    'ModelManager',
+    'ModelManagerConfig',
+    'ModelMetadata',
+    'ModelDeploymentResult',
+    'ModelStatus',
+    'DeploymentStrategy',
+    'PerformanceTracker',
+    'PerformanceConfig',
+    'PerformanceRecord',
+    'PerformanceAlert',
+    'PerformanceReport',
+    'PerformanceMetric',
+    'AlertType',
     'EconomicEvaluationMode',
     'UnifiedRegimeDetector',
     'UnifiedRegimeResult',

@@ -526,7 +526,7 @@ The unified utilities framework is designed to be extensible. Future enhancement
 
 ### **Leveraging Proven Tools**
 - **✅ Lookahead Protection**: Uses `src.utils.ml_common.utils.lookahead_protection.LookaheadProtection`
-- **✅ Overfitting Detection**: Uses `src.utils.ml_common.validation.enhanced_overfitting_detection.EnhancedOverfittingDetector`
+- **✅ Overfitting Detection**: Uses `src.utils.nas_tas.advanced_validation.UniversalOverfittingDetector`
 - **✅ HPO Optimization**: Uses `src.utils.ml_common.utils.hpo_utils.HyperparameterOptimization`
 - **✅ Data Leakage Prevention**: Uses `src.utils.ml_common.validation.data_leakage_prevention.DataLeakagePrevention`
 - **✅ Unified Validation**: Uses `src.utils.ml_common.validation.unified_validation_system.UnifiedValidationSystem`

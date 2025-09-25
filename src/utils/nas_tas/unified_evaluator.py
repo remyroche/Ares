@@ -354,18 +354,14 @@ class UnifiedEvaluator:
                 self.enhancement_detector = self.validation_suite.get('enhancement_detector')
                 self.validation_orchestrator = self.validation_suite.get('validation_orchestrator')
                 self.validation_manager = self.validation_suite.get('validation_manager')
-                self.enhancement_guide = self.validation_suite.get('enhancement_guide')
                 self.data_leakage_prevention = self.validation_suite.get('data_leakage_prevention')
-                self.complexity_analyzer = self.validation_suite.get('complexity_analyzer')
             else:
                 self.validation_suite = None
                 self.overfitting_detector = None
                 self.enhancement_detector = None
                 self.validation_orchestrator = None
                 self.validation_manager = None
-                self.enhancement_guide = None
                 self.data_leakage_prevention = None
-                self.complexity_analyzer = None
             
             # Initialize hybrid NAS-TAS shared utilities
             if HYBRID_NAS_TAS_AVAILABLE:
@@ -595,20 +591,13 @@ class UnifiedEvaluator:
                     else:
                         self.logger.warning(f"⚠️ Enhancement analysis failed: {e}")
             
-            # Create enhancement plan if enhancement guide is available
+            # Enhancement recommendations are provided by the enhancement detector
             enhancement_plan = None
-            if self.enhancement_guide and overfitting_report:
-                try:
-                    enhancement_plan = self.enhancement_guide.create_enhancement_plan(
-                        model_name=model_name,
-                        model_type=model_type,
-                        overfitting_report=overfitting_report.__dict__ if hasattr(overfitting_report, '__dict__') else overfitting_report
-                    )
-                except Exception as e:
-                    if TPRINT_AVAILABLE:
-                        tprint_warning(f"⚠️ Enhancement plan creation failed: {e}")
-                    else:
-                        self.logger.warning(f"⚠️ Enhancement plan creation failed: {e}")
+            if enhancement_report and hasattr(enhancement_report, 'recommendations'):
+                enhancement_plan = {
+                    'recommendations': enhancement_report.recommendations,
+                    'opportunities': enhancement_report.enhancement_opportunities if hasattr(enhancement_report, 'enhancement_opportunities') else []
+                }
             
             # Compile results
             validation_results = {

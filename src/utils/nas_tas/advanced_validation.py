@@ -21,17 +21,14 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 # Import additional validation utilities
 try:
-    from src.utils.ml_common.validation.model_enhancement_guide import ModelEnhancementGuide, EnhancementAction, ModelEnhancementPlan
     from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention, LeakageReport, DataLeakageConfig
-    from src.utils.ml_common.validation.model_complexity_analysis import ModelComplexityAnalyzer, ComplexityAnalysisReport, ModelComplexityConfig
-    ENHANCEMENT_GUIDE_AVAILABLE = True
     DATA_LEAKAGE_AVAILABLE = True
-    COMPLEXITY_ANALYSIS_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"⚠️ Additional validation utilities not available: {e}")
-    ENHANCEMENT_GUIDE_AVAILABLE = False
+    logging.warning(f"⚠️ Data leakage prevention utilities not available: {e}")
     DATA_LEAKAGE_AVAILABLE = False
-    COMPLEXITY_ANALYSIS_AVAILABLE = False
+
+# Note: ModelEnhancementGuide and ModelComplexityAnalyzer functionality
+# has been integrated directly into this module to reduce dependencies
 
 logger = logging.getLogger(__name__)
 
@@ -2660,23 +2657,19 @@ class ModelEnhancementDetector:
 
 # Convenience functions for accessing additional validation utilities
 
-def get_enhancement_guide() -> Optional[ModelEnhancementGuide]:
-    """Get model enhancement guide instance if available."""
-    if ENHANCEMENT_GUIDE_AVAILABLE:
-        return ModelEnhancementGuide()
-    return None
-
 def get_data_leakage_prevention(config: Optional[DataLeakageConfig] = None) -> Optional[DataLeakagePrevention]:
     """Get data leakage prevention instance if available."""
     if DATA_LEAKAGE_AVAILABLE:
         return DataLeakagePrevention(config)
     return None
 
-def get_complexity_analyzer(config: Optional[ModelComplexityConfig] = None) -> Optional[ModelComplexityAnalyzer]:
-    """Get model complexity analyzer instance if available."""
-    if COMPLEXITY_ANALYSIS_AVAILABLE:
-        return ModelComplexityAnalyzer(config)
-    return None
+def get_enhancement_detector():
+    """Get model enhancement detector instance."""
+    return ModelEnhancementDetector()
+
+def get_overfitting_detector(config: Optional[OverfittingConfig] = None):
+    """Get overfitting detector instance."""
+    return UniversalOverfittingDetector(config)
 
 def create_comprehensive_validation_suite():
     """
@@ -2687,17 +2680,12 @@ def create_comprehensive_validation_suite():
     """
     suite = {
         "overfitting_detector": UniversalOverfittingDetector(),
+        "enhancement_detector": ModelEnhancementDetector(),
         "validation_orchestrator": UniversalMLValidationOrchestrator(),
         "validation_manager": ValidationIntegrationManager()
     }
     
-    if ENHANCEMENT_GUIDE_AVAILABLE:
-        suite["enhancement_guide"] = ModelEnhancementGuide()
-    
     if DATA_LEAKAGE_AVAILABLE:
         suite["data_leakage_prevention"] = DataLeakagePrevention()
-    
-    if COMPLEXITY_ANALYSIS_AVAILABLE:
-        suite["complexity_analyzer"] = ModelComplexityAnalyzer()
     
     return suite

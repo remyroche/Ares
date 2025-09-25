@@ -85,6 +85,49 @@ from .confidence_scoring import (
     ConfidenceConfig
 )
 
+# Training-related utilities
+from .regime_aware_trainer import (
+    RegimeAwareTrainer,
+    RegimeAwareTrainingConfig,
+    RegimeTrainingResult,
+    ModelType,
+    RegimeTrainingStrategy
+)
+
+from .training_orchestrator import (
+    TrainingOrchestrator,
+    OrchestratorConfig,
+    OrchestrationResult,
+    OrchestrationMode
+)
+
+from .model_selector import (
+    ModelSelector,
+    ModelSelectionConfig,
+    ModelSelectionResult,
+    SelectionStrategy,
+    RoutingMethod
+)
+
+from .model_manager import (
+    ModelManager,
+    ModelManagerConfig,
+    ModelMetadata,
+    ModelDeploymentResult,
+    ModelStatus,
+    DeploymentStrategy
+)
+
+from .performance_tracker import (
+    PerformanceTracker,
+    PerformanceConfig,
+    PerformanceRecord,
+    PerformanceAlert,
+    PerformanceReport,
+    PerformanceMetric,
+    AlertType
+)
+
 
 __all__ = [
     'UnifiedEvaluator',
@@ -136,5 +179,33 @@ __all__ = [
     'TreeConfidenceScorer',
     'TreeReliabilityEstimator',
     'TreeCalibrationScorer',
-    'ConfidenceConfig'
+    'ConfidenceConfig',
+    # Training-related utilities
+    'RegimeAwareTrainer',
+    'RegimeAwareTrainingConfig',
+    'RegimeTrainingResult',
+    'ModelType',
+    'RegimeTrainingStrategy',
+    'TrainingOrchestrator',
+    'OrchestratorConfig',
+    'OrchestrationResult',
+    'OrchestrationMode',
+    'ModelSelector',
+    'ModelSelectionConfig',
+    'ModelSelectionResult',
+    'SelectionStrategy',
+    'RoutingMethod',
+    'ModelManager',
+    'ModelManagerConfig',
+    'ModelMetadata',
+    'ModelDeploymentResult',
+    'ModelStatus',
+    'DeploymentStrategy',
+    'PerformanceTracker',
+    'PerformanceConfig',
+    'PerformanceRecord',
+    'PerformanceAlert',
+    'PerformanceReport',
+    'PerformanceMetric',
+    'AlertType'
 ]

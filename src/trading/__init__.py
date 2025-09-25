@@ -46,12 +46,12 @@ from .execution.trading_orchestrator import (
     create_trading_orchestrator, start_trading_orchestrator
 )
 
-from .signal_generation.analyst_signals import (
+from .signal_generation.analyst_signals_refactored import (
     AnalystSignalGenerator, AnalystSignal, SignalType, SignalStrength,
     create_analyst_signal_generator, generate_analyst_signal
 )
 
-from .signal_generation.tactician_signals import (
+from .signal_generation.tactician_signals_refactored import (
     TacticianSignalGenerator, TacticianSignal, TimingSignal, TimingConfidence,
     create_tactician_signal_generator, generate_tactician_signal
 )

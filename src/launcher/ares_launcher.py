@@ -15,6 +15,9 @@ Key Features:
 - Comprehensive monitoring and reporting
 - Mid-function artifact creation
 - Real-time progress tracking
+- Enhanced error handling and logging
+- Hardware optimization integration
+- ML utilities integration
 """
 
 import asyncio
@@ -29,46 +32,44 @@ from pathlib import Path
 from enum import Enum
 
 # Add the project root to the Python path BEFORE any imports
-print("🔧 [IMPORTS] Setting up project root path...")
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-print(f"✅ [IMPORTS] Project root added to path: {project_root}")
 
 # Temporarily use simple logger to bypass initialization issues
-print("🔧 [IMPORTS] Setting up additional paths...")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-print("✅ [IMPORTS] Additional paths configured")
 
-print("🔧 [IMPORTS] Importing simple_logger...")
-from src.utils.logger import system_logger
-print("✅ [IMPORTS] Simple logger imported")
+# Import utilities with proper error handling
+try:
+    from src.utils.logger import system_logger
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_info
+    from src.utils.common_operations import (
+        safe_json_dump, safe_json_load, ensure_directory, 
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        integrate_with_m1_optimizers, cleanup_m1_optimizers
+    )
+    from src.utils.math_validation import (
+        validate_finite, validate_positive, safe_divide, safe_log, safe_sqrt
+    )
+    from src.utils.serialization_utils import UniversalSerializer
+    UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: Some utilities not available: {e}")
+    UTILS_AVAILABLE = False
+    # Fallback imports
+    from src.utils.logger import system_logger
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_info
 
-print("🔧 [IMPORTS] Importing tprint...")
-from src.utils.tprint import tprint
-print("✅ [IMPORTS] Tprint imported")
-
-tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
-tprint("✅ [IMPORTS] Core decorators imported")
-
-
-tprint("🔧 [IMPORTS] Importing main training pipeline components...")
 from src.training.steps.main_training_pipeline import (
     MainTrainingPipeline, MainPipelineConfig, MainPipelineResult,
     PipelineStage, ExecutionMode, get_full_pipeline_config,
     get_light_pipeline_config, get_blank_pipeline_config, SubPipelineStatus
 )
-tprint("✅ [IMPORTS] Main training pipeline components imported")
 
-tprint("🔧 [IMPORTS] Creating AresLauncher logger...")
 logger = system_logger.getChild('AresLauncher')
-# Ensure single emission via root 'AresSimple' only; do not add handlers here
 logger.propagate = True
 if logger.handlers:
     logger.handlers.clear()
-tprint("✅ [IMPORTS] AresLauncher logger created")
-tprint("✅ [IMPORTS] All imports completed successfully")
-tprint("=" * 60)
 
 class LauncherMode(Enum):
     """Launcher execution modes."""
@@ -93,64 +94,60 @@ class AresLauncher:
     """
     
     def __init__(self):
-        """Initialize the Ares launcher."""
-        tprint("🚀 [INIT] Starting AresLauncher initialization...")
-        tprint("🚀 [INIT] Creating logger instance...")
-        self.logger = logger.getChild('AresLauncher')
-        tprint("✅ [INIT] Logger created successfully")
-        
-        tprint("🚀 [INIT] Initializing MainTrainingPipeline...")
-        self.pipeline = MainTrainingPipeline()
-        tprint("✅ [INIT] MainTrainingPipeline initialized successfully")
-        
-        tprint("🚀 [INIT] Setting up execution tracking...")
-        self.current_execution: Optional[MainPipelineResult] = None
-        self.execution_history: List[MainPipelineResult] = []
-        tprint("✅ [INIT] Execution tracking setup complete")
-        
-        # Initialize monitoring
-        tprint("🚀 [INIT] Starting logging setup...")
-        self._setup_logging()
-        tprint("✅ [INIT] Logging setup complete")
-        
-        tprint("🚀 [INIT] Starting monitoring setup...")
-        self._setup_monitoring()
-        tprint("✅ [INIT] Monitoring setup complete")
-        
-        tprint("🎯 [INIT] AresLauncher initialization completed successfully!")
-        tprint("=" * 80)
+        """Initialize the Ares launcher with enhanced error handling and utilities."""
+        try:
+            tprint("🚀 Starting AresLauncher initialization...")
+            
+            # Initialize core components
+            self.logger = logger.getChild('AresLauncher')
+            self.pipeline = MainTrainingPipeline()
+            self.current_execution: Optional[MainPipelineResult] = None
+            self.execution_history: List[MainPipelineResult] = []
+            
+            # Initialize utility systems
+            self.utils_available = UTILS_AVAILABLE
+            self.serializer = None
+            self.m1_optimizers = None
+            
+            if self.utils_available:
+                try:
+                    self._initialize_utilities()
+                    tprint_success("✅ Utilities initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Utilities initialization failed: {e}")
+                    self.utils_available = False
+            
+            # Setup systems
+            self._setup_logging()
+            self._setup_monitoring()
+            
+            tprint_success("✅ AresLauncher initialized successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ AresLauncher initialization failed: {e}")
+            raise
+    
+    def _initialize_utilities(self):
+        """Initialize utility systems."""
+        try:
+            self.serializer = UniversalSerializer()
+            self.m1_optimizers = integrate_with_m1_optimizers()
+        except Exception as e:
+            tprint_warning(f"⚠️ Utility initialization failed: {e}")
+            self.utils_available = False
     
     def _setup_logging(self):
-        """Setup comprehensive logging."""
-        tprint("🔧 [SETUP_LOGGING] Starting logging configuration...")
-        tprint("🔧 [SETUP_LOGGING] Configuring logger formatters...")
-        
-        # Keep light verbosity in LIGHT mode
+        """Setup logging."""
         self.logger.info("🚀 Ares Launcher Initialized")
-        self.logger.info("🎯 Granular Sub-Pipeline Control Enabled")
-        
-        tprint("🔧 [SETUP_LOGGING] Logger configuration complete")
-        tprint("🔧 [SETUP_LOGGING] Logging levels configured")
-        tprint("🔧 [SETUP_LOGGING] Console output enabled")
-        tprint("🔧 [SETUP_LOGGING] File output configured")
-        tprint("✅ [SETUP_LOGGING] Comprehensive logging setup completed")
+        if self.utils_available:
+            self.logger.info("🔧 Utilities: Available")
     
     def _setup_monitoring(self):
-        """Setup monitoring and progress tracking."""
-        tprint("📊 [SETUP_MONITORING] Starting monitoring configuration...")
-        tprint("📊 [SETUP_MONITORING] Enabling monitoring system...")
+        """Setup monitoring."""
         self.monitoring_enabled = True
-        tprint("✅ [SETUP_MONITORING] Monitoring system enabled")
-        
-        tprint("📊 [SETUP_MONITORING] Initializing progress callbacks list...")
         self.progress_callbacks: List[callable] = []
-        tprint("✅ [SETUP_MONITORING] Progress callbacks list initialized")
-        
-        # Register default progress callback
-        tprint("📊 [SETUP_MONITORING] Registering default progress callback...")
         self.register_progress_callback(self._default_progress_callback)
-        tprint("✅ [SETUP_MONITORING] Default progress callback registered")
-        tprint("✅ [SETUP_MONITORING] Monitoring setup completed successfully")
+    
     
     def register_progress_callback(self, callback: callable):
         """Register a progress callback function."""
@@ -190,116 +187,8 @@ class AresLauncher:
             self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
             self.logger.info("=" * 60)
     
-    async def _create_outcome_file(self, stage: str, sub_pipeline: str, result: Any, config: MainPipelineConfig) -> str:
-        """Create outcome file for stage/sub-pipeline completion."""
-        outcome_dir = Path("outcomes")
-        outcome_dir.mkdir(exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
-        outcome_file = outcome_dir / filename
-        
-        outcome_data = {
-            'stage': stage,
-            'sub_pipeline': sub_pipeline,
-            'timestamp': datetime.now().isoformat(),
-            'status': result.status.value if hasattr(result, 'status') else 'completed',
-            'output_files': result.output_files if hasattr(result, 'output_files') else [],
-            'metadata': result.metadata if hasattr(result, 'metadata') else {},
-            'artifacts': result.artifacts if hasattr(result, 'artifacts') else {},
-            'config': {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe,
-                'mode': config.mode.value,
-                'intensity_percentage': config.intensity_percentage,
-                'training_mode_config': config.training_mode_config
-            },
-            'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
-        }
-        
-        with open(outcome_file, 'w') as f:
-            json.dump(outcome_data, f, indent=2, default=str)
-        
-        self.logger.info(f"💾 Outcome file created: {outcome_file}")
-        return str(outcome_file)
     
-    def _get_next_stage_requirements(self, current_stage: str, current_sub_pipeline: str) -> Dict[str, Any]:
-        """Get requirements for the next stage/sub-pipeline."""
-        requirements = {
-            'required_files': [],
-            'required_artifacts': [],
-            'data_dependencies': []
-        }
-        
-        # Define stage dependencies and requirements
-        stage_requirements = {
-            'data_collection': {
-                'next_stage': 'market_analysis',
-                'required_files': ['processed_data.parquet', 'data_quality_report.json', 'exported_data.parquet'],
-                'required_artifacts': ['data_metadata', 'quality_metrics', 'integration_results'],
-                'sub_pipelines': ['data_download', 'data_conversion', 'data_validation', 'data_preparation', 
-                                'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
-                                'data_integration', 'data_export']
-            },
-            'market_analysis': {
-                'next_stage': 'model_training',
-                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
-                                'hmm_models_training', 'hmm_ensemble_training',
-                                'feature_lookback_optimization', 'pid_based_feature_generation',
-                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
-                                'sr_feature_integration']
-            },
-            'model_training': {
-                'next_stage': 'backtesting',
-                'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
-                'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
-                'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training',
-                                'tactician_pre_ml_orchestration', 'tactician_dual_training',
-                                'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
-            },
-            'backtesting': {
-                'next_stage': 'reporting',
-                'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
-                'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
-                'sub_pipelines': ['basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
-                                'model_persistence', 'performance_analytics',
-                                'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
-            }
-        }
-        
-        if current_stage in stage_requirements:
-            requirements.update(stage_requirements[current_stage])
-        
-        return requirements
     
-    async def _check_outcome_files(self, stage: str, sub_pipeline: str) -> Optional[Dict[str, Any]]:
-        """Check for existing outcome files from previous stages."""
-        outcome_dir = Path("outcomes")
-        if not outcome_dir.exists():
-            return None
-        
-        # Look for the most recent outcome file for this stage/sub-pipeline
-        pattern = f"{stage}_{sub_pipeline}_outcome_*.json"
-        outcome_files = list(outcome_dir.glob(pattern))
-        
-        if not outcome_files:
-            return None
-        
-        # Get the most recent file
-        latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-        
-        try:
-            with open(latest_file, 'r') as f:
-                outcome_data = json.load(f)
-            
-            self.logger.info(f"📂 Found existing outcome file: {latest_file}")
-            return outcome_data
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not read outcome file {latest_file}: {e}")
-            return None
     
     async def execute_pipeline(
         self,
@@ -314,7 +203,7 @@ class AresLauncher:
         custom_config: Optional[Dict[str, Any]] = None
     ) -> MainPipelineResult:
         """
-        Execute the training pipeline with granular control.
+        Execute the training pipeline with granular control and enhanced error handling.
         
         Args:
             mode: Launcher execution mode (full, light, blank, stage, sub_pipeline)
@@ -330,42 +219,74 @@ class AresLauncher:
         Returns:
             MainPipelineResult with execution details
         """
-        tprint("🚀 [EXECUTE_PIPELINE] Starting pipeline execution...")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Mode: {mode.value}")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Symbol: {symbol}")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Exchange: {exchange}")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Timeframe: {timeframe}")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Data directory: {data_dir}")
-        tprint(f"🚀 [EXECUTE_PIPELINE] Execution mode: {execution_mode.value}")
-        
-        if stage:
-            tprint(f"🚀 [EXECUTE_PIPELINE] Target stage: {stage.value}")
-        if sub_pipeline:
-            tprint(f"🚀 [EXECUTE_PIPELINE] Target sub-pipeline: {sub_pipeline}")
-        if custom_config:
-            tprint(f"🚀 [EXECUTE_PIPELINE] Custom config provided: {len(custom_config)} parameters")
-        
-        self.logger.info(f"🚀 Starting pipeline execution: {mode.value}")
-        
-        # Create configuration based on mode
-        tprint("🚀 [EXECUTE_PIPELINE] Creating configuration...")
-        config = self._create_config(
-            mode, symbol, exchange, timeframe, data_dir, 
-            stage, sub_pipeline, execution_mode, custom_config
-        )
-        tprint("✅ [EXECUTE_PIPELINE] Configuration created successfully")
-        
-        # Execute based on mode
-        tprint("🚀 [EXECUTE_PIPELINE] Determining execution path...")
-        if mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
-            tprint(f"🚀 [EXECUTE_PIPELINE] Executing sub-pipeline: {sub_pipeline}")
-            return await self._execute_sub_pipeline(sub_pipeline, config)
-        elif mode == LauncherMode.STAGE and stage:
-            tprint(f"🚀 [EXECUTE_PIPELINE] Executing stage: {stage.value}")
-            return await self._execute_stage(stage, config)
-        else:
-            tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
-            return await self._execute_full_pipeline(config)
+        try:
+            tprint("🚀 [EXECUTE_PIPELINE] Starting pipeline execution...")
+            
+            # Validate inputs with math validation utilities
+            if self.utils_available:
+                try:
+                    validate_positive(len(symbol), "symbol length")
+                    validate_positive(len(exchange), "exchange length")
+                    validate_positive(len(timeframe), "timeframe length")
+                    validate_positive(len(data_dir), "data_dir length")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Input validation warning: {e}")
+            
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Mode: {mode.value}")
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Symbol: {symbol}")
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Exchange: {exchange}")
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Timeframe: {timeframe}")
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Data directory: {data_dir}")
+            tprint_info(f"🚀 [EXECUTE_PIPELINE] Execution mode: {execution_mode.value}")
+            
+            if stage:
+                tprint_info(f"🚀 [EXECUTE_PIPELINE] Target stage: {stage.value}")
+            if sub_pipeline:
+                tprint_info(f"🚀 [EXECUTE_PIPELINE] Target sub-pipeline: {sub_pipeline}")
+            if custom_config:
+                tprint_info(f"🚀 [EXECUTE_PIPELINE] Custom config provided: {len(custom_config)} parameters")
+            
+            self.logger.info(f"🚀 Starting pipeline execution: {mode.value}")
+            
+            # Create configuration based on mode with error handling
+            try:
+                tprint("🚀 [EXECUTE_PIPELINE] Creating configuration...")
+                config = self._create_config(
+                    mode, symbol, exchange, timeframe, data_dir, 
+                    stage, sub_pipeline, execution_mode, custom_config
+                )
+                tprint_success("✅ [EXECUTE_PIPELINE] Configuration created successfully")
+            except Exception as e:
+                tprint_error(f"❌ [EXECUTE_PIPELINE] Configuration creation failed: {e}")
+                raise
+            
+            # Execute based on mode with proper error handling
+            try:
+                tprint("🚀 [EXECUTE_PIPELINE] Determining execution path...")
+                if mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
+                    tprint_info(f"🚀 [EXECUTE_PIPELINE] Executing sub-pipeline: {sub_pipeline}")
+                    return await self._execute_sub_pipeline(sub_pipeline, config)
+                elif mode == LauncherMode.STAGE and stage:
+                    tprint_info(f"🚀 [EXECUTE_PIPELINE] Executing stage: {stage.value}")
+                    return await self._execute_stage(stage, config)
+                else:
+                    tprint_info("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
+                    return await self._execute_full_pipeline(config)
+            except Exception as e:
+                tprint_error(f"❌ [EXECUTE_PIPELINE] Pipeline execution failed: {e}")
+                raise
+                
+        except Exception as e:
+            tprint_error(f"❌ [EXECUTE_PIPELINE] Critical error in pipeline execution: {e}")
+            # Return a failed result instead of raising
+            return MainPipelineResult(
+                pipeline_id=f"failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=str(e)
+            )
     
     def _create_config(
         self,
@@ -644,7 +565,7 @@ class AresLauncher:
                 # Create outcome files for each sub-pipeline in the stage
                 for sub_result in stage_result:
                     if hasattr(sub_result, 'sub_pipeline_name'):
-                        await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
+                        # Outcome file creation handled by MainTrainingPipeline
                 
                 # Check if stage failed
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
@@ -705,7 +626,7 @@ class AresLauncher:
             stage_results = result.stage_results[stage]
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name'):
-                    await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
+                    # Outcome file creation handled by MainTrainingPipeline
         
         # Store execution
         self.current_execution = result
@@ -766,7 +687,7 @@ class AresLauncher:
             stage_results = result.stage_results[target_stage]
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
-                    await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
+                    # Outcome file creation handled by MainTrainingPipeline
                     break
         
         # Store execution

@@ -1,17 +1,23 @@
-"""
-Comprehensive Tree Architecture Search (TAS) for ML Common
-Integrates with shared utilities from src/utils/
-"""
+"""Tree architecture search utilities used by the TAS training pipeline."""
+
+import hashlib
+import itertools
+import json
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Callable, Union
-from dataclasses import dataclass, field
-import logging
-import time
-from datetime import datetime
-from pathlib import Path
-import json
+
+try:
+    from sklearn.metrics import accuracy_score, r2_score
+except ImportError:  # pragma: no cover - fallback for minimal environments
+    accuracy_score = None
+    r2_score = None
 
 # Import shared utilities
 from src.utils.common_operations import (
@@ -77,6 +83,10 @@ class TreeArchitectureConfig:
     enable_parallel_processing: bool = True
     max_parallel_jobs: int = 4
     
+    # Candidate caching
+    enable_candidate_cache: bool = True
+    cache_filename: str = "evaluation_cache.json"
+
     # Results
     save_results: bool = True
     results_dir: str = "tree_search_results"
@@ -103,6 +113,7 @@ class TreeArchitectureCandidate:
     efficiency_score: float = 0.0
     interpretability_score: float = 0.0
     overall_score: float = 0.0
+    metric_name: str = "accuracy"
     
     # Training info
     training_time: float = 0.0
@@ -122,18 +133,26 @@ class TreeArchitectureSearch:
         self.logger = logger.getChild('TreeArchitectureSearch')
         self.candidates: List[TreeArchitectureCandidate] = []
         self.serializer = JSONSerializer()
-        self.task_type: str = "regression"
-        self._last_tpe_params: Optional[Dict[str, Any]] = None
+        self.metric_tracker: Dict[str, Dict[str, float]] = {}
+        self.evaluation_cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_file: Optional[Path] = None
+        self.task_type: Optional[str] = None
+
 
         # Setup hardware optimization
         self._setup_hardware_optimization()
 
         # Setup optimization utilities
         self._setup_optimization_utilities()
-        
+
         # Create results directory
         ensure_directory(self.config.results_dir)
-        
+
+        # Load cached evaluations if enabled
+        if self.config.enable_candidate_cache:
+            self.cache_file = Path(self.config.results_dir) / self.config.cache_filename
+            self._load_evaluation_cache()
+
         tprint_info("✅ Tree Architecture Search initialized with shared utilities")
     
     def _setup_hardware_optimization(self):
@@ -141,8 +160,10 @@ class TreeArchitectureSearch:
         if self.config.enable_m1_optimization and M1_AVAILABLE:
             try:
                 self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                memory_optimizer = get_m1_memory_optimizer()
+                self.memory_optimizer = memory_optimizer if getattr(memory_optimizer, "optimize_array", None) else None
+                cpu_optimizer = get_m1_cpu_optimizer()
+                self.cpu_optimizer = cpu_optimizer if getattr(cpu_optimizer, "get_optimal_worker_count", None) else None
                 tprint_info("🚀 M1 hardware optimization enabled")
             except Exception as e:
                 tprint_warning(f"M1 optimization setup failed: {e}")
@@ -188,9 +209,8 @@ class TreeArchitectureSearch:
         # Split validation data if not provided
         if X_val is None or y_val is None:
             X_val, y_val = self._create_validation_split(X_train, y_train)
-        
-        # Determine task type (regression vs classification)
-        self.task_type = self._determine_task_type(y_train)
+        self.task_type = self._infer_task_type(y_train)
+
 
         # Optimize data for M1 if available
         if self.memory_optimizer:
@@ -234,7 +254,7 @@ class TreeArchitectureSearch:
     
     def _optimize_data_for_m1(self, data: np.ndarray) -> np.ndarray:
         """Optimize data for M1 processing."""
-        if self.memory_optimizer:
+        if self.memory_optimizer and getattr(self.memory_optimizer, "optimize_array", None):
             try:
                 return self.memory_optimizer.optimize_array(data)
             except:
@@ -262,22 +282,39 @@ class TreeArchitectureSearch:
     def _run_grid_search_phase(self, X_train: np.ndarray, y_train: np.ndarray,
                               X_val: np.ndarray, y_val: np.ndarray, n_trials: int) -> TreeArchitectureCandidate:
         """Run grid search phase."""
+        grid_candidates = self._generate_grid_candidates(n_trials)
         best_candidate = None
         best_score = -np.inf
-        
-        for trial in range(n_trials):
-            candidate = self._sample_grid_candidate(trial, n_trials)
+
+        for trial, params in enumerate(grid_candidates):
+            candidate = TreeArchitectureCandidate(**params)
             candidate.trial_number = trial
             candidate.search_method = "grid"
-            
+
             self._evaluate_candidate(candidate, X_train, y_train, X_val, y_val)
             self.candidates.append(candidate)
-            
+
             if candidate.overall_score > best_score:
                 best_score = candidate.overall_score
                 best_candidate = candidate
                 tprint_debug(f"Grid trial {trial}: New best {best_score:.4f}")
-        
+
+        # If requested trials exceed the unique grid combinations, fill the remainder via random sampling
+        remaining_trials = n_trials - len(grid_candidates)
+        for offset in range(remaining_trials):
+            trial = len(grid_candidates) + offset
+            candidate = self._sample_random_candidate()
+            candidate.trial_number = trial
+            candidate.search_method = "grid-random"
+
+            self._evaluate_candidate(candidate, X_train, y_train, X_val, y_val)
+            self.candidates.append(candidate)
+
+            if candidate.overall_score > best_score:
+                best_score = candidate.overall_score
+                best_candidate = candidate
+                tprint_debug(f"Grid trial {trial}: New best {best_score:.4f}")
+
         return best_candidate
     
     def _run_tpe_search_phase(self, X_train: np.ndarray, y_train: np.ndarray,
@@ -331,24 +368,273 @@ class TreeArchitectureSearch:
 
         return best_candidate
     
-    def _sample_grid_candidate(self, trial: int, total_trials: int) -> TreeArchitectureCandidate:
-        """Sample candidate using grid search strategy."""
-        # Simple grid sampling
-        grid_size = int(np.ceil(total_trials ** (1/3)))  # Cube root for 3D grid
-        
-        i = trial % grid_size
-        j = (trial // grid_size) % grid_size
-        k = (trial // (grid_size * grid_size)) % grid_size
-        
-        n_trees = int(self.config.min_trees + (self.config.max_trees - self.config.min_trees) * i / grid_size)
-        max_depth = int(self.config.min_depth + (self.config.max_depth - self.config.min_depth) * j / grid_size)
-        learning_rate = 0.01 + 0.29 * k / grid_size  # 0.01 to 0.3
-        
-        return TreeArchitectureCandidate(
-            n_trees=n_trees,
-            max_depth=max_depth,
-            learning_rate=learning_rate
-        )
+    def _generate_grid_candidates(self, total_trials: int) -> List[Dict[str, Any]]:
+        """Generate unique parameter combinations for grid sampling."""
+
+        parameter_specs = [
+            {
+                "name": "n_trees",
+                "type": "int",
+                "min": self.config.min_trees,
+                "max": self.config.max_trees,
+                "max_points": min(total_trials, 50)
+            },
+            {
+                "name": "max_depth",
+                "type": "int",
+                "min": self.config.min_depth,
+                "max": self.config.max_depth,
+                "max_points": min(total_trials, 30)
+            },
+            {
+                "name": "min_samples_split",
+                "type": "int",
+                "min": 2,
+                "max": 20,
+                "max_points": min(total_trials, 10)
+            },
+            {
+                "name": "min_samples_leaf",
+                "type": "int",
+                "min": 1,
+                "max": 10,
+                "max_points": min(total_trials, 10)
+            },
+            {
+                "name": "learning_rate",
+                "type": "float",
+                "min": 0.01,
+                "max": 0.3,
+                "max_points": min(total_trials, 25)
+            },
+            {
+                "name": "subsample",
+                "type": "float",
+                "min": 0.7,
+                "max": 1.0,
+                "max_points": min(total_trials, 25)
+            },
+            {
+                "name": "max_features",
+                "type": "categorical",
+                "values": ["auto", "sqrt", "log2"]
+            }
+        ]
+
+        num_params = len(parameter_specs)
+        if num_params == 0:
+            return []
+
+        base_size = max(1, int(np.ceil(total_trials ** (1 / num_params))))
+
+        counts: List[int] = []
+        max_counts: List[int] = []
+        for spec in parameter_specs:
+            if spec["type"] == "categorical":
+                values = spec["values"]
+                counts.append(min(len(values), base_size))
+                max_counts.append(len(values))
+            else:
+                max_points = spec.get("max_points", total_trials)
+                max_possible = max(1, min(max_points, total_trials))
+                counts.append(min(base_size, max_possible))
+                max_counts.append(max_possible)
+
+        def product(values: List[int]) -> int:
+            result = 1
+            for value in values:
+                result *= max(1, value)
+            return result
+
+        combination_target = max(1, total_trials)
+        while product(counts) < combination_target:
+            # Increase counts cyclically while respecting the max per parameter
+            for idx in range(len(counts)):
+                if counts[idx] < max_counts[idx]:
+                    counts[idx] += 1
+                    if product(counts) >= combination_target:
+                        break
+            else:
+                break  # Cannot increase further
+
+        axes: List[List[Any]] = []
+        for spec, count in zip(parameter_specs, counts):
+            if spec["type"] == "categorical":
+                axes.append(spec["values"][:count])
+            elif spec["type"] == "int":
+                values = np.linspace(spec["min"], spec["max"], count, dtype=int)
+                unique_values = sorted(set(int(v) for v in values))
+                axes.append(unique_values)
+            else:
+                values = np.linspace(spec["min"], spec["max"], count)
+                axes.append([float(v) for v in values])
+
+        combinations = list(itertools.product(*axes))
+        unique_combinations = combinations[:min(len(combinations), total_trials)]
+
+        candidates: List[Dict[str, Any]] = []
+        for values in unique_combinations:
+            params = {}
+            for spec, value in zip(parameter_specs, values):
+                params[spec["name"]] = value
+            candidates.append(params)
+
+        return candidates
+
+    def _candidate_parameters(self, candidate: TreeArchitectureCandidate) -> Dict[str, Any]:
+        """Extract the hyper-parameter portion of a candidate."""
+        return {
+            "model_type": candidate.model_type,
+            "n_trees": int(candidate.n_trees),
+            "max_depth": int(candidate.max_depth) if candidate.max_depth is not None else None,
+            "min_samples_split": int(candidate.min_samples_split),
+            "min_samples_leaf": int(candidate.min_samples_leaf),
+            "max_features": candidate.max_features,
+            "learning_rate": float(candidate.learning_rate),
+            "subsample": float(candidate.subsample),
+        }
+
+    def _candidate_cache_key(self, candidate: TreeArchitectureCandidate) -> str:
+        """Create a stable cache key for the candidate."""
+        snapshot = self._candidate_parameters(candidate)
+        serialized = json.dumps(snapshot, sort_keys=True, default=str)
+        return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+
+    def _apply_cached_results(self, candidate: TreeArchitectureCandidate, cached: Dict[str, Any]) -> None:
+        """Populate candidate metrics from cached evaluation results."""
+        candidate.accuracy = cached.get("accuracy", 0.0)
+        candidate.metric_name = cached.get("metric_name", candidate.metric_name)
+        candidate.efficiency_score = cached.get("efficiency_score", 0.0)
+        candidate.interpretability_score = cached.get("interpretability_score", 0.0)
+        candidate.overall_score = cached.get("overall_score", 0.0)
+        candidate.training_time = cached.get("training_time", 0.0)
+        candidate.model_size_mb = cached.get("model_size_mb", 0.0)
+
+        if cached.get("training_time") is not None:
+            self._update_metric_tracker("training_time", cached["training_time"])
+        if cached.get("complexity") is not None:
+            self._update_metric_tracker("complexity", cached["complexity"])
+        if cached.get("params"):
+            params = cached["params"]
+            if "n_trees" in params:
+                self._update_metric_tracker("n_trees", params["n_trees"])
+            if "max_depth" in params:
+                depth_value = params["max_depth"] if params["max_depth"] is not None else 1
+                self._update_metric_tracker("max_depth", depth_value)
+
+    def _store_in_cache(self, cache_key: str, candidate: TreeArchitectureCandidate) -> None:
+        """Persist evaluation results for reuse in future sessions."""
+        depth_value = candidate.max_depth if candidate.max_depth is not None else 1
+        entry = {
+            "accuracy": candidate.accuracy,
+            "metric_name": candidate.metric_name,
+            "efficiency_score": candidate.efficiency_score,
+            "interpretability_score": candidate.interpretability_score,
+            "overall_score": candidate.overall_score,
+            "training_time": candidate.training_time,
+            "model_size_mb": candidate.model_size_mb,
+            "complexity": candidate.n_trees * (2 ** max(depth_value, 1)),
+            "params": self._candidate_parameters(candidate),
+        }
+
+        self.evaluation_cache[cache_key] = entry
+        self._save_evaluation_cache()
+
+    def _load_evaluation_cache(self) -> None:
+        """Load cached candidate evaluations from disk."""
+        if not self.cache_file or not self.cache_file.exists():
+            return
+
+        try:
+            data = safe_json_load(self.cache_file)
+            if isinstance(data, dict):
+                entries = data.get("entries", {}) if "entries" in data else data
+                if isinstance(entries, dict):
+                    self.evaluation_cache = entries
+        except Exception as exc:  # pragma: no cover - defensive
+            tprint_warning(f"Failed to load evaluation cache: {exc}")
+            self.evaluation_cache = {}
+
+    def _save_evaluation_cache(self) -> None:
+        """Persist the evaluation cache to disk."""
+        if not self.config.enable_candidate_cache or not self.cache_file:
+            return
+
+        try:
+            payload = {"version": 1, "entries": self.evaluation_cache}
+            safe_json_dump(payload, self.cache_file)
+        except Exception as exc:  # pragma: no cover - defensive
+            tprint_warning(f"Failed to save evaluation cache: {exc}")
+
+    def _update_metric_tracker(self, name: str, value: float) -> None:
+        """Track the min and max values observed for a metric."""
+        stats = self.metric_tracker.setdefault(name, {"min": None, "max": None})
+        current_min = stats.get("min")
+        current_max = stats.get("max")
+
+        stats["min"] = value if current_min is None else min(current_min, value)
+        stats["max"] = value if current_max is None else max(current_max, value)
+
+    def _normalize_metric(self, name: str, value: float) -> float:
+        """Normalize a metric to the [0, 1] range using tracked extrema."""
+        stats = self.metric_tracker.get(name)
+        if not stats:
+            return 0.0
+
+        min_val = stats.get("min")
+        max_val = stats.get("max")
+
+        if min_val is None or max_val is None or np.isclose(max_val, min_val):
+            return 0.0
+
+        return float(np.clip((value - min_val) / (max_val - min_val), 0.0, 1.0))
+
+    def _compute_efficiency_score(self, training_time: float, complexity: float) -> float:
+        """Compute an efficiency score using normalized training time and complexity."""
+        time_norm = self._normalize_metric("training_time", training_time)
+        complexity_norm = self._normalize_metric("complexity", complexity)
+        score = 1.0 - 0.5 * time_norm - 0.5 * complexity_norm
+        return float(np.clip(score, 0.0, 1.0))
+
+    def _compute_interpretability_score(self, n_trees: int, max_depth: Union[int, float]) -> float:
+        """Compute interpretability favouring simpler models."""
+        trees_norm = self._normalize_metric("n_trees", n_trees)
+        depth_norm = self._normalize_metric("max_depth", max_depth)
+        score = 1.0 - 0.6 * trees_norm - 0.4 * depth_norm
+        return float(np.clip(score, 0.0, 1.0))
+
+    def _compute_primary_metric(self, model, X_val: np.ndarray, y_val: np.ndarray) -> float:
+        """Calculate the task-appropriate primary performance metric."""
+        if self.task_type == "classification":
+            predictions = model.predict(X_val)
+            if accuracy_score is not None:
+                return float(accuracy_score(y_val, predictions))
+            return float(model.score(X_val, y_val))
+
+        predictions = model.predict(X_val)
+        if r2_score is not None:
+            return float(r2_score(y_val, predictions))
+        return float(model.score(X_val, y_val))
+
+    def _infer_task_type(self, y: np.ndarray) -> str:
+        """Infer whether the target is for classification or regression."""
+        values = np.asarray(y).ravel()
+        if values.size == 0:
+            return "regression"
+
+        series = pd.Series(values)
+
+        if pd.api.types.is_bool_dtype(series) or pd.api.types.is_object_dtype(series):
+            return "classification"
+
+        unique_values = np.unique(values)
+        if pd.api.types.is_integer_dtype(series) and unique_values.size <= max(20, values.size // 10):
+            return "classification"
+
+        if unique_values.size <= 10 and not np.issubdtype(values.dtype, np.floating):
+            return "classification"
+
+        return "regression"
     
     def _sample_tpe_candidate(self, trial: int) -> TreeArchitectureCandidate:
         """Sample candidate using the most recent TPE suggestion."""
@@ -363,8 +649,8 @@ class TreeArchitectureSearch:
             max_depth=np.random.randint(self.config.min_depth, self.config.max_depth + 1),
             min_samples_split=np.random.randint(2, 21),
             min_samples_leaf=np.random.randint(1, 11),
-            learning_rate=np.random.uniform(0.01, 0.3),
-            subsample=np.random.uniform(0.7, 1.0),
+            learning_rate=float(np.random.uniform(0.01, 0.3)),
+            subsample=float(np.random.uniform(0.7, 1.0)),
             max_features=np.random.choice(["auto", "sqrt", "log2"])
         )
     
@@ -372,62 +658,79 @@ class TreeArchitectureSearch:
                            X_train: np.ndarray, y_train: np.ndarray,
                            X_val: np.ndarray, y_val: np.ndarray) -> None:
         """Evaluate a candidate architecture."""
+        params_key = self._candidate_cache_key(candidate)
+
+        if self.config.enable_candidate_cache and params_key in self.evaluation_cache:
+            cached = self.evaluation_cache[params_key]
+            self._apply_cached_results(candidate, cached)
+            return
+
         try:
-            # Create and train model
             model = self._create_model(candidate)
-            
+
             start_time = time.time()
             model.fit(X_train, y_train)
             training_time = time.time() - start_time
-            
-            # Evaluate accuracy
-            accuracy = model.score(X_val, y_val)
-            
-            # Calculate efficiency (inverse of time and complexity)
-            complexity = candidate.n_trees * (2 ** candidate.max_depth)
-            efficiency_score = 1.0 / (1.0 + training_time + complexity / 10000)
-            
-            # Calculate interpretability (simpler = more interpretable)
-            interpretability_score = 1.0 / (1.0 + candidate.n_trees / 100 + candidate.max_depth / 10)
-            
-            # Calculate overall score
+
+            depth_value = candidate.max_depth if candidate.max_depth is not None else 1
+            complexity = candidate.n_trees * (2 ** max(depth_value, 1))
+
+            performance_score = self._compute_primary_metric(model, X_val, y_val)
+
+            self._update_metric_tracker("training_time", training_time)
+            self._update_metric_tracker("complexity", complexity)
+            self._update_metric_tracker("n_trees", candidate.n_trees)
+            self._update_metric_tracker("max_depth", depth_value)
+
+            efficiency_score = self._compute_efficiency_score(training_time, complexity)
+            interpretability_score = self._compute_interpretability_score(candidate.n_trees, depth_value)
+
             overall_score = (
-                self.config.accuracy_weight * accuracy +
+                self.config.accuracy_weight * performance_score +
                 self.config.efficiency_weight * efficiency_score +
                 self.config.interpretability_weight * interpretability_score
             )
-            
-            # Update candidate
-            candidate.accuracy = accuracy
+
+            candidate.accuracy = performance_score
+            candidate.metric_name = "accuracy" if self.task_type == "classification" else "r2"
             candidate.efficiency_score = efficiency_score
             candidate.interpretability_score = interpretability_score
             candidate.overall_score = overall_score
             candidate.training_time = training_time
-            candidate.model_size_mb = complexity / 1000000  # Rough estimate
-            
+            candidate.model_size_mb = complexity / 1_000_000
+
+            if self.config.enable_candidate_cache:
+                self._store_in_cache(params_key, candidate)
+
         except Exception as e:
             tprint_warning(f"Evaluation failed: {e}")
             candidate.overall_score = 0.0
 
     def _create_model(self, candidate: TreeArchitectureCandidate):
-        """Create model from candidate."""
+        """Create a model instance for the candidate."""
         if candidate.model_type == "random_forest":
-            from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-            model_cls = RandomForestRegressor
-            if self.task_type == "classification":
-                model_cls = RandomForestClassifier
+            forest_cls = RandomForestClassifier if self.task_type == "classification" else RandomForestRegressor
 
-            return model_cls(
+            model_kwargs = dict(
+
                 n_estimators=candidate.n_trees,
                 max_depth=candidate.max_depth,
                 min_samples_split=candidate.min_samples_split,
                 min_samples_leaf=candidate.min_samples_leaf,
                 max_features=candidate.max_features,
-                random_state=42
+                random_state=42,
             )
-        else:
-            raise ValueError(f"Unknown model type: {candidate.model_type}")
+
+            if self.task_type == "classification":
+                model_kwargs["n_jobs"] = -1
+
+            return forest_cls(**model_kwargs)
+
+        raise ValueError(f"Unknown model type: {candidate.model_type}")
+
+       
 
     def _determine_task_type(self, y: np.ndarray) -> str:
         """Infer whether the problem is regression or classification."""

@@ -136,13 +136,6 @@ from .economic_evaluator import (
     create_economic_evaluator
 )
 
-from .dynamic_ensemble_manager import (
-    DynamicEnsembleManager,
-    EnsembleConfig,
-    EnsembleModel,
-    EnsembleResult
-)
-
 # Import search space utilities
 from .search_space import (
     create_default_nas_search_space,
@@ -180,22 +173,6 @@ from .evolutionary_search import (
     TreeGeneticAlgorithm,
     TreeNSGA2,
     EvolutionaryConfig
-)
-
-# Import uncertainty estimation
-from .uncertainty_estimation import (
-    TreeUncertaintyEstimator,
-    TreeEnsembleUncertainty,
-    TreeBayesianUncertainty,
-    UncertaintyConfig
-)
-
-# Import confidence scoring
-from .confidence_scoring import (
-    TreeConfidenceScorer,
-    TreeReliabilityEstimator,
-    TreeCalibrationScorer,
-    ConfidenceConfig
 )
 
 from .shared_services import (
@@ -273,7 +250,9 @@ from .ensemble_optimizer import (
 )
 
 
-# Export all main classes and functions
+# Export all main classes and functions. Components that are primarily intended for
+# live trading (e.g., uncertainty estimation or dynamic ensemble management) are
+# intentionally not re-exported here to keep the training API focused.
 __all__ = [
     # Core unified regime detection
     'UnifiedRegimeConfig',
@@ -299,14 +278,6 @@ __all__ = [
     'TreeGeneticAlgorithm',
     'TreeNSGA2',
     'EvolutionaryConfig',
-    'TreeUncertaintyEstimator',
-    'TreeEnsembleUncertainty',
-    'TreeBayesianUncertainty',
-    'UncertaintyConfig',
-    'TreeConfidenceScorer',
-    'TreeReliabilityEstimator',
-    'TreeCalibrationScorer',
-    'ConfidenceConfig',
     'UnifiedEvaluator',
     'EvaluationConfig',
     'EvaluationResult',
@@ -416,10 +387,6 @@ __all__ = [
     'create_economic_evaluator',
     
     # Ensemble management
-    'DynamicEnsembleManager',
-    'EnsembleConfig',
-    'EnsembleModel',
-    'EnsembleResult',
     'EnsembleOptimizer',
     'OptimizationConfig',
     

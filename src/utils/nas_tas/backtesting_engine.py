@@ -19,8 +19,46 @@ warnings.filterwarnings('ignore')
 
 # Import TAS components
 from src.utils.nas_tas.unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
-from ..regime_analysis.regime_qualification import RegimeQualifier, RegimeQualificationConfig
-from ..trading.trading_engine import TradingEngine, TradingConfig, TradingResult
+from src.training.steps.market_analysis.tas_regime.regime_analysis.regime_qualification import RegimeQualifier, RegimeQualificationConfig
+from src.training.steps.market_analysis.tas_regime.trading.trading_engine import TradingEngine, TradingConfig, TradingResult
+
+# Import enhanced utility tools
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
+    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
+    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
+    check_disk_space, CommonUtilities
+)
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, safe_correlation,
+    safe_covariance, safe_mean, safe_std, safe_percentile,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    MathValidation, MathValidationError
+)
+
+from src.utils.matrix_operations.unified_operations import (
+    UnifiedMatrixOperations, get_unified_matrix_operations,
+    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
+)
+
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+from src.utils.data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,13 +171,16 @@ class BacktestingEngine:
     """
     
     def __init__(self, config: BacktestingConfig):
-        """Initialize backtesting engine.
+        """Initialize backtesting engine with enhanced utility integration.
         
         Args:
             config: Backtesting configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize enhanced utility tools
+        self._initialize_enhanced_utility_tools()
         
         # Initialize components
         self.regime_detector = UnsupervisedRegimeDetector(config.regime_detection_config)
@@ -158,9 +199,86 @@ class BacktestingEngine:
         self.current_drawdown = 0.0
         self.max_drawdown = 0.0
         
-        self.logger.info("✅ Backtesting Engine initialized")
+        self.logger.info("✅ Enhanced Backtesting Engine initialized")
         self.logger.info(f"📅 Backtesting period: {config.start_date} to {config.end_date}")
         self.logger.info(f"💰 Initial capital: ${config.initial_capital:,.2f}")
+        self.logger.info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
+    
+    def _initialize_enhanced_utility_tools(self):
+        """Initialize enhanced utility tools for backtesting."""
+        try:
+            # Initialize common utilities
+            self.common_utils = CommonUtilities()
+            self.logger.info("✅ Common utilities initialized")
+            
+            # Initialize math validation
+            self.math_validator = MathValidation()
+            self.logger.info("✅ Math validation initialized")
+            
+            # Initialize matrix operations
+            self.enhanced_matrix_ops = get_unified_matrix_operations(
+                enable_gpu=True,
+                enable_memory_optimization=True,
+                enable_parallel=True
+            )
+            self.logger.info("✅ Enhanced matrix operations initialized")
+            
+            # Initialize serialization
+            self.enhanced_serializer = UniversalSerializer()
+            self.logger.info("✅ Enhanced serialization initialized")
+            
+            # Initialize data management
+            self.enhanced_klines_manager = get_klines_manager()
+            self.logger.info("✅ Enhanced klines data manager initialized")
+            
+            # Initialize M1 optimizations
+            self._initialize_enhanced_m1_optimizations()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced utility tools initialization failed: {e}")
+            # Set fallback values
+            self.common_utils = None
+            self.math_validator = None
+            self.enhanced_matrix_ops = None
+            self.enhanced_serializer = None
+            self.enhanced_klines_manager = None
+    
+    def _initialize_enhanced_m1_optimizations(self):
+        """Initialize enhanced M1 hardware optimizations."""
+        try:
+            # Get M1 optimizers
+            self.enhanced_gpu_manager = get_m1_gpu_manager()
+            self.enhanced_memory_optimizer = get_m1_memory_optimizer()
+            self.enhanced_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Integrate M1 optimizations
+            integration_result = integrate_with_m1_optimizers()
+            if integration_result.get('success', False):
+                self.logger.info("✅ Enhanced M1 optimizations integrated successfully")
+                self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
+                self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
+                self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
+            else:
+                self.logger.warning("⚠️ Enhanced M1 optimizations integration failed")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
+            self.enhanced_gpu_manager = None
+            self.enhanced_memory_optimizer = None
+            self.enhanced_cpu_optimizer = None
+    
+    def _get_enhanced_utility_status(self) -> str:
+        """Get status of enhanced utility tools."""
+        status = []
+        if self.common_utils: status.append("CommonOps")
+        if self.math_validator: status.append("MathVal")
+        if self.enhanced_matrix_ops: status.append("MatrixOps")
+        if self.enhanced_serializer: status.append("Serialization")
+        if self.enhanced_klines_manager: status.append("DataManager")
+        if self.enhanced_gpu_manager: status.append("M1GPU")
+        if self.enhanced_memory_optimizer: status.append("M1Memory")
+        if self.enhanced_cpu_optimizer: status.append("M1CPU")
+        return ", ".join(status) if status else "None"
     
     def run_backtest(self, 
                     market_data: pd.DataFrame,
@@ -429,27 +547,61 @@ class BacktestingEngine:
         return signals
     
     def _execute_trade(self, signal: Dict[str, Any], current_price: float, timestamp: int) -> Optional[Dict[str, Any]]:
-        """Execute a trade signal."""
+        """Execute a trade signal with comprehensive error handling and logging."""
         try:
+            # Validate signal data
+            if not signal or 'side' not in signal or 'quantity' not in signal:
+                self.logger.error("❌ Invalid trade signal: missing required fields")
+                return None
+            
             # Convert signal to trade execution
             side = signal['side']
             quantity = signal['quantity']
             price = signal.get('price', current_price)
             regime_info = signal.get('regime_info')
+            symbol = signal.get('symbol', 'BTC')
+            
+            # Validate trade parameters
+            if quantity <= 0:
+                self.logger.warning(f"⚠️ Invalid trade quantity: {quantity}")
+                return None
+            
+            if price <= 0:
+                self.logger.warning(f"⚠️ Invalid trade price: {price}")
+                return None
+            
+            if side not in ['buy', 'sell']:
+                self.logger.error(f"❌ Invalid trade side: {side}")
+                return None
             
             # Execute trade through trading engine
             trade_result = self.trading_engine.execute_trade(
-                symbol=signal.get('symbol', 'BTC'),
+                symbol=symbol,
                 side=side,
                 quantity=quantity,
                 price=price,
                 regime_info=regime_info
             )
             
+            if trade_result:
+                self.logger.debug(f"✅ Trade executed: {side} {quantity} {symbol} at {price}")
+            else:
+                self.logger.warning(f"⚠️ Trade execution returned no result")
+            
             return trade_result
             
+        except KeyError as e:
+            self.logger.error(f"❌ Trade signal missing required field: {e}")
+            return None
+        except ValueError as e:
+            self.logger.error(f"❌ Invalid trade signal value: {e}")
+            return None
         except Exception as e:
-            self.logger.warning(f"⚠️ Trade execution failed: {e}")
+            self.logger.error(f"❌ Trade execution failed: {e}")
+            # Log additional context for debugging
+            self.logger.debug(f"Trade signal: {signal}")
+            self.logger.debug(f"Current price: {current_price}")
+            self.logger.debug(f"Timestamp: {timestamp}")
             return None
     
     def _calculate_trading_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -538,36 +690,99 @@ class BacktestingEngine:
         }
     
     def _calculate_risk_metrics(self, simulation_results: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate comprehensive risk metrics."""
+        """Calculate comprehensive risk metrics using enhanced utilities."""
         returns_series = simulation_results['returns_series']
         
         if len(returns_series) == 0:
+            self.logger.warning("⚠️ No returns data available for risk calculation")
             return {
                 'var_95': 0.0, 'var_99': 0.0,
                 'cvar_95': 0.0, 'cvar_99': 0.0,
                 'beta': 0.0, 'alpha': 0.0
             }
         
-        # Value at Risk (VaR)
-        var_95 = np.percentile(returns_series, 5)
-        var_99 = np.percentile(returns_series, 1)
-        
-        # Conditional Value at Risk (CVaR)
-        cvar_95 = returns_series[returns_series <= var_95].mean() if len(returns_series[returns_series <= var_95]) > 0 else var_95
-        cvar_99 = returns_series[returns_series <= var_99].mean() if len(returns_series[returns_series <= var_99]) > 0 else var_99
-        
-        # Beta and Alpha (simplified - would need benchmark data for proper calculation)
-        beta = 1.0  # Placeholder
-        alpha = 0.0  # Placeholder
-        
-        return {
-            'var_95': var_95,
-            'var_99': var_99,
-            'cvar_95': cvar_95,
-            'cvar_99': cvar_99,
-            'beta': beta,
-            'alpha': alpha
-        }
+        try:
+            # Use math validation for safe calculations
+            if self.math_validator:
+                # Validate returns data
+                validated_returns = self.math_validator.validate_finite(returns_series)
+                if validated_returns is None:
+                    self.logger.warning("⚠️ Invalid returns data detected, using original data")
+                    validated_returns = returns_series
+            else:
+                validated_returns = returns_series
+            
+            # Value at Risk (VaR) with proper error handling
+            var_95 = np.percentile(validated_returns, 5)
+            var_99 = np.percentile(validated_returns, 1)
+            
+            # Conditional Value at Risk (CVaR) with validation
+            tail_95 = validated_returns[validated_returns <= var_95]
+            tail_99 = validated_returns[validated_returns <= var_99]
+            
+            cvar_95 = tail_95.mean() if len(tail_95) > 0 else var_95
+            cvar_99 = tail_99.mean() if len(tail_99) > 0 else var_99
+            
+            # Calculate Beta and Alpha using benchmark data if available
+            beta, alpha = self._calculate_beta_alpha(validated_returns, simulation_results.get('benchmark_returns'))
+            
+            self.logger.info(f"📊 Risk metrics calculated: VaR 95%: {var_95:.4f}, CVaR 95%: {cvar_95:.4f}")
+            
+            return {
+                'var_95': var_95,
+                'var_99': var_99,
+                'cvar_95': cvar_95,
+                'cvar_99': cvar_99,
+                'beta': beta,
+                'alpha': alpha
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk metrics calculation failed: {e}")
+            # Return safe defaults
+            return {
+                'var_95': 0.0, 'var_99': 0.0,
+                'cvar_95': 0.0, 'cvar_99': 0.0,
+                'beta': 1.0, 'alpha': 0.0
+            }
+    
+    def _calculate_beta_alpha(self, returns_series: pd.Series, benchmark_returns: Optional[pd.Series] = None) -> Tuple[float, float]:
+        """Calculate Beta and Alpha using proper statistical methods."""
+        try:
+            if benchmark_returns is None or len(benchmark_returns) == 0:
+                self.logger.warning("⚠️ No benchmark data available, using market beta assumption")
+                return 1.0, 0.0
+            
+            # Align data lengths
+            min_length = min(len(returns_series), len(benchmark_returns))
+            if min_length < 30:
+                self.logger.warning(f"⚠️ Insufficient data for beta calculation: {min_length} < 30")
+                return 1.0, 0.0
+            
+            # Use aligned data
+            aligned_returns = returns_series.iloc[:min_length]
+            aligned_benchmark = benchmark_returns.iloc[:min_length]
+            
+            # Calculate covariance and variance
+            covariance = np.cov(aligned_returns, aligned_benchmark)[0, 1]
+            benchmark_variance = np.var(aligned_benchmark)
+            
+            if benchmark_variance == 0:
+                self.logger.warning("⚠️ Benchmark variance is zero, using default beta")
+                return 1.0, 0.0
+            
+            # Calculate beta
+            beta = covariance / benchmark_variance
+            
+            # Calculate alpha (risk-free rate assumed to be 0 for simplicity)
+            alpha = aligned_returns.mean() - beta * aligned_benchmark.mean()
+            
+            self.logger.info(f"📊 Beta: {beta:.4f}, Alpha: {alpha:.4f}")
+            return beta, alpha
+            
+        except Exception as e:
+            self.logger.error(f"❌ Beta/Alpha calculation failed: {e}")
+            return 1.0, 0.0
     
     def _analyze_regime_performance(self, 
                                   simulation_results: Dict[str, Any],

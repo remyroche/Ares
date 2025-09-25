@@ -741,7 +741,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'confidence_low': {'type': 'float', 'min': 0.3, 'max': 0.5},
                 'confidence_medium': {'type': 'float', 'min': 0.5, 'max': 0.7},
                 'confidence_high': {'type': 'float', 'min': 0.7, 'max': 0.9},
-                
+                'confidence_force_exit_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'confidence_force_hold_threshold': {'type': 'float', 'min': 0.6, 'max': 0.95},
+
                 # Profit-taking parameters
                 'base_profit_target': {'type': 'float', 'min': 0.02, 'max': 0.08},
                 'min_confidence_for_profit': {'type': 'float', 'min': 0.5, 'max': 0.8},
@@ -749,12 +751,20 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'profit_tier_1': {'type': 'float', 'min': 0.2, 'max': 0.4},
                 'profit_tier_2': {'type': 'float', 'min': 0.4, 'max': 0.6},
                 'profit_tier_3': {'type': 'float', 'min': 0.6, 'max': 0.8},
-                
+                'tp_confidence_threshold': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'tp_exit_percentage': {'type': 'float', 'min': 0.2, 'max': 1.0},
+                'use_tp_atr_log_scaling': {'type': 'bool'},
+                'tp_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+
                 # Stop-loss parameters
                 'base_stop_loss': {'type': 'float', 'min': -0.08, 'max': -0.02},
                 'atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'volatility_adjustment_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
-                
+                'sl_confidence_threshold': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'sl_exit_percentage': {'type': 'float', 'min': 0.2, 'max': 1.0},
+                'use_sl_atr_log_scaling': {'type': 'bool'},
+                'sl_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+
                 # Time-based parameters
                 'max_hold_time': {'type': 'int', 'min': 3600, 'max': 14400},  # 1-4 hours
                 'min_hold_time': {'type': 'int', 'min': 60, 'max': 1800},     # 1-30 minutes
@@ -1962,7 +1972,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 base_target = params['base_profit_target']
                 min_conf = params['min_confidence_for_profit']
                 conf_mult = params['confidence_profit_multiplier']
-                
+
                 # Validate profit target is positive and reasonable
                 if 0.02 <= base_target <= 0.08:
                     score += 0.1
@@ -1972,7 +1982,43 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Validate confidence multiplier is reasonable
                 if 0.2 <= conf_mult <= 0.8:
                     score += 0.05
-            
+
+            # 2b. Enhanced profit-taking confidence controls (0.1 weight)
+            if all(param in params for param in ['tp_confidence_threshold', 'tp_exit_percentage']):
+                tp_conf_threshold = params['tp_confidence_threshold']
+                tp_exit_percentage = params['tp_exit_percentage']
+
+                if 0.4 <= tp_conf_threshold <= 0.8:
+                    score += 0.05
+
+                if 0.2 <= tp_exit_percentage <= 1.0:
+                    score += 0.03
+
+                # Encourage partial exits below 100% when confidence threshold is high
+                if tp_exit_percentage < 1.0 and tp_conf_threshold > 0.55:
+                    score += 0.02
+
+            # 2c. ATR log scaling exploration for TP (0.05 weight)
+            if 'use_tp_atr_log_scaling' in params and 'tp_atr_log_multiplier' in params:
+                use_log_scaling = params['use_tp_atr_log_scaling']
+                atr_multiplier = params['tp_atr_log_multiplier']
+
+                if isinstance(use_log_scaling, bool):
+                    score += 0.01
+
+                    if use_log_scaling and 0.0 <= atr_multiplier <= 3.0:
+                        average_atr = calibration_results.get('average_atr', 0.01)
+                        if average_atr > 0:
+                            log_adjustment = np.log1p(average_atr * max(atr_multiplier, 0.0))
+                            if 0.05 <= log_adjustment <= 0.5:
+                                score += 0.03
+                            else:
+                                score += 0.01
+                        else:
+                            score += 0.01
+                    elif not use_log_scaling:
+                        score += 0.01
+
             # 3. Stop-loss parameters validation (0.2 weight)
             stop_params = ['base_stop_loss', 'atr_multiplier', 'volatility_adjustment_factor']
             if all(param in params for param in stop_params):
@@ -1989,7 +2035,42 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Validate volatility adjustment is reasonable
                 if 0.5 <= vol_adj <= 2.0:
                     score += 0.05
-            
+
+            # 3b. Enhanced stop-loss confidence controls (0.1 weight)
+            if all(param in params for param in ['sl_confidence_threshold', 'sl_exit_percentage']):
+                sl_conf_threshold = params['sl_confidence_threshold']
+                sl_exit_percentage = params['sl_exit_percentage']
+
+                if 0.2 <= sl_conf_threshold <= 0.6:
+                    score += 0.05
+
+                if 0.2 <= sl_exit_percentage <= 1.0:
+                    score += 0.03
+
+                if sl_exit_percentage < 1.0 and sl_conf_threshold < 0.45:
+                    score += 0.02
+
+            # 3c. ATR log scaling exploration for SL (0.05 weight)
+            if 'use_sl_atr_log_scaling' in params and 'sl_atr_log_multiplier' in params:
+                use_sl_log = params['use_sl_atr_log_scaling']
+                sl_atr_multiplier = params['sl_atr_log_multiplier']
+
+                if isinstance(use_sl_log, bool):
+                    score += 0.01
+
+                    if use_sl_log and 0.0 <= sl_atr_multiplier <= 3.0:
+                        average_atr = calibration_results.get('average_atr', 0.01)
+                        if average_atr > 0:
+                            log_adjustment = np.log1p(average_atr * max(sl_atr_multiplier, 0.0))
+                            if 0.05 <= log_adjustment <= 0.5:
+                                score += 0.03
+                            else:
+                                score += 0.01
+                        else:
+                            score += 0.01
+                    elif not use_sl_log:
+                        score += 0.01
+
             # 4. Time-based parameters validation (0.15 weight)
             time_params = ['max_hold_time', 'min_hold_time', 'confidence_time_scaling_factor']
             if all(param in params for param in time_params):
@@ -2034,7 +2115,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Check if tiers are in ascending order
                 if all(tiers[i] <= tiers[i+1] for i in range(len(tiers)-1)):
                     score += 0.05
-            
+
+            # 9. Confidence-driven exit boundaries (0.1 weight)
+            boundary_params = ['confidence_force_exit_threshold', 'confidence_force_hold_threshold']
+            if all(param in params for param in boundary_params):
+                force_exit = params['confidence_force_exit_threshold']
+                force_hold = params['confidence_force_hold_threshold']
+
+                if 0.2 <= force_exit < force_hold <= 0.95:
+                    score += 0.07
+
+                    calibrated_median = calibration_results.get('median_exit_confidence', 0.55)
+                    if force_exit < calibrated_median < force_hold:
+                        score += 0.03
+                else:
+                    score += 0.02
+
             # 8. Risk-reward ratio validation (bonus)
             if 'base_profit_target' in params and 'base_stop_loss' in params:
                 profit_target = params['base_profit_target']

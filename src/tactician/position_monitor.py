@@ -10,6 +10,7 @@ re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
 """
 import asyncio
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -191,6 +192,12 @@ class PositionMonitor:
                     self.logger.error(invalid(f"Confidence threshold '{threshold_name}' must be between 0 and 1"))
                     return False
 
+            force_exit = self.confidence_thresholds.get("force_exit", 0.3)
+            force_hold = self.confidence_thresholds.get("force_hold", 0.8)
+            if force_exit >= force_hold:
+                self.logger.error(invalid("Force exit threshold must be below force hold threshold"))
+                return False
+
             # Validate PnL thresholds
             if self.pnl_thresholds["stop_loss"] >= 0:
                 self.logger.error(invalid("Stop loss threshold must be negative"))
@@ -208,6 +215,22 @@ class PositionMonitor:
             if not 0 <= self.profit_taking_config["confidence_profit_multiplier"] <= 1:
                 self.logger.error(invalid("Confidence profit multiplier must be between 0 and 1"))
                 return False
+
+            for pct_name, pct_value in [
+                ("tp_exit_percentage", self.profit_taking_config.get("exit_percentage", 1.0)),
+                ("sl_exit_percentage", self.stop_loss_config.get("exit_percentage", 1.0))
+            ]:
+                if not 0 < pct_value <= 1:
+                    self.logger.error(invalid(f"{pct_name} must be between 0 and 1"))
+                    return False
+
+            for conf_name, conf_value in [
+                ("tp_confidence_threshold", self.profit_taking_config.get("confidence_exit_threshold", 0.55)),
+                ("sl_confidence_threshold", self.stop_loss_config.get("confidence_exit_threshold", 0.4))
+            ]:
+                if not 0 <= conf_value <= 1:
+                    self.logger.error(invalid(f"{conf_name} must be between 0 and 1"))
+                    return False
 
             return True
 
@@ -350,7 +373,7 @@ class PositionMonitor:
             combined_confidence = normalize_dual_confidence(analyst_confidence, tactician_confidence)
 
             # Determine position action
-            position_action, action_reason = self._determine_position_action(
+            position_action, action_reason, action_metadata = self._determine_position_action(
                 position_data, combined_confidence
             )
 
@@ -366,7 +389,8 @@ class PositionMonitor:
                 tactician_confidence=tactician_confidence,
                 combined_confidence=combined_confidence,
                 position_action=position_action,
-                action_reason=action_reason
+                action_reason=action_reason,
+                metadata=action_metadata
             )
 
         except Exception as e:
@@ -377,7 +401,7 @@ class PositionMonitor:
         self,
         position_data: Dict[str, Any],
         combined_confidence: float
-    ) -> tuple[PositionAction, str]:
+    ) -> tuple[PositionAction, str, Dict[str, Any]]:
         """
         Determine recommended position action based on enhanced exit strategy.
 
@@ -386,17 +410,51 @@ class PositionMonitor:
             combined_confidence: Combined confidence score
 
         Returns:
-            tuple: (PositionAction, reason)
+            tuple: (PositionAction, reason, metadata)
         """
         try:
             unrealized_pnl = position_data["unrealized_pnl"]
             entry_time = position_data.get("entry_time")
             current_time = datetime.now()
             position_id = position_data.get("position_id", "unknown")
+            metadata: Dict[str, Any] = {
+                "confidence": combined_confidence,
+                "position_id": position_id,
+            }
 
-            # 1. CRITICAL CONDITIONS - Check first (highest priority)
-            if unrealized_pnl <= self.pnl_thresholds["stop_loss"]:
-                return PositionAction.STOP_LOSS, f"Critical stop loss: {unrealized_pnl:.4f} <= {self.pnl_thresholds['stop_loss']:.4f}"
+            force_exit_threshold = self.confidence_thresholds.get(
+                "force_exit",
+                self.confidence_thresholds.get("very_low", 0.2)
+            )
+            force_hold_threshold = self.confidence_thresholds.get(
+                "force_hold",
+                self.confidence_thresholds.get("high", 0.8)
+            )
+
+            dynamic_stop_loss = self._calculate_stop_loss_threshold(position_data)
+            metadata.setdefault("dynamic_thresholds", {})["stop_loss"] = dynamic_stop_loss
+
+            # 0. Force exit if confidence is critically low
+            if combined_confidence <= force_exit_threshold:
+                metadata.update({
+                    "exit_percentage": 1.0,
+                    "exit_type": "force_exit"
+                })
+                reason = (
+                    f"Confidence {combined_confidence:.3f} below force exit threshold "
+                    f"{force_exit_threshold:.3f}"
+                )
+                return PositionAction.FULL_CLOSE, reason, metadata
+
+            # 1. CRITICAL CONDITIONS - Check with dynamic stop loss
+            if unrealized_pnl <= dynamic_stop_loss:
+                return self._handle_stop_loss_exit(
+                    unrealized_pnl,
+                    combined_confidence,
+                    dynamic_stop_loss,
+                    force_hold_threshold,
+                    metadata
+                )
 
             # 2. TIME-BASED EXITS
             if entry_time:
@@ -404,49 +462,220 @@ class PositionMonitor:
                     entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
                 position_age = (current_time - entry_time).total_seconds()
                 if position_age > self.max_position_age:
-                    return PositionAction.FULL_CLOSE, f"Maximum hold time exceeded: {position_age:.0f}s > {self.max_position_age}s"
+                    metadata.update({
+                        "exit_percentage": 1.0,
+                        "exit_type": "time_limit",
+                        "position_age": position_age
+                    })
+                    return (
+                        PositionAction.FULL_CLOSE,
+                        f"Maximum hold time exceeded: {position_age:.0f}s > {self.max_position_age}s",
+                        metadata
+                    )
 
             # 3. CONFIDENCE-BASED EXITS
             if combined_confidence < self.confidence_thresholds["very_low"]:
-                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['very_low']:.3f}"
+                metadata.update({
+                    "exit_percentage": 1.0,
+                    "exit_type": "confidence_floor"
+                })
+                return (
+                    PositionAction.FULL_CLOSE,
+                    f"Very low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['very_low']:.3f}",
+                    metadata
+                )
             elif combined_confidence < self.confidence_thresholds["low"]:
-                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['low']:.3f}"
+                metadata.update({
+                    "exit_percentage": min(
+                        0.5,
+                        self.stop_loss_config.get("exit_percentage", 1.0)
+                    ),
+                    "exit_type": "confidence_reduction"
+                })
+                return (
+                    PositionAction.SCALE_DOWN,
+                    f"Low confidence: {combined_confidence:.3f} < {self.confidence_thresholds['low']:.3f}",
+                    metadata
+                )
 
             # 4. PROFIT-TAKING LOGIC (confidence-based scaling)
             if unrealized_pnl > 0:
-                profit_action, profit_reason = self._evaluate_profit_taking(
+                profit_action, profit_reason, profit_metadata = self._evaluate_profit_taking(
                     unrealized_pnl, combined_confidence, position_data
                 )
                 if profit_action != PositionAction.STAY:
-                    return profit_action, profit_reason
+                    profit_metadata.setdefault("confidence", combined_confidence)
+                    profit_metadata.setdefault("position_id", position_id)
+                    return profit_action, profit_reason, profit_metadata
 
             # 5. TRAILING STOP LOGIC
             if self.profit_taking_config["trailing_stop_enabled"]:
-                trailing_action, trailing_reason = self._evaluate_trailing_stop(
+                trailing_action, trailing_reason, trailing_metadata = self._evaluate_trailing_stop(
                     position_data, combined_confidence
                 )
                 if trailing_action != PositionAction.STAY:
-                    return trailing_action, trailing_reason
+                    trailing_metadata.setdefault("confidence", combined_confidence)
+                    trailing_metadata.setdefault("position_id", position_id)
+                    return trailing_action, trailing_reason, trailing_metadata
 
             # 6. CONFIDENCE-BASED POSITION MANAGEMENT
             if combined_confidence >= self.confidence_thresholds["high"]:
-                return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.confidence_thresholds['high']:.3f}"
+                metadata.update({
+                    "exit_type": "confidence_hold",
+                    "force_hold_threshold": force_hold_threshold
+                })
+                return (
+                    PositionAction.STAY,
+                    f"High confidence: {combined_confidence:.3f} >= {self.confidence_thresholds['high']:.3f}",
+                    metadata
+                )
             elif combined_confidence >= self.confidence_thresholds["medium"]:
-                return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within acceptable range)"
+                metadata.update({
+                    "exit_type": "confidence_neutral"
+                })
+                return (
+                    PositionAction.STAY,
+                    f"Medium confidence: {combined_confidence:.3f} (within acceptable range)",
+                    metadata
+                )
 
             # 7. DEFAULT ACTION
-            return PositionAction.STAY, f"Position maintained: confidence={combined_confidence:.3f}, pnl={unrealized_pnl:.4f}"
+            metadata.update({
+                "exit_type": "default",
+                "dynamic_thresholds": metadata.get("dynamic_thresholds", {})
+            })
+            return (
+                PositionAction.STAY,
+                f"Position maintained: confidence={combined_confidence:.3f}, pnl={unrealized_pnl:.4f}",
+                metadata
+            )
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error determining position action: {e}"))
-            return PositionAction.STAY, f"Error in position assessment: {e}"
+            return PositionAction.STAY, f"Error in position assessment: {e}", {}
+
+    def _extract_atr_value(self, position_data: Dict[str, Any]) -> float:
+        """Extract ATR value from position data if available."""
+        atr_keys = [
+            "atr",
+            "atr_14",
+            "atr_value",
+            "atr_percent",
+            "average_true_range"
+        ]
+
+        for key in atr_keys:
+            atr_value = position_data.get(key)
+            if atr_value is None:
+                continue
+            try:
+                return abs(float(atr_value))
+            except (TypeError, ValueError):
+                continue
+
+        return 0.0
+
+    def _calculate_stop_loss_threshold(self, position_data: Dict[str, Any]) -> float:
+        """Calculate dynamic stop loss threshold with optional ATR scaling."""
+        base_stop_loss = self.pnl_thresholds.get("stop_loss", -0.05)
+        threshold = base_stop_loss
+
+        if self.stop_loss_config.get("use_log_atr_multiplier", False):
+            atr_value = self._extract_atr_value(position_data)
+            atr_multiplier = max(self.stop_loss_config.get("atr_log_multiplier", 0.0), 0.0)
+
+            if atr_value > 0 and atr_multiplier > 0:
+                atr_factor = math.log1p(atr_value * atr_multiplier)
+                atr_factor = max(0.5, min(2.5, atr_factor))
+                threshold = base_stop_loss * atr_factor
+
+        return threshold
+
+    def _calculate_profit_target_threshold(
+        self,
+        combined_confidence: float,
+        position_data: Dict[str, Any]
+    ) -> float:
+        """Calculate dynamic profit target with confidence and ATR scaling."""
+        base_profit_target = self.pnl_thresholds.get("profit_target", 0.04)
+        target = base_profit_target
+
+        if self.profit_taking_config.get("confidence_scaling", True):
+            confidence_multiplier = self.profit_taking_config.get("confidence_profit_multiplier", 0.5)
+            confidence_factor = 1.0 - (combined_confidence - 0.5) * confidence_multiplier
+            confidence_factor = max(0.2, min(2.0, confidence_factor))
+            target *= confidence_factor
+
+        if self.profit_taking_config.get("use_log_atr_multiplier", False):
+            atr_value = self._extract_atr_value(position_data)
+            atr_multiplier = max(self.profit_taking_config.get("atr_log_multiplier", 0.0), 0.0)
+
+            if atr_value > 0 and atr_multiplier > 0:
+                atr_factor = math.log1p(atr_value * atr_multiplier)
+                atr_factor = max(0.5, min(2.5, atr_factor))
+                target *= atr_factor
+
+        return target
+
+    def _handle_stop_loss_exit(
+        self,
+        unrealized_pnl: float,
+        combined_confidence: float,
+        dynamic_threshold: float,
+        force_hold_threshold: float,
+        metadata: Dict[str, Any]
+    ) -> tuple[PositionAction, str, Dict[str, Any]]:
+        """Handle stop loss exits with confidence-aware scaling."""
+
+        exit_percentage = max(0.0, min(1.0, self.stop_loss_config.get("exit_percentage", 1.0)))
+        confidence_threshold = self.stop_loss_config.get("confidence_exit_threshold", 0.4)
+
+        metadata = dict(metadata)
+        metadata.update({
+            "exit_type": "stop_loss",
+            "exit_percentage": exit_percentage,
+            "threshold": dynamic_threshold
+        })
+
+        if combined_confidence <= confidence_threshold:
+            action = PositionAction.FULL_CLOSE if exit_percentage >= 0.99 else PositionAction.STOP_LOSS
+            reason = (
+                f"Stop loss triggered at {unrealized_pnl:.4f} (threshold {dynamic_threshold:.4f}) "
+                f"with low confidence {combined_confidence:.3f}"
+            )
+            return action, reason, metadata
+
+        if combined_confidence >= force_hold_threshold:
+            # High confidence despite drawdown – reduce exit size significantly
+            reduced_percentage = max(0.1, exit_percentage * 0.25)
+            metadata.update({
+                "exit_percentage": reduced_percentage,
+                "exit_type": "confidence_buffered_stop"
+            })
+            reason = (
+                f"Stop loss reached but confidence {combined_confidence:.3f} >= force hold "
+                f"{force_hold_threshold:.3f}; scaling down position"
+            )
+            return PositionAction.SCALE_DOWN, reason, metadata
+
+        # Moderate confidence – partial scale down
+        partial_percentage = max(0.1, exit_percentage * 0.5)
+        metadata.update({
+            "exit_percentage": partial_percentage,
+            "exit_type": "partial_stop"
+        })
+        reason = (
+            f"Stop loss reached with moderate confidence {combined_confidence:.3f}; "
+            "scaling down position"
+        )
+        return PositionAction.SCALE_DOWN, reason, metadata
 
     def _evaluate_profit_taking(
-        self, 
-        unrealized_pnl: float, 
-        combined_confidence: float, 
+        self,
+        unrealized_pnl: float,
+        combined_confidence: float,
         position_data: Dict[str, Any]
-    ) -> tuple[PositionAction, str]:
+    ) -> tuple[PositionAction, str, Dict[str, Any]]:
         """
         Evaluate profit-taking opportunities with confidence-based scaling.
 
@@ -456,26 +685,67 @@ class PositionMonitor:
             position_data: Position data
 
         Returns:
-            tuple: (PositionAction, reason)
+            tuple: (PositionAction, reason, metadata)
         """
         try:
+            metadata: Dict[str, Any] = {
+                "exit_type": "take_profit",
+                "unrealized_pnl": unrealized_pnl
+            }
+
+            force_hold_threshold = self.confidence_thresholds.get(
+                "force_hold",
+                self.confidence_thresholds.get("high", 0.8)
+            )
+
             # Check if confidence is high enough for profit taking
             if combined_confidence < self.profit_taking_config["min_confidence_for_profit"]:
-                return PositionAction.STAY, f"Confidence too low for profit taking: {combined_confidence:.3f} < {self.profit_taking_config['min_confidence_for_profit']:.3f}"
+                metadata["exit_type"] = "insufficient_confidence"
+                return (
+                    PositionAction.STAY,
+                    f"Confidence too low for profit taking: {combined_confidence:.3f} < {self.profit_taking_config['min_confidence_for_profit']:.3f}",
+                    metadata
+                )
 
-            # Calculate confidence-scaled profit targets
-            base_profit_target = self.pnl_thresholds["profit_target"]
-            
-            if self.profit_taking_config["confidence_scaling"]:
-                # Higher confidence = lower profit taking (hold longer for bigger gains)
-                confidence_factor = 1.0 - (combined_confidence - 0.5) * self.profit_taking_config["confidence_profit_multiplier"]
-                scaled_profit_target = base_profit_target * confidence_factor
-            else:
-                scaled_profit_target = base_profit_target
+            if combined_confidence >= force_hold_threshold:
+                metadata["exit_type"] = "force_hold_override"
+                return (
+                    PositionAction.STAY,
+                    f"Confidence {combined_confidence:.3f} >= force hold {force_hold_threshold:.3f}; deferring profit taking",
+                    metadata
+                )
+
+            # Calculate dynamic profit target
+            scaled_profit_target = self._calculate_profit_target_threshold(
+                combined_confidence,
+                position_data
+            )
+            metadata["target"] = scaled_profit_target
+
+            confidence_exit_threshold = self.profit_taking_config.get("confidence_exit_threshold", 0.55)
+            exit_percentage = max(0.0, min(1.0, self.profit_taking_config.get("exit_percentage", 1.0)))
+            metadata["exit_percentage"] = exit_percentage
 
             # Check for full profit target
             if unrealized_pnl >= scaled_profit_target:
-                return PositionAction.TAKE_PROFIT, f"Profit target reached: {unrealized_pnl:.4f} >= {scaled_profit_target:.4f} (confidence-scaled)"
+                if combined_confidence <= confidence_exit_threshold:
+                    action = PositionAction.TAKE_PROFIT if exit_percentage >= 0.99 else PositionAction.PARTIAL_PROFIT
+                    reason = (
+                        f"Profit target reached: {unrealized_pnl:.4f} >= {scaled_profit_target:.4f} "
+                        f"(confidence threshold {confidence_exit_threshold:.3f})"
+                    )
+                    return action, reason, metadata
+
+                partial_percentage = max(0.1, exit_percentage * 0.5)
+                metadata.update({
+                    "exit_percentage": partial_percentage,
+                    "exit_type": "confidence_buffered_profit"
+                })
+                reason = (
+                    f"Profit target hit but confidence {combined_confidence:.3f} > {confidence_exit_threshold:.3f}; "
+                    "taking partial profit"
+                )
+                return PositionAction.PARTIAL_PROFIT, reason, metadata
 
             # Check for tiered profit taking
             if self.profit_taking_config["tiered_profit_taking"]:
@@ -485,19 +755,34 @@ class PositionMonitor:
                         # Check if we haven't already taken profit at this tier
                         position_id = position_data.get("position_id", "unknown")
                         if not self._has_taken_profit_at_tier(position_id, i):
-                            return PositionAction.PARTIAL_PROFIT, f"Tier {i+1} profit: {unrealized_pnl:.4f} >= {tier_profit:.4f} (confidence-scaled)"
+                            tier_percentage = max(0.05, exit_percentage / (i + 1))
+                            metadata.update({
+                                "exit_percentage": tier_percentage,
+                                "exit_type": f"tier_{i+1}_profit",
+                                "tier_target": tier_profit
+                            })
+                            return (
+                                PositionAction.PARTIAL_PROFIT,
+                                f"Tier {i+1} profit: {unrealized_pnl:.4f} >= {tier_profit:.4f} (confidence-scaled)",
+                                metadata
+                            )
 
-            return PositionAction.STAY, f"Profit taking not triggered: {unrealized_pnl:.4f} < {scaled_profit_target:.4f}"
+            metadata["exit_type"] = "target_not_met"
+            return (
+                PositionAction.STAY,
+                f"Profit taking not triggered: {unrealized_pnl:.4f} < {scaled_profit_target:.4f}",
+                metadata
+            )
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating profit taking: {e}"))
-            return PositionAction.STAY, f"Error in profit evaluation: {e}"
+            return PositionAction.STAY, f"Error in profit evaluation: {e}", {}
 
     def _evaluate_trailing_stop(
-        self, 
-        position_data: Dict[str, Any], 
+        self,
+        position_data: Dict[str, Any],
         combined_confidence: float
-    ) -> tuple[PositionAction, str]:
+    ) -> tuple[PositionAction, str, Dict[str, Any]]:
         """
         Evaluate trailing stop conditions.
 
@@ -517,11 +802,15 @@ class PositionMonitor:
             # 4. Trigger exit if trailing stop is hit
             
             # For now, return STAY to indicate no trailing stop action needed
-            return PositionAction.STAY, "Trailing stop evaluation (placeholder)"
+            metadata = {
+                "exit_type": "trailing_stop",
+                "confidence": combined_confidence
+            }
+            return PositionAction.STAY, "Trailing stop evaluation (placeholder)", metadata
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
-            return PositionAction.STAY, f"Error in trailing stop evaluation: {e}"
+            return PositionAction.STAY, f"Error in trailing stop evaluation: {e}", {}
 
     def _has_taken_profit_at_tier(self, position_id: str, tier: int) -> bool:
         """
@@ -596,7 +885,9 @@ class PositionMonitor:
                     "very_low": exit_strategy_params.get("confidence_very_low", 0.2),
                     "low": exit_strategy_params.get("confidence_low", 0.4),
                     "medium": exit_strategy_params.get("confidence_medium", 0.6),
-                    "high": exit_strategy_params.get("confidence_high", 0.8)
+                    "high": exit_strategy_params.get("confidence_high", 0.8),
+                    "force_exit": exit_strategy_params.get("confidence_force_exit_threshold", 0.35),
+                    "force_hold": exit_strategy_params.get("confidence_force_hold_threshold", 0.85)
                 },
                 "profit_taking": {
                     "base_profit_target": exit_strategy_params.get("base_profit_target", 0.04),
@@ -606,12 +897,20 @@ class PositionMonitor:
                         exit_strategy_params.get("profit_tier_1", 0.25),
                         exit_strategy_params.get("profit_tier_2", 0.5),
                         exit_strategy_params.get("profit_tier_3", 0.75)
-                    ]
+                    ],
+                    "confidence_exit_threshold": exit_strategy_params.get("tp_confidence_threshold", 0.55),
+                    "exit_percentage": exit_strategy_params.get("tp_exit_percentage", 1.0),
+                    "use_log_atr_multiplier": exit_strategy_params.get("use_tp_atr_log_scaling", False),
+                    "atr_log_multiplier": exit_strategy_params.get("tp_atr_log_multiplier", 0.0)
                 },
                 "stop_loss": {
                     "base_stop_loss": exit_strategy_params.get("base_stop_loss", -0.05),
                     "atr_multiplier": exit_strategy_params.get("atr_multiplier", 1.5),
-                    "volatility_adjustment_factor": exit_strategy_params.get("volatility_adjustment_factor", 1.0)
+                    "volatility_adjustment_factor": exit_strategy_params.get("volatility_adjustment_factor", 1.0),
+                    "confidence_exit_threshold": exit_strategy_params.get("sl_confidence_threshold", 0.4),
+                    "exit_percentage": exit_strategy_params.get("sl_exit_percentage", 1.0),
+                    "use_log_atr_multiplier": exit_strategy_params.get("use_sl_atr_log_scaling", False),
+                    "atr_log_multiplier": exit_strategy_params.get("sl_atr_log_multiplier", 0.0)
                 },
                 "time_based": {
                     "max_hold_time": exit_strategy_params.get("max_hold_time", 10800),
@@ -645,7 +944,9 @@ class PositionMonitor:
             "very_low": 0.2,
             "low": 0.4,
             "medium": 0.6,
-            "high": 0.8
+            "high": 0.8,
+            "force_exit": 0.35,
+            "force_hold": 0.85
         })
 
     def _get_optimized_pnl_thresholds(self) -> Dict[str, Any]:
@@ -679,7 +980,11 @@ class PositionMonitor:
             "confidence_profit_multiplier": 0.5,
             "tiered_profit_taking": True,
             "trailing_stop_enabled": True,
-            "trailing_stop_atr_multiplier": 1.5
+            "trailing_stop_atr_multiplier": 1.5,
+            "confidence_exit_threshold": 0.55,
+            "exit_percentage": 1.0,
+            "use_log_atr_multiplier": False,
+            "atr_log_multiplier": 0.0
         })
 
     def _get_optimized_stop_loss_config(self) -> Dict[str, Any]:
@@ -692,7 +997,11 @@ class PositionMonitor:
             "base_stop_loss": -0.05,
             "atr_multiplier": 1.5,
             "volatility_adjustment": True,
-            "regime_adjustment": True
+            "regime_adjustment": True,
+            "confidence_exit_threshold": 0.4,
+            "exit_percentage": 1.0,
+            "use_log_atr_multiplier": False,
+            "atr_log_multiplier": 0.0
         })
 
     def _get_optimized_time_based_config(self) -> Dict[str, Any]:

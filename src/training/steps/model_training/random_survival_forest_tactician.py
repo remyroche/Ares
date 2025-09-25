@@ -410,9 +410,10 @@ class RandomSurvivalForestTactician:
     def _train_horizon_model_with_hpo(self, X: np.ndarray, y: np.ndarray, horizon: float, hpo_trials: int, cv_folds: int) -> RandomSurvivalForest:
         """Train Random Survival Forest for specific horizon using existing HPO tools."""
         try:
-            from src.utils.ml_common.validation.hpo_overfitting_prevention import (
-                HPOWithOverfittingPrevention, 
-                HPOOverfittingPreventionConfig
+            from src.utils.nas_tas.advanced_overfitting_detection import (
+                EnhancedOverfittingDetectorWithLearningCurves,
+                OverfittingConfig,
+                OverfittingReport
             )
             from src.utils.ml_common.validation.universal_temporal_validation import (
                 UniversalTimeSeriesSplit

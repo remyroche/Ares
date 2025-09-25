@@ -86,7 +86,7 @@ except ImportError as e:
 
 # Import ML utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult
     )
     from src.utils.ml_common.validation import CrossValidator

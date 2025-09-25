@@ -130,43 +130,39 @@ def test_nas_engine_integration():
         print(f"❌ NAS Engine integration test failed: {e}")
         return False
 
-def test_hybrid_orchestrator_integration():
-    """Test Hybrid Orchestrator with ML common utilities integration."""
-    print("\n🧪 Testing Hybrid Orchestrator ML Common integration...")
+def test_unified_regime_detector_integration():
+    """Test Unified Regime Detector with ML common utilities integration."""
+    print("\n🧪 Testing Unified Regime Detector ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.hybrid_nas_tas_regime.enhanced_hybrid_orchestrator import (
-            EnhancedHybridOrchestrator, HybridRegimeConfig, create_enhanced_hybrid_orchestrator
+        from src.utils.ml_common.nas_tas_unified import (
+            UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
         )
         from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
             RegimeCombinationStrategy
         )
 
-        # Create hybrid config with ML utilities enabled
-        config = HybridRegimeConfig(
-            combination_strategy=RegimeCombinationStrategy.WEIGHTED_AVERAGE,
+        # Create unified config with hybrid detection
+        config = UnifiedRegimeConfig(
+            detection_method=RegimeDetectionMethod.HYBRID,
             n_regimes=5,
-            enable_multi_timeframe=True,
+            primary_timeframe="15m",
             use_unified_search=True,
             use_signal_generation=True
         )
 
-        # Create orchestrator
-        orchestrator = EnhancedHybridOrchestrator(config)
+        # Create unified detector
+        orchestrator = UnifiedRegimeDetector(config)
 
-        # Check that ML common components are initialized
-        assert hasattr(orchestrator, 'safeguards'), "Hybrid Orchestrator missing safeguards"
-        assert hasattr(orchestrator, 'error_handler'), "Hybrid Orchestrator missing error handler"
-        assert hasattr(orchestrator, 'memory_optimizer'), "Hybrid Orchestrator missing memory optimizer"
-        assert hasattr(orchestrator, 'lookahead_protection'), "Hybrid Orchestrator missing lookahead protection"
-        assert hasattr(orchestrator, 'cache'), "Hybrid Orchestrator missing cache"
-        assert hasattr(orchestrator, 'ensemble_manager'), "Hybrid Orchestrator missing ensemble manager"
-
-        print("✅ Hybrid Orchestrator ML Common components initialized correctly")
+        # Check that unified detector components are initialized
+        assert hasattr(orchestrator, 'unified_detector'), "Unified Detector missing unified_detector"
+        assert hasattr(orchestrator, 'performance_optimizer'), "Unified Detector missing performance_optimizer"
+        assert hasattr(orchestrator, 'config'), "Unified Detector missing config"
+        print("✅ Unified Regime Detector components initialized correctly")
         return True
 
     except Exception as e:
-        print(f"❌ Hybrid Orchestrator integration test failed: {e}")
+        print(f"❌ Unified Regime Detector integration test failed: {e}")
         return False
 
 def test_functionality_with_mock_data():

@@ -58,19 +58,19 @@ def test_nas_engine_integration():
         print(f"❌ NAS Engine integration test failed: {e}")
         return False
 
-def test_hybrid_orchestrator_integration():
-    """Test Hybrid Orchestrator with ML common utilities integration."""
-    print("\n🧪 Testing Hybrid Orchestrator ML Common integration...")
+def test_unified_regime_detector_integration():
+    """Test Unified Regime Detector with ML common utilities integration."""
+    print("\n🧪 Testing Unified Regime Detector ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.hybrid_nas_tas_regime.enhanced_hybrid_orchestrator import (
-            EnhancedHybridOrchestrator, HybridRegimeConfig, create_enhanced_hybrid_orchestrator
+        from src.utils.ml_common.nas_tas_unified import (
+            UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
         )
-        print("✅ Hybrid Orchestrator imports successful")
+        print("✅ Unified Regime Detector imports successful")
         return True
 
     except Exception as e:
-        print(f"❌ Hybrid Orchestrator integration test failed: {e}")
+        print(f"❌ Unified Regime Detector integration test failed: {e}")
         return False
 
 def main():

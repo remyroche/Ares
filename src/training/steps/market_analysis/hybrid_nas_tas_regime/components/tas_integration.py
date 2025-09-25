@@ -53,7 +53,7 @@ class TASIntegrationComponent:
         try:
             # Import TAS components dynamically
             tprint_debug("📦 Importing TAS components...")
-            from src.utils.ml_common.optimization.tas.regime_analysis.clustering_regime_detection import (
+            from src.utils.nas_tas.clustering_regime_detection import (
                 TreeBasedClusteringRegimeDetector,
                 ClusteringRegimeConfig
             )

@@ -15,8 +15,8 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-# Import hybrid orchestrator
-from .enhanced_hybrid_orchestrator import EnhancedHybridOrchestrator, create_enhanced_hybrid_orchestrator
+# Import unified regime detector
+from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
 
 # Import configurations
 from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationStrategy
@@ -256,7 +256,13 @@ def demonstrate_hybrid_orchestrator():
         )
         
         # Create hybrid orchestrator
-        orchestrator = create_enhanced_hybrid_orchestrator(hybrid_config)
+        # Create unified detector with hybrid configuration
+        unified_config = UnifiedRegimeConfig(
+            detection_method=RegimeDetectionMethod.HYBRID,
+            n_regimes=hybrid_config.n_regimes,
+            primary_timeframe=hybrid_config.primary_timeframe
+        )
+        orchestrator = UnifiedRegimeDetector(unified_config)
         
         # Create sample market data
         market_data = create_sample_market_data(1000)
@@ -341,7 +347,13 @@ def demonstrate_multi_timeframe_support():
         )
         
         # Create hybrid orchestrator
-        orchestrator = create_enhanced_hybrid_orchestrator(hybrid_config)
+        # Create unified detector with hybrid configuration
+        unified_config = UnifiedRegimeConfig(
+            detection_method=RegimeDetectionMethod.HYBRID,
+            n_regimes=hybrid_config.n_regimes,
+            primary_timeframe=hybrid_config.primary_timeframe
+        )
+        orchestrator = UnifiedRegimeDetector(unified_config)
         
         # Create sample market data (15m for regime detection)
         market_data_15m = create_sample_market_data(500, "15m")

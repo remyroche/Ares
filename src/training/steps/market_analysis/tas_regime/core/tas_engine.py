@@ -133,7 +133,7 @@ except ImportError:
     EVOLUTIONARY_SEARCH_AVAILABLE = False
 
 try:
-    from ..search.bayesian_search import BayesianTreeSearch
+    from src.utils.nas_tas.bayesian_search import BayesianTreeSearch
     BAYESIAN_SEARCH_AVAILABLE = True
 except ImportError:
     BAYESIAN_SEARCH_AVAILABLE = False

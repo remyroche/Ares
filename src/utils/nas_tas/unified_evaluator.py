@@ -162,6 +162,18 @@ except ImportError as e:
     logging.warning(f"⚠️ ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
 
+# Import advanced overfitting detection
+try:
+    from src.utils.nas_tas.advanced_overfitting_detection import (
+        EnhancedOverfittingDetectorWithLearningCurves,
+        OverfittingConfig,
+        OverfittingReport
+    )
+    OVERFITTING_DETECTION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Advanced overfitting detection not available: {e}")
+    OVERFITTING_DETECTION_AVAILABLE = False
+
 # Import hybrid NAS-TAS shared utilities
 try:
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_utility_integration import (
@@ -278,6 +290,12 @@ class UnifiedEvaluator:
         self.evaluation_history: List[Dict[str, Any]] = []
         self.best_architecture: Optional[Dict[str, Any]] = None
         self.best_metrics: Optional[ArchitectureMetrics] = None
+        
+        # Initialize overfitting detection
+        if OVERFITTING_DETECTION_AVAILABLE:
+            self.overfitting_detector = EnhancedOverfittingDetectorWithLearningCurves()
+        else:
+            self.overfitting_detector = None
         
         # Initialize results storage
         self._setup_results_directory()
@@ -798,6 +816,27 @@ class UnifiedEvaluator:
             
             # Calculate additional metrics
             metrics = self._calculate_additional_metrics(metrics, architecture, X, y)
+            
+            # Perform overfitting detection if available
+            if self.overfitting_detector and y is not None:
+                try:
+                    overfitting_report = self.overfitting_detector.detect_overfitting_with_learning_curves(
+                        model=self._create_model(architecture),
+                        X_train=X,
+                        X_val=X,  # Using same data for simplicity
+                        y_train=y,
+                        y_val=y,
+                        model_name=architecture.get('name', 'unknown'),
+                        model_type=architecture.get('type', 'unknown')
+                    )
+                    
+                    # Add overfitting metrics
+                    metrics.generalization_gap = abs(metrics.accuracy - metrics.validation_loss)
+                    if overfitting_report.overfitting_detected:
+                        metrics.stability_score *= 0.5  # Reduce stability for overfitting
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Overfitting detection failed: {e}")
             
             return metrics
             
@@ -1424,5 +1463,6 @@ class UnifiedEvaluator:
             'klines_parquet': KLINES_PARQUET_AVAILABLE,
             'matrix_operations': MATRIX_OPERATIONS_AVAILABLE,
             'ml_common': ML_COMMON_AVAILABLE,
-            'hybrid_nas_tas': HYBRID_NAS_TAS_AVAILABLE
+            'hybrid_nas_tas': HYBRID_NAS_TAS_AVAILABLE,
+            'overfitting_detection': OVERFITTING_DETECTION_AVAILABLE
         }

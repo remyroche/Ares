@@ -1,66 +1,63 @@
-#!/usr/bin/env python3
 """
-NAS-TAS Unified Components Package - Enhanced with Comprehensive Features
+Unified TAS-NAS Regime Detection System
 
-This package provides unified components for both NAS and TAS systems,
-organized into logical modules for better maintainability and organization.
-Enhanced with comprehensive hardware management and merged evaluation capabilities.
-
-Modules:
-- evaluation: Enhanced unified evaluation framework with merged functionality
-- hardware: Comprehensive hardware optimization with performance monitoring
-- search: Search algorithms with Bayesian TPE integration
-- data_processing: Unified data processing pipeline
-- manager: Unified component manager
+This module provides a unified regime detection system that combines the best aspects
+of both TAS (Tree Architecture Search) and NAS (Neural Architecture Search) regime
+detection with enhanced economic significance and trading viability evaluation.
 """
 
-from .evaluation import UnifiedEvaluator, compute_classification_metrics, compute_regression_metrics
-from .hardware import (
-    UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics, 
-    HardwarePerformanceMonitor, WorkloadType, OptimizationLevel
+from .unified_regime_config import (
+    UnifiedRegimeConfig,
+    RegimeDetectionMethod,
+    OptimizationStrategy,
+    EconomicEvaluationMode
 )
-from .search import UnifiedSearchEngine
-from .data_processing import UnifiedDataProcessor
-from .manager import UnifiedComponentManager
+
+from .unified_regime_detector import (
+    UnifiedRegimeDetector,
+    UnifiedRegimeResult
+)
+
+from .performance_optimizer import (
+    PerformanceOptimizer,
+    PerformanceCache,
+    GPUAccelerator,
+    MemoryOptimizer,
+    optimize_performance,
+    get_performance_optimizer
+)
+
+from .real_time_monitor import (
+    RealTimeRegimeMonitor,
+    RegimeChangeEvent,
+    RealTimeMetrics,
+    DataStreamProcessor,
+    RegimeChangeDetector,
+    PerformanceMonitor,
+    create_real_time_monitor
+)
 
 __all__ = [
-    # Main components
-    'UnifiedEvaluator',
-    'UnifiedHardwareOptimizer', 
-    'UnifiedSearchEngine',
-    'UnifiedDataProcessor',
-    'UnifiedComponentManager',
-    
-    # Enhanced evaluation functions
-    'compute_classification_metrics',
-    'compute_regression_metrics',
-    
-    # Hardware management classes
-    'HardwareConfig',
-    'PerformanceMetrics',
-    'HardwarePerformanceMonitor',
-    'WorkloadType',
-    'OptimizationLevel'
-]
-
-__version__ = "2.0.0"
-__author__ = "AI Assistant"
-__description__ = "Enhanced unified components with comprehensive hardware management and merged evaluation capabilities"
-=======
-"""
-Unified NAS-TAS Regime Detection System
-
-This module provides unified components for both NAS and TAS regime detection systems,
-eliminating code duplication and providing consistent interfaces.
-"""
-
-from .unified_regime_detector import UnifiedRegimeDetector
-from .unified_regime_config import UnifiedRegimeConfig, RegimeSystemType
-from .unified_result import UnifiedRegimeResult
-
-__all__ = [
+    'UnifiedRegimeConfig',
+    'RegimeDetectionMethod',
+    'OptimizationStrategy',
+    'EconomicEvaluationMode',
     'UnifiedRegimeDetector',
-    'UnifiedRegimeConfig', 
-    'RegimeSystemType',
-    'UnifiedRegimeResult'
+    'UnifiedRegimeResult',
+    'PerformanceOptimizer',
+    'PerformanceCache',
+    'GPUAccelerator',
+    'MemoryOptimizer',
+    'optimize_performance',
+    'get_performance_optimizer',
+    'RealTimeRegimeMonitor',
+    'RegimeChangeEvent',
+    'RealTimeMetrics',
+    'DataStreamProcessor',
+    'RegimeChangeDetector',
+    'PerformanceMonitor',
+    'create_real_time_monitor'
 ]
+
+__version__ = "1.0.0"
+__author__ = "Unified Regime Detection System"

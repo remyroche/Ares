@@ -279,10 +279,10 @@ def analyze_market_regimes(self, market_data, timestamps=None, enable_multi_time
    - ✅ Updated initialization, search, and evaluation methods
    - ✅ Updated metadata to reflect shared utilities usage
 
-3. **Hybrid Orchestrator** (`src/training/steps/market_analysis/hybrid_nas_tas_regime/enhanced_hybrid_orchestrator.py`)
-   - ✅ Replaced individual ML utilities with shared `HybridSharedMLUtilities`
-   - ✅ Updated initialization and analysis methods
-   - ✅ Updated metadata to reflect shared utilities usage
+3. **Unified Regime Detector** (`src/utils/ml_common/nas_tas_unified/unified_regime_detector.py`)
+   - ✅ Unified TAS and NAS regime detection with shared utilities
+   - ✅ Performance optimization and real-time monitoring
+   - ✅ Comprehensive benchmarking and configuration options
 
 ### Files Created
 

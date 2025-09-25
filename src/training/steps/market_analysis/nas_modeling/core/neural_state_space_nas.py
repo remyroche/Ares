@@ -52,7 +52,7 @@ try:
         tprint_success, tprint_progress, tprint_performance,
         tprint_structured, tprint_with_level, tprint_timer
     )
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult,
         optimize_with_bayesian_tpe, create_search_space_from_bounds
     )

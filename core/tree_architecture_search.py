@@ -527,11 +527,11 @@ class TreeArchitectureSearch:
                 continue
 
             if config['type'] == 'int':
+                range_width = config['high'] - config['low']
+                step = max(1, int(range_width * 0.05))  # Mutate by up to 5% of the range
                 mutated[key] = int(np.clip(
-                    mutated[key] + np.random.randint(-2, 3),
-                    config['low'],
-                    config['high']
-                ))
+                    mutated[key] + np.random.randint(-step, step + 1),
+                    config['low'], config['high']))
             elif config['type'] == 'float':
                 range_width = config['high'] - config['low']
                 mutated[key] = float(np.clip(

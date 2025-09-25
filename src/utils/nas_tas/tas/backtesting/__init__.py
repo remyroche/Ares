@@ -1,0 +1,30 @@
+"""
+Backtesting Framework for TAS
+
+Comprehensive backtesting framework for tree architecture search including:
+- Historical data backtesting
+- Walk-forward analysis
+- Out-of-sample testing
+- Performance attribution
+- Risk analysis
+- Scenario testing
+- Monte Carlo simulation
+"""
+
+from src.utils.nas_tas.backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
+from src.utils.nas_tas.walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig
+from src.utils.nas_tas.performance_attribution import PerformanceAttributor, AttributionConfig
+from src.utils.nas_tas.risk_analysis import RiskAnalyzer, RiskConfig
+from .scenario_testing import ScenarioTester, ScenarioConfig
+from src.utils.nas_tas.monte_carlo_engine import UnifiedMonteCarloEngine as MonteCarloSimulator, MonteCarloConfig
+from .data_manager import BacktestingDataManager, DataConfig
+
+__all__ = [
+    'BacktestingEngine', 'BacktestingConfig', 'BacktestingResult',
+    'WalkForwardAnalyzer', 'WalkForwardConfig',
+    'PerformanceAttributor', 'AttributionConfig',
+    'RiskAnalyzer', 'RiskConfig',
+    'ScenarioTester', 'ScenarioConfig',
+    'MonteCarloSimulator', 'MonteCarloConfig',
+    'BacktestingDataManager', 'DataConfig'
+]

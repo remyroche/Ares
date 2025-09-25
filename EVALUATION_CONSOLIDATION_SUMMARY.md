@@ -101,7 +101,7 @@ results = evaluator.evaluate_tree_architecture(model, data)
 # Old imports still work
 from src.utils.nas_tas import UnifiedEvaluator
 from src.training.steps.market_analysis.nas_modeling.core.nas_evaluator import NASEvaluator
-from src.utils.ml_common.optimization.tas.evaluation.tas_evaluator import TASEvaluator
+from src.utils.nas_tas.tas.evaluation.tas_evaluator import TASEvaluator
 ```
 
 ## Next Steps

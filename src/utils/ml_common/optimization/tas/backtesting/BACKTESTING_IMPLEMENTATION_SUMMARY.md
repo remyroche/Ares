@@ -212,7 +212,7 @@ backtesting/
 ## 🎯 **Usage Example**
 
 ```python
-from src.utils.ml_common.optimization.tas.backtesting import (
+from src.utils.nas_tas.tas.backtesting import (
     BacktestingEngine, BacktestingConfig,
     WalkForwardAnalyzer, WalkForwardConfig,
     PerformanceAttributor, AttributionConfig,

@@ -22,6 +22,10 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.logger import get_logger
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
 
 
@@ -336,6 +340,10 @@ class StandaloneTimeframeOptimizer:
     
     def _calculate_performance_metrics(self, point: np.ndarray, data: pd.DataFrame) -> Dict[str, float]:
         """Calculate performance metrics for a given point."""
+        tprint_warning("⚠️ WARNING: Using simulated performance metrics")
+        tprint_warning("⚠️ These are not real calculations but illustrative values")
+        tprint_info("💡 Consider implementing real performance calculation for accurate optimization")
+        
         try:
             # Simple performance calculation based on data characteristics
             horizon, target = point[0], point[1]

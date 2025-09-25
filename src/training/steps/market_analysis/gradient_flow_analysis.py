@@ -17,7 +17,10 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import logging
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from src.utils.logger import get_logger
 
 @dataclass
@@ -81,6 +84,10 @@ class GradientFlowAnalyzer:
         
         Continuous targets provide much better gradients than binary targets.
         """
+        tprint_warning("⚠️ WARNING: Using hardcoded improvement factors for neural networks")
+        tprint_warning("⚠️ These are illustrative values, not calculated from real data")
+        tprint_info("💡 Consider implementing real gradient flow analysis for accurate results")
+        
         improvements = {}
         
         # 1. Gradient Information Content
@@ -116,6 +123,10 @@ class GradientFlowAnalyzer:
         
         Yes, linear regression also benefits significantly from continuous targets!
         """
+        tprint_warning("⚠️ WARNING: Using hardcoded improvement factors for linear regression")
+        tprint_warning("⚠️ These are illustrative values, not calculated from real data")
+        tprint_info("💡 Consider implementing real gradient flow analysis for accurate results")
+        
         improvements = {}
         
         # 1. Feature Relationship Learning
@@ -154,6 +165,10 @@ class GradientFlowAnalyzer:
         
         Tree-based models benefit significantly from continuous targets!
         """
+        tprint_warning("⚠️ WARNING: Using hardcoded improvement factors for tree-based models")
+        tprint_warning("⚠️ These are illustrative values, not calculated from real data")
+        tprint_info("💡 Consider implementing real gradient flow analysis for accurate results")
+        
         improvements = {}
         
         # 1. Splitting Criteria Quality

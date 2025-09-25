@@ -17,6 +17,11 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import numpy as np
 
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 try:
     from src.utils.sklearn_utils import KMeans
 except Exception:  # pragma: no cover
@@ -258,21 +263,72 @@ def enforce_cluster_constraints(
     random_state: int = 42,
     max_iters: int = 4,
 ) -> np.ndarray:
-    new_labels = labels.copy()
-    for _ in range(max_iters):
-        before = new_labels.copy()
-        new_labels = split_giant_clusters(
-            X, new_labels, max_prop=max_legit_prop, target_range=target_range, metric=metric, random_state=random_state
-        )
-        new_labels = merge_tail_into_topk(
-            X, new_labels, k=target_topk, coverage_target=coverage_target, metric=metric
-        )
-        new_labels = balance_topk_range(
-            X, new_labels, k=target_topk, target_range=target_range, max_prop=max_legit_prop, metric=metric, random_state=random_state
-        )
-        if np.array_equal(before, new_labels):
-            break
-    return new_labels
+    """Enforce cluster constraints with comprehensive error handling and logging."""
+    tprint_progress("🔧 Starting cluster constraint enforcement...")
+    tprint_info(f"📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
+    tprint_info(f"📊 Labels: {len(np.unique(labels))} unique clusters")
+    
+    try:
+        # Validate inputs
+        if X.shape[0] != labels.shape[0]:
+            tprint_error("❌ CRITICAL: Input array and labels have different lengths")
+            raise ValueError("Input array and labels must have the same length")
+        
+        if X.shape[0] == 0:
+            tprint_error("❌ CRITICAL: Empty input array")
+            raise ValueError("Input array cannot be empty")
+        
+        tprint_success("✅ Input validation passed")
+        
+        new_labels = labels.copy()
+        tprint_info(f"🔄 Starting iterative constraint enforcement (max {max_iters} iterations)")
+        
+        for iteration in range(max_iters):
+            tprint_progress(f"🔄 Iteration {iteration + 1}/{max_iters}")
+            before = new_labels.copy()
+            
+            try:
+                # Split giant clusters
+                tprint_info("✂️ Splitting giant clusters...")
+                new_labels = split_giant_clusters(
+                    X, new_labels, max_prop=max_legit_prop, target_range=target_range, metric=metric, random_state=random_state
+                )
+                tprint_success("✅ Giant cluster splitting completed")
+                
+                # Merge tail clusters
+                tprint_info("🔗 Merging tail clusters...")
+                new_labels = merge_tail_into_topk(
+                    X, new_labels, k=target_topk, coverage_target=coverage_target, metric=metric
+                )
+                tprint_success("✅ Tail cluster merging completed")
+                
+                # Balance top-k clusters
+                tprint_info("⚖️ Balancing top-k clusters...")
+                new_labels = balance_topk_range(
+                    X, new_labels, k=target_topk, target_range=target_range, max_prop=max_legit_prop, metric=metric, random_state=random_state
+                )
+                tprint_success("✅ Top-k cluster balancing completed")
+                
+                # Check for convergence
+                if np.array_equal(before, new_labels):
+                    tprint_success(f"✅ Convergence achieved after {iteration + 1} iterations")
+                    break
+                else:
+                    tprint_info(f"🔄 Changes detected, continuing to iteration {iteration + 2}")
+                    
+            except Exception as e:
+                tprint_error(f"❌ Error in iteration {iteration + 1}: {e}")
+                tprint_warning("⚠️ Returning labels from previous iteration")
+                break
+        
+        tprint_success("🎉 Cluster constraint enforcement completed")
+        tprint_info(f"📊 Final result: {len(np.unique(new_labels))} unique clusters")
+        return new_labels
+        
+    except Exception as e:
+        tprint_error(f"❌ CRITICAL: Cluster constraint enforcement failed: {e}")
+        tprint_warning("⚠️ Returning original labels as fallback")
+        return labels
 
 
 def summarize_distribution(labels: np.ndarray, topk: int = 20) -> dict:

@@ -18,6 +18,35 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[PERFORMANCE_TRACKER] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -267,7 +296,10 @@ class PerformanceTracker:
     
     def _create_drift_detector(self):
         """Create drift detector for a model."""
-        # Simple drift detector implementation
+        # ⚠️ PLACEHOLDER IMPLEMENTATION - This is a stub function
+        tprint_warning("⚠️ Using placeholder drift detector - not fully implemented")
+        self.logger.warning("⚠️ Using placeholder drift detector - not fully implemented")
+        # TODO: Implement actual drift detection logic
         return {
             'baseline_metrics': {},
             'recent_metrics': [],
@@ -351,8 +383,10 @@ class PerformanceTracker:
             return True
             
         except Exception as e:
+            tprint_error(f"❌ Performance recording failed for {model_id}: {e}")
             self.logger.error(f"❌ Performance recording failed for {model_id}: {e}")
-            return False
+            # Don't silently fail - raise the exception to prevent silent failures
+            raise RuntimeError(f"Performance recording failed for {model_id}: {e}") from e
     
     def _update_model_statistics(self, model_id: str, record: PerformanceRecord):
         """Update model statistics."""

@@ -19,6 +19,35 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[MODEL_MANAGER] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -181,6 +210,12 @@ class ModelManager:
         # Audit logging
         if config.enable_audit_logging:
             self._setup_audit_logging()
+        
+        tprint_success("✅ Model Manager initialized")
+        tprint_info(f"📁 Storage path: {config.model_storage_path}")
+        tprint_info(f"🚀 Deployment strategy: {config.deployment_strategy.value}")
+        tprint_info(f"⚙️ Auto-deployment: {config.enable_auto_deployment}")
+        tprint_info(f"📊 Model monitoring: {config.enable_model_monitoring}")
         
         self.logger.info("✅ Model Manager initialized")
         self.logger.info(f"   Storage path: {config.model_storage_path}")
@@ -432,43 +467,59 @@ class ModelManager:
     def _immediate_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """Immediate deployment strategy."""
         try:
-            # Simple immediate deployment
+            # ⚠️ PLACEHOLDER IMPLEMENTATION - This is a stub function
+            tprint_warning(f"⚠️ Using placeholder immediate deployment for {model_id}")
+            self.logger.warning(f"⚠️ Using placeholder immediate deployment for {model_id}")
             self.logger.info(f"   📦 Immediate deployment of {model_id}")
+            # TODO: Implement actual immediate deployment logic
             return True
         except Exception as e:
+            tprint_error(f"❌ Immediate deployment failed: {e}")
             self.logger.error(f"   ❌ Immediate deployment failed: {e}")
             return False
     
     def _gradual_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """Gradual deployment strategy."""
         try:
-            # Gradual rollout implementation
+            # ⚠️ PLACEHOLDER IMPLEMENTATION - This is a stub function
+            tprint_warning(f"⚠️ Using placeholder gradual deployment for {model_id}")
+            self.logger.warning(f"⚠️ Using placeholder gradual deployment for {model_id}")
             self.logger.info(f"   📦 Gradual deployment of {model_id}")
+            # TODO: Implement actual gradual deployment logic
             # In a real implementation, this would gradually increase traffic
             return True
         except Exception as e:
+            tprint_error(f"❌ Gradual deployment failed: {e}")
             self.logger.error(f"   ❌ Gradual deployment failed: {e}")
             return False
     
     def _ab_testing_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """A/B testing deployment strategy."""
         try:
-            # A/B testing implementation
+            # ⚠️ PLACEHOLDER IMPLEMENTATION - This is a stub function
+            tprint_warning(f"⚠️ Using placeholder A/B testing deployment for {model_id}")
+            self.logger.warning(f"⚠️ Using placeholder A/B testing deployment for {model_id}")
             self.logger.info(f"   📦 A/B testing deployment of {model_id}")
+            # TODO: Implement actual A/B testing deployment logic
             # In a real implementation, this would split traffic between old and new models
             return True
         except Exception as e:
+            tprint_error(f"❌ A/B testing deployment failed: {e}")
             self.logger.error(f"   ❌ A/B testing deployment failed: {e}")
             return False
     
     def _canary_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """Canary deployment strategy."""
         try:
-            # Canary deployment implementation
+            # ⚠️ PLACEHOLDER IMPLEMENTATION - This is a stub function
+            tprint_warning(f"⚠️ Using placeholder canary deployment for {model_id}")
+            self.logger.warning(f"⚠️ Using placeholder canary deployment for {model_id}")
             self.logger.info(f"   📦 Canary deployment of {model_id}")
+            # TODO: Implement actual canary deployment logic
             # In a real implementation, this would deploy to a small subset first
             return True
         except Exception as e:
+            tprint_error(f"❌ Canary deployment failed: {e}")
             self.logger.error(f"   ❌ Canary deployment failed: {e}")
             return False
     
@@ -688,10 +739,24 @@ class ModelManager:
         try:
             # Save model
             model_path = Path(self.config.model_storage_path) / model_id / f"{version}.pkl"
-            model_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(model_path, 'wb') as f:
-                pickle.dump(model, f)
+            # Create directory with proper error handling
+            try:
+                model_path.parent.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                tprint_error(f"❌ Failed to create model directory: {e}")
+                self.logger.error(f"❌ Failed to create model directory: {e}")
+                raise RuntimeError(f"Failed to create model directory for {model_id}: {e}") from e
+            
+            # Save model with proper error handling
+            try:
+                with open(model_path, 'wb') as f:
+                    pickle.dump(model, f)
+                tprint_success(f"✅ Model {model_id} v{version} saved successfully")
+            except (IOError, OSError, pickle.PicklingError) as e:
+                tprint_error(f"❌ Failed to save model {model_id}: {e}")
+                self.logger.error(f"❌ Failed to save model {model_id}: {e}")
+                raise RuntimeError(f"Failed to save model {model_id}: {e}") from e
             
             # Save metadata
             metadata_path = Path(self.config.model_metadata_path) / f"{model_id}_{version}.json"
@@ -731,12 +796,31 @@ class ModelManager:
             model_path = Path(self.config.model_storage_path) / model_id / f"{version}.pkl"
 
             if not model_path.exists():
+                tprint_error(f"❌ Model file not found: {model_path}")
                 self.logger.error(f"❌ Model file not found: {model_path}")
                 raise FileNotFoundError(f"Model {model_id} v{version} not found at {model_path}")
 
-            with open(model_path, 'rb') as f:
-                model = pickle.load(f)
+            # Load model with proper error handling
+            try:
+                with open(model_path, 'rb') as f:
+                    model = pickle.load(f)
+            except (IOError, OSError, pickle.UnpicklingError) as e:
+                tprint_error(f"❌ Failed to load model {model_id} v{version}: {e}")
+                self.logger.error(f"❌ Failed to load model {model_id} v{version}: {e}")
+                raise RuntimeError(f"Failed to load model {model_id} v{version}: {e}") from e
 
+            # Validate model integrity
+            if model is None:
+                tprint_error(f"❌ Loaded model {model_id} v{version} is None")
+                self.logger.error(f"❌ Loaded model {model_id} v{version} is None")
+                raise ValueError(f"Loaded model {model_id} v{version} is None")
+            
+            # Check if model has required methods
+            if not hasattr(model, 'predict'):
+                tprint_warning(f"⚠️ Model {model_id} v{version} doesn't have predict method")
+                self.logger.warning(f"⚠️ Model {model_id} v{version} doesn't have predict method")
+
+            tprint_success(f"✅ Successfully loaded and validated model {model_id} v{version}")
             self.logger.debug(f"✅ Successfully loaded model {model_id} v{version}")
             return model
 

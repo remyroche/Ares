@@ -20,6 +20,35 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    # Fallback function if tprint is not available
+    def tprint(message: str, color: str = "white", **kwargs):
+        print(f"[MODEL_SELECTOR] {message}")
+    def tprint_debug(message: str, **kwargs):
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs):
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs):
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs):
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs):
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs):
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs):
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs):
+        print(f"[TIMER] {message}")
+    TPRINT_AVAILABLE = False
+
 # Import regime detection systems
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
@@ -601,6 +630,10 @@ class ModelSelector:
                                   market_data: pd.DataFrame,
                                   context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Select model using meta-learning."""
+        # ⚠️ POORLY IMPLEMENTED - This is a simplified implementation
+        tprint_warning("⚠️ Using simplified meta-learning implementation - not fully developed")
+        self.logger.warning("⚠️ Using simplified meta-learning implementation - not fully developed")
+        
         # Extract meta-features
         meta_features = self._extract_meta_features(market_data, context)
         
@@ -608,6 +641,7 @@ class ModelSelector:
         meta_scores = {}
         for model_type, model_info in regime_models.items():
             # Simple meta-learning: weight by feature similarity
+            # TODO: Implement proper meta-learning algorithm
             similarity_score = self._calculate_feature_similarity(meta_features, model_type)
             base_performance = model_info['performance'].get(self.config.performance_metric, 0.0)
             meta_scores[model_type] = base_performance * similarity_score
@@ -644,11 +678,14 @@ class ModelSelector:
                         confidence = 0.5
                         self.logger.warning(f"Model {model_type} returned empty probability array")
                 except (ValueError, IndexError, TypeError) as e:
-                    confidence = 0.5
+                    tprint_warning(f"Could not calculate confidence for {model_type}: {e}")
                     self.logger.warning(f"Could not calculate confidence for {model_type}: {e}")
+                    confidence = 0.5
                 except Exception as e:
-                    confidence = 0.0
+                    tprint_error(f"Unexpected error calculating confidence for {model_type}: {e}")
                     self.logger.error(f"Unexpected error calculating confidence for {model_type}: {e}")
+                    # Don't silently fail - raise the exception to prevent silent failures
+                    raise RuntimeError(f"Confidence calculation failed for {model_type}: {e}") from e
             else:
                 confidence = 0.5
                 self.logger.debug(f"Model {model_type} doesn't support predict_proba")

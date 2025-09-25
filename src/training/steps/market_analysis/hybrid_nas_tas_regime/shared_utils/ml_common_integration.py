@@ -18,7 +18,7 @@ from datetime import datetime
 # Import existing ML Common utilities
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 from src.utils.ml_common.validation.enhanced_overfitting_detection import UniversalOverfittingDetector
-from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention
 # from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
 

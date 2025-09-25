@@ -22,7 +22,7 @@ from src.utils.ml_common.optimization.grid_utils import (
     build_coarse_grid_from_search_space,
     build_fine_grid_around_best
 )
-from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 # Import new Bayesian TPE optimizer
 from src.utils.nas_tas.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,

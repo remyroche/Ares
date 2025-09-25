@@ -14,11 +14,30 @@ from .unified_evaluator import (
     MetricType
 )
 
+from .unified_multi_objective import (
+    UnifiedMultiObjectiveOptimizer,
+    PerformanceEstimator,
+    ArchitectureFeatures,
+    PerformancePrediction,
+    PerformanceMetric,
+    EstimatorType,
+    OptimizationConfig,
+    MultiObjectiveResult
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
     'EvaluationResult',
     'ModelType',
     'EvaluationMode',
-    'MetricType'
+    'MetricType',
+    'UnifiedMultiObjectiveOptimizer',
+    'PerformanceEstimator',
+    'ArchitectureFeatures',
+    'PerformancePrediction',
+    'PerformanceMetric',
+    'EstimatorType',
+    'OptimizationConfig',
+    'MultiObjectiveResult'
 ]

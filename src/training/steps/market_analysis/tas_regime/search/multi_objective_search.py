@@ -1,16 +1,8 @@
 """
-Multi-Objective Search for TAS Tree Architecture
+TAS Multi-Objective Search - Updated to use Unified Implementation
 
-This module provides comprehensive multi-objective optimization for tree architecture search,
-integrating with the unified utilities and shared components from the hybrid NAS/TAS system.
-
-Features:
-- Multiple optimization algorithms (NSGA-II, SPEA2, Bayesian)
-- Integration with unified multi-objective optimizer
-- Economic significance and trading viability evaluation
-- Hardware optimization support
-- Real-time Pareto frontier management
-- Advanced constraint handling
+This module provides TAS-specific multi-objective optimization using
+the unified multi-objective optimization framework.
 """
 
 import numpy as np
@@ -26,65 +18,35 @@ import json
 import os
 from pathlib import Path
 
-# Import unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
-    UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
-    UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
-    UnifiedMultiObjectiveOptimizer, OptimizationConfig,
-    UnifiedHardwareOptimizer, HardwareConfig,
-    UnifiedRegimeAnalyzer, RegimeAnalysisConfig,
-    UnifiedValidationSystem, ValidationConfig,
-    create_unified_economic_evaluator, quick_economic_evaluation,
-    create_unified_trading_viability_evaluator, quick_trading_viability_evaluation,
-    create_unified_multi_objective_optimizer, quick_multi_objective_optimization,
-    create_unified_hardware_optimizer, quick_hardware_optimization,
-    create_unified_regime_analyzer, quick_regime_analysis,
-    create_unified_validation_system, quick_validation
-)
-
-# Import utility tools
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
-    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
-    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
-    check_disk_space, CommonUtilities
-)
-
-from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-    validate_positive, validate_range, safe_kelly_calculation,
-    safe_weighted_average, safe_percentage_change, safe_correlation,
-    safe_covariance, safe_mean, safe_std, safe_percentile,
-    validate_correlation_matrix, safe_matrix_inverse, math_safe,
-    MathValidation, MathValidationError
-)
-
-from src.utils.serialization_utils import (
-    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-)
-
-from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
-)
-
-# Import ML common utilities
+# Import unified multi-objective optimizer
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
-    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
-    from src.utils.ml_common.validation.cv import CrossValidationManager
-    ML_COMMON_AVAILABLE = True
+    from src.utils.nas_tas import (
+        UnifiedMultiObjectiveOptimizer,
+        PerformanceEstimator,
+        ArchitectureFeatures,
+        PerformancePrediction,
+        PerformanceMetric,
+        EstimatorType,
+        OptimizationConfig,
+        MultiObjectiveResult
+    )
+    UNIFIED_MULTI_OBJECTIVE_AVAILABLE = True
 except ImportError:
-    ML_COMMON_AVAILABLE = False
+    UNIFIED_MULTI_OBJECTIVE_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+# TAS-specific wrapper for unified multi-objective optimizer
+class TASMultiObjectiveOptimizer:
+    """TAS-specific multi-objective optimizer using unified implementation."""
+    
+    def __init__(self, config: OptimizationConfig = None):
+        """Initialize TAS multi-objective optimizer."""
+        if not UNIFIED_MULTI_OBJECTIVE_AVAILABLE:
+            raise ImportError("Unified multi-objective optimizer not available")
+        self.unified_optimizer = UnifiedMultiObjectiveOptimizer(config)
+    
+    def __getattr__(self, name):
+        """Delegate to unified optimizer."""
+        return getattr(self.unified_optimizer, name)
 
 
 class OptimizationAlgorithm(Enum):

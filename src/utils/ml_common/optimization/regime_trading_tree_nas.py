@@ -809,16 +809,25 @@ class RegimeTradingTreeNAS:
             raise
     
     def _calculate_regime_persistence(self, regime_predictions: np.ndarray) -> np.ndarray:
-        """Calculate regime persistence."""
+        """Calculate regime persistence with advanced analysis."""
         try:
             if len(regime_predictions) == 0:
                 tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Empty regime predictions for persistence calculation")
                 raise ValueError("Empty regime predictions for persistence calculation")
             
-            persistence = np.zeros(len(regime_predictions))
+            # Import utilities for advanced calculations
+            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
+            from src.utils.common_operations import safe_divide
+            
+            # Validate input
+            regime_predictions = validate_numeric_array(regime_predictions, "regime_predictions")
+            
+            n_samples = len(regime_predictions)
+            persistence = np.zeros(n_samples)
             current_persistence = 1
             
-            for i in range(1, len(regime_predictions)):
+            # Calculate basic persistence
+            for i in range(1, n_samples):
                 if regime_predictions[i] == regime_predictions[i-1]:
                     current_persistence += 1
                 else:
@@ -826,7 +835,58 @@ class RegimeTradingTreeNAS:
                 
                 persistence[i] = current_persistence
             
-            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated regime persistence for {len(regime_predictions)} samples")
+            # Advanced persistence analysis
+            unique_regimes = np.unique(regime_predictions)
+            regime_persistence_stats = {}
+            
+            for regime in unique_regimes:
+                regime_mask = regime_predictions == regime
+                regime_persistence_values = persistence[regime_mask]
+                
+                if len(regime_persistence_values) > 0:
+                    regime_persistence_stats[regime] = {
+                        'mean_persistence': safe_mean(regime_persistence_values),
+                        'std_persistence': safe_std(regime_persistence_values),
+                        'max_persistence': np.max(regime_persistence_values),
+                        'min_persistence': np.min(regime_persistence_values),
+                        'stability_score': safe_divide(safe_mean(regime_persistence_values), 
+                                                     safe_std(regime_persistence_values), 0.0)
+                    }
+            
+            # Calculate normalized persistence scores
+            max_possible_persistence = n_samples
+            normalized_persistence = persistence / max_possible_persistence
+            
+            # Calculate regime transition indicators
+            transition_points = np.zeros(n_samples, dtype=bool)
+            for i in range(1, n_samples):
+                if regime_predictions[i] != regime_predictions[i-1]:
+                    transition_points[i] = True
+            
+            # Calculate persistence quality metrics
+            overall_mean_persistence = safe_mean(persistence)
+            overall_std_persistence = safe_std(persistence)
+            persistence_consistency = safe_divide(overall_mean_persistence, 
+                                                overall_std_persistence, 0.0)
+            
+            # Store advanced metrics for later use
+            self._regime_persistence_metrics = {
+                'basic_persistence': persistence,
+                'normalized_persistence': normalized_persistence,
+                'transition_points': transition_points,
+                'regime_stats': regime_persistence_stats,
+                'overall_mean': overall_mean_persistence,
+                'overall_std': overall_std_persistence,
+                'consistency_score': persistence_consistency,
+                'n_transitions': np.sum(transition_points),
+                'transition_rate': safe_divide(np.sum(transition_points), n_samples, 0.0)
+            }
+            
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated advanced regime persistence for {n_samples} samples")
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Mean persistence: {overall_mean_persistence:.2f}, "
+                        f"Consistency: {persistence_consistency:.2f}, "
+                        f"Transitions: {np.sum(transition_points)}")
+            
             return persistence
             
         except Exception as e:
@@ -835,21 +895,123 @@ class RegimeTradingTreeNAS:
             raise RuntimeError(f"Regime persistence calculation failed: {e}") from e
     
     def _calculate_regime_transitions(self, regime_predictions: np.ndarray) -> np.ndarray:
-        """Calculate regime transitions."""
+        """Calculate regime transitions with advanced analysis."""
         try:
             if len(regime_predictions) == 0:
                 tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Empty regime predictions for transition calculation")
                 raise ValueError("Empty regime predictions for transition calculation")
             
-            transitions = np.zeros(len(regime_predictions))
+            # Import utilities for advanced calculations
+            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
+            from src.utils.common_operations import safe_divide
             
-            for i in range(1, len(regime_predictions)):
+            # Validate input
+            regime_predictions = validate_numeric_array(regime_predictions, "regime_predictions")
+            
+            n_samples = len(regime_predictions)
+            transitions = np.zeros(n_samples)
+            
+            # Calculate basic transitions
+            for i in range(1, n_samples):
                 if regime_predictions[i] != regime_predictions[i-1]:
                     transitions[i] = 1
                 else:
                     transitions[i] = 0
             
-            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated regime transitions for {len(regime_predictions)} samples")
+            # Advanced transition analysis
+            unique_regimes = np.unique(regime_predictions)
+            transition_matrix = np.zeros((len(unique_regimes), len(unique_regimes)))
+            regime_to_index = {regime: idx for idx, regime in enumerate(unique_regimes)}
+            
+            # Build transition matrix
+            for i in range(1, n_samples):
+                if regime_predictions[i] != regime_predictions[i-1]:
+                    from_regime = regime_predictions[i-1]
+                    to_regime = regime_predictions[i]
+                    from_idx = regime_to_index[from_regime]
+                    to_idx = regime_to_index[to_regime]
+                    transition_matrix[from_idx, to_idx] += 1
+            
+            # Calculate transition probabilities
+            transition_probabilities = np.zeros_like(transition_matrix)
+            for i in range(len(unique_regimes)):
+                row_sum = np.sum(transition_matrix[i, :])
+                if row_sum > 0:
+                    transition_probabilities[i, :] = transition_matrix[i, :] / row_sum
+            
+            # Calculate transition statistics
+            n_transitions = np.sum(transitions)
+            transition_rate = safe_divide(n_transitions, n_samples, 0.0)
+            
+            # Calculate transition patterns
+            transition_patterns = {}
+            for i in range(len(unique_regimes)):
+                for j in range(len(unique_regimes)):
+                    if i != j and transition_matrix[i, j] > 0:
+                        pattern_key = f"{unique_regimes[i]}_to_{unique_regimes[j]}"
+                        transition_patterns[pattern_key] = {
+                            'count': int(transition_matrix[i, j]),
+                            'probability': transition_probabilities[i, j],
+                            'from_regime': unique_regimes[i],
+                            'to_regime': unique_regimes[j]
+                        }
+            
+            # Calculate transition stability metrics
+            transition_stability = {}
+            for regime in unique_regimes:
+                regime_idx = regime_to_index[regime]
+                outgoing_transitions = np.sum(transition_matrix[regime_idx, :])
+                incoming_transitions = np.sum(transition_matrix[:, regime_idx])
+                
+                transition_stability[regime] = {
+                    'outgoing_transitions': int(outgoing_transitions),
+                    'incoming_transitions': int(incoming_transitions),
+                    'stability_score': safe_divide(outgoing_transitions, 
+                                                outgoing_transitions + incoming_transitions, 0.0)
+                }
+            
+            # Calculate transition clustering
+            transition_intervals = []
+            current_interval = 0
+            for i in range(1, n_samples):
+                if transitions[i] == 1:
+                    transition_intervals.append(current_interval)
+                    current_interval = 0
+                else:
+                    current_interval += 1
+            transition_intervals.append(current_interval)
+            
+            # Calculate transition timing statistics
+            if transition_intervals:
+                mean_interval = safe_mean(np.array(transition_intervals))
+                std_interval = safe_std(np.array(transition_intervals))
+                transition_regularity = safe_divide(mean_interval, std_interval, 0.0)
+            else:
+                mean_interval = 0.0
+                std_interval = 0.0
+                transition_regularity = 0.0
+            
+            # Store advanced transition metrics
+            self._regime_transition_metrics = {
+                'basic_transitions': transitions,
+                'transition_matrix': transition_matrix,
+                'transition_probabilities': transition_probabilities,
+                'transition_patterns': transition_patterns,
+                'transition_stability': transition_stability,
+                'n_transitions': n_transitions,
+                'transition_rate': transition_rate,
+                'transition_intervals': transition_intervals,
+                'mean_interval': mean_interval,
+                'std_interval': std_interval,
+                'transition_regularity': transition_regularity,
+                'unique_regimes': unique_regimes.tolist()
+            }
+            
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Calculated advanced regime transitions for {n_samples} samples")
+            tprint_debug(f"📊 [REGIME_TRADING_TREE_NAS] Transitions: {n_transitions}, "
+                        f"Rate: {transition_rate:.3f}, "
+                        f"Regularity: {transition_regularity:.2f}")
+            
             return transitions
             
         except Exception as e:
@@ -858,26 +1020,329 @@ class RegimeTradingTreeNAS:
             raise RuntimeError(f"Regime transition calculation failed: {e}") from e
     
     def get_combined_results(self) -> Dict[str, Any]:
-        """Get combined regime detection and trading results."""
+        """Get combined regime detection and trading results with comprehensive validation."""
         try:
             if self.regime_results is None or self.trading_results is None:
-                return {'message': 'No results available'}
+                tprint_warning("⚠️ [REGIME_TRADING_TREE_NAS] No results available for combination")
+                return {'message': 'No results available', 'success': False}
             
-            return {
+            # Import utilities for validation and analysis
+            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
+            from src.utils.common_operations import safe_divide, safe_weighted_average
+            from src.utils.common_utilities import validate_dataframe_columns
+            
+            # Validate regime results
+            regime_validation = self._validate_regime_results()
+            if not regime_validation['valid']:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Regime results validation failed: {regime_validation['error']}")
+                return {'error': f"Regime validation failed: {regime_validation['error']}", 'success': False}
+            
+            # Validate trading results
+            trading_validation = self._validate_trading_results()
+            if not trading_validation['valid']:
+                tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Trading results validation failed: {trading_validation['error']}")
+                return {'error': f"Trading validation failed: {trading_validation['error']}", 'success': False}
+            
+            # Extract regime metrics
+            regime_predictions = self.regime_results['regime_predictions']
+            regime_probabilities = self.regime_results['regime_probabilities']
+            regime_quality = self.regime_results['regime_quality']
+            
+            # Extract trading metrics
+            signals = self.trading_results['signals']
+            signal_strengths = self.trading_results['signal_strengths']
+            risk_scores = self.trading_results['risk_scores']
+            position_sizes = self.trading_results['position_sizes']
+            
+            # Calculate comprehensive combined analysis
+            combined_analysis = self._calculate_combined_analysis(
+                regime_predictions, regime_probabilities, regime_quality,
+                signals, signal_strengths, risk_scores, position_sizes
+            )
+            
+            # Calculate regime-trading alignment
+            regime_trading_alignment = self._calculate_regime_trading_alignment(
+                regime_predictions, signals, signal_strengths
+            )
+            
+            # Calculate performance metrics
+            performance_metrics = self._calculate_performance_metrics(
+                regime_quality, signal_strengths, risk_scores, position_sizes
+            )
+            
+            # Calculate risk-adjusted metrics
+            risk_adjusted_metrics = self._calculate_risk_adjusted_metrics(
+                signal_strengths, risk_scores, position_sizes
+            )
+            
+            # Create comprehensive results
+            combined_results = {
                 'regime_detection': self.regime_results,
                 'trading_signals': self.trading_results,
-                'combined_analysis': {
-                    'n_regimes': len(np.unique(self.regime_results['regime_predictions'])),
-                    'regime_quality': self.regime_results['regime_quality']['overall_quality'],
-                    'signal_distribution': np.bincount(self.trading_results['signals'] + 1),
-                    'avg_signal_strength': np.mean(self.trading_results['signal_strengths']),
-                    'avg_risk_score': np.mean(self.trading_results['risk_scores']),
-                    'avg_position_size': np.mean(np.abs(self.trading_results['position_sizes']))
+                'combined_analysis': combined_analysis,
+                'regime_trading_alignment': regime_trading_alignment,
+                'performance_metrics': performance_metrics,
+                'risk_adjusted_metrics': risk_adjusted_metrics,
+                'validation_status': {
+                    'regime_validation': regime_validation,
+                    'trading_validation': trading_validation,
+                    'overall_valid': regime_validation['valid'] and trading_validation['valid']
+                },
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'n_regimes': len(np.unique(regime_predictions)),
+                    'n_samples': len(regime_predictions),
+                    'regime_types': self.config.regime_types,
+                    'trading_strategies': self.config.trading_strategies
+                },
+                'success': True
+            }
+            
+            tprint_success(f"✅ [REGIME_TRADING_TREE_NAS] Combined results generated successfully")
+            tprint_info(f"📊 [REGIME_TRADING_TREE_NAS] Regimes: {len(np.unique(regime_predictions))}, "
+                       f"Quality: {regime_quality['overall_quality']:.3f}, "
+                       f"Signals: {len(signals)}")
+            
+            return combined_results
+            
+        except Exception as e:
+            tprint_error(f"❌ [REGIME_TRADING_TREE_NAS] Combined results generation failed: {e}")
+            self.logger.error(f"Combined results generation failed: {e}")
+            return {'error': str(e), 'success': False}
+    
+    def _validate_regime_results(self) -> Dict[str, Any]:
+        """Validate regime detection results."""
+        try:
+            if not self.regime_results:
+                return {'valid': False, 'error': 'No regime results available'}
+            
+            required_keys = ['regime_predictions', 'regime_probabilities', 'regime_quality']
+            missing_keys = [key for key in required_keys if key not in self.regime_results]
+            
+            if missing_keys:
+                return {'valid': False, 'error': f'Missing keys: {missing_keys}'}
+            
+            # Validate regime predictions
+            regime_predictions = self.regime_results['regime_predictions']
+            if not isinstance(regime_predictions, np.ndarray) or len(regime_predictions) == 0:
+                return {'valid': False, 'error': 'Invalid regime predictions'}
+            
+            # Validate regime probabilities
+            regime_probabilities = self.regime_results['regime_probabilities']
+            if not isinstance(regime_probabilities, np.ndarray) or regime_probabilities.shape[0] != len(regime_predictions):
+                return {'valid': False, 'error': 'Invalid regime probabilities'}
+            
+            # Validate regime quality
+            regime_quality = self.regime_results['regime_quality']
+            if not isinstance(regime_quality, dict) or 'overall_quality' not in regime_quality:
+                return {'valid': False, 'error': 'Invalid regime quality metrics'}
+            
+            return {'valid': True, 'error': None}
+            
+        except Exception as e:
+            return {'valid': False, 'error': f'Validation error: {e}'}
+    
+    def _validate_trading_results(self) -> Dict[str, Any]:
+        """Validate trading signal results."""
+        try:
+            if not self.trading_results:
+                return {'valid': False, 'error': 'No trading results available'}
+            
+            required_keys = ['signals', 'signal_strengths', 'risk_scores', 'position_sizes']
+            missing_keys = [key for key in required_keys if key not in self.trading_results]
+            
+            if missing_keys:
+                return {'valid': False, 'error': f'Missing keys: {missing_keys}'}
+            
+            # Validate signals
+            signals = self.trading_results['signals']
+            if not isinstance(signals, np.ndarray) or len(signals) == 0:
+                return {'valid': False, 'error': 'Invalid signals'}
+            
+            # Validate signal strengths
+            signal_strengths = self.trading_results['signal_strengths']
+            if not isinstance(signal_strengths, np.ndarray) or len(signal_strengths) != len(signals):
+                return {'valid': False, 'error': 'Invalid signal strengths'}
+            
+            return {'valid': True, 'error': None}
+            
+        except Exception as e:
+            return {'valid': False, 'error': f'Validation error: {e}'}
+    
+    def _calculate_combined_analysis(self, regime_predictions, regime_probabilities, regime_quality,
+                                   signals, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
+        """Calculate comprehensive combined analysis."""
+        try:
+            from src.utils.math_validation import safe_mean, safe_std
+            
+            # Basic metrics
+            n_regimes = len(np.unique(regime_predictions))
+            n_samples = len(regime_predictions)
+            
+            # Regime analysis
+            regime_analysis = {
+                'n_regimes': n_regimes,
+                'regime_quality': regime_quality['overall_quality'],
+                'regime_distribution': np.bincount(regime_predictions),
+                'regime_probability_stats': {
+                    'mean_probability': safe_mean(regime_probabilities.flatten()),
+                    'std_probability': safe_std(regime_probabilities.flatten()),
+                    'max_probability': np.max(regime_probabilities),
+                    'min_probability': np.min(regime_probabilities)
+                }
+            }
+            
+            # Trading analysis
+            trading_analysis = {
+                'signal_distribution': np.bincount(signals + 1),  # +1 to handle negative signals
+                'signal_strength_stats': {
+                    'mean_strength': safe_mean(signal_strengths),
+                    'std_strength': safe_std(signal_strengths),
+                    'max_strength': np.max(signal_strengths),
+                    'min_strength': np.min(signal_strengths)
+                },
+                'risk_stats': {
+                    'mean_risk': safe_mean(risk_scores),
+                    'std_risk': safe_std(risk_scores),
+                    'max_risk': np.max(risk_scores),
+                    'min_risk': np.min(risk_scores)
+                },
+                'position_stats': {
+                    'mean_position_size': safe_mean(np.abs(position_sizes)),
+                    'std_position_size': safe_std(np.abs(position_sizes)),
+                    'max_position_size': np.max(np.abs(position_sizes)),
+                    'min_position_size': np.min(np.abs(position_sizes))
+                }
+            }
+            
+            return {
+                'regime_analysis': regime_analysis,
+                'trading_analysis': trading_analysis,
+                'n_samples': n_samples,
+                'data_quality': {
+                    'regime_quality_score': regime_quality['overall_quality'],
+                    'signal_quality_score': safe_mean(signal_strengths),
+                    'overall_quality_score': (regime_quality['overall_quality'] + safe_mean(signal_strengths)) / 2
                 }
             }
             
         except Exception as e:
-            self.logger.error(f"Combined results generation failed: {e}")
+            self.logger.error(f"Combined analysis calculation failed: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_regime_trading_alignment(self, regime_predictions, signals, signal_strengths) -> Dict[str, Any]:
+        """Calculate alignment between regime detection and trading signals."""
+        try:
+            from src.utils.math_validation import safe_correlation, safe_mean
+            
+            # Calculate regime-signal correlation
+            regime_signal_correlation = safe_correlation(regime_predictions, signals)
+            
+            # Calculate regime-signal strength correlation
+            regime_strength_correlation = safe_correlation(regime_predictions, signal_strengths)
+            
+            # Calculate alignment by regime
+            unique_regimes = np.unique(regime_predictions)
+            regime_alignment = {}
+            
+            for regime in unique_regimes:
+                regime_mask = regime_predictions == regime
+                regime_signals = signals[regime_mask]
+                regime_strengths = signal_strengths[regime_mask]
+                
+                regime_alignment[regime] = {
+                    'n_samples': np.sum(regime_mask),
+                    'signal_distribution': np.bincount(regime_signals + 1),
+                    'mean_signal_strength': safe_mean(regime_strengths),
+                    'signal_consistency': safe_std(regime_strengths)
+                }
+            
+            return {
+                'regime_signal_correlation': regime_signal_correlation,
+                'regime_strength_correlation': regime_strength_correlation,
+                'regime_alignment': regime_alignment,
+                'overall_alignment_score': (abs(regime_signal_correlation) + abs(regime_strength_correlation)) / 2
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Regime-trading alignment calculation failed: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_performance_metrics(self, regime_quality, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
+        """Calculate performance metrics."""
+        try:
+            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            
+            # Signal performance
+            signal_performance = {
+                'mean_signal_strength': safe_mean(signal_strengths),
+                'signal_consistency': safe_divide(safe_mean(signal_strengths), safe_std(signal_strengths), 0.0),
+                'signal_quality_score': safe_mean(signal_strengths)
+            }
+            
+            # Risk performance
+            risk_performance = {
+                'mean_risk_score': safe_mean(risk_scores),
+                'risk_consistency': safe_divide(safe_mean(risk_scores), safe_std(risk_scores), 0.0),
+                'risk_management_score': 1.0 - safe_mean(risk_scores)  # Lower risk is better
+            }
+            
+            # Position performance
+            position_performance = {
+                'mean_position_size': safe_mean(np.abs(position_sizes)),
+                'position_consistency': safe_divide(safe_mean(np.abs(position_sizes)), safe_std(np.abs(position_sizes)), 0.0),
+                'position_management_score': safe_mean(np.abs(position_sizes))
+            }
+            
+            # Overall performance
+            overall_performance = {
+                'regime_quality': regime_quality['overall_quality'],
+                'signal_quality': signal_performance['signal_quality_score'],
+                'risk_quality': risk_performance['risk_management_score'],
+                'position_quality': position_performance['position_management_score'],
+                'combined_score': (
+                    regime_quality['overall_quality'] * 0.3 +
+                    signal_performance['signal_quality_score'] * 0.3 +
+                    risk_performance['risk_management_score'] * 0.2 +
+                    position_performance['position_management_score'] * 0.2
+                )
+            }
+            
+            return {
+                'signal_performance': signal_performance,
+                'risk_performance': risk_performance,
+                'position_performance': position_performance,
+                'overall_performance': overall_performance
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Performance metrics calculation failed: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_risk_adjusted_metrics(self, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
+        """Calculate risk-adjusted metrics."""
+        try:
+            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            
+            # Risk-adjusted signal strength
+            risk_adjusted_signals = signal_strengths / (1.0 + risk_scores)
+            
+            # Risk-adjusted position sizes
+            risk_adjusted_positions = position_sizes / (1.0 + risk_scores)
+            
+            # Calculate risk-adjusted metrics
+            risk_adjusted_metrics = {
+                'risk_adjusted_signal_strength': safe_mean(risk_adjusted_signals),
+                'risk_adjusted_position_size': safe_mean(np.abs(risk_adjusted_positions)),
+                'risk_adjustment_factor': safe_mean(1.0 / (1.0 + risk_scores)),
+                'risk_efficiency': safe_divide(safe_mean(signal_strengths), safe_mean(risk_scores), 0.0),
+                'position_efficiency': safe_divide(safe_mean(np.abs(position_sizes)), safe_mean(risk_scores), 0.0)
+            }
+            
+            return risk_adjusted_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Risk-adjusted metrics calculation failed: {e}")
             return {'error': str(e)}
 
 

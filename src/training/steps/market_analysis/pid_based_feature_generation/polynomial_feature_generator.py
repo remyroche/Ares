@@ -45,6 +45,23 @@ try:
 except ImportError as e:
     logging.warning(f"PID utilities not available: {e}")
     PID_AVAILABLE = False
+    # Define fallback PIDResult class
+    from dataclasses import dataclass, field
+    from typing import Dict, List, Any, Tuple
+
+    @dataclass
+    class PIDResult:
+        redundancy: Dict[Tuple[str, str], float] = field(default_factory=dict)
+        synergy: Dict[Tuple[str, str], float] = field(default_factory=dict)
+        unique_info: Dict[str, float] = field(default_factory=dict)
+        polynomial_features: List[str] = field(default_factory=list)
+        interaction_features: List[str] = field(default_factory=list)
+        cross_timeframe_features: List[str] = field(default_factory=list)
+        feature_pairs_analyzed: int = 0
+        significant_interactions: int = 0
+        significant_pairs: List[Tuple[str, str]] = field(default_factory=list)
+        execution_time: float = 0.0
+        convergence_info: Dict[str, Any] = field(default_factory=dict)
 
 # Import matrix operations
 try:

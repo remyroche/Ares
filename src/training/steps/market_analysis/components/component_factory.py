@@ -1000,6 +1000,7 @@ class ComponentFactory:
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
         'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
         'nas_tas_clustering': NASTASClusteringComponent,
+        'nas_clustering': NASTASClusteringComponent,  # Backward-compatible alias
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,
         'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent,

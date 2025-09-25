@@ -25,6 +25,14 @@ from .unified_multi_objective import (
     MultiObjectiveResult
 )
 
+from .nas_feature_extractor import (
+    NASFeatureExtractor,
+    NASFeatureConfig,
+    FeatureExtractionResult,
+    create_nas_feature_extractor,
+    extract_features_for_clustering
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -39,5 +47,10 @@ __all__ = [
     'PerformanceMetric',
     'EstimatorType',
     'OptimizationConfig',
-    'MultiObjectiveResult'
+    'MultiObjectiveResult',
+    'NASFeatureExtractor',
+    'NASFeatureConfig',
+    'FeatureExtractionResult',
+    'create_nas_feature_extractor',
+    'extract_features_for_clustering'
 ]

@@ -592,62 +592,72 @@ class SearchStrategies:
         n_trials: int,
         **kwargs
     ) -> Dict[str, Any]:
-        """Manual Bayesian optimization implementation."""
+        """Manual Bayesian optimization implementation using unified Bayesian TPE optimizer."""
         try:
-            from optuna import create_study, Trial
-            from optuna.samplers import TPESampler
-            from sklearn.model_selection import cross_val_score
-            
-            def objective(trial: Trial) -> float:
-                params = {}
-                for param_name, param_config in param_space.items():
-                    if isinstance(param_config, dict):
-                        if param_config['type'] == 'float':
-                            params[param_name] = trial.suggest_float(
-                                param_name, param_config['low'], param_config['high']
-                            )
-                        elif param_config['type'] == 'int':
-                            params[param_name] = trial.suggest_int(
-                                param_name, param_config['low'], param_config['high']
-                            )
-                        elif param_config['type'] == 'categorical':
-                            params[param_name] = trial.suggest_categorical(
-                                param_name, param_config['choices']
-                            )
-                    else:
-                        # Simple list of values
-                        params[param_name] = trial.suggest_categorical(
-                            param_name, param_config
-                        )
-                
-                # Create estimator with parameters
-                est = estimator.set_params(**params)
-                
-                # Cross-validation
-                scores = cross_val_score(
-                    est, X, y, cv=self.config.cv_folds, 
-                    scoring=self.config.validation_metric
-                )
-                
-                return scores.mean()
-            
-            # Create study
-            study = create_study(
-                direction='maximize' if self.config.objective == OptimizationObjective.MAXIMIZE else 'minimize',
-                sampler=TPESampler(seed=self.config.random_state)
+            # Import Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
             )
             
-            # Optimize
-            study.optimize(objective, n_trials=n_trials)
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                try:
+                    # Create estimator with parameters
+                    est = estimator.set_params(**params)
+                    
+                    # Cross-validation
+                    from sklearn.model_selection import cross_val_score
+                    scores = cross_val_score(
+                        est, X, y, cv=self.config.cv_folds, 
+                        scoring=self.config.validation_metric
+                    )
+                    
+                    return scores.mean()
+                    
+                except Exception as e:
+                    tprint_warning(f"Objective function failed: {e}")
+                    return -np.inf
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=n_trials,
+                timeout_seconds=self.config.timeout_seconds,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=self.config.n_jobs,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            tprint_info("🎯 Starting Bayesian TPE optimization for search strategies")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, param_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Search strategy optimization failed: {result.error_message}")
+            
+            tprint_success(f"✅ Search strategy optimization completed")
+            tprint_info(f"📊 Best score: {result.best_score:.4f}")
+            tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+            tprint_info(f"📊 Trials: {result.n_trials}")
             
             return {
-                'best_params': study.best_params,
-                'best_score': study.best_value,
-                'study': study
+                'best_params': result.best_params,
+                'best_score': result.best_score,
+                'optimization_time': result.optimization_time,
+                'n_trials': result.n_trials,
+                'convergence_info': result.convergence_info,
+                'grid_search_results': result.grid_search_results
             }
             
-        except ImportError:
-            tprint_warning("Optuna not available, falling back to random search")
+        except Exception as e:
+            tprint_warning(f"Bayesian TPE optimization failed: {e}, falling back to random search")
             return self._manual_random_search(
                 estimator, param_space, X, y, n_trials, **kwargs
             )

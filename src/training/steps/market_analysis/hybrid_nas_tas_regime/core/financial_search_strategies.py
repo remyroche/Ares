@@ -144,48 +144,78 @@ class RegimeAwareBayesianSearch:
         
     def search(self, architecture_generator: Callable, performance_evaluator: Callable,
                constraint_validator: Callable, n_iterations: int) -> FinancialSearchResult:
-        """Perform regime-aware Bayesian search."""
+        """Perform regime-aware Bayesian search using unified Bayesian TPE optimizer."""
         start_time = time.time()
-        self.logger.info("🔍 Starting Regime-Aware Bayesian Search...")
+        self.logger.info("🔍 Starting Regime-Aware Bayesian Search with Unified TPE Optimizer...")
         
         try:
-            # Initialize with random samples
-            X_init, y_init = self._initialize_search(architecture_generator, performance_evaluator, constraint_validator)
+            # Import Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
+            )
             
-            # Bayesian optimization loop
-            for iteration in range(n_iterations):
-                # Update GP with current data
-                if len(X_init) > 0:
-                    self.gp.fit(X_init, y_init)
-                
-                # Generate next candidate
-                candidate = self._generate_next_candidate(X_init, y_init, architecture_generator)
-                
-                # Evaluate candidate
-                performance = performance_evaluator(candidate)
-                
-                # Update search state
-                X_init = np.vstack([X_init, self._encode_architecture(candidate)])
-                y_init = np.append(y_init, performance)
-                
-                # Update best
-                if performance > self.best_score:
-                    self.best_score = performance
-                    self.best_architecture = candidate
-                
-                # Update regime tracking
-                self._update_regime_tracking(candidate, performance)
-                
-                # Store search history
-                self.search_history.append({
-                    'iteration': iteration,
-                    'architecture': candidate,
-                    'performance': performance,
-                    'regime': self._get_current_regime(),
-                    'timestamp': datetime.now()
-                })
-                
-                self.logger.debug(f"Iteration {iteration}: Performance = {performance:.4f}")
+            # Create search space for financial architecture optimization
+            search_space = self._create_financial_search_space()
+            
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                try:
+                    # Convert parameters to architecture
+                    architecture = self._params_to_architecture(params)
+                    
+                    # Validate constraints
+                    if not constraint_validator(architecture).is_valid:
+                        return -np.inf
+                    
+                    # Evaluate performance
+                    performance = performance_evaluator(architecture)
+                    
+                    # Update regime tracking
+                    self._update_regime_tracking(architecture, performance)
+                    
+                    # Store in search history
+                    self.search_history.append({
+                        'iteration': len(self.search_history),
+                        'architecture': architecture,
+                        'performance': performance,
+                        'regime': self._get_current_regime(),
+                        'timestamp': datetime.now()
+                    })
+                    
+                    # Update best
+                    if performance > self.best_score:
+                        self.best_score = performance
+                        self.best_architecture = architecture
+                    
+                    return performance
+                    
+                except Exception as e:
+                    self.logger.warning(f"Objective function failed: {e}")
+                    return -np.inf
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=n_iterations,
+                timeout_seconds=self.config.max_search_time,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=4,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info("🎯 Starting Bayesian TPE optimization for financial search strategies")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Financial search strategy optimization failed: {result.error_message}")
             
             execution_time = time.time() - start_time
             
@@ -194,6 +224,11 @@ class RegimeAwareBayesianSearch:
             regime_analysis = self._analyze_regime_performance()
             volatility_analysis = self._analyze_volatility_impact()
             risk_metrics = self._calculate_risk_metrics()
+            
+            self.logger.info(f"✅ Financial search strategy optimization completed")
+            self.logger.info(f"📊 Best score: {result.best_score:.4f}")
+            self.logger.info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+            self.logger.info(f"📊 Trials: {result.n_trials}")
             
             return FinancialSearchResult(
                 best_architecture=self.best_architecture,
@@ -211,6 +246,73 @@ class RegimeAwareBayesianSearch:
         except Exception as e:
             self.logger.error(f"Regime-aware Bayesian search failed: {e}")
             return self._create_error_result(str(e), time.time() - start_time)
+    
+    def _create_financial_search_space(self) -> Dict[str, Any]:
+        """Create search space for financial architecture optimization."""
+        return {
+            'n_layers': {
+                'type': 'int',
+                'low': self.config.min_layers,
+                'high': self.config.max_layers
+            },
+            'hidden_size': {
+                'type': 'int',
+                'low': 32,
+                'high': 512
+            },
+            'dropout_rate': {
+                'type': 'float',
+                'low': 0.0,
+                'high': 0.5
+            },
+            'activation_type': {
+                'type': 'categorical',
+                'choices': ['volatility_sensitive', 'regime_aware', 'sharpe_optimized', 'drawdown_aware', 'standard']
+            },
+            'regime_aware': {
+                'type': 'categorical',
+                'choices': [True, False]
+            },
+            'volatility_sensitive': {
+                'type': 'categorical',
+                'choices': [True, False]
+            },
+            'learning_rate': {
+                'type': 'float',
+                'low': 0.0001,
+                'high': 0.01,
+                'log': True
+            },
+            'batch_size': {
+                'type': 'int',
+                'low': 16,
+                'high': 256
+            }
+        }
+    
+    def _params_to_architecture(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert parameters to architecture dictionary."""
+        n_layers = params['n_layers']
+        hidden_size = params['hidden_size']
+        dropout_rate = params['dropout_rate']
+        
+        layers = []
+        for i in range(n_layers):
+            layers.append({
+                'hidden_size': hidden_size,
+                'dropout': dropout_rate,
+                'activation': params['activation_type']
+            })
+        
+        return {
+            'type': 'neural',
+            'layers': layers,
+            'activation': params['activation_type'],
+            'regime_aware': params['regime_aware'],
+            'volatility_sensitive': params['volatility_sensitive'],
+            'learning_rate': params['learning_rate'],
+            'batch_size': params['batch_size']
+        }
     
     def _initialize_search(self, architecture_generator: Callable, performance_evaluator: Callable,
                           constraint_validator: Callable) -> Tuple[np.ndarray, np.ndarray]:

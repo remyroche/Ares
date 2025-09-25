@@ -809,12 +809,14 @@ class EconomicClusterer:
             # Standard metrics
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
 
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['calinski_harabasz_score'] = 0.0
 
             # Economic-specific metrics

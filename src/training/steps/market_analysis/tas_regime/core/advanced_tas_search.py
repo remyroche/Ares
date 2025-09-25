@@ -21,6 +21,12 @@ from pathlib import Path
 import json
 from collections import defaultdict
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 from .tas_config import TASConfig, TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from ..components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from ..components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
@@ -220,7 +226,9 @@ class AdvancedTradingArchitectureSearch:
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-            except:
+            except Exception as e:
+                tprint_error(f"❌ NAS clustering regime detection failed: {e}")
+                tprint_info("🔄 Falling back to tree-based regime detection")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
@@ -658,7 +666,8 @@ class AdvancedTradingArchitectureSearch:
                                 'characteristics': self._extract_regime_characteristics(cluster_data),
                                 'transition_probability': 1.0 / n_regimes
                             }
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to extract characteristics for regime {regime_type}: {e}")
                     continue
 
             return regimes

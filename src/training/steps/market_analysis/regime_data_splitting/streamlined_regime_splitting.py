@@ -24,6 +24,12 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import our standardized utilities
 from src.utils.common_operations import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -720,7 +726,8 @@ class StreamlinedRegimeDataSplitting:
                     try:
                         pd.to_numeric(data[col], errors='coerce')
                         issues.append(f"Object column '{col}' may contain numeric data")
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"🔍 Failed to check if column '{col}' contains numeric data: {e}")
                         pass
 
             # Check for mixed data types in numeric columns

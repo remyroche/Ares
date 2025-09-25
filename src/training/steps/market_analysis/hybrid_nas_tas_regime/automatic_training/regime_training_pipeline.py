@@ -29,6 +29,13 @@ from ..config.hybrid_regime_config import HybridRegimeConfig
 
 # Import advanced tree models
 from ...tas_regime.components.advanced_tree_models import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     AdvancedTreeModelFactory, AdvancedTreeConfig,
     MetaLearningTreeModel, ContinualLearningTreeModel, CLVSAEnhancedTreeModel
 )
@@ -494,7 +501,8 @@ class RegimeModelTrainer:
             if probabilities is not None and len(np.unique(true_labels)) > 1:
                 try:
                     scores['roc_auc'] = roc_auc_score(true_labels, probabilities[:, 1] if probabilities.shape[1] > 1 else probabilities[:, 0])
-                except:
+                except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                     scores['roc_auc'] = 0.5
             
             return scores

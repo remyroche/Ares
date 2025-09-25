@@ -24,6 +24,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import Optuna for Bayesian optimization
 try:
     import optuna
@@ -103,7 +110,8 @@ except ImportError as e:
                 return default
             corr = np.corrcoef(x, y)[0, 1]
             return corr if np.isfinite(corr) else default
-        except:
+        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
             return default
 
 # Import matrix operations for advanced computations

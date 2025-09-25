@@ -481,7 +481,8 @@ class RegimeAwareTripleBarrierOptimizer:
             try:
                 accuracy = accuracy_score(y_true, y_pred)
                 precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary', zero_division=0)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate metrics for predictions: {e}")
                 accuracy = 0.0
                 precision = 0.0
                 recall = 0.0

@@ -14,6 +14,13 @@ import numpy as np
 
 from .constants import OPTIMIZATION_CONSTANTS
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import math validation utilities for safe operations
 try:
     from src.utils.math_validation import (
@@ -37,7 +44,8 @@ except ImportError:
                 return default
             corr = np.corrcoef(x, y)[0, 1]
             return corr if np.isfinite(corr) else default
-        except:
+        except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
             return default
 
 

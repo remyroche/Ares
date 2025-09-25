@@ -18,6 +18,13 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import warnings
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -195,7 +202,8 @@ class UnifiedClusteringAlgorithm:
                 try:
                     result = self._standard_clustering(features, economic_weights, algorithm)
                     predictions.append(result['labels'])
-                except:
+                except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                     continue
             
             if not predictions:
@@ -633,17 +641,20 @@ class UnifiedClusteringAlgorithm:
             # Standard clustering metrics
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
             
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['calinski_harabasz_score'] = 0.0
             
             try:
                 metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['davies_bouldin_score'] = 0.0
             
             # Regime-specific metrics

@@ -205,11 +205,13 @@ class DependencyManager:
         try:
             import importlib.metadata
             return importlib.metadata.version(package_name)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             try:
                 import pkg_resources
                 return pkg_resources.get_distribution(package_name).version
-            except:
+            except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                 return None
     
     def _create_fallback(self, dep_name: str) -> None:

@@ -27,6 +27,13 @@ import warnings
 import threading
 import queue
 from collections import deque
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -448,7 +455,8 @@ class UnsupervisedRegimeDetector:
                 labels = kmeans.fit_predict(features)
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
-            except:
+            except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                 silhouette_scores.append(0)
         
         if not silhouette_scores:
@@ -649,7 +657,8 @@ class UnsupervisedRegimeDetector:
                 if score > best_score:
                     best_score = score
                     best_method = method
-            except:
+            except Exception as e:
+                    tprint_debug(f"🔍 Operation failed: {e}")
                 continue
         
         return best_method

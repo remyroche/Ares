@@ -29,6 +29,16 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
+# Import unified hardware manager
+try:
+    from .hardware import (
+        UnifiedHardwareOptimizer, HardwareConfig, HardwarePerformanceMonitor,
+        PerformanceMetrics, WorkloadType, OptimizationLevel
+    )
+    UNIFIED_HARDWARE_AVAILABLE = True
+except ImportError:
+    UNIFIED_HARDWARE_AVAILABLE = False
+
 # Hardware optimization imports
 try:
     import torch
@@ -120,19 +130,23 @@ class NASHardwareAccelerator:
         self.config = config or HardwareAccelerationConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified hardware manager
+        if UNIFIED_HARDWARE_AVAILABLE:
+            hardware_config = HardwareConfig()
+            self.hardware_optimizer = UnifiedHardwareOptimizer(hardware_config)
+            self.performance_monitor = HardwarePerformanceMonitor(hardware_config)
+        else:
+            self.hardware_optimizer = None
+            self.performance_monitor = None
+        
         # Initialize hardware components
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         self.xla_compiler = None
         
-        # Performance tracking
-        self.performance_metrics = {
-            'gpu_usage': [],
-            'memory_usage': [],
-            'latency': [],
-            'throughput': []
-        }
+        # Performance tracking (delegate to unified hardware manager)
+        self.performance_metrics = {}
         
         # Initialize hardware acceleration
         self._initialize_hardware_acceleration()
@@ -450,15 +464,13 @@ class NASHardwareAccelerator:
     
     def _start_performance_monitoring(self):
         """Start performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_start_time = time.time()
-            self.monitoring_start_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.start_monitoring()
     
     def _stop_performance_monitoring(self):
         """Stop performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_end_time = time.time()
-            self.monitoring_end_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.stop_monitoring()
     
     def _apply_memory_optimization(self, data: np.ndarray) -> np.ndarray:
         """Apply memory optimization to data."""
@@ -551,19 +563,23 @@ class TASHardwareAccelerator:
         self.config = config or HardwareAccelerationConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified hardware manager
+        if UNIFIED_HARDWARE_AVAILABLE:
+            hardware_config = HardwareConfig()
+            self.hardware_optimizer = UnifiedHardwareOptimizer(hardware_config)
+            self.performance_monitor = HardwarePerformanceMonitor(hardware_config)
+        else:
+            self.hardware_optimizer = None
+            self.performance_monitor = None
+        
         # Initialize hardware components
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         self.xla_compiler = None
         
-        # Performance tracking
-        self.performance_metrics = {
-            'gpu_usage': [],
-            'memory_usage': [],
-            'latency': [],
-            'throughput': []
-        }
+        # Performance tracking (delegate to unified hardware manager)
+        self.performance_metrics = {}
         
         # Initialize hardware acceleration
         self._initialize_hardware_acceleration()
@@ -881,15 +897,13 @@ class TASHardwareAccelerator:
     
     def _start_performance_monitoring(self):
         """Start performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_start_time = time.time()
-            self.monitoring_start_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.start_monitoring()
     
     def _stop_performance_monitoring(self):
         """Stop performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_end_time = time.time()
-            self.monitoring_end_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.stop_monitoring()
     
     def _apply_memory_optimization(self, data: np.ndarray) -> np.ndarray:
         """Apply memory optimization to data."""

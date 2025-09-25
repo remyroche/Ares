@@ -186,6 +186,14 @@ from .uncertainty_estimation import (
     UncertaintyConfig
 )
 
+# Import confidence scoring
+from .confidence_scoring import (
+    TreeConfidenceScorer,
+    TreeReliabilityEstimator,
+    TreeCalibrationScorer,
+    ConfidenceConfig
+)
+
 # Import unified evaluator
 from .unified_evaluator import (
     UnifiedEvaluator,
@@ -214,19 +222,14 @@ from .hybrid_nas_system import (
     HybridArchitectureCandidate,
     optimize_hybrid_architecture,
     analyze_data_characteristics
-  
+)
+
+# Import ensemble optimizer
 from .ensemble_optimizer import (
     EnsembleOptimizer,
     OptimizationConfig
-
 )
 
-from .evolutionary_algorithms import (
-    EvolutionaryTreeSearch,
-    TreeGeneticAlgorithm,
-    TreeNSGA2,
-    EvolutionaryConfig
-)
 
 # Export all main classes and functions
 __all__ = [
@@ -380,7 +383,14 @@ __all__ = [
     'EvolutionaryTreeSearch',
     'TreeGeneticAlgorithm',
     'TreeNSGA2',
-    'EvolutionaryConfig'
+    'EvolutionaryConfig',
+    
+    # Hybrid NAS System
+    'HybridNASSystem',
+    'HybridNASConfig',
+    'HybridArchitectureCandidate',
+    'optimize_hybrid_architecture',
+    'analyze_data_characteristics'
 ]
 
 __version__ = "1.0.0"

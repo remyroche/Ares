@@ -449,8 +449,8 @@ class TreeArchitectureSearch:
                     # If float but effectively discrete (e.g., 0.0/1.0)
                     if np.allclose(unique_values, np.round(unique_values)):
                         return "classification"
-        except Exception:
-            pass
+        except Exception as e:
+            tprint_warning(f"Could not determine task type, defaulting to regression. Error: {e}")
 
         return "regression"
 

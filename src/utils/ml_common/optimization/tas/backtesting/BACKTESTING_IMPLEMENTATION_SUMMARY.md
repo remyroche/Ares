@@ -37,7 +37,7 @@ The comprehensive backtesting framework for TAS has been successfully implemente
   - R-squared analysis
 
 ### 4. **Risk Analysis** ✅
-- **File**: `risk_analysis.py`
+- **File**: `src/utils/nas_tas/risk_analysis.py` (consolidated)
 - **Features**:
   - VaR calculation (Historical, Parametric, Monte Carlo)
   - CVaR calculation
@@ -98,7 +98,7 @@ backtesting/
 ├── backtesting_engine.py               # Core backtesting engine
 ├── walk_forward_analysis.py            # Walk-forward analysis
 ├── performance_attribution.py          # Performance attribution
-├── risk_analysis.py                    # Risk analysis
+├── src/utils/nas_tas/risk_analysis.py   # Risk analysis (consolidated)
 ├── scenario_testing.py                 # Scenario testing
 ├── monte_carlo.py                      # Monte Carlo simulation
 ├── data_manager.py                     # Data management

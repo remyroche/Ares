@@ -25,6 +25,13 @@ from .unified_multi_objective import (
     MultiObjectiveResult
 )
 
+from .risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -39,5 +46,9 @@ __all__ = [
     'PerformanceMetric',
     'EstimatorType',
     'OptimizationConfig',
-    'MultiObjectiveResult'
+    'MultiObjectiveResult',
+    'RiskAnalyzer',
+    'RiskConfig',
+    'RiskResult',
+    'RiskMetric'
 ]

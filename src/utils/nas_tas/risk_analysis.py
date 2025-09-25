@@ -628,19 +628,10 @@ class RiskAnalyzer:
         returns_series = risk_data['returns_series']
         
         try:
-            # Validate data using math utilities
-            if self.math_validator:
-                validated_returns = self.math_validator.validate_finite(returns_series)
-                if validated_returns is None:
-                    tprint_warning("⚠️ Invalid returns data for higher moments calculation")
-                    validated_returns = returns_series
-            else:
-                validated_returns = returns_series
-            
             # Basic moments with error handling
-            volatility = validated_returns.std()
-            skewness = validated_returns.skew()
-            kurtosis = validated_returns.kurtosis()
+            volatility = returns_series.std()
+            skewness = returns_series.skew()
+            kurtosis = returns_series.kurtosis()
             
             # Validate moments
             if not np.isfinite(volatility):
@@ -658,7 +649,7 @@ class RiskAnalyzer:
             # Jarque-Bera test with error handling
             try:
                 from scipy.stats import jarque_bera
-                jb_stat, jb_pvalue = jarque_bera(validated_returns)
+                jb_stat, jb_pvalue = jarque_bera(returns_series)
                 
                 # Validate test results
                 if not np.isfinite(jb_stat) or not np.isfinite(jb_pvalue):
@@ -807,6 +798,7 @@ class RiskAnalyzer:
     def _save_results(self, result: RiskResult):
         """Save risk analysis results."""
         try:
+            from pathlib import Path
             results_dir = Path(self.config.risk_directory)
             results_dir.mkdir(parents=True, exist_ok=True)
             

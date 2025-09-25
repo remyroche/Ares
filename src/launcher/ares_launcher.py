@@ -451,7 +451,7 @@ class AresLauncher:
         ]
         
         # Set 15m as default for NAS sub-pipelines
-        if resolved_sub_pipeline in nas_sub_pipelines or sub_pipeline in nas_sub_pipelines:
+        if resolved_sub_pipeline in nas_sub_pipelines:
             original_timeframe = filtered_config.get('timeframe', '1m')
             if original_timeframe == '1m':  # Only override if using default
                 filtered_config['timeframe'] = '15m'

@@ -19,6 +19,9 @@ import time
 import asyncio
 import json
 import pickle
+import math
+import copy
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -163,6 +166,28 @@ class OptimizationConfig:
     cross_validation_folds: int = 5
     temporal_validation: bool = True
     lookahead_protection: bool = True
+    search_strategy: str = "evolutionary"
+    mcts_simulations: int = 64
+    mcts_exploration_constant: float = 1.4
+    mcts_max_layers: int = 4
+    mcts_layer_options: List[Tuple[int, str, float]] = field(
+        default_factory=lambda: [
+            (64, 'relu', 0.2),
+            (128, 'relu', 0.3),
+            (256, 'tanh', 0.2),
+            (256, 'relu', 0.4),
+            (512, 'relu', 0.5)
+        ]
+    )
+    mcts_learning_rates: List[float] = field(
+        default_factory=lambda: [5e-4, 1e-3, 2e-3]
+    )
+    mcts_batch_sizes: List[int] = field(
+        default_factory=lambda: [32, 64, 128]
+    )
+    mcts_epoch_options: List[int] = field(
+        default_factory=lambda: [50, 75, 100]
+    )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -181,7 +206,15 @@ class OptimizationConfig:
             'memory_limit_gb': self.memory_limit_gb,
             'cross_validation_folds': self.cross_validation_folds,
             'temporal_validation': self.temporal_validation,
-            'lookahead_protection': self.lookahead_protection
+            'lookahead_protection': self.lookahead_protection,
+            'search_strategy': self.search_strategy,
+            'mcts_simulations': self.mcts_simulations,
+            'mcts_exploration_constant': self.mcts_exploration_constant,
+            'mcts_max_layers': self.mcts_max_layers,
+            'mcts_layer_options': self.mcts_layer_options,
+            'mcts_learning_rates': self.mcts_learning_rates,
+            'mcts_batch_sizes': self.mcts_batch_sizes,
+            'mcts_epoch_options': self.mcts_epoch_options
         }
 
 @dataclass
@@ -214,11 +247,29 @@ class OptimizationResult:
 class RL_NAS_Optimizer:
     """
     Reinforcement Learning Neural Architecture Search Optimizer.
-    
+
     This class provides comprehensive RL-NAS optimization for trading strategies,
     integrating with existing utility modules for enhanced performance.
     """
-    
+
+    class _MCTSNode:
+        """Lightweight node representation for Monte-Carlo Tree Search."""
+
+        def __init__(self, state: Dict[str, Any], parent: Optional['RL_NAS_Optimizer._MCTSNode'] = None,
+                     action: Optional[Tuple[str, Any]] = None):
+            self.state = state
+            self.parent = parent
+            self.action = action
+            self.visits = 0
+            self.value = 0.0
+            self.children: Dict[Tuple[str, Any], 'RL_NAS_Optimizer._MCTSNode'] = {}
+
+        def add_child(self, action: Tuple[str, Any], child: 'RL_NAS_Optimizer._MCTSNode') -> None:
+            self.children[action] = child
+
+        def is_leaf(self) -> bool:
+            return len(self.children) == 0
+
     def __init__(self, config: OptimizationConfig):
         """
         Initialize RL-NAS Optimizer with comprehensive error handling.
@@ -490,7 +541,19 @@ class RL_NAS_Optimizer:
             except Exception as e:
                 tprint_error(f"Input data validation failed: {e}")
                 raise
-            
+
+            strategy = (self.config.search_strategy or "evolutionary").lower()
+            if strategy == "mcts":
+                tprint_info("🌲 Switching to Monte-Carlo Tree Search strategy")
+                result = self._run_mcts_search(
+                    data,
+                    target_columns,
+                    feature_columns,
+                    strategy_func,
+                )
+                tprint_success("🎉 RL-NAS optimization completed")
+                return result
+
             # Initialize population with error handling
             try:
                 self._initialize_population()
@@ -985,16 +1048,16 @@ class RL_NAS_Optimizer:
             target_columns = task['target_columns']
             feature_columns = task['feature_columns']
             strategy_func = task.get('strategy_func')
-            
+
             # Prepare data for evaluation
             X = data[feature_columns].values
             y = data[target_columns].values
-            
+
             # Apply M1 optimization if available
             if self.gpu_manager and self.config.use_m1_optimization:
                 X = self.gpu_manager.optimize_tensor_operations(X)
                 y = self.gpu_manager.optimize_tensor_operations(y)
-            
+
             # Perform cross-validation if available
             if self.cross_validator and self.config.temporal_validation:
                 fitness = self._evaluate_with_cross_validation(
@@ -1003,12 +1066,386 @@ class RL_NAS_Optimizer:
             else:
                 # Simple evaluation
                 fitness = self._evaluate_simple(X, y, architecture, strategy_func)
-            
+
             return fitness
-            
+
         except Exception as e:
             tprint_warning(f"Single architecture evaluation failed: {e}")
             return self._get_default_fitness()
+
+    def _run_mcts_search(
+        self,
+        data: pd.DataFrame,
+        target_columns: List[str],
+        feature_columns: List[str],
+        strategy_func: Optional[Callable] = None,
+    ) -> OptimizationResult:
+        """Perform Monte-Carlo Tree Search over architecture decisions."""
+
+        tprint_info("🧠 Running Monte-Carlo Tree Search for architecture exploration")
+
+        layer_options = self.config.mcts_layer_options or [(64, 'relu', 0.2)]
+        learning_rates = self.config.mcts_learning_rates or [1e-3]
+        batch_sizes = self.config.mcts_batch_sizes or [64]
+        epoch_options = self.config.mcts_epoch_options or [75]
+        max_layers = max(1, min(self.config.mcts_max_layers, len(layer_options)))
+
+        root = self._MCTSNode({'layers': []})
+        best_architecture: Optional[ArchitectureConfig] = None
+        best_fitness: Dict[str, float] = {}
+        best_reward = -float('inf')
+        evaluation_cache: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+
+        self.optimization_history = []
+        self.pareto_front = []
+
+        for simulation in range(max(1, self.config.mcts_simulations)):
+            node = self._mcts_select_and_expand(
+                root,
+                layer_options,
+                learning_rates,
+                batch_sizes,
+                epoch_options,
+                max_layers,
+            )
+
+            complete_state = self._mcts_rollout(
+                copy.deepcopy(node.state),
+                layer_options,
+                learning_rates,
+                batch_sizes,
+                epoch_options,
+                max_layers,
+            )
+
+            architecture_config = self._state_to_architecture_config(complete_state, layer_options)
+            reward, fitness = self._mcts_evaluate_architecture(
+                architecture_config,
+                data,
+                target_columns,
+                feature_columns,
+                strategy_func,
+                evaluation_cache,
+            )
+
+            self._mcts_backpropagate(node, reward)
+
+            self.optimization_history.append({
+                'simulation': simulation + 1,
+                'reward': reward,
+                'fitness': fitness,
+                'architecture': architecture_config.to_dict(),
+            })
+
+            if reward > best_reward:
+                best_reward = reward
+                best_architecture = architecture_config
+                best_fitness = fitness
+                self.pareto_front = [(architecture_config, fitness)]
+
+            if (simulation + 1) % max(1, self.config.mcts_simulations // 5) == 0:
+                tprint_info(
+                    f"🌳 MCTS progress {simulation + 1}/{self.config.mcts_simulations}: reward={best_reward:.4f}"
+                )
+
+        execution_time = time.time() - self.start_time if self.start_time else 0.0
+        convergence_info = {
+            'strategy': 'mcts',
+            'total_simulations': max(1, self.config.mcts_simulations),
+            'best_reward': best_reward,
+        }
+
+        memory_usage = self.memory_optimizer.get_memory_stats() if self.memory_optimizer else {}
+        hardware_utilization: Dict[str, Any] = {}
+        if self.gpu_manager:
+            hardware_utilization['gpu_info'] = self.gpu_manager.get_gpu_info()
+        if self.cpu_optimizer:
+            hardware_utilization['cpu_info'] = self.cpu_optimizer.get_cpu_info()
+
+        if best_architecture is None:
+            best_architecture = ArchitectureConfig(
+                architecture_type=ArchitectureType.FEEDFORWARD,
+                hidden_layers=[64],
+                activation_functions=['relu'],
+                dropout_rates=[0.2],
+                regularization={'l1': 0.0, 'l2': 0.0},
+                learning_rate=0.001,
+                batch_size=32,
+                epochs=100,
+            )
+            best_fitness = {}
+
+        result = OptimizationResult(
+            best_architecture=best_architecture,
+            best_fitness=best_fitness,
+            pareto_front=self.pareto_front,
+            optimization_history=self.optimization_history,
+            convergence_info=convergence_info,
+            execution_time=execution_time,
+            memory_usage=memory_usage,
+            hardware_utilization=hardware_utilization,
+        )
+
+        return result
+
+    def _mcts_select_and_expand(
+        self,
+        node: 'RL_NAS_Optimizer._MCTSNode',
+        layer_options: List[Tuple[int, str, float]],
+        learning_rates: List[float],
+        batch_sizes: List[int],
+        epoch_options: List[int],
+        max_layers: int,
+    ) -> 'RL_NAS_Optimizer._MCTSNode':
+        """Select a node to expand using UCT and return the expanded child."""
+
+        current = node
+        while True:
+            decision = self._get_next_mcts_decision(
+                current.state,
+                layer_options,
+                learning_rates,
+                batch_sizes,
+                epoch_options,
+                max_layers,
+            )
+
+            if decision is None:
+                return current
+
+            decision_name, options = decision
+            options_list = list(options)
+            unexplored = [opt for opt in options_list if (decision_name, opt) not in current.children]
+
+            if unexplored:
+                choice = unexplored[np.random.randint(0, len(unexplored))]
+                new_state = self._apply_mcts_action(current.state, decision_name, choice)
+                child = self._MCTSNode(new_state, parent=current, action=(decision_name, choice))
+                current.add_child((decision_name, choice), child)
+                return child
+
+            current = self._mcts_select_child(current)
+
+    def _mcts_select_child(
+        self, node: 'RL_NAS_Optimizer._MCTSNode'
+    ) -> 'RL_NAS_Optimizer._MCTSNode':
+        """Select child with highest UCT value."""
+
+        exploration = max(0.1, self.config.mcts_exploration_constant)
+        best_score = -float('inf')
+        best_child = None
+
+        for child in node.children.values():
+            if child.visits == 0:
+                return child
+            exploit = child.value / child.visits
+            explore = exploration * math.sqrt(math.log(node.visits + 1) / child.visits)
+            score = exploit + explore
+            if score > best_score:
+                best_score = score
+                best_child = child
+
+        return best_child or list(node.children.values())[0]
+
+    def _mcts_rollout(
+        self,
+        state: Dict[str, Any],
+        layer_options: List[Tuple[int, str, float]],
+        learning_rates: List[float],
+        batch_sizes: List[int],
+        epoch_options: List[int],
+        max_layers: int,
+    ) -> Dict[str, Any]:
+        """Complete the architecture decisions randomly for rollout."""
+
+        while True:
+            decision = self._get_next_mcts_decision(
+                state,
+                layer_options,
+                learning_rates,
+                batch_sizes,
+                epoch_options,
+                max_layers,
+            )
+            if decision is None:
+                break
+
+            decision_name, options = decision
+            options_list = list(options)
+            choice = options_list[np.random.randint(0, len(options_list))]
+            state = self._apply_mcts_action(state, decision_name, choice)
+
+        return state
+
+    def _get_next_mcts_decision(
+        self,
+        state: Dict[str, Any],
+        layer_options: List[Tuple[int, str, float]],
+        learning_rates: List[float],
+        batch_sizes: List[int],
+        epoch_options: List[int],
+        max_layers: int,
+    ) -> Optional[Tuple[str, List[Any]]]:
+        """Determine the next decision and available options for MCTS."""
+
+        if 'architecture_type' not in state:
+            return 'architecture_type', list(ArchitectureType)
+
+        if 'num_layers' not in state:
+            return 'num_layers', list(range(1, max_layers + 1))
+
+        layers = state.get('layers', [])
+        target_layers = state['num_layers']
+        if len(layers) < target_layers:
+            return f'layer_{len(layers)}', list(range(len(layer_options)))
+
+        if 'learning_rate' not in state:
+            return 'learning_rate', learning_rates
+
+        if 'batch_size' not in state:
+            return 'batch_size', batch_sizes
+
+        if 'epochs' not in state:
+            return 'epochs', epoch_options
+
+        return None
+
+    def _apply_mcts_action(self, state: Dict[str, Any], decision: str, choice: Any) -> Dict[str, Any]:
+        """Apply a decision to the state and return the new state."""
+
+        new_state = copy.deepcopy(state)
+
+        if decision == 'architecture_type':
+            new_state['architecture_type'] = choice
+        elif decision == 'num_layers':
+            new_state['num_layers'] = int(choice)
+            new_state.setdefault('layers', [])
+            new_state['layers'] = new_state['layers'][:new_state['num_layers']]
+        elif decision.startswith('layer_'):
+            layers = new_state.setdefault('layers', [])
+            layers.append(int(choice))
+        elif decision == 'learning_rate':
+            new_state['learning_rate'] = float(choice)
+        elif decision == 'batch_size':
+            new_state['batch_size'] = int(choice)
+        elif decision == 'epochs':
+            new_state['epochs'] = int(choice)
+
+        return new_state
+
+    def _state_to_architecture_config(
+        self,
+        state: Dict[str, Any],
+        layer_options: List[Tuple[int, str, float]],
+    ) -> ArchitectureConfig:
+        """Convert MCTS state into an ArchitectureConfig."""
+
+        architecture_type = state.get('architecture_type', ArchitectureType.FEEDFORWARD)
+        num_layers = int(state.get('num_layers', max(1, len(state.get('layers', [])))))
+        layers = state.get('layers', [])
+
+        hidden_layers: List[int] = []
+        activations: List[str] = []
+        dropouts: List[float] = []
+
+        for idx in range(num_layers):
+            option_index = layers[idx] if idx < len(layers) else 0
+            option = layer_options[option_index % len(layer_options)]
+            neurons, activation, dropout = option
+            hidden_layers.append(int(neurons))
+            activations.append(str(activation))
+            dropouts.append(float(dropout))
+
+        learning_rate = float(state.get('learning_rate', self.config.mcts_learning_rates[0]))
+        batch_size = int(state.get('batch_size', self.config.mcts_batch_sizes[0]))
+        epochs = int(state.get('epochs', self.config.mcts_epoch_options[0]))
+
+        return ArchitectureConfig(
+            architecture_type=architecture_type,
+            hidden_layers=hidden_layers,
+            activation_functions=activations,
+            dropout_rates=dropouts,
+            regularization={'l1': 0.0, 'l2': 0.0},
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            epochs=epochs,
+        )
+
+    def _mcts_evaluate_architecture(
+        self,
+        architecture: ArchitectureConfig,
+        data: pd.DataFrame,
+        target_columns: List[str],
+        feature_columns: List[str],
+        strategy_func: Optional[Callable],
+        cache: Dict[Tuple[Any, ...], Dict[str, Any]],
+    ) -> Tuple[float, Dict[str, float]]:
+        """Evaluate architecture with caching and return reward and fitness."""
+
+        key = (
+            architecture.architecture_type,
+            tuple(architecture.hidden_layers),
+            tuple(architecture.activation_functions),
+            tuple(architecture.dropout_rates),
+            architecture.learning_rate,
+            architecture.batch_size,
+            architecture.epochs,
+        )
+
+        if key in cache:
+            cached = cache[key]
+            return cached['reward'], cached['fitness']
+
+        task = {
+            'index': 0,
+            'architecture': architecture,
+            'data': data,
+            'target_columns': target_columns,
+            'feature_columns': feature_columns,
+            'strategy_func': strategy_func,
+        }
+        fitness = self._evaluate_single_architecture(task)
+        reward = self._calculate_reward(fitness)
+        cache[key] = {'reward': reward, 'fitness': fitness}
+        return reward, fitness
+
+    def _mcts_backpropagate(
+        self, node: 'RL_NAS_Optimizer._MCTSNode', reward: float
+    ) -> None:
+        """Backpropagate reward through the tree."""
+
+        current = node
+        while current is not None:
+            current.visits += 1
+            current.value += reward
+            current = current.parent
+
+    def _calculate_reward(self, fitness: Dict[str, float]) -> float:
+        """Aggregate multi-objective fitness into a scalar reward."""
+
+        if not fitness:
+            return 0.0
+
+        values: List[float] = []
+        for objective in self.config.objectives:
+            metric = fitness.get(objective.value)
+            if metric is not None:
+                try:
+                    values.append(float(metric))
+                except (TypeError, ValueError):
+                    continue
+
+        if not values:
+            for metric_value in fitness.values():
+                try:
+                    values.append(float(metric_value))
+                except (TypeError, ValueError):
+                    continue
+
+        if not values:
+            return 0.0
+
+        return float(np.mean(values))
     
     def _evaluate_with_cross_validation(self, 
                                       X: np.ndarray, 

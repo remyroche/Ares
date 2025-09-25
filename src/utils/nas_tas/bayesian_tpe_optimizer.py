@@ -48,7 +48,7 @@ except ImportError:
     optuna = None
 
 try:
-    from skopt import gp_minimize
+    from skopt import gp_minimize, forest_minimize
     from skopt.space import Real, Integer, Categorical
     from skopt.utils import use_named_args
     SKOPT_AVAILABLE = True
@@ -74,7 +74,7 @@ class BayesianTPEConfig:
     random_state: int = 42
     
     # Optimization backend
-    backend: str = 'optuna'  # 'optuna' or 'skopt'
+    backend: str = 'optuna'  # 'optuna', 'skopt', 'skopt_forest'
     
     # Parallel processing
     enable_parallel: bool = True
@@ -183,14 +183,19 @@ class BayesianTPEOptimizer:
     
     def _validate_config(self):
         """Validate configuration parameters."""
-        if self.config.backend not in ['optuna', 'skopt']:
-            raise ValueError(f"Invalid backend: {self.config.backend}. Must be 'optuna' or 'skopt'")
-        
+        valid_backends = ['optuna', 'skopt', 'skopt_forest']
+        if self.config.backend not in valid_backends:
+            raise ValueError(
+                f"Invalid backend: {self.config.backend}. Must be one of {valid_backends}"
+            )
+
         if self.config.backend == 'optuna' and not OPTUNA_AVAILABLE:
             raise ImportError("Optuna backend requested but not available. Install optuna or use 'skopt' backend.")
-        
-        if self.config.backend == 'skopt' and not SKOPT_AVAILABLE:
-            raise ImportError("scikit-optimize backend requested but not available. Install scikit-optimize or use 'optuna' backend.")
+
+        if self.config.backend in {'skopt', 'skopt_forest'} and not SKOPT_AVAILABLE:
+            raise ImportError(
+                "scikit-optimize backend requested but not available. Install scikit-optimize or use 'optuna' backend."
+            )
         
         if self.config.n_trials <= 0:
             raise ValueError("n_trials must be positive")
@@ -433,7 +438,7 @@ class BayesianTPEOptimizer:
             self.logger.warning(f"⚠️ Single point evaluation failed: {e}")
             return None
     
-    def _perform_tpe_optimization(self, 
+    def _perform_tpe_optimization(self,
                                  objective_function: Callable,
                                  search_space: Dict[str, Any],
                                  X: Optional[np.ndarray],
@@ -443,8 +448,16 @@ class BayesianTPEOptimizer:
         try:
             if self.config.backend == 'optuna':
                 return self._optimize_with_optuna(objective_function, search_space, X, y, **kwargs)
-            elif self.config.backend == 'skopt':
-                return self._optimize_with_skopt(objective_function, search_space, X, y, **kwargs)
+            elif self.config.backend in {'skopt', 'skopt_forest'}:
+                use_forest = self.config.backend == 'skopt_forest'
+                return self._optimize_with_skopt(
+                    objective_function,
+                    search_space,
+                    X,
+                    y,
+                    use_forest=use_forest,
+                    **kwargs
+                )
             else:
                 raise ValueError(f"Unknown backend: {self.config.backend}")
                 
@@ -524,11 +537,12 @@ class BayesianTPEOptimizer:
             self.logger.error(f"❌ Optuna optimization failed: {e}")
             return {'success': False, 'error': str(e)}
     
-    def _optimize_with_skopt(self, 
+    def _optimize_with_skopt(self,
                            objective_function: Callable,
                            search_space: Dict[str, Any],
                            X: Optional[np.ndarray],
                            y: Optional[np.ndarray],
+                           use_forest: bool = False,
                            **kwargs) -> Dict[str, Any]:
         """Optimize using scikit-optimize."""
         try:
@@ -558,14 +572,22 @@ class BayesianTPEOptimizer:
                 score = self._evaluate_single_point(objective_function, params, X, y, **kwargs)
                 return -score if score is not None else 1e6  # Minimize negative score
             
-            # Optimize
-            result = gp_minimize(
-                func=objective_wrapper,
-                dimensions=dimensions,
-                n_calls=self.config.n_trials,
-                random_state=self.config.random_state,
-                n_jobs=self.config.max_workers if self.config.enable_parallel else 1
-            )
+            optimizer_func = forest_minimize if use_forest else gp_minimize
+
+            optimizer_kwargs = {
+                'func': objective_wrapper,
+                'dimensions': dimensions,
+                'n_calls': self.config.n_trials,
+                'random_state': self.config.random_state
+            }
+
+            if self.config.enable_parallel:
+                optimizer_kwargs['n_jobs'] = self.config.max_workers
+
+            if use_forest:
+                optimizer_kwargs['base_estimator'] = 'rf'
+
+            result = optimizer_func(**optimizer_kwargs)
             
             # Extract best parameters
             best_params = dict(zip([dim.name for dim in dimensions], result.x))

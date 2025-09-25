@@ -411,53 +411,64 @@ class EnhancedModelTrainer:
     async def _perform_hyperparameter_optimization(self, X_train: np.ndarray, y_train: np.ndarray,
                                                  X_test: np.ndarray, y_test: np.ndarray,
                                                  model_type: str, model_name: str) -> Tuple[Optional[Any], Dict[str, Any], int]:
-        """Perform hyperparameter optimization."""
+        """Perform hyperparameter optimization using unified Bayesian TPE optimizer."""
         try:
-            import optuna
+            # Import Bayesian TPE optimizer
+            from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+                BayesianTPEOptimizer,
+                BayesianTPEConfig
+            )
             
-            def objective(trial):
-                # Define hyperparameter search space based on model type
-                if model_type == "lightgbm":
-                    params = {
-                        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                        'max_depth': trial.suggest_int('max_depth', 3, 10),
-                        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
-                        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-                        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-                        'reg_alpha': trial.suggest_float('reg_alpha', 0, 1),
-                        'reg_lambda': trial.suggest_float('reg_lambda', 0, 1)
-                    }
-                    model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
-                elif model_type == "random_forest":
-                    params = {
-                        'n_estimators': trial.suggest_int('n_estimators', 100, 500),
-                        'max_depth': trial.suggest_int('max_depth', 3, 20),
-                        'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
-                        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
-                        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
-                    }
-                    model = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
-                else:
-                    # Default to LightGBM
-                    params = {
-                        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                        'max_depth': trial.suggest_int('max_depth', 3, 10),
-                        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3)
-                    }
-                    model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
-                
-                # Train and evaluate
-                model.fit(X_train, y_train)
-                score = model.score(X_test, y_test)
-                return score
+            # Create search space based on model type
+            search_space = self._create_model_search_space(model_type)
             
-            # Create study
-            study = optuna.create_study(direction='maximize')
-            study.optimize(objective, n_trials=self.config.hpo_trials, timeout=self.config.hpo_timeout)
+            # Define objective function for Bayesian TPE optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                try:
+                    # Create model with sampled parameters
+                    if model_type == "lightgbm":
+                        model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
+                    elif model_type == "random_forest":
+                        model = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
+                    else:
+                        # Default to LightGBM
+                        model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
+                    
+                    # Train and evaluate
+                    model.fit(X_train, y_train)
+                    score = model.score(X_test, y_test)
+                    return score
+                    
+                except Exception as e:
+                    self.logger.warning(f"Objective function failed: {e}")
+                    return -np.inf
+            
+            # Configure Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.config.hpo_trials,
+                timeout_seconds=self.config.hpo_timeout,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=True,
+                max_workers=4,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            self.logger.info("🎯 Starting Bayesian TPE optimization for enhanced model training")
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"Model training optimization failed: {result.error_message}")
             
             # Get best model
-            best_params = study.best_params
-            best_score = study.best_value
+            best_params = result.best_params
+            best_score = result.best_score
             
             # Train final model with best parameters
             if model_type == "lightgbm":
@@ -469,12 +480,102 @@ class EnhancedModelTrainer:
             
             best_model.fit(X_train, y_train)
             
-            self.logger.info(f"✅ HPO completed: {len(study.trials)} trials, best score: {best_score:.4f}")
-            return best_model, best_params, len(study.trials)
+            self.logger.info(f"✅ HPO completed: {result.n_trials} trials, best score: {best_score:.4f}")
+            self.logger.info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+            return best_model, best_params, result.n_trials
             
         except Exception as e:
             self.logger.exception(f"💥 Error in hyperparameter optimization: {e}")
             return None, {}, 0
+    
+    def _create_model_search_space(self, model_type: str) -> Dict[str, Any]:
+        """Create search space for model hyperparameter optimization."""
+        if model_type == "lightgbm":
+            return {
+                'n_estimators': {
+                    'type': 'int',
+                    'low': 100,
+                    'high': 1000
+                },
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 10
+                },
+                'learning_rate': {
+                    'type': 'float',
+                    'low': 0.01,
+                    'high': 0.3,
+                    'log': True
+                },
+                'subsample': {
+                    'type': 'float',
+                    'low': 0.6,
+                    'high': 1.0
+                },
+                'colsample_bytree': {
+                    'type': 'float',
+                    'low': 0.6,
+                    'high': 1.0
+                },
+                'reg_alpha': {
+                    'type': 'float',
+                    'low': 0.0,
+                    'high': 1.0
+                },
+                'reg_lambda': {
+                    'type': 'float',
+                    'low': 0.0,
+                    'high': 1.0
+                }
+            }
+        elif model_type == "random_forest":
+            return {
+                'n_estimators': {
+                    'type': 'int',
+                    'low': 100,
+                    'high': 500
+                },
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 20
+                },
+                'min_samples_split': {
+                    'type': 'int',
+                    'low': 2,
+                    'high': 20
+                },
+                'min_samples_leaf': {
+                    'type': 'int',
+                    'low': 1,
+                    'high': 10
+                },
+                'max_features': {
+                    'type': 'categorical',
+                    'choices': ['sqrt', 'log2', None]
+                }
+            }
+        else:
+            # Default to LightGBM
+            return {
+                'n_estimators': {
+                    'type': 'int',
+                    'low': 100,
+                    'high': 1000
+                },
+                'max_depth': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 10
+                },
+                'learning_rate': {
+                    'type': 'float',
+                    'low': 0.01,
+                    'high': 0.3,
+                    'log': True
+                }
+            }
     
     def _check_improvement(self, pre_hpo: EvaluationResult, post_hpo: EvaluationResult) -> bool:
         """Check if improvement was achieved through HPO."""

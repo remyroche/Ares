@@ -1525,7 +1525,7 @@ class MRMRLookbackOptimizer:
         }
     
     def _tpe_fine_tuning(self, data: pd.DataFrame, feature_name: str, target_column: str, fine_results: Dict[str, Any], start_time: float) -> LookbackOptimizationResult:
-        """Step 3: TPE fine-tuning around best fine candidates."""
+        """Step 3: TPE fine-tuning around best fine candidates using Bayesian TPE optimizer."""
         
         if not fine_results['top_candidates']:
             raise ValueError("No fine candidates available for TPE fine-tuning")
@@ -1546,7 +1546,7 @@ class MRMRLookbackOptimizer:
             self.config.fine_refinement_factor
         )
         
-        # Create search space for TPE optimization
+        # Create search space for Bayesian TPE optimization
         search_space = {
             'first_lookback': {
                 'type': 'int',
@@ -1560,7 +1560,7 @@ class MRMRLookbackOptimizer:
             }
         }
         
-        # Define objective function for new optimizer
+        # Define objective function for Bayesian TPE optimizer
         def objective_function(params: Dict[str, Any], **kwargs) -> float:
             first_lookback = int(params['first_lookback'])
             second_lookback = int(params['second_lookback'])
@@ -1588,31 +1588,57 @@ class MRMRLookbackOptimizer:
             
             return combined_score
         
-        # Run TPE optimization using new optimizer
-        result = self.optimizer.optimize(objective_function, search_space)
+        # Configure Bayesian TPE optimizer
+        tpe_config = BayesianTPEConfig(
+            n_trials=self.config.tpe_trials,
+            timeout_seconds=self.config.tpe_timeout,
+            enable_grid_search=False,  # Grid search already done in previous stages
+            backend='optuna',
+            enable_parallel=True,
+            max_workers=2,
+            enable_early_stopping=True,
+            early_stopping_patience=5,
+            log_level='INFO'
+        )
+        
+        # Run optimization using new unified optimizer
+        self.logger.info(f"🎯 Starting Bayesian TPE fine-tuning for {feature_name}")
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        optimization_result = optimizer.optimize(objective_function, search_space)
+        
+        if not optimization_result.success:
+            raise RuntimeError(f"Bayesian TPE optimization failed: {optimization_result.error_message}")
         
         # Extract best result
-        if result.success:
-            best_params = result.best_params
-            best_score = result.best_score
-        else:
-            raise RuntimeError(f"TPE optimization failed: {result.error_message}")
+        best_params = optimization_result.best_params
+        best_score = optimization_result.best_score
         
-        self.logger.info(f"📊 TPE fine-tuning completed: {result.n_trials} trials")
+        self.logger.info(f"📊 Bayesian TPE fine-tuning completed: {optimization_result.n_trials} trials")
         self.logger.info(f"📊 Final result: {best_params['first_lookback']}, {best_params['second_lookback']} (score: {best_score:.4f})")
+        
+        # Calculate final scores for result object
+        first_mi_score = self._calculate_mutual_information(
+            data, feature_name, target_column, best_params['first_lookback'], "technical_indicator"
+        )
+        second_mi_score = self._calculate_mutual_information(
+            data, feature_name, target_column, best_params['second_lookback'], "technical_indicator"
+        )
+        correlation = self._calculate_correlation_between_periods(
+            data, feature_name, best_params['first_lookback'], best_params['second_lookback'], "technical_indicator"
+        )
         
         # Create result object
         result = LookbackOptimizationResult(
             first_lookback_period=best_params['first_lookback'],
             second_lookback_period=best_params['second_lookback'],
-            first_mi_score=best_trial.user_attrs['first_mi_score'],
-            second_mi_score=best_trial.user_attrs['second_mi_score'],
-            combined_mi_score=best_trial.value,
-            correlation_between_periods=best_trial.user_attrs['correlation'],
+            first_mi_score=first_mi_score,
+            second_mi_score=second_mi_score,
+            combined_mi_score=best_score,
+            correlation_between_periods=correlation,
             optimization_time=time.time() - start_time,
-            n_trials=len(study.trials),
-            best_score=best_trial.value,
-            optimization_method="two_step_grid_tpe"
+            n_trials=optimization_result.n_trials,
+            best_score=best_score,
+            optimization_method="bayesian_tpe"
         )
         
         return result

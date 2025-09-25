@@ -11,7 +11,7 @@ This replaces the HMM-based clustering system entirely.
 """
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,
@@ -22,7 +22,7 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils impor
 
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,

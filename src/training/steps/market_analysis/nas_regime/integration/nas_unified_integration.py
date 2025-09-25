@@ -19,7 +19,7 @@ from ..core.enhanced_nas_engine import EnhancedNASEngine, NASEngineConfig
 from ..core.nas_result import NASResult
 
 # Import enhanced unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
     UnifiedMultiObjectiveOptimizer, OptimizationConfig,

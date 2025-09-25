@@ -1,46 +1,7 @@
-"""
-Unified NAS-TAS System
+"""Deprecated hybrid shared utilities shim.
 
-This package provides a unified interface for both Neural Architecture Search (NAS)
-and Tree Architecture Search (TAS) systems. It consolidates all search strategies,
-optimization algorithms, evaluation methods, and utilities into a single, cohesive framework.
-
-Key Features:
-- Unified search engine supporting both neural and tree architectures
-- Comprehensive multi-objective optimization with multiple algorithms
-- Advanced economic evaluation and trading viability assessment
-- Flexible regime detection with multiple methods
-- Hardware optimization and parallel processing support
-- Backward compatibility with existing NAS/TAS components
-- Unified configuration system for easy management
-
-Main Components:
-- UnifiedSearchEngine: Unified interface for all search strategies
-- UnifiedMultiObjectiveOptimizer: Multi-objective optimization with NSGA-II, Bayesian, etc.
-- UnifiedEconomicEvaluator: Economic significance and trading viability evaluation
-- UnifiedRegimeDetector: Regime detection with clustering, HMM, neural networks, etc.
-- UnifiedUtilities: Common utilities for data processing and validation
-- UnifiedConfig: Comprehensive configuration management system
-
-Usage Example:
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
-        UnifiedSearchEngine, SearchConfig, ArchitectureType, SearchStrategy
-    )
-    
-    # Create unified search engine
-    config = SearchConfig(
-        architecture_type=ArchitectureType.HYBRID,
-        search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
-        max_iterations=100
-    )
-    
-    engine = UnifiedSearchEngine(config)
-    
-    # Perform search
-    result = engine.search(search_space, objective_function)
-    
-    print(f"Best architecture: {result.best_architecture}")
-    print(f"Best score: {max(result.best_scores.values())}")
+The shared NAS/TAS utilities now live in ``src.utils.nas_tas.shared_utils``.
+This package re-exports everything from the new location for backwards compatibility.
 """
 
 from typing import Any, Dict, Optional

@@ -1,11 +1,26 @@
 """
-Unified TAS-NAS Regime Detection System
+NAS-TAS Training Utilities
 
-This module provides a unified regime detection system that combines the best aspects
-of both TAS (Tree Architecture Search) and NAS (Neural Architecture Search) regime
-detection with enhanced economic significance and trading viability evaluation.
+This module contains all training-related utilities for Neural Architecture Search (NAS)
+and Tree Architecture Search (TAS) systems. These utilities are specifically designed
+for training and optimization processes, not for live trading operations.
+
+Main Components:
+- Unified Search Engine: Core search algorithms for architecture optimization
+- Multi-Objective Optimizer: Advanced optimization strategies
+- Regime Detector: Market regime detection for training data analysis
+- Architecture Config: Configuration management for training architectures
+- Utilities: General training utilities and helper functions
+- Constraint Systems: Architecture constraint validation
+- Backward Compatibility: Legacy component adapters
+- ML Common Integration: Integration with existing ML utilities
+- Economic Evaluator: Economic significance evaluation during training
+- Ensemble Management: Dynamic ensemble optimization for training
+- Unified Regime Detection: Enhanced regime detection with economic significance
+- Training Orchestration: Comprehensive training pipeline management
 """
 
+# Core unified regime detection components
 from .unified_regime_config import (
     UnifiedRegimeConfig,
     RegimeDetectionMethod,
@@ -18,25 +33,160 @@ from .unified_regime_detector import (
     UnifiedRegimeResult
 )
 
-from .performance_optimizer import (
-    PerformanceOptimizer,
-    PerformanceCache,
-    GPUAccelerator,
-    MemoryOptimizer,
-    optimize_performance,
-    get_performance_optimizer
+from .unified_result import (
+    UnifiedRegimeResult as UnifiedResult
 )
 
-from .real_time_monitor import (
-    RealTimeRegimeMonitor,
-    RegimeChangeEvent,
-    RealTimeMetrics,
-    DataStreamProcessor,
-    RegimeChangeDetector,
-    PerformanceMonitor,
-    create_real_time_monitor
+# Core search and optimization components
+from .unified_search_engine import (
+    UnifiedSearchEngine,
+    SearchConfig,
+    SearchResult,
+    SearchStrategy,
+    ArchitectureType,
+    OptimizationObjective,
+    BayesianSearchStrategy,
+    EvolutionarySearchStrategy,
+    RandomSearchStrategy,
+    create_unified_search_engine,
+    quick_search
 )
 
+from .unified_multi_objective_optimizer import (
+    UnifiedMultiObjectiveOptimizer,
+    UnifiedMultiObjectiveConfig,
+    UnifiedOptimizationResult,
+    ParetoSolution,
+    ObjectiveType,
+    OptimizationAlgorithm,
+    create_unified_multi_objective_optimizer,
+    quick_multi_objective_optimization
+)
+
+from .unified_architecture_config import (
+    BaseArchitectureConfig,
+    TASArchitectureConfig,
+    NASArchitectureConfig,
+    HybridArchitectureConfig,
+    ArchitectureType as ConfigArchitectureType,
+    SearchStrategy as ConfigSearchStrategy,
+    OptimizationObjective as ConfigOptimizationObjective,
+    MarketRegime,
+    create_tas_config,
+    create_nas_config,
+    create_hybrid_config,
+    create_quick_config,
+    create_comprehensive_config
+)
+
+from .unified_utilities import (
+    UnifiedUtilities,
+    UnifiedUtilityConfig,
+    ArchitectureType as UtilArchitectureType,
+    DataType,
+    create_unified_utilities,
+    quick_data_validation,
+    quick_data_optimization
+)
+
+from .constraint_systems import (
+    BaseConstraintValidator,
+    NeuralConstraintValidator,
+    TreeConstraintValidator,
+    UnifiedConstraintValidator,
+    ArchitectureConstraints,
+    ConstraintViolation,
+    ConstraintValidationResult,
+    ConstraintType,
+    ConstraintSeverity,
+    create_neural_constraint_validator,
+    create_tree_constraint_validator,
+    create_unified_constraint_validator
+)
+
+from .backward_compatibility import (
+    LegacyNASEngineAdapter,
+    LegacyTASEngineAdapter,
+    LegacyMultiObjectiveOptimizerAdapter,
+    LegacyEconomicEvaluatorAdapter,
+    LegacyRegimeDetectorAdapter,
+    LegacyUtilitiesAdapter,
+    migrate_config_to_unified,
+    create_legacy_component,
+    get_migration_guide,
+    deprecated_warning
+)
+
+from .ml_common_integration import (
+    MLCommonIntegration,
+    MLCommonIntegrationConfig,
+    MLCommonIntegrationType,
+    MLUtilityType,
+    MLUtilityConfig,
+    MLCommonIntegrationManager,
+    create_ml_common_integration,
+    create_tas_ml_common_integration,
+    create_nas_ml_common_integration,
+    create_hybrid_ml_common_integration,
+    create_shared_ml_utilities_manager
+)
+
+from .economic_evaluator import (
+    EconomicRegimeEvaluator,
+    create_economic_evaluator
+)
+
+from .dynamic_ensemble_manager import (
+    DynamicEnsembleManager,
+    EnsembleConfig,
+    EnsembleModel,
+    EnsembleResult
+)
+
+# Import search space utilities
+from .search_space import (
+    create_default_nas_search_space,
+    create_tree_search_space,
+    SearchSpace,
+    SearchSpaceConfig,
+    ParameterRange,
+    SearchSpaceType,
+    OptimizationStrategy
+)
+
+# Import risk analysis
+from .risk_analysis.risk_analysis import (
+    RiskAnalyzer,
+    RiskConfig,
+    RiskResult,
+    RiskMetric
+)
+
+# Import backtesting engine
+from .backtesting_engine import (
+    BacktestingEngine,
+    BacktestingConfig,
+    BacktestingResult,
+    BacktestingMode
+)
+
+# Import evolutionary search
+from .evolutionary_search import (
+    EvolutionaryTreeSearch,
+    TreeGeneticAlgorithm,
+    TreeNSGA2,
+    EvolutionaryConfig
+)
+
+# Import uncertainty estimation
+from .uncertainty_estimation import (
+    TreeUncertaintyEstimator,
+    TreeEnsembleUncertainty,
+    TreeBayesianUncertainty,
+    UncertaintyConfig
+)
+
+# Import confidence scoring
 from .confidence_scoring import (
     TreeConfidenceScorer,
     TreeReliabilityEstimator,
@@ -44,79 +194,50 @@ from .confidence_scoring import (
     ConfidenceConfig
 )
 
-# Training-related utilities
-from .regime_aware_trainer import (
-    RegimeAwareTrainer,
-    RegimeAwareTrainingConfig,
-    RegimeTrainingResult,
+# Import unified evaluator
+from .unified_evaluator import (
+    UnifiedEvaluator,
+    EvaluationConfig,
+    EvaluationResult,
     ModelType,
-    RegimeTrainingStrategy
+    EvaluationMode,
+    MetricType
 )
 
-from .training_orchestrator import (
-    TrainingOrchestrator,
-    OrchestratorConfig,
-    OrchestrationResult,
-    OrchestrationMode
+# Shared helper utilities exposed for consumers that previously relied on
+# duplicated fallback implementations.
+from .shared_logging import (
+    TPRINT_AVAILABLE,
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+    TPrintConfig,
+    LogLevel,
 )
 
-from .model_selector import (
-    ModelSelector,
-    ModelSelectionConfig,
-    ModelSelectionResult,
-    SelectionStrategy,
-    RoutingMethod
+from .shared_serialization import (
+    SERIALIZATION_AVAILABLE,
+    JSONSerializer,
+    PickleSerializer,
+    ParquetSerializer,
+    UniversalSerializer,
 )
 
-from .model_manager import (
-    ModelManager,
-    ModelManagerConfig,
-    ModelMetadata,
-    ModelDeploymentResult,
-    ModelStatus,
-    DeploymentStrategy
-)
-
-from .performance_tracker import (
-    PerformanceTracker,
-    PerformanceConfig,
-    PerformanceRecord,
-    PerformanceAlert,
-    PerformanceReport,
-    PerformanceMetric,
-    AlertType
-)
-# Import NAS modules
-from .nas import (
-    NeuralArchitectureSearch,
-    ArchitectureConfig,
-    ArchitectureCandidate,
-    ArchitectureSearchSpace,
-    search_neural_architecture,
-    AdaptiveRegimeNAS,
-    AdaptiveRegimeNASConfig,
-    RegimeDetector
-)
-
-# Import TAS modules
-from .tas import (
-    TreeBasedArchitectureSearch,
-    TreeArchitectureConfig,
-    TreeArchitectureCandidate,
-    TreeArchitectureSearchSpace,
-    search_tree_architecture,
-    PureTreeNAS,
-    PureTreeNASConfig,
-    UnsupervisedTreeNAS,
-    UnsupervisedTreeNASConfig,
-    RegimeTradingTreeNAS,
-    RegimeTradingTreeNASConfig,
-    TradingTreeArchitectureSearch,
-    TradingTASConfig,
-    TradingRegime,
-    TradingTASResult,
-    TradingObjective,
-    MarketRegime
+# Import unified hardware manager
+from .unified_hardware import (
+    UnifiedHardwareManager,
+    HardwareAccelerationConfig,
+    WorkloadType,
+    OptimizationLevel,
+    PerformanceMetrics,
+    create_unified_hardware_manager,
+    get_hardware_manager
 )
 
 # Import Hybrid NAS System
@@ -128,13 +249,25 @@ from .hybrid_nas_system import (
     analyze_data_characteristics
 )
 
+# Import ensemble optimizer
+from .ensemble_optimizer import (
+    EnsembleOptimizer,
+    OptimizationConfig
+)
 
+
+# Export all main classes and functions
 __all__ = [
+    # Core unified regime detection
     'UnifiedRegimeConfig',
     'RegimeDetectionMethod',
     'OptimizationStrategy',
     'create_default_nas_search_space',
     'create_tree_search_space',
+    'SearchSpace',
+    'SearchSpaceConfig',
+    'ParameterRange',
+    'SearchSpaceType',
     'RiskAnalyzer',
     'RiskConfig',
     'RiskResult',
@@ -155,88 +288,135 @@ __all__ = [
     'TreeReliabilityEstimator',
     'TreeCalibrationScorer',
     'ConfidenceConfig',
+    'UnifiedEvaluator',
+    'EvaluationConfig',
+    'EvaluationResult',
+    'ModelType',
+    'EvaluationMode',
+    'MetricType',
+    'UnifiedHardwareManager',
+    'HardwareAccelerationConfig',
+    'WorkloadType',
+    'OptimizationLevel',
+    'PerformanceMetrics',
+    'create_unified_hardware_manager',
+    'get_hardware_manager',
+    'EconomicEvaluationMode',
+    'UnifiedRegimeDetector',
+    'UnifiedRegimeResult',
+    'UnifiedResult',
+  
+    # Core search and optimization
+    'UnifiedSearchEngine',
+    'SearchConfig',
+    'SearchResult',
+    'SearchStrategy',
+    'ArchitectureType',
+    'OptimizationObjective',
+    'BayesianSearchStrategy',
+    'EvolutionarySearchStrategy',
+    'RandomSearchStrategy',
+    'create_unified_search_engine',
+    'quick_search',
     
-    # NAS modules
-    'NeuralArchitectureSearch',
-    'ArchitectureConfig',
-    'ArchitectureCandidate',
-    'ArchitectureSearchSpace',
-    'search_neural_architecture',
-    'AdaptiveRegimeNAS',
-    'AdaptiveRegimeNASConfig',
-    'RegimeDetector',
+    # Multi-objective optimization
+    'UnifiedMultiObjectiveOptimizer',
+    'UnifiedMultiObjectiveConfig',
+    'UnifiedOptimizationResult',
+    'ParetoSolution',
+    'ObjectiveType',
+    'OptimizationAlgorithm',
+    'create_unified_multi_objective_optimizer',
+    'quick_multi_objective_optimization',
     
-    # TAS modules
-    'TreeBasedArchitectureSearch',
-    'TreeArchitectureConfig',
-    'TreeArchitectureCandidate',
-    'TreeArchitectureSearchSpace',
-    'search_tree_architecture',
-    'PureTreeNAS',
-    'PureTreeNASConfig',
-    'UnsupervisedTreeNAS',
-    'UnsupervisedTreeNASConfig',
-    'RegimeTradingTreeNAS',
-    'RegimeTradingTreeNASConfig',
-    'TradingTreeArchitectureSearch',
-    'TradingTASConfig',
-    'TradingRegime',
-    'TradingTASResult',
-    'TradingObjective',
+    # Architecture configuration
+    'BaseArchitectureConfig',
+    'TASArchitectureConfig',
+    'NASArchitectureConfig',
+    'HybridArchitectureConfig',
+    'ConfigArchitectureType',
+    'ConfigSearchStrategy',
+    'ConfigOptimizationObjective',
     'MarketRegime',
+    'create_tas_config',
+    'create_nas_config',
+    'create_hybrid_config',
+    'create_quick_config',
+    'create_comprehensive_config',
+    
+    # Utilities
+    'UnifiedUtilities',
+    'UnifiedUtilityConfig',
+    'UtilArchitectureType',
+    'DataType',
+    'create_unified_utilities',
+    'quick_data_validation',
+    'quick_data_optimization',
+    
+    # Constraint systems
+    'BaseConstraintValidator',
+    'NeuralConstraintValidator',
+    'TreeConstraintValidator',
+    'UnifiedConstraintValidator',
+    'ArchitectureConstraints',
+    'ConstraintViolation',
+    'ConstraintValidationResult',
+    'ConstraintType',
+    'ConstraintSeverity',
+    'create_neural_constraint_validator',
+    'create_tree_constraint_validator',
+    'create_unified_constraint_validator',
+    
+    # Backward compatibility
+    'LegacyNASEngineAdapter',
+    'LegacyTASEngineAdapter',
+    'LegacyMultiObjectiveOptimizerAdapter',
+    'LegacyEconomicEvaluatorAdapter',
+    'LegacyRegimeDetectorAdapter',
+    'LegacyUtilitiesAdapter',
+    'migrate_config_to_unified',
+    'create_legacy_component',
+    'get_migration_guide',
+    'deprecated_warning',
+    
+    # ML Common integration
+    'MLCommonIntegration',
+    'MLCommonIntegrationConfig',
+    'MLCommonIntegrationType',
+    'MLUtilityType',
+    'MLUtilityConfig',
+    'MLCommonIntegrationManager',
+    'create_ml_common_integration',
+    'create_tas_ml_common_integration',
+    'create_nas_ml_common_integration',
+    'create_hybrid_ml_common_integration',
+    'create_shared_ml_utilities_manager',
+    
+    # Economic evaluation
+    'EconomicRegimeEvaluator',
+    'create_economic_evaluator',
+    
+    # Ensemble management
+    'DynamicEnsembleManager',
+    'EnsembleConfig',
+    'EnsembleModel',
+    'EnsembleResult',
+    'EnsembleOptimizer',
+    'OptimizationConfig',
+    
+    # Evolutionary algorithms
+    'EvolutionaryTreeSearch',
+    'TreeGeneticAlgorithm',
+    'TreeNSGA2',
+    'EvolutionaryConfig',
     
     # Hybrid NAS System
     'HybridNASSystem',
     'HybridNASConfig',
     'HybridArchitectureCandidate',
     'optimize_hybrid_architecture',
-    'analyze_data_characteristics',
-  
-    # Training-related utilities
-    'RegimeAwareTrainer',
-    'RegimeAwareTrainingConfig',
-    'RegimeTrainingResult',
-    'ModelType',
-    'RegimeTrainingStrategy',
-    'TrainingOrchestrator',
-    'OrchestratorConfig',
-    'OrchestrationResult',
-    'OrchestrationMode',
-    'ModelSelector',
-    'ModelSelectionConfig',
-    'ModelSelectionResult',
-    'SelectionStrategy',
-    'RoutingMethod',
-    'ModelManager',
-    'ModelManagerConfig',
-    'ModelMetadata',
-    'ModelDeploymentResult',
-    'ModelStatus',
-    'DeploymentStrategy',
-    'PerformanceTracker',
-    'PerformanceConfig',
-    'PerformanceRecord',
-    'PerformanceAlert',
-    'PerformanceReport',
-    'PerformanceMetric',
-    'AlertType',
-    'EconomicEvaluationMode',
-    'UnifiedRegimeDetector',
-    'UnifiedRegimeResult',
-    'PerformanceOptimizer',
-    'PerformanceCache',
-    'GPUAccelerator',
-    'MemoryOptimizer',
-    'optimize_performance',
-    'get_performance_optimizer',
-    'RealTimeRegimeMonitor',
-    'RegimeChangeEvent',
-    'RealTimeMetrics',
-    'DataStreamProcessor',
-    'RegimeChangeDetector',
-    'PerformanceMonitor',
-    'create_real_time_monitor'
+    'analyze_data_characteristics'
 ]
 
 __version__ = "1.0.0"
-__author__ = "Unified Regime Detection System"
+__author__ = "NAS-TAS Training Utilities"

@@ -444,9 +444,9 @@ class AresLauncher:
             'nas_regime_discovery',     # Discover market regimes using NAS
             'hybrid_nas_tas_regime_discovery',  # Canonical hybrid NAS-TAS regime discovery
             'nas_tas_regime_discovery', # Backward-compatible alias for hybrid NAS-TAS regime discovery
-            'nas_clustering',           # NAS-based regime clustering
-            'nas_models_training',      # Train regime detection models using NAS regime labels
-            'nas_ensemble_training',    # Train ensemble regime detection models using NAS regime labels
+            # 'nas_clustering',           # DEPRECATED - use nas_tas_clustering instead
+            # 'nas_models_training',      # REMOVED - moved to models_training/
+            # 'nas_ensemble_training',    # REMOVED - moved to models_training/
             'nas'                       # Combined NAS regime discovery + clustering
         ]
         
@@ -870,13 +870,13 @@ class AresLauncher:
             # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
-            'nas_clustering': "NAS-based regime clustering (DEPRECATED - use nas_tas_clustering instead)",
+            # 'nas_clustering': "NAS-based regime clustering (DEPRECATED - use nas_tas_clustering instead)",
             'nas_tas_clustering': "Advanced regime clustering using combined NAS-TAS approaches with economic awareness and ensemble methods",
             'hybrid_nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
             'nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (alias for hybrid_nas_tas_regime_discovery)",
             'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
-            'nas_models_training': "Train regime detection models using NAS regime labels",
-            'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",
+            # 'nas_models_training': "Train regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
+            # 'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",  # REMOVED - moved to models_training/
             'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
             'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
             'triple_barrier_labeling': "Apply triple barrier method",
@@ -928,7 +928,7 @@ class AresLauncher:
             
             # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
-            'nas_clustering': ['sr_clustering'],  # DEPRECATED - use nas_tas_clustering instead
+            # 'nas_clustering': ['sr_clustering'],  # DEPRECATED - use nas_tas_clustering instead
             'nas_tas_clustering': ['sr_clustering'],
             'hybrid_nas_tas_regime_discovery': ['sr_clustering'],
             'nas_tas_regime_discovery': ['sr_clustering'],
@@ -985,13 +985,13 @@ class AresLauncher:
             # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
-            'nas_clustering': ['nas_clusters.json'],
+            # 'nas_clustering': ['nas_clusters.json'],  # DEPRECATED
             'nas_tas_clustering': ['nas_tas_clustering_report.json', 'nas_tas_regime_assignments.parquet'],
             'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
             'nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
             'nas_regime_discovery': ['nas_regime_assignments.parquet'],
-            'nas_models_training': ['nas_models_training_result.json'],
-            'nas_ensemble_training': ['nas_ensemble_training_result.json'],
+            # 'nas_models_training': ['nas_models_training_result.json'],  # REMOVED - moved to models_training/
+            # 'nas_ensemble_training': ['nas_ensemble_training_result.json'],  # REMOVED - moved to models_training/
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
@@ -1081,7 +1081,7 @@ def create_cli_parser() -> argparse.ArgumentParser:
         epilog="""
 Note: The following sub-pipelines are DEPRECATED and will be removed in future versions:
   - nas_regime_discovery (use hybrid_nas_tas_regime_discovery instead)
-  - nas_clustering (use nas_tas_clustering instead)
+  # - nas_clustering (use nas_tas_clustering instead)  # DEPRECATED
   - nas (use hybrid_nas_tas_regime_discovery instead)
 
 Examples:
@@ -1172,7 +1172,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hybrid_nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_models_training, nas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hybrid_nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

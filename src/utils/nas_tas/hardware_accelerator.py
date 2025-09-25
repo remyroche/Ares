@@ -29,6 +29,16 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
+# Import unified hardware manager
+try:
+    from .hardware import (
+        UnifiedHardwareOptimizer, HardwareConfig, HardwarePerformanceMonitor,
+        PerformanceMetrics, WorkloadType, OptimizationLevel
+    )
+    UNIFIED_HARDWARE_AVAILABLE = True
+except ImportError:
+    UNIFIED_HARDWARE_AVAILABLE = False
+
 # Hardware optimization imports
 try:
     import torch
@@ -120,19 +130,23 @@ class NASHardwareAccelerator:
         self.config = config or HardwareAccelerationConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified hardware manager
+        if UNIFIED_HARDWARE_AVAILABLE:
+            hardware_config = HardwareConfig()
+            self.hardware_optimizer = UnifiedHardwareOptimizer(hardware_config)
+            self.performance_monitor = HardwarePerformanceMonitor(hardware_config)
+        else:
+            self.hardware_optimizer = None
+            self.performance_monitor = None
+        
         # Initialize hardware components
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         self.xla_compiler = None
         
-        # Performance tracking
-        self.performance_metrics = {
-            'gpu_usage': [],
-            'memory_usage': [],
-            'latency': [],
-            'throughput': []
-        }
+        # Performance tracking (delegate to unified hardware manager)
+        self.performance_metrics = {}
         
         # Initialize hardware acceleration
         self._initialize_hardware_acceleration()
@@ -450,15 +464,13 @@ class NASHardwareAccelerator:
     
     def _start_performance_monitoring(self):
         """Start performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_start_time = time.time()
-            self.monitoring_start_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.start_monitoring()
     
     def _stop_performance_monitoring(self):
         """Stop performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_end_time = time.time()
-            self.monitoring_end_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.stop_monitoring()
     
     def _apply_memory_optimization(self, data: np.ndarray) -> np.ndarray:
         """Apply memory optimization to data."""
@@ -476,12 +488,52 @@ class NASHardwareAccelerator:
     
     def _apply_architecture_optimization(self, nas_model: Any, architecture_config: Dict) -> Any:
         """Apply architecture-specific optimizations."""
-        # Architecture-specific optimizations
-        if 'architecture_parameters' in architecture_config:
-            # Apply architecture parameters
-            tprint_debug("Applying architecture parameters to NAS model")
-            # TODO: Implement architecture parameter application
-        return nas_model
+        try:
+            # Architecture-specific optimizations
+            if 'architecture_parameters' in architecture_config:
+                # Apply architecture parameters
+                tprint_debug("Applying architecture parameters to NAS model")
+                
+                arch_params = architecture_config['architecture_parameters']
+                
+                # Apply learning rate optimization
+                if 'learning_rate' in arch_params:
+                    if hasattr(nas_model, 'learning_rate'):
+                        nas_model.learning_rate = arch_params['learning_rate']
+                    elif hasattr(nas_model, 'lr'):
+                        nas_model.lr = arch_params['learning_rate']
+                
+                # Apply batch size optimization
+                if 'batch_size' in arch_params:
+                    if hasattr(nas_model, 'batch_size'):
+                        nas_model.batch_size = arch_params['batch_size']
+                
+                # Apply regularization parameters
+                if 'regularization' in arch_params:
+                    reg_params = arch_params['regularization']
+                    if 'l1_alpha' in reg_params and hasattr(nas_model, 'l1_alpha'):
+                        nas_model.l1_alpha = reg_params['l1_alpha']
+                    if 'l2_alpha' in reg_params and hasattr(nas_model, 'l2_alpha'):
+                        nas_model.l2_alpha = reg_params['l2_alpha']
+                
+                # Apply dropout optimization
+                if 'dropout_rate' in arch_params:
+                    if hasattr(nas_model, 'dropout_rate'):
+                        nas_model.dropout_rate = arch_params['dropout_rate']
+                
+                # Apply optimizer parameters
+                if 'optimizer_params' in arch_params:
+                    opt_params = arch_params['optimizer_params']
+                    if hasattr(nas_model, 'optimizer_params'):
+                        nas_model.optimizer_params.update(opt_params)
+                
+                tprint_success("✅ Architecture parameters applied successfully")
+            
+            return nas_model
+            
+        except Exception as e:
+            tprint_error(f"❌ Architecture parameter application failed: {e}")
+            return nas_model
     
     def _apply_memory_pooling(self, nas_model: Any) -> Any:
         """Apply memory pooling to NAS model."""
@@ -511,19 +563,23 @@ class TASHardwareAccelerator:
         self.config = config or HardwareAccelerationConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified hardware manager
+        if UNIFIED_HARDWARE_AVAILABLE:
+            hardware_config = HardwareConfig()
+            self.hardware_optimizer = UnifiedHardwareOptimizer(hardware_config)
+            self.performance_monitor = HardwarePerformanceMonitor(hardware_config)
+        else:
+            self.hardware_optimizer = None
+            self.performance_monitor = None
+        
         # Initialize hardware components
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         self.xla_compiler = None
         
-        # Performance tracking
-        self.performance_metrics = {
-            'gpu_usage': [],
-            'memory_usage': [],
-            'latency': [],
-            'throughput': []
-        }
+        # Performance tracking (delegate to unified hardware manager)
+        self.performance_metrics = {}
         
         # Initialize hardware acceleration
         self._initialize_hardware_acceleration()
@@ -841,15 +897,13 @@ class TASHardwareAccelerator:
     
     def _start_performance_monitoring(self):
         """Start performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_start_time = time.time()
-            self.monitoring_start_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.start_monitoring()
     
     def _stop_performance_monitoring(self):
         """Stop performance monitoring."""
-        if self.config.enable_performance_monitoring:
-            self.monitoring_end_time = time.time()
-            self.monitoring_end_memory = psutil.virtual_memory().used
+        if self.config.enable_performance_monitoring and self.performance_monitor:
+            self.performance_monitor.stop_monitoring()
     
     def _apply_memory_optimization(self, data: np.ndarray) -> np.ndarray:
         """Apply memory optimization to data."""
@@ -867,12 +921,66 @@ class TASHardwareAccelerator:
     
     def _apply_cvlsa_optimization(self, tas_model: Any, clvsa_config: Dict) -> Any:
         """Apply CLVSA-specific optimizations."""
-        # CLVSA-specific optimizations
-        if 'cvlsa_parameters' in clvsa_config:
-            # Apply CLVSA parameters
-            tprint_debug("Applying CLVSA parameters to TAS model")
-            # TODO: Implement CLVSA parameter application
-        return tas_model
+        try:
+            # CLVSA-specific optimizations
+            if 'cvlsa_parameters' in clvsa_config:
+                # Apply CLVSA parameters
+                tprint_debug("Applying CLVSA parameters to TAS model")
+                
+                cvlsa_params = clvsa_config['cvlsa_parameters']
+                
+                # Apply tree depth optimization
+                if 'max_depth' in cvlsa_params:
+                    if hasattr(tas_model, 'max_depth'):
+                        tas_model.max_depth = cvlsa_params['max_depth']
+                    elif hasattr(tas_model, 'tree_depth'):
+                        tas_model.tree_depth = cvlsa_params['max_depth']
+                
+                # Apply leaf optimization
+                if 'min_samples_leaf' in cvlsa_params:
+                    if hasattr(tas_model, 'min_samples_leaf'):
+                        tas_model.min_samples_leaf = cvlsa_params['min_samples_leaf']
+                
+                # Apply split optimization
+                if 'min_samples_split' in cvlsa_params:
+                    if hasattr(tas_model, 'min_samples_split'):
+                        tas_model.min_samples_split = cvlsa_params['min_samples_split']
+                
+                # Apply feature selection optimization
+                if 'max_features' in cvlsa_params:
+                    if hasattr(tas_model, 'max_features'):
+                        tas_model.max_features = cvlsa_params['max_features']
+                
+                # Apply ensemble optimization
+                if 'n_estimators' in cvlsa_params:
+                    if hasattr(tas_model, 'n_estimators'):
+                        tas_model.n_estimators = cvlsa_params['n_estimators']
+                
+                # Apply learning rate for boosting
+                if 'learning_rate' in cvlsa_params:
+                    if hasattr(tas_model, 'learning_rate'):
+                        tas_model.learning_rate = cvlsa_params['learning_rate']
+                
+                # Apply subsample optimization
+                if 'subsample' in cvlsa_params:
+                    if hasattr(tas_model, 'subsample'):
+                        tas_model.subsample = cvlsa_params['subsample']
+                
+                # Apply regularization
+                if 'reg_alpha' in cvlsa_params:
+                    if hasattr(tas_model, 'reg_alpha'):
+                        tas_model.reg_alpha = cvlsa_params['reg_alpha']
+                if 'reg_lambda' in cvlsa_params:
+                    if hasattr(tas_model, 'reg_lambda'):
+                        tas_model.reg_lambda = cvlsa_params['reg_lambda']
+                
+                tprint_success("✅ CLVSA parameters applied successfully")
+            
+            return tas_model
+            
+        except Exception as e:
+            tprint_error(f"❌ CLVSA parameter application failed: {e}")
+            return tas_model
     
     def _apply_memory_pooling(self, tas_model: Any) -> Any:
         """Apply memory pooling to TAS model."""
@@ -943,13 +1051,57 @@ class CLVSAHardwareOptimizer:
     
     def _apply_cvlsa_optimizations(self, model: Any, config: Dict) -> Any:
         """Apply CLVSA-specific optimizations."""
-        # CLVSA-specific optimizations
-        if 'cvlsa_parameters' in config:
-            # Apply CLVSA parameters
-            tprint_debug("Applying CLVSA parameters to model")
-            # TODO: Implement CLVSA parameter application
-        
-        return model
+        try:
+            # CLVSA-specific optimizations
+            if 'cvlsa_parameters' in config:
+                # Apply CLVSA parameters
+                tprint_debug("Applying CLVSA parameters to model")
+                
+                cvlsa_params = config['cvlsa_parameters']
+                
+                # Apply memory efficient attention
+                if 'memory_efficient_attention' in cvlsa_params:
+                    if hasattr(model, 'memory_efficient_attention'):
+                        model.memory_efficient_attention = cvlsa_params['memory_efficient_attention']
+                
+                # Apply gradient checkpointing
+                if 'gradient_checkpointing' in cvlsa_params:
+                    if hasattr(model, 'gradient_checkpointing'):
+                        model.gradient_checkpointing = cvlsa_params['gradient_checkpointing']
+                
+                # Apply mixed precision
+                if 'mixed_precision' in cvlsa_params:
+                    if hasattr(model, 'mixed_precision'):
+                        model.mixed_precision = cvlsa_params['mixed_precision']
+                
+                # Apply tree parallelization
+                if 'tree_parallelization' in cvlsa_params:
+                    if hasattr(model, 'tree_parallelization'):
+                        model.tree_parallelization = cvlsa_params['tree_parallelization']
+                
+                # Apply attention optimization
+                if 'attention_optimization' in cvlsa_params:
+                    attention_params = cvlsa_params['attention_optimization']
+                    if hasattr(model, 'attention_heads'):
+                        model.attention_heads = attention_params.get('heads', model.attention_heads)
+                    if hasattr(model, 'attention_dim'):
+                        model.attention_dim = attention_params.get('dim', model.attention_dim)
+                
+                # Apply layer optimization
+                if 'layer_optimization' in cvlsa_params:
+                    layer_params = cvlsa_params['layer_optimization']
+                    if hasattr(model, 'num_layers'):
+                        model.num_layers = layer_params.get('num_layers', model.num_layers)
+                    if hasattr(model, 'hidden_size'):
+                        model.hidden_size = layer_params.get('hidden_size', model.hidden_size)
+                
+                tprint_success("✅ CLVSA optimizations applied successfully")
+            
+            return model
+            
+        except Exception as e:
+            tprint_error(f"❌ CLVSA optimizations application failed: {e}")
+            return model
     
     def _apply_hardware_optimizations(self, model: Any) -> Any:
         """Apply hardware-specific optimizations."""

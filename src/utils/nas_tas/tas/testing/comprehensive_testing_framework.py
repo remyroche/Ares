@@ -45,7 +45,7 @@ except ImportError:
 
 # Import TAS components
 try:
-    from src.utils.ml_common.optimization.tas.hardware import (
+    from src.utils.nas_tas.tas.hardware import (
         TreeHardwareAccelerator, CLVSAHardwareOptimizer
     )
     HARDWARE_ACCELERATION_AVAILABLE = True
@@ -53,7 +53,7 @@ except ImportError:
     HARDWARE_ACCELERATION_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.realtime import (
+    from src.utils.nas_tas.tas.realtime import (
         RealTimeOptimizationEngine, PerformanceMonitor
     )
     REALTIME_OPTIMIZATION_AVAILABLE = True
@@ -61,7 +61,7 @@ except ImportError:
     REALTIME_OPTIMIZATION_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.architecture import (
+    from src.utils.nas_tas.tas.architecture import (
         TreeArchitectureFactory, TreeArchitectureEvaluator
     )
     ARCHITECTURE_DIVERSITY_AVAILABLE = True
@@ -69,7 +69,7 @@ except ImportError:
     ARCHITECTURE_DIVERSITY_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.meta_learning import (
+    from src.utils.nas_tas.tas.meta_learning import (
         AdvancedMetaLearningSystem, AdvancedMAML
     )
     META_LEARNING_AVAILABLE = True
@@ -77,7 +77,7 @@ except ImportError:
     META_LEARNING_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.optimization.tas.adaptation import (
+    from src.utils.nas_tas.tas.adaptation import (
         ContinuousAdaptationSystem, RegimeChangeDetector
     )
     CONTINUOUS_ADAPTATION_AVAILABLE = True

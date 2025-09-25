@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import warnings
 
 # Import unified system components
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
     UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,

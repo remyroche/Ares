@@ -63,7 +63,7 @@ from src.utils.math_validation import (
     MathValidation, safe_divide as math_safe_divide, safe_log as math_safe_log,
     safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
     validate_finite as math_validate_finite, validate_positive as math_validate_positive,
-    validate_range as math_validate_range, validate_numeric_array,
+    validate_range as math_validate_range, validate_numeric_array as math_validate_numeric_array,
     safe_kelly_calculation as math_safe_kelly, safe_weighted_average as math_safe_weighted,
     safe_percentage_change as math_safe_pct_change, safe_correlation as math_safe_corr,
     safe_covariance as math_safe_cov, safe_mean as math_safe_mean,
@@ -375,21 +375,43 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint_info(f"📊 Regimes discovered: {regime_count}")
                 tprint_info(f"📊 Data points processed: {len(market_data)}")
 
+            cluster_assignments = clustering_result.labels.tolist() if clustering_result.labels is not None else []
+            cluster_centers = (
+                clustering_result.cluster_centers.tolist()
+                if hasattr(clustering_result, 'cluster_centers') and clustering_result.cluster_centers is not None
+                else []
+            )
+            probabilities = (
+                clustering_result.probabilities.tolist()
+                if hasattr(clustering_result, 'probabilities') and clustering_result.probabilities is not None
+                else []
+            )
+            regime_characteristics = getattr(clustering_result, 'regime_characteristics', {})
+            nas_clustering_metrics = getattr(clustering_result, 'quality_metrics', {})
+
             return ComponentResult(
                 success=True,
                 artifacts={
                     'nas_tas_clustering_result': {
                         'regime_count': regime_count,
                         'total_samples': len(clustering_result.labels) if clustering_result.labels is not None else 0,
-                        'regime_assignments': clustering_result.labels.tolist() if clustering_result.labels is not None else [],
-                        'cluster_centers': clustering_result.cluster_centers.tolist() if hasattr(clustering_result, 'cluster_centers') and clustering_result.cluster_centers is not None else [],
-                        'probabilities': clustering_result.probabilities.tolist() if hasattr(clustering_result, 'probabilities') and clustering_result.probabilities is not None else [],
-                        'quality_metrics': getattr(clustering_result, 'quality_metrics', {}),
+                        'regime_assignments': cluster_assignments,
+                        'cluster_centers': cluster_centers,
+                        'probabilities': probabilities,
+                        'quality_metrics': nas_clustering_metrics,
                         'algorithm_used': getattr(clustering_result, 'algorithm_used', 'unknown'),
                         'execution_time': execution_time,
                         'configuration': asdict(self.config) if self.config else {},
                         'execution_info': self.execution_metadata,
-                        'performance_metrics': self.performance_metrics
+                        'performance_metrics': self.performance_metrics,
+                        'nas_clusters': {
+                            'regime_assignments': cluster_assignments,
+                            'cluster_centers': cluster_centers,
+                            'regime_characteristics': regime_characteristics,
+                            'probabilities': probabilities
+                        },
+                        'nas_clustering_metrics': nas_clustering_metrics,
+                        'cluster_assignments': cluster_assignments
                     }
                 },
                 metadata={
@@ -668,7 +690,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Initialize unified clustering algorithm with enhanced error handling."""
         try:
             # Import the unified clustering algorithm
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_clustering_algorithms import (
+            from src.utils.nas_tas.shared_utils.unified_clustering_algorithms import (
                 UnifiedClusteringAlgorithm
             )
 
@@ -773,6 +795,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Generate performance metrics
                 performance_metrics = await self._generate_performance_metrics(clustering_result)
                 if performance_metrics:
+                    self.performance_metrics = performance_metrics
                     perf_file = await self._save_performance_metrics(performance_metrics)
                     outputs['performance_metrics'] = perf_file
                     outputs['output_files'].append(perf_file)

@@ -43,7 +43,7 @@ try:
         FeatureOptimizationConfig,
         OptimizationConfigManager
     )
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_multi_objective_optimizer import (
+    from src.utils.nas_tas.shared_utils.unified_multi_objective_optimizer import (
         OptimizationConfig  # noqa: E402
     )
 except ImportError as e:

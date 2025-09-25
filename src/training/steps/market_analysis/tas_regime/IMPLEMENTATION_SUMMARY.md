@@ -183,7 +183,7 @@ results = detector.detect_regimes(market_data)
 
 ### **Regime Qualification**
 ```python
-from src.utils.ml_common.optimization.tas.regime_analysis.regime_qualification import (
+from src.utils.nas_tas.tas.regime_analysis.regime_qualification import (
     RegimeQualifier, RegimeQualificationConfig
 )
 

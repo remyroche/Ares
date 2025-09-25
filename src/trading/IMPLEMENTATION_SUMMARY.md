@@ -25,9 +25,9 @@ The `src/trading/` module has been fully implemented with comprehensive function
 
 #### **Signal Generation System**
 - `signal_generation/signal_pipeline.py`: Proper data flow (HMM → Analyst → Tactician)
-- `signal_generation/analyst_signals.py`: Analyst signal generation with ML integration
-- `signal_generation/tactician_signals.py`: Tactician timing signals with position sizing
-- `signal_generation/signal_combiner.py`: Multi-method signal combination
+- `signal_generation/analyst_signals_refactored.py`: Analyst signal generation with ML integration (refactored)
+- `signal_generation/tactician_signals_refactored.py`: Tactician timing signals with position sizing (refactored)
+- `signal_generation/signal_combiner_refactored.py`: Multi-method signal combination (refactored)
 
 #### **Data Collection System**
 - `data/live_data_collector.py`: Real-time data collection every 30 seconds

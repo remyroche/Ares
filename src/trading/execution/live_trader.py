@@ -32,8 +32,8 @@ from .order_manager import OrderManager, Order, OrderStatus, OrderSide, OrderTyp
 from .exchange_interface import ExchangeInterface, ExchangeType, create_exchange_interface
 
 # Import enhanced signal generators
-from ..signal_generation.analyst_signals import AnalystSignalGenerator, create_analyst_signal_generator
-from ..signal_generation.tactician_signals import TacticianSignalGenerator, create_tactician_signal_generator
+from ..signal_generation.analyst_signals_refactored import AnalystSignalGenerator, create_analyst_signal_generator
+from ..signal_generation.tactician_signals_refactored import TacticianSignalGenerator, create_tactician_signal_generator
 
 logger = system_logger.getChild('LiveTrader')
 

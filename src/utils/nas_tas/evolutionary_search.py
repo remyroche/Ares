@@ -680,7 +680,7 @@ class TreeNSGA2:
     def _mutate_value(self, value: Any, config: Any) -> Any:
         if isinstance(config, dict):
             if config['type'] == 'int':
-                step = max(1, (config['high'] - config['low']) // 10 or 1)
+                step = max(1, (config['high'] - config['low']) // 10)
                 return int(np.clip(value + np.random.randint(-step, step + 1), config['low'], config['high']))
             if config['type'] == 'float':
                 range_width = config['high'] - config['low']

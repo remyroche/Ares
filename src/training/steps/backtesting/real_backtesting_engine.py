@@ -29,7 +29,7 @@ from src.utils.ml_common.vectorized_backtesting import VectorizedBacktestEngine,
 from src.utils.ml_common.cvlsa import CVLSAValidator
 from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.common_ml.backtesting.backtesting_engine import BacktestingEngine, BacktestingConfig
-from src.utils.common_ml.backtesting.monte_carlo_engine import MonteCarloEngine, MonteCarloConfig
+from src.utils.nas_tas.monte_carlo_engine import UnifiedMonteCarloEngine as MonteCarloEngine, MonteCarloConfig
 from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite

@@ -1,8 +1,8 @@
 """
 NAS-TAS Common Utilities
 
-This module provides common utilities and unified backtesting framework that
-consolidates all functionality from TAS, NAS, and hybrid systems.
+This module provides common utilities and unified frameworks that consolidate
+all functionality from TAS, NAS, and hybrid systems.
 
 Components:
 - BacktestingEngine: Core backtesting functionality
@@ -11,6 +11,7 @@ Components:
 - WalkForwardAnalyzer: Time series validation
 - DataManager: Data management utilities
 - RiskAnalyzer: Risk assessment tools
+- SearchManager: Unified search algorithms (Bayesian, Evolutionary, Grid, Random)
 """
 
 from .backtesting_engine import (
@@ -54,6 +55,21 @@ from .unified_orchestrator import (
     OrchestratorConfig
 )
 
+from .search_algorithms import (
+    SearchManager,
+    SearchConfig,
+    SearchResult,
+    SearchAlgorithmType,
+    BayesianOptimizer,
+    EvolutionaryOptimizer,
+    GridSearchOptimizer,
+    RandomSearchOptimizer,
+    create_search_manager,
+    optimize_with_bayesian,
+    optimize_with_evolutionary,
+    optimize_with_grid
+)
+
 __all__ = [
     # Core backtesting
     "BacktestingEngine",
@@ -87,5 +103,19 @@ __all__ = [
     
     # Unified orchestrator
     "UnifiedBacktestingOrchestrator",
-    "OrchestratorConfig"
+    "OrchestratorConfig",
+    
+    # Search algorithms
+    "SearchManager",
+    "SearchConfig",
+    "SearchResult",
+    "SearchAlgorithmType",
+    "BayesianOptimizer",
+    "EvolutionaryOptimizer",
+    "GridSearchOptimizer",
+    "RandomSearchOptimizer",
+    "create_search_manager",
+    "optimize_with_bayesian",
+    "optimize_with_evolutionary",
+    "optimize_with_grid"
 ]

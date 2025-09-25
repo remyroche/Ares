@@ -1,20 +1,19 @@
 """
-Market Analysis Sub-Pipeline - Complete 13-Step Pipeline
+Market Analysis Sub-Pipeline - Complete 10-Step Pipeline
 
-This module provides the complete market analysis sub-pipeline with exactly 13 required steps:
+This module provides the complete market analysis sub-pipeline with the 10 active steps that
+are currently implemented and wired:
 
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
 3. sr_clustering - Generate SR clusters
 4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
-5. nas_clustering - NAS-based regime clustering
-6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
-7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
-8. regime_data_splitting - Tag data by regimes
-9. feature_lookback_optimization - Optimize feature lookback periods
-10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-11. multi_horizon_labeling - Apply multi-horizon profit labeling
-12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+5. nas_tas_clustering - Consolidated NAS/TAS clustering stage
+6. regime_data_splitting - Tag data by regimes
+7. feature_lookback_optimization - Optimize feature lookback periods
+8. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+9. multi_horizon_labeling - Apply multi-horizon profit labeling
+10. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -152,9 +151,9 @@ class SubPipelineResult:
             'sr_detection': ['sr_detection_result'],
             'sr_clustering': ['sr_clustering_result'],
             'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_regime_discovery_result'],
-            'nas_clustering': ['optimal_regime_clustering_result'],
-            'nas_models_training': ['nas_models_training_result'],
-            'nas_ensemble_training': ['nas_ensemble_training_result'],
+            'nas_tas_clustering': ['nas_tas_clustering_result'],
+            # Backward-compatible alias for legacy component name
+            'nas_clustering': ['nas_tas_clustering_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
             # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
@@ -362,7 +361,7 @@ class MarketAnalysisSubPipeline:
         config: Optional[SubPipelineConfig] = None
     ) -> Dict[str, Any]:
         """
-        Execute all 13 market analysis steps automatically from the beginning.
+        Execute all 10 market analysis steps automatically from the beginning.
         
         This is a convenience method that starts from step 1 (sr_parameter_optimization)
         and automatically triggers all subsequent steps when each completes.
@@ -379,21 +378,19 @@ class MarketAnalysisSubPipeline:
         # Reset results for a fresh run
         self.results = []
             
-        log_info('🚀 Starting automatic execution of all 13 market analysis steps')
+        log_info('🚀 Starting automatic execution of all 10 market analysis steps')
         log_info('=' * 80)
         log_info('📋 Steps to be executed automatically:')
         log_info('   1. sr_parameter_optimization - Optimize SR detection levels')
         log_info('   2. sr_detection - Detect Support/Resistance levels')
         log_info('   3. sr_clustering - Generate SR clusters')
         log_info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
-        log_info('   5. nas_clustering - NAS-based regime clustering')
-        log_info('   6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics')
-        log_info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
-        log_info('   8. regime_data_splitting - Tag data by regimes')
-        log_info('   9. feature_lookback_optimization - Optimize feature lookback periods')
-        log_info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
-        log_info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
-        log_info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
+        log_info('   5. nas_tas_clustering - Consolidated NAS/TAS clustering stage')
+        log_info('   6. regime_data_splitting - Tag data by regimes')
+        log_info('   7. feature_lookback_optimization - Optimize feature lookback periods')
+        log_info('   8. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
+        log_info('   9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
+        log_info('   10. final_feature_selection - Final feature selection (120→100→80→60)')
         log_info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -423,18 +420,16 @@ class MarketAnalysisSubPipeline:
         2. SR detection
         3. SR clustering
 
-        HMM Steps (4-7):
-        4. HMM regime discovery
-        5. HMM clustering
-        6. HMM models training with HPO
-        7. HMM ensemble training (meta-model)
+        HMM Steps (4-5):
+        4. Hybrid NAS/TAS regime discovery
+        5. NAS/TAS clustering
 
-        Data Processing Steps (8-12):
-        8. Regime data splitting
+        Data Processing Steps (6-10):
+        6. Regime data splitting
+        7. Feature lookback optimization
+        8. PID-based feature generation
         9. Multi-horizon profit labeling
-        10. Feature lookback optimization
-        11. PID-based feature generation
-        12. Final feature selection (120→100→80→60)
+        10. Final feature selection (120→100→80→60)
         """
         log_info('🎯 Starting Market Analysis Sub-Pipeline execution')
         # Reset results for a fresh run
@@ -602,34 +597,28 @@ class MarketAnalysisSubPipeline:
                 self.logger.error(f"❌ {error_msg}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
             
-            # Stage 6: NAS Models Training - REMOVED (moved to models_training/)
-            self.logger.info('ℹ️ Stage 6: NAS Models Training - REMOVED (moved to models_training/)')
-            
-            # Stage 7: NAS Ensemble Training - REMOVED (moved to models_training/)
-            self.logger.info('ℹ️ Stage 7: NAS Ensemble Training - REMOVED (moved to models_training/)')
-            
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
-            
-            # Stage 8: Regime Data Splitting
-            self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
+
+            # Stage 6: Regime Data Splitting
+            self.logger.info('✂️ Executing Stage 6: Regime Data Splitting')
             regime_data_splitting_result = await self.execute_sub_pipeline('regime_data_splitting', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(regime_data_splitting_result, "Regime Data Splitting")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             regime_splitting_data = regime_data_splitting_result.artifacts.get('regime_data_splitting_result', {})
             results['regime_data'] = regime_splitting_data.get('regime_data', {})
             results['regime_stats'] = regime_splitting_data.get('regime_stats', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_data': results['regime_data']
             })
-            
-            # Stage 9: Feature Lookback Optimization
-            self.logger.info('⚙️ Executing Stage 9: Feature Lookback Optimization')
+
+            # Stage 7: Feature Lookback Optimization
+            self.logger.info('⚙️ Executing Stage 7: Feature Lookback Optimization')
             feature_lookback_optimization_result = await self.execute_sub_pipeline('feature_lookback_optimization', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(feature_lookback_optimization_result, "Feature Lookback Optimization")
             if not is_success:
@@ -645,8 +634,8 @@ class MarketAnalysisSubPipeline:
                 'optimized_features': results['optimized_features']
             })
 
-            # Stage 10: PID-Based Feature Generation
-            self.logger.info('🔧 Executing Stage 10: PID-Based Feature Generation')
+            # Stage 8: PID-Based Feature Generation
+            self.logger.info('🔧 Executing Stage 8: PID-Based Feature Generation')
             pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
             if not is_success:
@@ -688,8 +677,8 @@ class MarketAnalysisSubPipeline:
                 'pid_based_features': results['pid_based_features']
             })
 
-            # Stage 11: Multi-Horizon Profit Labeler (moved here to use optimized features)
-            self.logger.info('🎯 Executing Stage 11: Multi-Horizon Profit Labeler')
+            # Stage 9: Multi-Horizon Profit Labeler (moved here to use optimized features)
+            self.logger.info('💰 Executing Stage 9: Multi-Horizon Profit Labeler')
             mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Profit Labeler")
             if not is_success:
@@ -706,10 +695,10 @@ class MarketAnalysisSubPipeline:
             })
 
             # ===== FINAL FEATURE SELECTION STEP =====
-            self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
+            self.logger.info('🏁 ===== STARTING FINAL FEATURE SELECTION =====')
 
-            # Stage 12: Final Feature Selection
-            self.logger.info('🎯 Executing Stage 12: Final Feature Selection')
+            # Stage 10: Final Feature Selection
+            self.logger.info('🏁 Executing Stage 10: Final Feature Selection')
             final_feature_selection_result = await self.execute_sub_pipeline('final_feature_selection', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(final_feature_selection_result, "Final Feature Selection")
             if not is_success:
@@ -741,7 +730,7 @@ class MarketAnalysisSubPipeline:
                 'success': True,
                 'results': results,
                 'execution_time': sum(result.execution_time for result in self.results),
-                'total_stages': 12,
+                'total_stages': 10,
                 'completed_stages': len(self.results)
             }
             
@@ -794,8 +783,8 @@ class MarketAnalysisSubPipeline:
         artifact_keys = list(artifacts.keys())
         
         self.logger.info(f"✅ {sub_pipeline_name} completed successfully")
-        # Ensure logs reflect single artifact expectation for nas_clustering
-        if sub_pipeline_name == 'nas_clustering' and artifact_count > 1:
+        # Ensure logs reflect single artifact expectation for nas_tas_clustering
+        if sub_pipeline_name in ('nas_tas_clustering', 'nas_clustering') and artifact_count > 1:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys} (note: consolidated into single artifact group)")
         else:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys}")
@@ -956,14 +945,12 @@ class MarketAnalysisSubPipeline:
         2. sr_detection - Detect Support/Resistance levels
         3. sr_clustering - Generate SR clusters
         4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
-        5. nas_clustering - NAS-based regime clustering
-        6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
-        7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
-        8. regime_data_splitting - Tag data by regimes
-        9. feature_lookback_optimization - Optimize feature lookback periods
-        10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-        11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
-        12. final_feature_selection - Final feature selection (120→100→80→60)
+        5. nas_tas_clustering - Consolidated NAS/TAS clustering stage
+        6. regime_data_splitting - Tag data by regimes
+        7. feature_lookback_optimization - Optimize feature lookback periods
+        8. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+        10. final_feature_selection - Final feature selection (120→100→80→60)
 
         When one step completes successfully, it automatically triggers the next step.
         
@@ -1001,9 +988,7 @@ class MarketAnalysisSubPipeline:
         
         hmm_steps = [
             'hybrid_nas_tas_regime_discovery',
-            'nas_clustering',
-            'nas_models_training',
-            'nas_ensemble_training'
+            'nas_tas_clustering'
         ]
         
         data_processing_steps = [
@@ -1071,16 +1056,7 @@ class MarketAnalysisSubPipeline:
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
-                # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
-                if pipeline_name in ('nas_models_training', 'nas_ensemble_training'):
-                    # Avoid mutating the shared config; create a scoped copy for this call
-                    from dataclasses import replace as _dc_replace
-                    scoped_config = _dc_replace(config, timeframe='15m')
-                    if getattr(config, 'timeframe', None) != '15m':
-                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m for this step only")
-                    result = await self.execute_sub_pipeline(pipeline_name, scoped_config)
-                else:
-                    result = await self.execute_sub_pipeline(pipeline_name, config)
+                result = await self.execute_sub_pipeline(pipeline_name, config)
                 results.append(result)
                 
                 # If this sub-pipeline failed, stop the sequence

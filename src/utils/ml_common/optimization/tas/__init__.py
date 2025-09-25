@@ -1,150 +1,151 @@
 """
-Advanced Tree Architecture Search (TAS) System
+TAS to NAS Parity Enhancement Module
 
-A comprehensive system for tree-based architecture search with advanced capabilities:
-- Meta-learning and few-shot learning
-- Hardware optimization and acceleration
-- Advanced search strategies
-- Uncertainty estimation
-- Continual learning
-- Regime analysis and reporting
-- Multi-objective optimization
-- Real-time adaptation
-- Trading-specific optimizations
-- Micro-regime detection
-- Economic significance validation
+This module provides comprehensive enhancements to bring the TAS (Tensor Adaptive System)
+to full parity with state-of-the-art NAS (Neural Architecture Search) systems.
 
-This system provides tree-based alternatives to neural architecture search
-while maintaining the same level of sophistication and capabilities, with
-specialized support for financial trading applications.
+Key Components:
+- Hardware acceleration for tree-based CLVSA models
+- Real-time optimization engine
+- Architecture diversity expansion
+- Advanced meta-learning capabilities
+- Continuous adaptation system
+- Comprehensive testing framework
 """
 
-# Core TAS components
-from .core.tas_engine import TreeArchitectureSearchEngine
-from .core.tas_config import TASConfig, TASSearchConfig, TASOptimizationConfig
-from .core.tas_result import TASResult, TASSearchResult, TASOptimizationResult
+# Import all major components
+from .hardware import (
+    TreeHardwareAccelerator,
+    CLVSAHardwareOptimizer,
+    HardwareAccelerationConfig,
+    create_tree_hardware_accelerator,
+    create_cvlsa_hardware_optimizer
+)
 
-# Trading-specific components
-from .core.tas_config import TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
-from .core.advanced_tas_search import AdvancedTradingArchitectureSearch, AdvancedTASResult
-from .core.tree_cvlSA_architecture import TreeCVLSASearch, CVLSAResult
+from .realtime import (
+    RealTimeOptimizationEngine,
+    PerformanceMonitor,
+    AdaptationEngine,
+    RealTimeOptimizationConfig,
+    create_realtime_optimization_engine,
+    create_performance_monitor,
+    create_adaptation_engine
+)
 
-# Meta-learning components
-from .meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML, TreePrototypicalNetwork
-from .meta_learning.few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
-from .meta_learning.continual_learning import ContinualTreeLearner, TreeEpisodicMemory
+from .architecture import (
+    TreeArchitectureFactory,
+    TreeArchitectureEvaluator,
+    TreeArchitectureSelector,
+    TreeArchitectureType,
+    TreeArchitectureConfig,
+    TreeArchitectureCandidate,
+    create_tree_architecture_factory,
+    create_tree_architecture_evaluator,
+    create_tree_architecture_selector
+)
 
-# Search strategies
-from .search.evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm
-from .search.bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer
-from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
-from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2
+from .meta_learning import (
+    AdvancedMetaLearningSystem,
+    AdvancedMAML,
+    CrossDomainMetaLearning,
+    MetaLearningMethod,
+    AdvancedMetaLearningConfig,
+    MetaTask,
+    MetaLearningResult,
+    create_advanced_meta_learning_system,
+    create_advanced_maml,
+    create_cross_domain_meta_learning
+)
 
-# Optimization components
-from .optimization.hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
-from .optimization.memory_optimization import TreeMemoryOptimizer, TreeCacheManager
-from .optimization.parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch
+from .adaptation import (
+    ContinuousAdaptationSystem,
+    RegimeChangeDetector,
+    PerformanceAdaptationTrigger,
+    CLVSAAdaptationEngine,
+    ContinuousAdaptationConfig,
+    AdaptationTrigger,
+    AdaptationResult,
+    create_continuous_adaptation_system,
+    create_regime_change_detector,
+    create_cvlsa_adaptation_engine
+)
 
-# Uncertainty estimation
-from .uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty
-from .uncertainty.confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator
-from .uncertainty.robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting
+from .testing import (
+    ComprehensiveTestingFramework,
+    UnitTestSuite,
+    IntegrationTestSuite,
+    NASBenchmarkSuite,
+    TestingConfig,
+    TestResult,
+    BenchmarkResult,
+    create_comprehensive_testing_framework,
+    create_unit_test_suite,
+    create_integration_test_suite,
+    create_nas_benchmark_suite
+)
 
-# Regime analysis
-from .regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector
-from .regime_analysis.regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector
-from .regime_analysis.regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer
-
-# Trading-specific components
-from .components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
-from .components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
-
-# Adaptation
-from .adaptation.real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor
-from .adaptation.dynamic_optimization import TreeDynamicOptimizer, TreeAdaptiveSearch
-from .adaptation.performance_tracking import TreePerformanceTracker, TreeMetricsCollector
-
-# Evaluation
-from .evaluation.tree_evaluator import TreeEvaluator, TreePerformanceEvaluator
-from .evaluation.multi_objective_evaluation import TreeMultiObjectiveEvaluator
-from .evaluation.regime_evaluation import TreeRegimeEvaluator, TreeRegimePerformanceAnalyzer
-from .evaluation.tas_evaluator import TASEvaluator, EvaluationResult
-
-# Utilities
-from .utils.tree_utils import TreeUtils, TreeArchitectureUtils
-from .utils.visualization import TreeVisualizer, TreeArchitectureVisualizer
-from .utils.logging import TreeLogger, TreeSearchLogger
-
-# Convenience functions
-from .core.advanced_tas_search import optimize_advanced_trading_architecture
-from .core.tree_cvlSA_architecture import optimize_cvlSA_architecture
-
-__version__ = "2.0.0"
-__author__ = "Advanced TAS Team"
-
-# Package configuration
-DEFAULT_CONFIG = TASConfig.create_advanced_trading_config()
-
-# Main exports
 __all__ = [
-    # Core components
-    'TreeArchitectureSearchEngine',
-    'TASConfig', 'TASSearchConfig', 'TASOptimizationConfig',
-    'TASResult', 'TASSearchResult', 'TASOptimizationResult',
+    # Hardware acceleration
+    'TreeHardwareAccelerator',
+    'CLVSAHardwareOptimizer',
+    'HardwareAccelerationConfig',
+    'create_tree_hardware_accelerator',
+    'create_cvlsa_hardware_optimizer',
     
-    # Trading-specific components
-    'TASArchitectureType', 'TradingObjective', 'MarketRegime', 'MicroRegimeType',
-    'AdvancedTradingArchitectureSearch', 'AdvancedTASResult',
-    'TreeCVLSASearch', 'CVLSAResult',
-    'MicroRegimeDetector', 'MicroRegimeDetectionResult',
-    'TASNeuralModel', 'NeuralArchitectureConfig',
+    # Real-time optimization
+    'RealTimeOptimizationEngine',
+    'PerformanceMonitor',
+    'AdaptationEngine',
+    'RealTimeOptimizationConfig',
+    'create_realtime_optimization_engine',
+    'create_performance_monitor',
+    'create_adaptation_engine',
+    
+    # Architecture diversity
+    'TreeArchitectureFactory',
+    'TreeArchitectureEvaluator',
+    'TreeArchitectureSelector',
+    'TreeArchitectureType',
+    'TreeArchitectureConfig',
+    'TreeArchitectureCandidate',
+    'create_tree_architecture_factory',
+    'create_tree_architecture_evaluator',
+    'create_tree_architecture_selector',
     
     # Meta-learning
-    'TreeMetaLearning', 'TreeMAML', 'TreePrototypicalNetwork',
-    'FewShotTreeLearner', 'TreeFewShotAdapter',
-    'ContinualTreeLearner', 'TreeEpisodicMemory',
+    'AdvancedMetaLearningSystem',
+    'AdvancedMAML',
+    'CrossDomainMetaLearning',
+    'MetaLearningMethod',
+    'AdvancedMetaLearningConfig',
+    'MetaTask',
+    'MetaLearningResult',
+    'create_advanced_meta_learning_system',
+    'create_advanced_maml',
+    'create_cross_domain_meta_learning',
     
-    # Search strategies
-    'EvolutionaryTreeSearch', 'TreeGeneticAlgorithm',
-    'BayesianTreeSearch', 'TreeBayesianOptimizer',
-    'RLTreeSearch', 'TreeReinforcementLearner',
-    'MultiObjectiveTreeSearch', 'TreeNSGA2',
+    # Continuous adaptation
+    'ContinuousAdaptationSystem',
+    'RegimeChangeDetector',
+    'PerformanceAdaptationTrigger',
+    'CLVSAAdaptationEngine',
+    'ContinuousAdaptationConfig',
+    'AdaptationTrigger',
+    'AdaptationResult',
+    'create_continuous_adaptation_system',
+    'create_regime_change_detector',
+    'create_cvlsa_adaptation_engine',
     
-    # Optimization
-    'TreeHardwareOptimizer', 'TreeMatrixOperations',
-    'TreeMemoryOptimizer', 'TreeCacheManager',
-    'TreeParallelOptimizer', 'TreeDistributedSearch',
-    
-    # Uncertainty
-    'TreeUncertaintyEstimator', 'TreeEnsembleUncertainty',
-    'TreeConfidenceScorer', 'TreeReliabilityEstimator',
-    'TreeRobustnessAnalyzer', 'TreeAdversarialTesting',
-    
-    # Regime analysis
-    'TreeRegimeAnalyzer', 'TreeRegimeDetector',
-    'TreeRegimeOptimizer', 'TreeRegimeSelector',
-    'TreeRegimeReporter', 'TreeRegimeVisualizer',
-    
-    # Adaptation
-    'TreeRealTimeAdapter', 'TreePerformanceMonitor',
-    'TreeDynamicOptimizer', 'TreeAdaptiveSearch',
-    'TreePerformanceTracker', 'TreeMetricsCollector',
-    
-    # Evaluation
-    'TreeEvaluator', 'TreePerformanceEvaluator',
-    'TreeMultiObjectiveEvaluator',
-    'TreeRegimeEvaluator', 'TreeRegimePerformanceAnalyzer',
-    'TASEvaluator', 'EvaluationResult',
-    
-    # Utilities
-    'TreeUtils', 'TreeArchitectureUtils',
-    'TreeVisualizer', 'TreeArchitectureVisualizer',
-    'TreeLogger', 'TreeSearchLogger',
-    
-    # Convenience functions
-    'optimize_advanced_trading_architecture',
-    'optimize_cvlSA_architecture',
-    
-    # Configuration
-    'DEFAULT_CONFIG'
+    # Testing framework
+    'ComprehensiveTestingFramework',
+    'UnitTestSuite',
+    'IntegrationTestSuite',
+    'NASBenchmarkSuite',
+    'TestingConfig',
+    'TestResult',
+    'BenchmarkResult',
+    'create_comprehensive_testing_framework',
+    'create_unit_test_suite',
+    'create_integration_test_suite',
+    'create_nas_benchmark_suite'
 ]

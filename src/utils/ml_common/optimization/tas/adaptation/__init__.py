@@ -1,20 +1,32 @@
 """
-Real-time Adaptation for TAS
+Continuous Adaptation Module for CLVSA Architectures
 
-Advanced adaptation capabilities for tree architecture search including:
-- Real-time performance monitoring
-- Dynamic architecture adaptation
-- Incremental learning and updates
-- Performance tracking and metrics collection
-- Adaptive search strategies
+This module provides continuous adaptation capabilities for tree-based CLVSA models
+during live trading.
 """
 
-from .real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor, TreeAdaptiveSearch
-from .dynamic_optimization import TreeDynamicOptimizer, TreeIncrementalLearner, TreeOnlineOptimizer
-from .performance_tracking import TreePerformanceTracker, TreeMetricsCollector, TreeAnalytics
+from .continuous_adaptation_system import (
+    ContinuousAdaptationSystem,
+    RegimeChangeDetector,
+    PerformanceAdaptationTrigger,
+    CLVSAAdaptationEngine,
+    ContinuousAdaptationConfig,
+    AdaptationTrigger,
+    AdaptationResult,
+    create_continuous_adaptation_system,
+    create_regime_change_detector,
+    create_cvlsa_adaptation_engine
+)
 
 __all__ = [
-    'TreeRealTimeAdapter', 'TreePerformanceMonitor', 'TreeAdaptiveSearch',
-    'TreeDynamicOptimizer', 'TreeIncrementalLearner', 'TreeOnlineOptimizer',
-    'TreePerformanceTracker', 'TreeMetricsCollector', 'TreeAnalytics'
+    'ContinuousAdaptationSystem',
+    'RegimeChangeDetector',
+    'PerformanceAdaptationTrigger',
+    'CLVSAAdaptationEngine',
+    'ContinuousAdaptationConfig',
+    'AdaptationTrigger',
+    'AdaptationResult',
+    'create_continuous_adaptation_system',
+    'create_regime_change_detector',
+    'create_cvlsa_adaptation_engine'
 ]

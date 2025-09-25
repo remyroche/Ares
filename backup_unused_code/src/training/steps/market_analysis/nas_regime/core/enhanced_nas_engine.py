@@ -13,8 +13,7 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils impor
     UnifiedEconomicEvaluator, EconomicEvaluationConfig,
     UnifiedRegimeDetector, RegimeDetectionConfig,
     UnifiedUtilities, UnifiedUtilityConfig,
-    UnifiedConfig, create_unified_system,
-    LegacyNASEngineAdapter  # For backward compatibility
+    UnifiedConfig, create_unified_system
 )
 
 
@@ -30,6 +29,16 @@ import pickle
 import os
 from pathlib import Path
 
+# Import unified system components
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+    UnifiedSearchEngine, SearchConfig, SearchResult, SearchStrategy, ArchitectureType,
+    UnifiedMultiObjectiveOptimizer, UnifiedMultiObjectiveConfig, OptimizationAlgorithm,
+    UnifiedEconomicEvaluator, EconomicEvaluationConfig,
+    UnifiedRegimeDetector, RegimeDetectionConfig,
+    UnifiedUtilities, UnifiedUtilityConfig,
+    UnifiedConfig, create_unified_system,
+    LegacyNASEngineAdapter  # For backward compatibility
+)
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
@@ -743,12 +752,14 @@ class EnhancedNASEngine:
 
                     self.logger.debug(f"Architecture evaluated with estimator: {estimated_score:.4f}")
                     return estimated_score
-                except Exception as e:
-                    tprint_error(f"Performance estimator failed: {e}")
-                    tprint_debug(f"Performance estimator error context: {locals()}")
-                    self.logger.error(f"Performance estimator failed: {e}")
-                    # Fall through to fallback evaluation
-            
+        except Exception as e:
+            tprint_error(f"Performance estimator failed: {e}")
+            tprint_debug(f"Performance estimator error context: {locals()}")
+            tprint_error("CRITICAL: Performance estimator is required for NAS analysis")
+            tprint_error("Cannot proceed without proper performance estimation")
+            self.logger.error(f"Performance estimator failed: {e}")
+            raise ValueError(f"Performance estimator failed: {e}") from e
+
             # Fallback to actual evaluation (simplified)
             # In practice, this would involve training and validating the architecture
             X_val, y_val = validation_data

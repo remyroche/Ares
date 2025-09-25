@@ -63,6 +63,7 @@ class RegimeHandler:
                 self._regime_metadata[cache_key] = safe_json_load(metadata_file)
             return data
         except Exception as e:
+            tprint_error(f"❌ Error loading unified regime data: {e}")
             self.logger.exception(f'❌ Error loading unified regime data: {e}')
             return None
 
@@ -80,6 +81,7 @@ class RegimeHandler:
             List of unique regime IDs
         """
         if 'composite_cluster_id' not in data.columns:
+            tprint_error("❌ No composite_cluster_id column found in data - this should be tagged regime data")
             self.logger.error('❌ No composite_cluster_id column found in data - this should be tagged regime data')
             return []
         regime_ids = sorted(data['composite_cluster_id'].unique())
@@ -135,6 +137,7 @@ class RegimeHandler:
             return benefits
             
         except Exception as e:
+            tprint_error(f"❌ Error showing tagging benefits: {e}")
             self.logger.error(f'❌ Error showing tagging benefits: {e}')
             return {}
 

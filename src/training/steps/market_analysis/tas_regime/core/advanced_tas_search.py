@@ -220,7 +220,10 @@ class AdvancedTradingArchitectureSearch:
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-            except:
+                tprint_success("✅ NAS clustering regime detection completed successfully")
+            except Exception as e:
+                tprint_warning(f"⚠️ NAS clustering regime detection failed: {e}")
+                tprint_info("🔄 Falling back to tree-based regime detection")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
@@ -658,7 +661,8 @@ class AdvancedTradingArchitectureSearch:
                                 'characteristics': self._extract_regime_characteristics(cluster_data),
                                 'transition_probability': 1.0 / n_regimes
                             }
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to process regime {regime_id}: {e}")
                     continue
 
             return regimes

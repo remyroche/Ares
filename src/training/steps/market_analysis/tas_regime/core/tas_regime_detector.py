@@ -705,6 +705,7 @@ class TASRegimeDetector:
 
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ TAS regime detection failed: {e}")
             self.logger.error(f"❌ TAS regime detection failed: {e}")
 
             return TASRegimeResult(

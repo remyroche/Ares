@@ -460,25 +460,29 @@ except ImportError:
     def safe_mean(values, default=0.0):
         try:
             return float(np.mean(values)) if len(values) > 0 else default
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate mean: {e}")
             return default
     
     def safe_std(values, default=0.0):
         try:
             return float(np.std(values)) if len(values) > 0 else default
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate std: {e}")
             return default
     
     def validate_finite(value, context=""):
         try:
             return float(value) if np.isfinite(value) else 0.0
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to validate finite value: {e}")
             return 0.0
     
     def safe_percentage_change(old_val, new_val, default=0.0):
         try:
             return (new_val - old_val) / old_val if old_val != 0 else default
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate percentage change: {e}")
             return default
 
 
@@ -556,7 +560,8 @@ def safe_divide(numerator, denominator, default=0.0):
     """Safely divide two numbers."""
     try:
         return numerator / denominator if denominator != 0 else default
-    except:
+    except Exception as e:
+        tprint_warning(f"⚠️ Failed to calculate safe division: {e}")
         return default
 
 # Import the multi-horizon labeler

@@ -544,6 +544,7 @@ class TreeArchitectureSearchEngine:
             
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ Enhanced TAS failed: {e}")
             self.logger.error(f"❌ Enhanced TAS failed: {e}")
             
             return TASResult(

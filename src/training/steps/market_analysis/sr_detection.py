@@ -254,6 +254,7 @@ class SRDetectionStep(BaseStep):
 
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ SR Detection failed: {e}")
             self.logger.error(f'❌ SR Detection failed: {e}')
             return {
                 'success': False,
@@ -270,10 +271,12 @@ class SRDetectionStep(BaseStep):
 
         # CRITICAL: Validate input data before S/R detection
         if data is None:
+            tprint_error("❌ CRITICAL: Input data is None for S/R detection. Cannot proceed.")
             self.logger.error('❌ CRITICAL: Input data is None for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
 
         if data.empty:
+            tprint_error("❌ CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
             self.logger.error('❌ CRITICAL: Input data is empty for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
 

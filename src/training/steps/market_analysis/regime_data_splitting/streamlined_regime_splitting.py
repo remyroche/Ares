@@ -218,6 +218,7 @@ class StreamlinedRegimeDataSplitting:
 
         except Exception as e:
             error_msg = f"Regime data splitting failed: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
             self.logger.exception(error_msg)
             return RegimeSplittingResult.failure_result(error_msg)
 
@@ -720,7 +721,8 @@ class StreamlinedRegimeDataSplitting:
                     try:
                         pd.to_numeric(data[col], errors='coerce')
                         issues.append(f"Object column '{col}' may contain numeric data")
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Could not convert column '{col}' to numeric: {e}")
                         pass
 
             # Check for mixed data types in numeric columns

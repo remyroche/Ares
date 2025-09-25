@@ -582,7 +582,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         numeric_col = pd.to_numeric(X[:, i], errors='coerce')
                         if not numeric_col.isna().all():
                             numeric_features.append(i)
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to process numeric column {i}: {e}")
                         continue
                 
                 if not numeric_features:
@@ -722,11 +723,14 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     self.logger.warning(f"⚠️ Feature {feature_name} has no numeric values")
                     return None, ""
                 x = x_numeric.values
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Initial conversion failed for {feature_name}: {e}")
                 # If conversion fails, try direct conversion
                 try:
                     x = x.astype(float)
-                except:
+                    tprint_success(f"✅ Direct conversion successful for {feature_name}")
+                except Exception as e2:
+                    tprint_error(f"❌ Cannot convert feature {feature_name} to numeric: {e2}")
                     self.logger.warning(f"⚠️ Cannot convert feature {feature_name} to numeric")
                     return None, ""
             
@@ -819,7 +823,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     feature = x * x  # Self cross product
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
                         return feature, f"{feature_name}_cross_self"
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate cross-self feature for {feature_name}: {e}")
                     pass
                 
             elif polynomial_type == PolynomialType.INTERACTION:
@@ -829,7 +834,8 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                     feature = x * x_squared
                     if not (np.any(np.isnan(feature)) or np.any(np.isinf(feature))):
                         return feature, f"{feature_name}_interaction"
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate interaction feature for {feature_name}: {e}")
                     pass
                 
             return None, ""

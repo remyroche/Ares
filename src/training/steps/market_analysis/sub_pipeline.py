@@ -697,8 +697,10 @@ class MarketAnalysisSubPipeline:
             }
             
         except Exception as e:
+            tprint_error(f"❌ Market Analysis Sub-Pipeline failed: {e}")
             self.logger.error(f'❌ Market Analysis Sub-Pipeline failed: {e}')
             import traceback
+            tprint_error(f"❌ Error details: {traceback.format_exc()}")
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
             return {
                 'success': False,

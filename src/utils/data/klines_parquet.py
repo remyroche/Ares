@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
@@ -207,17 +206,6 @@ class KlinesParquetManager:
             if not data_dir.exists():
                 self.logger.warning(f"No data directory found for {symbol} {interval}")
                 self.logger.warning(f"🔍 DEBUG: Looking for directory: {data_dir}")
-                synthetic = self._generate_synthetic_data(
-                    symbol,
-                    interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                if synthetic is not None:
-                    self.logger.warning(
-                        "⚠️ Using synthetic klines data as a fallback for missing processed files"
-                    )
-                    return synthetic
                 return None
             
             # Find matching files
@@ -232,17 +220,6 @@ class KlinesParquetManager:
                 # List all files in the directory for debugging
                 all_files = list(data_dir.glob("*"))
                 self.logger.warning(f"🔍 DEBUG: All files in {data_dir}: {[f.name for f in all_files]}")
-                synthetic = self._generate_synthetic_data(
-                    symbol,
-                    interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                if synthetic is not None:
-                    self.logger.warning(
-                        "⚠️ Using synthetic klines data as a fallback for empty processed directory"
-                    )
-                    return synthetic
                 return None
             
             # Load and combine data
@@ -275,17 +252,6 @@ class KlinesParquetManager:
             
             if not dataframes:
                 self.logger.warning(f"No valid data found for {symbol} {interval}")
-                synthetic = self._generate_synthetic_data(
-                    symbol,
-                    interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                if synthetic is not None:
-                    self.logger.warning(
-                        "⚠️ Using synthetic klines data as a fallback after failed parquet reads"
-                    )
-                    return synthetic
                 return None
             
             # Combine all dataframes
@@ -348,83 +314,6 @@ class KlinesParquetManager:
             self.logger.exception(f"❌ Failed to read data: {e}")
             return None
 
-    def _generate_synthetic_data(
-        self,
-        symbol: str,
-        interval: str,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        max_periods: int = 10000,
-    ) -> Optional[pd.DataFrame]:
-        """Create deterministic synthetic klines data when parquet files are absent."""
-
-        try:
-            freq_map = {
-                "1m": "1min",
-                "3m": "3min",
-                "5m": "5min",
-                "15m": "15min",
-                "30m": "30min",
-                "1h": "1H",
-                "2h": "2H",
-                "4h": "4H",
-                "6h": "6H",
-                "8h": "8H",
-                "12h": "12H",
-                "1d": "1D",
-            }
-            freq = freq_map.get(interval.lower(), "15min")
-
-            if start_date and end_date:
-                date_range = pd.date_range(start=start_date, end=end_date, freq=freq)
-            elif end_date:
-                date_range = pd.date_range(end=end_date, periods=max_periods, freq=freq)
-            else:
-                date_range = pd.date_range(
-                    end=datetime.utcnow(), periods=max_periods, freq=freq
-                )
-
-            if len(date_range) == 0:
-                date_range = pd.date_range(
-                    end=datetime.utcnow(), periods=max_periods, freq=freq
-                )
-
-            if len(date_range) > max_periods:
-                date_range = date_range[-max_periods:]
-
-            rng_seed = abs(hash((symbol.lower(), interval.lower()))) % (2**32)
-            rng = np.random.default_rng(rng_seed)
-
-            base_price = 1800 + 50 * np.sin(np.linspace(0, 12, len(date_range)))
-            noise = rng.normal(scale=3.0, size=len(date_range)).cumsum() / 5.0
-            close = base_price + noise
-            open_prices = close + rng.normal(scale=1.5, size=len(close))
-            high = np.maximum(open_prices, close) + rng.random(len(close)) * 2.0
-            low = np.minimum(open_prices, close) - rng.random(len(close)) * 2.0
-            volume = rng.lognormal(mean=8.0, sigma=0.2, size=len(close))
-
-            df = pd.DataFrame(
-                {
-                    "open": open_prices,
-                    "high": high,
-                    "low": low,
-                    "close": close,
-                    "volume": volume,
-                    "symbol": symbol.upper(),
-                    "interval": interval,
-                },
-                index=pd.Index(date_range, name="timestamp"),
-            )
-            df["timestamp"] = df.index
-
-            self.logger.info(
-                "🧪 Generated %d rows of synthetic %s %s data", len(df), symbol.upper(), interval
-            )
-            return df
-        except Exception as exc:  # pragma: no cover - defensive safeguard
-            self.logger.error(f"Failed to generate synthetic data for {symbol} {interval}: {exc}")
-            return None
-    
     def write_data(
         self,
         df: pd.DataFrame,

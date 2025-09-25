@@ -803,11 +803,8 @@ class PositionMonitor:
             }
 
             # Respect global enable switches
-            if not self.profit_taking_config.get("trailing_stop_enabled", True):
-                metadata["reason"] = "trailing_stop_disabled"
-                return PositionAction.STAY, "Trailing stop disabled", metadata
-
-            if not trailing_config.get("enabled", True):
+            # Respect global enable switches
+            if not self.profit_taking_config.get("trailing_stop_enabled", True) or not trailing_config.get("enabled", True):
                 metadata["reason"] = "trailing_stop_disabled"
                 return PositionAction.STAY, "Trailing stop disabled", metadata
 

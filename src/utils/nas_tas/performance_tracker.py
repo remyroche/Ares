@@ -1,8 +1,8 @@
 """
-Performance Tracking for Tree Architecture Search
+Advanced Performance Tracking for NAS and TAS
 
-Advanced performance tracking and analytics capabilities for tree-based models
-including metrics collection, performance analysis, and reporting.
+Comprehensive performance tracking and analytics capabilities for neural architecture search
+and tree architecture search including metrics collection, performance analysis, and reporting.
 """
 
 import numpy as np
@@ -24,10 +24,6 @@ from src.utils.tprint import (
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-
-from ..core.tas_config import TASConfig, TreeModelType
-from ..core.tree_architecture import TreeArchitectureCandidate
-from ..core.tas_result import TASResult
 
 logger = logging.getLogger(__name__)
 
@@ -57,21 +53,21 @@ class AnalyticsReport:
     visualizations: Dict[str, Any] = field(default_factory=dict)
 
 
-class TreePerformanceTracker:
+class AdvancedPerformanceTracker:
     """
-    Advanced Performance Tracker for Tree Architecture Search.
+    Advanced Performance Tracker for NAS and TAS.
 
-    Tracks and analyzes performance of tree models across multiple dimensions
+    Tracks and analyzes performance of models across multiple dimensions
     including accuracy, efficiency, robustness, and system impact.
     """
 
-    def __init__(self, config: TASConfig):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize performance tracker.
 
         Args:
-            config: TAS configuration
+            config: Configuration dictionary
         """
-        self.config = config
+        self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Performance tracking
@@ -79,39 +75,41 @@ class TreePerformanceTracker:
         self.current_session_id = self._generate_session_id()
 
         # Tracking configuration
-        self.track_system_metrics = True
-        self.track_data_characteristics = True
-        self.track_predictions = False  # Enable for detailed prediction tracking
+        self.track_system_metrics = self.config.get('track_system_metrics', True)
+        self.track_data_characteristics = self.config.get('track_data_characteristics', True)
+        self.track_predictions = self.config.get('track_predictions', False)
 
         # Analysis parameters
-        self.anomaly_threshold = 2.0  # Standard deviations
-        self.trend_window = 20
-        self.reporting_interval = timedelta(hours=1)
+        self.anomaly_threshold = self.config.get('anomaly_threshold', 2.0)
+        self.trend_window = self.config.get('trend_window', 20)
+        self.reporting_interval = timedelta(hours=self.config.get('reporting_interval_hours', 1))
 
         # Storage
-        self.storage_path = "performance_reports"
+        self.storage_path = self.config.get('storage_path', "performance_reports")
         self._ensure_storage_path()
 
-        self.logger.info("✅ Tree Performance Tracker initialized")
+        self.logger.info("✅ Advanced Performance Tracker initialized")
         self.logger.info(f"📊 Session ID: {self.current_session_id}")
         self.logger.info(f"📈 Anomaly threshold: {self.anomaly_threshold}σ")
 
     def track_performance(self,
                          model: Any,
-                         architecture: TreeArchitectureCandidate,
+                         architecture_params: Dict[str, Any],
                          train_data: Tuple[np.ndarray, np.ndarray],
                          test_data: Tuple[np.ndarray, np.ndarray],
                          training_time: float,
-                         inference_time: float) -> PerformanceSnapshot:
+                         inference_time: float,
+                         model_type: str = "unknown") -> PerformanceSnapshot:
         """Track comprehensive performance of a model.
 
         Args:
             model: The trained model
-            architecture: Architecture used
+            architecture_params: Architecture parameters used
             train_data: Training data
             test_data: Test data
             training_time: Training time in seconds
             inference_time: Inference time in seconds
+            model_type: Type of model (e.g., 'tree', 'neural', 'ensemble')
 
         Returns:
             PerformanceSnapshot object
@@ -134,8 +132,8 @@ class TreePerformanceTracker:
             # Create snapshot
             snapshot = PerformanceSnapshot(
                 timestamp=datetime.now(),
-                model_type=architecture.model_type.value,
-                architecture_params=architecture.to_dict(),
+                model_type=model_type,
+                architecture_params=architecture_params,
                 metrics=metrics,
                 system_metrics=system_metrics,
                 data_characteristics=data_characteristics,
@@ -157,8 +155,8 @@ class TreePerformanceTracker:
             # Return minimal snapshot
             return PerformanceSnapshot(
                 timestamp=datetime.now(),
-                model_type=architecture.model_type.value,
-                architecture_params={},
+                model_type=model_type,
+                architecture_params=architecture_params,
                 metrics={'error': str(e)},
                 system_metrics={},
                 data_characteristics={}
@@ -253,13 +251,13 @@ class TreePerformanceTracker:
                 metrics['accuracy'] = accuracy_score(y, predictions)
 
                 if len(np.unique(y)) == 2:  # Binary classification
-                    metrics['precision'] = precision_score(y, predictions, average='binary')
-                    metrics['recall'] = recall_score(y, predictions, average='binary')
-                    metrics['f1'] = f1_score(y, predictions, average='binary')
+                    metrics['precision'] = precision_score(y, predictions, average='binary', zero_division=0)
+                    metrics['recall'] = recall_score(y, predictions, average='binary', zero_division=0)
+                    metrics['f1'] = f1_score(y, predictions, average='binary', zero_division=0)
                 else:  # Multi-class classification
-                    metrics['precision'] = precision_score(y, predictions, average='weighted')
-                    metrics['recall'] = recall_score(y, predictions, average='weighted')
-                    metrics['f1'] = f1_score(y, predictions, average='weighted')
+                    metrics['precision'] = precision_score(y, predictions, average='weighted', zero_division=0)
+                    metrics['recall'] = recall_score(y, predictions, average='weighted', zero_division=0)
+                    metrics['f1'] = f1_score(y, predictions, average='weighted', zero_division=0)
 
                 # Probability metrics
                 proba = model.predict_proba(X)
@@ -578,7 +576,7 @@ class TreePerformanceTracker:
 
     def _generate_session_id(self) -> str:
         """Generate unique session ID."""
-        return f"TAS_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{np.random.randint(1000, 9999)}"
+        return f"NAS_TAS_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{np.random.randint(1000, 9999)}"
 
     def _generate_report_id(self) -> str:
         """Generate unique report ID."""
@@ -623,20 +621,20 @@ class TreePerformanceTracker:
         return self.performance_history
 
 
-class TreeMetricsCollector:
+class MetricsCollector:
     """
-    Advanced Metrics Collector for Tree Architecture Search.
+    Advanced Metrics Collector for NAS and TAS.
 
     Collects and aggregates metrics from multiple sources for comprehensive analysis.
     """
 
-    def __init__(self, config: TASConfig):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize metrics collector.
 
         Args:
-            config: TAS configuration
+            config: Configuration dictionary
         """
-        self.config = config
+        self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Collection state
@@ -647,7 +645,7 @@ class TreeMetricsCollector:
         # Default aggregation functions
         self._setup_default_aggregations()
 
-        self.logger.info("✅ Tree Metrics Collector initialized")
+        self.logger.info("✅ Metrics Collector initialized")
 
     def collect_metrics(self,
                        source: str,
@@ -771,21 +769,21 @@ class TreeMetricsCollector:
         self.logger.info(f"🧹 Cleared metrics for source: {source or 'all'}")
 
 
-class TreeAnalytics:
+class PerformanceAnalytics:
     """
-    Advanced Analytics Engine for Tree Architecture Search.
+    Advanced Analytics Engine for NAS and TAS.
 
     Provides advanced analytics capabilities including statistical analysis,
     correlation analysis, and predictive modeling of performance.
     """
 
-    def __init__(self, config: TASConfig):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize analytics engine.
 
         Args:
-            config: TAS configuration
+            config: Configuration dictionary
         """
-        self.config = config
+        self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Analytics state
@@ -793,7 +791,7 @@ class TreeAnalytics:
         self.prediction_models = {}
         self.statistical_tests = {}
 
-        self.logger.info("✅ Tree Analytics Engine initialized")
+        self.logger.info("✅ Performance Analytics Engine initialized")
 
     def calculate_correlations(self, metrics_data: Dict[str, List[float]]) -> Dict[str, float]:
         """Calculate correlations between metrics.
@@ -892,16 +890,22 @@ class TreeAnalytics:
 
 
 # Convenience functions
-def create_performance_tracker(config: TASConfig) -> TreePerformanceTracker:
+def create_performance_tracker(config: Optional[Dict[str, Any]] = None) -> AdvancedPerformanceTracker:
     """Create a performance tracker with default configuration."""
-    return TreePerformanceTracker(config)
+    return AdvancedPerformanceTracker(config)
 
 
-def create_metrics_collector(config: TASConfig) -> TreeMetricsCollector:
+def create_metrics_collector(config: Optional[Dict[str, Any]] = None) -> MetricsCollector:
     """Create a metrics collector with default configuration."""
-    return TreeMetricsCollector(config)
+    return MetricsCollector(config)
 
 
-def create_analytics_engine(config: TASConfig) -> TreeAnalytics:
+def create_analytics_engine(config: Optional[Dict[str, Any]] = None) -> PerformanceAnalytics:
     """Create an analytics engine with default configuration."""
-    return TreeAnalytics(config)
+    return PerformanceAnalytics(config)
+
+
+# Backward compatibility aliases
+TreePerformanceTracker = AdvancedPerformanceTracker
+TreeMetricsCollector = MetricsCollector
+TreeAnalytics = PerformanceAnalytics

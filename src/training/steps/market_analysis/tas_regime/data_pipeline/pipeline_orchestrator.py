@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 # Import pipeline components
 from .data_ingestion import DataIngestor, DataIngestionConfig
-from .data_preprocessing import DataPreprocessor, DataPreprocessingConfig
+from .data_preprocessing import DataPreprocessor, PreprocessingConfig as DataPreprocessingConfig
 from .feature_engineering import FeatureEngineer, FeatureEngineeringConfig
 from .regime_detection import RegimeDetectorPipeline, RegimeDetectionPipelineConfig
 from .data_validation import DataValidator, DataValidationConfig

@@ -254,3 +254,11 @@ _site/
 *.dmp
 *.hprof
 outcomes/market_analysis_hybrid_nas_tas_regime_discovery_outcome_*.json
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so

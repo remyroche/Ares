@@ -23,10 +23,10 @@ import warnings
 from pathlib import Path
 
 # Import unified evaluation framework
-from ...hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import (
+from src.utils.nas_tas.shared_utils.unified_evaluation_framework import (
     UnifiedEvaluationFramework, EvaluationConfig
 )
-from ...hybrid_nas_tas_regime.shared_utils.unified_architecture_config import ArchitectureType
+from src.utils.nas_tas.shared_utils.unified_architecture_config import ArchitectureType
 
 # Import utility modules
 from src.utils.common_operations import (

@@ -47,7 +47,7 @@ from ..core.tas_engine import TASEngine, TASEngineConfig
 from ..core.tas_result import TASResult
 
 # Import enhanced unified utilities
-from ...hybrid_nas_tas_regime.shared_utils import (
+from src.utils.nas_tas.shared_utils import (
     UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig,
     UnifiedTradingViabilityEvaluator, TradingViabilityConfig,
     UnifiedMultiObjectiveOptimizer, OptimizationConfig,

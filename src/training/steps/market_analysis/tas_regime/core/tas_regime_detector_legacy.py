@@ -81,9 +81,9 @@ except ImportError:
 
 # Import shared utilities from hybrid regime system
 try:
-    from ...hybrid_nas_tas_regime.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
-    from ...hybrid_nas_tas_regime.shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
-    from ...hybrid_nas_tas_regime.shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
+    from src.utils.nas_tas.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
+    from src.utils.nas_tas.shared_utils.analysis_components import SharedClusteringUtilities, AnalysisComponentConfig
+    from src.utils.nas_tas.shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
     SHARED_UTILITIES_AVAILABLE = True
     POSITION_AWARE_AVAILABLE = True
 except ImportError:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Pure Tree-Based NAS - 100% Tree Models with Creative Architectures
 
@@ -418,75 +420,85 @@ class NODEModel:
         return self._feature_importances if hasattr(self, '_feature_importances') else None
 
 
-class ObliviousTree(nn.Module):
-    """Oblivious Decision Tree implementation for NODE."""
-    
-    def __init__(self, input_dim: int, tree_dim: int, depth: int, choice_function: str, bin_function: str):
-        super().__init__()
-        self.input_dim = input_dim
-        self.tree_dim = tree_dim
-        self.depth = depth
-        
-        # Decision nodes (same feature used at each level)
-        self.decision_layers = nn.ModuleList([
-            nn.Linear(input_dim, 1) for _ in range(depth)
-        ])
-        
-        # Leaf nodes
-        self.leaf_layers = nn.ModuleList([
-            nn.Linear(2**depth, tree_dim) for _ in range(tree_dim)
-        ])
-        
-        # Choice and bin functions
-        self.choice_function = self._get_choice_function(choice_function)
-        self.bin_function = self._get_bin_function(bin_function)
-    
-    def _get_choice_function(self, choice_function: str):
-        """Get choice function for routing."""
-        if choice_function == 'entmax15':
-            return lambda x: torch.softmax(x * 1.5, dim=-1)
-        elif choice_function == 'sparsemax':
-            return lambda x: torch.softmax(x, dim=-1)
-        else:
-            return lambda x: torch.softmax(x, dim=-1)
-    
-    def _get_bin_function(self, bin_function: str):
-        """Get bin function for leaf selection."""
-        if bin_function == 'entmoid':
-            return lambda x: torch.sigmoid(x)
-        elif bin_function == 'sigmoid':
-            return lambda x: torch.sigmoid(x)
-        else:
-            return lambda x: torch.sigmoid(x)
-    
-    def forward(self, x):
-        """Forward pass through oblivious tree."""
-        batch_size = x.shape[0]
-        
-        # Decision path through tree
-        path_probs = []
-        for i in range(self.depth):
-            decision = self.decision_layers[i](x)
-            prob = self.choice_function(decision)
-            path_probs.append(prob)
-        
-        # Calculate leaf probabilities
-        leaf_probs = torch.ones(batch_size, 2**self.depth, device=x.device)
-        for i, prob in enumerate(path_probs):
-            level_size = 2**(self.depth - i - 1)
-            for j in range(2**i):
-                start_idx = j * level_size
-                end_idx = (j + 1) * level_size
-                leaf_probs[:, start_idx:end_idx] *= prob[:, 0:1]  # Left child
-                leaf_probs[:, start_idx:end_idx] *= (1 - prob[:, 0:1])  # Right child
-        
-        # Apply leaf layers
-        outputs = []
-        for i in range(self.tree_dim):
-            leaf_output = self.leaf_layers[i](leaf_probs)
-            outputs.append(leaf_output)
-        
-        return torch.stack(outputs, dim=1)
+if TORCH_AVAILABLE:
+    class ObliviousTree(nn.Module):
+        """Oblivious Decision Tree implementation for NODE."""
+
+        def __init__(self, input_dim: int, tree_dim: int, depth: int, choice_function: str, bin_function: str):
+            super().__init__()
+            self.input_dim = input_dim
+            self.tree_dim = tree_dim
+            self.depth = depth
+
+            # Decision nodes (same feature used at each level)
+            self.decision_layers = nn.ModuleList([
+                nn.Linear(input_dim, 1) for _ in range(depth)
+            ])
+
+            # Leaf nodes
+            self.leaf_layers = nn.ModuleList([
+                nn.Linear(2**depth, tree_dim) for _ in range(tree_dim)
+            ])
+
+            # Choice and bin functions
+            self.choice_function = self._get_choice_function(choice_function)
+            self.bin_function = self._get_bin_function(bin_function)
+
+        def _get_choice_function(self, choice_function: str):
+            """Get choice function for routing."""
+            if choice_function == 'entmax15':
+                return lambda x: torch.softmax(x * 1.5, dim=-1)
+            elif choice_function == 'sparsemax':
+                return lambda x: torch.softmax(x, dim=-1)
+            else:
+                return lambda x: torch.softmax(x, dim=-1)
+
+        def _get_bin_function(self, bin_function: str):
+            """Get bin function for leaf selection."""
+            if bin_function == 'entmoid':
+                return lambda x: torch.sigmoid(x)
+            elif bin_function == 'sigmoid':
+                return lambda x: torch.sigmoid(x)
+            else:
+                return lambda x: torch.sigmoid(x)
+
+        def forward(self, x):
+            """Forward pass through oblivious tree."""
+            batch_size = x.shape[0]
+
+            # Decision path through tree
+            path_probs = []
+            for i in range(self.depth):
+                decision = self.decision_layers[i](x)
+                prob = self.choice_function(decision)
+                path_probs.append(prob)
+
+            # Calculate leaf probabilities
+            leaf_probs = torch.ones(batch_size, 2**self.depth, device=x.device)
+            for i, prob in enumerate(path_probs):
+                level_size = 2**(self.depth - i - 1)
+                for j in range(2**i):
+                    start_idx = j * level_size
+                    end_idx = (j + 1) * level_size
+                    leaf_probs[:, start_idx:end_idx] *= prob[:, 0:1]  # Left child
+                    leaf_probs[:, start_idx:end_idx] *= (1 - prob[:, 0:1])  # Right child
+
+            # Apply leaf layers
+            outputs = []
+            for i in range(self.tree_dim):
+                leaf_output = self.leaf_layers[i](leaf_probs)
+                outputs.append(leaf_output)
+
+            return torch.stack(outputs, dim=1)
+else:
+    class ObliviousTree:
+        """Placeholder ObliviousTree when PyTorch is unavailable."""
+
+        def __init__(self, *_, **__):
+            raise ImportError("PyTorch is required for ObliviousTree models")
+
+        def forward(self, *_args, **_kwargs):
+            raise ImportError("PyTorch is required for ObliviousTree models")
 
 
 class ObliviousTreeModel:

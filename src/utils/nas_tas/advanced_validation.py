@@ -15,8 +15,20 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Optional visualization imports
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    plt = None  # type: ignore[assignment]
+    MATPLOTLIB_AVAILABLE = False
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    sns = None  # type: ignore[assignment]
+    SEABORN_AVAILABLE = False
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, log_loss, roc_auc_score
 
 # Import additional validation utilities
@@ -486,10 +498,13 @@ class UniversalOverfittingDetector:
     
     def _generate_visualizations(self, report: OverfittingReport):
         """Generate visualization plots."""
+        if not MATPLOTLIB_AVAILABLE:
+            logger.warning("⚠️ Matplotlib not available - skipping visualization generation")
+            return
         try:
             viz_dir = Path(self.config.report_directory) / "visualizations"
             viz_dir.mkdir(exist_ok=True)
-            
+
             # Generate plots
             self._plot_accuracy_comparison(report, viz_dir)
             self._plot_overfitting_indicators(report, viz_dir)
@@ -499,6 +514,8 @@ class UniversalOverfittingDetector:
     
     def _plot_accuracy_comparison(self, report: OverfittingReport, viz_dir: Path):
         """Plot accuracy comparison."""
+        if not MATPLOTLIB_AVAILABLE:
+            return
         try:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
             
@@ -540,6 +557,8 @@ class UniversalOverfittingDetector:
     
     def _plot_overfitting_indicators(self, report: OverfittingReport, viz_dir: Path):
         """Plot overfitting indicators."""
+        if not MATPLOTLIB_AVAILABLE:
+            return
         try:
             if not report.indicators:
                 return

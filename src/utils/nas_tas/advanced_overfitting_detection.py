@@ -16,8 +16,20 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import json
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Optional visualization imports
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    plt = None  # type: ignore[assignment]
+    MATPLOTLIB_AVAILABLE = False
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    sns = None  # type: ignore[assignment]
+    SEABORN_AVAILABLE = False
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, log_loss, roc_auc_score
 from sklearn.model_selection import learning_curve, validation_curve
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor

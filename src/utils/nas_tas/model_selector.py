@@ -121,10 +121,10 @@ class ModelSelectionResult:
     
     # Alternative options
     alternative_models: List[Dict[str, Any]]
-    ensemble_weights: Optional[Dict[str, float]] = None
-    
+
     # Metadata
     selection_time: datetime
+    ensemble_weights: Optional[Dict[str, float]] = None
     regime_probabilities: Optional[np.ndarray] = None
     model_rankings: Dict[str, int] = field(default_factory=dict)
 

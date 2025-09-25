@@ -28,7 +28,7 @@ from tprint import tprint, tprint_warning
 
 # Import existing neural NAS (if available)
 try:
-    from .neural_architecture_search import NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
+    from .nas.neural_architecture_search import NeuralArchitectureSearch, ArchitectureConfig, ArchitectureCandidate
     NEURAL_NAS_AVAILABLE = True
 except ImportError:
     tprint_warning("⚠️ [HYBRID_NAS] Neural architecture search module not available")
@@ -42,7 +42,7 @@ except ImportError:
 
 # Import tree-based NAS (if available)
 try:
-    from .tree_based_architecture_search import TreeBasedArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+    from .tas.tree_based_architecture_search import TreeBasedArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
     TREE_NAS_AVAILABLE = True
 except ImportError:
     tprint_warning("⚠️ [HYBRID_NAS] Tree-based architecture search module not available")
@@ -56,7 +56,7 @@ except ImportError:
 
 # Import pure tree NAS as fallback
 try:
-    from .pure_tree_nas import PureTreeNAS, PureTreeNASConfig, TreeArchitectureCandidate as PureTreeArchitectureCandidate
+    from .tas.pure_tree_nas import PureTreeNAS, PureTreeNASConfig, TreeArchitectureCandidate as PureTreeArchitectureCandidate
     PURE_TREE_NAS_AVAILABLE = True
 except ImportError:
     PURE_TREE_NAS_AVAILABLE = False

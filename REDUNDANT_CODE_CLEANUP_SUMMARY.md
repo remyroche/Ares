@@ -160,7 +160,7 @@ result = detector.detect_regimes(market_data, timestamps)
 
 ### Unified Regime Detector
 ```python
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig
 
 # Create unified configuration
 config = UnifiedRegimeConfig.create_production_config()

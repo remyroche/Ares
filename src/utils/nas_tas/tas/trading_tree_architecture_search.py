@@ -21,7 +21,7 @@ import json
 from enum import Enum
 
 # Import existing components
-from .tree_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+from .tree_based_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
 from src.utils.ml_common.models.model_factory import ModelType, ModelConfig
 from src.training.steps.market_analysis.nas_clustering.core.nas_config import NASArchitectureType
 

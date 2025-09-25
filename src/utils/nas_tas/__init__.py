@@ -16,7 +16,26 @@ Main Components:
 - ML Common Integration: Integration with existing ML utilities
 - Economic Evaluator: Economic significance evaluation during training
 - Ensemble Management: Dynamic ensemble optimization for training
+- Unified Regime Detection: Enhanced regime detection with economic significance
+- Training Orchestration: Comprehensive training pipeline management
 """
+
+# Core unified regime detection components
+from .unified_regime_config import (
+    UnifiedRegimeConfig,
+    RegimeDetectionMethod,
+    OptimizationStrategy,
+    EconomicEvaluationMode
+)
+
+from .unified_regime_detector import (
+    UnifiedRegimeDetector,
+    UnifiedRegimeResult
+)
+
+from .unified_result import (
+    UnifiedRegimeResult as UnifiedResult
+)
 
 # Core search and optimization components
 from .unified_search_engine import (
@@ -42,16 +61,6 @@ from .unified_multi_objective_optimizer import (
     OptimizationAlgorithm,
     create_unified_multi_objective_optimizer,
     quick_multi_objective_optimization
-)
-
-from .unified_regime_detector import (
-    UnifiedRegimeDetector,
-    RegimeDetectionConfig,
-    RegimeDetectionResult,
-    RegimeInfo,
-    RegimeDetectionMethod,
-    ArchitectureType as RegimeArchitectureType,
-    create_unified_regime_detector
 )
 
 from .unified_architecture_config import (
@@ -148,6 +157,15 @@ from .evolutionary_algorithms import (
 
 # Export all main classes and functions
 __all__ = [
+    # Core unified regime detection
+    'UnifiedRegimeConfig',
+    'RegimeDetectionMethod',
+    'OptimizationStrategy',
+    'EconomicEvaluationMode',
+    'UnifiedRegimeDetector',
+    'UnifiedRegimeResult',
+    'UnifiedResult',
+    
     # Core search and optimization
     'UnifiedSearchEngine',
     'SearchConfig',
@@ -170,15 +188,6 @@ __all__ = [
     'OptimizationAlgorithm',
     'create_unified_multi_objective_optimizer',
     'quick_multi_objective_optimization',
-    
-    # Regime detection
-    'UnifiedRegimeDetector',
-    'RegimeDetectionConfig',
-    'RegimeDetectionResult',
-    'RegimeInfo',
-    'RegimeDetectionMethod',
-    'RegimeArchitectureType',
-    'create_unified_regime_detector',
     
     # Architecture configuration
     'BaseArchitectureConfig',
@@ -261,3 +270,6 @@ __all__ = [
     'TreeNSGA2',
     'EvolutionaryConfig'
 ]
+
+__version__ = "1.0.0"
+__author__ = "NAS-TAS Training Utilities"

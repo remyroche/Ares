@@ -1,9 +1,9 @@
 """
-Unified Regime Detector for NAS and TAS Systems
+Unified Regime Detection System
 
-This module consolidates all regime detection capabilities for both
-Neural Architecture Search (NAS) and Tree Architecture Search (TAS) systems.
-It provides a unified interface for regime detection, clustering, and analysis.
+This module provides a unified regime detection system that combines the best aspects
+of both TAS (Tree Architecture Search) and NAS (Neural Architecture Search) regime
+detection with enhanced economic significance and trading viability evaluation.
 """
 
 import numpy as np

@@ -12,12 +12,8 @@ Available modules:
 - analytics_reporter: Comprehensive analytics and reporting
 """
 
-from .backtesting_engine import (
-    BacktestingEngine,
-    WalkForwardValidator,
-    BacktestingConfig,
-    BacktestingResults
-)
+from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as BacktestingEngine
+from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig as BacktestingConfig, BacktestingResults
 
 from .monte_carlo_engine import (
     MonteCarloEngine,

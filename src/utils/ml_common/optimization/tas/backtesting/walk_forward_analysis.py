@@ -15,7 +15,8 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
-from .backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
+from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as BacktestingEngine
+from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig as BacktestingConfig, BacktestingResults as BacktestingResult
 
 logger = logging.getLogger(__name__)
 

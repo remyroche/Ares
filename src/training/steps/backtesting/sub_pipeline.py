@@ -554,7 +554,7 @@ class BacktestingSubPipeline:
         
         try:
             # Import real backtesting engine
-            from .real_backtesting_engine import RealBacktestingEngine
+            from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine
             
             # Execute real backtest based on mode
             if config.mode == ExecutionMode.BLANK:

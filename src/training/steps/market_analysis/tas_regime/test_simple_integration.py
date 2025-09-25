@@ -40,9 +40,8 @@ def test_imports():
         logger.info("✅ Enhanced regime detector imported successfully")
         
         # Test enhanced backtesting engine
-        from src.training.steps.market_analysis.tas_regime.backtesting.backtesting_engine import (
-            BacktestingEngine, BacktestingConfig
-        )
+        from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as BacktestingEngine
+        from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig as BacktestingConfig
         logger.info("✅ Enhanced backtesting engine imported successfully")
         
         return True

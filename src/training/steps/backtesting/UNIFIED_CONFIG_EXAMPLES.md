@@ -317,7 +317,7 @@ config = (create_config()
 
 ### **Real Backtesting Engine**
 ```python
-from src.training.steps.backtesting.real_backtesting_engine import RealBacktestingEngine
+from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine
 
 # Create configuration
 config = (create_config()

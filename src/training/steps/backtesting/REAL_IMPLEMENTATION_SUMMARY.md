@@ -142,7 +142,7 @@ The main `sub_pipeline.py` has been updated to use real implementations:
 
 ### **Basic Backtesting**
 ```python
-from src.training.steps.backtesting.real_backtesting_engine import execute_real_backtest
+from src.utils.nas_tas.backtesting_engine import execute_real_backtest
 
 # Execute real backtest
 results = await execute_real_backtest(

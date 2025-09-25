@@ -28,10 +28,8 @@ except ImportError:
 
 # Import general ML pipeline optimization tools
 try:
-    from src.utils.common_ml.backtesting.backtesting_engine import (
-        BacktestingEngine as CommonBacktestingEngine,
-        BacktestingConfig as CommonBacktestingConfig
-    )
+    from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as CommonBacktestingEngine
+    from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig as CommonBacktestingConfig
     from src.training.steps.backtesting.walk_forward_validation import WalkForwardValidation
     from src.training.steps.backtesting.monte_carlo_simulation import MonteCarloSimulationStep
     from src.training.steps.backtesting.consolidated_backtesting_step import ConsolidatedBacktestingStep

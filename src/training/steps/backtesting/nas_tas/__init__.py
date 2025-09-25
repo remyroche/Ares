@@ -5,7 +5,8 @@ Comprehensive backtesting framework that integrates with regime detection
 and model training systems to provide complete validation capabilities.
 """
 
-from .backtesting_engine import BacktestingEngine, BacktestingConfig
+from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as BacktestingEngine
+from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig as BacktestingConfig
 from .walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig
 from .performance_attribution import PerformanceAttributor, AttributionConfig
 from .scenario_tester import ScenarioTester, ScenarioConfig

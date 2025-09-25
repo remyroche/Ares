@@ -28,9 +28,7 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.ml_common.vectorized_backtesting import VectorizedBacktestEngine, VectorizedBacktestConfig
 from src.utils.ml_common.cvlsa import CVLSAValidator
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.common_ml.backtesting.backtesting_engine import BacktestingEngine, BacktestingConfig
-from src.utils.common_ml.backtesting.monte_carlo_engine import MonteCarloEngine, MonteCarloConfig
-from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
+# Removed circular imports - these are now handled by the unified engine
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -81,9 +79,7 @@ class RealBacktestingEngine:
         
         # Initialize backtesting engines
         self.vectorized_engine = VectorizedBacktestEngine()
-        self.backtesting_engine = BacktestingEngine()
-        self.monte_carlo_engine = MonteCarloEngine()
-        self.ab_testing_engine = ABTestingEngine()
+        # Removed redundant engine initializations - functionality is now in the unified engine
         
         # Performance tracking
         self.performance_metrics = {}

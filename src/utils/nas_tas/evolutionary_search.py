@@ -624,7 +624,7 @@ class TreeNSGA2:
             return [float(v) for v in values_list]
         except Exception as e:
             tprint_warning(f"⚠️ Objective evaluation failed: {e}")
-            return [float('-inf')] * len(self.objective_names or [0])
+            return [float('-inf')] * (len(self.objective_names) if self.objective_names else 2)  # Assume at least 2 objectives for NSGA-II
 
     def _generate_offspring(self, search_space: Dict[str, Any]) -> List[Dict[str, Any]]:
         offspring = []

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 
 from .evaluation import UnifiedEvaluator
-from .hardware import UnifiedHardwareOptimizer
+from .hardware import UnifiedHardwareOptimizer, HardwareConfig, WorkloadType, OptimizationLevel
 from .search import UnifiedSearchEngine
 from .data_processing import UnifiedDataProcessor
 
@@ -245,24 +245,43 @@ def get_default_config() -> Dict[str, Any]:
     }
 
 
-def create_nas_config() -> Dict[str, Any]:
+def create_nas_config() -> HardwareConfig:
     """Create configuration optimized for NAS."""
     config = get_default_config()
-    config.update({
-        'enable_trading_metrics': False,  # NAS doesn't need trading metrics
-        'use_bayesian_optimization': True,
-        'search_strategy': 'neural_architecture_search'
-    })
-    return config
+    # Convert to HardwareConfig for enhanced functionality
+    return HardwareConfig(
+        cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+        gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
+        memory_optimization_level=OptimizationLevel.BALANCED,
+        enable_adaptive_optimization=True,
+        learning_enabled=True,
+        performance_monitoring_enabled=True,
+        monitoring_interval=3.0,  # More frequent monitoring for NAS
+        alert_thresholds={
+            'cpu_usage': 90.0,  # Higher threshold for NAS
+            'memory_usage': 85.0,
+            'gpu_usage': 90.0,
+            'temperature': 85.0
+        }
+    )
 
 
-def create_tas_config() -> Dict[str, Any]:
+def create_tas_config() -> HardwareConfig:
     """Create configuration optimized for TAS."""
     config = get_default_config()
-    config.update({
-        'enable_trading_metrics': True,  # TAS needs trading metrics
-        'enable_economic_metrics': True,
-        'use_bayesian_optimization': True,
-        'search_strategy': 'tree_search'
-    })
-    return config
+    # Convert to HardwareConfig for enhanced functionality
+    return HardwareConfig(
+        cpu_optimization_level=OptimizationLevel.BALANCED,
+        gpu_optimization_level=OptimizationLevel.MINIMAL,  # TAS doesn't need heavy GPU
+        memory_optimization_level=OptimizationLevel.AGGRESSIVE,  # TAS needs memory optimization
+        enable_adaptive_optimization=True,
+        learning_enabled=True,
+        performance_monitoring_enabled=True,
+        monitoring_interval=5.0,  # Standard monitoring for TAS
+        alert_thresholds={
+            'cpu_usage': 80.0,
+            'memory_usage': 90.0,  # Higher memory threshold for TAS
+            'gpu_usage': 50.0,  # Lower GPU threshold for TAS
+            'temperature': 85.0
+        }
+    )

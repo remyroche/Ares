@@ -1,22 +1,37 @@
 #!/usr/bin/env python3
 """
-Unified Evaluation Framework
+Unified Evaluation Framework - Enhanced with Existing Unified Evaluator
 
 This module provides a unified evaluation framework for both NAS and TAS architectures,
 consolidating all evaluation metrics and methods into a single, comprehensive system.
+Enhanced with existing unified evaluator functionality to avoid conflicts.
 
 Key Features:
-- Basic classification/regression metrics
+- Basic classification/regression metrics (from existing unified evaluator)
 - Trading-specific metrics (Sharpe ratio, max drawdown, win rate)
 - Economic significance validation
 - Model complexity assessment
 - Performance monitoring
+- Consistent metric naming and safe calculations
+- Backward compatibility with existing evaluation systems
 """
 
 import time
 import logging
 import numpy as np
 from typing import Any, Dict, List, Optional, Union, Tuple
+from __future__ import annotations
+
+# Import sklearn metrics for comprehensive evaluation
+try:
+    from sklearn.metrics import (
+        accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score,
+        mean_absolute_error, mean_squared_error, r2_score, classification_report,
+        confusion_matrix, log_loss, roc_auc_score
+    )
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 # Import utility modules
 try:
@@ -39,6 +54,148 @@ except ImportError:
         print("SUCCESS:", *args, **kwargs)
 
 logger = logging.getLogger(__name__)
+
+
+# Helper functions from existing unified evaluator
+def _is_classification_task(y_true: np.ndarray, y_pred: np.ndarray) -> bool:
+    """Determine if this is a classification task."""
+    try:
+        unique_true = len(np.unique(y_true))
+        unique_pred = len(np.unique(y_pred))
+        return unique_true <= 10 and unique_pred <= 10 and not np.issubdtype(y_true.dtype, np.floating)
+    except Exception:
+        return False
+
+
+def compute_classification_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_prob: Optional[np.ndarray] = None,
+    include: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Compute common classification metrics with consistent naming.
+    
+    Returns keys:
+    - accuracy, balanced_accuracy
+    - precision_macro, recall_macro, f1_macro
+    - precision_weighted, recall_weighted, f1_weighted
+    - confusion_matrix, classification_report
+    - roc_auc, log_loss (when y_prob provided)
+    
+    For backward-compatibility, also includes:
+    - precision, recall, f1_score (mapped to weighted variants)
+    """
+    if not SKLEARN_AVAILABLE:
+        return {}
+
+    metrics: Dict[str, Any] = {}
+
+    # Basic and macro/weighted aggregates
+    try:
+        metrics["accuracy"] = float(accuracy_score(y_true, y_pred))
+        metrics["balanced_accuracy"] = float(balanced_accuracy_score(y_true, y_pred))
+
+        metrics["precision_macro"] = float(precision_score(y_true, y_pred, average="macro", zero_division=0))
+        metrics["recall_macro"] = float(recall_score(y_true, y_pred, average="macro", zero_division=0))
+        metrics["f1_macro"] = float(f1_score(y_true, y_pred, average="macro", zero_division=0))
+
+        metrics["precision_weighted"] = float(
+            precision_score(y_true, y_pred, average="weighted", zero_division=0)
+        )
+        metrics["recall_weighted"] = float(
+            recall_score(y_true, y_pred, average="weighted", zero_division=0)
+        )
+        metrics["f1_weighted"] = float(
+            f1_score(y_true, y_pred, average="weighted", zero_division=0)
+        )
+
+        # Back-compat keys used in older modules
+        metrics["precision"] = metrics["precision_weighted"]
+        metrics["recall"] = metrics["recall_weighted"]
+        metrics["f1_score"] = metrics["f1_weighted"]
+    except Exception as e:
+        logger.error(f"❌ Classification aggregate metrics failed: {e}")
+        logger.warning("⚠️ Classification metrics failed - returning empty metrics")
+
+    # Detailed outputs
+    try:
+        cm = confusion_matrix(y_true, y_pred)
+        metrics["confusion_matrix"] = cm.tolist()
+    except Exception as e:
+        logger.error(f"❌ Critical error: Could not compute confusion matrix: {e}")
+        metrics["confusion_matrix"] = []
+
+    try:
+        report = classification_report(y_true, y_pred, output_dict=True)
+        metrics["classification_report"] = report
+    except Exception as e:
+        logger.error(f"❌ Critical error: Could not generate classification report: {e}")
+        metrics["classification_report"] = {}
+
+    # Probability-based metrics
+    if y_prob is not None:
+        try:
+            unique_classes = np.unique(y_true)
+            if len(unique_classes) == 2 and y_prob.ndim == 2 and y_prob.shape[1] >= 2:
+                metrics["roc_auc"] = float(roc_auc_score(y_true, y_prob[:, 1]))
+            elif y_prob.ndim == 2:
+                metrics["roc_auc"] = float(roc_auc_score(y_true, y_prob, multi_class="ovr"))
+        except Exception as e:
+            logger.warning(f"⚠️ ROC-AUC calculation failed: {e}")
+            metrics["roc_auc"] = None
+
+        try:
+            metrics["log_loss"] = float(log_loss(y_true, y_prob))
+        except Exception as e:
+            logger.warning(f"⚠️ Log loss calculation failed: {e}")
+            metrics["log_loss"] = None
+
+    # Optional include filter
+    if include:
+        filtered: Dict[str, Any] = {}
+        for key in include:
+            if key in metrics:
+                filtered[key] = metrics[key]
+        return filtered
+
+    return metrics
+
+
+def compute_regression_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    include: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Compute common regression metrics with consistent naming.
+    
+    Returns keys:
+    - mse, rmse, mae, r2_score
+    """
+    if not SKLEARN_AVAILABLE:
+        return {}
+
+    metrics: Dict[str, Any] = {}
+
+    try:
+        metrics["mse"] = float(mean_squared_error(y_true, y_pred))
+        metrics["rmse"] = float(np.sqrt(metrics["mse"]))
+        metrics["mae"] = float(mean_absolute_error(y_true, y_pred))
+        metrics["r2_score"] = float(r2_score(y_true, y_pred))
+    except Exception as e:
+        logger.error(f"❌ Regression metrics failed: {e}")
+        return {}
+
+    # Optional include filter
+    if include:
+        filtered: Dict[str, Any] = {}
+        for key in include:
+            if key in metrics:
+                filtered[key] = metrics[key]
+        return filtered
+
+    return metrics
 
 
 class UnifiedEvaluator:
@@ -108,36 +265,35 @@ class UnifiedEvaluator:
             return {'evaluation_time': time.time() - start_time, 'error': str(e)}
     
     def _calculate_basic_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optional[np.ndarray] = None) -> Dict[str, float]:
-        """Calculate basic evaluation metrics."""
+        """Calculate basic evaluation metrics using merged functionality."""
         metrics = {}
         
-        # Determine if classification or regression
-        n_unique = len(np.unique(y_true))
+        # Determine if classification or regression using merged helper
+        is_classification = _is_classification_task(y_true, y_pred)
         
-        if n_unique <= 10:  # Classification
+        if is_classification:
+            # Use merged classification metrics
             try:
-                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+                classification_metrics = compute_classification_metrics(y_true, y_pred, y_prob)
+                metrics.update(classification_metrics)
                 
-                metrics['accuracy'] = accuracy_score(y_true, y_pred)
-                metrics['precision'] = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-                metrics['recall'] = recall_score(y_true, y_pred, average='weighted', zero_division=0)
-                metrics['f1_score'] = f1_score(y_true, y_pred, average='weighted', zero_division=0)
-                
-                if y_prob is not None:
-                    try:
-                        metrics['roc_auc'] = roc_auc_score(y_true, y_prob, average='weighted', multi_class='ovr')
-                    except ValueError:
-                        metrics['roc_auc'] = 0.0
+                # Ensure backward compatibility
+                if 'precision_weighted' in classification_metrics:
+                    metrics['precision'] = classification_metrics['precision_weighted']
+                if 'recall_weighted' in classification_metrics:
+                    metrics['recall'] = classification_metrics['recall_weighted']
+                if 'f1_weighted' in classification_metrics:
+                    metrics['f1_score'] = classification_metrics['f1_weighted']
+                    
             except Exception as e:
-                tprint_warning(f"Basic metrics calculation failed: {e}")
+                tprint_warning(f"Classification metrics calculation failed: {e}")
                 metrics = {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1_score': 0.0, 'roc_auc': 0.0}
         
         else:  # Regression
             try:
-                metrics['mse'] = np.mean((y_true - y_pred) ** 2)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['mae'] = np.mean(np.abs(y_true - y_pred))
-                metrics['r2_score'] = 1 - (np.sum((y_true - y_pred) ** 2) / np.sum((y_true - np.mean(y_true)) ** 2))
+                regression_metrics = compute_regression_metrics(y_true, y_pred)
+                metrics.update(regression_metrics)
+                
             except Exception as e:
                 tprint_warning(f"Regression metrics calculation failed: {e}")
                 metrics = {'mse': float('inf'), 'rmse': float('inf'), 'mae': float('inf'), 'r2_score': 0.0}

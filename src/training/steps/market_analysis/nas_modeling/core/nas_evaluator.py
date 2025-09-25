@@ -1,18 +1,8 @@
 """
-Neural Architecture Search (NAS) Evaluator
+NAS Evaluator - Updated to use Unified Evaluator
 
-This module provides a comprehensive NASEvaluator class that combines
-neural architecture search evaluation with advanced ML optimization,
-hardware acceleration, and data processing capabilities.
-
-Features:
-- Architecture evaluation with performance metrics
-- Cross-validation and hyperparameter optimization
-- M1 hardware optimization integration
-- Advanced data processing and validation
-- Matrix operations and mathematical validation
-- Comprehensive logging and monitoring
-- Serialization and persistence utilities
+This module provides NAS-specific evaluation capabilities using
+the unified evaluation framework.
 """
 
 import logging
@@ -26,6 +16,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import numpy as np
 import pandas as pd
+
+# Import unified evaluator
+try:
+    from src.utils.nas_tas import UnifiedEvaluator, EvaluationConfig, EvaluationResult
+    UNIFIED_EVALUATOR_AVAILABLE = True
+except ImportError:
+    UNIFIED_EVALUATOR_AVAILABLE = False
 
 # Import utility modules with comprehensive error handling
 try:
@@ -237,6 +234,21 @@ class EvaluationConfig:
     cache_results: bool = True
 
 class NASEvaluator:
+    """NAS-specific evaluator using unified components."""
+    
+    def __init__(self, config: Optional[EvaluationConfig] = None):
+        """Initialize NAS evaluator with unified components."""
+        if UNIFIED_EVALUATOR_AVAILABLE:
+            self.unified_evaluator = UnifiedEvaluator(config)
+        else:
+            raise ImportError("Unified evaluator not available")
+    
+    def __getattr__(self, name):
+        """Delegate to unified evaluator."""
+        return getattr(self.unified_evaluator, name)
+
+
+class LegacyNASEvaluator:
     """
     Comprehensive Neural Architecture Search Evaluator.
     

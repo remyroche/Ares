@@ -33,7 +33,7 @@ try:
         BacktestingConfig as CommonBacktestingConfig
     )
     from src.training.steps.backtesting.walk_forward_validation import WalkForwardValidation
-    from src.training.steps.backtesting.monte_carlo_simulation import MonteCarloSimulationStep
+    from src.utils.nas_tas.monte_carlo_engine import UnifiedMonteCarloEngine, MonteCarloConfig
     from src.training.steps.backtesting.consolidated_backtesting_step import ConsolidatedBacktestingStep
     OPTIMIZED_TOOLS_AVAILABLE = True
 except ImportError:
@@ -272,7 +272,7 @@ class BacktestingEngine:
             self.logger.warning("⚠️ Optimized ML pipeline tools not available")
             self.common_backtesting_engine = None
             self.walk_forward_validation = None
-            self.monte_carlo_simulation = None
+            self.monte_carlo_engine = None
             self.consolidated_backtesting = None
             return
 
@@ -293,7 +293,7 @@ class BacktestingEngine:
             self.logger.info("✅ Walk-forward validation initialized")
 
             # Initialize Monte Carlo simulation
-            self.monte_carlo_simulation = MonteCarloSimulationStep()
+            self.monte_carlo_engine = UnifiedMonteCarloEngine(MonteCarloConfig())
             self.logger.info("✅ Monte Carlo simulation initialized")
 
             # Initialize consolidated backtesting
@@ -304,7 +304,7 @@ class BacktestingEngine:
             self.logger.warning(f"Optimized tools initialization failed: {e}")
             self.common_backtesting_engine = None
             self.walk_forward_validation = None
-            self.monte_carlo_simulation = None
+            self.monte_carlo_engine = None
             self.consolidated_backtesting = None
     
     def register_models(self, 

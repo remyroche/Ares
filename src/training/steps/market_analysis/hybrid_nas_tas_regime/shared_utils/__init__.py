@@ -1,326 +1,257 @@
 """
-Shared utilities for hybrid NAS-TAS regime detection.
+Unified NAS-TAS System
 
-This module provides comprehensive utilities used by both NAS and TAS regime detection systems,
-including:
-- Feature collection using pre-existing feature_generator/
-- Economic significance evaluation
-- Trading viability assessment
-- Data pipeline utilities
-- Advanced Search Strategies (RL, Bayesian, Evolutionary)
-- Search space definitions for NAS and TAS
-- Performance estimators and surrogate models
-- Architecture encoding/decoding systems
-- Constraint validation systems
-- Bayesian optimization with grid optimization
-- Advanced evolutionary algorithms (NSGA-II, SPEA2)
-- Hardware optimization based on hardware/
-- Advanced Analysis Components
-- Metrics reporting and analysis
+This package provides a unified interface for both Neural Architecture Search (NAS)
+and Tree Architecture Search (TAS) systems. It consolidates all search strategies,
+optimization algorithms, evaluation methods, and utilities into a single, cohesive framework.
+
+Key Features:
+- Unified search engine supporting both neural and tree architectures
+- Comprehensive multi-objective optimization with multiple algorithms
+- Advanced economic evaluation and trading viability assessment
+- Flexible regime detection with multiple methods
+- Hardware optimization and parallel processing support
+- Backward compatibility with existing NAS/TAS components
+- Unified configuration system for easy management
+
+Main Components:
+- UnifiedSearchEngine: Unified interface for all search strategies
+- UnifiedMultiObjectiveOptimizer: Multi-objective optimization with NSGA-II, Bayesian, etc.
+- UnifiedEconomicEvaluator: Economic significance and trading viability evaluation
+- UnifiedRegimeDetector: Regime detection with clustering, HMM, neural networks, etc.
+- UnifiedUtilities: Common utilities for data processing and validation
+- UnifiedConfig: Comprehensive configuration management system
+
+Usage Example:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils import (
+        UnifiedSearchEngine, SearchConfig, ArchitectureType, SearchStrategy
+    )
+    
+    # Create unified search engine
+    config = SearchConfig(
+        architecture_type=ArchitectureType.HYBRID,
+        search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
+        max_iterations=100
+    )
+    
+    engine = UnifiedSearchEngine(config)
+    
+    # Perform search
+    result = engine.search(search_space, objective_function)
+    
+    print(f"Best architecture: {result.best_architecture}")
+    print(f"Best score: {max(result.best_scores.values())}")
 """
 
-from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
-
-# Missing config classes as placeholders
-@dataclass
-class EconomicSignificanceConfig:
-    """Configuration for economic significance evaluation."""
-    significance_threshold: float = 0.5
-    min_regime_duration: int = 10
-
-# TradingViabilityConfig is now imported from unified_trading_viability_evaluator
-
-@dataclass
-class SearchStrategyConfig:
-    """Configuration for search strategies."""
-    max_iterations: int = 100
-    use_bayesian_optimization: bool = True
-
-@dataclass
-class EvolutionaryAlgorithmConfig:
-    """Configuration for evolutionary algorithms."""
-    population_size: int = 50
-    max_generations: int = 100
-    use_nsga2: bool = True
-    use_spea2: bool = True
-
-@dataclass
-class HardwareOptimizationConfig:
-    """Configuration for hardware optimization."""
-    use_gpu_acceleration: bool = True
-    memory_limit_gb: float = 8.0
-
-@dataclass
-class MetricsReportingConfig:
-    """Configuration for metrics reporting."""
-    include_detailed_metrics: bool = True
-    save_to_file: bool = False
-
-# Placeholder managers
-class EconomicSignificanceEvaluator:
-    def __init__(self, config: EconomicSignificanceConfig):
-        self.config = config
-
-# TradingViabilityEvaluator is now imported from unified_trading_viability_evaluator
-
-class SearchStrategyManager:
-    def __init__(self, config: SearchStrategyConfig):
-        self.config = config
-
-class EvolutionaryAlgorithmManager:
-    def __init__(self, config: EvolutionaryAlgorithmConfig):
-        self.config = config
-
-class HardwareOptimizer:
-    def __init__(self, config: HardwareOptimizationConfig):
-        self.config = config
-
-# Original utilities
-from .data_pipeline import DataPipelineManager, DataPipelineConfig, MarketDataProcessor
-from .feature_collection import FeatureCollectionManager, FeatureCollectionConfig, StandardizedFeatureCalculator
-# Removed redundant imports - now using unified versions
-from .position_aware_trading import (
-    PositionAwareTradingAnalyzer, PositionAwareConfig, PositionAwareResult,
-    create_position_aware_analyzer, quick_position_aware_analysis
-)
-from .search_strategies import AdvancedSearchStrategy, BayesianOptimizer, GridOptimizer
-from .evolutionary_algorithms import NSGA2Optimizer, SPEA2Optimizer, EvolutionaryAlgorithm
-# from .hardware_optimization import HardwareOptimizer, PerformanceMonitor  # DEPRECATED
-from .analysis_components import AdvancedAnalysisComponent, RegimeAnalyzer, ClusterAnalyzer
-from .metrics_reporting import MetricsReporter, ConsolidatedMetricsReport
-
-# New comprehensive shared utilities
-from .search_spaces import (
-    NeuralSearchSpace, TreeSearchSpace, ArchitectureConstraints,
-    NeuralArchitecture, TreeArchitecture, LayerSpecification, TreeSpecification,
-    create_neural_search_space, create_tree_search_space
-)
-from .performance_estimators import (
-    UnifiedPerformanceEstimator, NeuralPerformanceEstimator, TreePerformanceEstimator,
-    ArchitectureFeatures, PerformancePrediction,
-    create_unified_performance_estimator, create_neural_performance_estimator, create_tree_performance_estimator
-)
-from .architecture_encoders import (
-    UnifiedArchitectureEncoder, NeuralArchitectureEncoder, TreeArchitectureEncoder,
-    EncodingResult, DecodingResult,
-    create_unified_architecture_encoder, create_neural_architecture_encoder, create_tree_architecture_encoder
-)
-from .constraint_systems import (
-    UnifiedConstraintValidator, NeuralConstraintValidator, TreeConstraintValidator,
-    ConstraintValidationResult, ConstraintViolation,
-    create_unified_constraint_validator, create_neural_constraint_validator, create_tree_constraint_validator
-)
-from .advanced_search_strategies import (
-    ReinforcementLearningSearch, EnhancedBayesianOptimization, AdaptiveEvolutionarySearch,
-    RLState, RLAction, RLReward, SearchStrategyResult,
-    create_rl_search_strategy, create_enhanced_bayesian_search, create_adaptive_evolutionary_search
-)
-from .unified_search_algorithms import (
-    UnifiedSearchManager, BayesianOptimizationSearch, EvolutionaryAlgorithmSearch,
-    create_unified_search_manager, create_search_algorithm
-)
-from .unified_clustering_algorithms import (
-    UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
+# Import main unified components
+from .unified_search_engine import (
+    UnifiedSearchEngine,
+    SearchConfig,
+    SearchResult,
+    SearchStrategy,
+    ArchitectureType,
+    OptimizationObjective,
+    create_unified_search_engine,
+    quick_search
 )
 
-# New Unified Utilities
-from .unified_economic_evaluator import (
-    UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig, EconomicSignificanceResult,
-    create_unified_economic_evaluator, quick_economic_evaluation
-)
-from .unified_trading_viability_evaluator import (
-    UnifiedTradingViabilityEvaluator, TradingViabilityConfig, TradingViabilityResult,
-    create_unified_trading_viability_evaluator, quick_trading_viability_evaluation
-)
-
-# Alias for compatibility
-TradingViabilityEvaluator = UnifiedTradingViabilityEvaluator
 from .unified_multi_objective_optimizer import (
-    UnifiedMultiObjectiveOptimizer, OptimizationConfig, OptimizationResult,
-    create_unified_multi_objective_optimizer, quick_multi_objective_optimization
-)
-from .unified_hardware_optimizer import (
-    UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics,
-    create_unified_hardware_optimizer, quick_hardware_optimization
-)
-# Evaluation utilities are available in unified_evaluation_framework.py
-from .unified_regime_analyzer import (
-    UnifiedRegimeAnalyzer, RegimeAnalysisConfig, RegimeAnalysisResult,
-    create_unified_regime_analyzer, quick_regime_analysis
-)
-from .unified_config_manager import (
-    UnifiedConfigManager, UnifiedRegimeConfig,
-    create_unified_config_manager, load_config_from_file, create_environment_config
-)
-from .unified_validation_system import (
-    UnifiedValidationSystem, ValidationConfig, ValidationResult,
-    create_unified_validation_system, quick_validation
+    UnifiedMultiObjectiveOptimizer,
+    UnifiedMultiObjectiveConfig,
+    UnifiedOptimizationResult,
+    ParetoSolution,
+    ObjectiveType,
+    OptimizationAlgorithm,
+    create_unified_multi_objective_optimizer,
+    quick_multi_objective_optimization
 )
 
-# ML Common Integration - Integration with existing utilities
-from .ml_common_integration import (
-    MLCommonIntegration, MLCommonIntegrationType, MLCommonIntegrationConfig,
-    create_ml_common_integration, create_tas_ml_common_integration,
-    create_nas_ml_common_integration, create_hybrid_ml_common_integration
+from .unified_economic_evaluator import (
+    UnifiedEconomicEvaluator,
+    EconomicEvaluationConfig,
+    EconomicEvaluationResult,
+    EconomicMetrics,
+    EvaluationType,
+    create_unified_economic_evaluator,
+    quick_economic_evaluation
 )
 
-# New Unified Architecture Management
-from .unified_architecture_config import (
-    BaseArchitectureConfig, TASArchitectureConfig, NASArchitectureConfig, HybridArchitectureConfig,
-    ArchitectureType, SearchStrategy, OptimizationObjective, MarketRegime,
-    create_tas_config, create_nas_config, create_hybrid_config,
-    create_quick_config, create_comprehensive_config
+from .unified_regime_detector import (
+    UnifiedRegimeDetector,
+    RegimeDetectionConfig,
+    RegimeDetectionResult,
+    RegimeInfo,
+    RegimeDetectionMethod,
+    create_unified_regime_detector
 )
 
-from .unified_performance_monitor import (
-    UnifiedPerformanceMonitor, PerformanceMetric, MonitoringLevel,
-    PerformanceSnapshot, PerformanceTrend, RegimePerformanceProfile,
-    create_performance_monitor, create_basic_monitor, create_real_time_monitor
+from .unified_utilities import (
+    UnifiedUtilities,
+    UnifiedUtilityConfig,
+    DataType,
+    create_unified_utilities,
+    quick_data_validation,
+    quick_data_optimization
 )
 
-from .unified_meta_learning import (
-    UnifiedMetaLearner, MetaLearningMethod, AdaptationType,
-    MetaTask, AdaptationResult, MetaLearningConfig,
-    TASMetaModel, NASMetaModel, HybridMetaModel,
-    create_meta_learner, create_few_shot_learner, create_continual_learner
+from .unified_config import (
+    UnifiedConfig,
+    SearchConfig as UnifiedSearchConfig,
+    OptimizationConfig,
+    EvaluationConfig,
+    RegimeDetectionConfig as UnifiedRegimeDetectionConfig,
+    UtilityConfig,
+    ConfigManager,
+    ConfigFormat,
+    config_manager,
+    get_config,
+    set_config,
+    create_default_config,
+    load_config_from_file
 )
 
-from .unified_ensemble_search_space import (
-    UnifiedEnsembleSearchSpace, EnsembleArchitecture, EnsembleSearchResult,
-    EnsembleMethod, EnsembleCombinationStrategy, EnsembleSearchSpaceConfig,
-    create_unified_ensemble_search_space, quick_ensemble_search
+from .backward_compatibility import (
+    LegacyNASEngineAdapter,
+    LegacyTASEngineAdapter,
+    LegacyMultiObjectiveOptimizerAdapter,
+    LegacyEconomicEvaluatorAdapter,
+    LegacyRegimeDetectorAdapter,
+    LegacyUtilitiesAdapter,
+    migrate_config_to_unified,
+    create_legacy_component,
+    get_migration_guide,
+    deprecated_warning
 )
 
-from .unified_architecture_compression import (
-    UnifiedArchitectureCompressor, CompressionResult, CompressionMethod, CompressionLevel, CompressionConfig,
-    create_unified_architecture_compressor, quick_compress_architecture
-)
+# Version information
+__version__ = "1.0.0"
+__author__ = "Unified NAS-TAS System Team"
+__email__ = "unified-system@example.com"
 
-from .unified_search_space_evolution import (
-    UnifiedSearchSpaceEvolutionManager, EvolutionEvent, EvolutionResult, EvolutionTrigger, EvolutionAction,
-    UnifiedEvolutionConfig, create_unified_evolution_manager, quick_evolution_setup
-)
-
-from .unified_hardware_manager import (
-    UnifiedHardwareManager, HardwareType, CanonicalOptimizationLevel as OptimizationLevel, WorkloadType,
-    HardwareMetrics, OptimizationResult, HardwareConfig,
-    create_hardware_manager, create_basic_hardware_manager, create_aggressive_hardware_manager
-)
-
-from .unified_evaluation_framework import (
-    UnifiedEvaluationFramework, EvaluationType, EvaluationMetric,
-    EvaluationResult, EvaluationConfig,
-    create_evaluation_framework, create_basic_evaluator, create_trading_evaluator
-)
-
+# Main exports
 __all__ = [
-    # Original utilities
-    'DataPipelineManager', 'MarketDataProcessor',
-    'FeatureCollectionManager', 'StandardizedFeatureCalculator',
-    # Removed redundant exports - now using unified versions
-
-    # Position-Aware Trading
-    'PositionAwareTradingAnalyzer', 'PositionAwareConfig', 'PositionAwareResult',
-    'create_position_aware_analyzer', 'quick_position_aware_analysis',
-
-    # Search Strategies
-    'AdvancedSearchStrategy', 'BayesianOptimizer', 'GridOptimizer',
-    'NSGA2Optimizer', 'SPEA2Optimizer', 'EvolutionaryAlgorithm',
-    # 'HardwareOptimizer', 'PerformanceMonitor',  # DEPRECATED
-    'AdvancedAnalysisComponent', 'RegimeAnalyzer', 'ClusterAnalyzer',
-    'MetricsReporter', 'ConsolidatedMetricsReport',
-
-    # New comprehensive shared utilities - Search Spaces
-    'NeuralSearchSpace', 'TreeSearchSpace', 'ArchitectureConstraints',
-    'NeuralArchitecture', 'TreeArchitecture', 'LayerSpecification', 'TreeSpecification',
-    'create_neural_search_space', 'create_tree_search_space',
-
-    # Performance Estimators
-    'UnifiedPerformanceEstimator', 'NeuralPerformanceEstimator', 'TreePerformanceEstimator',
-    'ArchitectureFeatures', 'PerformancePrediction',
-    'create_unified_performance_estimator', 'create_neural_performance_estimator', 'create_tree_performance_estimator',
-
-    # Architecture Encoders
-    'UnifiedArchitectureEncoder', 'NeuralArchitectureEncoder', 'TreeArchitectureEncoder',
-    'EncodingResult', 'DecodingResult',
-    'create_unified_architecture_encoder', 'create_neural_architecture_encoder', 'create_tree_architecture_encoder',
-
-    # Constraint Systems
-    'UnifiedConstraintValidator', 'NeuralConstraintValidator', 'TreeConstraintValidator',
-    'ConstraintValidationResult', 'ConstraintViolation',
-    'create_unified_constraint_validator', 'create_neural_constraint_validator', 'create_tree_constraint_validator',
-
-    # Advanced Search Strategies
-    'ReinforcementLearningSearch', 'EnhancedBayesianOptimization', 'AdaptiveEvolutionarySearch',
-    'RLState', 'RLAction', 'RLReward', 'SearchStrategyResult',
-    'create_rl_search_strategy', 'create_enhanced_bayesian_search', 'create_adaptive_evolutionary_search',
-
-    # Unified Search and Clustering
-    'UnifiedSearchManager', 'BayesianOptimizationSearch', 'EvolutionaryAlgorithmSearch',
-    'create_unified_search_manager', 'create_search_algorithm',
-    'UnifiedClusteringAlgorithm', 'create_unified_clustering_algorithm',
-
-    # New Unified Utilities
-    'UnifiedEconomicSignificanceEvaluator', 'EconomicEvaluationConfig', 'EconomicSignificanceResult',
-    'UnifiedTradingViabilityEvaluator', 'TradingViabilityConfig', 'TradingViabilityResult',
-    'UnifiedMultiObjectiveOptimizer', 'OptimizationConfig', 'OptimizationResult',
-    'UnifiedHardwareOptimizer', 'HardwareConfig', 'PerformanceMetrics',
-    'UnifiedRegimeAnalyzer', 'RegimeAnalysisConfig', 'RegimeAnalysisResult',
-    'UnifiedConfigManager', 'UnifiedRegimeConfig',
-    'UnifiedValidationSystem', 'ValidationConfig', 'ValidationResult',
-
-    # Convenience functions for new utilities
-    'create_unified_economic_evaluator', 'quick_economic_evaluation',
-    'create_unified_trading_viability_evaluator', 'quick_trading_viability_evaluation',
-    'create_unified_multi_objective_optimizer', 'quick_multi_objective_optimization',
-    'create_unified_hardware_optimizer', 'quick_hardware_optimization',
-    'create_unified_regime_analyzer', 'quick_regime_analysis',
-    'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
-    'create_unified_validation_system', 'quick_validation',
-
-    # ML Common Integration - Integration with existing utilities
-    'MLCommonIntegration', 'MLCommonIntegrationType', 'MLCommonIntegrationConfig',
-    'create_ml_common_integration', 'create_tas_ml_common_integration',
-    'create_nas_ml_common_integration', 'create_hybrid_ml_common_integration',
-
-    # New Unified Architecture Management
-    'BaseArchitectureConfig', 'TASArchitectureConfig', 'NASArchitectureConfig', 'HybridArchitectureConfig',
-    'ArchitectureType', 'SearchStrategy', 'OptimizationObjective', 'MarketRegime',
-    'create_tas_config', 'create_nas_config', 'create_hybrid_config',
-    'create_quick_config', 'create_comprehensive_config',
-
-    # Unified Performance Monitoring
-    'UnifiedPerformanceMonitor', 'PerformanceMetric', 'MonitoringLevel',
-    'PerformanceSnapshot', 'PerformanceTrend', 'RegimePerformanceProfile',
-    'create_performance_monitor', 'create_basic_monitor', 'create_real_time_monitor',
-
-    # Unified Meta-Learning
-    'UnifiedMetaLearner', 'MetaLearningMethod', 'AdaptationType',
-    'MetaTask', 'AdaptationResult', 'MetaLearningConfig',
-    'TASMetaModel', 'NASMetaModel', 'HybridMetaModel',
-    'create_meta_learner', 'create_few_shot_learner', 'create_continual_learner',
-
-    # Unified Ensemble Search Space
-    'UnifiedEnsembleSearchSpace', 'EnsembleArchitecture', 'EnsembleSearchResult',
-    'EnsembleMethod', 'EnsembleCombinationStrategy', 'EnsembleSearchSpaceConfig',
-    'create_unified_ensemble_search_space', 'quick_ensemble_search',
-
-    # Unified Architecture Compression
-    'UnifiedArchitectureCompressor', 'CompressionResult', 'CompressionMethod', 'CompressionLevel', 'CompressionConfig',
-    'create_unified_architecture_compressor', 'quick_compress_architecture',
-
-    # Unified Search Space Evolution
-    'UnifiedSearchSpaceEvolutionManager', 'EvolutionEvent', 'EvolutionResult', 'EvolutionTrigger', 'EvolutionAction',
-    'UnifiedEvolutionConfig', 'create_unified_evolution_manager', 'quick_evolution_setup',
-
-    # Unified Hardware Management
-    'UnifiedHardwareManager', 'HardwareType', 'OptimizationLevel', 'WorkloadType',
-    'HardwareMetrics', 'OptimizationResult', 'HardwareConfig',
-    'create_hardware_manager', 'create_basic_hardware_manager', 'create_aggressive_hardware_manager',
-
-    # Unified Evaluation Framework
-    'UnifiedEvaluationFramework', 'EvaluationType', 'EvaluationMetric',
-    'EvaluationResult', 'EvaluationConfig',
-    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator'
+    # Core unified components
+    'UnifiedSearchEngine',
+    'UnifiedMultiObjectiveOptimizer', 
+    'UnifiedEconomicEvaluator',
+    'UnifiedRegimeDetector',
+    'UnifiedUtilities',
+    'UnifiedConfig',
+    
+    # Configuration classes
+    'SearchConfig',
+    'UnifiedMultiObjectiveConfig',
+    'EconomicEvaluationConfig',
+    'RegimeDetectionConfig',
+    'UnifiedUtilityConfig',
+    'OptimizationConfig',
+    'EvaluationConfig',
+    'UtilityConfig',
+    
+    # Result classes
+    'SearchResult',
+    'UnifiedOptimizationResult',
+    'EconomicEvaluationResult',
+    'RegimeDetectionResult',
+    'EconomicMetrics',
+    'ParetoSolution',
+    'RegimeInfo',
+    
+    # Enums
+    'SearchStrategy',
+    'ArchitectureType',
+    'OptimizationObjective',
+    'ObjectiveType',
+    'OptimizationAlgorithm',
+    'EvaluationType',
+    'DataType',
+    'RegimeDetectionMethod',
+    'ConfigFormat',
+    
+    # Utility functions
+    'create_unified_search_engine',
+    'create_unified_multi_objective_optimizer',
+    'create_unified_economic_evaluator',
+    'create_unified_regime_detector',
+    'create_unified_utilities',
+    'quick_search',
+    'quick_multi_objective_optimization',
+    'quick_economic_evaluation',
+    'quick_data_validation',
+    'quick_data_optimization',
+    
+    # Configuration management
+    'ConfigManager',
+    'config_manager',
+    'get_config',
+    'set_config',
+    'create_default_config',
+    'load_config_from_file',
+    
+    # Backward compatibility
+    'LegacyNASEngineAdapter',
+    'LegacyTASEngineAdapter',
+    'LegacyMultiObjectiveOptimizerAdapter',
+    'LegacyEconomicEvaluatorAdapter',
+    'LegacyRegimeDetectorAdapter',
+    'LegacyUtilitiesAdapter',
+    'migrate_config_to_unified',
+    'create_legacy_component',
+    'get_migration_guide',
+    'deprecated_warning',
+    
+    # Version info
+    '__version__',
+    '__author__',
+    '__email__'
 ]
+
+# Convenience functions for quick access
+def create_unified_system(config: Optional[UnifiedConfig] = None) -> Dict[str, Any]:
+    """
+    Create a complete unified system with all components.
+    
+    Args:
+        config: Unified configuration (optional)
+        
+    Returns:
+        Dictionary containing all unified components
+    """
+    if config is None:
+        config = create_default_config()
+    
+    return {
+        'search_engine': UnifiedSearchEngine(config.search_config),
+        'optimizer': UnifiedMultiObjectiveOptimizer(config.optimization_config),
+        'evaluator': UnifiedEconomicEvaluator(config.evaluation_config),
+        'regime_detector': UnifiedRegimeDetector(config.regime_detection_config),
+        'utilities': UnifiedUtilities(config.utility_config),
+        'config': config
+    }
+
+def get_system_info() -> Dict[str, Any]:
+    """Get information about the unified system."""
+    return {
+        'version': __version__,
+        'author': __author__,
+        'email': __email__,
+        'components': [
+            'UnifiedSearchEngine',
+            'UnifiedMultiObjectiveOptimizer',
+            'UnifiedEconomicEvaluator', 
+            'UnifiedRegimeDetector',
+            'UnifiedUtilities',
+            'UnifiedConfig'
+        ],
+        'supported_architectures': ['neural', 'tree', 'hybrid'],
+        'supported_search_strategies': [strategy.value for strategy in SearchStrategy],
+        'supported_optimization_algorithms': [algo.value for algo in OptimizationAlgorithm],
+        'supported_evaluation_types': [eval_type.value for eval_type in EvaluationType],
+        'supported_regime_detection_methods': [method.value for method in RegimeDetectionMethod]
+    }
+
+# Add convenience functions to __all__
+__all__.extend([
+    'create_unified_system',
+    'get_system_info'
+])

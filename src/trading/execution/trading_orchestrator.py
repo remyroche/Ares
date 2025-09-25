@@ -24,9 +24,9 @@ from src.utils.tprint import (
 )
 
 # Import signal generators
-from ..signal_generation.analyst_signals import AnalystSignalGenerator, AnalystSignal
-from ..signal_generation.tactician_signals import TacticianSignalGenerator, TacticianSignal
-from ..signal_generation.signal_combiner import SignalCombiner
+from ..signal_generation.analyst_signals_refactored import AnalystSignalGenerator, AnalystSignal
+from ..signal_generation.tactician_signals_refactored import TacticianSignalGenerator, TacticianSignal
+from ..signal_generation.signal_combiner_refactored import SignalCombiner
 from ..data.live_data_collector import LiveDataCollector, LiveDataConfig
 from .live_trading_scheduler import LiveTradingScheduler, ModelType
 from ..monitoring.comprehensive_trade_monitor import comprehensive_trade_monitor, record_detailed_trade, update_trade_outcome

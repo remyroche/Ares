@@ -34,7 +34,7 @@ from .meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML, TreePr
 from .meta_learning import FewShotTreeLearner, TreeFewShotAdapter, ContinualTreeLearner, TreeEpisodicMemory
 
 # Search strategies
-from .search.evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm
+from src.utils.nas_tas.evolutionary_algorithms import EvolutionaryTreeSearch, TreeGeneticAlgorithm
 from .search.bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer
 from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
 from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2

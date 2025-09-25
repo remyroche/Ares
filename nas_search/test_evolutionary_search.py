@@ -17,7 +17,7 @@ import logging
 # Add the current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from evolutionary_search import (
+from src.utils.nas_tas.evolutionary_algorithms import (
     EvolutionaryArchitectureSearch,
     ArchitectureConfig,
     EvolutionaryConfig,

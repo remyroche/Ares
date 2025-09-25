@@ -33,7 +33,7 @@ import os
 
 # Import utility modules
 try:
-    from src.utils.common_operations import (
+    from ..common_operations import (
         safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
         calculate_data_quality_metrics, safe_merge_dataframes, create_summary_statistics,
         safe_drop_columns, safe_rename_columns, validate_timestamp_column,
@@ -64,13 +64,13 @@ except ImportError:
             return contextmanager(lambda: (yield))
 
 try:
-    from src.utils.common_utilities import CommonUtilities as BaseCommonUtilities
+    from ..common_utilities import CommonUtilities as BaseCommonUtilities
 except ImportError:
     class BaseCommonUtilities:
         pass
 
 try:
-    from src.utils.math_validation import (
+    from ..math_validation import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
         validate_positive, validate_range, safe_correlation, safe_covariance,
         safe_mean, safe_std, safe_percentile, MathValidation
@@ -89,7 +89,7 @@ except ImportError:
         return np.std(x) if len(x) > 1 else default
 
 try:
-    from src.utils.serialization_utils import (
+    from ..serialization_utils import (
         JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
     )
 except ImportError:
@@ -106,7 +106,7 @@ except ImportError:
                 return json.load(f)
 
 try:
-    from src.utils.tprint import (
+    from ..tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
         tprint_debug, tprint_performance, tprint_progress, tprint_structured,
         tprint_timer, LogLevel, TPrintConfig, configure_tprint
@@ -137,12 +137,12 @@ except ImportError:
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.optimization.hpo_utils import HPOOptimizer
-    from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
-    from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import BayesianOptimizer
-    from src.utils.ml_common.optimization.enhanced_hpo_monitor import HPOMonitor
+    from ..ml_common.optimization.hpo_utils import HPOOptimizer
+    from ..ml_common.optimization.grid_utils import GridSearchOptimizer
+    from ..ml_common.optimization.bayesian_entry_timing_optimizer import BayesianOptimizer
+    from ..ml_common.optimization.enhanced_hpo_monitor import HPOMonitor
     # Import Bayesian TPE optimizer
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from ..ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer,
         BayesianTPEConfig,
         optimize_with_bayesian_tpe
@@ -191,9 +191,9 @@ except ImportError:
 
 # Import hardware optimization utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
-    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from ..hardware.m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from ..hardware.m1_cpu_optimizer import M1CPUOptimizer
 except ImportError:
     # Fallback hardware utilities
     class M1GPUManager:

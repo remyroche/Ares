@@ -60,7 +60,7 @@ sys.modules['pandas'] = type('MockPandas', (), {'DataFrame': MockDataFrame})()
 
 # Now import our module
 try:
-    from evolutionary_search import (
+    from src.utils.nas_tas.evolutionary_algorithms import (
         EvolutionaryArchitectureSearch,
         ArchitectureConfig,
         EvolutionaryConfig,

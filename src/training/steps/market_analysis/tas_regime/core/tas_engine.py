@@ -127,7 +127,7 @@ except ImportError:
     META_LEARNING_AVAILABLE = False
 
 try:
-    from ..search.evolutionary_search import EvolutionaryTreeSearch
+    from src.utils.nas_tas.evolutionary_algorithms import EvolutionaryTreeSearch
     EVOLUTIONARY_SEARCH_AVAILABLE = True
 except ImportError:
     EVOLUTIONARY_SEARCH_AVAILABLE = False

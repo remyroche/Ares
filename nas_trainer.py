@@ -39,7 +39,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 # Import unified components
 try:
-    from unified_components import (
+    from src.utils.ml_common.unified_components import (
         UnifiedEvaluator, UnifiedHardwareOptimizer, UnifiedSearchEngine, 
         UnifiedDataProcessor, UnifiedComponentManager
     )

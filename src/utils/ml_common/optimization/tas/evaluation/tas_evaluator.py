@@ -21,7 +21,7 @@ from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
 
 # Import unified components
 try:
-    from unified_components import UnifiedEvaluator
+    from src.utils.ml_common.unified_components import UnifiedEvaluator
     UNIFIED_EVALUATOR_AVAILABLE = True
 except ImportError:
     UNIFIED_EVALUATOR_AVAILABLE = False

@@ -146,7 +146,7 @@ class RegimeChangeDetector:
         self.regime_change_count = 0
         self.last_regime_change = None
         
-        self.logger.info("✅ Regime Change Detector initialized")
+        tprint_info("✅ Regime Change Detector initialized")
     
     def detect_regime_change(self, 
                             market_data: np.ndarray,
@@ -200,7 +200,7 @@ class RegimeChangeDetector:
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Regime change detection failed: {e}")
+            tprint_error(f"❌ Regime change detection failed: {e}")
             return {
                 'regime_change_detected': False,
                 'error': str(e)
@@ -279,7 +279,7 @@ class PerformanceAdaptationTrigger:
         self.performance_history = deque(maxlen=config.monitoring_window)
         self.baseline_performance = None
         
-        self.logger.info("✅ Performance Adaptation Trigger initialized")
+        tprint_info("✅ Performance Adaptation Trigger initialized")
     
     def check_adaptation_trigger(self, 
                                current_performance: Dict[str, float],
@@ -328,7 +328,7 @@ class PerformanceAdaptationTrigger:
             return None
             
         except Exception as e:
-            self.logger.error(f"❌ Performance adaptation trigger check failed: {e}")
+            tprint_error(f"❌ Performance adaptation trigger check failed: {e}")
             return None
     
     def _calculate_performance_degradation(self) -> float:
@@ -373,7 +373,7 @@ class CLVSAAdaptationEngine:
         else:
             self.meta_learning_system = None
         
-        self.logger.info("✅ CLVSA Adaptation Engine initialized")
+        tprint_info("✅ CLVSA Adaptation Engine initialized")
     
     def adapt_cvlsa_model(self, 
                          model: Any,
@@ -434,7 +434,7 @@ class CLVSAAdaptationEngine:
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ CLVSA adaptation failed: {e}")
+            tprint_error(f"❌ CLVSA adaptation failed: {e}")
             return AdaptationResult(
                 adaptation_id=adaptation_id,
                 trigger=adaptation_trigger,
@@ -471,7 +471,7 @@ class CLVSAAdaptationEngine:
             return model
             
         except Exception as e:
-            self.logger.error(f"❌ CLVSA adaptation failed: {e}")
+            tprint_error(f"❌ CLVSA adaptation failed: {e}")
             return model
     
     def _optimize_performance(self, model: Any, market_data: np.ndarray) -> Any:
@@ -548,7 +548,7 @@ class ContinuousAdaptationSystem:
         self.adaptation_history = []
         self.performance_history = []
         
-        self.logger.info("✅ Continuous Adaptation System initialized")
+        tprint_info("✅ Continuous Adaptation System initialized")
     
     def start_continuous_adaptation(self):
         """Start continuous adaptation system."""
@@ -636,7 +636,7 @@ class ContinuousAdaptationSystem:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Market data processing failed: {e}")
+            tprint_error(f"❌ Market data processing failed: {e}")
             return {
                 'timestamp': timestamp,
                 'error': str(e)
@@ -668,7 +668,7 @@ class ContinuousAdaptationSystem:
             except queue.Empty:
                 continue
             except Exception as e:
-                self.logger.error(f"❌ Adaptation loop error: {e}")
+                tprint_error(f"❌ Adaptation loop error: {e}")
     
     def get_adaptation_status(self) -> Dict[str, Any]:
         """Get current adaptation status."""

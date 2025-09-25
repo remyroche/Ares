@@ -119,7 +119,7 @@ class AdvancedTradingArchitectureSearch:
         tprint_success("✅ Results tracking initialized")
 
         tprint_success("✅ Advanced TAS initialized with all components")
-        self.logger.info("✅ Advanced TAS initialized with all components")
+        tprint_info("✅ Advanced TAS initialized with all components")
 
     def optimize_advanced_architecture(self,
                                      market_data: pd.DataFrame,
@@ -140,7 +140,7 @@ class AdvancedTradingArchitectureSearch:
         tprint_debug(f"Market data shape: {market_data.shape}")
         tprint_debug(f"Target returns shape: {target_returns.shape}")
         tprint_debug(f"Existing regimes: {'Yes' if existing_regimes is not None else 'No'}")
-        self.logger.info("🚀 Starting Advanced TAS optimization...")
+        tprint_info("🚀 Starting Advanced TAS optimization...")
         start_time = time.time()
 
         try:
@@ -203,33 +203,33 @@ class AdvancedTradingArchitectureSearch:
                 }
             )
 
-            self.logger.info(f"✅ Advanced TAS completed in {result.execution_time:.2f}s")
-            self.logger.info(f"   Economic Significance: {result.economic_significance_score:.3f}")
-            self.logger.info(f"   Trading Viability: {result.trading_viability_score:.3f}")
-            self.logger.info(f"   Architecture Type: {result.architecture_type.value}")
+            tprint_info(f"✅ Advanced TAS completed in {result.execution_time:.2f}s")
+            tprint_info(f"   Economic Significance: {result.economic_significance_score:.3f}")
+            tprint_info(f"   Trading Viability: {result.trading_viability_score:.3f}")
+            tprint_info(f"   Architecture Type: {result.architecture_type.value}")
 
             return result
 
         except Exception as e:
-            self.logger.error(f"Advanced TAS failed: {e}")
+            tprint_error(f"Advanced TAS failed: {e}")
             raise
 
     def _perform_comprehensive_market_analysis(self, market_data: pd.DataFrame,
                                             target_returns: pd.Series) -> Dict[MarketRegime, Any]:
         """Perform comprehensive market analysis including regime detection."""
-        self.logger.info("🔍 Performing comprehensive market analysis...")
+        tprint_info("🔍 Performing comprehensive market analysis...")
 
         # Use existing NAS clustering if available
         if self.config.integrate_with_nas_clustering and self.config.use_existing_regime_detection:
             try:
                 regimes = self._detect_regimes_with_nas_clustering(market_data)
-                self.logger.info("✅ Successfully used NAS clustering for regime detection")
+                tprint_info("✅ Successfully used NAS clustering for regime detection")
             except Exception as e:
-                self.logger.warning(f"⚠️ NAS clustering regime detection failed: {e}, falling back to tree models")
+                tprint_warning(f"⚠️ NAS clustering regime detection failed: {e}, falling back to tree models")
                 regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
         else:
             regimes = self._detect_regimes_with_tree_models(market_data, target_returns)
-            self.logger.info("✅ Using tree models for regime detection")
+            tprint_info("✅ Using tree models for regime detection")
 
         # Enhance regime analysis with micro-regime information
         enhanced_regimes = {}
@@ -249,12 +249,12 @@ class AdvancedTradingArchitectureSearch:
                 }
                 enhanced_regimes[regime_type] = enhanced_regime
 
-        self.logger.info(f"✅ Comprehensive market analysis completed: {len(enhanced_regimes)} regimes")
+        tprint_info(f"✅ Comprehensive market analysis completed: {len(enhanced_regimes)} regimes")
         return enhanced_regimes
 
     def _analyze_micro_regimes(self, market_data: pd.DataFrame) -> Dict[MicroRegimeType, List[MicroRegimeDetectionResult]]:
         """Analyze micro-regimes in the market data."""
-        self.logger.info("🔬 Analyzing micro-regimes...")
+        tprint_info("🔬 Analyzing micro-regimes...")
 
         if not self.config.enable_micro_regime_detection:
             return {}
@@ -272,13 +272,13 @@ class AdvancedTradingArchitectureSearch:
 
         self.micro_regime_history.extend(micro_regimes)
 
-        self.logger.info(f"✅ Micro-regime analysis completed: {len(micro_regimes)} micro-regimes detected")
+        tprint_info(f"✅ Micro-regime analysis completed: {len(micro_regimes)} micro-regimes detected")
         return dict(micro_regime_analysis)
 
     def _perform_advanced_architecture_search(self, market_data: pd.DataFrame, target_returns: pd.Series,
                                             market_analysis: Dict, micro_regime_analysis: Dict) -> Any:
         """Perform advanced architecture search using multiple strategies."""
-        self.logger.info("🏗️ Performing advanced architecture search...")
+        tprint_info("🏗️ Performing advanced architecture search...")
 
         # Use the advanced search engine
         search_result = self.search_engine.search(
@@ -295,7 +295,7 @@ class AdvancedTradingArchitectureSearch:
                                            target_returns: pd.Series, market_analysis: Dict,
                                            micro_regime_analysis: Dict) -> List[EvaluationResult]:
         """Comprehensive evaluation of architecture across multiple dimensions."""
-        self.logger.info("🔬 Performing comprehensive architecture evaluation...")
+        tprint_info("🔬 Performing comprehensive architecture evaluation...")
 
         evaluation_results = []
 
@@ -330,12 +330,12 @@ class AdvancedTradingArchitectureSearch:
             ensemble_result = self._create_evaluation_ensemble(evaluation_results)
             evaluation_results.append(ensemble_result)
 
-        self.logger.info(f"✅ Comprehensive evaluation completed: {len(evaluation_results)} results")
+        tprint_info(f"✅ Comprehensive evaluation completed: {len(evaluation_results)} results")
         return evaluation_results
 
     def _validate_economic_significance(self, evaluation_results: List[EvaluationResult]) -> Dict[str, float]:
         """Validate economic significance and trading viability."""
-        self.logger.info("💰 Validating economic significance...")
+        tprint_info("💰 Validating economic significance...")
 
         validation_scores = {
             'economic_score': 0.0,
@@ -364,17 +364,17 @@ class AdvancedTradingArchitectureSearch:
 
         validation_scores['overall_validation'] = economic_passes and viability_passes and risk_passes and sharpe_passes
 
-        self.logger.info(f"✅ Economic validation completed:")
-        self.logger.info(f"   Economic Score: {avg_economic_score:.3f}")
-        self.logger.info(f"   Viability Score: {avg_viability_score:.3f}")
-        self.logger.info(f"   Overall Validation: {validation_scores['overall_validation']}")
+        tprint_info(f"✅ Economic validation completed:")
+        tprint_info(f"   Economic Score: {avg_economic_score:.3f}")
+        tprint_info(f"   Viability Score: {avg_viability_score:.3f}")
+        tprint_info(f"   Overall Validation: {validation_scores['overall_validation']}")
 
         return validation_scores
 
     def _create_advanced_ensemble(self, base_architecture: Any,
                                  evaluation_results: List[EvaluationResult]) -> Dict[str, Any]:
         """Create advanced ensemble with meta-learning and optimization."""
-        self.logger.info("🤖 Creating advanced ensemble...")
+        tprint_info("🤖 Creating advanced ensemble...")
 
         ensemble_result = {
             'ensemble': base_architecture,
@@ -395,10 +395,10 @@ class AdvancedTradingArchitectureSearch:
 
                 if meta_result['improvement'] > 0:
                     ensemble_result.update(meta_result)
-                    self.logger.info(f"✅ Ensemble optimized with meta-learning: {meta_result['improvement']:.3f} improvement")
+                    tprint_info(f"✅ Ensemble optimized with meta-learning: {meta_result['improvement']:.3f} improvement")
 
         except Exception as e:
-            self.logger.warning(f"Advanced ensemble creation partially failed: {e}")
+            tprint_warning(f"Advanced ensemble creation partially failed: {e}")
 
         return ensemble_result
 
@@ -429,7 +429,7 @@ class AdvancedTradingArchitectureSearch:
                 return 0.0
 
         except Exception as e:
-            self.logger.warning(f"Regime adaptation score calculation failed: {e}")
+            tprint_warning(f"Regime adaptation score calculation failed: {e}")
             return 0.0
 
     def _calculate_micro_regime_accuracy(self, micro_regime_analysis: Dict) -> float:
@@ -450,7 +450,7 @@ class AdvancedTradingArchitectureSearch:
                 return 0.0
 
         except Exception as e:
-            self.logger.warning(f"Micro-regime accuracy calculation failed: {e}")
+            tprint_warning(f"Micro-regime accuracy calculation failed: {e}")
             return 0.0
 
     def _prepare_training_data(self, market_data: pd.DataFrame, target_returns: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
@@ -629,7 +629,7 @@ class AdvancedTradingArchitectureSearch:
             return regimes
 
         except ImportError:
-            self.logger.warning("NAS clustering not available, falling back to tree-based detection")
+            tprint_warning("NAS clustering not available, falling back to tree-based detection")
             return {}
 
     def _detect_regimes_with_tree_models(self, market_data: pd.DataFrame, target_returns: pd.Series) -> Dict[MarketRegime, Dict]:
@@ -671,7 +671,7 @@ class AdvancedTradingArchitectureSearch:
             return regimes
 
         except Exception as e:
-            self.logger.warning(f"Tree-based regime detection failed: {e}")
+            tprint_warning(f"Tree-based regime detection failed: {e}")
             return {}
 
     def _engineer_regime_features(self, market_data: pd.DataFrame) -> np.ndarray:

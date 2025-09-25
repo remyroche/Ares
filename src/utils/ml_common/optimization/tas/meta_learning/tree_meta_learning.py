@@ -86,7 +86,7 @@ class TreeMAML:
         self.meta_loss_history = []
         self.adaptation_success_rate = 0.0
         
-        self.logger.info("✅ Tree MAML initialized")
+        tprint_success("✅ Tree MAML initialized")
     
     def meta_train(self, 
                    meta_train_tasks: List[Dict[str, Any]],
@@ -101,7 +101,7 @@ class TreeMAML:
         Returns:
             Meta-training results
         """
-        self.logger.info("🚀 Starting meta-training for tree MAML")
+        tprint_info("🚀 Starting meta-training for tree MAML")
         start_time = time.time()
         
         try:
@@ -120,11 +120,11 @@ class TreeMAML:
                 # Validation
                 if outer_step % 10 == 0:
                     val_loss = self._evaluate_meta_validation(meta_val_tasks)
-                    self.logger.info(f"📈 Outer step {outer_step}: Meta-loss = {meta_loss:.4f}, Val-loss = {val_loss:.4f}")
+                    tprint_info(f"📈 Outer step {outer_step}: Meta-loss = {meta_loss:.4f}, Val-loss = {val_loss:.4f}")
                 
                 # Early stopping
                 if self._check_early_stopping():
-                    self.logger.info(f"🛑 Early stopping at step {outer_step}")
+                    tprint_info(f"🛑 Early stopping at step {outer_step}")
                     break
             
             # Final evaluation
@@ -141,13 +141,13 @@ class TreeMAML:
                 'success': final_performance < 0.5
             }
             
-            self.logger.info(f"✅ Meta-training completed in {execution_time:.2f}s")
-            self.logger.info(f"🎯 Final performance: {final_performance:.4f}")
+            tprint_success(f"✅ Meta-training completed in {execution_time:.2f}s")
+            tprint_info(f"🎯 Final performance: {final_performance:.4f}")
             
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Meta-training failed: {e}")
+            tprint_error(f"❌ Meta-training failed: {e}")
             raise
     
     def adapt_to_new_task(self,
@@ -165,7 +165,7 @@ class TreeMAML:
         Returns:
             Adapted architecture
         """
-        self.logger.info(f"🔄 Adapting to new {task_type} task")
+        tprint_info(f"🔄 Adapting to new {task_type} task")
         
         try:
             # Initialize adapted parameters
@@ -202,11 +202,11 @@ class TreeMAML:
                 'timestamp': datetime.now().isoformat()
             })
             
-            self.logger.info(f"✅ Adaptation completed with score: {query_score:.4f}")
+            tprint_info(f"✅ Adaptation completed with score: {query_score:.4f}")
             return adapted_architecture
             
         except Exception as e:
-            self.logger.error(f"❌ Task adaptation failed: {e}")
+            tprint_error(f"❌ Task adaptation failed: {e}")
             raise
     
     def _initialize_meta_parameters(self, sample_task: Dict[str, Any]):
@@ -338,7 +338,7 @@ class TreeMAML:
             model.fit(X, y)
             return model.score(X, y)
         except Exception as e:
-            self.logger.warning(f"⚠️ Architecture evaluation failed: {e}")
+            tprint_warning(f"⚠️ Architecture evaluation failed: {e}")
             return 0.0
     
     def _create_model_from_architecture(self, architecture: TreeArchitectureCandidate, task_type: str):
@@ -427,7 +427,7 @@ class TreePrototypicalNetwork:
         self.embeddings = {}
         self.class_centers = {}
         
-        self.logger.info("✅ Tree Prototypical Network initialized")
+        tprint_info("✅ Tree Prototypical Network initialized")
     
     def fit(self, support_data: Tuple[np.ndarray, np.ndarray], 
             support_labels: np.ndarray) -> Dict[str, Any]:
@@ -441,7 +441,7 @@ class TreePrototypicalNetwork:
         Returns:
             Fitting results
         """
-        self.logger.info("🎯 Fitting prototypical network")
+        tprint_info("🎯 Fitting prototypical network")
         
         try:
             # Compute prototypes for each class
@@ -459,7 +459,7 @@ class TreePrototypicalNetwork:
             self.prototypes = prototypes
             self.class_centers = unique_labels
             
-            self.logger.info(f"✅ Prototypes computed for {len(unique_labels)} classes")
+            tprint_info(f"✅ Prototypes computed for {len(unique_labels)} classes")
             
             return {
                 'n_classes': len(unique_labels),
@@ -468,7 +468,7 @@ class TreePrototypicalNetwork:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Prototypical network fitting failed: {e}")
+            tprint_error(f"❌ Prototypical network fitting failed: {e}")
             raise
     
     def predict(self, query_data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -508,7 +508,7 @@ class TreePrototypicalNetwork:
             return np.array(predictions), np.array(distances)
             
         except Exception as e:
-            self.logger.error(f"❌ Prediction failed: {e}")
+            tprint_error(f"❌ Prediction failed: {e}")
             raise
     
     def evaluate(self, query_data: np.ndarray, query_labels: np.ndarray) -> Dict[str, float]:
@@ -541,7 +541,7 @@ class TreePrototypicalNetwork:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Evaluation failed: {e}")
+            tprint_error(f"❌ Evaluation failed: {e}")
             return {'accuracy': 0.0, 'avg_distance': float('inf'), 'confidence': 0.0}
 
 
@@ -569,7 +569,7 @@ class TreeMetaLearning:
         self.meta_trained = False
         self.adaptation_history = []
         
-        self.logger.info("✅ Tree Meta-Learning system initialized")
+        tprint_info("✅ Tree Meta-Learning system initialized")
     
     def meta_train(self, 
                    meta_train_tasks: List[Dict[str, Any]],
@@ -584,7 +584,7 @@ class TreeMetaLearning:
         Returns:
             Meta-training results
         """
-        self.logger.info("🚀 Starting meta-training")
+        tprint_info("🚀 Starting meta-training")
         
         try:
             # Meta-train MAML
@@ -603,11 +603,11 @@ class TreeMetaLearning:
                 'n_val_tasks': len(meta_val_tasks)
             }
             
-            self.logger.info("✅ Meta-training completed")
+            tprint_info("✅ Meta-training completed")
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Meta-training failed: {e}")
+            tprint_error(f"❌ Meta-training failed: {e}")
             raise
     
     def few_shot_adaptation(self,
@@ -625,7 +625,7 @@ class TreeMetaLearning:
         Returns:
             Adaptation results
         """
-        self.logger.info(f"🔄 Few-shot adaptation using {adaptation_method}")
+        tprint_info(f"🔄 Few-shot adaptation using {adaptation_method}")
         
         try:
             results = {}
@@ -656,11 +656,11 @@ class TreeMetaLearning:
                 'timestamp': datetime.now().isoformat()
             })
             
-            self.logger.info("✅ Few-shot adaptation completed")
+            tprint_info("✅ Few-shot adaptation completed")
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Few-shot adaptation failed: {e}")
+            tprint_error(f"❌ Few-shot adaptation failed: {e}")
             raise
     
     def _meta_train_prototypical_network(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -692,7 +692,7 @@ class TreeMetaLearning:
             }
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Prototypical network meta-training failed: {e}")
+            tprint_warning(f"⚠️ Prototypical network meta-training failed: {e}")
             return {'avg_accuracy': 0.0, 'n_tasks': 0}
     
     def get_adaptation_statistics(self) -> Dict[str, Any]:

@@ -164,7 +164,7 @@ class AdvancedMAML:
             'adaptation_rate': config.cvlsa_adaptation_rate
         }
         
-        self.logger.info("✅ Advanced MAML initialized")
+        tprint_info("✅ Advanced MAML initialized")
     
     def meta_train(self, 
                    meta_train_tasks: List[MetaTask],
@@ -236,7 +236,7 @@ class AdvancedMAML:
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ Advanced meta-training failed: {e}")
+            tprint_error(f"❌ Advanced meta-training failed: {e}")
             return MetaLearningResult(
                 meta_parameters={},
                 adaptation_results=[],
@@ -305,7 +305,7 @@ class AdvancedMAML:
             return adaptation_result
             
         except Exception as e:
-            self.logger.error(f"❌ Advanced task adaptation failed: {e}")
+            tprint_error(f"❌ Advanced task adaptation failed: {e}")
             return {
                 'task_type': task_type,
                 'final_score': 0.0,
@@ -434,7 +434,7 @@ class AdvancedMAML:
                     random_state=42
                 )
         except Exception as e:
-            self.logger.error(f"❌ Model creation failed: {e}")
+            tprint_error(f"❌ Model creation failed: {e}")
             return None
     
     def _deep_copy_meta_parameters(self) -> Dict[str, Any]:
@@ -456,7 +456,7 @@ class AdvancedMAML:
             model.fit(X_query, y_query)
             return model.score(X_query, y_query)
         except Exception as e:
-            self.logger.error(f"❌ Model evaluation failed: {e}")
+            tprint_error(f"❌ Model evaluation failed: {e}")
             return 0.0
     
     def _evaluate_advanced_task_loss(self, params: Dict[str, Any], query_data: Tuple[np.ndarray, np.ndarray]) -> float:
@@ -521,7 +521,7 @@ class CrossDomainMetaLearning:
         self.transfer_weights = {}
         self.domain_adaptation_history = []
         
-        self.logger.info("✅ Cross-Domain Meta-Learning initialized")
+        tprint_info("✅ Cross-Domain Meta-Learning initialized")
     
     def learn_cross_domain(self, 
                           source_domains: List[MetaTask],
@@ -564,7 +564,7 @@ class CrossDomainMetaLearning:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Cross-domain meta-learning failed: {e}")
+            tprint_error(f"❌ Cross-domain meta-learning failed: {e}")
             return {
                 'cross_domain_success': False,
                 'error': str(e)
@@ -696,7 +696,7 @@ class AdvancedMetaLearningSystem:
         self.meta_trained = False
         self.adaptation_history = []
         
-        self.logger.info("✅ Advanced Meta-Learning System initialized")
+        tprint_info("✅ Advanced Meta-Learning System initialized")
     
     def meta_train(self, 
                    meta_train_tasks: List[MetaTask],
@@ -746,7 +746,7 @@ class AdvancedMetaLearningSystem:
             return combined_result
             
         except Exception as e:
-            self.logger.error(f"❌ Advanced meta-training failed: {e}")
+            tprint_error(f"❌ Advanced meta-training failed: {e}")
             return MetaLearningResult(
                 meta_parameters={},
                 adaptation_results=[],
@@ -807,7 +807,7 @@ class AdvancedMetaLearningSystem:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Few-shot adaptation failed: {e}")
+            tprint_error(f"❌ Few-shot adaptation failed: {e}")
             return {
                 'adaptation_success': False,
                 'error': str(e)

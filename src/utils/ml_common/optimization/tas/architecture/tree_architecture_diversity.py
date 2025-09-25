@@ -157,7 +157,7 @@ class TreeArchitectureFactory:
         self.architecture_registry = {}
         self._register_architectures()
         
-        self.logger.info("✅ Tree Architecture Factory initialized")
+        tprint_info("✅ Tree Architecture Factory initialized")
     
     def _register_architectures(self):
         """Register available tree architectures."""
@@ -220,7 +220,7 @@ class TreeArchitectureFactory:
             return candidate
             
         except Exception as e:
-            self.logger.error(f"❌ Architecture creation failed: {e}")
+            tprint_error(f"❌ Architecture creation failed: {e}")
             raise
     
     def create_diverse_architectures(self, 
@@ -248,7 +248,7 @@ class TreeArchitectureFactory:
                     candidate = self.create_architecture(arch_type, task_type=task_type)
                     architectures.append(candidate)
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to create {arch_type.value}: {e}")
+                    tprint_warning(f"⚠️ Failed to create {arch_type.value}: {e}")
                     continue
             
             if TPRINT_AVAILABLE:
@@ -257,7 +257,7 @@ class TreeArchitectureFactory:
             return architectures
             
         except Exception as e:
-            self.logger.error(f"❌ Diverse architecture creation failed: {e}")
+            tprint_error(f"❌ Diverse architecture creation failed: {e}")
             return []
     
     def _create_decision_tree(self, parameters: Optional[Dict], task_type: str):
@@ -440,7 +440,7 @@ class TreeArchitectureEvaluator:
         self.config = config or TreeArchitectureConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        self.logger.info("✅ Tree Architecture Evaluator initialized")
+        tprint_info("✅ Tree Architecture Evaluator initialized")
     
     def evaluate_architecture(self, 
                             candidate: TreeArchitectureCandidate,
@@ -499,7 +499,7 @@ class TreeArchitectureEvaluator:
             return candidate
             
         except Exception as e:
-            self.logger.error(f"❌ Architecture evaluation failed: {e}")
+            tprint_error(f"❌ Architecture evaluation failed: {e}")
             candidate.performance_score = 0.0
             return candidate
     
@@ -514,7 +514,7 @@ class TreeArchitectureEvaluator:
             return np.mean(cv_scores)
             
         except Exception as e:
-            self.logger.error(f"❌ Performance score calculation failed: {e}")
+            tprint_error(f"❌ Performance score calculation failed: {e}")
             return 0.0
     
     def _calculate_diversity_score(self, candidate: TreeArchitectureCandidate) -> float:
@@ -585,7 +585,7 @@ class TreeArchitectureSelector:
         self.config = config or TreeArchitectureConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        self.logger.info("✅ Tree Architecture Selector initialized")
+        tprint_info("✅ Tree Architecture Selector initialized")
     
     def select_best_architectures(self, 
                                 candidates: List[TreeArchitectureCandidate],
@@ -624,7 +624,7 @@ class TreeArchitectureSelector:
             return selected
             
         except Exception as e:
-            self.logger.error(f"❌ Architecture selection failed: {e}")
+            tprint_error(f"❌ Architecture selection failed: {e}")
             return candidates
     
     def _calculate_hybrid_score(self, candidate: TreeArchitectureCandidate) -> float:

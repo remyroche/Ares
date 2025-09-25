@@ -774,7 +774,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
                 'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
-                
+                'trailing_reversal_pct': {'type': 'float', 'min': 0.005, 'max': 0.05},
+                'use_trailing_atr_log_scaling': {'type': 'bool'},
+                'trailing_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+
                 # Regime-aware parameters
                 'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
                 'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2}
@@ -2091,13 +2094,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 trailing_atr = params['trailing_atr_multiplier']
                 min_dist = params['trailing_min_distance']
                 conf_act = params['trailing_confidence_activation']
-                
+
                 # Validate trailing stop parameters
-                if (1.0 <= trailing_atr <= 3.0 and 
-                    0.005 <= min_dist <= 0.03 and 
+                if (1.0 <= trailing_atr <= 3.0 and
+                    0.005 <= min_dist <= 0.03 and
                     0.6 <= conf_act <= 0.9):
                     score += 0.1
-            
+
             # 6. Regime-aware parameters validation (0.1 weight)
             regime_params = ['regime_transition_penalty', 'regime_specific_scaling']
             if all(param in params for param in regime_params):

@@ -25,6 +25,17 @@ from .unified_multi_objective import (
     MultiObjectiveResult
 )
 
+from .evolutionary_search import (
+    EvolutionaryTreeSearch,
+    TreeGeneticAlgorithm,
+    TreeNSGA2,
+    EvolutionaryConfig,
+    EvolutionaryArchitectureSearch,
+    ArchitectureConfig,
+    FitnessConfig,
+    Architecture
+)
+
 __all__ = [
     'UnifiedEvaluator',
     'EvaluationConfig', 
@@ -39,5 +50,13 @@ __all__ = [
     'PerformanceMetric',
     'EstimatorType',
     'OptimizationConfig',
-    'MultiObjectiveResult'
+    'MultiObjectiveResult',
+    'EvolutionaryTreeSearch',
+    'TreeGeneticAlgorithm',
+    'TreeNSGA2',
+    'EvolutionaryConfig',
+    'EvolutionaryArchitectureSearch',
+    'ArchitectureConfig',
+    'FitnessConfig',
+    'Architecture'
 ]

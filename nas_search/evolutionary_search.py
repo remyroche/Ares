@@ -141,6 +141,12 @@ try:
     from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer
     from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import BayesianOptimizer
     from src.utils.ml_common.optimization.enhanced_hpo_monitor import HPOMonitor
+    # Import Bayesian TPE optimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        BayesianTPEConfig,
+        optimize_with_bayesian_tpe
+    )
 except ImportError:
     # Fallback ML utilities
     class HPOOptimizer:
@@ -168,6 +174,20 @@ except ImportError:
             pass
         def stop_monitoring(self):
             pass
+    
+    class BayesianTPEOptimizer:
+        def __init__(self, config=None):
+            self.config = config
+        def optimize(self, objective_function, search_space, **kwargs):
+            return {'success': False, 'best_params': {}, 'best_score': 0.0}
+    
+    class BayesianTPEConfig:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+    
+    def optimize_with_bayesian_tpe(objective_function, search_space, config=None, **kwargs):
+        return {'success': False, 'best_params': {}, 'best_score': 0.0}
 
 # Import hardware optimization utilities
 try:
@@ -444,6 +464,17 @@ class EvolutionaryArchitectureSearch:
         self.grid_optimizer = GridSearchOptimizer()
         self.bayesian_optimizer = BayesianOptimizer()
         self.hpo_monitor = HPOMonitor()
+        # Initialize Bayesian TPE optimizer
+        self.bayesian_tpe_optimizer = BayesianTPEOptimizer(
+            BayesianTPEConfig(
+                n_trials=30,
+                enable_grid_search=True,
+                coarse_grid_points=5,
+                fine_grid_points=8,
+                enable_parallel=True,
+                max_workers=4
+            )
+        )
         
         # Common utilities
         try:
@@ -639,6 +670,86 @@ class EvolutionaryArchitectureSearch:
         self.evaluation_times.append(architecture.training_time)
         
         return fitness
+    
+    def optimize_hyperparameters(self, architecture: Architecture) -> Architecture:
+        """Optimize hyperparameters for a given architecture using Bayesian TPE."""
+        if not hasattr(self, 'bayesian_tpe_optimizer') or not self.bayesian_tpe_optimizer:
+            tprint_warning("Bayesian TPE optimizer not available, skipping hyperparameter optimization")
+            return architecture
+        
+        tprint_info("🔧 Starting Bayesian TPE hyperparameter optimization")
+        
+        # Define hyperparameter search space for the architecture
+        search_space = {
+            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.1, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'weight_decay': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True}
+        }
+        
+        try:
+            # Use Bayesian TPE optimizer with automatic grid search
+            result = self.bayesian_tpe_optimizer.optimize(
+                objective_function=lambda params: self._evaluate_hyperparameters(architecture, params),
+                search_space=search_space,
+                X=self.X,
+                y=self.y
+            )
+            
+            if result.success:
+                # Update architecture with optimized hyperparameters
+                optimized_architecture = self._apply_optimized_hyperparameters(architecture, result.best_params)
+                tprint_success(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+                return optimized_architecture
+            else:
+                tprint_warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return architecture
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Bayesian TPE optimization failed: {e}")
+            return architecture
+    
+    def _evaluate_hyperparameters(self, architecture: Architecture, params: Dict[str, Any]) -> float:
+        """Evaluate hyperparameters for Bayesian TPE optimization."""
+        try:
+            # Create a temporary architecture with new hyperparameters
+            temp_architecture = self._create_architecture_with_params(architecture, params)
+            
+            # Evaluate fitness with new hyperparameters
+            fitness = self.evaluate_fitness(temp_architecture)
+            
+            # Return negative fitness for minimization (Bayesian TPE maximizes)
+            return -fitness
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Hyperparameter evaluation failed: {e}")
+            return -1.0  # Return poor score on error
+    
+    def _create_architecture_with_params(self, base_architecture: Architecture, params: Dict[str, Any]) -> Architecture:
+        """Create a new architecture with specified hyperparameters."""
+        # Create a copy of the base architecture
+        new_architecture = Architecture(
+            layers=base_architecture.layers.copy(),
+            config=base_architecture.config
+        )
+        
+        # Update hyperparameters
+        new_architecture.learning_rate = params.get('learning_rate', base_architecture.learning_rate)
+        new_architecture.batch_size = params.get('batch_size', base_architecture.batch_size)
+        new_architecture.dropout_rate = params.get('dropout_rate', base_architecture.dropout_rate)
+        new_architecture.weight_decay = params.get('weight_decay', getattr(base_architecture, 'weight_decay', 0.0001))
+        
+        return new_architecture
+    
+    def _apply_optimized_hyperparameters(self, architecture: Architecture, best_params: Dict[str, Any]) -> Architecture:
+        """Apply optimized hyperparameters to the architecture."""
+        # Update the architecture with best parameters
+        architecture.learning_rate = best_params.get('learning_rate', architecture.learning_rate)
+        architecture.batch_size = best_params.get('batch_size', architecture.batch_size)
+        architecture.dropout_rate = best_params.get('dropout_rate', architecture.dropout_rate)
+        architecture.weight_decay = best_params.get('weight_decay', getattr(architecture, 'weight_decay', 0.0001))
+        
+        return architecture
     
     def _simulate_training(self, architecture: Architecture) -> float:
         """Simulate training process for fitness evaluation."""

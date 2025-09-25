@@ -115,6 +115,12 @@ try:
     from src.utils.ml_common.common_operations import get_ml_common_operations
     from src.utils.ml_common.validation import get_validation_framework
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
+    # Import Bayesian TPE optimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        BayesianTPEConfig,
+        optimize_with_bayesian_tpe
+    )
     ML_COMMON_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"ML common tools not available: {e}")
@@ -353,17 +359,30 @@ class EnhancedPerfectNASRegimeDetector:
         if not ML_COMMON_AVAILABLE:
             self.ml_common_ops = None
             self.validation_framework = None
+            self.bayesian_tpe_optimizer = None
             return
         
         try:
             self.ml_common_ops = get_ml_common_operations()
             self.validation_framework = get_validation_framework()
+            # Initialize Bayesian TPE optimizer
+            self.bayesian_tpe_optimizer = BayesianTPEOptimizer(
+                BayesianTPEConfig(
+                    n_trials=50,
+                    enable_grid_search=True,
+                    coarse_grid_points=5,
+                    fine_grid_points=8,
+                    enable_parallel=True,
+                    max_workers=4
+                )
+            )
             self.logger.info("✅ ML common utilities initialized")
             
         except Exception as e:
             self.logger.warning(f"ML common initialization failed: {e}")
             self.ml_common_ops = None
             self.validation_framework = None
+            self.bayesian_tpe_optimizer = None
     
     def _initialize_nas_clustering(self):
         """Initialize NAS clustering components."""
@@ -955,6 +974,137 @@ class EnhancedPerfectNASRegimeDetector:
             }
         
         return metrics
+    
+    def optimize_hyperparameters(self, data: np.ndarray, timestamps: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Optimize hyperparameters using Bayesian TPE optimizer."""
+        if not hasattr(self, 'bayesian_tpe_optimizer') or not self.bayesian_tpe_optimizer:
+            self.logger.warning("Bayesian TPE optimizer not available, skipping hyperparameter optimization")
+            return {}
+        
+        self.logger.info("🔧 Starting Bayesian TPE hyperparameter optimization")
+        
+        # Define hyperparameter search space for regime detection
+        search_space = {
+            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'hidden_units': {'type': 'int', 'low': 32, 'high': 512},
+            'num_layers': {'type': 'int', 'low': 2, 'high': 8},
+            'regularization': {'type': 'float', 'low': 0.0001, 'high': 0.01, 'log': True}
+        }
+        
+        try:
+            # Use Bayesian TPE optimizer with automatic grid search
+            result = self.bayesian_tpe_optimizer.optimize(
+                objective_function=lambda params: self._evaluate_hyperparameters(data, timestamps, params),
+                search_space=search_space,
+                X=data,
+                y=timestamps
+            )
+            
+            if result.success:
+                self.logger.info(f"✅ Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+                self.logger.info(f"   Best parameters: {result.best_params}")
+                
+                # Update configuration with optimized parameters
+                self._update_config_with_optimized_params(result.best_params)
+                
+                return {
+                    'success': True,
+                    'best_params': result.best_params,
+                    'best_score': result.best_score,
+                    'optimization_time': result.optimization_time,
+                    'n_trials': result.n_trials
+                }
+            else:
+                self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return {'success': False, 'error': result.error_message}
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Bayesian TPE optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _evaluate_hyperparameters(self, data: np.ndarray, timestamps: Optional[np.ndarray], params: Dict[str, Any]) -> float:
+        """Evaluate hyperparameters for Bayesian TPE optimization."""
+        try:
+            # Create a temporary configuration with new hyperparameters
+            temp_config = self._create_temp_config_with_params(params)
+            
+            # Perform regime detection with temporary configuration
+            temp_detector = EnhancedPerfectNASRegimeDetector(temp_config)
+            result = temp_detector.detect_regimes(data, timestamps)
+            
+            if result.success:
+                # Calculate evaluation score based on regime quality
+                score = self._calculate_regime_quality_score(result)
+                return score
+            else:
+                return -1.0  # Return poor score on failure
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hyperparameter evaluation failed: {e}")
+            return -1.0
+    
+    def _create_temp_config_with_params(self, params: Dict[str, Any]) -> PerfectNASConfig:
+        """Create a temporary configuration with optimized parameters."""
+        # Create a copy of the current configuration
+        temp_config = PerfectNASConfig(
+            architecture_type=self.config.architecture_type,
+            hidden_layers=params.get('num_layers', self.config.hidden_layers),
+            hidden_units=params.get('hidden_units', self.config.hidden_units),
+            learning_rate=params.get('learning_rate', self.config.learning_rate),
+            batch_size=params.get('batch_size', self.config.batch_size),
+            dropout_rate=params.get('dropout_rate', self.config.dropout_rate),
+            regularization=params.get('regularization', self.config.regularization),
+            max_epochs=self.config.max_epochs,
+            early_stopping_patience=self.config.early_stopping_patience,
+            validation_split=self.config.validation_split
+        )
+        return temp_config
+    
+    def _calculate_regime_quality_score(self, result: EnhancedPerfectNASResult) -> float:
+        """Calculate a quality score for regime detection results."""
+        try:
+            # Combine multiple metrics for overall quality
+            regime_diversity = len(np.unique(result.regime_predictions))
+            economic_significance = np.mean(result.economic_significance_scores)
+            trading_viability = np.mean(result.trading_viability_scores)
+            regime_stability = np.mean(result.regime_stability_scores)
+            
+            # Weighted combination of metrics
+            quality_score = (
+                0.3 * regime_diversity / 10.0 +  # Normalize diversity
+                0.3 * economic_significance +
+                0.2 * trading_viability +
+                0.2 * regime_stability
+            )
+            
+            return quality_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quality score calculation failed: {e}")
+            return 0.0
+    
+    def _update_config_with_optimized_params(self, best_params: Dict[str, Any]):
+        """Update the configuration with optimized parameters."""
+        try:
+            if 'learning_rate' in best_params:
+                self.config.learning_rate = best_params['learning_rate']
+            if 'batch_size' in best_params:
+                self.config.batch_size = best_params['batch_size']
+            if 'dropout_rate' in best_params:
+                self.config.dropout_rate = best_params['dropout_rate']
+            if 'hidden_units' in best_params:
+                self.config.hidden_units = best_params['hidden_units']
+            if 'num_layers' in best_params:
+                self.config.hidden_layers = best_params['num_layers']
+            if 'regularization' in best_params:
+                self.config.regularization = best_params['regularization']
+                
+            self.logger.info("✅ Configuration updated with optimized parameters")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to update configuration: {e}")
     
     def _log_enhanced_results_summary(self, result: EnhancedPerfectNASResult):
         """Log summary of enhanced results."""

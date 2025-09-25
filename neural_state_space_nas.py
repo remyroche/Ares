@@ -419,6 +419,12 @@ try:
     from src.utils.ml_common.optimization.pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
     from src.utils.ml_common.optimization.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig
     from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
+    # Import Bayesian TPE optimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        BayesianTPEConfig,
+        optimize_with_bayesian_tpe
+    )
     ML_UTILS_AVAILABLE = True
 except ImportError:
     ML_UTILS_AVAILABLE = False
@@ -588,9 +594,21 @@ class NeuralSSM_NAS_Optimizer:
         if ML_UTILS_AVAILABLE:
             self.hpo_optimizer = HyperparameterOptimization()
             self.pareto_analyzer = ParetoFrontAnalyzer()
+            # Initialize Bayesian TPE optimizer
+            self.bayesian_tpe_optimizer = BayesianTPEOptimizer(
+                BayesianTPEConfig(
+                    n_trials=50,
+                    enable_grid_search=True,
+                    coarse_grid_points=5,
+                    fine_grid_points=8,
+                    enable_parallel=True,
+                    max_workers=4
+                )
+            )
         else:
             self.hpo_optimizer = None
             self.pareto_analyzer = None
+            self.bayesian_tpe_optimizer = None
             tprint_warning("ML utilities not available, using fallback implementations")
         
         # Initialize matrix operations if available
@@ -1020,27 +1038,40 @@ class NeuralSSM_NAS_Optimizer:
                                 architecture: ArchitectureConfig,
                                 data: Tuple[Any, Any],
                                 validation_data: Optional[Tuple[Any, Any]] = None) -> ArchitectureConfig:
-        """Optimize hyperparameters for a given architecture."""
-        if not self.hpo_optimizer:
-            tprint_warning("HPO optimizer not available")
-            return architecture
+        """Optimize hyperparameters for a given architecture using Bayesian TPE."""
+        if not self.bayesian_tpe_optimizer:
+            tprint_warning("Bayesian TPE optimizer not available, falling back to basic optimization")
+            return self._basic_hyperparameter_optimization(architecture, data, validation_data)
         
-        tprint_info("Starting hyperparameter optimization")
+        tprint_info("Starting Bayesian TPE hyperparameter optimization")
         
-        # Define hyperparameter search space
+        # Define hyperparameter search space for Bayesian TPE
         search_space = {
-            'learning_rate': [0.0001, 0.001, 0.01, 0.1],
-            'batch_size': [16, 32, 64, 128],
-            'dropout_rate': [0.0, 0.1, 0.2, 0.3, 0.5],
-            'regularization': [0.001, 0.01, 0.1, 0.5]
+            'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.1, 'log': True},
+            'batch_size': {'type': 'int', 'low': 16, 'high': 128},
+            'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
+            'regularization': {'type': 'float', 'low': 0.001, 'high': 0.5, 'log': True}
         }
         
-        # Use HPO optimizer
-        best_params = self.hpo_optimizer.optimize(
-            search_space=search_space,
-            objective_function=lambda params: self._evaluate_hyperparameters(architecture, params, data, validation_data),
-            max_trials=20
-        )
+        # Use Bayesian TPE optimizer with automatic grid search
+        try:
+            result = self.bayesian_tpe_optimizer.optimize(
+                objective_function=lambda params: self._evaluate_hyperparameters(architecture, params, data, validation_data),
+                search_space=search_space,
+                X=data[0] if data else None,
+                y=data[1] if data else None
+            )
+            
+            if result.success:
+                best_params = result.best_params
+                tprint_success(f"Bayesian TPE optimization completed - Best score: {result.best_score:.4f}")
+            else:
+                tprint_warning(f"Bayesian TPE optimization failed: {result.error_message}")
+                return self._basic_hyperparameter_optimization(architecture, data, validation_data)
+                
+        except Exception as e:
+            tprint_warning(f"Bayesian TPE optimization failed: {e}")
+            return self._basic_hyperparameter_optimization(architecture, data, validation_data)
         
         # Update architecture with best parameters
         optimized_architecture = ArchitectureConfig(
@@ -1060,6 +1091,58 @@ class NeuralSSM_NAS_Optimizer:
         )
         
         tprint_success("Hyperparameter optimization completed")
+        return optimized_architecture
+    
+    def _basic_hyperparameter_optimization(self, 
+                                         architecture: ArchitectureConfig,
+                                         data: Tuple[Any, Any],
+                                         validation_data: Optional[Tuple[Any, Any]] = None) -> ArchitectureConfig:
+        """Fallback basic hyperparameter optimization when Bayesian TPE is not available."""
+        tprint_info("Using basic hyperparameter optimization")
+        
+        # Simple grid search fallback
+        learning_rates = [0.0001, 0.001, 0.01, 0.1]
+        batch_sizes = [16, 32, 64, 128]
+        dropout_rates = [0.0, 0.1, 0.2, 0.3, 0.5]
+        regularizations = [0.001, 0.01, 0.1, 0.5]
+        
+        best_score = -float('inf')
+        best_params = {}
+        
+        for lr in learning_rates:
+            for bs in batch_sizes:
+                for dr in dropout_rates:
+                    for reg in regularizations:
+                        params = {
+                            'learning_rate': lr,
+                            'batch_size': bs,
+                            'dropout_rate': dr,
+                            'regularization': reg
+                        }
+                        
+                        score = self._evaluate_hyperparameters(architecture, params, data, validation_data)
+                        if score > best_score:
+                            best_score = score
+                            best_params = params
+        
+        # Update architecture with best parameters
+        optimized_architecture = ArchitectureConfig(
+            architecture_type=architecture.architecture_type,
+            hidden_layers=architecture.hidden_layers,
+            hidden_units=architecture.hidden_units,
+            activation=architecture.activation,
+            dropout_rate=best_params.get('dropout_rate', architecture.dropout_rate),
+            learning_rate=best_params.get('learning_rate', architecture.learning_rate),
+            batch_size=best_params.get('batch_size', architecture.batch_size),
+            sequence_length=architecture.sequence_length,
+            state_dim=architecture.state_dim,
+            observation_dim=architecture.observation_dim,
+            use_attention=architecture.use_attention,
+            use_residual=architecture.use_residual,
+            regularization=best_params.get('regularization', architecture.regularization)
+        )
+        
+        tprint_success(f"Basic hyperparameter optimization completed - Best score: {best_score:.4f}")
         return optimized_architecture
     
     def _evaluate_hyperparameters(self, 

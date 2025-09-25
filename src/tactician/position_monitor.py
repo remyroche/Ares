@@ -32,6 +32,9 @@ import json
 import logging
 import time
 
+MIN_TRAILING_PCT = 0.0005
+MAX_TRAILING_PCT = 0.5
+
 class PositionAction(Enum):
     """Enum for position actions."""
 
@@ -803,52 +806,22 @@ class PositionMonitor:
             profit_config = dict(self.profit_taking_config or {})
             metadata["trailing_config"] = trailing_config
 
-            # Ensure trailing stop is enabled in the configurations
-            if not profit_config.get("trailing_stop_enabled", False):
-                metadata["status"] = "disabled"
-                return PositionAction.STAY, "Trailing stop disabled", metadata
+            precondition_result, market_state = self._check_trailing_stop_preconditions(
+                position_data,
+                combined_confidence,
+                trailing_config,
+                profit_config,
+                metadata
+            )
 
-            if not trailing_config.get("enabled", True):
-                metadata["status"] = "disabled"
-                return PositionAction.STAY, "Trailing stop disabled in configuration", metadata
+            if precondition_result is not None:
+                return precondition_result
 
-            high_conf_threshold = self.confidence_thresholds.get("high", 0.8)
-            confidence_activation = trailing_config.get("confidence_activation", 0.7)
+            entry_price = market_state["entry_price"]
+            current_price = market_state["current_price"]
+            quantity = market_state["quantity"]
+            side = market_state["side"]
 
-            # Trailing stop is only active when confidence is below the high threshold
-            if combined_confidence >= high_conf_threshold:
-                metadata["status"] = "confidence_above_high_threshold"
-                metadata["high_threshold"] = high_conf_threshold
-                return (
-                    PositionAction.STAY,
-                    "Confidence above high threshold; trailing stop inactive",
-                    metadata
-                )
-
-            # Require a minimum confidence to avoid activating during panic exits
-            if combined_confidence < confidence_activation:
-                metadata["status"] = "confidence_below_activation"
-                metadata["activation_threshold"] = confidence_activation
-                return (
-                    PositionAction.STAY,
-                    "Confidence below trailing activation threshold",
-                    metadata
-                )
-
-            entry_price = float(position_data.get("entry_price", 0.0) or 0.0)
-            current_price = float(position_data.get("current_price", 0.0) or 0.0)
-            quantity = abs(float(position_data.get("quantity", 0.0) or 0.0))
-            side = str(position_data.get("side", "LONG")).upper()
-
-            if entry_price <= 0 or current_price <= 0 or quantity <= 0:
-                metadata["status"] = "insufficient_market_data"
-                return (
-                    PositionAction.STAY,
-                    "Insufficient data for trailing stop evaluation",
-                    metadata
-                )
-
-            # Determine the dynamically scaled profit target used for activation
             dynamic_profit_target = self._calculate_profit_target_threshold(
                 combined_confidence,
                 position_data
@@ -858,75 +831,33 @@ class PositionMonitor:
             if side == "LONG":
                 target_price = entry_price + profit_per_unit
                 price_above_target = current_price >= target_price
-            elif side == "SHORT":
+            else:  # SHORT
                 target_price = entry_price - profit_per_unit
                 price_above_target = current_price <= target_price
-            else:
-                metadata["status"] = "unsupported_side"
-                metadata["side"] = side
-                return PositionAction.STAY, "Unsupported position side for trailing stop", metadata
 
             metadata.update({
                 "target_price": target_price,
                 "unrealized_target": dynamic_profit_target
             })
 
-            trailing_state = position_data.setdefault(
-                "trailing_state",
-                {
-                    "activated": False,
-                    "target_price": target_price,
-                    "extreme_price": None,
-                    "atr_at_activation": None
-                }
+            trailing_state, state_result = self._update_trailing_state(
+                position_data,
+                target_price,
+                price_above_target,
+                current_price,
+                side,
+                metadata
             )
+            if state_result is not None:
+                return state_result
 
-            if not price_above_target:
-                # Reset trailing state if we fall back below the activation price
-                trailing_state.update({
-                    "activated": False,
-                    "target_price": target_price,
-                    "extreme_price": None,
-                    "atr_at_activation": None
-                })
-                metadata["status"] = "target_not_reached"
-                return (
-                    PositionAction.STAY,
-                    "Trailing stop inactive until dynamic target price is exceeded",
-                    metadata
-                )
-
-            # Update the best favorable price since the target was reached
-            extreme_price = trailing_state.get("extreme_price")
-            if extreme_price is None:
-                extreme_price = current_price
-            if side == "LONG":
-                extreme_price = max(extreme_price, current_price)
-            else:  # SHORT
-                extreme_price = min(extreme_price, current_price)
-            trailing_state["extreme_price"] = extreme_price
-
-            # Configure trailing reversal percentage and volatility modulation
-            reversal_pct = max(trailing_config.get("reversal_percentage", 0.02), 0.0)
-            min_distance = max(trailing_config.get("min_distance", 0.0), 0.0)
-
-            atr_value = self._extract_atr_value(position_data)
-            if trailing_state.get("atr_at_activation") is None and atr_value is not None:
-                trailing_state["atr_at_activation"] = float(atr_value)
-            atr_for_calculation = trailing_state.get("atr_at_activation") or atr_value or 0.0
-
-            if trailing_config.get("use_atr_log_scaling", False):
-                atr_log_multiplier = max(trailing_config.get("atr_log_multiplier", 0.0), 0.0)
-                if atr_for_calculation > 0 and atr_log_multiplier > 0:
-                    reversal_pct *= math.log1p(atr_for_calculation * atr_log_multiplier)
-
-            atr_multiplier = max(trailing_config.get("atr_multiplier", 0.0), 0.0)
-            atr_pct = 0.0
-            if atr_for_calculation > 0 and atr_multiplier > 0 and current_price > 0:
-                atr_pct = (atr_for_calculation / current_price) * atr_multiplier
-
-            trailing_pct = max(reversal_pct, atr_pct, min_distance)
-            trailing_pct = min(max(trailing_pct, 0.0005), 0.5)
+            extreme_price = trailing_state.get("extreme_price", current_price)
+            trailing_pct = self._calculate_trailing_percentage(
+                trailing_config,
+                trailing_state,
+                current_price,
+                position_data
+            )
 
             trailing_state.update({
                 "activated": True,
@@ -935,14 +866,12 @@ class PositionMonitor:
                 "last_update": time.time()
             })
 
-            if side == "LONG":
-                trigger_price = extreme_price * (1.0 - trailing_pct)
-                reversal_amount = (extreme_price - current_price) / max(extreme_price, 1e-8)
-                triggered = current_price <= trigger_price
-            else:  # SHORT
-                trigger_price = extreme_price * (1.0 + trailing_pct)
-                reversal_amount = (current_price - extreme_price) / max(abs(extreme_price), 1e-8)
-                triggered = current_price >= trigger_price
+            triggered, trigger_price, reversal_amount = self._check_trailing_stop_trigger(
+                side,
+                current_price,
+                extreme_price,
+                trailing_pct
+            )
 
             metadata.update({
                 "extreme_price": extreme_price,
@@ -981,6 +910,181 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
             return PositionAction.STAY, f"Error in trailing stop evaluation: {e}", {}
+
+    def _check_trailing_stop_preconditions(
+        self,
+        position_data: Dict[str, Any],
+        combined_confidence: float,
+        trailing_config: Dict[str, Any],
+        profit_config: Dict[str, Any],
+        metadata: Dict[str, Any]
+    ) -> tuple[Optional[tuple[PositionAction, str, Dict[str, Any]]], Dict[str, Any]]:
+        """Validate trailing stop configuration and market inputs."""
+
+        if not profit_config.get("trailing_stop_enabled", False):
+            metadata["status"] = "disabled"
+            return (
+                PositionAction.STAY,
+                "Trailing stop disabled",
+                metadata
+            ), {}
+
+        if not trailing_config.get("enabled", True):
+            metadata["status"] = "disabled"
+            return (
+                PositionAction.STAY,
+                "Trailing stop disabled in configuration",
+                metadata
+            ), {}
+
+        high_conf_threshold = self.confidence_thresholds.get("high", 0.8)
+        confidence_activation = trailing_config.get("confidence_activation", 0.7)
+
+        if combined_confidence >= high_conf_threshold:
+            metadata["status"] = "confidence_above_high_threshold"
+            metadata["high_threshold"] = high_conf_threshold
+            return (
+                PositionAction.STAY,
+                "Confidence above high threshold; trailing stop inactive",
+                metadata
+            ), {}
+
+        if combined_confidence < confidence_activation:
+            metadata["status"] = "confidence_below_activation"
+            metadata["activation_threshold"] = confidence_activation
+            return (
+                PositionAction.STAY,
+                "Confidence below trailing activation threshold",
+                metadata
+            ), {}
+
+        entry_price = float(position_data.get("entry_price", 0.0) or 0.0)
+        current_price = float(position_data.get("current_price", 0.0) or 0.0)
+        quantity = abs(float(position_data.get("quantity", 0.0) or 0.0))
+        side = str(position_data.get("side", "LONG")).upper()
+
+        if entry_price <= 0 or current_price <= 0 or quantity <= 0:
+            metadata["status"] = "insufficient_market_data"
+            return (
+                PositionAction.STAY,
+                "Insufficient data for trailing stop evaluation",
+                metadata
+            ), {}
+
+        if side not in {"LONG", "SHORT"}:
+            metadata["status"] = "unsupported_side"
+            metadata["side"] = side
+            return (
+                PositionAction.STAY,
+                "Unsupported position side for trailing stop",
+                metadata
+            ), {}
+
+        return None, {
+            "entry_price": entry_price,
+            "current_price": current_price,
+            "quantity": quantity,
+            "side": side
+        }
+
+    def _update_trailing_state(
+        self,
+        position_data: Dict[str, Any],
+        target_price: float,
+        price_above_target: bool,
+        current_price: float,
+        side: str,
+        metadata: Dict[str, Any]
+    ) -> tuple[Dict[str, Any], Optional[tuple[PositionAction, str, Dict[str, Any]]]]:
+        """Initialize or update the trailing state and handle activation resets."""
+
+        trailing_state = position_data.setdefault(
+            "trailing_state",
+            {
+                "activated": False,
+                "target_price": target_price,
+                "extreme_price": None,
+                "atr_at_activation": None
+            }
+        )
+
+        trailing_state["target_price"] = target_price
+
+        if not price_above_target:
+            trailing_state.update({
+                "activated": False,
+                "extreme_price": None,
+                "atr_at_activation": None
+            })
+            metadata["status"] = "target_not_reached"
+            return trailing_state, (
+                PositionAction.STAY,
+                "Trailing stop inactive until dynamic target price is exceeded",
+                metadata
+            )
+
+        extreme_price = trailing_state.get("extreme_price")
+        if extreme_price is None:
+            extreme_price = current_price
+        elif side == "LONG":
+            extreme_price = max(extreme_price, current_price)
+        else:
+            extreme_price = min(extreme_price, current_price)
+
+        trailing_state["extreme_price"] = extreme_price
+        return trailing_state, None
+
+    def _calculate_trailing_percentage(
+        self,
+        trailing_config: Dict[str, Any],
+        trailing_state: Dict[str, Any],
+        current_price: float,
+        position_data: Dict[str, Any]
+    ) -> float:
+        """Calculate the dynamic trailing percentage based on configuration and volatility."""
+
+        reversal_pct = max(trailing_config.get("reversal_percentage", 0.02), 0.0)
+        min_distance = max(trailing_config.get("min_distance", 0.0), 0.0)
+
+        atr_value = self._extract_atr_value(position_data)
+        if trailing_state.get("atr_at_activation") is None and atr_value is not None:
+            trailing_state["atr_at_activation"] = float(atr_value)
+        atr_for_calculation = trailing_state.get("atr_at_activation") or atr_value or 0.0
+
+        if trailing_config.get("use_atr_log_scaling", False):
+            atr_log_multiplier = max(trailing_config.get("atr_log_multiplier", 0.0), 0.0)
+            if atr_for_calculation > 0 and atr_log_multiplier > 0:
+                reversal_pct *= math.log1p(atr_for_calculation * atr_log_multiplier)
+
+        atr_multiplier = max(trailing_config.get("atr_multiplier", 0.0), 0.0)
+        atr_pct = 0.0
+        if atr_for_calculation > 0 and atr_multiplier > 0 and current_price > 0:
+            atr_pct = (atr_for_calculation / current_price) * atr_multiplier
+
+        trailing_pct = max(reversal_pct, atr_pct, min_distance)
+        return min(max(trailing_pct, MIN_TRAILING_PCT), MAX_TRAILING_PCT)
+
+    def _check_trailing_stop_trigger(
+        self,
+        side: str,
+        current_price: float,
+        extreme_price: float,
+        trailing_pct: float
+    ) -> tuple[bool, float, float]:
+        """Check whether trailing stop conditions have been met."""
+
+        if side == "LONG":
+            trigger_price = extreme_price * (1.0 - trailing_pct)
+            denominator = max(extreme_price, 1e-8)
+            reversal_amount = (extreme_price - current_price) / denominator
+            triggered = current_price <= trigger_price
+        else:
+            trigger_price = extreme_price * (1.0 + trailing_pct)
+            denominator = max(abs(extreme_price), 1e-8)
+            reversal_amount = (current_price - extreme_price) / denominator
+            triggered = current_price >= trigger_price
+
+        return triggered, trigger_price, reversal_amount
 
     def _has_taken_profit_at_tier(self, position_id: str, tier: int) -> bool:
         """

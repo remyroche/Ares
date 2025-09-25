@@ -84,8 +84,7 @@ from .position_aware_trading import (
     PositionAwareTradingAnalyzer, PositionAwareConfig, PositionAwareResult,
     create_position_aware_analyzer, quick_position_aware_analysis
 )
-from .search_strategies import AdvancedSearchStrategy, BayesianOptimizer, GridOptimizer
-from .evolutionary_algorithms import NSGA2Optimizer, SPEA2Optimizer, EvolutionaryAlgorithm
+# Legacy search strategies removed - now using unified search algorithms from src.utils.nas_tas
 # from .hardware_optimization import HardwareOptimizer, PerformanceMonitor  # DEPRECATED
 from .analysis_components import AdvancedAnalysisComponent, RegimeAnalyzer, ClusterAnalyzer
 from .metrics_reporting import MetricsReporter, ConsolidatedMetricsReport
@@ -111,15 +110,8 @@ from .constraint_systems import (
     ConstraintValidationResult, ConstraintViolation,
     create_unified_constraint_validator, create_neural_constraint_validator, create_tree_constraint_validator
 )
-from .advanced_search_strategies import (
-    ReinforcementLearningSearch, EnhancedBayesianOptimization, AdaptiveEvolutionarySearch,
-    RLState, RLAction, RLReward, SearchStrategyResult,
-    create_rl_search_strategy, create_enhanced_bayesian_search, create_adaptive_evolutionary_search
-)
-from .unified_search_algorithms import (
-    UnifiedSearchManager, BayesianOptimizationSearch, EvolutionaryAlgorithmSearch,
-    create_unified_search_manager, create_search_algorithm
-)
+# Advanced search strategies removed - now using unified search algorithms from src.utils.nas_tas
+# Unified search algorithms now available from src.utils.nas_tas.search_algorithms
 from .unified_clustering_algorithms import (
     UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
 )

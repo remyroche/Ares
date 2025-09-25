@@ -21,9 +21,7 @@ from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning,
 
 # Import existing components
 from ..shared_utils.search_spaces import NeuralSearchSpace, TreeSearchSpace
-from ..shared_utils.advanced_search_strategies import (
-    ReinforcementLearningSearch, EnhancedBayesianOptimization, AdaptiveEvolutionarySearch
-)
+# Advanced search strategies removed - now using unified search algorithms from src.utils.nas_tas
 from ..shared_utils.performance_estimators import UnifiedPerformanceEstimator
 from ..shared_utils.architecture_encoders import UnifiedArchitectureEncoder
 from ..shared_utils.constraint_systems import UnifiedConstraintValidator

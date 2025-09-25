@@ -53,7 +53,7 @@ from .core.unified_architecture_search_engine import (
     UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType, SearchMode
 )
 from .core.performance_estimator import UnifiedPerformanceEstimator
-from .core.advanced_search_strategies import AdvancedSearchStrategies
+# Advanced search strategies removed - now using unified search algorithms from src.utils.nas_tas
 from .shared_utils import UnifiedMultiObjectiveOptimizer, OptimizationConfig
 from .core.nas_financial_features import NASFinancialFeatureEngineer
 from .core.nas_financial_optimizer import NASFinancialOptimizer

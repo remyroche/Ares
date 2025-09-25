@@ -47,9 +47,7 @@ from ...hybrid_nas_tas_regime.shared_utils.performance_estimators import (
 # )
 from ...hybrid_nas_tas_regime.shared_utils.search_spaces import create_tree_search_space
 from ...hybrid_nas_tas_regime.shared_utils.constraint_systems import create_unified_constraint_validator
-from ...hybrid_nas_tas_regime.shared_utils.advanced_search_strategies import (
-    create_rl_search_strategy, create_enhanced_bayesian_search, create_adaptive_evolutionary_search
-)
+# Advanced search strategies removed - now using unified search algorithms from src.utils.nas_tas
 try:
     from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (  # type: ignore
         TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType

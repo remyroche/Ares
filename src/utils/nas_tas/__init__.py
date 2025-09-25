@@ -1,118 +1,26 @@
 """
-NAS TAS (Neural Architecture Search - Tree Architecture Search) Utilities
+NAS-TAS Shared Utilities
 
-This module provides common utilities for NAS and TAS operations including
-backtesting engines, regime detection, and optimization tools.
+Shared utilities for Neural Architecture Search (NAS) and Tree Architecture Search (TAS)
+components, providing agnostic functionality that can be used by both systems.
 """
 
-from .unified_evaluator import (
-    UnifiedEvaluator,
-    EvaluationConfig,
-    EvaluationResult,
-    ModelType,
-    EvaluationMode,
-    MetricType
+from .agnostic_clustering import (
+    AgnosticClusterer, AgnosticClusteringConfig, AgnosticClusteringResult,
+    create_nas_clusterer, create_tas_clusterer
 )
-
-from .unified_multi_objective import (
-    UnifiedMultiObjectiveOptimizer,
-    PerformanceEstimator,
-    ArchitectureFeatures,
-    PerformancePrediction,
-    PerformanceMetric,
-    EstimatorType,
-    OptimizationConfig,
-    MultiObjectiveResult
+from .agnostic_config import (
+    AgnosticConfig, AgnosticResults, create_nas_config, create_tas_config
 )
-
-from .nas_feature_extractor import (
-    NASFeatureExtractor,
-    NASFeatureConfig,
-    FeatureExtractionResult,
-    create_nas_feature_extractor,
-    extract_features_for_clustering
-)
-
-from .bayesian_search import (
-    BayesianTreeSearch,
-    TreeBayesianOptimizer,
-    TreeGaussianProcess,
-    BayesianConfig
-)
-
-from .search_space import (
-    SearchSpace,
-    SearchSpaceConfig,
-    ParameterRange,
-    SearchSpaceType,
-    OptimizationStrategy,
-    create_default_nas_search_space,
-    create_tree_search_space
-)
-
-from .risk_analysis import (
-    RiskAnalyzer,
-    RiskConfig,
-    RiskResult,
-    RiskMetric
-)
-
-from .backtesting_engine import (
-    BacktestingEngine,
-    BacktestingConfig,
-    BacktestingResult,
-    BacktestingMode
-)
-
-from .evolutionary_search import (
-    EvolutionaryTreeSearch,
-    TreeGeneticAlgorithm,
-    TreeNSGA2,
-    EvolutionaryConfig
-)
-
 
 __all__ = [
-    'UnifiedEvaluator',
-    'EvaluationConfig', 
-    'EvaluationResult',
-    'ModelType',
-    'EvaluationMode',
-    'MetricType',
-    'UnifiedMultiObjectiveOptimizer',
-    'PerformanceEstimator',
-    'ArchitectureFeatures',
-    'PerformancePrediction',
-    'PerformanceMetric',
-    'EstimatorType',
-    'OptimizationConfig',
-    'MultiObjectiveResult',
-    'NASFeatureExtractor',
-    'NASFeatureConfig',
-    'FeatureExtractionResult',
-    'create_nas_feature_extractor',
-    'extract_features_for_clustering',
-    'BayesianTreeSearch',
-    'TreeBayesianOptimizer',
-    'TreeGaussianProcess',
-    'BayesianConfig',
-    'SearchSpace',
-    'SearchSpaceConfig',
-    'ParameterRange',
-    'SearchSpaceType',
-    'OptimizationStrategy',
-    'create_default_nas_search_space',
-    'create_tree_search_space',
-    'RiskAnalyzer',
-    'RiskConfig',
-    'RiskResult',
-    'RiskMetric',
-    'BacktestingEngine',
-    'BacktestingConfig', 
-    'BacktestingResult',
-    'BacktestingMode',
-    'EvolutionaryTreeSearch',
-    'TreeGeneticAlgorithm',
-    'TreeNSGA2',
-    'EvolutionaryConfig'
+    'AgnosticClusterer',
+    'AgnosticClusteringConfig', 
+    'AgnosticClusteringResult',
+    'create_nas_clusterer',
+    'create_tas_clusterer',
+    'AgnosticConfig',
+    'AgnosticResults',
+    'create_nas_config',
+    'create_tas_config'
 ]

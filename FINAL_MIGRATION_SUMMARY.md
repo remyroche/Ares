@@ -14,7 +14,7 @@ I have successfully completed the full migration to modern unified components, e
 
 ### **2. Import Updates** ✅ **COMPLETED**
 - **Updated Files**: 3 critical files updated with modern imports
-- **Modern Import Pattern**: All imports now use `src.utils.ml_common.nas_tas_unified`
+- **Modern Import Pattern**: All imports now use `src.utils.nas_tas`
 - **Eliminated Old Imports**: All references to deleted duplicate files removed
 - **Enhanced Exports**: Updated `__all__` exports with modern components
 
@@ -59,7 +59,7 @@ metrics["precision"] = metrics["precision_weighted"]  # Backward compat
 ### **After Migration (Modern)**
 ```python
 # Modern imports - ENFORCED
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedEvaluator, UnifiedHardwareOptimizer, UnifiedSearchEngine, 
     UnifiedDataProcessor, UnifiedComponentManager,
     compute_classification_metrics, compute_regression_metrics,
@@ -83,7 +83,7 @@ precision = metrics["precision_weighted"]  # Modern naming
 
 ### **Hardware Optimization**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedHardwareOptimizer, HardwareConfig, WorkloadType, OptimizationLevel
 )
 
@@ -104,7 +104,7 @@ recommendations = hardware_optimizer.get_optimization_recommendations()
 
 ### **Evaluation Framework**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedEvaluator, compute_classification_metrics, compute_regression_metrics
 )
 
@@ -119,7 +119,7 @@ regression_metrics = compute_regression_metrics(y_true, y_pred)
 
 ### **Component Management**
 ```python
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedComponentManager, create_nas_config, create_tas_config
 )
 

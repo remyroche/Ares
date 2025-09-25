@@ -183,7 +183,7 @@ except ImportError as e:
 
 # Import unified components with error handling
 try:
-    from src.utils.ml_common.nas_tas_unified import (
+    from src.utils.nas_tas import (
         UnifiedEvaluator, UnifiedHardwareOptimizer, UnifiedSearchEngine, 
         UnifiedDataProcessor, UnifiedComponentManager
     )

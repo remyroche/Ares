@@ -63,7 +63,7 @@ def test_unified_regime_detector_integration():
     print("\n🧪 Testing Unified Regime Detector ML Common integration...")
 
     try:
-        from src.utils.ml_common.nas_tas_unified import (
+        from src.utils.nas_tas import (
             UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
         )
         print("✅ Unified Regime Detector imports successful")

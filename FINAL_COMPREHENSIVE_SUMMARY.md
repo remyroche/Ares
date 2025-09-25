@@ -32,7 +32,7 @@ Successfully transformed the regime detection system from a collection of separa
 
 ### **Core Components**
 ```
-src/utils/ml_common/nas_tas_unified/
+src/utils/nas_tas/
 ├── unified_regime_config.py      # Unified configuration system
 ├── unified_regime_detector.py    # Main unified detector
 ├── performance_optimizer.py      # Performance optimization suite
@@ -112,7 +112,7 @@ src/training/steps/market_analysis/hybrid_nas_tas_regime/
 
 ### **Basic Unified Detection**
 ```python
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig
 
 # Create configuration
 config = UnifiedRegimeConfig.create_production_config()
@@ -126,7 +126,7 @@ result = detector.detect_regimes(market_data, timestamps)
 
 ### **Real-Time Monitoring**
 ```python
-from src.utils.ml_common.nas_tas_unified import create_real_time_monitor
+from src.utils.nas_tas import create_real_time_monitor
 
 # Create real-time monitor
 monitor = create_real_time_monitor()
@@ -163,7 +163,7 @@ benchmark.print_benchmark_summary(results)
 
 ### **Performance Optimization**
 ```python
-from src.utils.ml_common.nas_tas_unified import optimize_performance, get_performance_optimizer
+from src.utils.nas_tas import optimize_performance, get_performance_optimizer
 
 # Get performance optimizer
 optimizer = get_performance_optimizer()

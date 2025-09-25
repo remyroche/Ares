@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 import logging
 
 # Import unified regime system
-from src.utils.ml_common.nas_tas_unified import (
+from src.utils.nas_tas import (
     UnifiedRegimeDetector, UnifiedRegimeConfig, UnifiedRegimeResult,
     RegimeDetectionMethod, OptimizationStrategy, EconomicEvaluationMode
 )

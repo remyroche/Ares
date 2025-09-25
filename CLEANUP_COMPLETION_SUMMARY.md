@@ -12,27 +12,27 @@ I have successfully identified and deleted all code that is no longer used after
 1. **`src/training/steps/market_analysis/hybrid_nas_tas_regime/shared_utils/unified_hardware_optimizer.py`**
    - **Size**: ~190 lines
    - **Reason**: Direct duplicate of `UnifiedHardwareOptimizer` now in `nas_tas_unified`
-   - **Replacement**: Use `src.utils.ml_common.nas_tas_unified.UnifiedHardwareOptimizer`
+   - **Replacement**: Use `src.utils.nas_tas.UnifiedHardwareOptimizer`
 
 2. **`src/training/steps/market_analysis/hybrid_nas_tas_regime/shared_utils/unified_search_algorithms.py`**
    - **Size**: ~900 lines
    - **Reason**: Direct duplicate of `UnifiedSearchEngine` now in `nas_tas_unified`
-   - **Replacement**: Use `src.utils.ml_common.nas_tas_unified.UnifiedSearchEngine`
+   - **Replacement**: Use `src.utils.nas_tas.UnifiedSearchEngine`
 
 3. **`src/training/steps/market_analysis/hybrid_nas_tas_regime/shared_utils/data_pipeline.py`**
    - **Size**: ~540 lines
    - **Reason**: Direct duplicate of `UnifiedDataProcessor` now in `nas_tas_unified`
-   - **Replacement**: Use `src.utils.ml_common.nas_tas_unified.UnifiedDataProcessor`
+   - **Replacement**: Use `src.utils.nas_tas.UnifiedDataProcessor`
 
 4. **`src/training/steps/market_analysis/hybrid_nas_tas_regime/shared_utils/unified_evaluation_framework.py`**
    - **Size**: ~330 lines
    - **Reason**: Duplicate evaluation framework now merged into `nas_tas_unified`
-   - **Replacement**: Use `src.utils.ml_common.nas_tas_unified.UnifiedEvaluator`
+   - **Replacement**: Use `src.utils.nas_tas.UnifiedEvaluator`
 
 5. **`src/training/steps/market_analysis/hybrid_nas_tas_regime/shared_utils/unified_config_manager.py`**
    - **Size**: ~200 lines
    - **Reason**: Duplicate configuration management now in `nas_tas_unified`
-   - **Replacement**: Use `src.utils.ml_common.nas_tas_unified.UnifiedComponentManager`
+   - **Replacement**: Use `src.utils.nas_tas.UnifiedComponentManager`
 
 ### **2. Temporary Integration Files (3 files)**
 
@@ -112,7 +112,7 @@ I have successfully identified and deleted all code that is no longer used after
 - **Cleaner Codebase**: Removed temporary and development files
 
 ### **Improved Organization**
-- **Clear Structure**: Unified components properly organized in `src.utils.ml_common.nas_tas_unified`
+- **Clear Structure**: Unified components properly organized in `src.utils.nas_tas`
 - **Consistent Imports**: All imports now point to the same unified components
 - **Better Documentation**: Temporary documentation replaced with comprehensive final documentation
 
@@ -151,7 +151,7 @@ I have successfully identified and deleted all code that is no longer used after
 3. **Update Documentation**: Update any custom documentation to reference new imports
 
 ### **For Developers**
-1. **Use Unified Components**: Always use `src.utils.ml_common.nas_tas_unified` for new development
+1. **Use Unified Components**: Always use `src.utils.nas_tas` for new development
 2. **Maintain Consistency**: Ensure all new components follow the unified pattern
 3. **Update Tests**: Update any tests that referenced deleted files
 

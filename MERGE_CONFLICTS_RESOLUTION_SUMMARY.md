@@ -40,7 +40,7 @@ Successfully resolved all merge conflicts by updating references to deleted file
   - Updated import statements and usage patterns
 
 ### **3. Import Structure Fixed** ✅
-- **All imports updated** to use `src.utils.ml_common.nas_tas_unified`
+- **All imports updated** to use `src.utils.nas_tas`
 - **All function calls updated** to use `UnifiedRegimeDetector`
 - **All configuration updated** to use `UnifiedRegimeConfig`
 - **All test assertions updated** to match unified detector attributes
@@ -55,7 +55,7 @@ Successfully resolved all merge conflicts by updating references to deleted file
 from .enhanced_hybrid_orchestrator import EnhancedHybridOrchestrator, create_enhanced_hybrid_orchestrator
 
 # NEW (unified system)
-from src.utils.ml_common.nas_tas_unified import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
+from src.utils.nas_tas import UnifiedRegimeDetector, UnifiedRegimeConfig, RegimeDetectionMethod
 ```
 
 ### **Configuration Updates**

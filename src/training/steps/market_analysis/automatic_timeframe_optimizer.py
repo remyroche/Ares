@@ -23,9 +23,13 @@ import json
 from pathlib import Path
 
 from src.utils.logger import get_logger
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
 
-# Import optimization components
+# Import optimization components with comprehensive error handling
 try:
     from src.research.profit_labeling.dynamic_target_optimizer import (
         JointTargetHorizonOptimizer,
@@ -42,9 +46,13 @@ try:
         ValidationConfig
     )
     OPTIMIZATION_AVAILABLE = True
+    tprint_success("✅ Optimization components imported successfully")
+    tprint_info("🔧 Available components: JointTargetHorizonOptimizer, HeuristicAnalyzer, LabelingValidator")
 except ImportError as e:
     OPTIMIZATION_AVAILABLE = False
-    print(f"⚠️ Optimization components not available: {e}")
+    tprint_error(f"❌ CRITICAL: Optimization components not available: {e}")
+    tprint_warning("⚠️ Optimization will be disabled - this may cause training failures")
+    tprint_info("💡 Consider installing missing dependencies or using fallback configurations")
 
 
 class ModelType(Enum):
@@ -110,8 +118,11 @@ class AutomaticTimeframeOptimizer:
         self.performance_metrics: Dict[str, List[float]] = {}
         
     def _initialize_optimization_components(self):
-        """Initialize optimization components."""
+        """Initialize optimization components with comprehensive error handling."""
+        tprint_progress("🔧 Initializing optimization components...")
+        
         try:
+            tprint_info("🎯 Creating Analyst optimization config...")
             # Analyst-specific optimization config (15m base timeframe, 1-16 periods)
             self.analyst_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
@@ -123,7 +134,9 @@ class AutomaticTimeframeOptimizer:
                 target_range=(0.002, 0.010),  # 0.2% to 1.0%
                 bayesian_iterations=25  # Analyst optimization
             )
+            tprint_success("✅ Analyst config created")
             
+            tprint_info("🎯 Creating Tactician optimization config...")
             # Tactician-specific optimization config (5m base timeframe, 1-16 periods)
             self.tactician_config = DynamicOptimizationConfig(
                 optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
@@ -135,19 +148,33 @@ class AutomaticTimeframeOptimizer:
                 target_range=(0.005, 0.015),  # 0.5% to 1.5%
                 bayesian_iterations=30  # Tactician optimization
             )
+            tprint_success("✅ Tactician config created")
             
+            tprint_info("🚀 Initializing Analyst optimizer...")
             # Initialize optimizers
             self.analyst_optimizer = JointTargetHorizonOptimizer(self.analyst_config)
-            self.tactician_optimizer = JointTargetHorizonOptimizer(self.tactician_config)
+            tprint_success("✅ Analyst optimizer initialized")
             
+            tprint_info("🚀 Initializing Tactician optimizer...")
+            self.tactician_optimizer = JointTargetHorizonOptimizer(self.tactician_config)
+            tprint_success("✅ Tactician optimizer initialized")
+            
+            tprint_info("🧠 Initializing HeuristicAnalyzer...")
             # Initialize analysis components
             self.heuristic_analyzer = HeuristicAnalyzer()
-            self.labeling_validator = LabelingValidator()
+            tprint_success("✅ HeuristicAnalyzer initialized")
             
+            tprint_info("🔍 Initializing LabelingValidator...")
+            self.labeling_validator = LabelingValidator()
+            tprint_success("✅ LabelingValidator initialized")
+            
+            tprint_success("🎉 All optimization components initialized successfully")
             self.logger.info('✅ Optimization components initialized successfully')
             
         except Exception as e:
+            tprint_error(f"❌ CRITICAL: Failed to initialize optimization components: {e}")
             self.logger.error(f'❌ Failed to initialize optimization components: {e}')
+            tprint_warning("⚠️ Optimization will be disabled - training may fail")
             self.optimization_enabled = False
     
     def optimize_for_model(self, 
@@ -166,6 +193,9 @@ class AutomaticTimeframeOptimizer:
             OptimizationResult with optimal configuration
         """
         if not self.optimization_enabled:
+            tprint_error(f"❌ FAST FAIL: Optimization disabled for {model_type.value} model")
+            tprint_error("❌ Cannot proceed without optimal timeframe discovery")
+            tprint_error("❌ Training pipeline will terminate")
             raise RuntimeError(
                 f"❌ FAST FAIL: Optimization disabled for {model_type.value} model. "
                 f"Cannot proceed without optimal timeframe discovery. "
@@ -174,29 +204,41 @@ class AutomaticTimeframeOptimizer:
         
         # Check for cached results
         if not force_optimization and model_type in self.optimization_results:
+            tprint_info(f'📋 Using cached optimization results for {model_type.value}')
             self.logger.info(f'📋 Using cached optimization results for {model_type.value}')
             return self.optimization_results[model_type]
         
+        tprint_progress(f'🎯 Starting optimization for {model_type.value} model')
         self.logger.info(f'🎯 Starting optimization for {model_type.value} model')
         start_time = datetime.now()
+        tprint_timer(f"Optimization timer started for {model_type.value}")
         
         try:
             # Select appropriate optimizer
+            tprint_info(f"🔧 Selecting optimizer for {model_type.value} model...")
             if model_type == ModelType.ANALYST:
                 optimizer = self.analyst_optimizer
                 config = self.analyst_config
+                tprint_success("✅ Selected Analyst optimizer")
             elif model_type == ModelType.TACTICIAN:
                 optimizer = self.tactician_optimizer
                 config = self.tactician_config
+                tprint_success("✅ Selected Tactician optimizer")
             else:
                 # For BOTH, use a combined approach
+                tprint_info("🔄 Using combined approach for BOTH models")
                 return self._optimize_for_both_models(market_data)
             
             # Run optimization
+            tprint_progress(f'🚀 Running {config.optimization_method.value} optimization...')
             self.logger.info(f'   → Running {config.optimization_method.value} optimization...')
             optimization_result = optimizer.optimize_target_horizon_combinations(market_data)
+            tprint_success(f"✅ Optimization completed with score: {optimization_result.objective_score:.3f}")
             
             if optimization_result.objective_score < 0.3:
+                tprint_error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) for {model_type.value}')
+                tprint_error("❌ Score below minimum threshold (0.3)")
+                tprint_error("❌ Cannot proceed without optimal timeframe discovery")
                 self.logger.error(f'❌ FAST FAIL: Low optimization score ({optimization_result.objective_score:.3f}) for {model_type.value}')
                 raise RuntimeError(
                     f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "
@@ -205,17 +247,24 @@ class AutomaticTimeframeOptimizer:
                 )
             
             # Create optimized configuration
+            tprint_info("🔧 Creating optimized configuration...")
             optimized_config = self._create_optimized_config(
                 optimization_result, model_type
             )
+            tprint_success("✅ Optimized configuration created")
             
             # Validate configuration
+            tprint_progress("🔍 Validating optimized configuration...")
             validation_score = self._validate_optimized_config(
                 optimized_config, market_data, model_type
             )
+            tprint_info(f"📊 Validation score: {validation_score:.3f}")
             
             # Fast fail if validation score is too low
             if validation_score < 0.5:
+                tprint_error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) for optimized configuration')
+                tprint_error("❌ Score below minimum threshold (0.5)")
+                tprint_error("❌ Cannot proceed with invalid timeframe configuration")
                 self.logger.error(f'❌ FAST FAIL: Low validation score ({validation_score:.3f}) for optimized configuration')
                 raise RuntimeError(
                     f"❌ FAST FAIL: Optimized configuration validation failed for {model_type.value} model. "
@@ -224,11 +273,14 @@ class AutomaticTimeframeOptimizer:
                 )
             
             # Calculate performance metrics
+            tprint_info("📊 Calculating performance metrics...")
             performance_metrics = self._calculate_performance_metrics(
                 optimization_result, validation_score
             )
+            tprint_success("✅ Performance metrics calculated")
             
             # Create result
+            tprint_info("📝 Creating optimization result...")
             result = OptimizationResult(
                 model_type=model_type,
                 optimal_config=optimized_config,
@@ -237,10 +289,21 @@ class AutomaticTimeframeOptimizer:
                 performance_metrics=performance_metrics,
                 optimization_time=(datetime.now() - start_time).total_seconds()
             )
+            tprint_success("✅ Optimization result created")
             
             # Store results
+            tprint_info("💾 Storing optimization results...")
             self.optimization_results[model_type] = result
             self.optimization_history.append(result)
+            tprint_success("✅ Results stored successfully")
+            
+            # Log comprehensive results
+            tprint_success(f'🎉 Optimization completed for {model_type.value}')
+            tprint_performance(f'📊 Optimization score: {result.optimization_score:.3f}')
+            tprint_performance(f'📊 Validation score: {result.validation_score:.3f}')
+            tprint_info(f'⏱️ Time horizons: {optimized_config.time_horizons}')
+            tprint_info(f'🎯 Profit targets: {optimized_config.profit_targets}')
+            tprint_timer(f"Total optimization time: {result.optimization_time:.2f}s")
             
             self.logger.info(f'✅ Optimization completed for {model_type.value}')
             self.logger.info(f'   → Optimization score: {result.optimization_score:.3f}')
@@ -251,6 +314,8 @@ class AutomaticTimeframeOptimizer:
             return result
             
         except Exception as e:
+            tprint_error(f'❌ FAST FAIL: Optimization failed for {model_type.value}: {e}')
+            tprint_error("❌ Training pipeline will terminate")
             self.logger.error(f'❌ FAST FAIL: Optimization failed for {model_type.value}: {e}')
             raise RuntimeError(
                 f"❌ FAST FAIL: Optimization failed for {model_type.value} model. "

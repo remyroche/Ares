@@ -1,8 +1,8 @@
 """
-Backtesting Engine with M1 Hardware Optimizations
+Backtesting Engine with M1 Hardware Optimizations - Updated to use common NAS/TAS backtesting engine
 
-This module provides a comprehensive backtesting engine with walk-forward validation,
-utilizing M1 GPU, memory, and CPU optimizations for maximum performance.
+This module now uses the unified backtesting engine from src/utils/nas_tas/
+while maintaining Common ML-specific functionality.
 """
 
 import asyncio
@@ -36,6 +36,10 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
+
+# Import the unified backtesting engine
+from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine
+from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig, create_config, ExecutionMode
 
 # M1 Optimization imports
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, m1_backtesting_simulate
@@ -528,12 +532,18 @@ class WalkForwardValidator:
 
 
 class BacktestingEngine:
-    """Main backtesting engine with comprehensive M1 optimizations."""
+    """Common ML backtesting engine wrapper with M1 optimizations."""
     
     def __init__(self, config: BacktestingConfig):
-        """Initialize backtesting engine."""
+        """Initialize Common ML backtesting engine."""
         self.config = config
         self.logger = logger.getChild('BacktestingEngine')
+        
+        # Convert Common ML config to unified config
+        self.unified_config = self._convert_to_unified_config(config)
+        
+        # Initialize the unified backtesting engine
+        self.unified_engine = RealBacktestingEngine(self.unified_config)
         
         # Initialize components
         self.walk_forward_validator = WalkForwardValidator(config)
@@ -550,7 +560,28 @@ class BacktestingEngine:
         # Initialize utilities
         self.parquet_utils = get_parquet_utils()
         
-        self.logger.info(f"🚀 BacktestingEngine initialized for {config.symbol}")
+        self.logger.info(f"🚀 Common ML BacktestingEngine initialized with unified engine for {config.symbol}")
+    
+    def _convert_to_unified_config(self, common_ml_config: BacktestingConfig) -> UnifiedBacktestingConfig:
+        """Convert Common ML config to unified config."""
+        return (create_config()
+                .set_symbol(common_ml_config.symbol)
+                .set_exchange(common_ml_config.exchange)
+                .set_timeframe(common_ml_config.timeframe)
+                .set_data_dir(common_ml_config.data_dir)
+                .set_backtesting_config(
+                    initial_capital=common_ml_config.initial_capital,
+                    commission_rate=common_ml_config.commission_rate,
+                    slippage_rate=common_ml_config.slippage_rate
+                )
+                .set_hardware_config(
+                    enable_gpu_acceleration=common_ml_config.enable_gpu_acceleration,
+                    enable_memory_optimization=common_ml_config.enable_memory_optimization,
+                    enable_parallel_processing=common_ml_config.enable_parallel_processing,
+                    memory_limit_gb=common_ml_config.memory_limit_gb,
+                    max_workers=common_ml_config.max_workers
+                )
+                .build())
     
     @traced(span_name='execute_backtesting')
     async def execute(
@@ -559,30 +590,89 @@ class BacktestingEngine:
         strategy_func: Callable,
         **strategy_kwargs
     ) -> BacktestingResults:
-        """Execute comprehensive backtesting with M1 optimizations."""
+        """Execute comprehensive backtesting using unified engine with M1 optimizations."""
         
-        self.logger.info("🚀 Starting comprehensive backtesting...")
+        self.logger.info("🚀 Starting Common ML backtesting with unified engine...")
         start_time = time.time()
         
-        # Memory optimization context
-        if self.m1_memory:
-            with self.m1_memory.optimization_context():
-                results = await self._execute_backtesting(data, strategy_func, **strategy_kwargs)
-        else:
-            results = await self._execute_backtesting(data, strategy_func, **strategy_kwargs)
+        try:
+            # Use unified engine for backtesting
+            # Calculate technical indicators using unified engine
+            data_with_indicators = self.unified_engine.calculate_technical_indicators(data)
+            
+            # Generate trading signals using unified engine
+            signals = self.unified_engine.generate_trading_signals(data_with_indicators)
+            
+            # Execute backtest using unified engine
+            unified_results = await self.unified_engine.execute_backtest(data_with_indicators, signals)
+            
+            # Convert unified results to Common ML format
+            results = self._convert_unified_results_to_common_ml(unified_results, data)
+            
+            execution_time = time.time() - start_time
+            results.execution_time = execution_time
+            
+            # Log memory usage
+            if self.m1_memory:
+                results.memory_usage_mb = self.m1_memory.get_current_memory_usage_mb()
+            
+            self.logger.info(f"✅ Common ML Backtesting completed in {execution_time:.2f}s")
+            self.logger.info(f"📊 Total return: {results.total_return:.2%}")
+            self.logger.info(f"📈 Sharpe ratio: {results.sharpe_ratio:.2f}")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Common ML Backtesting failed: {e}")
+            raise
+    
+    def _convert_unified_results_to_common_ml(self, unified_results: Dict[str, Any], data: pd.DataFrame) -> BacktestingResults:
+        """Convert unified engine results to Common ML format."""
+        performance_metrics = unified_results['performance_metrics']
         
-        execution_time = time.time() - start_time
-        results.execution_time = execution_time
-        
-        # Log memory usage
-        if self.m1_memory:
-            results.memory_usage_mb = self.m1_memory.get_current_memory_usage_mb()
-        
-        self.logger.info(f"✅ Backtesting completed in {execution_time:.2f}s")
-        self.logger.info(f"📊 Total return: {results.total_return:.2%}")
-        self.logger.info(f"📈 Sharpe ratio: {results.sharpe_ratio:.2f}")
-        
-        return results
+        return BacktestingResults(
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            timeframe=self.config.timeframe,
+            start_date=data.index[0] if hasattr(data, 'index') else datetime.now(),
+            end_date=data.index[-1] if hasattr(data, 'index') else datetime.now(),
+            total_duration=(data.index[-1] - data.index[0]).total_seconds() / 86400 if hasattr(data, 'index') else 0,
+            
+            # Performance metrics
+            total_return=performance_metrics['total_return'],
+            annualized_return=performance_metrics['annualized_return'],
+            sharpe_ratio=performance_metrics['sharpe_ratio'],
+            sortino_ratio=performance_metrics.get('sortino_ratio', 0.0),
+            max_drawdown=performance_metrics['max_drawdown'],
+            calmar_ratio=performance_metrics.get('calmar_ratio', 0.0),
+            
+            # Trade statistics
+            total_trades=unified_results['total_trades'],
+            winning_trades=performance_metrics.get('winning_trades', 0),
+            losing_trades=performance_metrics.get('losing_trades', 0),
+            win_rate=performance_metrics['win_rate'],
+            profit_factor=performance_metrics.get('profit_factor', 0.0),
+            average_win=performance_metrics.get('avg_win', 0.0),
+            average_loss=performance_metrics.get('avg_loss', 0.0),
+            
+            # Risk metrics
+            volatility=performance_metrics['volatility'],
+            var_95=0.0,  # Simplified
+            cvar_95=0.0,  # Simplified
+            beta=0.0,  # Simplified
+            alpha=0.0,  # Simplified
+            
+            # Detailed data
+            equity_curve=pd.DataFrame({'equity': unified_results['equity_curve']}),
+            trade_log=pd.DataFrame(unified_results.get('trade_log', [])),
+            daily_returns=pd.Series([0.0] * len(unified_results['equity_curve'])),  # Simplified
+            
+            # Metadata
+            config=self.config,
+            execution_time=0.0,  # Will be set by caller
+            memory_usage_mb=0.0,  # Will be set by caller
+            optimization_used=self._get_optimization_used()
+        )
     
     async def _execute_backtesting(
         self, 

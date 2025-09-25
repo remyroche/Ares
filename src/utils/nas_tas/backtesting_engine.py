@@ -1,8 +1,9 @@
 """
-Real Backtesting Engine Implementation - Updated to use common NAS/TAS backtesting engine
+Real Backtesting Engine Implementation
 
-This module now uses the unified backtesting engine from src/utils/nas_tas/
-while maintaining real backtesting-specific functionality.
+This module provides comprehensive real backtesting functionality using existing
+utilities from src/utils/ for data loading, matrix operations, hardware optimization,
+and ML common utilities.
 """
 
 import asyncio
@@ -17,10 +18,6 @@ import time
 import gc
 from pathlib import Path
 import json
-
-# Import the unified backtesting engine
-from src.utils.nas_tas.backtesting_engine import RealBacktestingEngine as UnifiedRealBacktestingEngine
-from src.utils.nas_tas.unified_config import UnifiedBacktestingConfig, create_config, ExecutionMode
 
 # Import existing utilities
 from src.utils.data.klines_parquet import get_klines_manager
@@ -52,7 +49,7 @@ from .unified_config import UnifiedBacktestingConfig, ExecutionMode
 
 class RealBacktestingEngine:
     """
-    Real backtesting engine wrapper using unified engine.
+    Real backtesting engine using existing utilities.
     
     This engine provides comprehensive backtesting functionality with:
     - Real data loading from klines_parquet
@@ -66,9 +63,6 @@ class RealBacktestingEngine:
         """Initialize the real backtesting engine."""
         self.config = config
         self.logger = logger.getChild('RealBacktestingEngine')
-        
-        # Initialize the unified backtesting engine
-        self.unified_engine = UnifiedRealBacktestingEngine(config)
         
         # Initialize data manager
         self.klines_manager = get_klines_manager(data_dir=config.data.data_dir)
@@ -97,16 +91,146 @@ class RealBacktestingEngine:
         self.equity_curve = []
         
     async def load_market_data(self) -> pd.DataFrame:
-        """Load real market data using unified engine."""
-        return await self.unified_engine.load_market_data()
+        """Load real market data using klines_parquet."""
+        self.logger.info(f"📊 Loading market data for {self.config.data.symbol} on {self.config.data.exchange}")
+        
+        try:
+            # Parse date range
+            start_date = None
+            end_date = None
+            if self.config.data.start_date:
+                start_date = datetime.strptime(self.config.data.start_date, '%Y-%m-%d')
+            if self.config.data.end_date:
+                end_date = datetime.strptime(self.config.data.end_date, '%Y-%m-%d')
+            
+            # Load data with memory optimization
+            if self.memory_optimizer:
+                with self.memory_optimizer.optimize_for_workload("data_loading"):
+                    data = self.klines_manager.read_data(
+                        symbol=self.config.data.symbol,
+                        interval=self.config.data.timeframe,
+                        data_type=self.config.data.data_type,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+            else:
+                data = self.klines_manager.read_data(
+                    symbol=self.config.data.symbol,
+                    interval=self.config.data.timeframe,
+                    data_type=self.config.data.data_type,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            
+            if data is None or data.empty:
+                raise ValueError(f"No data found for {self.config.data.symbol} on {self.config.data.exchange}")
+            
+            self.logger.info(f"✅ Loaded {len(data)} rows of market data")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load market data: {e}")
+            raise
     
     def calculate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate technical indicators using unified engine."""
-        return self.unified_engine.calculate_technical_indicators(data)
+        """Calculate technical indicators using matrix operations."""
+        self.logger.info("📈 Calculating technical indicators")
+        
+        try:
+            # Use matrix operations for efficient calculation
+            if self.matrix_ops:
+                # Calculate moving averages
+                data['sma_20'] = self.matrix_ops.rolling_mean(data['close'].values, 20)
+                data['sma_50'] = self.matrix_ops.rolling_mean(data['close'].values, 50)
+                data['sma_200'] = self.matrix_ops.rolling_mean(data['close'].values, 200)
+                
+                # Calculate RSI
+                delta = data['close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                data['rsi'] = 100 - (100 / (1 + rs))
+                
+                # Calculate Bollinger Bands
+                data['bb_middle'] = self.matrix_ops.rolling_mean(data['close'].values, 20)
+                bb_std = self.matrix_ops.rolling_std(data['close'].values, 20)
+                data['bb_upper'] = data['bb_middle'] + (bb_std * 2)
+                data['bb_lower'] = data['bb_middle'] - (bb_std * 2)
+                
+                # Calculate MACD
+                ema_12 = data['close'].ewm(span=12).mean()
+                ema_26 = data['close'].ewm(span=26).mean()
+                data['macd'] = ema_12 - ema_26
+                data['macd_signal'] = data['macd'].ewm(span=9).mean()
+                data['macd_histogram'] = data['macd'] - data['macd_signal']
+                
+                # Calculate ATR
+                high_low = data['high'] - data['low']
+                high_close = np.abs(data['high'] - data['close'].shift())
+                low_close = np.abs(data['low'] - data['close'].shift())
+                ranges = pd.concat([high_low, high_close, low_close], axis=1)
+                true_range = ranges.max(axis=1)
+                data['atr'] = true_range.rolling(window=14).mean()
+                
+            else:
+                # Fallback to standard pandas operations
+                data['sma_20'] = data['close'].rolling(window=20).mean()
+                data['sma_50'] = data['close'].rolling(window=50).mean()
+                data['rsi'] = self._calculate_rsi(data['close'])
+                data['atr'] = self._calculate_atr(data)
+            
+            # Clean up NaN values
+            data = data.fillna(method='bfill').fillna(method='ffill')
+            
+            self.logger.info(f"✅ Calculated technical indicators: {len(data.columns)} columns")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate technical indicators: {e}")
+            raise
     
     def generate_trading_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate trading signals using unified engine."""
-        return self.unified_engine.generate_trading_signals(data)
+        """Generate real trading signals based on technical analysis."""
+        self.logger.info("🎯 Generating trading signals")
+        
+        try:
+            signals = pd.DataFrame(index=data.index)
+            signals['signal'] = 0  # 0: hold, 1: buy, -1: sell
+            signals['position'] = 0.0
+            signals['confidence'] = 0.0
+            
+            # Trend following signals
+            trend_signals = self._generate_trend_signals(data)
+            
+            # Mean reversion signals
+            mean_reversion_signals = self._generate_mean_reversion_signals(data)
+            
+            # Momentum signals
+            momentum_signals = self._generate_momentum_signals(data)
+            
+            # Combine signals with confidence weighting
+            for i in range(len(data)):
+                trend_signal = trend_signals.iloc[i] if i < len(trend_signals) else 0
+                mean_rev_signal = mean_reversion_signals.iloc[i] if i < len(mean_reversion_signals) else 0
+                momentum_signal = momentum_signals.iloc[i] if i < len(momentum_signals) else 0
+                
+                # Weighted combination
+                combined_signal = (0.4 * trend_signal + 0.3 * mean_rev_signal + 0.3 * momentum_signal)
+                
+                # Apply confidence threshold
+                if abs(combined_signal) > 0.5:
+                    signals.iloc[i, signals.columns.get_loc('signal')] = np.sign(combined_signal)
+                    signals.iloc[i, signals.columns.get_loc('confidence')] = abs(combined_signal)
+            
+            # Position sizing based on confidence and risk management
+            signals['position'] = self._calculate_position_sizes(signals, data)
+            
+            self.logger.info(f"✅ Generated {len(signals[signals['signal'] != 0])} trading signals")
+            return signals
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate trading signals: {e}")
+            raise
     
     def _generate_trend_signals(self, data: pd.DataFrame) -> pd.Series:
         """Generate trend following signals."""
@@ -170,8 +294,97 @@ class RealBacktestingEngine:
         return positions
     
     async def execute_backtest(self, data: pd.DataFrame, signals: pd.DataFrame) -> Dict[str, Any]:
-        """Execute backtest using unified engine."""
-        return await self.unified_engine.execute_backtest(data, signals)
+        """Execute the actual backtest."""
+        self.logger.info("🚀 Executing backtest")
+        
+        try:
+            # Initialize portfolio
+            portfolio_value = self.config.backtesting.initial_capital
+            position = 0.0
+            cash = self.config.backtesting.initial_capital
+            
+            # Performance tracking
+            equity_curve = [portfolio_value]
+            trade_log = []
+            
+            # Execute trades
+            for i in range(1, len(data)):
+                current_price = data['close'].iloc[i]
+                signal = signals['signal'].iloc[i]
+                position_size = signals['position'].iloc[i]
+                
+                if signal != 0 and position_size > 0:
+                    # Calculate trade size
+                    trade_value = portfolio_value * position_size
+                    shares = trade_value / current_price
+                    
+                    # Apply transaction costs
+                    commission = trade_value * self.config.backtesting.commission_rate
+                    slippage = trade_value * self.config.backtesting.slippage_rate
+                    total_cost = trade_value + commission + slippage
+                    
+                    if signal == 1 and cash >= total_cost:  # Buy signal
+                        # Execute buy
+                        shares_to_buy = shares
+                        cost = shares_to_buy * current_price + commission + slippage
+                        
+                        if cost <= cash:
+                            position += shares_to_buy
+                            cash -= cost
+                            
+                            # Log trade
+                            trade_log.append({
+                                'timestamp': data.index[i],
+                                'action': 'BUY',
+                                'shares': shares_to_buy,
+                                'price': current_price,
+                                'cost': cost,
+                                'portfolio_value': portfolio_value
+                            })
+                    
+                    elif signal == -1 and position > 0:  # Sell signal
+                        # Execute sell
+                        shares_to_sell = min(position, shares)
+                        proceeds = shares_to_sell * current_price - commission - slippage
+                        
+                        position -= shares_to_sell
+                        cash += proceeds
+                        
+                        # Log trade
+                        trade_log.append({
+                            'timestamp': data.index[i],
+                            'action': 'SELL',
+                            'shares': shares_to_sell,
+                            'price': current_price,
+                            'proceeds': proceeds,
+                            'portfolio_value': portfolio_value
+                        })
+                
+                # Update portfolio value
+                portfolio_value = cash + (position * current_price)
+                equity_curve.append(portfolio_value)
+            
+            # Calculate performance metrics
+            performance_metrics = self._calculate_performance_metrics(equity_curve, trade_log)
+            
+            # Store results
+            self.equity_curve = equity_curve
+            self.trade_log = trade_log
+            self.performance_metrics = performance_metrics
+            
+            self.logger.info(f"✅ Backtest completed: {len(trade_log)} trades, {performance_metrics['total_return']:.2%} return")
+            
+            return {
+                'performance_metrics': performance_metrics,
+                'trade_log': trade_log,
+                'equity_curve': equity_curve,
+                'final_portfolio_value': portfolio_value,
+                'total_trades': len(trade_log)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Backtest execution failed: {e}")
+            raise
     
     def _calculate_performance_metrics(self, equity_curve: List[float], trade_log: List[Dict]) -> Dict[str, Any]:
         """Calculate comprehensive performance metrics."""

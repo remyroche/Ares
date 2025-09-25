@@ -221,12 +221,13 @@ class FibonacciLevelGenerator(FeatureGenerator):
 class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
     """Generator for historical price level crossing counts - backward looking for ML training."""
 
-    def __init__(self, level_pct: float = 0.2, window: int = 100):
+    def __init__(self, level_pct: float = 0.2, window: int = 100, use_bank: bool = True):
         """Initialize historical crossing generator.
 
         Args:
             level_pct: Price level percentage (e.g., 0.2 for 0.2%)
             window: Lookback window for historical analysis
+            use_bank: Whether to check price level bank first
         """
         config = FeatureConfig(
             name=f"historical_crossings_{level_pct}_{window}",
@@ -236,14 +237,78 @@ class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level_pct': level_pct, 'window': window}
+            parameters={'level_pct': level_pct, 'window': window, 'use_bank': use_bank}
         )
         super().__init__(config)
         self.level_pct = level_pct
         self.window = window
+        self.use_bank = use_bank
+
+        # Initialize price level bank if available
+        self.price_level_bank = None
+        if self.use_bank:
+            try:
+                from ..core.price_level_bank import get_global_price_level_bank
+                self.price_level_bank = get_global_price_level_bank()
+            except ImportError:
+                pass
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate historical price level crossing counts (backward looking)."""
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # Try to get data from bank first if available
+        if self.price_level_bank and len(data) > 0:
+            symbol = kwargs.get('symbol', 'BTCUSDT')  # Default symbol
+            timeframe = kwargs.get('timeframe', '1h')  # Default timeframe
+
+            try:
+                # Get current price (last value in data)
+                current_price = close.iloc[-1]
+
+                # Query bank for relevant levels
+                levels = self.price_level_bank.query_levels(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    min_price=current_price * 0.5,  # Look in reasonable range
+                    max_price=current_price * 1.5,
+                    limit=50  # Limit to avoid too much data
+                )
+
+                if levels:
+                    # Use bank data to generate features
+                    return self._generate_from_bank(data, levels)
+
+            except Exception as e:
+                # Fall back to calculation if bank query fails
+                pass
+
+        # Fall back to original calculation method
+        return self._generate_from_calculation(data)
+
+    def _generate_from_bank(self, data: pd.DataFrame, levels: List) -> pd.Series:
+        """Generate features using bank data."""
+        close = data['close']
+        crossings = pd.Series(index=data.index, dtype=float)
+
+        for idx in range(self.window, len(data)):
+            total_crossings = 0
+
+            for level in levels:
+                # Check if this level is relevant for this data point
+                # (Levels are stored with their historical significance)
+                if level.level_pct == self.level_pct:
+                    # Use the historical crossing count from the bank
+                    total_crossings += level.historical_crossings
+
+            crossings.iloc[idx] = total_crossings
+
+        return crossings.fillna(0).astype(int)
+
+    def _generate_from_calculation(self, data: pd.DataFrame) -> pd.Series:
+        """Generate features using original calculation method."""
         close = data['close']
         high = data['high']
         low = data['low']
@@ -284,12 +349,13 @@ class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
 class HistoricalPriceLevelBounceGenerator(FeatureGenerator):
     """Generator for historical price level bounce counts - backward looking for ML training."""
 
-    def __init__(self, level_pct: float = 0.2, window: int = 100):
+    def __init__(self, level_pct: float = 0.2, window: int = 100, use_bank: bool = True):
         """Initialize historical bounce generator.
 
         Args:
             level_pct: Price level percentage
             window: Lookback window for historical analysis
+            use_bank: Whether to check price level bank first
         """
         config = FeatureConfig(
             name=f"historical_bounces_{level_pct}_{window}",
@@ -299,11 +365,21 @@ class HistoricalPriceLevelBounceGenerator(FeatureGenerator):
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level_pct': level_pct, 'window': window}
+            parameters={'level_pct': level_pct, 'window': window, 'use_bank': use_bank}
         )
         super().__init__(config)
         self.level_pct = level_pct
         self.window = window
+        self.use_bank = use_bank
+
+        # Initialize price level bank if available
+        self.price_level_bank = None
+        if self.use_bank:
+            try:
+                from ..core.price_level_bank import get_global_price_level_bank
+                self.price_level_bank = get_global_price_level_bank()
+            except ImportError:
+                pass
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate historical price level bounce counts (backward looking)."""
@@ -361,12 +437,13 @@ class HistoricalPriceLevelBounceGenerator(FeatureGenerator):
 class HistoricalVolumeAtPriceLevelGenerator(FeatureGenerator):
     """Generator for historical volume traded at price levels - backward looking for ML training."""
 
-    def __init__(self, level_pct: float = 0.2, window: int = 100):
+    def __init__(self, level_pct: float = 0.2, window: int = 100, use_bank: bool = True):
         """Initialize historical volume at price level generator.
 
         Args:
             level_pct: Price level percentage
             window: Lookback window for historical analysis
+            use_bank: Whether to check price level bank first
         """
         config = FeatureConfig(
             name=f"historical_volume_at_levels_{level_pct}_{window}",
@@ -376,11 +453,21 @@ class HistoricalVolumeAtPriceLevelGenerator(FeatureGenerator):
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level_pct': level_pct, 'window': window}
+            parameters={'level_pct': level_pct, 'window': window, 'use_bank': use_bank}
         )
         super().__init__(config)
         self.level_pct = level_pct
         self.window = window
+        self.use_bank = use_bank
+
+        # Initialize price level bank if available
+        self.price_level_bank = None
+        if self.use_bank:
+            try:
+                from ..core.price_level_bank import get_global_price_level_bank
+                self.price_level_bank = get_global_price_level_bank()
+            except ImportError:
+                pass
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate historical volume at price levels (backward looking)."""
@@ -939,9 +1026,9 @@ def create_default_support_resistance_generators() -> List[FeatureGenerator]:
     for level_pct in price_level_pcts:
         for window in [50, 100, 200]:
             generators.extend([
-                HistoricalPriceLevelCrossingGenerator(level_pct, window),
-                HistoricalPriceLevelBounceGenerator(level_pct, window),
-                HistoricalVolumeAtPriceLevelGenerator(level_pct, window),
+                HistoricalPriceLevelCrossingGenerator(level_pct, window, use_bank=True),
+                HistoricalPriceLevelBounceGenerator(level_pct, window, use_bank=True),
+                HistoricalVolumeAtPriceLevelGenerator(level_pct, window, use_bank=True),
                 HistoricalPriceLevelTouchDensityGenerator(level_pct, window),
                 HistoricalPriceLevelTimeDecayGenerator(level_pct, window, decay_half_life=20),
             ])

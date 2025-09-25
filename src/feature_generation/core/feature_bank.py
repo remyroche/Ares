@@ -92,6 +92,15 @@ class FeatureBank:
         # Auto-register default generators
         self._auto_register_generators()
 
+        # Initialize price level bank
+        self.price_level_bank = None
+        try:
+            from .price_level_bank import PriceLevelBank
+            self.price_level_bank = PriceLevelBank()
+            self.logger.info("✅ Price Level Bank initialized")
+        except ImportError:
+            self.logger.warning("⚠️ Price Level Bank not available")
+
         self.logger.info("✅ FeatureBank initialized")
         self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
                         f"GPU: {self.config.enable_gpu_acceleration}, "

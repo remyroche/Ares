@@ -230,7 +230,10 @@ class UnifiedLogger:
             name = 'UnifiedLogger'
         
         if name not in self.loggers:
-            self.loggers[name] = logging.getLogger(name)
+            logger = logging.getLogger(name)
+            # Ensure the logger propagates to parent loggers
+            logger.propagate = True
+            self.loggers[name] = logger
         
         return self.loggers[name]
     

@@ -800,8 +800,7 @@ class AresLauncher:
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
-            enabled_sub_pipelines = config.enabled_sub_pipelines.get(stage, [])
-            if sub_pipeline in enabled_sub_pipelines or resolved_sub_pipeline in enabled_sub_pipelines:
+            if resolved_sub_pipeline in enabled_sub_pipelines:
                 target_stage = stage
                 break
 

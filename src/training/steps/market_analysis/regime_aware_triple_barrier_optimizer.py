@@ -12,14 +12,12 @@ Key Features:
 - Integration with market analysis pipeline
 """
 
-from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time, cached
 from src.utils.math_validation import safe_divide, validate_positive, MathValidationError
 
 import pandas as pd
 import numpy as np
-import time
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -28,7 +26,6 @@ from datetime import datetime
 import contextlib
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from scipy.optimize import minimize
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig, apply_multi_horizon_labeling
 import warnings
 
 # Import the triple barrier labeling module
@@ -480,9 +477,14 @@ class RegimeAwareTripleBarrierOptimizer:
             
             try:
                 accuracy = accuracy_score(y_true, y_pred)
-                precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary', zero_division=0)
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to calculate metrics for predictions: {e}")
+                precision, recall, f1, _ = precision_recall_fscore_support(
+                    y_true,
+                    y_pred,
+                    average='binary',
+                    zero_division=0,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self.logger.warning("Failed to calculate regime classification metrics", exc_info=exc)
                 accuracy = 0.0
                 precision = 0.0
                 recall = 0.0
@@ -760,6 +762,8 @@ def apply_optimized_regime_labeling(
     return optimizer.apply_optimized_labeling(data, regime_column)
 
 if __name__ == '__main__':
+    from src.utils.tprint import tprint
+
     # Test the regime-aware optimizer
     tprint('🧪 Testing Regime-Aware Triple Barrier Optimizer')
     

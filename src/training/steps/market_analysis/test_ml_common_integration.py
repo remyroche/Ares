@@ -9,10 +9,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import sys
-import os
-
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 def test_ml_common_imports():
     """Test that all ML common utilities can be imported successfully."""

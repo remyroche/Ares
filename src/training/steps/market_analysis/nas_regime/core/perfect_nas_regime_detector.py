@@ -22,14 +22,20 @@ from datetime import datetime
 from dataclasses import dataclass
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
-# Enhanced-only implementation imports
+# Import unified utilities
+try:
+    from src.utils.ml_common.nas_tas_unified import (
+        UnifiedRegimeDetector, UnifiedRegimeConfig, UnifiedRegimeResult,
+        RegimeDetectionMethod
+    )
+    from src.utils.common_operations import (
+        CommonUtilities, memory_checkpoint, gpu_context, timed_operation
+    )
+    UNIFIED_UTILITIES_AVAILABLE = True
+except ImportError:
+    UNIFIED_UTILITIES_AVAILABLE = False
 
-# Import new components
-from .perfect_nas_config import PerfectNASConfig, NeuralArchitectureType
-from .enhanced_perfect_nas_config import EnhancedPerfectNASConfig, ThresholdLearningMode
-from .hybrid_architecture import HybridRegimeArchitecture
-
-# Import enhanced integrations
+# Import enhanced integrations (keep for compatibility)
 from .enhanced_perfect_nas_regime_detector import EnhancedPerfectNASRegimeDetector
 from .enhanced_matrix_operations import EnhancedMatrixOperations
 from .enhanced_ml_common_integration import EnhancedMLCommonIntegration, MLCommonConfig
@@ -37,16 +43,12 @@ from .enhanced_nas_clustering_integration import EnhancedNASClusteringIntegratio
 from .enhanced_nas_modeling_integration import EnhancedNASModelingIntegration, NASModelingConfig
 from .enhanced_data_operations import EnhancedDataOperations
 
-# Import enhanced utilities
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, ensure_directory,
-    safe_file_exists, timed_operation, format_bytes,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, memory_checkpoint, gpu_context
-)
+# Import configuration
+from .perfect_nas_config import PerfectNASConfig, NeuralArchitectureType
+from .enhanced_perfect_nas_config import EnhancedPerfectNASConfig, ThresholdLearningMode
+
+# Keep only essential imports for legacy compatibility
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_finite,
-    validate_positive, validate_range, safe_correlation,
     validate_numeric_array, MathValidationError
 )
 from src.utils.serialization_utils import UniversalSerializer
@@ -112,19 +114,26 @@ class PerfectNASRegimeDetector:
         self.using_adaptive_thresholds = isinstance(config, EnhancedPerfectNASConfig)
         tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Using adaptive thresholds: {self.using_adaptive_thresholds}", color="blue")
         
-        # Initialize enhanced utilities
-        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced utilities", color="yellow")
-        self._initialize_enhanced_utilities()
+        # Initialize unified utilities if available
+        if UNIFIED_UTILITIES_AVAILABLE:
+            tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing unified utilities", color="yellow")
+            try:
+                self.common_utils = CommonUtilities()
+                self.unified_detector = UnifiedRegimeDetector(self._create_unified_config())
+                tprint_success("✅ Unified utilities initialized")
+                self.logger.info("✅ Unified utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified utilities initialization failed: {e}")
+                self.logger.warning(f"Unified utilities initialization failed: {e}")
+                self.common_utils = None
+                self.unified_detector = None
+        else:
+            tprint_warning("⚠️ Unified utilities not available, using enhanced detector")
+            self.unified_detector = None
         
-        # Initialize enhanced detector with full tool integration
+        # Initialize enhanced detector as fallback
         tprint("🧠 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced detector", color="yellow")
         self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
-
-        # Initialize shared utilities
-        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing shared utilities", color="yellow")
-        self._initialize_shared_utilities()
-        tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing position-aware analyzer", color="yellow")
-        self._initialize_position_aware_analyzer()
 
         tprint("✅ [PERFECT_NAS_REGIME_DETECTOR] Perfect NAS Regime Detector initialized successfully", color="green")
         self.logger.info(f"✅ Enhanced Perfect NAS Regime Detector initialized with full tool integration")
@@ -145,122 +154,37 @@ class PerfectNASRegimeDetector:
             self.logger.info(f"   Economic Learning: {config.adaptive_thresholds.enable_economic_learning}")
             self.logger.info(f"   Trading Learning: {config.adaptive_thresholds.enable_trading_learning}")
             self.logger.info(f"   Stability Learning: {config.adaptive_thresholds.enable_stability_learning}")
-    
-    def _initialize_enhanced_utilities(self):
-        """Initialize enhanced utility components."""
-        try:
-            # Initialize serialization
-            self.serializer = UniversalSerializer()
-            
-            # Initialize M1 optimizations
-            self.m1_integration = integrate_with_m1_optimizers()
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
-            
-            # Initialize enhanced data operations
-            self.data_operations = EnhancedDataOperations(
-                data_dir="nas_regime_data",
-                enable_validation=True
-            )
-            
-            # Initialize enhanced matrix operations
-            self.matrix_operations = EnhancedMatrixOperations(
-                enable_gpu=True,
-                enable_optimization=True,
-                enable_m1_optimization=True
-            )
-            
-            # Initialize enhanced ML common integration
-            ml_config = MLCommonConfig(
-                enable_validation=True,
-                enable_feature_selection=True,
-                enable_ensemble_methods=True,
-                enable_evaluation=True,
-                enable_optimization=True,
-                enable_hardware_optimization=True,
-                enable_m1_optimization=True,
-                enable_serialization=True,
-                math_validation_level='standard',
-                enable_safe_math=True,
-                enable_performance_monitoring=True
-            )
-            self.ml_common_integration = EnhancedMLCommonIntegration(ml_config)
-            
-            self.logger.info("✅ Enhanced utilities initialized successfully")
-            self.logger.info(f"   M1 Integration: {'✅ Available' if self.m1_integration.get('success', False) else '❌ Not available'}")
-            self.logger.info(f"   Data Operations: ✅ Initialized")
-            self.logger.info(f"   Matrix Operations: ✅ Initialized")
-            self.logger.info(f"   ML Common Integration: ✅ Initialized")
-            
-        except Exception as e:
-            self.logger.warning(f"Enhanced utilities initialization failed: {e}")
-            # Initialize fallback components
-            self.serializer = None
-            self.m1_integration = None
-            self.gpu_manager = None
-            self.memory_optimizer = None
-            self.cpu_optimizer = None
-            self.data_operations = None
-            self.matrix_operations = None
-            self.ml_common_integration = None
 
-    def _initialize_shared_utilities(self):
-        """Initialize shared utilities from hybrid regime system."""
-        if not SHARED_UTILITIES_AVAILABLE:
-            self.logger.warning("⚠️ Shared utilities not available")
-            self.search_strategy_manager = None
-            self.shared_clustering = None
-            return
+    def _create_unified_config(self) -> UnifiedRegimeConfig:
+        """Create unified configuration from NAS configuration."""
+        return UnifiedRegimeConfig(
+            detection_method=RegimeDetectionMethod.NAS_ONLY,
+            n_regimes=self.config.n_regimes,
+            primary_timeframe=self.config.primary_timeframe,
+            min_regime_samples=self.config.min_regime_duration,
+            max_regime_samples=self.config.max_regime_duration,
+            economic_significance_threshold=self.config.economic_significance_threshold,
+            trading_viability_threshold=self.config.trading_viability_threshold,
+            max_execution_time=self.config.max_execution_time,
+            enable_hardware_optimization=self.config.hardware_config.enable_gpu_acceleration
+        )
 
-        try:
-            # Initialize search strategy manager
-            search_config = SearchStrategyConfig(
-                max_iterations=50,
-                n_initial_points=10,
-                acquisition_function="expected_improvement",
-                exploration_weight=0.1,
-                convergence_threshold=1e-6,
-                parallel_evaluations=1,
-                random_state=42,
-                use_bayesian_optimization=True,
-                use_grid_optimization=True
-            )
-            self.search_strategy_manager = SearchStrategyManager(search_config)
-
-            # Initialize shared clustering utilities
-            self.shared_clustering = SharedClusteringUtilities()
-
-            self.logger.info("✅ Shared utilities initialized")
-        except Exception as e:
-            self.logger.warning(f"Shared utilities initialization failed: {e}")
-            self.search_strategy_manager = None
-            self.shared_clustering = None
-
-    def _initialize_position_aware_analyzer(self):
-        """Initialize position-aware trading analyzer."""
-        if not POSITION_AWARE_AVAILABLE:
-            self.position_analyzer = None
-            return
-
-        try:
-            position_config = PositionAwareConfig(
-                minimum_profit_threshold=0.001,
-                transaction_cost=0.001,
-                position_holding_periods=[1, 5, 10, 20],
-                risk_free_rate=0.02,
-                win_rate_thresholds={
-                    'excellent': 0.7,
-                    'good': 0.6,
-                    'acceptable': 0.5,
-                    'poor': 0.4
-                }
-            )
-            self.position_analyzer = PositionAwareTradingAnalyzer(position_config)
-            self.logger.info("✅ Position-aware trading analyzer initialized")
-        except Exception as e:
-            self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
-            self.position_analyzer = None
+    def _convert_unified_to_nas_result(self, unified_result: UnifiedRegimeResult) -> PerfectNASResult:
+        """Convert unified result to NAS result format."""
+        return PerfectNASResult(
+            success=unified_result.success,
+            regime_predictions=unified_result.regime_predictions,
+            regime_probabilities=unified_result.regime_probabilities,
+            economic_significance_scores=unified_result.economic_significance_scores,
+            trading_viability_scores=unified_result.trading_viability_scores,
+            regime_stability_scores=unified_result.regime_stability_scores,
+            transition_probabilities=unified_result.transition_probabilities,
+            micro_regimes=unified_result.micro_regimes,
+            uncertainty_estimates=unified_result.uncertainty_estimates,
+            execution_time=unified_result.execution_time,
+            metadata=unified_result.metadata,
+            error_message=unified_result.error_message
+        )
 
     @timed_operation
     def detect_regimes(self,
@@ -284,6 +208,14 @@ class PerfectNASRegimeDetector:
             PerfectNASResult with regime detection results
         """
         try:
+            # Use unified detector if available
+            if self.unified_detector:
+                tprint_info("🧠 Using unified regime detector")
+                unified_result = self.unified_detector.detect_regimes(market_data, timestamps)
+                return self._convert_unified_to_nas_result(unified_result)
+
+            # Fallback to enhanced detector
+            tprint_info("🔄 Using enhanced NAS regime detection")
             # Use memory checkpoint for large datasets
             with memory_checkpoint("regime_detection"):
                 # Pre-process market data using enhanced data operations

@@ -45,42 +45,22 @@ try:
 except ImportError:
     HARDWARE_AVAILABLE = False
 
-# Import enhanced utility tools
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
-    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
-    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
-    check_disk_space, CommonUtilities
-)
+# Import unified utilities
+try:
+    from src.utils.ml_common.nas_tas_unified import (
+        UnifiedRegimeDetector, UnifiedRegimeConfig, UnifiedRegimeResult,
+        RegimeDetectionMethod
+    )
+    from src.utils.common_operations import (
+        CommonUtilities, memory_checkpoint, gpu_context
+    )
+    UNIFIED_UTILITIES_AVAILABLE = True
+except ImportError:
+    UNIFIED_UTILITIES_AVAILABLE = False
 
+# Keep only essential imports for legacy compatibility
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-    validate_positive, validate_range, safe_kelly_calculation,
-    safe_weighted_average, safe_percentage_change, safe_correlation,
-    safe_covariance, safe_mean, safe_std, safe_percentile,
-    validate_correlation_matrix, safe_matrix_inverse, math_safe,
     MathValidation, MathValidationError
-)
-
-from src.utils.matrix_operations.unified_operations import (
-    UnifiedMatrixOperations, get_unified_matrix_operations,
-    safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
-)
-
-from src.utils.serialization_utils import (
-    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-)
-
-from src.utils.data.klines_parquet import (
-    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
-    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
 )
 
 # Import enhanced TAS hardware optimization
@@ -92,20 +72,12 @@ try:
 except ImportError:
     ENHANCED_HARDWARE_AVAILABLE = False
 
-# Import matrix operations
+# Legacy imports for compatibility (minimal)
 try:
     from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
     MATRIX_OPS_AVAILABLE = True
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
-
-# Import ML common utilities
-try:
-    from src.utils.ml_common.common_operations import get_ml_common_operations
-    from src.utils.ml_common.validation import get_validation_framework
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
 
 # Import shared utilities from hybrid regime system
 try:
@@ -186,361 +158,66 @@ class TASRegimeDetector:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # Initialize enhanced utility tools
-        tprint_info("🔧 Initializing enhanced utility tools...")
-        self._initialize_enhanced_utility_tools()
-        
-        # Initialize tool integrations
-        tprint_info("🛠️ Initializing tool integrations...")
-        tprint_debug("💻 Initializing hardware optimization...")
-        self._initialize_hardware_optimization()
-        tprint_debug("⚡ Initializing enhanced hardware optimization...")
-        self._initialize_enhanced_hardware_optimization()
-        tprint_debug("🔢 Initializing matrix operations...")
-        self._initialize_matrix_operations()
-        tprint_debug("🤖 Initializing ML common...")
-        self._initialize_ml_common()
-        tprint_debug("🏗️ Initializing CLVSA architecture...")
-        self._initialize_clvsa_architecture()
-        tprint_debug("🌳 Initializing tree components...")
-        self._initialize_tree_components()
-        tprint_debug("🌲 Initializing advanced tree models...")
-        self._initialize_advanced_tree_models()
-        tprint_debug("🔗 Initializing shared utilities...")
-        self._initialize_shared_utilities()
-        tprint_debug("📊 Initializing position aware analyzer...")
-        self._initialize_position_aware_analyzer()
+        # Initialize unified utilities if available
+        if UNIFIED_UTILITIES_AVAILABLE:
+            tprint_info("🔧 Initializing unified utilities...")
+            try:
+                self.common_utils = CommonUtilities()
+                self.unified_detector = UnifiedRegimeDetector(self._create_unified_config())
+                tprint_success("✅ Unified utilities initialized")
+                self.logger.info("✅ Unified utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified utilities initialization failed: {e}")
+                self.logger.warning(f"Unified utilities initialization failed: {e}")
+                self.common_utils = None
+                self.unified_detector = None
+        else:
+            tprint_warning("⚠️ Unified utilities not available, using legacy initialization")
+            self._initialize_legacy_components()
 
-        tprint_success("✅ TAS Regime Detector initialized with enhanced utility integration")
-        tprint_info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
-        self.logger.info("✅ TAS Regime Detector initialized with enhanced utility integration")
-        self.logger.info(f"🛠️ Enhanced utilities: {self._get_enhanced_utility_status()}")
+        tprint_success("✅ TAS Regime Detector initialized")
+        self.logger.info("✅ TAS Regime Detector initialized")
 
-    def _initialize_enhanced_utility_tools(self):
-        """Initialize enhanced utility tools for TAS regime detection."""
-        tprint_debug("🔧 Starting enhanced utility tools initialization...")
+    def _create_unified_config(self) -> UnifiedRegimeConfig:
+        """Create unified configuration from TAS configuration."""
+        return UnifiedRegimeConfig(
+            detection_method=RegimeDetectionMethod.TAS_ONLY,
+            n_regimes=self.config.n_regimes,
+            primary_timeframe=self.config.primary_timeframe,
+            min_regime_samples=self.config.min_regime_samples,
+            max_regime_samples=self.config.max_regime_samples,
+            economic_significance_threshold=self.config.economic_significance_threshold,
+            trading_viability_threshold=self.config.trading_viability_threshold,
+            max_execution_time=self.config.max_execution_time,
+            enable_hardware_optimization=self.config.enable_hardware_optimization
+        )
+
+    def _initialize_legacy_components(self):
+        """Initialize legacy components as fallback."""
+        tprint_info("🔧 Initializing legacy components...")
         try:
-            # Initialize common utilities
-            tprint_debug("📦 Creating common utilities...")
             self.common_utils = CommonUtilities()
-            tprint_success("✅ Common utilities initialized")
-            self.logger.info("✅ Common utilities initialized")
-            
-            # Initialize math validation
-            tprint_debug("🧮 Creating math validator...")
-            self.math_validator = MathValidation()
-            tprint_success("✅ Math validation initialized")
-            self.logger.info("✅ Math validation initialized")
-            
-            # Initialize matrix operations
-            tprint_debug("🔢 Creating enhanced matrix operations...")
-            self.enhanced_matrix_ops = get_unified_matrix_operations(
-                enable_gpu=True,
-                enable_memory_optimization=True,
-                enable_parallel=True
-            )
-            tprint_success("✅ Enhanced matrix operations initialized")
-            self.logger.info("✅ Enhanced matrix operations initialized")
-            
-            # Initialize serialization
-            tprint_debug("💾 Creating enhanced serializer...")
-            self.enhanced_serializer = UniversalSerializer()
-            tprint_success("✅ Enhanced serialization initialized")
-            self.logger.info("✅ Enhanced serialization initialized")
-            
-            # Initialize data management
-            tprint_debug("📊 Creating klines data manager...")
-            self.enhanced_klines_manager = get_klines_manager()
-            tprint_success("✅ Enhanced klines data manager initialized")
-            self.logger.info("✅ Enhanced klines data manager initialized")
-            
-            # Initialize M1 optimizations
-            tprint_debug("🍎 Initializing M1 optimizations...")
-            self._initialize_enhanced_m1_optimizations()
-            
+            tprint_success("✅ Legacy components initialized")
         except Exception as e:
-            tprint_error(f"❌ Enhanced utility tools initialization failed: {e}")
-            self.logger.error(f"❌ Enhanced utility tools initialization failed: {e}")
-            # Set fallback values
+            tprint_warning(f"⚠️ Legacy components initialization failed: {e}")
             self.common_utils = None
-            self.math_validator = None
-            self.enhanced_matrix_ops = None
-            self.enhanced_serializer = None
-            self.enhanced_klines_manager = None
-    
-    def _initialize_enhanced_m1_optimizations(self):
-        """Initialize enhanced M1 hardware optimizations."""
-        tprint_debug("🍎 Starting M1 optimizations initialization...")
-        try:
-            # Get M1 optimizers
-            tprint_debug("🎮 Getting M1 GPU manager...")
-            self.enhanced_gpu_manager = get_m1_gpu_manager()
-            tprint_debug("💾 Getting M1 memory optimizer...")
-            self.enhanced_memory_optimizer = get_m1_memory_optimizer()
-            tprint_debug("⚡ Getting M1 CPU optimizer...")
-            self.enhanced_cpu_optimizer = get_m1_cpu_optimizer()
-            
-            # Integrate M1 optimizations
-            tprint_debug("🔗 Integrating M1 optimizations...")
-            integration_result = integrate_with_m1_optimizers()
-            if integration_result.get('success', False):
-                tprint_success("✅ Enhanced M1 optimizations integrated successfully")
-                tprint_info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
-                tprint_info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
-                self.logger.info("✅ Enhanced M1 optimizations integrated successfully")
-                self.logger.info(f"   GPU Manager: {integration_result.get('gpu_manager', False)}")
-                self.logger.info(f"   Memory Optimizer: {integration_result.get('memory_optimizer', False)}")
-                self.logger.info(f"   CPU Optimizer: {integration_result.get('cpu_optimizer', False)}")
-            else:
-                tprint_warning("⚠️ Enhanced M1 optimizations integration failed")
-                self.logger.warning("⚠️ Enhanced M1 optimizations integration failed")
-                
-        except Exception as e:
-            tprint_warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
-            self.logger.warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
-            self.enhanced_gpu_manager = None
-            self.enhanced_memory_optimizer = None
-            self.enhanced_cpu_optimizer = None
-    
-    def _get_enhanced_utility_status(self) -> str:
-        """Get status of enhanced utility tools."""
-        status = []
-        if self.common_utils: status.append("CommonOps")
-        if self.math_validator: status.append("MathVal")
-        if self.enhanced_matrix_ops: status.append("MatrixOps")
-        if self.enhanced_serializer: status.append("Serialization")
-        if self.enhanced_klines_manager: status.append("DataManager")
-        if self.enhanced_gpu_manager: status.append("M1GPU")
-        if self.enhanced_memory_optimizer: status.append("M1Memory")
-        if self.enhanced_cpu_optimizer: status.append("M1CPU")
-        return ", ".join(status) if status else "None"
 
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        tprint_debug("💻 Starting hardware optimization initialization...")
-        if not HARDWARE_AVAILABLE:
-            tprint_warning("⚠️ Hardware optimization not available")
-            self.hardware_manager = None
-            return
-
-        try:
-            tprint_debug("⚙️ Creating hardware configuration...")
-            hardware_config = HardwareConfig(
-                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
-                gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
-                memory_optimization_level=OptimizationLevel.AGGRESSIVE,
-                enable_adaptive_optimization=True,
-                enable_learning=True,
-                auto_tuning_enabled=True
-            )
-            tprint_debug("🏗️ Creating unified hardware manager...")
-            self.hardware_manager = UnifiedHardwareManager(hardware_config)
-            tprint_success("✅ Hardware optimization initialized")
-            self.logger.info("✅ Hardware optimization initialized")
-        except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
-            self.logger.warning(f"Hardware optimization initialization failed: {e}")
-            self.hardware_manager = None
-
-    def _initialize_enhanced_hardware_optimization(self):
-        """Initialize enhanced TAS hardware optimization components."""
-        tprint_debug("⚡ Starting enhanced hardware optimization initialization...")
-        if not ENHANCED_HARDWARE_AVAILABLE:
-            tprint_warning("⚠️ Enhanced hardware optimization not available")
-            self.enhanced_hardware_optimizer = None
-            return
-
-        try:
-            tprint_debug("⚙️ Creating TAS hardware configuration...")
-            hardware_config = TASHardwareConfig(
-                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
-                gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
-                memory_optimization_level=OptimizationLevel.AGGRESSIVE,
-                enable_gpu_acceleration=True,
-                enable_memory_optimization=True,
-                enable_parallel_processing=True,
-                matrix_optimization_level='aggressive',
-                enable_tree_optimization=True,
-                enable_clustering_optimization=True,
-                enable_statistical_optimization=True,
-                enable_regime_optimization=True,
-                enable_performance_monitoring=True,
-                enable_adaptive_optimization=True
-            )
-            tprint_debug("🏗️ Creating enhanced TAS hardware optimizer...")
-            self.enhanced_hardware_optimizer = EnhancedTASHardwareOptimizer(hardware_config)
-            tprint_success("✅ Enhanced TAS hardware optimization initialized")
-            self.logger.info("✅ Enhanced TAS hardware optimization initialized")
-        except Exception as e:
-            tprint_warning(f"⚠️ Enhanced hardware optimization initialization failed: {e}")
-            self.logger.warning(f"Enhanced hardware optimization initialization failed: {e}")
-            self.enhanced_hardware_optimizer = None
-
-    def _initialize_matrix_operations(self):
-        """Initialize matrix operations optimization."""
-        if not MATRIX_OPS_AVAILABLE:
-            self.matrix_ops = None
-            return
-
-        try:
-            self.matrix_ops = UnifiedMatrixOperations(
-                enable_gpu=True,
-                enable_memory_optimization=True,
-                enable_parallel=True,
-                optimization_level='aggressive'
-            )
-            self.logger.info("✅ Matrix operations initialized")
-        except Exception as e:
-            self.logger.warning(f"Matrix operations initialization failed: {e}")
-            self.matrix_ops = None
-
-    def _initialize_ml_common(self):
-        """Initialize ML common utilities."""
-        if not ML_COMMON_AVAILABLE:
-            self.ml_common_ops = None
-            self.validation_framework = None
-            return
-
-        try:
-            self.ml_common_ops = get_ml_common_operations()
-            self.validation_framework = get_validation_framework()
-            self.logger.info("✅ ML common utilities initialized")
-        except Exception as e:
-            self.logger.warning(f"ML common initialization failed: {e}")
-            self.ml_common_ops = None
-            self.validation_framework = None
-
-    def _initialize_clvsa_architecture(self):
-        """Initialize CLVSA architecture for regime enhancement."""
-        if not CLVSA_AVAILABLE:
-            self.clvsa_model = None
-            return
-
-        try:
-            clvsa_config = CLVSAConfig(
-                input_dim=100,
-                output_dim=self.config.n_regimes,
-                seq_length=200,
-                regime_aware=True,
-                uncertainty_quantification=self.config.enable_uncertainty_quantification,
-                multi_scale=self.config.enable_multi_scale_analysis
-            )
-            self.clvsa_model = create_clvsa_model({'clvsa_params': clvsa_config.__dict__})
-            self.logger.info("✅ CLVSA architecture initialized for regime enhancement")
-        except Exception as e:
-            self.logger.warning(f"CLVSA initialization failed: {e}")
-            self.clvsa_model = None
-
-    def _initialize_tree_components(self):
-        """Initialize tree-based components."""
-        if not TREE_AVAILABLE:
-            self.tree_search = None
-            return
-
-        try:
-            tree_config = TreeArchitectureConfig(
-                tree_type='hybrid',
-                max_depth=self.config.tree_depth,
-                n_estimators=self.config.n_estimators,
-                min_samples_split=self.config.min_samples_split,
-                min_samples_leaf=self.config.min_samples_leaf,
-                max_features=self.config.max_features,
-                enable_feature_importance=True,
-                enable_uncertainty_estimation=self.config.enable_uncertainty_quantification
-            )
-            self.tree_search = TreeBasedArchitectureSearch(tree_config)
-            self.logger.info("✅ Tree-based components initialized")
-        except Exception as e:
-            self.logger.warning(f"Tree components initialization failed: {e}")
-
-    def _initialize_shared_utilities(self):
-        """Initialize shared utilities from hybrid regime system."""
-        if not SHARED_UTILITIES_AVAILABLE:
-            self.logger.warning("⚠️ Shared utilities not available")
-            self.search_strategy_manager = None
-            self.shared_clustering = None
-            return
-
-        try:
-            # Initialize search strategy manager
-            search_config = SearchStrategyConfig(
-                max_iterations=50,
-                n_initial_points=10,
-                acquisition_function="expected_improvement",
-                exploration_weight=0.1,
-                convergence_threshold=1e-6,
-                parallel_evaluations=1,
-                random_state=42,
-                use_bayesian_optimization=True,
-                use_grid_optimization=True
-            )
-            self.search_strategy_manager = SearchStrategyManager(search_config)
-
-            # Initialize shared clustering utilities
-            self.shared_clustering = SharedClusteringUtilities()
-
-            self.logger.info("✅ Shared utilities initialized")
-        except Exception as e:
-            self.logger.warning(f"Shared utilities initialization failed: {e}")
-            self.search_strategy_manager = None
-            self.shared_clustering = None
-            self.tree_search = None
-
-    def _initialize_advanced_tree_models(self):
-        """Initialize advanced tree models with meta-learning."""
-        if not ADVANCED_TREE_AVAILABLE:
-            self.advanced_tree_factory = None
-            self.regime_optimizer = None
-            return
-
-        try:
-            # Create advanced tree configuration
-            tree_config = AdvancedTreeConfig(
-                primary_model="xgboost",
-                enable_ensemble=True,
-                ensemble_models=["xgboost", "lightgbm", "catboost"],
-                enable_meta_learning=True,
-                enable_continual_learning=True,
-                enable_regime_aware_optimization=True,
-                enable_hyperparameter_adaptation=True
-            )
-
-            # Initialize advanced tree factory
-            self.advanced_tree_factory = AdvancedTreeModelFactory(tree_config)
-
-            # Initialize regime-aware optimizer
-            self.regime_optimizer = RegimeAwareTreeOptimizer(tree_config)
-
-            self.logger.info("✅ Advanced tree models with meta-learning initialized")
-        except Exception as e:
-            self.logger.warning(f"Advanced tree models initialization failed: {e}")
-            self.advanced_tree_factory = None
-            self.regime_optimizer = None
-
-    def _initialize_position_aware_analyzer(self):
-        """Initialize position-aware trading analyzer."""
-        if not POSITION_AWARE_AVAILABLE:
-            self.position_analyzer = None
-            return
-
-        try:
-            position_config = PositionAwareConfig(
-                minimum_profit_threshold=0.001,
-                transaction_cost=0.001,
-                position_holding_periods=[1, 5, 10, 20],
-                risk_free_rate=0.02,
-                win_rate_thresholds={
-                    'excellent': 0.7,
-                    'good': 0.6,
-                    'acceptable': 0.5,
-                    'poor': 0.4
-                }
-            )
-            self.position_analyzer = PositionAwareTradingAnalyzer(position_config)
-            self.logger.info("✅ Position-aware trading analyzer initialized")
-        except Exception as e:
-            self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
-            self.position_analyzer = None
+    def _convert_unified_to_tas_result(self, unified_result: UnifiedRegimeResult) -> TASRegimeResult:
+        """Convert unified result to TAS result format."""
+        return TASRegimeResult(
+            success=unified_result.success,
+            regime_predictions=unified_result.regime_predictions,
+            regime_probabilities=unified_result.regime_probabilities,
+            economic_significance_scores=unified_result.economic_significance_scores,
+            trading_viability_scores=unified_result.trading_viability_scores,
+            regime_stability_scores=unified_result.regime_stability_scores,
+            transition_probabilities=unified_result.transition_probabilities,
+            micro_regimes=unified_result.micro_regimes,
+            uncertainty_estimates=unified_result.uncertainty_estimates,
+            execution_time=unified_result.execution_time,
+            metadata=unified_result.metadata,
+            error_message=unified_result.error_message
+        )
 
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
@@ -564,7 +241,14 @@ class TASRegimeDetector:
         try:
             self.logger.info("🚀 Starting TAS regime detection")
 
-            # Hardware optimization context
+            # Use unified detector if available
+            if self.unified_detector:
+                tprint_info("🧠 Using unified regime detector")
+                unified_result = self.unified_detector.detect_regimes(market_data, timestamps)
+                return self._convert_unified_to_tas_result(unified_result)
+
+            # Fallback to legacy detection
+            tprint_info("🔄 Using legacy TAS regime detection")
             with self._hardware_optimization_context():
                 # Prepare and enhance data
                 processed_data, processed_timestamps = self._prepare_and_enhance_data(
@@ -726,12 +410,13 @@ class TASRegimeDetector:
     @contextmanager
     def _hardware_optimization_context(self):
         """Context manager for hardware optimization."""
-        if self.hardware_manager:
+        # Use memory checkpoint if available
+        if self.common_utils:
             try:
-                self.hardware_manager.start_optimization(WorkloadType.ML_TRAINING)
+                with memory_checkpoint("tas_regime_detection"):
+                    yield
+            except Exception:
                 yield
-            finally:
-                self.hardware_manager.stop_optimization()
         else:
             yield
 

@@ -293,8 +293,11 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.info("✅ Hardware optimization initialized")
             
         except Exception as e:
-            self.logger.warning(f"Hardware optimization initialization failed: {e}")
+            tprint_error(f"❌ Hardware optimization initialization failed: {e}")
+            self.logger.error(f"❌ Hardware optimization initialization failed: {e}")
             self.hardware_manager = None
+            # Don't continue silently - this is a critical component
+            raise RuntimeError(f"Hardware optimization initialization failed: {e}")
 
     def _initialize_memory_optimization(self):
         """Initialize memory optimization using enhanced utilities."""
@@ -351,8 +354,11 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.info("✅ Matrix operations initialized")
             
         except Exception as e:
-            self.logger.warning(f"Matrix operations initialization failed: {e}")
+            tprint_error(f"❌ Matrix operations initialization failed: {e}")
+            self.logger.error(f"❌ Matrix operations initialization failed: {e}")
             self.matrix_ops = None
+            # Matrix operations are critical for performance
+            raise RuntimeError(f"Matrix operations initialization failed: {e}")
     
     def _initialize_ml_common(self):
         """Initialize ML common utilities."""
@@ -379,10 +385,13 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.info("✅ ML common utilities initialized")
             
         except Exception as e:
-            self.logger.warning(f"ML common initialization failed: {e}")
+            tprint_error(f"❌ ML common initialization failed: {e}")
+            self.logger.error(f"❌ ML common initialization failed: {e}")
             self.ml_common_ops = None
             self.validation_framework = None
             self.bayesian_tpe_optimizer = None
+            # ML common utilities are important but not critical
+            tprint_warning("⚠️ Continuing without ML common utilities")
     
     def _initialize_nas_clustering(self):
         """Initialize NAS clustering components."""
@@ -412,8 +421,11 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.info("✅ NAS clustering components initialized")
             
         except Exception as e:
-            self.logger.warning(f"NAS clustering initialization failed: {e}")
+            tprint_error(f"❌ NAS clustering initialization failed: {e}")
+            self.logger.error(f"❌ NAS clustering initialization failed: {e}")
             self.nas_clusterer = None
+            # NAS clustering is critical for regime detection
+            raise RuntimeError(f"NAS clustering initialization failed: {e}")
     
     def _initialize_nas_modeling(self):
         """Initialize NAS modeling components."""
@@ -442,8 +454,11 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.info("✅ NAS modeling components initialized")
             
         except Exception as e:
-            self.logger.warning(f"NAS modeling initialization failed: {e}")
+            tprint_error(f"❌ NAS modeling initialization failed: {e}")
+            self.logger.error(f"❌ NAS modeling initialization failed: {e}")
             self.nas_evaluator = None
+            # NAS modeling is important but not critical
+            tprint_warning("⚠️ Continuing without NAS modeling components")
     
     def _initialize_neural_architectures(self):
         """Initialize neural architecture components with optimizations."""

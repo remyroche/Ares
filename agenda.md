@@ -92,6 +92,7 @@
 - Use `src/utils/graceful_module_handler.py` for module-level error recovery
 - Apply `src/utils/fallback_monitoring.py` for system resilience
 - Leverage `src/utils/error_recovery/` for advanced error recovery patterns
+- **FAST-FAIL PREFERRED**: When operating interactive agent flows, prefer immediate failure over degraded fallbacks. Disable fallback/retry paths (for example, set `enable_fallback_mode=False` in `NASTASClusteringConfig`) unless the user explicitly requests resilience testing.
 
 ### 9. Validation & Quality Assurance
 - Use `src/utils/validation/` for comprehensive validation frameworks

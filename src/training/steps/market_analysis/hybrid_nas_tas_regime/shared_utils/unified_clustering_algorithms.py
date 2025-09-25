@@ -203,7 +203,7 @@ class UnifiedClusteringAlgorithm:
                     result = self._standard_clustering(features, economic_weights, algorithm)
                     predictions.append(result['labels'])
                 except Exception as e:
-                                tprint_warning(f"⚠️ Operation failed: {e}")
+                    tprint_warning(f"⚠️ Operation failed: {e}")
                     continue
             
             if not predictions:
@@ -642,19 +642,19 @@ class UnifiedClusteringAlgorithm:
             try:
                 metrics['silhouette_score'] = silhouette_score(features, labels)
             except Exception as e:
-                                tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
             
             try:
                 metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
             except Exception as e:
-                                tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['calinski_harabasz_score'] = 0.0
             
             try:
                 metrics['davies_bouldin_score'] = davies_bouldin_score(features, labels)
             except Exception as e:
-                                tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['davies_bouldin_score'] = 0.0
             
             # Regime-specific metrics

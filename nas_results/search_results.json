@@ -1,0 +1,191 @@
+[
+  {
+    "trial_id": 1,
+    "architecture": {
+      "layers": [
+        {
+          "neurons": 185,
+          "activation": "sigmoid",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 512,
+          "activation": "relu",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 91,
+          "activation": "relu",
+          "dropout": 0.5
+        },
+        {
+          "neurons": 111,
+          "activation": "tanh",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 341,
+          "activation": "relu",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 136,
+          "activation": "sigmoid",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 290,
+          "activation": "tanh",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 495,
+          "activation": "relu",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 356,
+          "activation": "tanh",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 54,
+          "activation": "relu",
+          "dropout": 0.2
+        }
+      ],
+      "learning_rate": 0.07711421110973252,
+      "batch_size": 179,
+      "optimizer": "adam",
+      "n_layers": 10,
+      "trial_id": 1,
+      "search_strategy": "random"
+    },
+    "train_accuracy": 0.9429292838400926,
+    "val_accuracy": 0.926771086212704,
+    "epochs_trained": 2,
+    "best_val_accuracy": 0.926771086212704,
+    "success": true
+  },
+  {
+    "trial_id": 0,
+    "architecture": {
+      "layers": [
+        {
+          "neurons": 507,
+          "activation": "relu",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 266,
+          "activation": "sigmoid",
+          "dropout": 0.5
+        },
+        {
+          "neurons": 83,
+          "activation": "relu",
+          "dropout": 0.5
+        },
+        {
+          "neurons": 141,
+          "activation": "sigmoid",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 99,
+          "activation": "tanh",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 482,
+          "activation": "relu",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 177,
+          "activation": "relu",
+          "dropout": 0.3
+        }
+      ],
+      "learning_rate": 0.0833761580144343,
+      "batch_size": 196,
+      "optimizer": "adam",
+      "n_layers": 7,
+      "trial_id": 0,
+      "search_strategy": "random"
+    },
+    "train_accuracy": 0.7058810000426115,
+    "val_accuracy": 0.6074956690174632,
+    "epochs_trained": 1,
+    "best_val_accuracy": 0.6074956690174632,
+    "success": true
+  },
+  {
+    "trial_id": 2,
+    "architecture": {
+      "layers": [
+        {
+          "neurons": 393,
+          "activation": "tanh",
+          "dropout": 0.5
+        },
+        {
+          "neurons": 36,
+          "activation": "relu",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 484,
+          "activation": "sigmoid",
+          "dropout": 0.1
+        },
+        {
+          "neurons": 311,
+          "activation": "relu",
+          "dropout": 0.2
+        },
+        {
+          "neurons": 330,
+          "activation": "sigmoid",
+          "dropout": 0.1
+        },
+        {
+          "neurons": 252,
+          "activation": "relu",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 189,
+          "activation": "tanh",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 492,
+          "activation": "tanh",
+          "dropout": 0.1
+        },
+        {
+          "neurons": 381,
+          "activation": "relu",
+          "dropout": 0.0
+        },
+        {
+          "neurons": 213,
+          "activation": "sigmoid",
+          "dropout": 0.3
+        }
+      ],
+      "learning_rate": 0.09738396389350253,
+      "batch_size": 207,
+      "optimizer": "adam",
+      "n_layers": 10,
+      "trial_id": 2,
+      "search_strategy": "random"
+    },
+    "train_accuracy": 0.6540936684162716,
+    "val_accuracy": 0.5611055668469042,
+    "epochs_trained": 1,
+    "best_val_accuracy": 0.5611055668469042,
+    "success": true
+  }
+]

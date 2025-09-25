@@ -33,6 +33,7 @@ import concurrent.futures
 import threading
 from datetime import datetime
 import warnings
+from itertools import count
 
 # Core dependencies
 import numpy as np
@@ -50,6 +51,11 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
+
+from src.utils.nas_tas.bayesian_tpe_optimizer import (
+    BayesianTPEConfig,
+    BayesianTPEOptimizer,
+)
 
 from src.utils.nas_tas.shared_logging import (
     TPRINT_AVAILABLE,
@@ -274,7 +280,7 @@ class NASConfig:
     """Configuration for Neural Architecture Search with comprehensive validation."""
     
     # Search parameters
-    search_strategy: str = 'random'  # 'random', 'grid', 'bayesian', 'evolutionary'
+    search_strategy: str = 'random'  # 'random', 'grid', 'bayesian', 'bayesian_tpe', 'random_forest', 'evolutionary'
     max_trials: int = 100
     max_epochs: int = 50
     early_stopping_patience: int = 10
@@ -317,7 +323,7 @@ class NASConfig:
         """Validate configuration after initialization."""
         try:
             # Validate search strategy
-            valid_strategies = ['random', 'grid', 'bayesian', 'evolutionary']
+            valid_strategies = ['random', 'grid', 'bayesian', 'bayesian_tpe', 'random_forest', 'evolutionary']
             if self.search_strategy not in valid_strategies:
                 tprint_warning(f"Invalid search strategy: {self.search_strategy}, using 'random'")
                 self.search_strategy = 'random'
@@ -947,7 +953,7 @@ class NASTrainer:
             architecture = self._generate_random_architecture()
         elif self.config.search_strategy == 'grid':
             architecture = self._generate_grid_architecture(trial_id)
-        elif self.config.search_strategy == 'bayesian':
+        elif self.config.search_strategy in {'bayesian', 'bayesian_tpe', 'random_forest'}:
             architecture = self._generate_bayesian_architecture(trial_id)
         else:
             architecture = self._generate_random_architecture()
@@ -1311,13 +1317,14 @@ class NASTrainer:
             'data_shape': data_splits['X_train'].shape
         })
         
-        search_results = []
-        
-        # Use M1-optimized parallel processing if available
-        if self.config.use_m1_optimization and self.cpu_optimizer:
-            search_results = self._parallel_architecture_search(data_splits)
+        if self.config.search_strategy in {'bayesian_tpe', 'random_forest'}:
+            search_results = self._bayesian_optimizer_search(data_splits)
         else:
-            search_results = self._sequential_architecture_search(data_splits)
+            # Use M1-optimized parallel processing if available
+            if self.config.use_m1_optimization and self.cpu_optimizer:
+                search_results = self._parallel_architecture_search(data_splits)
+            else:
+                search_results = self._sequential_architecture_search(data_splits)
         
         # Sort results by validation accuracy
         search_results.sort(key=lambda x: x.get('val_accuracy', 0), reverse=True)
@@ -1357,26 +1364,200 @@ class NASTrainer:
     def _parallel_architecture_search(self, data_splits: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Perform parallel architecture search using M1 optimization."""
         tprint_info("🚀 Using M1-optimized parallel architecture search")
-        
+
         # Create trial tasks
         trial_tasks = []
         for trial_id in range(self.config.max_trials):
             architecture = self.generate_architecture(trial_id)
             trial_tasks.append((trial_id, architecture))
-        
+
         # Use M1-optimized parallel processing
         def train_single_architecture(task):
             trial_id, architecture = task
             return self.train_architecture(architecture, data_splits)
-        
+
         # Execute in parallel with M1 optimization
         search_results = parallel_map_m1(
             train_single_architecture,
             trial_tasks,
             max_workers=self.cpu_optimizer.get_optimal_worker_count()
         )
-        
+
         return search_results
+
+    def _build_architecture_search_space(self) -> Dict[str, Any]:
+        """Build search space configuration for Bayesian optimization."""
+        activation_choices = sorted({str(act) for act in (self.config.activation_functions or ['relu'])})
+        dropout_choices = sorted({float(rate) for rate in (self.config.dropout_rates or [0.0])})
+
+        min_layers = max(1, int(self.config.min_layers))
+        max_layers = max(min_layers, int(self.config.max_layers))
+
+        min_neurons = max(1, int(self.config.min_neurons))
+        max_neurons = max(min_neurons, int(self.config.max_neurons))
+
+        lr_low, lr_high = self.config.learning_rate_range
+        if lr_low <= 0:
+            lr_low = 1e-5
+        if lr_high <= lr_low:
+            lr_high = lr_low * 10
+
+        batch_low, batch_high = self.config.batch_size_range
+        if batch_low <= 0:
+            batch_low = 8
+        if batch_high <= batch_low:
+            batch_high = max(batch_low, batch_low * 2)
+
+        search_space: Dict[str, Any] = {
+            'n_layers': {'type': 'int', 'low': min_layers, 'high': max_layers},
+            'learning_rate': {'type': 'float', 'low': lr_low, 'high': lr_high, 'log': True},
+            'batch_size': {'type': 'int', 'low': int(batch_low), 'high': int(batch_high)}
+        }
+
+        for layer_idx in range(max_layers):
+            search_space[f'layer_{layer_idx}_neurons'] = {
+                'type': 'int',
+                'low': min_neurons,
+                'high': max_neurons
+            }
+            search_space[f'layer_{layer_idx}_activation'] = {
+                'type': 'categorical',
+                'choices': activation_choices
+            }
+            search_space[f'layer_{layer_idx}_dropout'] = {
+                'type': 'categorical',
+                'choices': dropout_choices
+            }
+
+        return search_space
+
+    def _architecture_from_params(self, params: Dict[str, Any], trial_id: Optional[int] = None) -> Dict[str, Any]:
+        """Convert optimizer parameters into architecture dictionary."""
+        n_layers = int(params.get('n_layers', max(1, self.config.min_layers)))
+        n_layers = max(self.config.min_layers, min(self.config.max_layers, n_layers))
+
+        layers: List[Dict[str, Any]] = []
+        for layer_idx in range(n_layers):
+            neurons = int(params.get(f'layer_{layer_idx}_neurons', self.config.min_neurons))
+            neurons = max(self.config.min_neurons, min(self.config.max_neurons, neurons))
+
+            activation = params.get(
+                f'layer_{layer_idx}_activation',
+                self.config.activation_functions[0] if self.config.activation_functions else 'relu'
+            )
+            dropout = float(params.get(
+                f'layer_{layer_idx}_dropout',
+                self.config.dropout_rates[0] if self.config.dropout_rates else 0.0
+            ))
+
+            layers.append({
+                'neurons': neurons,
+                'activation': activation,
+                'dropout': dropout
+            })
+
+        learning_rate = float(params.get('learning_rate', np.mean(self.config.learning_rate_range)))
+        batch_size = int(params.get('batch_size', self.config.batch_size_range[0]))
+
+        architecture = {
+            'layers': layers,
+            'learning_rate': learning_rate,
+            'batch_size': batch_size,
+            'optimizer': self.config.optimizer,
+            'n_layers': n_layers,
+            'search_strategy': self.config.search_strategy,
+            'generated_at': datetime.now().isoformat()
+        }
+
+        if trial_id is not None:
+            architecture['trial_id'] = trial_id
+
+        return architecture
+
+    def _bayesian_optimizer_search(self, data_splits: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Run Bayesian or random-forest surrogate optimization for architectures."""
+        backend = 'optuna' if self.config.search_strategy == 'bayesian_tpe' else 'skopt_forest'
+
+        tpe_config = BayesianTPEConfig(
+            n_trials=max(1, int(self.config.max_trials)),
+            enable_grid_search=True,
+            backend=backend,
+            enable_parallel=False,
+            max_workers=self.cpu_optimizer.get_optimal_worker_count() if self.cpu_optimizer else 4
+        )
+
+        optimizer = BayesianTPEOptimizer(tpe_config)
+        search_space = self._build_architecture_search_space()
+
+        trial_counter = count()
+        evaluation_lock = threading.Lock()
+        evaluated_cache: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+        results: List[Dict[str, Any]] = []
+
+        def params_to_key(param_dict: Dict[str, Any]) -> Tuple[Any, ...]:
+            key_items: List[Tuple[str, Any]] = []
+            for key, value in sorted(param_dict.items()):
+                if isinstance(value, list):
+                    key_items.append((key, tuple(value)))
+                elif isinstance(value, np.generic):
+                    key_items.append((key, float(value)))
+                else:
+                    key_items.append((key, value))
+            return tuple(key_items)
+
+        def objective(params: Dict[str, Any], **kwargs) -> float:
+            params_key = params_to_key(params)
+
+            with evaluation_lock:
+                cached = evaluated_cache.get(params_key)
+                if cached is not None:
+                    return float(cached.get('val_accuracy', 0.0))
+
+            trial_id = next(trial_counter)
+            architecture = self._architecture_from_params(params, trial_id=trial_id)
+
+            result = self.train_architecture(architecture, data_splits)
+            score = float(result.get('val_accuracy', 0.0) or 0.0)
+
+            enriched_result = result.copy()
+            enriched_result['params'] = params.copy()
+            enriched_result['search_strategy'] = self.config.search_strategy
+
+            with evaluation_lock:
+                evaluated_cache[params_key] = enriched_result
+                results.append(enriched_result)
+
+            return score
+
+        optimization_result = optimizer.optimize(
+            objective_function=objective,
+            search_space=search_space,
+        )
+
+        best_params = optimization_result.best_params if optimization_result.success else {}
+        if best_params:
+            best_key = params_to_key(best_params)
+            if best_key not in evaluated_cache:
+                trial_id = next(trial_counter)
+                architecture = self._architecture_from_params(best_params, trial_id=trial_id)
+                result = self.train_architecture(architecture, data_splits)
+                result['params'] = best_params.copy()
+                result['search_strategy'] = self.config.search_strategy
+                with evaluation_lock:
+                    evaluated_cache[best_key] = result
+                    results.append(result)
+
+        if not results:
+            tprint_warning("Bayesian optimizer did not yield results; falling back to random search")
+            return self._sequential_architecture_search(data_splits)
+
+        results.sort(key=lambda r: r.get('val_accuracy', 0.0), reverse=True)
+
+        tprint_success(
+            f"✅ Bayesian search completed: best val_acc={results[0].get('val_accuracy', 0.0):.4f}"
+        )
+
+        return results
     
     def evaluate_best_architecture(self, data_splits: Dict[str, Any]) -> Dict[str, Any]:
         """

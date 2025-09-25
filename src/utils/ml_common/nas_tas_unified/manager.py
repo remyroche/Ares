@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 class UnifiedComponentManager:
     """Unified component manager orchestrating all unified components."""
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize unified component manager."""
+    def __init__(self, config: HardwareConfig):
+        """Initialize unified component manager with modern HardwareConfig."""
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -73,24 +73,20 @@ class UnifiedComponentManager:
         
         try:
             # Initialize evaluator
-            if self.config.get('enable_evaluation', True):
-                self.evaluator = UnifiedEvaluator(self.config)
-                tprint_success("✅ UnifiedEvaluator initialized")
+            self.evaluator = UnifiedEvaluator(self.config.__dict__)
+            tprint_success("✅ UnifiedEvaluator initialized")
             
             # Initialize hardware optimizer
-            if self.config.get('enable_hardware_optimization', True):
-                self.hardware_optimizer = UnifiedHardwareOptimizer(self.config)
-                tprint_success("✅ UnifiedHardwareOptimizer initialized")
+            self.hardware_optimizer = UnifiedHardwareOptimizer(self.config)
+            tprint_success("✅ UnifiedHardwareOptimizer initialized")
             
             # Initialize search engine
-            if self.config.get('enable_search', True):
-                self.search_engine = UnifiedSearchEngine(self.config)
-                tprint_success("✅ UnifiedSearchEngine initialized")
+            self.search_engine = UnifiedSearchEngine(self.config.__dict__)
+            tprint_success("✅ UnifiedSearchEngine initialized")
             
             # Initialize data processor
-            if self.config.get('enable_data_processing', True):
-                self.data_processor = UnifiedDataProcessor(self.config)
-                tprint_success("✅ UnifiedDataProcessor initialized")
+            self.data_processor = UnifiedDataProcessor(self.config.__dict__)
+            tprint_success("✅ UnifiedDataProcessor initialized")
             
             tprint_success("🎉 All unified components initialized successfully")
             
@@ -204,51 +200,18 @@ class UnifiedComponentManager:
 
 
 # Convenience functions for easy access to unified components
-def create_unified_manager(config: Dict[str, Any]) -> UnifiedComponentManager:
-    """Create a unified component manager with given configuration."""
+def create_unified_manager(config: HardwareConfig) -> UnifiedComponentManager:
+    """Create a unified component manager with modern HardwareConfig."""
     return UnifiedComponentManager(config)
 
 
-def get_default_config() -> Dict[str, Any]:
-    """Get default configuration for unified components."""
-    return {
-        # Component enablement
-        'enable_evaluation': True,
-        'enable_hardware_optimization': True,
-        'enable_search': True,
-        'enable_data_processing': True,
-        
-        # Hardware optimization
-        'enable_m1_optimization': True,
-        'memory_limit_gb': None,
-        
-        # Evaluation
-        'enable_trading_metrics': True,
-        'enable_economic_metrics': True,
-        'enable_complexity_metrics': True,
-        
-        # Data processing
-        'handle_missing_values': True,
-        'normalize_data': True,
-        'standardize_data': False,
-        'outlier_detection': True,
-        'enable_feature_selection': False,
-        'max_features': 100,
-        'validation_split': 0.2,
-        
-        # Search
-        'use_bayesian_optimization': True,
-        'n_trials': 50,
-        'timeout_seconds': None,
-        'enable_early_stopping': True,
-        'early_stopping_patience': 10
-    }
+def get_default_hardware_config() -> HardwareConfig:
+    """Get default HardwareConfig for unified components."""
+    return HardwareConfig()
 
 
 def create_nas_config() -> HardwareConfig:
     """Create configuration optimized for NAS."""
-    config = get_default_config()
-    # Convert to HardwareConfig for enhanced functionality
     return HardwareConfig(
         cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
         gpu_optimization_level=OptimizationLevel.AGGRESSIVE,
@@ -268,8 +231,6 @@ def create_nas_config() -> HardwareConfig:
 
 def create_tas_config() -> HardwareConfig:
     """Create configuration optimized for TAS."""
-    config = get_default_config()
-    # Convert to HardwareConfig for enhanced functionality
     return HardwareConfig(
         cpu_optimization_level=OptimizationLevel.BALANCED,
         gpu_optimization_level=OptimizationLevel.MINIMAL,  # TAS doesn't need heavy GPU

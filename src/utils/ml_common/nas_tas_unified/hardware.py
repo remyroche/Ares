@@ -332,13 +332,9 @@ class HardwarePerformanceMonitor:
 class UnifiedHardwareOptimizer:
     """Enhanced unified hardware optimization with comprehensive hardware management."""
     
-    def __init__(self, config: Union[Dict[str, Any], HardwareConfig]):
+    def __init__(self, config: HardwareConfig):
         """Initialize hardware optimizer with existing tools and comprehensive management."""
-        # Convert dict config to HardwareConfig if needed
-        if isinstance(config, dict):
-            self.config = self._dict_to_hardware_config(config)
-        else:
-            self.config = config
+        self.config = config
             
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -357,35 +353,6 @@ class UnifiedHardwareOptimizer:
             self._initialize_hardware_tools()
             self._initialize_comprehensive_management()
     
-    def _dict_to_hardware_config(self, config_dict: Dict[str, Any]) -> HardwareConfig:
-        """Convert dictionary config to HardwareConfig."""
-        return HardwareConfig(
-            cpu_optimization_level=OptimizationLevel(config_dict.get('cpu_optimization_level', 'balanced')),
-            enable_core_affinity=config_dict.get('enable_core_affinity', True),
-            enable_thermal_monitoring=config_dict.get('enable_thermal_monitoring', True),
-            enable_power_management=config_dict.get('enable_power_management', True),
-            gpu_optimization_level=OptimizationLevel(config_dict.get('gpu_optimization_level', 'balanced')),
-            enable_mps_acceleration=config_dict.get('enable_mps_acceleration', True),
-            enable_gpu_memory_pooling=config_dict.get('enable_gpu_memory_pooling', True),
-            enable_batch_operations=config_dict.get('enable_batch_operations', True),
-            memory_optimization_level=OptimizationLevel(config_dict.get('memory_optimization_level', 'balanced')),
-            memory_limit_gb=config_dict.get('memory_limit_gb', 8.0),
-            enable_memory_pooling=config_dict.get('enable_memory_pooling', True),
-            enable_predictive_allocation=config_dict.get('enable_predictive_allocation', True),
-            enable_compression=config_dict.get('enable_compression', True),
-            enable_adaptive_optimization=config_dict.get('enable_adaptive_optimization', True),
-            learning_enabled=config_dict.get('learning_enabled', True),
-            auto_tuning_enabled=config_dict.get('auto_tuning_enabled', True),
-            performance_monitoring_enabled=config_dict.get('performance_monitoring_enabled', True),
-            monitoring_interval=config_dict.get('monitoring_interval', 5.0),
-            metrics_retention_hours=config_dict.get('metrics_retention_hours', 24),
-            alert_thresholds=config_dict.get('alert_thresholds', {
-                'cpu_usage': 85.0,
-                'memory_usage': 90.0,
-                'gpu_usage': 80.0,
-                'temperature': 85.0
-            })
-        )
     
     def _initialize_comprehensive_management(self):
         """Initialize comprehensive hardware management."""

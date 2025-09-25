@@ -76,9 +76,8 @@ class HardwareOptimizer:
     def __init__(self, config: HardwareOptimizationConfig):
         self.config = config
 
-# Original utilities
+# Original utilities - REPLACED with unified components
 # from .data_pipeline import DataPipelineManager, DataPipelineConfig, MarketDataProcessor
-# REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
 from .feature_collection import FeatureCollectionManager, FeatureCollectionConfig, StandardizedFeatureCalculator
 # Removed redundant imports - now using unified versions
 from .position_aware_trading import (
@@ -121,9 +120,17 @@ from .advanced_search_strategies import (
 #     UnifiedSearchManager, BayesianOptimizationSearch, EvolutionaryAlgorithmSearch,
 #     create_unified_search_manager, create_search_algorithm
 # )
-# REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
 from .unified_clustering_algorithms import (
     UnifiedClusteringAlgorithm, create_unified_clustering_algorithm
+)
+
+# Unified Components - Modern imports from nas_tas_unified
+from src.utils.ml_common.nas_tas_unified import (
+    UnifiedEvaluator, UnifiedHardwareOptimizer, UnifiedSearchEngine, 
+    UnifiedDataProcessor, UnifiedComponentManager,
+    compute_classification_metrics, compute_regression_metrics,
+    HardwareConfig, PerformanceMetrics, HardwarePerformanceMonitor,
+    WorkloadType, OptimizationLevel
 )
 
 # New Unified Utilities
@@ -136,8 +143,7 @@ from .unified_trading_viability_evaluator import (
     create_unified_trading_viability_evaluator, quick_trading_viability_evaluation
 )
 
-# Alias for compatibility
-TradingViabilityEvaluator = UnifiedTradingViabilityEvaluator
+# No backward compatibility aliases - use UnifiedTradingViabilityEvaluator directly
 from .unified_multi_objective_optimizer import (
     UnifiedMultiObjectiveOptimizer, OptimizationConfig, OptimizationResult,
     create_unified_multi_objective_optimizer, quick_multi_objective_optimization
@@ -146,7 +152,6 @@ from .unified_multi_objective_optimizer import (
 #     UnifiedHardwareOptimizer, HardwareConfig, PerformanceMetrics,
 #     create_unified_hardware_optimizer, quick_hardware_optimization
 # )
-# REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
 # Evaluation utilities are available in unified_evaluation_framework.py
 from .unified_regime_analyzer import (
     UnifiedRegimeAnalyzer, RegimeAnalysisConfig, RegimeAnalysisResult,
@@ -218,11 +223,15 @@ from .unified_evaluation_framework import (
 )
 
 __all__ = [
+    # Unified Components - Modern exports
+    'UnifiedEvaluator', 'UnifiedHardwareOptimizer', 'UnifiedSearchEngine', 
+    'UnifiedDataProcessor', 'UnifiedComponentManager',
+    'compute_classification_metrics', 'compute_regression_metrics',
+    'HardwareConfig', 'PerformanceMetrics', 'HardwarePerformanceMonitor',
+    'WorkloadType', 'OptimizationLevel',
+    
     # Original utilities
-    # 'DataPipelineManager', 'MarketDataProcessor',
-    # REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
     'FeatureCollectionManager', 'StandardizedFeatureCalculator',
-    # Removed redundant exports - now using unified versions
 
     # Position-Aware Trading
     'PositionAwareTradingAnalyzer', 'PositionAwareConfig', 'PositionAwareResult',
@@ -261,17 +270,12 @@ __all__ = [
     'create_rl_search_strategy', 'create_enhanced_bayesian_search', 'create_adaptive_evolutionary_search',
 
     # Unified Search and Clustering
-    # 'UnifiedSearchManager', 'BayesianOptimizationSearch', 'EvolutionaryAlgorithmSearch',
-    # 'create_unified_search_manager', 'create_search_algorithm',
-    # REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
     'UnifiedClusteringAlgorithm', 'create_unified_clustering_algorithm',
 
     # New Unified Utilities
     'UnifiedEconomicSignificanceEvaluator', 'EconomicEvaluationConfig', 'EconomicSignificanceResult',
     'UnifiedTradingViabilityEvaluator', 'TradingViabilityConfig', 'TradingViabilityResult',
     'UnifiedMultiObjectiveOptimizer', 'OptimizationConfig', 'OptimizationResult',
-    # 'UnifiedHardwareOptimizer', 'HardwareConfig', 'PerformanceMetrics',
-    # REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
     'UnifiedRegimeAnalyzer', 'RegimeAnalysisConfig', 'RegimeAnalysisResult',
     'UnifiedConfigManager', 'UnifiedRegimeConfig',
     'UnifiedValidationSystem', 'ValidationConfig', 'ValidationResult',
@@ -280,8 +284,6 @@ __all__ = [
     'create_unified_economic_evaluator', 'quick_economic_evaluation',
     'create_unified_trading_viability_evaluator', 'quick_trading_viability_evaluation',
     'create_unified_multi_objective_optimizer', 'quick_multi_objective_optimization',
-    # 'create_unified_hardware_optimizer', 'quick_hardware_optimization',
-    # REPLACED: Now using unified components from src.utils.ml_common.nas_tas_unified
     'create_unified_regime_analyzer', 'quick_regime_analysis',
     'create_unified_config_manager', 'load_config_from_file', 'create_environment_config',
     'create_unified_validation_system', 'quick_validation',

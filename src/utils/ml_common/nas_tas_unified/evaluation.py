@@ -83,8 +83,8 @@ def compute_classification_metrics(
     - confusion_matrix, classification_report
     - roc_auc, log_loss (when y_prob provided)
     
-    For backward-compatibility, also includes:
-    - precision, recall, f1_score (mapped to weighted variants)
+    Modern naming convention:
+    - precision_weighted, recall_weighted, f1_weighted (preferred)
     """
     if not SKLEARN_AVAILABLE:
         return {}
@@ -110,10 +110,7 @@ def compute_classification_metrics(
             f1_score(y_true, y_pred, average="weighted", zero_division=0)
         )
 
-        # Back-compat keys used in older modules
-        metrics["precision"] = metrics["precision_weighted"]
-        metrics["recall"] = metrics["recall_weighted"]
-        metrics["f1_score"] = metrics["f1_weighted"]
+        # Use modern naming convention only
     except Exception as e:
         logger.error(f"❌ Classification aggregate metrics failed: {e}")
         logger.warning("⚠️ Classification metrics failed - returning empty metrics")
@@ -277,17 +274,11 @@ class UnifiedEvaluator:
                 classification_metrics = compute_classification_metrics(y_true, y_pred, y_prob)
                 metrics.update(classification_metrics)
                 
-                # Ensure backward compatibility
-                if 'precision_weighted' in classification_metrics:
-                    metrics['precision'] = classification_metrics['precision_weighted']
-                if 'recall_weighted' in classification_metrics:
-                    metrics['recall'] = classification_metrics['recall_weighted']
-                if 'f1_weighted' in classification_metrics:
-                    metrics['f1_score'] = classification_metrics['f1_weighted']
+                # Use modern naming convention only
                     
             except Exception as e:
                 tprint_warning(f"Classification metrics calculation failed: {e}")
-                metrics = {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1_score': 0.0, 'roc_auc': 0.0}
+                metrics = {'accuracy': 0.0, 'precision_weighted': 0.0, 'recall_weighted': 0.0, 'f1_weighted': 0.0, 'roc_auc': 0.0}
         
         else:  # Regression
             try:

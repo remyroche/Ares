@@ -76,8 +76,12 @@ class TASIntegrationComponent:
             self.logger.info("✅ TAS components initialized successfully")
 
         except ImportError as e:
-            self.logger.warning(f"TAS components not available: {e}, using fallback")
-            self.tas_detector = None
+            tprint_error(f"TAS components not available: {e}")
+            tprint_debug(f"TAS components import error context: {locals()}")
+            tprint_error("CRITICAL: TAS components are required for TAS integration")
+            tprint_error("Cannot proceed without proper TAS components")
+            self.logger.error(f"TAS components not available: {e}")
+            raise ImportError(f"TAS components not available: {e}") from e
 
     def extract_features(self, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -119,8 +123,12 @@ class TASIntegrationComponent:
                 return self._extract_tas_features_fallback(market_data)
 
         except Exception as e:
-            self.logger.warning(f"TAS feature extraction failed: {e}, using fallback")
-            return self._extract_tas_features_fallback(market_data)
+            tprint_error(f"TAS feature extraction failed: {e}")
+            tprint_debug(f"TAS feature extraction error context: {locals()}")
+            tprint_error("CRITICAL: TAS feature extraction is required for TAS integration")
+            tprint_error("Cannot proceed without proper TAS feature extraction")
+            self.logger.error(f"TAS feature extraction failed: {e}")
+            raise ValueError(f"TAS feature extraction failed: {e}") from e
 
     def _extract_features_from_tas_results(self, tas_results: Dict[str, Any]) -> np.ndarray:
         """Extract features from TAS detector results."""
@@ -171,8 +179,12 @@ class TASIntegrationComponent:
             return features, metadata
 
         except Exception as e:
+            tprint_error(f"Fallback TAS feature extraction failed: {e}")
+            tprint_debug(f"Fallback TAS feature extraction error context: {locals()}")
+            tprint_error("CRITICAL: Fallback TAS feature extraction is required for TAS integration")
+            tprint_error("Cannot proceed without proper fallback TAS feature extraction")
             self.logger.error(f"Fallback TAS feature extraction failed: {e}")
-            # Return minimal features
+            raise ValueError(f"Fallback TAS feature extraction failed: {e}") from e
             basic_features = market_data['close'].values.reshape(-1, 1)
             return basic_features, {
                 'method': 'minimal',
@@ -302,8 +314,12 @@ class TASIntegrationComponent:
             return min(confidence, 1.0)
 
         except Exception as e:
-            self.logger.warning(f"Feature confidence calculation failed: {e}")
-            return 0.5
+            tprint_error(f"Feature confidence calculation failed: {e}")
+            tprint_debug(f"Feature confidence calculation error context: {locals()}")
+            tprint_error("CRITICAL: Feature confidence calculation is required for TAS integration")
+            tprint_error("Cannot proceed without proper feature confidence calculation")
+            self.logger.error(f"Feature confidence calculation failed: {e}")
+            raise ValueError(f"Feature confidence calculation failed: {e}") from e
 
     def _calculate_adaptive_weight(self, tas_results: Dict[str, Any]) -> float:
         """Calculate adaptive weight based on TAS performance."""
@@ -341,8 +357,12 @@ class TASIntegrationComponent:
             return max(min_weight, min(max_weight, adaptive_weight))
 
         except Exception as e:
-            self.logger.warning(f"Adaptive weight calculation failed: {e}")
-            return self.config.get('base_weight', 0.4)
+            tprint_error(f"Adaptive weight calculation failed: {e}")
+            tprint_debug(f"Adaptive weight calculation error context: {locals()}")
+            tprint_error("CRITICAL: Adaptive weight calculation is required for TAS integration")
+            tprint_error("Cannot proceed without proper adaptive weight calculation")
+            self.logger.error(f"Adaptive weight calculation failed: {e}")
+            raise ValueError(f"Adaptive weight calculation failed: {e}") from e
 
     def _extract_performance_metrics(self, tas_results: Dict[str, Any]) -> Dict[str, float]:
         """Extract performance metrics from TAS results."""
@@ -359,8 +379,12 @@ class TASIntegrationComponent:
             }
 
         except Exception as e:
-            self.logger.warning(f"Performance metrics extraction failed: {e}")
-            return {}
+            tprint_error(f"Performance metrics extraction failed: {e}")
+            tprint_debug(f"Performance metrics extraction error context: {locals()}")
+            tprint_error("CRITICAL: Performance metrics extraction is required for TAS integration")
+            tprint_error("Cannot proceed without proper performance metrics extraction")
+            self.logger.error(f"Performance metrics extraction failed: {e}")
+            raise ValueError(f"Performance metrics extraction failed: {e}") from e
 
     def _calculate_feature_quality(self, features: np.ndarray) -> Dict[str, float]:
         """Calculate feature quality metrics."""
@@ -399,8 +423,12 @@ class TASIntegrationComponent:
             return quality
 
         except Exception as e:
-            self.logger.warning(f"Feature quality calculation failed: {e}")
-            return {'quality_score': 0.5}
+            tprint_error(f"Feature quality calculation failed: {e}")
+            tprint_debug(f"Feature quality calculation error context: {locals()}")
+            tprint_error("CRITICAL: Feature quality calculation is required for TAS integration")
+            tprint_error("Cannot proceed without proper feature quality calculation")
+            self.logger.error(f"Feature quality calculation failed: {e}")
+            raise ValueError(f"Feature quality calculation failed: {e}") from e
 
 
 def create_tas_integration(config: Dict[str, Any]) -> TASIntegrationComponent:

@@ -193,7 +193,12 @@ class NASRegimeAnalyzer:
             else:
                 tprint_warning("M1 optimization setup failed, using fallback")
         except Exception as e:
+            tprint_error(f"M1 optimization setup error: {e}")
+            tprint_debug(f"M1 optimization setup error context: {locals()}")
+            tprint_error("CRITICAL: M1 optimization setup is required for NAS regime analysis")
+            tprint_error("Cannot proceed without proper M1 optimization setup")
             tprint_warning(f"M1 optimization setup error: {e}")
+            raise ValueError(f"M1 optimization setup error: {e}") from e
     
     def _validate_input_data(self, data: pd.DataFrame) -> bool:
         """
@@ -630,7 +635,11 @@ class NASRegimeAnalyzer:
             
         except Exception as e:
             tprint_error(f"Error saving results: {e}")
-            return False
+            tprint_debug(f"Error saving results context: {locals()}")
+            tprint_error("CRITICAL: Saving results is required for NAS regime analysis")
+            tprint_error("Cannot proceed without proper result saving")
+            tprint_error(f"Error saving results: {e}")
+            raise ValueError(f"Error saving results: {e}") from e
     
     def load_results(self, filepath: str) -> Optional[RegimeResult]:
         """
@@ -670,7 +679,11 @@ class NASRegimeAnalyzer:
             
         except Exception as e:
             tprint_error(f"Error loading results: {e}")
-            return None
+            tprint_debug(f"Error loading results context: {locals()}")
+            tprint_error("CRITICAL: Loading results is required for NAS regime analysis")
+            tprint_error("Cannot proceed without proper result loading")
+            tprint_error(f"Error loading results: {e}")
+            raise ValueError(f"Error loading results: {e}") from e
     
     def get_regime_summary(self, result: RegimeResult) -> Dict[str, Any]:
         """

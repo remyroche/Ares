@@ -11,7 +11,7 @@ Comprehensive backtesting framework for tree architecture search including:
 - Monte Carlo simulation
 """
 
-from .backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
+from src.utils.nas_tas.backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult
 from src.utils.nas_tas.walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig
 from src.utils.nas_tas.performance_attribution import PerformanceAttributor, AttributionConfig
 from .risk_analysis import RiskAnalyzer, RiskConfig

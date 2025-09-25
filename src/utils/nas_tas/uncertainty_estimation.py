@@ -14,7 +14,7 @@ Key Features:
 - Comprehensive logging and error handling
 
 Usage:
-    from uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, UncertaintyConfig
+    from src.utils.nas_tas.uncertainty_estimation import TreeUncertaintyEstimator, UncertaintyConfig
     
     config = UncertaintyConfig(method='bootstrap', n_samples=100)
     estimator = TreeUncertaintyEstimator(config)

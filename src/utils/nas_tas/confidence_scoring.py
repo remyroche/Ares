@@ -14,7 +14,7 @@ Key Features:
 - Comprehensive logging and error handling
 
 Usage:
-    from uncertainty.confidence_scoring import TreeConfidenceScorer, ConfidenceConfig
+    from src.utils.nas_tas.confidence_scoring import TreeConfidenceScorer, ConfidenceConfig
     
     config = ConfidenceConfig(method='calibration', confidence_threshold=0.8)
     scorer = TreeConfidenceScorer(config)
@@ -663,97 +663,6 @@ class TreeConfidenceScorer:
         except Exception as e:
             tprint_error(f"❌ Failed to load confidence scorer: {e}")
             return False
-    
-    def get_high_confidence_predictions(self, X: np.ndarray, predictions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Get predictions with high confidence."""
-        confidence = self.predict_confidence(X, predictions)
-        high_conf_mask = confidence >= self.config.confidence_threshold
-        
-        return X[high_conf_mask], predictions[high_conf_mask]
-    
-    def get_confidence_statistics(self, X: np.ndarray, predictions: np.ndarray) -> Dict[str, float]:
-        """Get confidence statistics."""
-        confidence = self.predict_confidence(X, predictions)
-        
-        return {
-            'mean_confidence': np.mean(confidence),
-            'std_confidence': np.std(confidence),
-            'min_confidence': np.min(confidence),
-            'max_confidence': np.max(confidence),
-            'high_confidence_ratio': np.mean(confidence >= self.config.confidence_threshold)
-        }
-    
-    def _predict_calibration_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced calibration-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced calibration method
-        return self._predict_calibration_confidence(X, predictions)
-    
-    def _predict_uncertainty_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced uncertainty-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced uncertainty method
-        return self._predict_uncertainty_confidence(X, predictions)
-    
-    def _predict_ensemble_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced ensemble-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced ensemble method
-        return self._predict_ensemble_confidence(X, predictions)
-    
-    def _create_simple_confidence_model(self):
-        """Create a simple confidence model."""
-        return {'type': 'simple', 'threshold': self.config.confidence_threshold}
-    
-    def _create_ensemble_confidence_model(self):
-        """Create an ensemble confidence model."""
-        return {'type': 'ensemble', 'threshold': self.config.confidence_threshold}
-    
-    def _predict_uncertainty_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced uncertainty-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced uncertainty method
-        return self._predict_uncertainty_confidence(X, predictions)
-    
-    def _predict_ensemble_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced ensemble-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced ensemble method
-        return self._predict_ensemble_confidence(X, predictions)
-    
-    def _create_simple_confidence_model(self):
-        """Create a simple confidence model."""
-        return {'type': 'simple', 'threshold': self.config.confidence_threshold}
-    
-    def _create_ensemble_confidence_model(self):
-        """Create an ensemble confidence model."""
-        return {'type': 'ensemble', 'threshold': self.config.confidence_threshold}
-    
-    def _predict_ensemble_confidence(self, X: np.ndarray, predictions: np.ndarray) -> np.ndarray:
-        """Enhanced ensemble-based confidence prediction."""
-        if self.confidence_model is None:
-            return np.ones(len(X)) * 0.5
-        
-        # Use the enhanced ensemble method
-        return self._predict_ensemble_confidence(X, predictions)
-    
-    def _create_simple_confidence_model(self):
-        """Create a simple confidence model."""
-        return {'type': 'simple', 'threshold': self.config.confidence_threshold}
-    
-    def _create_ensemble_confidence_model(self):
-        """Create an ensemble confidence model."""
-        return {'type': 'ensemble', 'threshold': self.config.confidence_threshold}
     
     def get_high_confidence_predictions(self, X: np.ndarray, predictions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Get predictions with high confidence."""

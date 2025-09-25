@@ -183,7 +183,8 @@ class TreeArchitectureSearchEngine:
             # Real-time adaptation
             if self.config.enable_real_time_adaptation:
                 self.real_time_adapter = TreeRealTimeAdapter(self.config.base_config)
-                self.performance_monitor = TreePerformanceMonitor(self.config.base_config)
+                from src.utils.nas_tas import UnifiedPerformanceTracker
+                self.performance_monitor = UnifiedPerformanceTracker(self.config.base_config)
                 self.logger.info("✅ Real-time adaptation initialized")
             
             # Search strategies

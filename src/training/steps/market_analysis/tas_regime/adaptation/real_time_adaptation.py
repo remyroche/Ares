@@ -872,9 +872,9 @@ class TreeRealTimeAdapter:
 
 
 # Convenience functions
-def create_performance_monitor(config: TASConfig) -> TreePerformanceMonitor:
+def create_performance_monitor(config: TASConfig) -> UnifiedPerformanceTracker:
     """Create a performance monitor with default configuration."""
-    return TreePerformanceMonitor(config)
+    return UnifiedPerformanceTracker(config)
 
 
 def create_real_time_adapter(config: TASConfig) -> TreeRealTimeAdapter:

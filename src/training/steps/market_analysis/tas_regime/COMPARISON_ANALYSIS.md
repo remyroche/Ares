@@ -161,7 +161,7 @@ report = regime_reporter.generate_report(regime_analysis)
 ```python
 # Real-time adaptation
 from tas.adaptation import (
-    TreeRealTimeAdapter, TreePerformanceMonitor, TreeDynamicOptimizer
+    TreeRealTimeAdapter, UnifiedPerformanceTracker, TreeDynamicOptimizer
 )
 
 # Real-time adaptation
@@ -171,7 +171,7 @@ adapted_architecture = real_time_adapter.adapt_to_new_data(
 )
 
 # Performance monitoring
-performance_monitor = TreePerformanceMonitor(config)
+performance_monitor = UnifiedPerformanceTracker(config)
 performance_monitor.track_architecture_performance(architecture, metrics)
 
 # Dynamic optimization

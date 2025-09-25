@@ -299,9 +299,9 @@ visualizer.plot_regime_analysis(result.regime_analysis)
 ### Performance Analytics
 
 ```python
-from src.utils.ml_common.optimization.tas.adaptation import TreePerformanceTracker
+from src.utils.nas_tas import UnifiedPerformanceTracker
 
-tracker = TreePerformanceTracker()
+tracker = UnifiedPerformanceTracker()
 
 # Track performance metrics
 tracker.track_architecture_performance(architecture, performance_metrics)

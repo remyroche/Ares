@@ -142,6 +142,7 @@ def example_3_feature_generation():
     awareness_gen = SituationalAwarenessGenerator()
     closest_02_gen = ClosestPriceLevelGenerator(0.2, 'both')
     closest_04_gen = ClosestPriceLevelGenerator(0.4, 'both')
+    closest_08_gen = ClosestPriceLevelGenerator(0.8, 'both')
 
     # Generate situational awareness features
     logger.info("Generating situational awareness features...")
@@ -155,6 +156,10 @@ def example_3_feature_generation():
     )
 
     closest_04_features = closest_04_gen._generate_feature(
+        df, symbol='BTCUSDT', timeframe='1h'
+    )
+
+    closest_08_features = closest_08_gen._generate_feature(
         df, symbol='BTCUSDT', timeframe='1h'
     )
 
@@ -180,6 +185,13 @@ def example_3_feature_generation():
                 latest_value = feature_series.dropna().iloc[-1]
                 print(f"  • {feature_name}: {latest_value}")
 
+    if closest_08_features:
+        logger.info("✅ 0.8% Level Features:")
+        for feature_name, feature_series in closest_08_features.items():
+            if feature_series is not None and len(feature_series.dropna()) > 0:
+                latest_value = feature_series.dropna().iloc[-1]
+                print(f"  • {feature_name}: {latest_value}")
+
 def example_4_trading_context():
     """Example 4: Trading context and decision support."""
     logger.info("\n" + "="*70)
@@ -200,18 +212,23 @@ def example_4_trading_context():
 🎯 RISK ASSESSMENT:")
     price_range_02 = awareness['price_ranges']['0.2%']
     price_range_04 = awareness['price_ranges']['0.4%']
+    price_range_08 = awareness['price_ranges']['0.8%']
 
     # Check for immediate levels
     levels_within_02pct = len(awareness['levels_in_ranges']['within_0.2%'])
     levels_within_04pct = len(awareness['levels_in_ranges']['within_0.4%'])
+    levels_within_08pct = len(awareness['levels_in_ranges']['within_0.8%'])
 
     print(f"  • Levels within 0.2% (±${price_range_02",.2f"}): {levels_within_02pct} levels")
     print(f"  • Levels within 0.4% (±${price_range_04",.2f"}): {levels_within_04pct} levels")
+    print(f"  • Levels within 0.8% (±${price_range_08",.2f"}): {levels_within_08pct} levels")
 
     if levels_within_02pct > 0:
         print("  ⚠️ HIGH RISK: Multiple levels very close to current price")
     elif levels_within_04pct > 2:
         print("  ⚡ MODERATE RISK: Several levels within striking distance")
+    elif levels_within_08pct > 5:
+        print("  📊 ELEVATED RISK: Multiple levels within 0.8% range")
     else:
         print("  ✅ LOW RISK: Clear space around current price")
 
@@ -222,7 +239,7 @@ def example_4_trading_context():
     # Nearest resistance (above)
     nearest_resistance = None
     nearest_resistance_dist = float('inf')
-    for pct in [0.2, 0.4, 1.0]:
+    for pct in [0.2, 0.4, 0.8, 1.0]:
         if pct in awareness['distances']['above']:
             dist = awareness['distances']['above'][pct]['distance_pct']
             if dist < nearest_resistance_dist:
@@ -232,7 +249,7 @@ def example_4_trading_context():
     # Nearest support (below)
     nearest_support = None
     nearest_support_dist = float('inf')
-    for pct in [0.2, 0.4, 1.0]:
+    for pct in [0.2, 0.4, 0.8, 1.0]:
         if pct in awareness['distances']['below']:
             dist = awareness['distances']['below'][pct]['distance_pct']
             if dist < nearest_support_dist:
@@ -252,16 +269,42 @@ def example_4_trading_context():
 💡 TRADING RECOMMENDATIONS:")
 
     if nearest_resistance and nearest_resistance_dist < 0.1:  # Very close resistance
-        print("  🎯 SCALPING OPPORTUNITY: Resistance very close above")
-        print("  💰 Consider: Quick long position targeting resistance")
+        crossings = nearest_resistance['historical_crossings']
+        bounces = nearest_resistance['historical_bounces']
+        print(f"  🎯 SCALPING OPPORTUNITY: Resistance very close above (${nearest_resistance['price']",.2f"})")
+        print(f"    ├─ Historical Activity: {crossings} crossings, {bounces} bounces")
+        print("    💰 Consider: Quick long position targeting resistance")
 
     if nearest_support and nearest_support_dist < 0.1:  # Very close support
-        print("  🛡️ PROTECTION: Strong support very close below")
-        print("  📊 Consider: Tight stop loss above support level")
+        crossings = nearest_support['historical_crossings']
+        bounces = nearest_support['historical_bounces']
+        print(f"  🛡️ PROTECTION: Strong support very close below (${nearest_support['price']",.2f"})")
+        print(f"    ├─ Historical Activity: {crossings} crossings, {bounces} bounces")
+        print("    📊 Consider: Tight stop loss above support level")
 
-    if levels_within_02pct == 0 and levels_within_04pct <= 2:
+    if levels_within_02pct == 0 and levels_within_04pct <= 2 and levels_within_08pct <= 5:
         print("  🚀 MOMENTUM PLAY: Clear space for price movement")
-        print("  🎯 Consider: Momentum trading with wider targets")
+        print("    🎯 Consider: Momentum trading with wider targets")
+        print("    📈 Low resistance in near-term path")
+
+    # Check for 0.8% level opportunities
+    if 0.8 in awareness['distances']['above']:
+        level_08_above = awareness['distances']['above'][0.8]
+        if level_08_above['distance_pct'] < 0.5:  # Within reasonable range
+            crossings = level_08_above['historical_crossings']
+            bounces = level_08_above['historical_bounces']
+            print(f"  📊 MEDIUM-TERM TARGET: 0.8% resistance at ${level_08_above['price']",.2f"}")
+            print(f"    ├─ Distance: {level_08_above['distance_pct']"+.2f"}%")
+            print(f"    └─ Activity: {crossings} crossings, {bounces} bounces")
+
+    if 0.8 in awareness['distances']['below']:
+        level_08_below = awareness['distances']['below'][0.8]
+        if level_08_below['distance_pct'] < 0.5:  # Within reasonable range
+            crossings = level_08_below['historical_crossings']
+            bounces = level_08_below['historical_bounces']
+            print(f"  📊 MEDIUM-TERM SUPPORT: 0.8% level at ${level_08_below['price']",.2f"}")
+            print(f"    ├─ Distance: {level_08_below['distance_pct']"+.2f"}%")
+            print(f"    └─ Activity: {crossings} crossings, {bounces} bounces")
 
     # Position sizing guidance
     print("

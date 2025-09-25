@@ -124,6 +124,41 @@ bounce_gen = HistoricalPriceLevelBounceGenerator(level_pct=0.2, window=100)
 volume_gen = HistoricalVolumeAtPriceLevelGenerator(level_pct=0.2, window=100)
 ```
 
+## 📊 Enhanced Situational Awareness Features
+
+### **Immediate Access Features (Always Available)**
+The price level bank now provides these enhanced situational awareness features by default:
+
+- ✅ **Closest 0.2% level above** - Price, percentage distance, crossings, bounces, volume
+- ✅ **Closest 0.2% level below** - Price, percentage distance, crossings, bounces, volume
+- ✅ **Closest 0.4% level above** - Price, percentage distance, crossings, bounces, volume
+- ✅ **Closest 0.4% level below** - Price, percentage distance, crossings, bounces, volume
+- ✅ **Closest 0.8% level above** - Price, percentage distance, crossings, bounces, volume ✨ **NEW**
+- ✅ **Closest 0.8% level below** - Price, percentage distance, crossings, bounces, volume ✨ **NEW**
+- ✅ **Raw historical data** - Volume, bounces, crossings for each level ✨ **ENHANCED**
+- ✅ **Distance calculations** - Percentage only (no dollar distances) ✨ **UPDATED**
+
+### **Rich Historical Context**
+Each situational awareness query now includes:
+```python
+# Example response structure
+{
+    'current_price': 50000,
+    'distances': {
+        'above': {
+            0.2: {
+                'price': 50100.0,
+                'distance_pct': 0.2,
+                'historical_crossings': 45,
+                'historical_bounces': 23,
+                'historical_volume': 125000,
+                'significance_level': 0.85
+            }
+        }
+    }
+}
+```
+
 ## 🔧 Configuration
 
 ### Bank Configuration

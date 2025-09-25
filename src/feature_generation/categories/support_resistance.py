@@ -1047,45 +1047,120 @@ class SituationalAwarenessGenerator(FeatureGenerator):
         # Convert to feature series
         features = {}
 
-        # Distance to closest 0.2% levels
+        # Distance to closest 0.2% levels (percentage only + raw historical data)
         if 0.2 in awareness['distances']['above']:
-            features['closest_0.2pct_above'] = pd.Series(
-                [awareness['distances']['above'][0.2]['distance']] * len(data),
+            level_data = awareness['distances']['above'][0.2]
+            features['closest_0.2pct_above_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
                 index=data.index
             )
-            features['closest_0.2pct_above_pct'] = pd.Series(
-                [awareness['distances']['above'][0.2]['distance_pct']] * len(data),
+            features['closest_0.2pct_above_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_above_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_above_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
                 index=data.index
             )
 
         if 0.2 in awareness['distances']['below']:
-            features['closest_0.2pct_below'] = pd.Series(
-                [awareness['distances']['below'][0.2]['distance']] * len(data),
+            level_data = awareness['distances']['below'][0.2]
+            features['closest_0.2pct_below_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
                 index=data.index
             )
-            features['closest_0.2pct_below_pct'] = pd.Series(
-                [awareness['distances']['below'][0.2]['distance_pct']] * len(data),
+            features['closest_0.2pct_below_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_below_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.2pct_below_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
                 index=data.index
             )
 
-        # Distance to closest 0.4% levels
+        # Distance to closest 0.4% levels (percentage only + raw historical data)
         if 0.4 in awareness['distances']['above']:
-            features['closest_0.4pct_above'] = pd.Series(
-                [awareness['distances']['above'][0.4]['distance']] * len(data),
+            level_data = awareness['distances']['above'][0.4]
+            features['closest_0.4pct_above_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
                 index=data.index
             )
-            features['closest_0.4pct_above_pct'] = pd.Series(
-                [awareness['distances']['above'][0.4]['distance_pct']] * len(data),
+            features['closest_0.4pct_above_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_above_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_above_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
                 index=data.index
             )
 
         if 0.4 in awareness['distances']['below']:
-            features['closest_0.4pct_below'] = pd.Series(
-                [awareness['distances']['below'][0.4]['distance']] * len(data),
+            level_data = awareness['distances']['below'][0.4]
+            features['closest_0.4pct_below_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
                 index=data.index
             )
-            features['closest_0.4pct_below_pct'] = pd.Series(
-                [awareness['distances']['below'][0.4]['distance_pct']] * len(data),
+            features['closest_0.4pct_below_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_below_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.4pct_below_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
+                index=data.index
+            )
+
+        # Distance to closest 0.8% levels (percentage only + raw historical data)
+        if 0.8 in awareness['distances']['above']:
+            level_data = awareness['distances']['above'][0.8]
+            features['closest_0.8pct_above_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_above_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_above_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_above_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
+                index=data.index
+            )
+
+        if 0.8 in awareness['distances']['below']:
+            level_data = awareness['distances']['below'][0.8]
+            features['closest_0.8pct_below_pct'] = pd.Series(
+                [level_data['distance_pct']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_below_crossings'] = pd.Series(
+                [level_data['historical_crossings']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_below_bounces'] = pd.Series(
+                [level_data['historical_bounces']] * len(data),
+                index=data.index
+            )
+            features['closest_0.8pct_below_volume'] = pd.Series(
+                [level_data['historical_volume']] * len(data),
                 index=data.index
             )
 
@@ -1110,6 +1185,10 @@ class SituationalAwarenessGenerator(FeatureGenerator):
         )
         features['price_range_0.4pct'] = pd.Series(
             [awareness['price_ranges']['0.4%']] * len(data),
+            index=data.index
+        )
+        features['price_range_0.8pct'] = pd.Series(
+            [awareness['price_ranges']['0.8%']] * len(data),
             index=data.index
         )
         features['price_range_1.0pct'] = pd.Series(
@@ -1265,6 +1344,7 @@ def create_default_support_resistance_generators() -> List[FeatureGenerator]:
         SituationalAwarenessGenerator(),  # Provides comprehensive situational awareness
         ClosestPriceLevelGenerator(0.2, 'both'),  # Closest 0.2% levels above/below
         ClosestPriceLevelGenerator(0.4, 'both'),  # Closest 0.4% levels above/below
+        ClosestPriceLevelGenerator(0.8, 'both'),  # Closest 0.8% levels above/below
         ClosestPriceLevelGenerator(1.0, 'above'), # Closest 1.0% level above
         ClosestPriceLevelGenerator(1.0, 'below'), # Closest 1.0% level below
     ])

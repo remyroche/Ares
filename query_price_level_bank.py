@@ -287,18 +287,22 @@ class PriceLevelBankQuery:
             else:
                 print(f"  No {level_pct".1f"}% levels found {direction}")
 
-        # Display distances
+        # Display distances with raw historical data
         print("
-DISTANCES TO NEAREST LEVELS:")
-        print("-" * 40)
+CLOSEST LEVELS WITH HISTORICAL DATA:")
+        print("-" * 50)
 
         distances = awareness['distances']
-        for pct in [0.2, 0.4, 1.0, 2.0]:
+        for pct in [0.2, 0.4, 0.8, 1.0, 2.0]:
             for direction in ['above', 'below']:
                 if pct in distances[direction]:
                     dist = distances[direction][pct]
                     print(f"  {pct".1f"}% {direction}: ${dist['price']",.2f"} "
                           f"({dist['distance_pct']"+.2f"}%)")
+                    print(f"    ├─ Crossings: {dist['historical_crossings']","} "
+                          f"Bounces: {dist['historical_bounces']","} "
+                          f"Volume: {dist['historical_volume']",.0f"}")
+                    print(f"    └─ Significance: {dist['significance_level']".2f"}")
 
         # Display nearby levels summary
         print("
@@ -307,18 +311,31 @@ NEARBY LEVELS SUMMARY:")
 
         levels_in_ranges = awareness['levels_in_ranges']
         for range_name, levels in levels_in_ranges.items():
-            print(f"  {range_name}: {len(levels)} levels")
+            if levels:
+                avg_significance = sum(l.significance_level for l in levels) / len(levels)
+                total_crossings = sum(l.historical_crossings for l in levels)
+                total_bounces = sum(l.historical_bounces for l in levels)
+                total_volume = sum(l.historical_volume for l in levels)
+                print(f"  {range_name}: {len(levels)} levels")
+                print(f"    ├─ Avg Significance: {avg_significance".2f"}")
+                print(f"    ├─ Total Crossings: {total_crossings","} "
+                      f"Bounces: {total_bounces","} "
+                      f"Volume: {total_volume",.0f"}")
+                print(f"    └─ Activity Score: {(total_crossings + total_bounces) / 100",.1f"}")
 
         # Display significant nearby levels
         print("
 MOST SIGNIFICANT NEARBY LEVELS:")
-        print("-" * 35)
+        print("-" * 40)
 
         for level in awareness['significant_nearby'][:5]:  # Top 5
             distance_pct = abs(level.price - current_price) / current_price * 100
             direction = "above" if level.price > current_price else "below"
-            print(f"  ${level.price",.2f"} ({distance_pct"+.2f"}% {direction}) - "
-                  f"Significance: {level.significance_level".2f"}")
+            print(f"  ${level.price",.2f"} ({distance_pct"+.2f"}% {direction})")
+            print(f"    ├─ Crossings: {level.historical_crossings","} "
+                  f"Bounces: {level.historical_bounces","} "
+                  f"Volume: {level.historical_volume",.0f"}")
+            print(f"    └─ Significance: {level.significance_level".2f"}")
 
         print("="*60 + "\n")
 

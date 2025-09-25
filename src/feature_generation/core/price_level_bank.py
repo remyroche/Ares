@@ -384,13 +384,13 @@ class PriceLevelBank:
             symbol: Trading symbol
             timeframe: Timeframe string
             current_price: Current market price
-            level_pcts: List of percentages to find (e.g., [0.2, 0.4, 1.0])
+            level_pcts: List of percentages to find (e.g., [0.2, 0.4, 0.8, 1.0])
 
         Returns:
             Dictionary with 'above' and 'below' keys containing lists of levels
         """
         if level_pcts is None:
-            level_pcts = [0.2, 0.4, 1.0]  # Default percentages
+            level_pcts = [0.2, 0.4, 0.8, 1.0]  # Default percentages including 0.8%
 
         result = {'above': [], 'below': []}
 
@@ -444,8 +444,8 @@ class PriceLevelBank:
         Returns:
             Dictionary with situational awareness data
         """
-        # Get closest levels by percentage
-        default_pcts = [0.2, 0.4, 1.0, 2.0]
+        # Get closest levels by percentage (including 0.8%)
+        default_pcts = [0.2, 0.4, 0.8, 1.0, 2.0]
         closest_levels = self.get_closest_levels_by_percentage(
             symbol, timeframe, current_price, default_pcts
         )
@@ -460,6 +460,7 @@ class PriceLevelBank:
         # Calculate price ranges
         price_range_02 = current_price * 0.002  # 0.2% range
         price_range_04 = current_price * 0.004  # 0.4% range
+        price_range_08 = current_price * 0.008  # 0.8% range
         price_range_10 = current_price * 0.01   # 1.0% range
 
         # Find levels within specific percentage ranges
@@ -468,11 +469,13 @@ class PriceLevelBank:
                           if abs(l.price - current_price) <= price_range_02],
             'within_0.4%': [l for l in all_levels
                           if abs(l.price - current_price) <= price_range_04],
+            'within_0.8%': [l for l in all_levels
+                          if abs(l.price - current_price) <= price_range_08],
             'within_1.0%': [l for l in all_levels
                           if abs(l.price - current_price) <= price_range_10]
         }
 
-        # Calculate distances to nearest levels
+        # Calculate percentage-only distances to nearest levels
         distances = {'above': {}, 'below': {}}
         for pct in default_pcts:
             above_levels = [l for l in closest_levels['above'] if abs(l.level_pct - pct) < 0.01]
@@ -482,16 +485,22 @@ class PriceLevelBank:
                 closest_above = min(above_levels, key=lambda x: x.price - current_price)
                 distances['above'][pct] = {
                     'price': closest_above.price,
-                    'distance': closest_above.price - current_price,
-                    'distance_pct': (closest_above.price - current_price) / current_price * 100
+                    'distance_pct': (closest_above.price - current_price) / current_price * 100,
+                    'historical_crossings': closest_above.historical_crossings,
+                    'historical_bounces': closest_above.historical_bounces,
+                    'historical_volume': closest_above.historical_volume,
+                    'significance_level': closest_above.significance_level
                 }
 
             if below_levels:
                 closest_below = min(below_levels, key=lambda x: current_price - x.price)
                 distances['below'][pct] = {
                     'price': closest_below.price,
-                    'distance': current_price - closest_below.price,
-                    'distance_pct': (current_price - closest_below.price) / current_price * 100
+                    'distance_pct': (current_price - closest_below.price) / current_price * 100,
+                    'historical_crossings': closest_below.historical_crossings,
+                    'historical_bounces': closest_below.historical_bounces,
+                    'historical_volume': closest_below.historical_volume,
+                    'significance_level': closest_below.significance_level
                 }
 
         return {
@@ -503,6 +512,7 @@ class PriceLevelBank:
             'price_ranges': {
                 '0.2%': price_range_02,
                 '0.4%': price_range_04,
+                '0.8%': price_range_08,
                 '1.0%': price_range_10
             }
         }

@@ -27,6 +27,13 @@ from datetime import datetime
 from pathlib import Path
 import optuna
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 from ....utils.compat import handle_specific_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -187,14 +194,37 @@ class RegimeSpecificTPSLOptimizer:
         try:
             self.logger.info(f'🎯 Optimizing TP/SL for regime: {regime}')
             base_params = self.regime_parameters.get(regime, self.regime_parameters['SIDEWAYS_RANGE'])
-            study = optuna.create_study(direction='maximize', study_name = f'tpsl_optimization_{regime}')
-
-            def objective(trial: Any) -> None:
-                return self._evaluate_tpsl_parameters(trial, regime, historical_data, base_params)
-            study.optimize(objective, n_trials = self.n_trials, show_progress_bar = False)
-            best_params = study.best_params
-            best_value = study.best_value
-            optimized_params = {**base_params, **best_params, 'optimization_score': best_value, 'optimization_trials': self.n_trials, 'optimization_time': datetime.now().isoformat()}
+            
+            # Create search space for TP/SL optimization
+            search_space = self._create_tpsl_search_space(base_params)
+            
+            # Define objective function for new optimizer
+            def objective_function(params: Dict[str, Any], **kwargs) -> float:
+                return self._evaluate_tpsl_parameters_from_dict(params, regime, historical_data, base_params)
+            
+            # Configure new Bayesian TPE optimizer
+            tpe_config = BayesianTPEConfig(
+                n_trials=self.n_trials,
+                enable_grid_search=True,
+                coarse_grid_points=3,
+                fine_grid_points=5,
+                backend='optuna',
+                enable_parallel=False,  # Sequential for TP/SL optimization
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                log_level='INFO'
+            )
+            
+            # Run optimization using new unified optimizer
+            optimizer = BayesianTPEOptimizer(tpe_config)
+            result = optimizer.optimize(objective_function, search_space)
+            
+            if not result.success:
+                raise RuntimeError(f"TP/SL optimization failed: {result.error_message}")
+            
+            best_params = result.best_params
+            best_value = result.best_score
+            optimized_params = {**base_params, **best_params, 'optimization_score': best_value, 'optimization_trials': result.n_trials, 'optimization_time': datetime.now().isoformat()}
             self.optimization_results[regime] = optimized_params
             await self._save_optimization_results()
             self.logger.info(f'✅ Optimized TP/SL for {regime}: {best_params}')

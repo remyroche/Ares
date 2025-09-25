@@ -25,6 +25,13 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     warnings.warn("Optuna not available. Install with: pip install optuna")
 
+# Import new Bayesian TPE optimizer
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    BayesianTPEConfig,
+    optimize_with_bayesian_tpe
+)
+
 try:
     from skopt import gp_minimize
     from skopt.space import Real, Integer, Categorical
@@ -200,15 +207,11 @@ class BayesianEntryTimingOptimizer:
                             hmm_regime_probs: Optional[np.ndarray] = None,
                             timestamps: Optional[np.ndarray] = None,
                             model_name: str = "model") -> EntryTimingResult:
-        """Optimize using Optuna."""
+        """Optimize using new unified Bayesian TPE optimizer."""
         start_time = datetime.now()
         
-        # Create study
-        study = optuna.create_study(
-            direction='maximize',
-            sampler=TPESampler(seed=self.config.random_state),
-            pruner=MedianPruner()
-        )
+        # Create search space for entry timing optimization
+        search_space = self._create_entry_timing_search_space()
         
         # Define objective function
         def objective(trial):

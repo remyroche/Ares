@@ -9,16 +9,26 @@ Advanced optimization capabilities for tree architecture search including:
 - Real-time performance monitoring
 """
 
-# Import from existing enhanced hardware optimization
+# Import from consolidated hardware accelerator
 try:
-    from .enhanced_hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations, TreeM1Optimizer
-    ENHANCED_HARDWARE_OPTIMIZATION_AVAILABLE = True
+    from src.utils.nas_tas.hardware_accelerator import (
+        TASHardwareAccelerator, NASHardwareAccelerator, CLVSAHardwareOptimizer,
+        HardwareAccelerationConfig, create_tas_hardware_accelerator,
+        create_nas_hardware_accelerator, create_cvlsa_hardware_optimizer
+    )
+    CONSOLIDATED_HARDWARE_ACCELERATION_AVAILABLE = True
+    
+    # Create aliases for backward compatibility
+    TreeHardwareOptimizer = TASHardwareAccelerator
+    TreeMatrixOperations = TASHardwareAccelerator  # Use TAS accelerator for matrix operations
+    TreeM1Optimizer = TASHardwareAccelerator  # Use TAS accelerator for M1 optimization
+    
 except ImportError as e:
-    ENHANCED_HARDWARE_OPTIMIZATION_AVAILABLE = False
+    CONSOLIDATED_HARDWARE_ACCELERATION_AVAILABLE = False
     # Create fallback implementations
     import logging
     logger = logging.getLogger(__name__)
-    logger.warning(f"Enhanced hardware optimization not available: {e}")
+    logger.warning(f"Consolidated hardware acceleration not available: {e}")
     
     class TreeHardwareOptimizer:
         """Fallback tree hardware optimizer."""
@@ -28,7 +38,7 @@ except ImportError as e:
         
         def optimize_tas_processing(self, *args, **kwargs):
             """Fallback TAS processing optimization method."""
-            return {'success': False, 'error': 'Enhanced hardware optimization not available'}
+            return {'success': False, 'error': 'Consolidated hardware acceleration not available'}
     
     class TreeMatrixOperations:
         """Fallback tree matrix operations."""

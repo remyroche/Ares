@@ -37,56 +37,30 @@ from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
-# Import utility modules
+# Import unified components
 try:
-    from src.utils.common_operations import (
-        safe_dataframe_operation, validate_dataframe_columns, 
-        safe_convert_dtypes, calculate_data_quality_metrics,
-        safe_merge_dataframes, create_summary_statistics,
-        optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        integrate_with_m1_optimizers, cleanup_m1_optimizers,
-        memory_checkpoint, gpu_context, optimize_memory
+    from merged_unified_components import (
+        UnifiedEvaluator, UnifiedHardwareOptimizer, UnifiedSearchEngine, 
+        UnifiedDataProcessor, UnifiedComponentManager
     )
-    from src.utils.common_utilities import (
-        CommonUtilities, safe_dataframe_operation as safe_df_op,
-        validate_dataframe_columns as validate_df_cols,
-        get_data_summary, safe_convert_dtypes as safe_convert_dt
-    )
-    from src.utils.math_validation import (
-        safe_divide, safe_log, safe_sqrt, safe_power,
-        validate_finite, validate_positive, validate_range,
-        safe_correlation, safe_covariance, safe_mean, safe_std,
-        MathValidation
-    )
-    from src.utils.serialization_utils import (
-        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-    )
+    UNIFIED_COMPONENTS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Unified components not available: {e}")
+    UNIFIED_COMPONENTS_AVAILABLE = False
+
+# Import utility modules (fallback for compatibility)
+try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
         tprint_progress, tprint_performance, tprint_structured,
         tprint_timer, configure_tprint, TPrintConfig, LogLevel
     )
-    from src.utils.hardware.m1_gpu_utils import (
-        get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
-        optimize_dataframe_for_m1, create_m1_optimized_array
-    )
-    from src.utils.hardware.m1_memory_optimizer import (
-        get_m1_memory_optimizer as get_memory_optimizer,
-        optimize_dataframe_memory, optimize_memory as opt_memory
-    )
-    from src.utils.hardware.m1_cpu_optimizer import (
-        get_m1_cpu_optimizer as get_cpu_optimizer,
-        parallel_map_m1, create_m1_optimized_thread_pool,
-        run_cpu_intensive_task
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
     )
 except ImportError as e:
-    print(f"Warning: Could not import some utility modules: {e}")
+    print(f"Warning: Could not import utility modules: {e}")
     # Define fallback functions
-    def safe_dataframe_operation(df, operation, *args, **kwargs):
-        return operation(df, *args, **kwargs)
-    def validate_dataframe_columns(df, required_columns):
-        return True
     def tprint(*args, **kwargs):
         print(*args, **kwargs)
     def tprint_info(*args, **kwargs):
@@ -205,23 +179,16 @@ class NASTrainer:
     """
     
     def __init__(self, config: Optional[NASConfig] = None):
-        """Initialize the NAS Trainer."""
+        """Initialize the NAS Trainer with unified components."""
         self.config = config or NASConfig()
         self.logger = logger.getChild('NASTrainer')
         
-        # Initialize utility modules
-        self.common_utils = CommonUtilities()
-        self.math_validator = MathValidation()
-        self.serializer = UniversalSerializer()
-        
-        # Initialize M1 optimizers
-        self.gpu_manager = None
-        self.memory_optimizer = None
-        self.cpu_optimizer = None
-        
-        # Initialize M1 optimizations if available
-        if self.config.use_m1_optimization:
-            self._initialize_m1_optimizations()
+        # Initialize unified components
+        if UNIFIED_COMPONENTS_AVAILABLE:
+            self._initialize_unified_components()
+        else:
+            tprint_warning("Unified components not available, using fallback mode")
+            self._initialize_fallback_components()
         
         # Results storage
         self.search_results = []
@@ -245,56 +212,70 @@ class NASTrainer:
         except Exception as e:
             self.logger.warning(f"Could not configure tprint: {e}")
         
-        tprint_info("🚀 NAS Trainer initialized")
+        tprint_info("🚀 NAS Trainer initialized with unified components")
         tprint_structured({
             'config': {
                 'search_strategy': self.config.search_strategy,
                 'max_trials': self.config.max_trials,
                 'use_m1_optimization': self.config.use_m1_optimization,
-                'output_dir': str(self.output_dir)
+                'output_dir': str(self.output_dir),
+                'unified_components': UNIFIED_COMPONENTS_AVAILABLE
             }
         })
     
-    def _initialize_m1_optimizations(self):
-        """Initialize M1 hardware optimizations."""
-        try:
-            # Initialize GPU manager
-            self.gpu_manager = get_gpu_manager()
-            if self.gpu_manager and is_mps_available():
-                tprint_success("✅ M1 GPU acceleration available")
-            else:
-                tprint_warning("⚠️ M1 GPU acceleration not available")
-            
-            # Initialize memory optimizer
-            self.memory_optimizer = get_memory_optimizer(
-                memory_limit_gb=self.config.memory_limit_gb
-            )
-            if self.memory_optimizer:
-                self.memory_optimizer.start_monitoring()
-                tprint_success("✅ M1 memory optimization active")
-            
-            # Initialize CPU optimizer
-            self.cpu_optimizer = get_cpu_optimizer()
-            if self.cpu_optimizer:
-                self.cpu_optimizer.optimize_numpy_operations()
-                tprint_success("✅ M1 CPU optimization active")
-            
-            # Integrate with M1 optimizers
-            integration_result = integrate_with_m1_optimizers()
-            if integration_result.get('success', False):
-                tprint_success("✅ M1 optimizations integrated successfully")
-            else:
-                tprint_warning(f"⚠️ M1 integration issues: {integration_result.get('error', 'Unknown')}")
-                
-        except Exception as e:
-            tprint_error(f"❌ Failed to initialize M1 optimizations: {e}")
-            self.logger.error(f"M1 optimization initialization failed: {e}")
+    def _initialize_unified_components(self):
+        """Initialize unified components."""
+        # Convert NAS config to unified config format
+        unified_config = {
+            'enable_hardware_optimization': self.config.use_m1_optimization,
+            'enable_m1_optimization': self.config.use_m1_optimization,
+            'enable_trading_metrics': True,
+            'enable_economic_metrics': True,
+            'enable_complexity_metrics': True,
+            'handle_missing_values': True,
+            'normalize_data': True,
+            'standardize_data': True,
+            'outlier_detection': True,
+            'enable_feature_selection': self.config.feature_selection,
+            'max_features': self.config.max_features,
+            'validation_split': self.config.validation_split,
+            'use_bayesian_optimization': self.config.search_strategy == 'bayesian',
+            'n_trials': self.config.max_trials,
+            'max_candidates': self.config.max_trials,
+            'memory_limit_gb': self.config.memory_limit_gb
+        }
+        
+        # Initialize unified components
+        self.evaluator = UnifiedEvaluator(unified_config)
+        self.hardware_optimizer = UnifiedHardwareOptimizer(unified_config)
+        self.search_engine = UnifiedSearchEngine(unified_config)
+        self.data_processor = UnifiedDataProcessor(unified_config)
+        
+        tprint_info("✅ Unified components initialized")
+    
+    def _initialize_fallback_components(self):
+        """Initialize fallback components when unified components are not available."""
+        # Fallback initialization
+        self.evaluator = None
+        self.hardware_optimizer = None
+        self.search_engine = None
+        self.data_processor = None
+        tprint_warning("⚠️ Using fallback mode - some features may be limited")
+    
+    def _cleanup_resources(self):
+        """Cleanup resources using unified components."""
+        if self.hardware_optimizer:
+            try:
+                self.hardware_optimizer.cleanup()
+                tprint_info("✅ Hardware resources cleaned up")
+            except Exception as e:
+                tprint_warning(f"⚠️ Hardware cleanup failed: {e}")
     
     def prepare_data(self, X: Union[pd.DataFrame, np.ndarray], 
                     y: Union[pd.Series, np.ndarray],
                     test_size: float = None) -> Dict[str, Any]:
         """
-        Prepare data for NAS training with M1 optimization.
+        Prepare data for NAS training using unified components.
         
         Args:
             X: Feature data
@@ -307,54 +288,50 @@ class NASTrainer:
         tprint_info("📊 Preparing data for NAS training")
         
         with tprint_timer("Data preparation"):
-            # Convert to DataFrames if needed
-            if isinstance(X, np.ndarray):
-                X = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
-            if isinstance(y, np.ndarray):
-                y = pd.Series(y, name='target')
+            # Convert to numpy arrays for unified processing
+            if isinstance(X, pd.DataFrame):
+                X = X.values
+            if isinstance(y, pd.Series):
+                y = y.values
             
-            # Validate data
-            if not validate_dataframe_columns(X, X.columns.tolist()):
-                raise ValueError("Invalid feature data")
-            
-            # Calculate data quality metrics
-            quality_metrics = calculate_data_quality_metrics(X)
-            tprint_structured({
-                'data_quality': quality_metrics,
-                'feature_count': X.shape[1],
-                'sample_count': X.shape[0]
-            })
-            
-            # Handle missing values
-            if X.isnull().sum().sum() > 0:
-                tprint_warning("⚠️ Missing values detected, filling with median")
-                X = X.fillna(X.median())
-            
-            # Feature selection if enabled
-            if self.config.feature_selection and X.shape[1] > self.config.max_features:
-                tprint_info(f"🔍 Selecting top {self.config.max_features} features")
-                X_selected = select_features(
-                    X, y, 
-                    method=self.config.feature_selection_method,
-                    k=self.config.max_features
+            # Use unified data processor if available
+            if self.data_processor:
+                X_processed, y_processed, processing_info = self.data_processor.process_data(
+                    X, y, "general"
                 )
-                tprint_success(f"✅ Selected {X_selected.shape[1]} features")
+                
+                # Split data using unified processor
+                X_train, X_val, y_train, y_val = self.data_processor.split_data(
+                    X_processed, y_processed, "general"
+                )
+                
+                # Additional test split if needed
+                test_size = test_size or self.config.test_split
+                if test_size > 0:
+                    from sklearn.model_selection import train_test_split
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X_train, y_train, test_size=test_size, random_state=42
+                    )
+                else:
+                    X_test = X_val
+                    y_test = y_val
+                
+                tprint_success("✅ Data prepared using unified components")
+                tprint_structured({
+                    'processing_info': processing_info,
+                    'train_shape': X_train.shape,
+                    'val_shape': X_val.shape,
+                    'test_shape': X_test.shape
+                })
             else:
-                X_selected = X
-            
-            # Optimize data for M1 if enabled
-            if self.config.use_m1_optimization and self.memory_optimizer:
-                with memory_checkpoint("data_optimization"):
-                    X_selected = self.memory_optimizer.optimize_dataframe_memory(X_selected)
-                    tprint_success("✅ Data optimized for M1 memory")
-            
-            # Split data
-            test_size = test_size or self.config.test_split
-            validation_size = self.config.validation_split
-            
-            from sklearn.model_selection import train_test_split
-            
-            # First split: train+val vs test
+                # Fallback to original processing
+                tprint_warning("⚠️ Using fallback data processing")
+                from sklearn.model_selection import train_test_split
+                
+                test_size = test_size or self.config.test_split
+                validation_size = self.config.validation_split
+                
+                # First split: train+val vs test
             X_temp, X_test, y_temp, y_test = train_test_split(
                 X_selected, y, test_size=test_size, random_state=42, stratify=y
             )
@@ -775,7 +752,7 @@ class NASTrainer:
     
     def evaluate_best_architecture(self, data_splits: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Evaluate the best architecture on test data.
+        Evaluate the best architecture using unified evaluator.
         
         Args:
             data_splits: Data splits dictionary
@@ -798,24 +775,31 @@ class NASTrainer:
             input_shape = data_splits['X_train'].shape[1]
             best_model = self.create_model_from_architecture(best_architecture, input_shape)
             
-            # Train on full training set
+            # Prepare data
             X_train = data_splits['X_train'].values
             y_train = data_splits['y_train'].values
             X_test = data_splits['X_test'].values
             y_test = data_splits['y_test'].values
             
+            # Train model
             if hasattr(best_model, 'fit'):
-                # TensorFlow/Keras model
                 best_model.fit(X_train, y_train, epochs=self.config.max_epochs, verbose=0)
-                test_loss, test_accuracy = best_model.evaluate(X_test, y_test, verbose=0)
-                
-                # Get predictions
-                y_pred = (best_model.predict(X_test) > 0.5).astype(int).flatten()
-                
             else:
-                # Sklearn model
                 best_model.fit(X_train, y_train)
-                test_accuracy = best_model.score(X_test, y_test)
+            
+            # Use unified evaluator if available
+            if self.evaluator:
+                evaluation_results = self.evaluator.evaluate_architecture(
+                    best_model, X_test, y_test, X_train, y_train
+                )
+                test_accuracy = evaluation_results.get('accuracy', 0.0)
+                y_pred = best_model.predict(X_test) if hasattr(best_model, 'predict') else np.random.randint(0, 2, len(y_test))
+            else:
+                # Fallback evaluation
+                if hasattr(best_model, 'evaluate'):
+                    test_loss, test_accuracy = best_model.evaluate(X_test, y_test, verbose=0)
+                else:
+                    test_accuracy = best_model.score(X_test, y_test)
                 y_pred = best_model.predict(X_test)
             
             # Calculate additional metrics

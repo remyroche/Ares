@@ -498,15 +498,49 @@ class WalkForwardAnalyzer:
         }
     
     def _calculate_drawdown_series(self) -> List[float]:
-        """Calculate drawdown series."""
-        if not self.equity_curve:
+        """Calculate drawdown series with comprehensive error handling."""
+        try:
+            if not self.equity_curve:
+                self.logger.warning("⚠️ No equity curve data available for drawdown calculation")
+                return []
+            
+            if len(self.equity_curve) < 2:
+                self.logger.warning("⚠️ Insufficient equity curve data for drawdown calculation")
+                return []
+            
+            # Validate equity curve data
+            equity_series = pd.Series(self.equity_curve)
+            
+            # Check for invalid values
+            if not equity_series.isna().sum() == 0:
+                self.logger.warning("⚠️ Equity curve contains NaN values, filling with forward fill")
+                equity_series = equity_series.fillna(method='ffill')
+            
+            if (equity_series <= 0).any():
+                self.logger.warning("⚠️ Equity curve contains non-positive values")
+                # Filter out non-positive values
+                equity_series = equity_series[equity_series > 0]
+                if len(equity_series) == 0:
+                    self.logger.error("❌ No valid equity curve data after filtering")
+                    return []
+            
+            # Calculate running maximum
+            running_max = equity_series.expanding().max()
+            
+            # Calculate drawdown with division by zero protection
+            drawdown_series = (equity_series - running_max) / running_max
+            
+            # Validate results
+            if not drawdown_series.isna().sum() == 0:
+                self.logger.warning("⚠️ Drawdown series contains NaN values")
+                drawdown_series = drawdown_series.fillna(0)
+            
+            self.logger.info(f"✅ Drawdown series calculated: {len(drawdown_series)} points")
+            return drawdown_series.tolist()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Drawdown series calculation failed: {e}")
             return []
-        
-        equity_series = pd.Series(self.equity_curve)
-        running_max = equity_series.expanding().max()
-        drawdown_series = (equity_series - running_max) / running_max
-        
-        return drawdown_series.tolist()
     
     def _save_results(self, result: WalkForwardResult):
         """Save walk-forward analysis results."""

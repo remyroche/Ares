@@ -15,6 +15,12 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import existing utilities from the codebase
 try:
     from src.utils.data.processing.data_processing import DataProcessor
@@ -408,7 +414,8 @@ class DataPreprocessor:
                 if cleaned_data[col].dtype == 'object':
                     try:
                         cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-                    except:
+                    except Exception as e:
+                        tprint_warning(f"Failed to convert column {col} to numeric: {e}. Skipping.")
                         pass
             metadata['steps_applied'].append('convert_data_types')
         

@@ -624,25 +624,74 @@ class RiskAnalyzer:
         }
     
     def _calculate_higher_moments(self, risk_data: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate higher moments and statistical tests."""
+        """Calculate higher moments and statistical tests with comprehensive validation."""
         returns_series = risk_data['returns_series']
         
-        # Basic moments
-        volatility = returns_series.std()
-        skewness = returns_series.skew()
-        kurtosis = returns_series.kurtosis()
-        
-        # Jarque-Bera test
-        from scipy.stats import jarque_bera
-        jb_stat, jb_pvalue = jarque_bera(returns_series)
-        
-        return {
-            'volatility': volatility,
-            'skewness': skewness,
-            'kurtosis': kurtosis,
-            'jarque_bera_stat': jb_stat,
-            'jarque_bera_pvalue': jb_pvalue
-        }
+        try:
+            # Validate data using math utilities
+            if self.math_validator:
+                validated_returns = self.math_validator.validate_finite(returns_series)
+                if validated_returns is None:
+                    tprint_warning("⚠️ Invalid returns data for higher moments calculation")
+                    validated_returns = returns_series
+            else:
+                validated_returns = returns_series
+            
+            # Basic moments with error handling
+            volatility = validated_returns.std()
+            skewness = validated_returns.skew()
+            kurtosis = validated_returns.kurtosis()
+            
+            # Validate moments
+            if not np.isfinite(volatility):
+                tprint_warning("⚠️ Invalid volatility calculated, using fallback")
+                volatility = 0.0
+            
+            if not np.isfinite(skewness):
+                tprint_warning("⚠️ Invalid skewness calculated, using fallback")
+                skewness = 0.0
+                
+            if not np.isfinite(kurtosis):
+                tprint_warning("⚠️ Invalid kurtosis calculated, using fallback")
+                kurtosis = 0.0
+            
+            # Jarque-Bera test with error handling
+            try:
+                from scipy.stats import jarque_bera
+                jb_stat, jb_pvalue = jarque_bera(validated_returns)
+                
+                # Validate test results
+                if not np.isfinite(jb_stat) or not np.isfinite(jb_pvalue):
+                    tprint_warning("⚠️ Invalid Jarque-Bera test results")
+                    jb_stat, jb_pvalue = 0.0, 1.0
+                    
+            except ImportError:
+                tprint_warning("⚠️ scipy.stats not available, skipping Jarque-Bera test")
+                jb_stat, jb_pvalue = 0.0, 1.0
+            except Exception as e:
+                tprint_warning(f"⚠️ Jarque-Bera test failed: {e}")
+                jb_stat, jb_pvalue = 0.0, 1.0
+            
+            tprint_info(f"📊 Higher moments: Vol={volatility:.4f}, Skew={skewness:.4f}, Kurt={kurtosis:.4f}")
+            
+            return {
+                'volatility': volatility,
+                'skewness': skewness,
+                'kurtosis': kurtosis,
+                'jarque_bera_stat': jb_stat,
+                'jarque_bera_pvalue': jb_pvalue
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Higher moments calculation failed: {e}")
+            # Return safe defaults
+            return {
+                'volatility': 0.0,
+                'skewness': 0.0,
+                'kurtosis': 0.0,
+                'jarque_bera_stat': 0.0,
+                'jarque_bera_pvalue': 1.0
+            }
     
     def _run_stress_testing(self, risk_data: Dict[str, Any]) -> Dict[str, Any]:
         """Run stress testing scenarios."""

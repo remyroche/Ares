@@ -10,7 +10,45 @@ Advanced optimization capabilities for tree architecture search including:
 """
 
 # Import from existing enhanced hardware optimization
-from .enhanced_hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations, TreeM1Optimizer
+try:
+    from .enhanced_hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations, TreeM1Optimizer
+    ENHANCED_HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create fallback implementations
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Enhanced hardware optimization not available: {e}")
+    
+    class TreeHardwareOptimizer:
+        """Fallback tree hardware optimizer."""
+        def __init__(self, *args, **kwargs):
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("TreeHardwareOptimizer not available - using fallback")
+        
+        def optimize_tas_processing(self, *args, **kwargs):
+            """Fallback TAS processing optimization method."""
+            return {'success': False, 'error': 'Enhanced hardware optimization not available'}
+    
+    class TreeMatrixOperations:
+        """Fallback tree matrix operations."""
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("TreeMatrixOperations not available - using fallback")
+        
+        def optimize_matrix_operations(self, *args, **kwargs):
+            """Fallback matrix operations optimization method."""
+            return args[0] if args else None
+    
+    class TreeM1Optimizer:
+        """Fallback tree M1 optimizer."""
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("TreeM1Optimizer not available - using fallback")
+        
+        def optimize_for_m1(self, *args, **kwargs):
+            """Fallback M1 optimization method."""
+            return args[0] if args else None
 
 # Commented out missing imports - will add fallback implementations
 # from .memory_optimization import TreeMemoryOptimizer, TreeCacheManager, TreeMemoryPool

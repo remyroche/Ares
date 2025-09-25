@@ -1,13 +1,8 @@
 """
-Advanced TAS Evaluator
+Advanced TAS Evaluator - Updated to use Unified Components
 
-This module provides comprehensive evaluation capabilities for TAS including:
-- Economic significance validation
-- Trading viability assessment
-- Multi-objective optimization evaluation
-- Uncertainty quantification
-- Risk-adjusted performance metrics
-- Regime-specific validation
+This module provides comprehensive evaluation capabilities for TAS using
+the unified evaluation framework from merged_unified_components.
 """
 
 import numpy as np
@@ -23,6 +18,13 @@ from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 import torch
 
 from ..core.tas_config import TASConfig, TradingObjective, MarketRegime
+
+# Import unified components
+try:
+    from src.utils.ml_common.nas_tas_unified import UnifiedEvaluator
+    UNIFIED_EVALUATOR_AVAILABLE = True
+except ImportError:
+    UNIFIED_EVALUATOR_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -92,16 +94,38 @@ class EvaluationResult:
 
 
 class TASEvaluator:
-    """Advanced evaluator for Trading Architecture Search."""
+    """Advanced evaluator for Trading Architecture Search using unified components."""
 
     def __init__(self, config: TASConfig):
-        """Initialize TAS evaluator.
+        """Initialize TAS evaluator with unified components.
 
         Args:
             config: TAS configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize unified evaluator if available
+        if UNIFIED_EVALUATOR_AVAILABLE:
+            unified_config = {
+                'enable_hardware_optimization': True,
+                'enable_m1_optimization': True,
+                'enable_trading_metrics': True,
+                'enable_economic_metrics': True,
+                'enable_complexity_metrics': True,
+                'handle_missing_values': True,
+                'normalize_data': True,
+                'standardize_data': True,
+                'outlier_detection': True,
+                'enable_feature_selection': True,
+                'max_features': 100,
+                'validation_split': 0.2
+            }
+            self.unified_evaluator = UnifiedEvaluator(unified_config)
+            self.logger.info("✅ Using unified evaluator")
+        else:
+            self.unified_evaluator = None
+            self.logger.warning("⚠️ Unified evaluator not available, using fallback")
 
         # Evaluation parameters
         self.min_trades_for_evaluation = 50
@@ -116,7 +140,7 @@ class TASEvaluator:
     def evaluate_model(self, model: Any, X_test: np.ndarray, y_test: np.ndarray,
                       market_data: pd.DataFrame, regime_labels: Optional[pd.Series] = None,
                       model_name: str = "unknown", architecture_type: str = "unknown") -> EvaluationResult:
-        """Comprehensive evaluation of a trading model.
+        """Comprehensive evaluation of a trading model using unified components.
 
         Args:
             model: Trained model to evaluate
@@ -139,14 +163,30 @@ class TASEvaluator:
         )
 
         try:
-            # Basic model evaluation
-            self._evaluate_basic_metrics(model, X_test, y_test, result)
-
-            # Trading performance evaluation
-            self._evaluate_trading_performance(model, X_test, y_test, market_data, result)
-
-            # Risk analysis
-            self._evaluate_risk_metrics(result)
+            # Use unified evaluator if available
+            if self.unified_evaluator:
+                unified_results = self.unified_evaluator.evaluate_architecture(
+                    model, X_test, y_test
+                )
+                
+                # Map unified results to TAS-specific result format
+                result.accuracy = unified_results.get('accuracy', 0.0)
+                result.precision = unified_results.get('precision', 0.0)
+                result.recall = unified_results.get('recall', 0.0)
+                result.f1_score = unified_results.get('f1_score', 0.0)
+                result.sharpe_ratio = unified_results.get('sharpe_ratio', 0.0)
+                result.max_drawdown = unified_results.get('max_drawdown', 0.0)
+                result.total_return = unified_results.get('total_return', 0.0)
+                result.volatility = unified_results.get('volatility', 0.0)
+                result.economic_significance_score = unified_results.get('economic_significance_score', 0.0)
+                result.model_complexity = unified_results.get('complexity_score', 0.0)
+                
+                self.logger.info("✅ Used unified evaluator for comprehensive metrics")
+            else:
+                # Fallback to original evaluation methods
+                self._evaluate_basic_metrics(model, X_test, y_test, result)
+                self._evaluate_trading_performance(model, X_test, y_test, market_data, result)
+                self._evaluate_risk_metrics(result)
 
             # Regime-specific evaluation
             if regime_labels is not None:

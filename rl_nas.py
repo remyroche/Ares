@@ -221,76 +221,225 @@ class RL_NAS_Optimizer:
     
     def __init__(self, config: OptimizationConfig):
         """
-        Initialize RL-NAS Optimizer.
+        Initialize RL-NAS Optimizer with comprehensive error handling.
         
         Args:
             config: Optimization configuration
         """
-        self.config = config
-        self.logger = logger.getChild('RL_NAS_Optimizer')
-        
-        # Initialize utility modules
-        self.common_utils = CommonUtilities()
-        self.math_validator = MathValidation()
-        self.serializer = UniversalSerializer()
-        
-        # Initialize hardware optimizers
-        self._init_hardware_optimizers()
-        
-        # Initialize ML utilities if available
-        self._init_ml_utilities()
-        
-        # Optimization state
-        self.population: List[Tuple[ArchitectureConfig, Dict[str, float]]] = []
-        self.optimization_history: List[Dict[str, Any]] = []
-        self.pareto_front: List[Tuple[ArchitectureConfig, Dict[str, float]]] = []
-        self.convergence_info: Dict[str, Any] = {}
-        
-        # Performance tracking
-        self.start_time: Optional[float] = None
-        self.memory_checkpoints: List[Dict[str, Any]] = []
-        
-        tprint_success("🚀 RL-NAS Optimizer initialized successfully")
+        try:
+            tprint_info("🚀 Initializing RL-NAS Optimizer...")
+            
+            # Validate config
+            if not isinstance(config, OptimizationConfig):
+                raise ValueError("Config must be an OptimizationConfig instance")
+            
+            self.config = config
+            self.logger = logger.getChild('RL_NAS_Optimizer') if logger else None
+            
+            # Initialize utility modules with error handling
+            try:
+                self.common_utils = CommonUtilities()
+                tprint_info("✅ Common utilities initialized")
+            except Exception as e:
+                tprint_warning(f"Common utilities initialization failed: {e}")
+                self.common_utils = None
+            
+            try:
+                self.math_validator = MathValidation()
+                tprint_info("✅ Math validator initialized")
+            except Exception as e:
+                tprint_warning(f"Math validator initialization failed: {e}")
+                self.math_validator = None
+            
+            try:
+                self.serializer = UniversalSerializer()
+                tprint_info("✅ Serializer initialized")
+            except Exception as e:
+                tprint_warning(f"Serializer initialization failed: {e}")
+                self.serializer = None
+            
+            # Initialize hardware optimizers with error handling
+            self._init_hardware_optimizers()
+            
+            # Initialize ML utilities if available with error handling
+            self._init_ml_utilities()
+            
+            # Optimization state
+            self.population: List[Tuple[ArchitectureConfig, Dict[str, float]]] = []
+            self.optimization_history: List[Dict[str, Any]] = []
+            self.pareto_front: List[Tuple[ArchitectureConfig, Dict[str, float]]] = []
+            self.convergence_info: Dict[str, Any] = {}
+            self.error_log: List[Dict[str, Any]] = []
+            
+            # Performance tracking
+            self.start_time: Optional[float] = None
+            self.memory_checkpoints: List[Dict[str, Any]] = []
+            
+            tprint_success("🚀 RL-NAS Optimizer initialized successfully")
+            tprint_structured({
+                'config': self.config.to_dict(),
+                'hardware_available': {
+                    'gpu_manager': self.gpu_manager is not None,
+                    'memory_optimizer': self.memory_optimizer is not None,
+                    'cpu_optimizer': self.cpu_optimizer is not None
+                },
+                'ml_utilities_available': {
+                    'model_factory': self.model_factory is not None,
+                    'ensemble_manager': self.ensemble_manager is not None,
+                    'cross_validator': self.cross_validator is not None
+                }
+            })
+            
+        except Exception as e:
+            tprint_error(f"RL-NAS Optimizer initialization failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"Failed to initialize RL-NAS Optimizer: {e}")
     
     def _init_hardware_optimizers(self):
-        """Initialize hardware optimization utilities."""
-        if HARDWARE_UTILS_AVAILABLE:
-            try:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer(
-                    memory_limit_gb=self.config.memory_limit_gb
-                )
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+        """Initialize hardware optimization utilities with comprehensive error handling."""
+        try:
+            if HARDWARE_UTILS_AVAILABLE:
+                tprint_info("🔧 Initializing hardware optimizers...")
                 
-                # Start memory monitoring if configured
-                if self.config.use_m1_optimization:
-                    self.memory_optimizer.start_monitoring()
-                    tprint_info("🧠 M1 hardware optimization enabled")
-            except Exception as e:
-                tprint_warning(f"Hardware optimization initialization failed: {e}")
+                # Initialize GPU manager with error handling
+                try:
+                    self.gpu_manager = get_m1_gpu_manager()
+                    tprint_info("✅ GPU manager initialized")
+                except Exception as e:
+                    tprint_warning(f"GPU manager initialization failed: {e}")
+                    self.gpu_manager = None
+                
+                # Initialize memory optimizer with error handling
+                try:
+                    self.memory_optimizer = get_m1_memory_optimizer(
+                        memory_limit_gb=self.config.memory_limit_gb
+                    )
+                    tprint_info("✅ Memory optimizer initialized")
+                    
+                    # Start memory monitoring if configured
+                    if self.config.use_m1_optimization and self.memory_optimizer:
+                        try:
+                            self.memory_optimizer.start_monitoring()
+                            tprint_info("🧠 M1 memory monitoring enabled")
+                        except Exception as e:
+                            tprint_warning(f"Memory monitoring start failed: {e}")
+                            
+                except Exception as e:
+                    tprint_warning(f"Memory optimizer initialization failed: {e}")
+                    self.memory_optimizer = None
+                
+                # Initialize CPU optimizer with error handling
+                try:
+                    self.cpu_optimizer = get_m1_cpu_optimizer()
+                    tprint_info("✅ CPU optimizer initialized")
+                except Exception as e:
+                    tprint_warning(f"CPU optimizer initialization failed: {e}")
+                    self.cpu_optimizer = None
+                
+                # Check if any hardware optimization is available
+                if any([self.gpu_manager, self.memory_optimizer, self.cpu_optimizer]):
+                    tprint_success("🧠 M1 hardware optimization partially enabled")
+                else:
+                    tprint_warning("⚠️ No hardware optimization available")
+                    
+            else:
+                tprint_warning("⚠️ Hardware utilities not available")
                 self.gpu_manager = None
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
-        else:
+                
+        except Exception as e:
+            tprint_error(f"Hardware optimizers initialization failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
     
     def _init_ml_utilities(self):
-        """Initialize ML utilities if available."""
-        if ML_UTILS_AVAILABLE:
-            try:
-                self.model_factory = create_model_factory()
-                self.ensemble_manager = EnsembleManager()
-                self.cross_validator = UnifiedCrossValidator()
-                self.memory_optimizer_ml = MemoryOptimizer()
-                self.parallel_processor = ParallelProcessor()
-                self.lookahead_protection = LookaheadProtection()
-                self.training_safeguards = MLTrainingSafeguards()
-                self.error_handler = RobustErrorHandler()
-                tprint_info("🤖 ML utilities initialized")
-            except Exception as e:
-                tprint_warning(f"ML utilities initialization failed: {e}")
+        """Initialize ML utilities with comprehensive error handling."""
+        try:
+            if ML_UTILS_AVAILABLE:
+                tprint_info("🤖 Initializing ML utilities...")
+                
+                # Initialize model factory with error handling
+                try:
+                    self.model_factory = create_model_factory()
+                    tprint_info("✅ Model factory initialized")
+                except Exception as e:
+                    tprint_warning(f"Model factory initialization failed: {e}")
+                    self.model_factory = None
+                
+                # Initialize ensemble manager with error handling
+                try:
+                    self.ensemble_manager = EnsembleManager()
+                    tprint_info("✅ Ensemble manager initialized")
+                except Exception as e:
+                    tprint_warning(f"Ensemble manager initialization failed: {e}")
+                    self.ensemble_manager = None
+                
+                # Initialize cross validator with error handling
+                try:
+                    self.cross_validator = UnifiedCrossValidator()
+                    tprint_info("✅ Cross validator initialized")
+                except Exception as e:
+                    tprint_warning(f"Cross validator initialization failed: {e}")
+                    self.cross_validator = None
+                
+                # Initialize memory optimizer ML with error handling
+                try:
+                    self.memory_optimizer_ml = MemoryOptimizer()
+                    tprint_info("✅ ML memory optimizer initialized")
+                except Exception as e:
+                    tprint_warning(f"ML memory optimizer initialization failed: {e}")
+                    self.memory_optimizer_ml = None
+                
+                # Initialize parallel processor with error handling
+                try:
+                    self.parallel_processor = ParallelProcessor()
+                    tprint_info("✅ Parallel processor initialized")
+                except Exception as e:
+                    tprint_warning(f"Parallel processor initialization failed: {e}")
+                    self.parallel_processor = None
+                
+                # Initialize lookahead protection with error handling
+                try:
+                    self.lookahead_protection = LookaheadProtection()
+                    tprint_info("✅ Lookahead protection initialized")
+                except Exception as e:
+                    tprint_warning(f"Lookahead protection initialization failed: {e}")
+                    self.lookahead_protection = None
+                
+                # Initialize training safeguards with error handling
+                try:
+                    self.training_safeguards = MLTrainingSafeguards()
+                    tprint_info("✅ Training safeguards initialized")
+                except Exception as e:
+                    tprint_warning(f"Training safeguards initialization failed: {e}")
+                    self.training_safeguards = None
+                
+                # Initialize error handler with error handling
+                try:
+                    self.error_handler = RobustErrorHandler()
+                    tprint_info("✅ Error handler initialized")
+                except Exception as e:
+                    tprint_warning(f"Error handler initialization failed: {e}")
+                    self.error_handler = None
+                
+                # Check if any ML utilities are available
+                ml_utilities = [
+                    self.model_factory, self.ensemble_manager, self.cross_validator,
+                    self.memory_optimizer_ml, self.parallel_processor,
+                    self.lookahead_protection, self.training_safeguards, self.error_handler
+                ]
+                available_count = sum(1 for util in ml_utilities if util is not None)
+                
+                if available_count > 0:
+                    tprint_success(f"🤖 ML utilities partially initialized ({available_count}/8 available)")
+                else:
+                    tprint_warning("⚠️ No ML utilities available")
+                    
+            else:
+                tprint_warning("⚠️ ML utilities not available")
                 self.model_factory = None
                 self.ensemble_manager = None
                 self.cross_validator = None
@@ -299,7 +448,10 @@ class RL_NAS_Optimizer:
                 self.lookahead_protection = None
                 self.training_safeguards = None
                 self.error_handler = None
-        else:
+                
+        except Exception as e:
+            tprint_error(f"ML utilities initialization failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
             self.model_factory = None
             self.ensemble_manager = None
             self.cross_validator = None
@@ -315,7 +467,7 @@ class RL_NAS_Optimizer:
                  feature_columns: List[str],
                  strategy_func: Optional[Callable] = None) -> OptimizationResult:
         """
-        Perform RL-NAS optimization.
+        Perform RL-NAS optimization with comprehensive error handling.
         
         Args:
             data: Input data for optimization
@@ -326,129 +478,421 @@ class RL_NAS_Optimizer:
         Returns:
             Optimization result
         """
-        tprint_info("🎯 Starting RL-NAS optimization")
-        self.start_time = time.time()
-        
-        # Validate input data
-        if not self._validate_input_data(data, target_columns, feature_columns):
-            raise ValueError("Invalid input data")
-        
-        # Initialize population
-        self._initialize_population()
-        
-        # Main optimization loop
-        for generation in range(self.config.max_generations):
-            tprint_progress(generation + 1, self.config.max_generations, 
-                          f"Generation {generation + 1}")
+        try:
+            tprint_info("🎯 Starting RL-NAS optimization")
+            self.start_time = time.time()
             
-            # Evaluate population
-            self._evaluate_population(data, target_columns, feature_columns, strategy_func)
+            # Validate input data with error handling
+            try:
+                if not self._validate_input_data(data, target_columns, feature_columns):
+                    raise ValueError("Invalid input data")
+                tprint_success("✅ Input data validation passed")
+            except Exception as e:
+                tprint_error(f"Input data validation failed: {e}")
+                raise
             
-            # Update Pareto front
-            self._update_pareto_front()
+            # Initialize population with error handling
+            try:
+                self._initialize_population()
+                tprint_success("✅ Population initialized")
+            except Exception as e:
+                tprint_error(f"Population initialization failed: {e}")
+                raise
             
-            # Check convergence
-            if self._check_convergence():
-                tprint_info(f"✅ Convergence achieved at generation {generation + 1}")
-                break
+            # Main optimization loop with comprehensive error handling
+            try:
+                for generation in range(self.config.max_generations):
+                    try:
+                        tprint_progress(generation + 1, self.config.max_generations, 
+                                      f"Generation {generation + 1}")
+                        
+                        # Evaluate population with error handling
+                        try:
+                            self._evaluate_population(data, target_columns, feature_columns, strategy_func)
+                        except Exception as e:
+                            tprint_error(f"Population evaluation failed for generation {generation + 1}: {e}")
+                            # Continue with next generation
+                            continue
+                        
+                        # Update Pareto front with error handling
+                        try:
+                            self._update_pareto_front()
+                        except Exception as e:
+                            tprint_warning(f"Pareto front update failed for generation {generation + 1}: {e}")
+                        
+                        # Check convergence with error handling
+                        try:
+                            if self._check_convergence():
+                                tprint_info(f"✅ Convergence achieved at generation {generation + 1}")
+                                break
+                        except Exception as e:
+                            tprint_warning(f"Convergence check failed for generation {generation + 1}: {e}")
+                        
+                        # Selection and reproduction with error handling
+                        try:
+                            self._selection_and_reproduction()
+                        except Exception as e:
+                            tprint_error(f"Selection and reproduction failed for generation {generation + 1}: {e}")
+                            # Try to continue with current population
+                            continue
+                        
+                        # Record generation info with error handling
+                        try:
+                            self._record_generation_info(generation)
+                        except Exception as e:
+                            tprint_warning(f"Generation info recording failed for generation {generation + 1}: {e}")
+                        
+                        # Memory optimization with error handling
+                        try:
+                            if self.memory_optimizer:
+                                self._optimize_memory_usage()
+                        except Exception as e:
+                            tprint_warning(f"Memory optimization failed for generation {generation + 1}: {e}")
+                        
+                    except Exception as e:
+                        tprint_error(f"Generation {generation + 1} failed completely: {e}")
+                        tprint_error(f"Traceback: {traceback.format_exc()}")
+                        # Log error and continue
+                        self.error_log.append({
+                            'generation': generation + 1,
+                            'error': str(e),
+                            'timestamp': time.time()
+                        })
+                        continue
+                
+                tprint_success("✅ Optimization loop completed")
+                
+            except Exception as e:
+                tprint_error(f"Optimization loop failed: {e}")
+                tprint_error(f"Traceback: {traceback.format_exc()}")
             
-            # Selection and reproduction
-            self._selection_and_reproduction()
+            # Finalize optimization with error handling
+            try:
+                result = self._finalize_optimization()
+                tprint_success("🎉 RL-NAS optimization completed")
+                return result
+            except Exception as e:
+                tprint_error(f"Optimization finalization failed: {e}")
+                tprint_error(f"Traceback: {traceback.format_exc()}")
+                
+                # Return minimal result
+                return OptimizationResult(
+                    best_architecture=ArchitectureConfig(
+                        architecture_type=ArchitectureType.FEEDFORWARD,
+                        hidden_layers=[64],
+                        activation_functions=['relu'],
+                        dropout_rates=[0.2],
+                        regularization={'l1': 0.0, 'l2': 0.0},
+                        learning_rate=0.001,
+                        batch_size=32,
+                        epochs=100
+                    ),
+                    best_fitness={},
+                    pareto_front=[],
+                    optimization_history=self.optimization_history,
+                    convergence_info={'error': str(e)},
+                    execution_time=time.time() - self.start_time if self.start_time else 0.0,
+                    memory_usage={},
+                    hardware_utilization={}
+                )
+                
+        except Exception as e:
+            tprint_error(f"RL-NAS optimization failed completely: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
             
-            # Record generation info
-            self._record_generation_info(generation)
-            
-            # Memory optimization
-            if self.memory_optimizer:
-                self._optimize_memory_usage()
-        
-        # Finalize optimization
-        result = self._finalize_optimization()
-        tprint_success("🎉 RL-NAS optimization completed")
-        
-        return result
+            # Return minimal result
+            return OptimizationResult(
+                best_architecture=ArchitectureConfig(
+                    architecture_type=ArchitectureType.FEEDFORWARD,
+                    hidden_layers=[64],
+                    activation_functions=['relu'],
+                    dropout_rates=[0.2],
+                    regularization={'l1': 0.0, 'l2': 0.0},
+                    learning_rate=0.001,
+                    batch_size=32,
+                    epochs=100
+                ),
+                best_fitness={},
+                pareto_front=[],
+                optimization_history=[],
+                convergence_info={'error': str(e)},
+                execution_time=0.0,
+                memory_usage={},
+                hardware_utilization={}
+            )
     
     def _validate_input_data(self, 
                             data: pd.DataFrame, 
                             target_columns: List[str], 
                             feature_columns: List[str]) -> bool:
-        """Validate input data for optimization."""
+        """Validate input data for optimization with comprehensive error handling."""
         try:
+            tprint_info("🔍 Validating input data...")
+            
             # Check if data is valid DataFrame
-            if not validate_dataframe(data):
-                tprint_error("❌ Invalid DataFrame provided")
+            try:
+                if not validate_dataframe(data):
+                    tprint_error("❌ Invalid DataFrame provided")
+                    return False
+                tprint_info("✅ DataFrame validation passed")
+            except Exception as e:
+                tprint_error(f"DataFrame validation failed: {e}")
                 return False
             
-            # Check required columns
-            all_columns = target_columns + feature_columns
-            if not validate_dataframe_columns(data, all_columns):
-                tprint_error("❌ Missing required columns")
+            # Check required columns with error handling
+            try:
+                all_columns = target_columns + feature_columns
+                if not validate_dataframe_columns(data, all_columns):
+                    tprint_error("❌ Missing required columns")
+                    return False
+                tprint_info("✅ Column validation passed")
+            except Exception as e:
+                tprint_error(f"Column validation failed: {e}")
                 return False
             
-            # Check data quality
-            quality_report = create_data_quality_report(data)
-            if quality_report.get('issues'):
-                tprint_warning(f"⚠️ Data quality issues: {quality_report['issues']}")
+            # Check data quality with error handling
+            try:
+                quality_report = create_data_quality_report(data)
+                if quality_report.get('issues'):
+                    tprint_warning(f"⚠️ Data quality issues: {quality_report['issues']}")
+                else:
+                    tprint_info("✅ Data quality check passed")
+            except Exception as e:
+                tprint_warning(f"Data quality check failed: {e}")
+                # Continue with validation
             
-            # Check for sufficient data
-            if len(data) < 100:
-                tprint_warning("⚠️ Limited data available for optimization")
+            # Check for sufficient data with error handling
+            try:
+                if len(data) < 100:
+                    tprint_warning("⚠️ Limited data available for optimization")
+                elif len(data) < 50:
+                    tprint_error("❌ Insufficient data for optimization (minimum 50 samples)")
+                    return False
+                else:
+                    tprint_info(f"✅ Data size validation passed: {len(data)} samples")
+            except Exception as e:
+                tprint_warning(f"Data size validation failed: {e}")
+                # Continue with validation
             
-            tprint_info(f"✅ Data validation passed: {data.shape[0]} rows, {data.shape[1]} columns")
+            # Check for missing values with error handling
+            try:
+                missing_count = data.isnull().sum().sum()
+                if missing_count > 0:
+                    tprint_warning(f"⚠️ Found {missing_count} missing values in data")
+                else:
+                    tprint_info("✅ No missing values found")
+            except Exception as e:
+                tprint_warning(f"Missing value check failed: {e}")
+                # Continue with validation
+            
+            # Check for infinite values with error handling
+            try:
+                if hasattr(data, 'select_dtypes'):
+                    numeric_data = data.select_dtypes(include=[np.number])
+                    if not numeric_data.empty:
+                        infinite_count = np.isinf(numeric_data).sum().sum()
+                        if infinite_count > 0:
+                            tprint_warning(f"⚠️ Found {infinite_count} infinite values in data")
+                        else:
+                            tprint_info("✅ No infinite values found")
+            except Exception as e:
+                tprint_warning(f"Infinite value check failed: {e}")
+                # Continue with validation
+            
+            tprint_success(f"✅ Data validation passed: {data.shape[0]} rows, {data.shape[1]} columns")
+            tprint_structured({
+                'data_shape': data.shape,
+                'target_columns': len(target_columns),
+                'feature_columns': len(feature_columns),
+                'missing_values': data.isnull().sum().sum() if hasattr(data, 'isnull') else 0
+            })
+            
             return True
             
         except Exception as e:
             tprint_error(f"❌ Data validation failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
             return False
     
     def _initialize_population(self):
-        """Initialize population of neural architectures."""
-        tprint_info("🧬 Initializing population")
-        
-        self.population = []
-        for i in range(self.config.population_size):
-            architecture = self._generate_random_architecture()
-            self.population.append((architecture, {}))
-        
-        tprint_info(f"✅ Population initialized with {len(self.population)} architectures")
+        """Initialize population of neural architectures with comprehensive error handling."""
+        try:
+            tprint_info("🧬 Initializing population")
+            
+            # Validate population size
+            if self.config.population_size <= 0:
+                tprint_warning(f"Invalid population size {self.config.population_size}, using 10")
+                self.config.population_size = 10
+            
+            self.population = []
+            successful_architectures = 0
+            failed_architectures = 0
+            
+            for i in range(self.config.population_size):
+                try:
+                    architecture = self._generate_random_architecture()
+                    self.population.append((architecture, {}))
+                    successful_architectures += 1
+                    
+                except Exception as e:
+                    tprint_warning(f"Architecture generation failed for individual {i + 1}: {e}")
+                    failed_architectures += 1
+                    
+                    # Create fallback architecture
+                    try:
+                        fallback_architecture = ArchitectureConfig(
+                            architecture_type=ArchitectureType.FEEDFORWARD,
+                            hidden_layers=[64],
+                            activation_functions=['relu'],
+                            dropout_rates=[0.2],
+                            regularization={'l1': 0.0, 'l2': 0.0},
+                            learning_rate=0.001,
+                            batch_size=32,
+                            epochs=100
+                        )
+                        self.population.append((fallback_architecture, {}))
+                        successful_architectures += 1
+                        failed_architectures -= 1
+                        
+                    except Exception as fallback_error:
+                        tprint_error(f"Fallback architecture creation failed: {fallback_error}")
+                        # Skip this individual
+                        continue
+            
+            if successful_architectures == 0:
+                tprint_error("❌ No architectures could be generated")
+                raise RuntimeError("Population initialization failed completely")
+            
+            tprint_success(f"✅ Population initialized with {successful_architectures} architectures")
+            if failed_architectures > 0:
+                tprint_warning(f"⚠️ {failed_architectures} architectures failed to generate")
+            
+            tprint_structured({
+                'population_size': len(self.population),
+                'successful_architectures': successful_architectures,
+                'failed_architectures': failed_architectures
+            })
+            
+        except Exception as e:
+            tprint_error(f"Population initialization failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"Failed to initialize population: {e}")
     
     def _generate_random_architecture(self) -> ArchitectureConfig:
-        """Generate a random neural architecture."""
-        # Random architecture type
-        arch_type = np.random.choice(list(ArchitectureType))
-        
-        # Random hidden layers (1-5 layers)
-        num_layers = np.random.randint(1, 6)
-        hidden_layers = [np.random.randint(32, 512) for _ in range(num_layers)]
-        
-        # Random activation functions
-        activations = ['relu', 'tanh', 'sigmoid', 'elu', 'swish']
-        activation_functions = [np.random.choice(activations) for _ in range(num_layers)]
-        
-        # Random dropout rates
-        dropout_rates = [np.random.uniform(0.1, 0.5) for _ in range(num_layers)]
-        
-        # Random regularization
-        regularization = {
-            'l1': np.random.uniform(0.0, 0.01),
-            'l2': np.random.uniform(0.0, 0.01)
-        }
-        
-        # Random hyperparameters
-        learning_rate = 10 ** np.random.uniform(-4, -1)  # 0.0001 to 0.1
-        batch_size = 2 ** np.random.randint(5, 11)  # 32 to 1024
-        epochs = np.random.randint(50, 200)
-        
-        return ArchitectureConfig(
-            architecture_type=arch_type,
-            hidden_layers=hidden_layers,
-            activation_functions=activation_functions,
-            dropout_rates=dropout_rates,
-            regularization=regularization,
-            learning_rate=learning_rate,
-            batch_size=batch_size,
-            epochs=epochs
-        )
+        """Generate a random neural architecture with comprehensive error handling."""
+        try:
+            # Random architecture type with error handling
+            try:
+                arch_type = np.random.choice(list(ArchitectureType))
+            except Exception as e:
+                tprint_warning(f"Architecture type selection failed: {e}, using FEEDFORWARD")
+                arch_type = ArchitectureType.FEEDFORWARD
+            
+            # Random hidden layers (1-5 layers) with error handling
+            try:
+                num_layers = np.random.randint(1, 6)
+                if num_layers <= 0:
+                    num_layers = 1
+                    tprint_warning("Invalid layer count, using 1")
+            except Exception as e:
+                tprint_warning(f"Layer count generation failed: {e}, using 2")
+                num_layers = 2
+            
+            try:
+                hidden_layers = [np.random.randint(32, 512) for _ in range(num_layers)]
+                # Validate layer sizes
+                hidden_layers = [max(32, min(512, size)) for size in hidden_layers]
+            except Exception as e:
+                tprint_warning(f"Hidden layers generation failed: {e}, using defaults")
+                hidden_layers = [64] * num_layers
+            
+            # Random activation functions with error handling
+            try:
+                activations = ['relu', 'tanh', 'sigmoid', 'elu', 'swish']
+                activation_functions = [np.random.choice(activations) for _ in range(num_layers)]
+            except Exception as e:
+                tprint_warning(f"Activation functions generation failed: {e}, using relu")
+                activation_functions = ['relu'] * num_layers
+            
+            # Random dropout rates with error handling
+            try:
+                dropout_rates = [np.random.uniform(0.1, 0.5) for _ in range(num_layers)]
+                # Validate dropout rates
+                dropout_rates = [max(0.0, min(0.8, rate)) for rate in dropout_rates]
+            except Exception as e:
+                tprint_warning(f"Dropout rates generation failed: {e}, using defaults")
+                dropout_rates = [0.2] * num_layers
+            
+            # Random regularization with error handling
+            try:
+                regularization = {
+                    'l1': np.random.uniform(0.0, 0.01),
+                    'l2': np.random.uniform(0.0, 0.01)
+                }
+                # Validate regularization values
+                regularization['l1'] = max(0.0, min(0.1, regularization['l1']))
+                regularization['l2'] = max(0.0, min(0.1, regularization['l2']))
+            except Exception as e:
+                tprint_warning(f"Regularization generation failed: {e}, using defaults")
+                regularization = {'l1': 0.0, 'l2': 0.0}
+            
+            # Random hyperparameters with error handling
+            try:
+                learning_rate = 10 ** np.random.uniform(-4, -1)  # 0.0001 to 0.1
+                learning_rate = max(1e-5, min(1.0, learning_rate))
+            except Exception as e:
+                tprint_warning(f"Learning rate generation failed: {e}, using 0.001")
+                learning_rate = 0.001
+            
+            try:
+                batch_size = 2 ** np.random.randint(5, 11)  # 32 to 1024
+                batch_size = max(16, min(2048, batch_size))
+            except Exception as e:
+                tprint_warning(f"Batch size generation failed: {e}, using 32")
+                batch_size = 32
+            
+            try:
+                epochs = np.random.randint(50, 200)
+                epochs = max(10, min(1000, epochs))
+            except Exception as e:
+                tprint_warning(f"Epochs generation failed: {e}, using 100")
+                epochs = 100
+            
+            # Create architecture with validation
+            try:
+                architecture = ArchitectureConfig(
+                    architecture_type=arch_type,
+                    hidden_layers=hidden_layers,
+                    activation_functions=activation_functions,
+                    dropout_rates=dropout_rates,
+                    regularization=regularization,
+                    learning_rate=learning_rate,
+                    batch_size=batch_size,
+                    epochs=epochs
+                )
+                
+                tprint_info(f"✅ Random architecture generated: {arch_type.value}, {num_layers} layers")
+                return architecture
+                
+            except Exception as e:
+                tprint_error(f"Architecture creation failed: {e}")
+                raise
+                
+        except Exception as e:
+            tprint_error(f"Random architecture generation failed: {e}")
+            tprint_error(f"Traceback: {traceback.format_exc()}")
+            
+            # Return minimal fallback architecture
+            return ArchitectureConfig(
+                architecture_type=ArchitectureType.FEEDFORWARD,
+                hidden_layers=[64],
+                activation_functions=['relu'],
+                dropout_rates=[0.2],
+                regularization={'l1': 0.0, 'l2': 0.0},
+                learning_rate=0.001,
+                batch_size=32,
+                epochs=100
+            )
     
     def _evaluate_population(self, 
                            data: pd.DataFrame, 

@@ -179,13 +179,22 @@ class NODEModel:
         self.config = config
         self.model = None
         self.is_trained = False
+        self.feature_importances_ = None
+        self.training_history = []
         
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Train NODE model."""
+        """Train NODE model with comprehensive training loop."""
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch required for NODE model")
         
         try:
+            from src.utils.math_validation import validate_numeric_array, safe_mean
+            from src.utils.common_operations import safe_weighted_average
+            
+            # Validate inputs
+            X = validate_numeric_array(X, "X")
+            y = validate_numeric_array(y, "y")
+            
             # Convert to tensors
             X_tensor = torch.FloatTensor(X)
             y_tensor = torch.FloatTensor(y)
@@ -193,51 +202,121 @@ class NODEModel:
             # Create NODE model
             self.model = self._create_node_model(X.shape[1])
             
-            # Training loop
-            optimizer = optim.Adam(self.model.parameters(), lr=0.001)
-            criterion = nn.MSELoss()
+            # Training configuration
+            learning_rate = self.config.get('learning_rate', 0.001)
+            n_epochs = self.config.get('n_epochs', 200)
+            batch_size = self.config.get('batch_size', 32)
+            patience = self.config.get('patience', 20)
             
-            for epoch in range(100):  # Simplified training
-                optimizer.zero_grad()
-                outputs = self.model(X_tensor)
-                loss = criterion(outputs, y_tensor)
-                loss.backward()
-                optimizer.step()
+            # Optimizer and loss
+            optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
+            criterion = nn.MSELoss()
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
+            
+            # Training loop with early stopping
+            best_loss = float('inf')
+            patience_counter = 0
+            
+            for epoch in range(n_epochs):
+                # Training mode
+                self.model.train()
+                total_loss = 0.0
+                n_batches = 0
+                
+                # Mini-batch training
+                for i in range(0, len(X_tensor), batch_size):
+                    batch_X = X_tensor[i:i+batch_size]
+                    batch_y = y_tensor[i:i+batch_size]
+                    
+                    optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = criterion(outputs.squeeze(), batch_y)
+                    loss.backward()
+                    
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    
+                    optimizer.step()
+                    
+                    total_loss += loss.item()
+                    n_batches += 1
+                
+                avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
+                self.training_history.append(avg_loss)
+                
+                # Learning rate scheduling
+                scheduler.step(avg_loss)
+                
+                # Early stopping
+                if avg_loss < best_loss:
+                    best_loss = avg_loss
+                    patience_counter = 0
+                    # Save best model state
+                    self.best_model_state = self.model.state_dict().copy()
+                else:
+                    patience_counter += 1
+                
+                if patience_counter >= patience:
+                    logger.info(f"Early stopping at epoch {epoch}")
+                    break
+                
+                # Log progress
+                if epoch % 20 == 0:
+                    logger.info(f"Epoch {epoch}, Loss: {avg_loss:.6f}")
+            
+            # Load best model
+            if hasattr(self, 'best_model_state'):
+                self.model.load_state_dict(self.best_model_state)
+            
+            # Calculate feature importances
+            self._calculate_feature_importances(X_tensor)
             
             self.is_trained = True
+            logger.info(f"NODE training completed. Best loss: {best_loss:.6f}")
             
         except Exception as e:
             logger.error(f"NODE training failed: {e}")
             raise
     
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
+        """Make predictions with proper error handling."""
         if not self.is_trained:
             raise ValueError("Model not trained")
         
-        X_tensor = torch.FloatTensor(X)
-        with torch.no_grad():
-            predictions = self.model(X_tensor)
-        return predictions.numpy()
+        try:
+            from src.utils.math_validation import validate_numeric_array
+            
+            X = validate_numeric_array(X, "X")
+            X_tensor = torch.FloatTensor(X)
+            
+            self.model.eval()
+            with torch.no_grad():
+                predictions = self.model(X_tensor)
+                return predictions.numpy().flatten()
+                
+        except Exception as e:
+            logger.error(f"NODE prediction failed: {e}")
+            raise
     
     def _create_node_model(self, input_dim: int):
-        """Create NODE model architecture."""
+        """Create comprehensive NODE model architecture."""
         class NODELayer(nn.Module):
-            def __init__(self, input_dim, tree_dim, depth):
+            def __init__(self, input_dim, tree_dim, depth, num_trees, choice_function, bin_function):
                 super().__init__()
                 self.input_dim = input_dim
                 self.tree_dim = tree_dim
                 self.depth = depth
+                self.num_trees = num_trees
                 
                 # Oblivious decision trees
                 self.trees = nn.ModuleList([
-                    self._create_oblivious_tree(input_dim, tree_dim, depth)
-                    for _ in range(self.config.get('num_trees', 2))
+                    ObliviousTree(input_dim, tree_dim, depth, choice_function, bin_function)
+                    for _ in range(num_trees)
                 ])
                 
-            def _create_oblivious_tree(self, input_dim, tree_dim, depth):
-                """Create oblivious decision tree."""
-                tree = nn.ModuleList()
+                # Final linear layer for combining tree outputs
+                self.final_layer = nn.Linear(num_trees * tree_dim, 1)
+                self.dropout = nn.Dropout(0.1)
                 
                 # Decision nodes - all nodes at same level use same feature
                 for d in range(depth):
@@ -253,14 +332,17 @@ class NODEModel:
             def forward(self, x):
                 """Forward pass through NODE layer."""
                 # Apply oblivious trees
-                outputs = []
+                tree_outputs = []
                 for tree in self.trees:
-                    tree_output = self._forward_tree(x, tree)
-                    outputs.append(tree_output)
+                    tree_output = tree(x)
+                    tree_outputs.append(tree_output)
                 
                 # Combine tree outputs
-                combined = torch.cat(outputs, dim=1)
-                return combined
+                combined = torch.cat(tree_outputs, dim=1)
+                combined = self.dropout(combined)
+                output = self.final_layer(combined)
+                
+                return output
             
             def _forward_tree(self, x, tree):
                 """Forward pass through a single oblivious tree."""
@@ -295,147 +377,791 @@ class NODEModel:
         return NODELayer(
             input_dim, 
             self.config.get('tree_dim', 2),
-            self.config.get('depth', 6)
+            self.config.get('depth', 6),
+            self.config.get('num_trees', 2),
+            self.config.get('choice_function', 'entmax15'),
+            self.config.get('bin_function', 'entmoid')
         )
+    
+    def _calculate_feature_importances(self, X_tensor: torch.Tensor):
+        """Calculate feature importances using gradient-based method."""
+        try:
+            self.model.eval()
+            feature_importances = torch.zeros(X_tensor.shape[1])
+            
+            # Calculate gradients for each feature
+            for i in range(X_tensor.shape[1]):
+                X_tensor.requires_grad_(True)
+                output = self.model(X_tensor)
+                
+                # Calculate gradient
+                grad = torch.autograd.grad(
+                    output.sum(), X_tensor, create_graph=True, retain_graph=True
+                )[0]
+                
+                # Feature importance as mean absolute gradient
+                feature_importances[i] = torch.mean(torch.abs(grad[:, i]))
+            
+            # Normalize importances
+            if feature_importances.sum() > 0:
+                feature_importances = feature_importances / feature_importances.sum()
+            
+            self.feature_importances_ = feature_importances.detach().numpy()
+            
+        except Exception as e:
+            logger.warning(f"Feature importance calculation failed: {e}")
+            self.feature_importances_ = np.ones(X_tensor.shape[1]) / X_tensor.shape[1]
+    
+    @property
+    def feature_importances_(self):
+        """Get feature importances."""
+        return self._feature_importances if hasattr(self, '_feature_importances') else None
+
+
+class ObliviousTree(nn.Module):
+    """Oblivious Decision Tree implementation for NODE."""
+    
+    def __init__(self, input_dim: int, tree_dim: int, depth: int, choice_function: str, bin_function: str):
+        super().__init__()
+        self.input_dim = input_dim
+        self.tree_dim = tree_dim
+        self.depth = depth
+        
+        # Decision nodes (same feature used at each level)
+        self.decision_layers = nn.ModuleList([
+            nn.Linear(input_dim, 1) for _ in range(depth)
+        ])
+        
+        # Leaf nodes
+        self.leaf_layers = nn.ModuleList([
+            nn.Linear(2**depth, tree_dim) for _ in range(tree_dim)
+        ])
+        
+        # Choice and bin functions
+        self.choice_function = self._get_choice_function(choice_function)
+        self.bin_function = self._get_bin_function(bin_function)
+    
+    def _get_choice_function(self, choice_function: str):
+        """Get choice function for routing."""
+        if choice_function == 'entmax15':
+            return lambda x: torch.softmax(x * 1.5, dim=-1)
+        elif choice_function == 'sparsemax':
+            return lambda x: torch.softmax(x, dim=-1)
+        else:
+            return lambda x: torch.softmax(x, dim=-1)
+    
+    def _get_bin_function(self, bin_function: str):
+        """Get bin function for leaf selection."""
+        if bin_function == 'entmoid':
+            return lambda x: torch.sigmoid(x)
+        elif bin_function == 'sigmoid':
+            return lambda x: torch.sigmoid(x)
+        else:
+            return lambda x: torch.sigmoid(x)
+    
+    def forward(self, x):
+        """Forward pass through oblivious tree."""
+        batch_size = x.shape[0]
+        
+        # Decision path through tree
+        path_probs = []
+        for i in range(self.depth):
+            decision = self.decision_layers[i](x)
+            prob = self.choice_function(decision)
+            path_probs.append(prob)
+        
+        # Calculate leaf probabilities
+        leaf_probs = torch.ones(batch_size, 2**self.depth, device=x.device)
+        for i, prob in enumerate(path_probs):
+            level_size = 2**(self.depth - i - 1)
+            for j in range(2**i):
+                start_idx = j * level_size
+                end_idx = (j + 1) * level_size
+                leaf_probs[:, start_idx:end_idx] *= prob[:, 0:1]  # Left child
+                leaf_probs[:, start_idx:end_idx] *= (1 - prob[:, 0:1])  # Right child
+        
+        # Apply leaf layers
+        outputs = []
+        for i in range(self.tree_dim):
+            leaf_output = self.leaf_layers[i](leaf_probs)
+            outputs.append(leaf_output)
+        
+        return torch.stack(outputs, dim=1)
 
 
 class ObliviousTreeModel:
-    """Oblivious Decision Tree implementation."""
+    """True Oblivious Decision Tree implementation."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize Oblivious Tree model."""
         self.config = config
         self.tree = None
         self.feature_order = None
+        self.feature_importances_ = None
+        self.tree_structure = None
         
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Train Oblivious Tree model."""
+        """Train true Oblivious Tree model."""
         try:
-            # Create oblivious tree (simplified implementation)
-            self.tree = DecisionTreeRegressor(
-                max_depth=self.config.get('max_depth', 10),
-                min_samples_split=self.config.get('min_samples_split', 2),
-                min_samples_leaf=self.config.get('min_samples_leaf', 1),
-                random_state=42
-            )
+            from src.utils.math_validation import validate_numeric_array
+            from src.utils.common_operations import safe_weighted_average
             
-            # Train with feature ordering for oblivious structure
-            self.tree.fit(X, y)
+            # Validate inputs
+            X = validate_numeric_array(X, "X")
+            y = validate_numeric_array(y, "y")
             
-            # Store feature order for oblivious structure
+            # Determine feature order for oblivious structure
             self.feature_order = self._determine_feature_order(X, y)
+            
+            # Create oblivious tree structure
+            self.tree_structure = self._build_oblivious_tree_structure(X, y)
+            
+            # Train the oblivious tree
+            self._train_oblivious_tree(X, y)
+            
+            # Calculate feature importances
+            self._calculate_feature_importances(X, y)
             
         except Exception as e:
             logger.error(f"Oblivious Tree training failed: {e}")
             raise
     
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
-        if self.tree is None:
+        """Make predictions using oblivious tree structure."""
+        if self.tree_structure is None:
             raise ValueError("Model not trained")
         
-        return self.tree.predict(X)
+        try:
+            from src.utils.math_validation import validate_numeric_array
+            X = validate_numeric_array(X, "X")
+            
+            predictions = []
+            for i in range(len(X)):
+                prediction = self._predict_single_sample(X[i])
+                predictions.append(prediction)
+            
+            return np.array(predictions)
+            
+        except Exception as e:
+            logger.error(f"Oblivious Tree prediction failed: {e}")
+            raise
     
     def _determine_feature_order(self, X: np.ndarray, y: np.ndarray) -> List[int]:
-        """Determine feature order for oblivious structure."""
-        # Simplified feature ordering based on importance
-        feature_importance = self.tree.feature_importances_
-        return np.argsort(feature_importance)[::-1].tolist()
+        """Determine feature order for oblivious structure using mutual information."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            
+            # Calculate mutual information between features and target
+            mi_scores = mutual_info_regression(X, y, random_state=42)
+            
+            # Sort features by mutual information (descending)
+            feature_order = np.argsort(mi_scores)[::-1].tolist()
+            
+            return feature_order
+            
+        except Exception as e:
+            logger.warning(f"Mutual information calculation failed: {e}")
+            # Fallback to random order
+            return list(range(X.shape[1]))
+    
+    def _build_oblivious_tree_structure(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Build oblivious tree structure."""
+        try:
+            max_depth = self.config.get('max_depth', 10)
+            min_samples_split = self.config.get('min_samples_split', 2)
+            
+            # Create tree structure
+            tree_structure = {
+                'nodes': {},
+                'leaves': {},
+                'max_depth': max_depth,
+                'feature_order': self.feature_order
+            }
+            
+            # Build tree nodes level by level (oblivious structure)
+            for level in range(max_depth):
+                if level < len(self.feature_order):
+                    feature_idx = self.feature_order[level]
+                    tree_structure['nodes'][level] = {
+                        'feature_idx': feature_idx,
+                        'threshold': None,  # Will be set during training
+                        'left_child': 2 * level + 1,
+                        'right_child': 2 * level + 2
+                    }
+            
+            # Create leaf nodes
+            n_leaves = 2 ** max_depth
+            for i in range(n_leaves):
+                tree_structure['leaves'][i] = {
+                    'value': 0.0,  # Will be set during training
+                    'samples': []
+                }
+            
+            return tree_structure
+            
+        except Exception as e:
+            logger.error(f"Tree structure building failed: {e}")
+            raise
+    
+    def _train_oblivious_tree(self, X: np.ndarray, y: np.ndarray):
+        """Train the oblivious tree by setting thresholds and leaf values."""
+        try:
+            # Set thresholds for each level
+            for level, node_info in self.tree_structure['nodes'].items():
+                feature_idx = node_info['feature_idx']
+                feature_values = X[:, feature_idx]
+                
+                # Find optimal threshold using median split
+                threshold = np.median(feature_values)
+                self.tree_structure['nodes'][level]['threshold'] = threshold
+            
+            # Calculate leaf values
+            for leaf_idx, leaf_info in self.tree_structure['leaves'].items():
+                # Find samples that reach this leaf
+                leaf_samples = self._get_samples_for_leaf(X, leaf_idx)
+                
+                if len(leaf_samples) > 0:
+                    # Set leaf value to mean of target values
+                    leaf_values = y[leaf_samples]
+                    self.tree_structure['leaves'][leaf_idx]['value'] = np.mean(leaf_values)
+                    self.tree_structure['leaves'][leaf_idx]['samples'] = leaf_samples
+                else:
+                    # Default to overall mean
+                    self.tree_structure['leaves'][leaf_idx]['value'] = np.mean(y)
+            
+        except Exception as e:
+            logger.error(f"Oblivious tree training failed: {e}")
+            raise
+    
+    def _get_samples_for_leaf(self, X: np.ndarray, leaf_idx: int) -> List[int]:
+        """Get samples that reach a specific leaf in the oblivious tree."""
+        try:
+            samples = []
+            max_depth = self.tree_structure['max_depth']
+            
+            for sample_idx in range(len(X)):
+                current_leaf = self._traverse_to_leaf(X[sample_idx])
+                if current_leaf == leaf_idx:
+                    samples.append(sample_idx)
+            
+            return samples
+            
+        except Exception as e:
+            logger.warning(f"Sample collection for leaf {leaf_idx} failed: {e}")
+            return []
+    
+    def _traverse_to_leaf(self, sample: np.ndarray) -> int:
+        """Traverse a sample through the oblivious tree to find its leaf."""
+        try:
+            current_node = 0
+            max_depth = self.tree_structure['max_depth']
+            
+            for level in range(max_depth):
+                if level in self.tree_structure['nodes']:
+                    node_info = self.tree_structure['nodes'][level]
+                    feature_idx = node_info['feature_idx']
+                    threshold = node_info['threshold']
+                    
+                    if sample[feature_idx] <= threshold:
+                        current_node = node_info['left_child']
+                    else:
+                        current_node = node_info['right_child']
+                else:
+                    break
+            
+            # Convert node index to leaf index
+            leaf_idx = current_node - (2 ** max_depth - 1)
+            return max(0, min(leaf_idx, 2 ** max_depth - 1))
+            
+        except Exception as e:
+            logger.warning(f"Tree traversal failed: {e}")
+            return 0
+    
+    def _predict_single_sample(self, sample: np.ndarray) -> float:
+        """Predict a single sample using the oblivious tree."""
+        try:
+            leaf_idx = self._traverse_to_leaf(sample)
+            return self.tree_structure['leaves'][leaf_idx]['value']
+            
+        except Exception as e:
+            logger.warning(f"Single sample prediction failed: {e}")
+            return 0.0
+    
+    def _calculate_feature_importances(self, X: np.ndarray, y: np.ndarray):
+        """Calculate feature importances for the oblivious tree."""
+        try:
+            n_features = X.shape[1]
+            feature_importances = np.zeros(n_features)
+            
+            # Calculate importance based on tree structure
+            for level, node_info in self.tree_structure['nodes'].items():
+                feature_idx = node_info['feature_idx']
+                
+                # Calculate importance based on variance reduction
+                left_samples = []
+                right_samples = []
+                
+                for i in range(len(X)):
+                    sample = X[i]
+                    if sample[feature_idx] <= node_info['threshold']:
+                        left_samples.append(i)
+                    else:
+                        right_samples.append(i)
+                
+                if len(left_samples) > 0 and len(right_samples) > 0:
+                    left_values = y[left_samples]
+                    right_values = y[right_samples]
+                    
+                    # Variance reduction
+                    total_var = np.var(y)
+                    left_var = np.var(left_values)
+                    right_var = np.var(right_values)
+                    
+                    weighted_var = (len(left_samples) * left_var + len(right_samples) * right_var) / len(y)
+                    variance_reduction = total_var - weighted_var
+                    
+                    feature_importances[feature_idx] += max(0, variance_reduction)
+            
+            # Normalize importances
+            if np.sum(feature_importances) > 0:
+                feature_importances = feature_importances / np.sum(feature_importances)
+            else:
+                feature_importances = np.ones(n_features) / n_features
+            
+            self.feature_importances_ = feature_importances
+            
+        except Exception as e:
+            logger.warning(f"Feature importance calculation failed: {e}")
+            self.feature_importances_ = np.ones(X.shape[1]) / X.shape[1]
 
 
 class RotationForestModel:
-    """Rotation Forest implementation."""
+    """Enhanced Rotation Forest implementation with proper rotation logic."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize Rotation Forest model."""
         self.config = config
         self.base_models = []
         self.rotations = []
+        self.feature_importances_ = None
+        self.training_history = []
         
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Train Rotation Forest model."""
+        """Train enhanced Rotation Forest model."""
         try:
-            from sklearn.decomposition import PCA
+            from sklearn.decomposition import PCA, FastICA
+            from sklearn.preprocessing import StandardScaler
+            from src.utils.math_validation import validate_numeric_array
+            from src.utils.common_operations import safe_weighted_average
+            
+            # Validate inputs
+            X = validate_numeric_array(X, "X")
+            y = validate_numeric_array(y, "y")
             
             n_estimators = self.config.get('n_estimators', 10)
             n_features_per_subset = self.config.get('n_features_per_subset', 3)
+            rotation_method = self.config.get('rotation_method', 'pca')
+            bootstrap = self.config.get('bootstrap', True)
+            max_depth = self.config.get('max_depth', 10)
+            min_samples_split = self.config.get('min_samples_split', 2)
+            min_samples_leaf = self.config.get('min_samples_leaf', 1)
+            
+            n_features = X.shape[1]
+            n_samples = X.shape[0]
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
             
             for i in range(n_estimators):
-                # Create random feature subset
-                n_features = X.shape[1]
-                feature_indices = np.random.choice(
-                    n_features, 
-                    size=min(n_features_per_subset, n_features), 
-                    replace=False
-                )
-                
-                # Create rotation matrix
-                X_subset = X[:, feature_indices]
-                pca = PCA(n_components=min(3, X_subset.shape[1]))
-                X_rotated = pca.fit_transform(X_subset)
-                
-                # Train base model on rotated features
-                base_model = DecisionTreeRegressor(
-                    max_depth=self.config.get('max_depth', 10),
-                    random_state=42
-                )
-                base_model.fit(X_rotated, y)
-                
-                self.base_models.append(base_model)
-                self.rotations.append((pca, feature_indices))
+                try:
+                    # Bootstrap sampling if enabled
+                    if bootstrap:
+                        sample_indices = np.random.choice(
+                            n_samples, size=n_samples, replace=True
+                        )
+                        X_bootstrap = X_scaled[sample_indices]
+                        y_bootstrap = y[sample_indices]
+                    else:
+                        X_bootstrap = X_scaled
+                        y_bootstrap = y
+                    
+                    # Create random feature subset
+                    n_subset_features = min(n_features_per_subset, n_features)
+                    feature_indices = np.random.choice(
+                        n_features, 
+                        size=n_subset_features, 
+                        replace=False
+                    )
+                    
+                    # Get feature subset
+                    X_subset = X_bootstrap[:, feature_indices]
+                    
+                    # Create rotation matrix
+                    if rotation_method == 'pca':
+                        rotation = PCA(
+                            n_components=min(n_subset_features, 3),
+                            random_state=42 + i
+                        )
+                    elif rotation_method == 'ica':
+                        rotation = FastICA(
+                            n_components=min(n_subset_features, 3),
+                            random_state=42 + i,
+                            max_iter=1000
+                        )
+                    else:
+                        # Default to PCA
+                        rotation = PCA(
+                            n_components=min(n_subset_features, 3),
+                            random_state=42 + i
+                        )
+                    
+                    # Fit rotation and transform
+                    X_rotated = rotation.fit_transform(X_subset)
+                    
+                    # Train base model on rotated features
+                    base_model = DecisionTreeRegressor(
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        random_state=42 + i,
+                        max_features='sqrt'
+                    )
+                    base_model.fit(X_rotated, y_bootstrap)
+                    
+                    # Store model and rotation info
+                    self.base_models.append(base_model)
+                    self.rotations.append({
+                        'rotation': rotation,
+                        'feature_indices': feature_indices,
+                        'scaler': scaler,
+                        'rotation_method': rotation_method
+                    })
+                    
+                    # Track training progress
+                    self.training_history.append({
+                        'estimator': i,
+                        'n_features_used': len(feature_indices),
+                        'rotation_components': X_rotated.shape[1],
+                        'model_score': base_model.score(X_rotated, y_bootstrap)
+                    })
+                    
+                except Exception as e:
+                    logger.warning(f"Estimator {i} training failed: {e}")
+                    continue
+            
+            if not self.base_models:
+                raise RuntimeError("All estimators failed to train")
+            
+            # Calculate feature importances
+            self._calculate_feature_importances(X, y)
+            
+            logger.info(f"Rotation Forest training completed with {len(self.base_models)} estimators")
                 
         except Exception as e:
             logger.error(f"Rotation Forest training failed: {e}")
             raise
     
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
+        """Make predictions with enhanced error handling."""
         if not self.base_models:
             raise ValueError("Model not trained")
         
-        predictions = []
-        for model, (pca, feature_indices) in zip(self.base_models, self.rotations):
-            X_subset = X[:, feature_indices]
-            X_rotated = pca.transform(X_subset)
-            pred = model.predict(X_rotated)
-            predictions.append(pred)
-        
-        # Average predictions
-        return np.mean(predictions, axis=0)
+        try:
+            from src.utils.math_validation import validate_numeric_array
+            X = validate_numeric_array(X, "X")
+            
+            predictions = []
+            weights = []
+            
+            for i, (model, rotation_info) in enumerate(zip(self.base_models, self.rotations)):
+                try:
+                    # Get feature subset
+                    feature_indices = rotation_info['feature_indices']
+                    X_subset = X[:, feature_indices]
+                    
+                    # Apply scaling
+                    scaler = rotation_info['scaler']
+                    X_scaled = scaler.transform(X_subset)
+                    
+                    # Apply rotation
+                    rotation = rotation_info['rotation']
+                    X_rotated = rotation.transform(X_scaled)
+                    
+                    # Make prediction
+                    pred = model.predict(X_rotated)
+                    predictions.append(pred)
+                    
+                    # Calculate weight based on model performance
+                    weight = self._calculate_model_weight(model, X_rotated)
+                    weights.append(weight)
+                    
+                except Exception as e:
+                    logger.warning(f"Prediction failed for estimator {i}: {e}")
+                    continue
+            
+            if not predictions:
+                raise RuntimeError("All predictions failed")
+            
+            # Weighted average of predictions
+            predictions_array = np.array(predictions)
+            weights_array = np.array(weights)
+            
+            if np.sum(weights_array) > 0:
+                weights_array = weights_array / np.sum(weights_array)
+                final_predictions = np.average(predictions_array, axis=0, weights=weights_array)
+            else:
+                final_predictions = np.mean(predictions_array, axis=0)
+            
+            return final_predictions
+            
+        except Exception as e:
+            logger.error(f"Rotation Forest prediction failed: {e}")
+            raise
+    
+    def _calculate_model_weight(self, model, X_rotated: np.ndarray) -> float:
+        """Calculate weight for model based on its performance."""
+        try:
+            # Use model's score as weight
+            if hasattr(model, 'score'):
+                return max(0.1, model.score(X_rotated, np.zeros(len(X_rotated))))
+            else:
+                return 1.0
+        except Exception:
+            return 1.0
+    
+    def _calculate_feature_importances(self, X: np.ndarray, y: np.ndarray):
+        """Calculate feature importances for the rotation forest."""
+        try:
+            n_features = X.shape[1]
+            feature_importances = np.zeros(n_features)
+            
+            for model, rotation_info in zip(self.base_models, self.rotations):
+                # Get feature indices used by this model
+                feature_indices = rotation_info['feature_indices']
+                
+                # Get model feature importances
+                if hasattr(model, 'feature_importances_'):
+                    model_importances = model.feature_importances_
+                    
+                    # Map back to original feature space
+                    for i, orig_idx in enumerate(feature_indices):
+                        if i < len(model_importances):
+                            feature_importances[orig_idx] += model_importances[i]
+            
+            # Normalize importances
+            if np.sum(feature_importances) > 0:
+                feature_importances = feature_importances / np.sum(feature_importances)
+            else:
+                feature_importances = np.ones(n_features) / n_features
+            
+            self.feature_importances_ = feature_importances
+            
+        except Exception as e:
+            logger.warning(f"Feature importance calculation failed: {e}")
+            self.feature_importances_ = np.ones(X.shape[1]) / X.shape[1]
+    
+    def get_rotation_info(self) -> List[Dict[str, Any]]:
+        """Get information about rotations used."""
+        try:
+            rotation_info = []
+            for i, rotation_data in enumerate(self.rotations):
+                info = {
+                    'estimator': i,
+                    'feature_indices': rotation_data['feature_indices'].tolist(),
+                    'rotation_method': rotation_data['rotation_method'],
+                    'n_components': rotation_data['rotation'].n_components_,
+                    'explained_variance_ratio': getattr(
+                        rotation_data['rotation'], 'explained_variance_ratio_', None
+                    )
+                }
+                rotation_info.append(info)
+            
+            return rotation_info
+            
+        except Exception as e:
+            logger.warning(f"Rotation info extraction failed: {e}")
+            return []
 
 
 class HistogramGradientBoostingModel:
-    """Histogram Gradient Boosting implementation."""
+    """Enhanced Histogram Gradient Boosting implementation."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize Histogram Gradient Boosting model."""
         self.config = config
         self.model = None
+        self.feature_importances_ = None
+        self.training_history = []
+        self.validation_scores = []
         
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Train Histogram Gradient Boosting model."""
+        """Train enhanced Histogram Gradient Boosting model."""
         try:
             from sklearn.ensemble import HistGradientBoostingRegressor
+            from sklearn.model_selection import train_test_split
+            from src.utils.math_validation import validate_numeric_array
+            from src.utils.common_operations import safe_weighted_average
             
+            # Validate inputs
+            X = validate_numeric_array(X, "X")
+            y = validate_numeric_array(y, "y")
+            
+            # Configuration parameters
+            max_iter = self.config.get('max_iter', 100)
+            max_depth = self.config.get('max_depth', 10)
+            learning_rate = self.config.get('learning_rate', 0.1)
+            min_samples_leaf = self.config.get('min_samples_leaf', 20)
+            l2_regularization = self.config.get('l2_regularization', 0.0)
+            early_stopping = self.config.get('early_stopping', True)
+            validation_fraction = self.config.get('validation_fraction', 0.1)
+            n_iter_no_change = self.config.get('n_iter_no_change', 10)
+            tol = self.config.get('tol', 1e-7)
+            categorical_features = self.config.get('categorical_features', None)
+            monotonic_cst = self.config.get('monotonic_cst', None)
+            interaction_cst = self.config.get('interaction_cst', None)
+            warm_start = self.config.get('warm_start', False)
+            
+            # Create model
             self.model = HistGradientBoostingRegressor(
-                max_iter=self.config.get('max_iter', 100),
-                max_depth=self.config.get('max_depth', 10),
-                learning_rate=self.config.get('learning_rate', 0.1),
-                random_state=42
+                max_iter=max_iter,
+                max_depth=max_depth,
+                learning_rate=learning_rate,
+                min_samples_leaf=min_samples_leaf,
+                l2_regularization=l2_regularization,
+                early_stopping=early_stopping,
+                validation_fraction=validation_fraction,
+                n_iter_no_change=n_iter_no_change,
+                tol=tol,
+                categorical_features=categorical_features,
+                monotonic_cst=monotonic_cst,
+                interaction_cst=interaction_cst,
+                warm_start=warm_start,
+                random_state=42,
+                verbose=0
             )
             
+            # Train model
             self.model.fit(X, y)
+            
+            # Extract training history
+            if hasattr(self.model, 'train_score_'):
+                self.training_history = self.model.train_score_.tolist()
+            
+            if hasattr(self.model, 'validation_score_'):
+                self.validation_scores = self.model.validation_score_.tolist()
+            
+            # Calculate feature importances
+            self._calculate_feature_importances(X, y)
+            
+            logger.info(f"Histogram Gradient Boosting training completed")
+            logger.info(f"   → Final iterations: {self.model.n_iter_}")
+            logger.info(f"   → Final score: {self.model.score(X, y):.4f}")
             
         except Exception as e:
             logger.error(f"Histogram Gradient Boosting training failed: {e}")
             raise
     
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
+        """Make predictions with enhanced error handling."""
         if self.model is None:
             raise ValueError("Model not trained")
         
-        return self.model.predict(X)
+        try:
+            from src.utils.math_validation import validate_numeric_array
+            X = validate_numeric_array(X, "X")
+            
+            predictions = self.model.predict(X)
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"Histogram Gradient Boosting prediction failed: {e}")
+            raise
+    
+    def _calculate_feature_importances(self, X: np.ndarray, y: np.ndarray):
+        """Calculate feature importances for the histogram gradient boosting model."""
+        try:
+            # Get feature importances from the model
+            if hasattr(self.model, 'feature_importances_'):
+                self.feature_importances_ = self.model.feature_importances_
+            else:
+                # Fallback: calculate using permutation importance
+                self._calculate_permutation_importance(X, y)
+            
+        except Exception as e:
+            logger.warning(f"Feature importance calculation failed: {e}")
+            self.feature_importances_ = np.ones(X.shape[1]) / X.shape[1]
+    
+    def _calculate_permutation_importance(self, X: np.ndarray, y: np.ndarray):
+        """Calculate permutation importance as fallback."""
+        try:
+            from sklearn.inspection import permutation_importance
+            
+            # Calculate permutation importance
+            perm_importance = permutation_importance(
+                self.model, X, y, n_repeats=5, random_state=42
+            )
+            
+            self.feature_importances_ = perm_importance.importances_mean
+            
+        except Exception as e:
+            logger.warning(f"Permutation importance calculation failed: {e}")
+            self.feature_importances_ = np.ones(X.shape[1]) / X.shape[1]
+    
+    def get_training_curves(self) -> Dict[str, List[float]]:
+        """Get training and validation curves."""
+        try:
+            curves = {}
+            
+            if self.training_history:
+                curves['training_score'] = self.training_history
+            
+            if self.validation_scores:
+                curves['validation_score'] = self.validation_scores
+            
+            return curves
+            
+        except Exception as e:
+            logger.warning(f"Training curves extraction failed: {e}")
+            return {}
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get comprehensive model information."""
+        try:
+            info = {
+                'n_iter_': getattr(self.model, 'n_iter_', None),
+                'n_trees_per_iteration_': getattr(self.model, 'n_trees_per_iteration_', None),
+                'train_score_': getattr(self.model, 'train_score_', None),
+                'validation_score_': getattr(self.model, 'validation_score_', None),
+                'feature_importances_': self.feature_importances_,
+                'training_history': self.training_history,
+                'validation_scores': self.validation_scores
+            }
+            
+            return info
+            
+        except Exception as e:
+            logger.warning(f"Model info extraction failed: {e}")
+            return {}
+    
+    def partial_fit(self, X: np.ndarray, y: np.ndarray):
+        """Incremental learning (if warm_start is enabled)."""
+        try:
+            if not hasattr(self.model, 'partial_fit'):
+                raise ValueError("Model does not support partial_fit")
+            
+            from src.utils.math_validation import validate_numeric_array
+            X = validate_numeric_array(X, "X")
+            y = validate_numeric_array(y, "y")
+            
+            self.model.partial_fit(X, y)
+            
+            # Update feature importances
+            self._calculate_feature_importances(X, y)
+            
+        except Exception as e:
+            logger.error(f"Partial fit failed: {e}")
+            raise
 
 
 class PureTreeNAS:

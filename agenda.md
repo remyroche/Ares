@@ -20,6 +20,7 @@
   - `tprint_success()` - Success messages
   - `tprint_progress()` - Progress updates
   - `tprint_performance()` - Performance metrics
+- **NEVER** swallow exceptions or allow silent failures — every caught error must emit a `tprint_error()` (or more specific severity) entry that captures full context.
 - Configure `tprint` with appropriate log levels and file output
 - Use structured logging with `tprint_structured()` for complex data
 
@@ -92,6 +93,7 @@
 - Use `src/utils/graceful_module_handler.py` for module-level error recovery
 - Apply `src/utils/fallback_monitoring.py` for system resilience
 - Leverage `src/utils/error_recovery/` for advanced error recovery patterns
+- **NO SILENT FAILURES**: Always log detected issues with the appropriate `tprint_*` helper and propagate actionable context.
 - **FAST-FAIL PREFERRED**: When operating interactive agent flows, prefer immediate failure over degraded fallbacks. Disable fallback/retry paths (for example, set `enable_fallback_mode=False` in `NASTASClusteringConfig`) unless the user explicitly requests resilience testing.
 
 ### 9. Validation & Quality Assurance

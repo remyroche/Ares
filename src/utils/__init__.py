@@ -100,8 +100,6 @@ try:
 except ImportError:
     SERIALIZATION_AVAILABLE = False
 
-CONFIG_AVAILABLE = False
-
 try:
     from .performance_utils import (
         PerformanceMonitor,

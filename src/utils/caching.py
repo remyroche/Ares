@@ -1,6 +1,5 @@
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 import logging
-import asyncio
 
 from src.utils.unified_cache import UnifiedCache
 
@@ -42,15 +41,24 @@ class IntelligentCache:
 
     # Sync API
     def get(self, key: str) -> Any | None:
+        """Retrieve a cached value synchronously."""
         return self._cache.get(key)
 
-    def set(self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def set(
+        self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Store a value synchronously."""
         self._cache.set(key, value, metadata)
 
-    async def get(self, key: str) -> Any | None:
+    # Async API
+    async def async_get(self, key: str) -> Any | None:
+        """Retrieve a cached value asynchronously."""
         return await self._cache.aget(key)
 
-    async def set(self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
+    async def async_set(
+        self, key: str, value: Any, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Store a value asynchronously."""
         await self._cache.aset(key, value, metadata)
 
     def clear(self) -> None:

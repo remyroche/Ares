@@ -55,7 +55,7 @@ class DecoratorMetadata:
             self.last_used = None
             self.error_count = 0
             self.last_error = None
-            logger.success(f"✅ DecoratorMetadata created successfully for '{name}'")
+            logger.info(f"✅ DecoratorMetadata created successfully for '{name}'")
         except Exception as e:
             logger.error(f"❌ Failed to create DecoratorMetadata for '{name}': {e}")
             log_error_with_context(logger, e, context={'name': name, 'version': version, 'deprecated': deprecated}, operation='DecoratorMetadata.__init__')

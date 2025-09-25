@@ -10,9 +10,13 @@ import aiofiles
 from .logger import system_logger
 from .warning_symbols import invalid, failed, missing
 
-from logging import warning
 from src.utils.decorators import handles_errors
 # src/utils/async_utils.py
+
+
+def _format_warning(message: str) -> str:
+    """Return a standardized warning message."""
+    return f"⚠️ {message}"
 
 
 class AsyncFileManager:
@@ -291,6 +295,7 @@ class AsyncTaskManager:
         self.active_tasks: dict[str, asyncio.Task[Any]] = {}
         self.task_results: dict[str, Any] = {}
         self.max_concurrent_tasks: int = 10
+        self.max_stored_results: int = 100
 
         # Configuration
         self.task_config: dict[str, Any] = self.config.get("async_task_manager", {})
@@ -336,10 +341,12 @@ class AsyncTaskManager:
         self.task_config.setdefault("task_timeout", 300)
         self.task_config.setdefault("enable_task_monitoring", True)
         self.task_config.setdefault("auto_cleanup_failed_tasks", True)
+        self.task_config.setdefault("max_stored_results", 100)
 
         # Update configuration
         self.max_concurrent_tasks = int(self.task_config["max_concurrent_tasks"])
         self.task_timeout = int(self.task_config["task_timeout"])
+        self.max_stored_results = max(1, int(self.task_config["max_stored_results"]))
 
         self.logger.info("Task configuration loaded successfully")
 
@@ -359,6 +366,10 @@ class AsyncTaskManager:
         # Validate task timeout
         if self.task_timeout <= 0:
             self.logger.error(invalid("Invalid task timeout"))
+            return False
+
+        if self.max_stored_results <= 0:
+            self.logger.error(invalid("Invalid max stored task results"))
             return False
 
         self.logger.info("Configuration validation successful")
@@ -400,9 +411,10 @@ class AsyncTaskManager:
             # Execute with timeout
             result = await asyncio.wait_for(task, timeout = chosen_timeout)
             self.task_results[task_name] = result
+            self._prune_task_results()
             self.logger.info(f"Task completed: {task_name}")
             return result
-        except TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             self.logger.exception(failed(f"Task timed out: {task_name}"))
             task.cancel()
             return None
@@ -457,19 +469,21 @@ class AsyncTaskManager:
         self.logger.info("All tasks cancelled")
 
     def get_task_status(self) -> dict[str, Any]:
-        """
-        Get task manager status information.
-
-        Returns:
-            Dict[str, Any]: Task manager status
-        """
+        """Get task manager status information."""
         return {
             "active_tasks_count": len(self.active_tasks),
             "max_concurrent_tasks": self.max_concurrent_tasks,
             "task_timeout": self.task_timeout,
+            "max_stored_results": self.max_stored_results,
             "active_task_names": list(self.active_tasks.keys()),
             "completed_tasks_count": len(self.task_results),
         }
+
+    def _prune_task_results(self) -> None:
+        """Ensure the stored task results do not exceed the configured limit."""
+        while len(self.task_results) > self.max_stored_results:
+            oldest_task = next(iter(self.task_results))
+            del self.task_results[oldest_task]
 
     @handles_errors(fallback = None)
     async def stop(self) -> None:
@@ -507,7 +521,9 @@ class AsyncProcessesManager:
         """Start an async process."""
         if len(self.processes) >= self.max_processes:
             self.logger.warning(
-                warning(f"Maximum processes ({self.max_processes}) reached")
+                _format_warning(
+                    f"Maximum processes ({self.max_processes}) reached"
+                )
             )
             return None
 
@@ -536,7 +552,7 @@ class AsyncProcessesManager:
         try:
             process.terminate()
             await asyncio.wait_for(process.wait(), timeout = 5.0)
-        except TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             process.kill()
             await process.wait()
         except Exception as e:  # noqa: BLE001

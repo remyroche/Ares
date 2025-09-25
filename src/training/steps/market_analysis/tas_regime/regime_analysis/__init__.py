@@ -12,7 +12,7 @@ Advanced regime analysis capabilities for tree architecture search including:
 from .tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector, TreeRegimeClassifier
 from .regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector, TreeRegimeAdapter
 from .regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer, TreeRegimeDashboard
-from .clustering_regime_detection import (
+from src.utils.nas_tas.clustering_regime_detection import (
     TreeBasedClusteringRegimeDetector,
     ClusteringRegimeConfig,
     quick_clustering_detection

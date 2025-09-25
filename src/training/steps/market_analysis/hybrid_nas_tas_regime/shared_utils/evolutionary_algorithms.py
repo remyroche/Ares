@@ -85,7 +85,100 @@ class EvolutionaryAlgorithm(ABC):
         Returns:
             EvolutionaryResult with optimization results
         """
-        pass
+        try:
+            start_time = time.time()
+            optimization_history = []
+            
+            # Initialize population
+            population = self._initialize_population(parameter_space)
+            
+            # Evaluate initial population
+            for individual in population:
+                try:
+                    objectives = []
+                    for obj_func in objective_functions:
+                        score = obj_func(individual.parameters)
+                        objectives.append(score)
+                    individual.objectives = objectives
+                except Exception as e:
+                    self.logger.warning(f"Objective function failed for {individual.parameters}: {e}")
+                    individual.objectives = [0.0] * len(objective_functions)
+            
+            # Main evolutionary loop
+            for generation in range(self.config.max_generations):
+                # Selection
+                parents = self._selection(population)
+                
+                # Crossover
+                offspring = self._crossover(parents)
+                
+                # Mutation
+                offspring = self._mutation(offspring, parameter_space)
+                
+                # Evaluate offspring
+                for individual in offspring:
+                    try:
+                        objectives = []
+                        for obj_func in objective_functions:
+                            score = obj_func(individual.parameters)
+                            objectives.append(score)
+                        individual.objectives = objectives
+                    except Exception as e:
+                        self.logger.warning(f"Objective function failed for {individual.parameters}: {e}")
+                        individual.objectives = [0.0] * len(objective_functions)
+                
+                # Combine population and offspring
+                combined_population = population + offspring
+                
+                # Environmental selection
+                population = self._environmental_selection(combined_population)
+                
+                # Record generation info
+                gen_info = {
+                    'generation': generation,
+                    'population_size': len(population),
+                    'best_objectives': [max(ind.objectives) for ind in population[:5]],
+                    'timestamp': time.time()
+                }
+                optimization_history.append(gen_info)
+                
+                # Check convergence
+                if self._check_convergence(population):
+                    self.logger.info(f"Converged at generation {generation}")
+                    break
+            
+            # Find Pareto front
+            pareto_front = self._find_pareto_front(population)
+            
+            # Get best individuals
+            best_individuals = sorted(population, key=lambda x: sum(x.objectives), reverse=True)[:10]
+            
+            execution_time = time.time() - start_time
+            
+            return EvolutionaryResult(
+                best_individuals=best_individuals,
+                pareto_front=pareto_front,
+                optimization_history=optimization_history,
+                convergence_info={
+                    'n_generations': len(optimization_history),
+                    'final_population_size': len(population),
+                    'converged': len(optimization_history) < self.config.max_generations
+                },
+                execution_time=execution_time,
+                success=True
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Evolutionary optimization failed: {e}")
+            return EvolutionaryResult(
+                best_individuals=[],
+                pareto_front=[],
+                optimization_history=[],
+                convergence_info={'error': str(e)},
+                execution_time=0.0,
+                success=False,
+                error_message=str(e)
+            )
     
     def _initialize_population(self, parameter_space: Dict[str, Any]) -> List[Individual]:
         """Initialize random population."""

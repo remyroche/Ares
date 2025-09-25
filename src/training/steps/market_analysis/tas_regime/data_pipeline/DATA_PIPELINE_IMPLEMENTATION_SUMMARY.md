@@ -144,7 +144,7 @@ This document summarizes the implementation of the comprehensive data pipeline f
 ## Usage Example
 
 ```python
-from src.utils.ml_common.optimization.tas.data_pipeline.pipeline_orchestrator import (
+from src.utils.nas_tas.tas.data_pipeline.pipeline_orchestrator import (
     DataPipelineOrchestrator, PipelineConfig
 )
 

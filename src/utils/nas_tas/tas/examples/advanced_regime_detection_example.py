@@ -14,7 +14,7 @@ import logging
 from src.utils.nas_tas.unsupervised_regime_detection import (
     UnsupervisedRegimeDetector, RegimeDetectionConfig
 )
-from src.utils.ml_common.optimization.tas.regime_analysis.regime_qualification import (
+from src.utils.nas_tas.tas.regime_analysis.regime_qualification import (
     RegimeQualifier, RegimeQualificationConfig
 )
 

@@ -1,94 +1,151 @@
 """
-Tree-Based Architecture Search (TAS) module.
+TAS to NAS Parity Enhancement Module
 
-This module contains TAS-specific implementations for automated tree-based model architecture discovery.
+This module provides comprehensive enhancements to bring the TAS (Tensor Adaptive System)
+to full parity with state-of-the-art NAS (Neural Architecture Search) systems.
+
+Key Components:
+- Hardware acceleration for tree-based CLVSA models
+- Real-time optimization engine
+- Architecture diversity expansion
+- Advanced meta-learning capabilities
+- Continuous adaptation system
+- Comprehensive testing framework
 """
 
-from .tree_based_architecture_search import (
-    TreeBasedArchitectureSearch,
+# Import all major components
+from .hardware import (
+    TreeHardwareAccelerator,
+    CLVSAHardwareOptimizer,
+    HardwareAccelerationConfig,
+    create_tree_hardware_accelerator,
+    create_cvlsa_hardware_optimizer
+)
+
+from .realtime import (
+    RealTimeOptimizationEngine,
+    PerformanceMonitor,
+    AdaptationEngine,
+    RealTimeOptimizationConfig,
+    create_realtime_optimization_engine,
+    create_performance_monitor,
+    create_adaptation_engine
+)
+
+from .architecture import (
+    TreeArchitectureFactory,
+    TreeArchitectureEvaluator,
+    TreeArchitectureSelector,
+    TreeArchitectureType,
     TreeArchitectureConfig,
     TreeArchitectureCandidate,
-    TreeArchitectureSearchSpace,
-    search_tree_architecture
+    create_tree_architecture_factory,
+    create_tree_architecture_evaluator,
+    create_tree_architecture_selector
 )
 
-from .pure_tree_nas import (
-    PureTreeNAS,
-    PureTreeNASConfig,
-    TreeArchitectureCandidate as PureTreeArchitectureCandidate,
-    NODEModel,
-    ObliviousTree,
-    ObliviousTreeModel,
-    RotationForestModel,
-    HistogramGradientBoostingModel
+from .meta_learning import (
+    AdvancedMetaLearningSystem,
+    AdvancedMAML,
+    CrossDomainMetaLearning,
+    MetaLearningMethod,
+    AdvancedMetaLearningConfig,
+    MetaTask,
+    MetaLearningResult,
+    create_advanced_meta_learning_system,
+    create_advanced_maml,
+    create_cross_domain_meta_learning
 )
 
-from .unsupervised_tree_nas import (
-    UnsupervisedTreeNAS,
-    UnsupervisedTreeNASConfig,
-    RegimeCandidate,
-    UnsupervisedArchitectureCandidate
+from .adaptation import (
+    ContinuousAdaptationSystem,
+    RegimeChangeDetector,
+    PerformanceAdaptationTrigger,
+    CLVSAAdaptationEngine,
+    ContinuousAdaptationConfig,
+    AdaptationTrigger,
+    AdaptationResult,
+    create_continuous_adaptation_system,
+    create_regime_change_detector,
+    create_cvlsa_adaptation_engine
 )
 
-from .regime_trading_tree_nas import (
-    RegimeTradingTreeNAS,
-    RegimeTradingTreeNASConfig,
-    RegimeDetectionTree,
-    TradingSignalTree,
-    RiskManagementTree,
-    PositionSizingTree
-)
-
-from .trading_tree_architecture_search import (
-    TradingTreeArchitectureSearch,
-    TradingTASConfig,
-    TradingRegime,
-    TradingTASResult,
-    TradingObjective,
-    MarketRegime,
-    optimize_trading_regimes,
-    select_trading_model
+from .testing import (
+    ComprehensiveTestingFramework,
+    UnitTestSuite,
+    IntegrationTestSuite,
+    NASBenchmarkSuite,
+    TestingConfig,
+    TestResult,
+    BenchmarkResult,
+    create_comprehensive_testing_framework,
+    create_unit_test_suite,
+    create_integration_test_suite,
+    create_nas_benchmark_suite
 )
 
 __all__ = [
-    # Core TAS
-    'TreeBasedArchitectureSearch',
+    # Hardware acceleration
+    'TreeHardwareAccelerator',
+    'CLVSAHardwareOptimizer',
+    'HardwareAccelerationConfig',
+    'create_tree_hardware_accelerator',
+    'create_cvlsa_hardware_optimizer',
+    
+    # Real-time optimization
+    'RealTimeOptimizationEngine',
+    'PerformanceMonitor',
+    'AdaptationEngine',
+    'RealTimeOptimizationConfig',
+    'create_realtime_optimization_engine',
+    'create_performance_monitor',
+    'create_adaptation_engine',
+    
+    # Architecture diversity
+    'TreeArchitectureFactory',
+    'TreeArchitectureEvaluator',
+    'TreeArchitectureSelector',
+    'TreeArchitectureType',
     'TreeArchitectureConfig',
-    'TreeArchitectureCandidate', 
-    'TreeArchitectureSearchSpace',
-    'search_tree_architecture',
+    'TreeArchitectureCandidate',
+    'create_tree_architecture_factory',
+    'create_tree_architecture_evaluator',
+    'create_tree_architecture_selector',
     
-    # Pure Tree NAS
-    'PureTreeNAS',
-    'PureTreeNASConfig',
-    'PureTreeArchitectureCandidate',
-    'NODEModel',
-    'ObliviousTree',
-    'ObliviousTreeModel',
-    'RotationForestModel',
-    'HistogramGradientBoostingModel',
+    # Meta-learning
+    'AdvancedMetaLearningSystem',
+    'AdvancedMAML',
+    'CrossDomainMetaLearning',
+    'MetaLearningMethod',
+    'AdvancedMetaLearningConfig',
+    'MetaTask',
+    'MetaLearningResult',
+    'create_advanced_meta_learning_system',
+    'create_advanced_maml',
+    'create_cross_domain_meta_learning',
     
-    # Unsupervised Tree NAS
-    'UnsupervisedTreeNAS',
-    'UnsupervisedTreeNASConfig',
-    'RegimeCandidate',
-    'UnsupervisedArchitectureCandidate',
+    # Continuous adaptation
+    'ContinuousAdaptationSystem',
+    'RegimeChangeDetector',
+    'PerformanceAdaptationTrigger',
+    'CLVSAAdaptationEngine',
+    'ContinuousAdaptationConfig',
+    'AdaptationTrigger',
+    'AdaptationResult',
+    'create_continuous_adaptation_system',
+    'create_regime_change_detector',
+    'create_cvlsa_adaptation_engine',
     
-    # Regime Trading Tree NAS
-    'RegimeTradingTreeNAS',
-    'RegimeTradingTreeNASConfig',
-    'RegimeDetectionTree',
-    'TradingSignalTree',
-    'RiskManagementTree',
-    'PositionSizingTree',
-    
-    # Trading Tree Architecture Search
-    'TradingTreeArchitectureSearch',
-    'TradingTASConfig',
-    'TradingRegime',
-    'TradingTASResult',
-    'TradingObjective',
-    'MarketRegime',
-    'optimize_trading_regimes',
-    'select_trading_model'
+    # Testing framework
+    'ComprehensiveTestingFramework',
+    'UnitTestSuite',
+    'IntegrationTestSuite',
+    'NASBenchmarkSuite',
+    'TestingConfig',
+    'TestResult',
+    'BenchmarkResult',
+    'create_comprehensive_testing_framework',
+    'create_unit_test_suite',
+    'create_integration_test_suite',
+    'create_nas_benchmark_suite'
 ]

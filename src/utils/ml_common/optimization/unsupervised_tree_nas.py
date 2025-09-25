@@ -953,81 +953,443 @@ class UnsupervisedTreeNAS:
             return 0.0
     
     def _determine_regime_type(self, regime_samples: np.ndarray, feature_names: List[str]) -> str:
-        """Determine the type of regime based on sample characteristics."""
+        """Determine the type of regime based on comprehensive sample characteristics."""
         try:
-            # Simple heuristic based on feature values
+            from src.utils.math_validation import safe_mean, safe_std, validate_finite
+            from src.utils.common_operations import safe_weighted_average
+            
+            # Initialize regime characteristics
+            regime_characteristics = {
+                'bull_score': 0.0,
+                'bear_score': 0.0,
+                'sideways_score': 0.0,
+                'volatile_score': 0.0,
+                'trending_score': 0.0
+            }
+            
+            # Analyze returns if available
             if 'returns' in feature_names:
                 returns_idx = feature_names.index('returns')
-                avg_returns = np.mean(regime_samples[:, returns_idx])
+                returns_data = regime_samples[:, returns_idx]
                 
-                if avg_returns > 0.01:
-                    return 'bull'
-                elif avg_returns < -0.01:
-                    return 'bear'
-                else:
-                    return 'sideways'
-            elif 'volatility' in feature_names:
-                volatility_idx = feature_names.index('volatility')
-                avg_volatility = np.mean(regime_samples[:, volatility_idx])
+                # Remove NaN and infinite values
+                valid_returns = returns_data[np.isfinite(returns_data)]
+                if len(valid_returns) > 0:
+                    avg_returns = safe_mean(valid_returns)
+                    returns_std = safe_std(valid_returns)
+                    returns_skew = self._calculate_skewness(valid_returns)
+                    
+                    # Bull market indicators
+                    if avg_returns > 0.005:  # Positive returns
+                        regime_characteristics['bull_score'] += 0.3
+                    if returns_skew > 0:  # Positive skew
+                        regime_characteristics['bull_score'] += 0.2
+                    
+                    # Bear market indicators
+                    if avg_returns < -0.005:  # Negative returns
+                        regime_characteristics['bear_score'] += 0.3
+                    if returns_skew < -0.5:  # Negative skew
+                        regime_characteristics['bear_score'] += 0.2
+                    
+                    # Sideways market indicators
+                    if abs(avg_returns) < 0.002:  # Low absolute returns
+                        regime_characteristics['sideways_score'] += 0.4
+                    
+                    # Volatile market indicators
+                    if returns_std > 0.02:  # High volatility
+                        regime_characteristics['volatile_score'] += 0.3
+            
+            # Analyze momentum features
+            momentum_features = [f for f in feature_names if 'momentum' in f.lower()]
+            if momentum_features:
+                momentum_scores = []
+                for momentum_feature in momentum_features:
+                    try:
+                        momentum_idx = feature_names.index(momentum_feature)
+                        momentum_data = regime_samples[:, momentum_idx]
+                        valid_momentum = momentum_data[np.isfinite(momentum_data)]
+                        if len(valid_momentum) > 0:
+                            momentum_scores.append(safe_mean(valid_momentum))
+                    except (ValueError, IndexError):
+                        continue
                 
-                if avg_volatility > 0.02:
-                    return 'volatile'
-                else:
-                    return 'stable'
-            else:
-                return 'unknown'
+                if momentum_scores:
+                    avg_momentum = safe_mean(np.array(momentum_scores))
+                    if avg_momentum > 0.01:
+                        regime_characteristics['trending_score'] += 0.3
+                    elif avg_momentum < -0.01:
+                        regime_characteristics['trending_score'] += 0.2
+            
+            # Analyze volatility features
+            volatility_features = [f for f in feature_names if 'volatility' in f.lower() or 'vol' in f.lower()]
+            if volatility_features:
+                volatility_scores = []
+                for vol_feature in volatility_features:
+                    try:
+                        vol_idx = feature_names.index(vol_feature)
+                        vol_data = regime_samples[:, vol_idx]
+                        valid_vol = vol_data[np.isfinite(vol_data)]
+                        if len(valid_vol) > 0:
+                            volatility_scores.append(safe_mean(valid_vol))
+                    except (ValueError, IndexError):
+                        continue
+                
+                if volatility_scores:
+                    avg_volatility = safe_mean(np.array(volatility_scores))
+                    if avg_volatility > 0.02:
+                        regime_characteristics['volatile_score'] += 0.4
+                    elif avg_volatility < 0.01:
+                        regime_characteristics['sideways_score'] += 0.2
+            
+            # Analyze volume features
+            volume_features = [f for f in feature_names if 'volume' in f.lower()]
+            if volume_features:
+                volume_scores = []
+                for vol_feature in volume_features:
+                    try:
+                        vol_idx = feature_names.index(vol_feature)
+                        vol_data = regime_samples[:, vol_idx]
+                        valid_vol = vol_data[np.isfinite(vol_data)]
+                        if len(valid_vol) > 0:
+                            volume_scores.append(safe_mean(valid_vol))
+                    except (ValueError, IndexError):
+                        continue
+                
+                if volume_scores:
+                    avg_volume = safe_mean(np.array(volume_scores))
+                    if avg_volume > 1.5:  # High volume
+                        regime_characteristics['trending_score'] += 0.2
+                    elif avg_volume < 0.8:  # Low volume
+                        regime_characteristics['sideways_score'] += 0.2
+            
+            # Analyze technical indicators
+            if 'rsi' in feature_names:
+                try:
+                    rsi_idx = feature_names.index('rsi')
+                    rsi_data = regime_samples[:, rsi_idx]
+                    valid_rsi = rsi_data[np.isfinite(rsi_data)]
+                    if len(valid_rsi) > 0:
+                        avg_rsi = safe_mean(valid_rsi)
+                        if avg_rsi > 70:  # Overbought
+                            regime_characteristics['bear_score'] += 0.2
+                        elif avg_rsi < 30:  # Oversold
+                            regime_characteristics['bull_score'] += 0.2
+                        elif 40 <= avg_rsi <= 60:  # Neutral
+                            regime_characteristics['sideways_score'] += 0.2
+                except (ValueError, IndexError):
+                    pass
+            
+            # Determine regime type based on highest score
+            best_regime = max(regime_characteristics.items(), key=lambda x: x[1])
+            regime_type = best_regime[0].replace('_score', '')
+            
+            # Add confidence-based refinement
+            if best_regime[1] < 0.3:  # Low confidence
+                regime_type = 'mixed'
+            elif best_regime[1] > 0.7:  # High confidence
+                # Keep the determined type
+                pass
+            else:  # Medium confidence
+                # Check for secondary characteristics
+                second_best = sorted(regime_characteristics.items(), key=lambda x: x[1], reverse=True)[1]
+                if second_best[1] > best_regime[1] * 0.8:  # Close second
+                    regime_type = f"{regime_type}_{second_best[0].replace('_score', '')}"
+            
+            return regime_type
                 
         except Exception as e:
             self.logger.warning(f"Regime type determination failed: {e}")
             return 'unknown'
     
-    def _calculate_transition_probabilities(self, labels: np.ndarray, regime_id: int) -> Tuple[float, List[int]]:
-        """Calculate transition probabilities from a regime."""
+    def _calculate_skewness(self, data: np.ndarray) -> float:
+        """Calculate skewness of data."""
         try:
+            if len(data) < 3:
+                return 0.0
+            
+            mean_val = np.mean(data)
+            std_val = np.std(data)
+            
+            if std_val == 0:
+                return 0.0
+            
+            skewness = np.mean(((data - mean_val) / std_val) ** 3)
+            return float(skewness)
+            
+        except Exception:
+            return 0.0
+    
+    def _calculate_transition_probabilities(self, labels: np.ndarray, regime_id: int) -> Tuple[float, List[int]]:
+        """Calculate comprehensive transition probabilities from a regime."""
+        try:
+            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.common_operations import safe_weighted_average
+            
             regime_positions = np.where(labels == regime_id)[0]
             if len(regime_positions) == 0:
                 return 0.0, []
             
-            # Find transitions
-            transitions = []
-            for pos in regime_positions:
-                if pos < len(labels) - 1 and labels[pos + 1] != regime_id:
-                    transitions.append(labels[pos + 1])
+            # Find all transitions (both forward and backward)
+            forward_transitions = []
+            backward_transitions = []
             
-            if not transitions:
+            for pos in regime_positions:
+                # Forward transitions
+                if pos < len(labels) - 1 and labels[pos + 1] != regime_id:
+                    forward_transitions.append({
+                        'from_regime': regime_id,
+                        'to_regime': labels[pos + 1],
+                        'position': pos,
+                        'direction': 'forward'
+                    })
+                
+                # Backward transitions (regime started after another regime)
+                if pos > 0 and labels[pos - 1] != regime_id:
+                    backward_transitions.append({
+                        'from_regime': labels[pos - 1],
+                        'to_regime': regime_id,
+                        'position': pos,
+                        'direction': 'backward'
+                    })
+            
+            # Calculate transition probabilities
+            total_transitions = len(forward_transitions) + len(backward_transitions)
+            if total_transitions == 0:
                 return 0.0, []
             
-            # Calculate transition probability
-            transition_probability = len(transitions) / len(regime_positions)
+            # Basic transition probability
+            transition_probability = total_transitions / len(regime_positions)
             
-            # Get unique transition targets
-            transition_targets = list(set(transitions))
+            # Weight transitions by their temporal proximity and regime stability
+            weighted_transitions = []
+            for transition in forward_transitions + backward_transitions:
+                # Calculate weight based on regime duration and stability
+                regime_duration = self._calculate_regime_duration_at_position(labels, regime_id, transition['position'])
+                stability_weight = min(1.0, regime_duration / 10.0)  # Longer regimes are more stable
+                
+                weighted_transitions.append({
+                    'target_regime': transition['to_regime'],
+                    'weight': stability_weight,
+                    'direction': transition['direction']
+                })
             
-            return float(transition_probability), transition_targets
+            # Group by target regime and calculate weighted probabilities
+            target_regimes = {}
+            for wt in weighted_transitions:
+                target = wt['target_regime']
+                if target not in target_regimes:
+                    target_regimes[target] = {'weights': [], 'directions': []}
+                target_regimes[target]['weights'].append(wt['weight'])
+                target_regimes[target]['directions'].append(wt['direction'])
+            
+            # Calculate weighted transition targets
+            weighted_targets = []
+            for target_regime, data in target_regimes.items():
+                avg_weight = safe_mean(np.array(data['weights']))
+                # Only include targets with significant weight
+                if avg_weight > 0.3:
+                    weighted_targets.append(target_regime)
+            
+            # If no weighted targets, use simple unique targets
+            if not weighted_targets:
+                all_transitions = [t['to_regime'] for t in forward_transitions]
+                weighted_targets = list(set(all_transitions))
+            
+            # Adjust transition probability based on regime characteristics
+            regime_stability = self._calculate_regime_stability(labels, regime_id)
+            adjusted_probability = transition_probability * (1.0 - regime_stability * 0.5)
+            
+            return float(np.clip(adjusted_probability, 0.0, 1.0)), weighted_targets
             
         except Exception as e:
             self.logger.warning(f"Transition probability calculation failed: {e}")
             return 0.0, []
     
+    def _calculate_regime_duration_at_position(self, labels: np.ndarray, regime_id: int, position: int) -> int:
+        """Calculate regime duration at a specific position."""
+        try:
+            if position < 0 or position >= len(labels):
+                return 0
+            
+            # Find the start of the current regime segment
+            start_pos = position
+            while start_pos > 0 and labels[start_pos - 1] == regime_id:
+                start_pos -= 1
+            
+            # Find the end of the current regime segment
+            end_pos = position
+            while end_pos < len(labels) - 1 and labels[end_pos + 1] == regime_id:
+                end_pos += 1
+            
+            return end_pos - start_pos + 1
+            
+        except Exception:
+            return 1
+    
+    def _calculate_regime_stability(self, labels: np.ndarray, regime_id: int) -> float:
+        """Calculate regime stability based on consecutive occurrences."""
+        try:
+            regime_positions = np.where(labels == regime_id)[0]
+            if len(regime_positions) == 0:
+                return 0.0
+            
+            # Find consecutive segments
+            consecutive_segments = []
+            current_segment = [regime_positions[0]]
+            
+            for i in range(1, len(regime_positions)):
+                if regime_positions[i] == regime_positions[i-1] + 1:
+                    current_segment.append(regime_positions[i])
+                else:
+                    consecutive_segments.append(current_segment)
+                    current_segment = [regime_positions[i]]
+            
+            consecutive_segments.append(current_segment)
+            
+            # Calculate stability based on segment lengths
+            segment_lengths = [len(segment) for segment in consecutive_segments]
+            if not segment_lengths:
+                return 0.0
+            
+            # Stability is higher for longer consecutive segments
+            max_segment_length = max(segment_lengths)
+            avg_segment_length = np.mean(segment_lengths)
+            
+            # Normalize stability (0 to 1)
+            stability = min(1.0, (max_segment_length + avg_segment_length) / (2 * 20))
+            
+            return float(stability)
+            
+        except Exception:
+            return 0.0
+    
     def _calculate_regime_feature_importance(self, regime_samples: np.ndarray, 
                                           feature_names: List[str]) -> Dict[str, float]:
-        """Calculate feature importance for a specific regime."""
+        """Calculate comprehensive feature importance for a specific regime."""
         try:
+            from src.utils.math_validation import safe_mean, safe_std, safe_correlation
+            from src.utils.common_operations import safe_weighted_average
+            
             if len(regime_samples) == 0:
                 return {name: 0.0 for name in feature_names}
             
-            # Calculate variance of each feature within the regime
+            # Multiple importance metrics
+            importance_metrics = {}
+            
+            # 1. Variance-based importance (original method)
             feature_variances = np.var(regime_samples, axis=0)
-            
-            # Normalize variances to get importance scores
             total_variance = np.sum(feature_variances)
-            if total_variance == 0:
-                return {name: 1.0 / len(feature_names) for name in feature_names}
+            if total_variance > 0:
+                variance_importance = feature_variances / total_variance
+            else:
+                variance_importance = np.ones(len(feature_names)) / len(feature_names)
             
+            # 2. Range-based importance (spread of values)
+            feature_ranges = np.ptp(regime_samples, axis=0)  # peak-to-peak
+            total_range = np.sum(feature_ranges)
+            if total_range > 0:
+                range_importance = feature_ranges / total_range
+            else:
+                range_importance = np.ones(len(feature_names)) / len(feature_names)
+            
+            # 3. Skewness-based importance (asymmetry indicates regime characteristics)
+            skewness_importance = np.zeros(len(feature_names))
+            for i in range(len(feature_names)):
+                feature_data = regime_samples[:, i]
+                valid_data = feature_data[np.isfinite(feature_data)]
+                if len(valid_data) > 2:
+                    skewness = self._calculate_skewness(valid_data)
+                    skewness_importance[i] = abs(skewness)  # Absolute skewness
+            
+            total_skewness = np.sum(skewness_importance)
+            if total_skewness > 0:
+                skewness_importance = skewness_importance / total_skewness
+            else:
+                skewness_importance = np.ones(len(feature_names)) / len(feature_names)
+            
+            # 4. Correlation-based importance (how well features correlate with regime center)
+            regime_center = np.mean(regime_samples, axis=0)
+            correlation_importance = np.zeros(len(feature_names))
+            
+            for i in range(len(feature_names)):
+                feature_data = regime_samples[:, i]
+                valid_mask = np.isfinite(feature_data) & np.isfinite(regime_center[i])
+                if np.sum(valid_mask) > 1:
+                    corr = safe_correlation(feature_data[valid_mask], 
+                                          np.full(np.sum(valid_mask), regime_center[i]))
+                    correlation_importance[i] = abs(corr)
+            
+            total_correlation = np.sum(correlation_importance)
+            if total_correlation > 0:
+                correlation_importance = correlation_importance / total_correlation
+            else:
+                correlation_importance = np.ones(len(feature_names)) / len(feature_names)
+            
+            # 5. Entropy-based importance (information content)
+            entropy_importance = np.zeros(len(feature_names))
+            for i in range(len(feature_names)):
+                feature_data = regime_samples[:, i]
+                valid_data = feature_data[np.isfinite(feature_data)]
+                if len(valid_data) > 1:
+                    # Calculate entropy using histogram
+                    hist, _ = np.histogram(valid_data, bins=min(10, len(valid_data)))
+                    hist = hist[hist > 0]  # Remove zero bins
+                    if len(hist) > 0:
+                        probabilities = hist / np.sum(hist)
+                        entropy = -np.sum(probabilities * np.log2(probabilities + 1e-10))
+                        entropy_importance[i] = entropy
+            
+            total_entropy = np.sum(entropy_importance)
+            if total_entropy > 0:
+                entropy_importance = entropy_importance / total_entropy
+            else:
+                entropy_importance = np.ones(len(feature_names)) / len(feature_names)
+            
+            # 6. Feature-specific importance based on feature type
+            type_importance = np.ones(len(feature_names))
+            for i, name in enumerate(feature_names):
+                if 'returns' in name.lower() or 'momentum' in name.lower():
+                    type_importance[i] = 1.5  # Higher importance for returns/momentum
+                elif 'volatility' in name.lower() or 'vol' in name.lower():
+                    type_importance[i] = 1.3  # High importance for volatility
+                elif 'volume' in name.lower():
+                    type_importance[i] = 1.2  # Medium-high importance for volume
+                elif 'rsi' in name.lower() or 'macd' in name.lower():
+                    type_importance[i] = 1.1  # Slightly higher for technical indicators
+                else:
+                    type_importance[i] = 1.0  # Standard importance
+            
+            # Combine all importance metrics with weights
+            weights = {
+                'variance': 0.25,
+                'range': 0.20,
+                'skewness': 0.15,
+                'correlation': 0.20,
+                'entropy': 0.10,
+                'type': 0.10
+            }
+            
+            combined_importance = (
+                weights['variance'] * variance_importance +
+                weights['range'] * range_importance +
+                weights['skewness'] * skewness_importance +
+                weights['correlation'] * correlation_importance +
+                weights['entropy'] * entropy_importance +
+                weights['type'] * type_importance
+            )
+            
+            # Normalize to sum to 1
+            total_importance = np.sum(combined_importance)
+            if total_importance > 0:
+                combined_importance = combined_importance / total_importance
+            else:
+                combined_importance = np.ones(len(feature_names)) / len(feature_names)
+            
+            # Create feature importance dictionary
             feature_importance = {}
             for i, name in enumerate(feature_names):
-                if i < len(feature_variances):
-                    feature_importance[name] = float(feature_variances[i] / total_variance)
+                if i < len(combined_importance):
+                    feature_importance[name] = float(combined_importance[i])
                 else:
                     feature_importance[name] = 0.0
             

@@ -405,8 +405,7 @@ class MainTrainingPipeline:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
-                                'hmm_models_training', 'hmm_ensemble_training',
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery',
                                 'feature_lookback_optimization', 'pid_based_feature_generation',
                                 'multi_horizon_profit_labeler', 'triple_barrier_labeling',
                                 'sr_feature_integration']

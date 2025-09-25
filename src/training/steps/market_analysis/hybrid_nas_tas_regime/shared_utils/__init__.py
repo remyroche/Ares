@@ -43,6 +43,8 @@ Usage Example:
     print(f"Best score: {max(result.best_scores.values())}")
 """
 
+from typing import Any, Dict, Optional
+
 # Import main unified components
 from .unified_search_engine import (
     UnifiedSearchEngine,
@@ -68,8 +70,10 @@ from .unified_multi_objective_optimizer import (
 
 from .unified_economic_evaluator import (
     UnifiedEconomicEvaluator,
+    UnifiedEconomicSignificanceEvaluator,
     EconomicEvaluationConfig,
     EconomicEvaluationResult,
+    EconomicSignificanceResult,
     EconomicMetrics,
     EvaluationType,
     create_unified_economic_evaluator,
@@ -132,8 +136,9 @@ __email__ = "unified-system@example.com"
 __all__ = [
     # Core unified components
     'UnifiedSearchEngine',
-    'UnifiedMultiObjectiveOptimizer', 
+    'UnifiedMultiObjectiveOptimizer',
     'UnifiedEconomicEvaluator',
+    'UnifiedEconomicSignificanceEvaluator',
     'UnifiedRegimeDetector',
     'UnifiedUtilities',
     'UnifiedConfig',
@@ -152,6 +157,7 @@ __all__ = [
     'SearchResult',
     'UnifiedOptimizationResult',
     'EconomicEvaluationResult',
+    'EconomicSignificanceResult',
     'RegimeDetectionResult',
     'EconomicMetrics',
     'ParetoSolution',

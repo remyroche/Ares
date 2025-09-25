@@ -66,7 +66,7 @@ from src.utils.tprint import (
 
 # Import ML common utilities
 try:
-    from src.utils.nas_tas.bayesian_tpe_optimizer import (
+    from .bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult
     )
     ML_COMMON_AVAILABLE = True

@@ -219,7 +219,7 @@ class TPrintConfig:
     
     # Integration
     integrate_with_logging: bool = True
-    log_to_python_logger: bool = False
+    log_to_python_logger: bool = True
 
     # Auto-logging configuration
     auto_log_prints: bool = True
@@ -277,30 +277,21 @@ class TPrintManager:
     def _setup_python_logging(self):
         """Setup integration with Python logging if configured."""
         if self.config.integrate_with_logging:
-            # Create a custom logger for tprint
-            self.logger = logging.getLogger('tprint')
-            if not self.logger.handlers:
-                # Try to use the structured logging formatter if available
-                try:
-                    from .structured_logging import get_json_formatter
-                    formatter = get_json_formatter()
-                    handler = logging.StreamHandler()
-                    handler.setFormatter(formatter)
-                    self.logger.addHandler(handler)
-                except ImportError:
-                    # Fallback to basic formatter
+            # Use the existing unified logger system instead of creating a separate logger
+            try:
+                from .logger import get_system_logger
+                self.logger = get_system_logger()
+                # Don't add handlers - use the existing logger's handlers
+                self.logger.setLevel(logging.DEBUG)
+            except ImportError:
+                # Fallback to root logger if unified logger is not available
+                self.logger = logging.getLogger()
+                if not self.logger.handlers:
+                    # Only add handlers if none exist
                     handler = logging.StreamHandler()
                     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
                     handler.setFormatter(formatter)
                     self.logger.addHandler(handler)
-
-                # Also add the correlation ID filter if available
-                try:
-                    from .structured_logging import CorrelationIdFilter
-                    self.logger.addFilter(CorrelationIdFilter())
-                except ImportError:
-                    pass
-
                 self.logger.setLevel(logging.DEBUG)
     
     def _get_timestamp(self) -> str:

@@ -6,6 +6,7 @@ from typing import Optional
 from typing import Tuple
 import numpy as np
 from ..utils.logger import system_logger
+from ..utils.common_operations import tprint
 'Explainability orchestrator for coordinating all model explanations.\n\nThis module provides a centralized orchestrator for managing SHAP/LIME explanations\nacross all ML models and creating comprehensive trade decision traces.\n'
 from datetime import datetime
 import asyncio
@@ -50,8 +51,13 @@ class ExplainabilityOrchestrator:
                 await self._initialize_model_explainers(model_type, model_name)
             self.logger.info(f'✅ Model {model_name} registered successfully')
             return True
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to register model {model_name}: {e}')
+            tprint(f'❌ Failed to register model {model_name}: {e}')
+            return False
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error registering model {model_name}: {e}')
+            tprint(f'❌ Unexpected error registering model {model_name}: {e}')
             return False
 
     async def _initialize_model_explainers(self, model_type: str, model_name: str) -> bool:
@@ -80,8 +86,13 @@ class ExplainabilityOrchestrator:
             else:
                 self.logger.warning(f'⚠️ Failed to initialize explainers for {model_name}')
             return success
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f'❌ Failed to initialize explainers for {model_name}: {e}')
+            tprint(f'❌ Failed to initialize explainers for {model_name}: {e}')
+            return False
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error initializing explainers for {model_name}: {e}')
+            tprint(f'❌ Unexpected error initializing explainers for {model_name}: {e}')
             return False
 
     async def explain_model_prediction(self, model_type: str, model_name: str, features: np.ndarray, feature_names: List[str], prediction: Optional[Any]=None, market_conditions: Optional[Dict[str, Any]]=None) -> Optional[Any]:
@@ -123,8 +134,13 @@ class ExplainabilityOrchestrator:
             except asyncio.TimeoutError:
                 self.logger.error(f'⏰ Explanation timeout for {model_name}')
                 return None
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f'❌ Failed to explain {model_name}: {e}')
+            tprint(f'❌ Failed to explain {model_name}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error explaining {model_name}: {e}')
+            tprint(f'❌ Unexpected error explaining {model_name}: {e}')
             return None
 
     async def start_trade_decision_trace(self, decision_id: str, decision_type: str, market_conditions: Optional[Dict[str, Any]]=None) -> TradeDecisionTrace:
@@ -137,8 +153,13 @@ class ExplainabilityOrchestrator:
             self.active_traces[decision_id] = trace
             self.logger.info(f'🔍 Started decision trace: {decision_id}')
             return trace
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f'❌ Failed to start decision trace {decision_id}: {e}')
+            tprint(f'❌ Failed to start decision trace {decision_id}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error starting decision trace {decision_id}: {e}')
+            tprint(f'❌ Unexpected error starting decision trace {decision_id}: {e}')
             return None
 
     async def add_explanation_to_trace(self, decision_id: str, model_type: str, explanation: Any) -> bool:
@@ -153,8 +174,13 @@ class ExplainabilityOrchestrator:
             else:
                 self.logger.warning(f'⚠️ Failed to add {model_type} explanation to trace {decision_id}')
             return success
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to add explanation to trace {decision_id}: {e}')
+            tprint(f'❌ Failed to add explanation to trace {decision_id}: {e}')
+            return False
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error adding explanation to trace {decision_id}: {e}')
+            tprint(f'❌ Unexpected error adding explanation to trace {decision_id}: {e}')
             return False
 
     async def finalize_trade_decision_trace(self, decision_id: str, final_decision: Any, confidence: float) -> Optional[TradeDecisionTrace]:
@@ -170,8 +196,13 @@ class ExplainabilityOrchestrator:
             else:
                 self.logger.warning(f'⚠️ Failed to finalize decision trace: {decision_id}')
             return trace
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to finalize decision trace {decision_id}: {e}')
+            tprint(f'❌ Failed to finalize decision trace {decision_id}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error finalizing decision trace {decision_id}: {e}')
+            tprint(f'❌ Unexpected error finalizing decision trace {decision_id}: {e}')
             return None
 
     async def explain_complete_trading_decision(self, decision_id: str, decision_type: str, market_data: pd.DataFrame, tactician_features: Optional[Tuple[np.ndarray, List[str]]]=None, hmm_features: Optional[Tuple[np.ndarray, List[str]]]=None, sr_features: Optional[Tuple[np.ndarray, List[str]]]=None, analyst_features: Optional[Tuple[np.ndarray, List[str]]]=None, final_decision: Optional[Any]=None, confidence: float = 0.5) -> Optional[TradeDecisionTrace]:
@@ -215,8 +246,13 @@ class ExplainabilityOrchestrator:
             else:
                 self.logger.warning(f'⚠️ Failed to finalize complete trading decision: {decision_id}')
             return final_trace
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f'❌ Failed to explain complete trading decision {decision_id}: {e}')
+            tprint(f'❌ Failed to explain complete trading decision {decision_id}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error explaining complete trading decision {decision_id}: {e}')
+            tprint(f'❌ Unexpected error explaining complete trading decision {decision_id}: {e}')
             return None
 
     def _extract_market_conditions(self, market_data: pd.DataFrame) -> Dict[str, Any]:
@@ -238,8 +274,13 @@ class ExplainabilityOrchestrator:
                     conditions[indicator] = float(market_data[indicator].iloc[-1])
             conditions['timestamp'] = datetime.now().isoformat()
             return conditions
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to extract market conditions: {e}')
+            tprint(f'❌ Failed to extract market conditions: {e}')
+            return {}
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error extracting market conditions: {e}')
+            tprint(f'❌ Unexpected error extracting market conditions: {e}')
             return {}
 
     async def get_decision_trace_summary(self, decision_id: str) -> Optional[Dict[str, Any]]:
@@ -254,8 +295,13 @@ class ExplainabilityOrchestrator:
                 return None
             summary = {'decision_id': trace.decision_id, 'timestamp': trace.timestamp.isoformat(), 'decision_type': trace.decision_type, 'final_decision': trace.final_decision, 'confidence': trace.confidence, 'market_conditions': trace.market_conditions, 'explanations_available': {'tactician': trace.tactician_explanation is not None, 'hmm': trace.hmm_explanation is not None, 'sr': trace.sr_explanation is not None, 'analyst': trace.analyst_explanation is not None}, 'top_contributing_factors': trace.top_contributing_factors[:5], 'risk_factors_count': len(trace.risk_factors), 'opportunity_factors_count': len(trace.opportunity_factors)}
             return summary
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to get decision trace summary {decision_id}: {e}')
+            tprint(f'❌ Failed to get decision trace summary {decision_id}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error getting decision trace summary {decision_id}: {e}')
+            tprint(f'❌ Unexpected error getting decision trace summary {decision_id}: {e}')
             return None
 
     async def _load_decision_trace(self, decision_id: str) -> Optional[TradeDecisionTrace]:
@@ -270,8 +316,13 @@ class ExplainabilityOrchestrator:
                 trace_data = json.load(f)
             trace = TradeDecisionTrace(decision_id = trace_data['decision_id'], timestamp = datetime.fromisoformat(trace_data['timestamp']), decision_type = trace_data['decision_type'], final_decision = trace_data['final_decision'], confidence = trace_data['confidence'], top_contributing_factors = trace_data.get('top_contributing_factors', []), risk_factors = trace_data.get('risk_factors', []), opportunity_factors = trace_data.get('opportunity_factors', []), market_conditions = trace_data.get('market_conditions', {}), metadata = trace_data.get('metadata', {}))
             return trace
-        except Exception as e:
+        except (OSError, IOError, ValueError, KeyError) as e:
             self.logger.error(f'❌ Failed to load decision trace {decision_id}: {e}')
+            tprint(f'❌ Failed to load decision trace {decision_id}: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error loading decision trace {decision_id}: {e}')
+            tprint(f'❌ Unexpected error loading decision trace {decision_id}: {e}')
             return None
 
     async def get_model_explanation_summary(self, model_type: str, model_name: str, explanation: Any) -> Optional[str]:
@@ -288,8 +339,13 @@ class ExplainabilityOrchestrator:
             else:
                 self.logger.error(f'❌ Unknown model type for summary: {model_type}')
                 return None
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'❌ Failed to generate explanation summary: {e}')
+            tprint(f'❌ Failed to generate explanation summary: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error generating explanation summary: {e}')
+            tprint(f'❌ Unexpected error generating explanation summary: {e}')
             return None
 
     def get_registered_models(self) -> Dict[str, Dict[str, Any]]:
@@ -311,6 +367,11 @@ class ExplainabilityOrchestrator:
                             files_removed += 1
             self.logger.info(f'🧹 Cleaned up {files_removed} old explanation files')
             return files_removed
-        except Exception as e:
+        except (OSError, IOError, PermissionError) as e:
             self.logger.error(f'❌ Failed to cleanup old explanations: {e}')
+            tprint(f'❌ Failed to cleanup old explanations: {e}')
+            return 0
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error cleaning up old explanations: {e}')
+            tprint(f'❌ Unexpected error cleaning up old explanations: {e}')
             return 0

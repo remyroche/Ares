@@ -230,8 +230,13 @@ class BacktestingEngine:
         try:
             self.validation_framework = get_validation_framework()
             self.logger.info("✅ ML common utilities initialized")
-        except Exception as e:
+        except (ImportError, AttributeError, ValueError) as e:
             self.logger.warning(f"ML common initialization failed: {e}")
+            tprint(f"⚠️ ML common utilities initialization failed: {e}")
+            self.validation_framework = None
+        except Exception as e:
+            self.logger.error(f"Unexpected error in ML common initialization: {e}")
+            tprint(f"❌ Unexpected error in ML common utilities initialization: {e}")
             self.validation_framework = None
     
     def _initialize_regime_detection(self):
@@ -257,8 +262,13 @@ class BacktestingEngine:
                 self.nas_detector = PerfectNASRegimeDetector(nas_config)
                 self.logger.info("✅ NAS regime detector initialized")
                 
-        except Exception as e:
+        except (ImportError, AttributeError, ValueError, RuntimeError) as e:
             self.logger.warning(f"Regime detection initialization failed: {e}")
+            tprint(f"⚠️ Regime detection initialization failed: {e}")
+            self.tas_detector = None
+        except Exception as e:
+            self.logger.error(f"Unexpected error in regime detection initialization: {e}")
+            tprint(f"❌ Unexpected error in regime detection initialization: {e}")
             self.tas_detector = None
             self.nas_detector = None
 
@@ -296,8 +306,13 @@ class BacktestingEngine:
             self.consolidated_backtesting = ConsolidatedBacktestingStep()
             self.logger.info("✅ Consolidated backtesting initialized")
 
-        except Exception as e:
+        except (ImportError, AttributeError, ValueError, RuntimeError) as e:
             self.logger.warning(f"Optimized tools initialization failed: {e}")
+            tprint(f"⚠️ Optimized tools initialization failed: {e}")
+            self.common_backtesting_engine = None
+        except Exception as e:
+            self.logger.error(f"Unexpected error in optimized tools initialization: {e}")
+            tprint(f"❌ Unexpected error in optimized tools initialization: {e}")
             self.common_backtesting_engine = None
             self.walk_forward_validation = None
             self.monte_carlo_engine = None
@@ -343,8 +358,13 @@ class BacktestingEngine:
             
             self.logger.info(f"✅ Registered models for {len(self.available_models)} regimes")
             
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"❌ Model registration failed: {e}")
+            tprint(f"❌ Model registration failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in model registration: {e}")
+            tprint(f"❌ Unexpected error in model registration: {e}")
             raise
     
     def run_backtest(self, 
@@ -436,9 +456,10 @@ class BacktestingEngine:
             
             return result
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             execution_time = (datetime.now() - start_time).total_seconds()
             self.logger.error(f"❌ Backtesting failed: {e}")
+            tprint(f"❌ Backtesting failed: {e}")
             
             return BacktestingResult(
                 success=False,
@@ -447,6 +468,19 @@ class BacktestingEngine:
                 end_date=datetime.now(),
                 total_periods=0,
                 error_message=str(e)
+            )
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            self.logger.error(f"❌ Unexpected error in backtesting: {e}")
+            tprint(f"❌ Unexpected error in backtesting: {e}")
+            
+            return BacktestingResult(
+                success=False,
+                execution_time=execution_time,
+                start_date=datetime.now(),
+                end_date=datetime.now(),
+                total_periods=0,
+                error_message=f"Unexpected error: {str(e)}"
             )
     
     def _prepare_data(self, 
@@ -493,8 +527,14 @@ class BacktestingEngine:
                 'data_quality': data_quality
             }
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
+            self.logger.error(f"Data preparation failed: {e}")
+            tprint(f"❌ Data preparation failed: {e}")
             return {'success': False, 'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"Unexpected error in data preparation: {e}")
+            tprint(f"❌ Unexpected error in data preparation: {e}")
+            return {'success': False, 'error': f"Unexpected error: {str(e)}"}
     
     def _initialize_backtesting_state(self):
         """Initialize backtesting state."""
@@ -562,9 +602,14 @@ class BacktestingEngine:
             
             return {'success': True, 'total_periods': total_periods}
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Backtesting loop failed: {e}")
+            tprint(f"❌ Backtesting loop failed: {e}")
             return {'success': False, 'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in backtesting loop: {e}")
+            tprint(f"❌ Unexpected error in backtesting loop: {e}")
+            return {'success': False, 'error': f"Unexpected error: {str(e)}"}
     
     def _detect_current_regime(self, data: pd.DataFrame) -> int:
         """Detect current market regime."""
@@ -587,8 +632,13 @@ class BacktestingEngine:
             # Fallback to simple regime detection
             return self._fallback_regime_detection(data)
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.warning(f"Regime detection failed: {e}")
+            tprint(f"⚠️ Regime detection failed: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"Unexpected error in regime detection: {e}")
+            tprint(f"❌ Unexpected error in regime detection: {e}")
             return 0
     
     def _fallback_regime_detection(self, data: pd.DataFrame) -> int:
@@ -608,8 +658,13 @@ class BacktestingEngine:
             else:
                 return 0  # Default regime
                 
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.warning(f"Fallback regime detection failed: {e}")
+            tprint(f"⚠️ Fallback regime detection failed: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"Unexpected error in fallback regime detection: {e}")
+            tprint(f"❌ Unexpected error in fallback regime detection: {e}")
             return 0
     
     def _select_model_for_regime(self, regime_id: int) -> Optional[Dict[str, Any]]:
@@ -640,8 +695,13 @@ class BacktestingEngine:
                 'performance': regime_models[best_model_type]['performance']
             }
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             self.logger.warning(f"Model selection failed: {e}")
+            tprint(f"⚠️ Model selection failed: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error in model selection: {e}")
+            tprint(f"❌ Unexpected error in model selection: {e}")
             return None
     
     def _make_prediction(self, 
@@ -678,8 +738,13 @@ class BacktestingEngine:
                 'regime_id': selected_model['regime_id']
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.warning(f"Prediction failed: {e}")
+            tprint(f"⚠️ Prediction failed: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error in prediction: {e}")
+            tprint(f"❌ Unexpected error in prediction: {e}")
             return None
     
     def _execute_trading_decision(self, 
@@ -713,8 +778,13 @@ class BacktestingEngine:
                 'timestamp': current_period
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.warning(f"Trading decision execution failed: {e}")
+            tprint(f"⚠️ Trading decision execution failed: {e}")
+            return {'action': 'hold', 'position_size': 0.0, 'confidence': 0.0}
+        except Exception as e:
+            self.logger.error(f"Unexpected error in trading decision execution: {e}")
+            tprint(f"❌ Unexpected error in trading decision execution: {e}")
             return {'action': 'hold', 'position_size': 0.0, 'confidence': 0.0}
     
     def _calculate_position_size(self, confidence: float) -> float:
@@ -767,8 +837,12 @@ class BacktestingEngine:
             }
             self.model_performance[model_id]['trades'].append(trade_record)
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             self.logger.warning(f"Performance tracking update failed: {e}")
+            tprint(f"⚠️ Performance tracking update failed: {e}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in performance tracking update: {e}")
+            tprint(f"❌ Unexpected error in performance tracking update: {e}")
     
     def _update_capital_and_positions(self, trading_result: Dict[str, Any]):
         """Update capital and positions based on trading result."""
@@ -796,8 +870,12 @@ class BacktestingEngine:
                 'capital': self.current_capital
             })
             
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             self.logger.warning(f"Capital update failed: {e}")
+            tprint(f"⚠️ Capital update failed: {e}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in capital update: {e}")
+            tprint(f"❌ Unexpected error in capital update: {e}")
     
     def _calculate_performance_metrics(self) -> Dict[str, float]:
         """Calculate comprehensive performance metrics."""
@@ -860,8 +938,13 @@ class BacktestingEngine:
                 'largest_loss': 0.0  # Simplified
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
+            tprint(f"❌ Performance metrics calculation failed: {e}")
+            return self._get_default_metrics()
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in performance metrics calculation: {e}")
+            tprint(f"❌ Unexpected error in performance metrics calculation: {e}")
             return self._get_default_metrics()
     
     def _get_default_metrics(self) -> Dict[str, float]:
@@ -926,8 +1009,13 @@ class BacktestingEngine:
                 'transitions': transitions
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"❌ Regime analysis failed: {e}")
+            tprint(f"❌ Regime analysis failed: {e}")
+            return {'regime_performance': {}, 'transitions': []}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in regime analysis: {e}")
+            tprint(f"❌ Unexpected error in regime analysis: {e}")
             return {'regime_performance': {}, 'transitions': []}
     
     def _analyze_model_performance(self) -> Dict[str, Any]:
@@ -960,8 +1048,13 @@ class BacktestingEngine:
                 'selection_history': selection_history
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"❌ Model analysis failed: {e}")
+            tprint(f"❌ Model analysis failed: {e}")
+            return {'model_performance': {}, 'selection_history': []}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in model analysis: {e}")
+            tprint(f"❌ Unexpected error in model analysis: {e}")
             return {'model_performance': {}, 'selection_history': []}
     
     def _get_configuration_summary(self) -> Dict[str, Any]:
@@ -1012,8 +1105,12 @@ class BacktestingEngine:
             
             self.logger.info(f"💾 Backtesting results saved to {results_path}")
             
-        except Exception as e:
+        except (OSError, IOError, ValueError) as e:
             self.logger.error(f"❌ Failed to save backtesting results: {e}")
+            tprint(f"❌ Failed to save backtesting results: {e}")
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error saving backtesting results: {e}")
+            tprint(f"❌ Unexpected error saving backtesting results: {e}")
     
     def get_backtesting_summary(self) -> Dict[str, Any]:
         """Get summary of backtesting results."""

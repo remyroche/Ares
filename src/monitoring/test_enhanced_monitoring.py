@@ -109,8 +109,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             tprint(f"❌ Initialization failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in initialization: {e}")
             return False
     
     async def test_context_capture(self):
@@ -151,8 +154,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             tprint(f"❌ Context capture failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in context capture: {e}")
             return False
     
     async def test_decision_recording(self):
@@ -251,8 +257,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             tprint(f"❌ Decision recording failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in decision recording: {e}")
             return False
     
     async def test_export_functionality(self):
@@ -291,8 +300,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (OSError, IOError, ValueError) as e:
             tprint(f"❌ Export functionality failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in export functionality: {e}")
             return False
     
     async def test_statistics(self):
@@ -319,8 +331,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             tprint(f"❌ Statistics test failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in statistics test: {e}")
             return False
     
     async def test_cleanup(self):
@@ -334,8 +349,11 @@ class TestEnhancedMonitoring:
             
             return True
             
-        except Exception as e:
+        except (OSError, IOError, ValueError) as e:
             tprint(f"❌ Cleanup test failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in cleanup test: {e}")
             return False
     
     def teardown(self):
@@ -373,8 +391,10 @@ class TestEnhancedMonitoring:
                         tprint(f"✅ {test_name} test passed")
                     else:
                         tprint(f"❌ {test_name} test failed")
-                except Exception as e:
+                except (ValueError, AttributeError, RuntimeError) as e:
                     tprint(f"❌ {test_name} test failed with exception: {e}")
+                except Exception as e:
+                    tprint(f"❌ {test_name} test failed with unexpected exception: {e}")
             
             tprint("\n" + "=" * 50)
             tprint(f"📊 Test Results: {passed}/{total} tests passed")

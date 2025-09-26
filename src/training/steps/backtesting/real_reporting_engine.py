@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Import existing utilities
-from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
+from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory, tprint
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
 from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
 from src.utils.ml_common.evaluation import ModelEvaluator
@@ -149,8 +149,13 @@ class RealReportingEngine:
             
             return report
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Report generation failed: {e}")
+            tprint(f"❌ Report generation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in report generation: {e}")
+            tprint(f"❌ Unexpected error in report generation: {e}")
             raise
     
     async def _generate_performance_metrics(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -216,8 +221,13 @@ class RealReportingEngine:
                 'timestamp': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Performance metrics generation failed: {e}")
+            tprint(f"❌ Performance metrics generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in performance metrics generation: {e}")
+            tprint(f"❌ Unexpected error in performance metrics generation: {e}")
             return {'error': str(e)}
     
     async def _generate_risk_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -271,8 +281,13 @@ class RealReportingEngine:
                 'timestamp': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Risk analysis generation failed: {e}")
+            tprint(f"❌ Risk analysis generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in risk analysis generation: {e}")
+            tprint(f"❌ Unexpected error in risk analysis generation: {e}")
             return {'error': str(e)}
     
     async def _generate_trade_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -343,8 +358,13 @@ class RealReportingEngine:
                 'timestamp': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Trade analysis generation failed: {e}")
+            tprint(f"❌ Trade analysis generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in trade analysis generation: {e}")
+            tprint(f"❌ Unexpected error in trade analysis generation: {e}")
             return {'error': str(e)}
     
     async def _generate_portfolio_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -404,8 +424,13 @@ class RealReportingEngine:
                 'timestamp': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Portfolio analysis generation failed: {e}")
+            tprint(f"❌ Portfolio analysis generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in portfolio analysis generation: {e}")
+            tprint(f"❌ Unexpected error in portfolio analysis generation: {e}")
             return {'error': str(e)}
     
     async def _generate_visualizations(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -543,8 +568,13 @@ class RealReportingEngine:
                 'timestamp': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Visualization generation failed: {e}")
+            tprint(f"❌ Visualization generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in visualization generation: {e}")
+            tprint(f"❌ Unexpected error in visualization generation: {e}")
             return {'error': str(e)}
     
     def _generate_summary(self, sections: Dict[str, Any]) -> Dict[str, Any]:
@@ -576,8 +606,13 @@ class RealReportingEngine:
             
             return summary
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Summary generation failed: {e}")
+            tprint(f"❌ Summary generation failed: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in summary generation: {e}")
+            tprint(f"❌ Unexpected error in summary generation: {e}")
             return {'error': str(e)}
     
     async def _save_report(self, report: Dict[str, Any], test_name: str):
@@ -600,8 +635,13 @@ class RealReportingEngine:
             else:
                 self.logger.warning(f"⚠️ Unknown output format: {self.config.output_format}")
                 
-        except Exception as e:
+        except (OSError, IOError, PermissionError) as e:
             self.logger.error(f"❌ Failed to save report: {e}")
+            tprint(f"❌ Failed to save report: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error saving report: {e}")
+            tprint(f"❌ Unexpected error saving report: {e}")
             raise
     
     def _generate_html_report(self, report: Dict[str, Any]) -> str:
@@ -667,8 +707,13 @@ class RealReportingEngine:
             
             return html
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ HTML report generation failed: {e}")
+            tprint(f"❌ HTML report generation failed: {e}")
+            return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>"
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in HTML report generation: {e}")
+            tprint(f"❌ Unexpected error in HTML report generation: {e}")
             return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>"
     
     def _calculate_skewness(self, returns: np.ndarray) -> float:
@@ -681,7 +726,13 @@ class RealReportingEngine:
             if std == 0:
                 return 0.0
             return np.mean(((returns - mean) / std) ** 3)
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating skewness: {e}")
+            tprint(f"⚠️ Error calculating skewness: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating skewness: {e}")
+            tprint(f"❌ Unexpected error calculating skewness: {e}")
             return 0.0
     
     def _calculate_kurtosis(self, returns: np.ndarray) -> float:
@@ -694,7 +745,13 @@ class RealReportingEngine:
             if std == 0:
                 return 0.0
             return np.mean(((returns - mean) / std) ** 4) - 3
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating kurtosis: {e}")
+            tprint(f"⚠️ Error calculating kurtosis: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating kurtosis: {e}")
+            tprint(f"❌ Unexpected error calculating kurtosis: {e}")
             return 0.0
     
     def _calculate_max_consecutive_losses(self, returns: np.ndarray) -> int:
@@ -714,7 +771,13 @@ class RealReportingEngine:
                     current_consecutive = 0
             
             return max_consecutive
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating max consecutive losses: {e}")
+            tprint(f"⚠️ Error calculating max consecutive losses: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating max consecutive losses: {e}")
+            tprint(f"❌ Unexpected error calculating max consecutive losses: {e}")
             return 0
     
     def _calculate_max_consecutive_wins(self, profits: List[float]) -> int:
@@ -734,7 +797,13 @@ class RealReportingEngine:
                     current_consecutive = 0
             
             return max_consecutive
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating max consecutive wins: {e}")
+            tprint(f"⚠️ Error calculating max consecutive wins: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating max consecutive wins: {e}")
+            tprint(f"❌ Unexpected error calculating max consecutive wins: {e}")
             return 0
     
     def _calculate_drawdown_duration(self, drawdown: np.ndarray) -> int:
@@ -754,7 +823,13 @@ class RealReportingEngine:
                     current_duration = 0
             
             return max_duration
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating drawdown duration: {e}")
+            tprint(f"⚠️ Error calculating drawdown duration: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating drawdown duration: {e}")
+            tprint(f"❌ Unexpected error calculating drawdown duration: {e}")
             return 0
     
     def _calculate_recovery_time(self, equity_curve: np.ndarray) -> int:
@@ -779,7 +854,13 @@ class RealReportingEngine:
                     recovery_times.append(i - drawdown_start)
             
             return int(np.mean(recovery_times)) if recovery_times else 0
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating recovery time: {e}")
+            tprint(f"⚠️ Error calculating recovery time: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating recovery time: {e}")
+            tprint(f"❌ Unexpected error calculating recovery time: {e}")
             return 0
 
 # Convenience functions

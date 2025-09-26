@@ -24,6 +24,7 @@ from src.utils.data.quality.data_quality import DataQualityFramework, check_data
 from src.utils.data.validation.validators import CrossStepValidator
 from src.utils.logger import system_logger
 from src.utils.data.gap_detector import GapDetector
+from src.utils.common_operations import tprint
 
 
 def setup_logging(verbose: bool = False):
@@ -162,8 +163,13 @@ async def download_standardized_command(args):
 
         return 0
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         print(f"❌ Standardized download failed: {e}")
+        tprint(f"❌ Standardized download failed: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error in standardized download: {e}")
+        tprint(f"❌ Unexpected error in standardized download: {e}")
         return 1
 
 
@@ -247,8 +253,12 @@ def fix_timezone_command(args):
 
                 files_processed += 1
 
-            except Exception as e:
+            except (OSError, IOError, ValueError) as e:
                 print(f"❌ Error processing {file_path.name}: {e}")
+                tprint(f"❌ Error processing {file_path.name}: {e}")
+            except Exception as e:
+                print(f"❌ Unexpected error processing {file_path.name}: {e}")
+                tprint(f"❌ Unexpected error processing {file_path.name}: {e}")
 
         print(f"\\n📋 Timezone Fix Summary:")
         print(f"  Files processed: {files_processed}")
@@ -263,8 +273,15 @@ def fix_timezone_command(args):
 
         return 0
 
-    except Exception as e:
+    except (OSError, IOError, ValueError) as e:
         print(f"❌ Timezone fix failed: {e}")
+        tprint(f"❌ Timezone fix failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error in timezone fix: {e}")
+        tprint(f"❌ Unexpected error in timezone fix: {e}")
         import traceback
         traceback.print_exc()
         return 1
@@ -523,8 +540,14 @@ async def pipeline_command(args):
             print("🎉 Comprehensive pipeline completed successfully!")
             return 0
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         print(f"❌ Comprehensive pipeline failed: {e}")
+        tprint(f"❌ Comprehensive pipeline failed: {e}")
+        traceback.print_exc()
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error in comprehensive pipeline: {e}")
+        tprint(f"❌ Unexpected error in comprehensive pipeline: {e}")
         traceback.print_exc()
         return 1
 
@@ -777,8 +800,12 @@ def comprehensive_data_checker(args):
                         interval_validation["issues"].extend([i["message"] for i in cross_validation["issues"]])
                     if cross_validation["warnings"]:
                         interval_validation["warnings"].extend(cross_validation["warnings"])
-                except Exception as e:
+                except (ValueError, AttributeError, RuntimeError) as e:
                     interval_validation["warnings"].append(f"Cross-validation failed: {str(e)}")
+                    tprint(f"⚠️ Cross-validation failed: {str(e)}")
+                except Exception as e:
+                    interval_validation["warnings"].append(f"Unexpected error in cross-validation: {str(e)}")
+                    tprint(f"⚠️ Unexpected error in cross-validation: {str(e)}")
 
                 validation_results["validation_details"][interval] = interval_validation
 
@@ -794,10 +821,16 @@ def comprehensive_data_checker(args):
                 status = "✅" if not interval_validation["issues"] else "❌"
                 print(f"    {status} {interval}: {len(data)} records, {len(interval_validation['issues'])} issues, {len(interval_validation['warnings'])} warnings")
 
-            except Exception as e:
+            except (ValueError, AttributeError, RuntimeError) as e:
                 error_msg = f"Failed to validate {args.symbol} {interval}: {str(e)}"
                 validation_results["errors"].append(error_msg)
                 validation_results["overall_success"] = False
+                tprint(f"❌ Failed to validate {args.symbol} {interval}: {str(e)}")
+            except Exception as e:
+                error_msg = f"Unexpected error validating {args.symbol} {interval}: {str(e)}"
+                validation_results["errors"].append(error_msg)
+                validation_results["overall_success"] = False
+                tprint(f"❌ Unexpected error validating {args.symbol} {interval}: {str(e)}")
                 print(f"    ❌ {error_msg}")
 
         # Print final summary
@@ -830,8 +863,13 @@ def comprehensive_data_checker(args):
 
         return 0 if validation_results["overall_success"] else 1
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         print(f"❌ Validation failed with error: {e}")
+        tprint(f"❌ Validation failed with error: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error in validation: {e}")
+        tprint(f"❌ Unexpected error in validation: {e}")
         return 1
 
 
@@ -980,8 +1018,12 @@ async def enhanced_pipeline_command(args):
 
                             print(f"✅ {month_key} {interval}: {len(month_data)} records validated")
 
-                except Exception as e:
+                except (ValueError, AttributeError, RuntimeError) as e:
                     print(f"❌ Error validating {interval} data: {e}")
+                    tprint(f"❌ Error validating {interval} data: {e}")
+                except Exception as e:
+                    print(f"❌ Unexpected error validating {interval} data: {e}")
+                    tprint(f"❌ Unexpected error validating {interval} data: {e}")
 
         # Step 4: Post-feature engineering validation
         print(f"\n🔍 Step 4: Post-feature engineering validation")
@@ -1014,8 +1056,13 @@ async def enhanced_pipeline_command(args):
 
         return validation_results
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         print(f"❌ Enhanced pipeline failed: {e}")
+        tprint(f"❌ Enhanced pipeline failed: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error in enhanced pipeline: {e}")
+        tprint(f"❌ Unexpected error in enhanced pipeline: {e}")
         return 1
 
 
@@ -1203,8 +1250,13 @@ Examples:
     except KeyboardInterrupt:
         print("\n❌ Operation cancelled by user")
         return 1
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         print(f"❌ Error: {e}")
+        tprint(f"❌ Error: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        tprint(f"❌ Unexpected error: {e}")
         return 1
 
 

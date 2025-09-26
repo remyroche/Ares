@@ -17,8 +17,9 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
     try:
         if logger is not None:
             logger.info({'msg': 'dual_confidence_compute', 'analyst': float(analyst_confidence), 'tactician': float(tactician_confidence), 'dual': float(dual), 'normalized': float(normalized)})
-    except Exception:
-        pass
+    except (TypeError, ValueError, AttributeError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to log dual confidence computation: {e}")
     return (dual, normalized)
 
 

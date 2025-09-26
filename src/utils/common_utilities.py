@@ -128,7 +128,9 @@ def validate_timestamp_column(df: pd.DataFrame, column: str) -> bool:
             return False
         pd.to_datetime(df[column])
         return True
-    except Exception:
+    except (TypeError, ValueError, pd.errors.ParserError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to validate timestamp column '{column}': {e}")
         return False
 
 def safe_timestamp_conversion(df: pd.DataFrame, column: str) -> pd.DataFrame:

@@ -272,8 +272,10 @@ class ModelSaver:
             model_size = self._estimate_model_size(model)
             if model_size > 1000:  # 1GB
                 self.logger.warning(f"Large model detected: {model_size:.2f} MB")
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, MemoryError) as e:
             self.logger.warning(f"Could not estimate model size: {e}")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Model size estimation failed: {e}")
     
     def _estimate_model_size(self, model: Any) -> float:
         """Estimate model size in MB."""
@@ -284,8 +286,10 @@ class ModelSaver:
                 tmp.flush()
                 size_bytes = tmp.tell()
                 return size_bytes / (1024 * 1024)  # Convert to MB
-        except Exception:
+        except (pickle.PicklingError, MemoryError, OSError, IOError) as e:
             # Fallback estimation
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Model size estimation failed, using fallback: {e}")
             return 10.0  # Default estimate
     
     async def _save_model_comprehensive(
@@ -322,8 +326,10 @@ class ModelSaver:
                     model, metadata, save_format, **kwargs
                 )
                 saved_files.append(file_path)
-            except Exception as e:
+            except (OSError, IOError, MemoryError, ValueError, TypeError) as e:
                 self.logger.error(f"Failed to save in {save_format.value} format: {e}")
+                from src.utils.tprint import tprint_error
+                tprint_error(f"Model save failed in {save_format.value} format: {e}")
         
         if not saved_files:
             raise RuntimeError("Failed to save model in any format")
@@ -386,15 +392,19 @@ class ModelSaver:
         if hasattr(model, 'get_params'):
             try:
                 metadata.model_parameters = model.get_params()
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 self.logger.warning(f"Could not extract model parameters: {e}")
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"Could not extract model parameters: {e}")
         
         # Update feature names if available
         if hasattr(model, 'feature_names_in_'):
             try:
                 metadata.feature_names = list(model.feature_names_in_)
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 self.logger.warning(f"Could not extract feature names: {e}")
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"Could not extract feature names: {e}")
         
         return metadata
     
@@ -427,7 +437,9 @@ class ModelSaver:
             try:
                 versions_data = safe_json_load(version_file)
                 current_version = versions_data.get('current_version', '0.0.0')
-            except Exception:
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"Could not load version file, using default: {e}")
                 current_version = '0.0.0'
         else:
             current_version = '0.0.0'
@@ -513,8 +525,9 @@ class ModelSaver:
         if hasattr(model, 'get_params'):
             try:
                 model_data['parameters'] = model.get_params()
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError) as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"Could not extract model parameters for JSON save: {e}")
         
         safe_json_dump(file_path, model_data)
     
@@ -531,8 +544,9 @@ class ModelSaver:
         if hasattr(model, 'get_params'):
             try:
                 model_data['parameters'] = model.get_params()
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError) as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"Could not extract model parameters for YAML save: {e}")
         
         with open(file_path, 'w') as f:
             yaml.dump(model_data, f, default_flow_style=False)
@@ -631,8 +645,10 @@ class ModelSaver:
                 try:
                     old_file.unlink()
                     self.logger.info(f"🗑️ Removed old version: {old_file.name}")
-                except Exception as e:
+                except (OSError, PermissionError, FileNotFoundError) as e:
                     self.logger.error(f"Failed to remove old version {old_file.name}: {e}")
+                    from src.utils.tprint import tprint_error
+                    tprint_error(f"Failed to remove old version {old_file.name}: {e}")
     
     def _calculate_checksum(self, file_path: str) -> str:
         """Calculate file checksum."""

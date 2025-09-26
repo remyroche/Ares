@@ -14,6 +14,18 @@ from abc import ABC, abstractmethod
 import json
 from pathlib import Path
 
+from ._validation import (
+    ConfigValidationError,
+    ValidationIssue,
+    build_report,
+    ensure_min_less_than_max,
+    ensure_non_empty_string,
+    ensure_positive,
+    ensure_probability,
+    ensure_sequence_not_empty,
+    normalize_weights,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,37 +171,73 @@ class BaseArchitectureConfig(ABC):
         self._validate_config()
         self._setup_logging()
     
-    def _validate_config(self):
+    def _validate_config(self) -> None:
         """Validate configuration parameters."""
-        try:
-            # Validate objective weights sum to 1.0
-            total_weight = sum(self.objective_weights.values())
-            if abs(total_weight - 1.0) > 1e-6:
-                logger.warning(f"Objective weights sum to {total_weight}, normalizing to 1.0")
-                for obj in self.objective_weights:
-                    self.objective_weights[obj] /= total_weight
-            
-            # Validate thresholds
-            thresholds = [
-                ('accuracy_threshold', self.accuracy_threshold),
-                ('economic_significance_threshold', self.economic_significance_threshold),
-                ('trading_viability_threshold', self.trading_viability_threshold),
-                ('regime_stability_threshold', self.regime_stability_threshold)
-            ]
-            
-            for name, value in thresholds:
-                if not (0.0 <= value <= 1.0):
-                    raise ValueError(f"Invalid {name}: {value}")
-            
-            # Validate timeframes
-            if self.min_regime_duration >= self.max_regime_duration:
-                raise ValueError("Minimum regime duration must be less than maximum")
-            
-            logger.info("✅ Configuration validation passed")
-            
-        except Exception as e:
-            logger.error(f"❌ Configuration validation failed: {e}")
-            raise
+
+        issues: List[ValidationIssue] = []
+
+        def capture(field: str, func) -> None:
+            try:
+                func()
+            except ConfigValidationError as exc:  # pragma: no cover - defensive aggregation
+                issues.append(ValidationIssue(field=field, message=str(exc)))
+
+        total_weight = sum(self.objective_weights.values())
+        if abs(total_weight - 1.0) > 1e-6:
+            logger.warning("Objective weights sum to %s; normalizing to 1.0", total_weight)
+        capture("objective_weights", lambda: normalize_weights(self.objective_weights))
+
+        capture("secondary_objectives", lambda: ensure_sequence_not_empty("secondary_objectives", self.secondary_objectives))
+
+        for threshold_name in (
+            "accuracy_threshold",
+            "economic_significance_threshold",
+            "trading_viability_threshold",
+            "regime_stability_threshold",
+            "max_drawdown_threshold",
+        ):
+            capture(
+                threshold_name,
+                lambda name=threshold_name: ensure_probability(name, getattr(self, name)),
+            )
+        capture(
+            "risk_adjusted_return_threshold",
+            lambda: ensure_positive("risk_adjusted_return_threshold", self.risk_adjusted_return_threshold),
+        )
+
+        capture(
+            "regime_duration",
+            lambda: ensure_min_less_than_max(
+                "min_regime_duration",
+                self.min_regime_duration,
+                "max_regime_duration",
+                self.max_regime_duration,
+            ),
+        )
+        capture("min_improvement_threshold", lambda: ensure_positive("min_improvement_threshold", self.min_improvement_threshold))
+        capture("max_iterations", lambda: ensure_positive("max_iterations", self.max_iterations))
+        capture("max_time_seconds", lambda: ensure_positive("max_time_seconds", self.max_time_seconds))
+        capture("early_stopping_patience", lambda: ensure_positive("early_stopping_patience", self.early_stopping_patience))
+        capture("cv_folds", lambda: ensure_positive("cv_folds", self.cv_folds))
+        capture("validation_split", lambda: ensure_probability("validation_split", self.validation_split))
+        capture("time_series_gap", lambda: ensure_positive("time_series_gap", self.time_series_gap, allow_zero=True))
+
+        capture("gpu_memory_fraction", lambda: ensure_probability("gpu_memory_fraction", self.gpu_memory_fraction))
+        capture("cache_size_mb", lambda: ensure_positive("cache_size_mb", self.cache_size_mb))
+        capture("max_memory_usage_gb", lambda: ensure_positive("max_memory_usage_gb", self.max_memory_usage_gb))
+        capture("batch_size", lambda: ensure_positive("batch_size", self.batch_size))
+        capture("regime_detection_window", lambda: ensure_positive("regime_detection_window", self.regime_detection_window))
+
+        capture("system_name", lambda: ensure_non_empty_string("system_name", self.system_name))
+        capture("output_dir", lambda: ensure_non_empty_string("output_dir", self.output_dir))
+
+        if issues:
+            build_report(*issues)
+            raise ConfigValidationError(
+                f"{self.__class__.__name__} validation failed; inspect logged issues."
+            )
+
+        logger.info("✅ Configuration validation passed")
     
     def _setup_logging(self):
         """Setup logging configuration."""

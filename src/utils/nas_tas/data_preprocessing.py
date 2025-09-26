@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
-import warnings
 from pathlib import Path
 
 # Import tprint for comprehensive logging
@@ -20,7 +19,6 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
-warnings.filterwarnings('ignore')
 
 # Import existing utilities from the codebase
 try:

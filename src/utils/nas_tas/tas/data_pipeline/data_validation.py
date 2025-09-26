@@ -13,7 +13,6 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 import warnings
-warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 

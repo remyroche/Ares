@@ -20,8 +20,6 @@ from collections import defaultdict, deque
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit
-import warnings
-warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 

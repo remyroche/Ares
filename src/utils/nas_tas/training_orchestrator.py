@@ -34,6 +34,10 @@ from src.utils.nas_tas.shared_services import (
     engineer_core_features,
     validate_market_data,
 )
+from src.utils.nas_tas.unified_regime_pipeline import (
+    RegimeUnifiedPipeline,
+    UnifiedRegimePipelineConfig,
+)
 
 # Import components
 from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult
@@ -88,6 +92,10 @@ class OrchestratorConfig:
     enable_model_selection: bool = True
     enable_model_management: bool = True
     enable_performance_tracking: bool = True
+
+    # Unified regime pipeline
+    enable_unified_regime_pipeline: bool = True
+    unified_pipeline_config: Optional[UnifiedRegimePipelineConfig] = None
     
     # Data settings
     data_validation: bool = True
@@ -179,6 +187,7 @@ class TrainingOrchestrator:
         self.services = SharedOrchestrationServices()
         self.last_data_validation: Optional[DataValidationResult] = None
         self.last_feature_engineering: Optional[FeatureEngineeringResult] = None
+        self.last_unified_pipeline_output: Optional[Dict[str, Any]] = None
         tprint(f"📊 Config: mode={config.mode.value}, regime_detection={config.enable_regime_detection}", color="cyan")
 
         self._validate_configuration()
@@ -191,6 +200,17 @@ class TrainingOrchestrator:
         # Initialize components
         tprint("🔧 Initializing components", color="yellow")
         self._initialize_components()
+
+        # Unified regime pipeline setup
+        self.unified_pipeline: Optional[RegimeUnifiedPipeline] = None
+        if self.config.enable_unified_regime_pipeline:
+            pipeline_config = (
+                self.config.unified_pipeline_config
+                if self.config.unified_pipeline_config is not None
+                else UnifiedRegimePipelineConfig()
+            )
+            self.unified_pipeline = RegimeUnifiedPipeline(pipeline_config)
+            tprint("🔗 Unified regime pipeline enabled", color="green")
         
         # Orchestration state
         tprint("📊 Initializing orchestration state", color="yellow")
@@ -359,7 +379,18 @@ class TrainingOrchestrator:
                             if col in processed_data.columns and col != target_variable
                         ]
 
-            # Step 3: Model training
+            # Step 3: Unified regime pipeline
+            if self.unified_pipeline:
+                unified_output = self._run_unified_regime_pipeline(
+                    processed_data,
+                    target_variable,
+                    active_feature_columns,
+                    timestamps,
+                )
+                if unified_output:
+                    self.current_pipeline_state['unified_regime_output'] = unified_output
+
+            # Step 4: Model training
             training_result = None
             if self.config.enable_model_training and self.services.trainer:
                 self.logger.info("🤖 Training regime-aware models...")
@@ -386,26 +417,26 @@ class TrainingOrchestrator:
                     )
                     result.overfitting_results = overfitting_results
             
-            # Step 4: Model selection setup
+            # Step 5: Model selection setup
             if self.config.enable_model_selection and self.services.selector and training_result:
                 self.logger.info("🎯 Setting up model selection...")
                 self._setup_model_selection(training_result)
-            
-            # Step 5: Model management
+
+            # Step 6: Model management
             management_result = None
             if self.config.enable_model_management and self.services.manager and training_result:
                 self.logger.info("📦 Managing trained models...")
                 management_result = self._orchestrate_model_management(training_result)
                 result.management_result = management_result
-            
-            # Step 6: Performance tracking
+
+            # Step 7: Performance tracking
             performance_result = None
             if self.config.enable_performance_tracking and self.services.performance_tracker:
                 self.logger.info("📈 Setting up performance tracking...")
                 performance_result = self._orchestrate_performance_tracking(training_result)
                 result.performance_result = performance_result
-            
-            # Step 7: Evaluation and backtesting
+
+            # Step 8: Evaluation and backtesting
             if self.config.enable_backtesting and training_result:
                 self.logger.info("🧪 Performing backtesting...")
                 backtest_result = self._orchestrate_backtesting(
@@ -413,7 +444,7 @@ class TrainingOrchestrator:
                 )
                 result.overall_performance.update(backtest_result)
             
-            # Step 8: Save results
+            # Step 9: Save results
             if self.config.save_results:
                 self.logger.info("💾 Saving orchestration results...")
                 self._save_orchestration_results(result)
@@ -472,6 +503,36 @@ class TrainingOrchestrator:
         if errors:
             message = "Invalid orchestrator configuration:\n - " + "\n - ".join(errors)
             raise ValueError(message)
+
+    def _run_unified_regime_pipeline(
+        self,
+        market_data: pd.DataFrame,
+        target_variable: str,
+        feature_columns: Optional[List[str]],
+        timestamps: Optional[pd.Series],
+    ) -> Optional[Dict[str, Any]]:
+        """Execute the unified NAS/TAS pipeline if configured."""
+
+        if not self.unified_pipeline:
+            return None
+
+        try:
+            output = self.unified_pipeline.run(
+                market_data,
+                target_variable=target_variable,
+                feature_columns=feature_columns,
+                timestamps=timestamps,
+            )
+            self.last_unified_pipeline_output = output
+            self.logger.info(
+                "✅ Unified regime pipeline produced %s regimes", 
+                output.get('regime_assignments', {}).get('n_regimes')
+            )
+            return output
+
+        except Exception as exc:
+            self.logger.error(f"❌ Unified regime pipeline failed: {exc}")
+            return None
 
     def _validate_and_preprocess_data(self,
                                     market_data: pd.DataFrame,
@@ -648,7 +709,8 @@ class TrainingOrchestrator:
                 market_data=market_data,
                 target_variable=target_variable,
                 feature_columns=feature_columns,
-                timestamps=timestamps
+                timestamps=timestamps,
+                unified_regime_output=self.last_unified_pipeline_output,
             )
             
             if training_result.success:

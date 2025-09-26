@@ -31,6 +31,7 @@ class RegimeTrainerService(Protocol):
         target_variable: str,
         feature_columns: Optional[list[str]] = None,
         timestamps: Optional[pd.Series] = None,
+        unified_regime_output: Optional[Dict[str, Any]] = None,
     ) -> RegimeTrainingResult:
         """Train models for the supplied market data."""
 

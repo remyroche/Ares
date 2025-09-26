@@ -16,7 +16,7 @@ import json
 import itertools
 
 # Import shared utilities
-from src.utils.common_operations import (
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
     safe_json_dump, safe_json_load, ensure_directory,
     safe_divide, safe_log, safe_sqrt, validate_finite, validate_positive,
     get_current_datetime, optimize_dataframe_dtypes
@@ -25,7 +25,7 @@ from src.utils.common_utilities import (
     validate_dataframe_columns, safe_convert_dtypes,
     calculate_data_quality_metrics, get_dataframe_info
 )
-from src.utils.math_validation import (
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
     safe_correlation, safe_covariance, safe_mean, safe_std,
     safe_percentile, validate_correlation_matrix
 )
@@ -37,8 +37,8 @@ from src.utils.serialization_utils import JSONSerializer, UniversalSerializer
 
 # Import ML optimization utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-    from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
+    from src.utils.nas_tas.shared_utils.ml_common_bridge import BayesianTPEOptimizer
+    from src.utils.nas_tas.shared_utils.ml_common_bridge import build_coarse_grid_from_search_space
     TPE_GRID_AVAILABLE = True
 except ImportError:
     TPE_GRID_AVAILABLE = False

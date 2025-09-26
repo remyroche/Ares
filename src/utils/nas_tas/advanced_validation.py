@@ -33,7 +33,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 # Import additional validation utilities
 try:
-    from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention, LeakageReport, DataLeakageConfig
+    from src.utils.nas_tas.shared_utils.ml_common_bridge import DataLeakagePrevention, LeakageReport, DataLeakageConfig
     DATA_LEAKAGE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"⚠️ Data leakage prevention utilities not available: {e}")

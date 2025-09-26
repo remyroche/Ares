@@ -22,7 +22,7 @@ from enum import Enum
 
 # Import existing components
 from .tree_based_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
-from src.utils.ml_common.models.model_factory import ModelType, ModelConfig
+from src.utils.nas_tas.shared_utils.ml_common_bridge import ModelType, ModelConfig
 from src.training.steps.market_analysis.nas_clustering.core.nas_config import NASArchitectureType
 
 logger = logging.getLogger(__name__)

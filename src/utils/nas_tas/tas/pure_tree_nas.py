@@ -190,8 +190,8 @@ class NODEModel:
             raise ImportError("PyTorch required for NODE model")
         
         try:
-            from src.utils.math_validation import validate_numeric_array, safe_mean
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array, safe_mean
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             # Validate inputs
             X = validate_numeric_array(X, "X")
@@ -286,7 +286,7 @@ class NODEModel:
             raise ValueError("Model not trained")
         
         try:
-            from src.utils.math_validation import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
             
             X = validate_numeric_array(X, "X")
             X_tensor = torch.FloatTensor(X)
@@ -515,8 +515,8 @@ class ObliviousTreeModel:
     def fit(self, X: np.ndarray, y: np.ndarray):
         """Train true Oblivious Tree model."""
         try:
-            from src.utils.math_validation import validate_numeric_array
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             # Validate inputs
             X = validate_numeric_array(X, "X")
@@ -544,7 +544,7 @@ class ObliviousTreeModel:
             raise ValueError("Model not trained")
         
         try:
-            from src.utils.math_validation import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
             X = validate_numeric_array(X, "X")
             
             predictions = []
@@ -763,8 +763,8 @@ class RotationForestModel:
         try:
             from sklearn.decomposition import PCA, FastICA
             from sklearn.preprocessing import StandardScaler
-            from src.utils.math_validation import validate_numeric_array
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             # Validate inputs
             X = validate_numeric_array(X, "X")
@@ -880,7 +880,7 @@ class RotationForestModel:
             raise ValueError("Model not trained")
         
         try:
-            from src.utils.math_validation import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
             X = validate_numeric_array(X, "X")
             
             predictions = []
@@ -1012,8 +1012,8 @@ class HistogramGradientBoostingModel:
         try:
             from sklearn.ensemble import HistGradientBoostingRegressor
             from sklearn.model_selection import train_test_split
-            from src.utils.math_validation import validate_numeric_array
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             # Validate inputs
             X = validate_numeric_array(X, "X")
@@ -1080,7 +1080,7 @@ class HistogramGradientBoostingModel:
             raise ValueError("Model not trained")
         
         try:
-            from src.utils.math_validation import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
             X = validate_numeric_array(X, "X")
             
             predictions = self.model.predict(X)
@@ -1162,7 +1162,7 @@ class HistogramGradientBoostingModel:
             if not hasattr(self.model, 'partial_fit'):
                 raise ValueError("Model does not support partial_fit")
             
-            from src.utils.math_validation import validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import validate_numeric_array
             X = validate_numeric_array(X, "X")
             y = validate_numeric_array(y, "y")
             

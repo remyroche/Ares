@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - psutil is optional
 
 # Lazily imported utilities to avoid circular dependencies
 if TYPE_CHECKING:  # pragma: no cover - for static analysis only
-    from src.utils.common_operations import optimize_dataframe_dtypes, get_memory_usage
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import optimize_dataframe_dtypes, get_memory_usage
     from src.utils.hardware import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
 else:
     optimize_dataframe_dtypes = None  # type: ignore
@@ -39,7 +39,7 @@ else:
     get_m1_memory_optimizer = None  # type: ignore
     get_m1_cpu_optimizer = None  # type: ignore
 
-from src.utils.math_validation import (
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
     safe_weighted_average, safe_percentage_change, safe_correlation,
@@ -71,7 +71,7 @@ class UnifiedCacheWarning(UserWarning):
 def _load_optimize_dataframe_dtypes() -> Callable[[pd.DataFrame], pd.DataFrame]:
     global optimize_dataframe_dtypes
     if optimize_dataframe_dtypes is None:  # pragma: no branch - simple guard
-        from src.utils.common_operations import optimize_dataframe_dtypes as _impl
+        from src.utils.nas_tas.shared_utils.common_operations_bridge import optimize_dataframe_dtypes as _impl
 
         optimize_dataframe_dtypes = _impl
     return cast(Callable[[pd.DataFrame], pd.DataFrame], optimize_dataframe_dtypes)
@@ -80,7 +80,7 @@ def _load_optimize_dataframe_dtypes() -> Callable[[pd.DataFrame], pd.DataFrame]:
 def _load_get_memory_usage() -> Callable[[], float]:
     global get_memory_usage
     if get_memory_usage is None:  # pragma: no branch - simple guard
-        from src.utils.common_operations import get_memory_usage as _impl
+        from src.utils.nas_tas.shared_utils.common_operations_bridge import get_memory_usage as _impl
 
         get_memory_usage = _impl
     return cast(Callable[[], float], get_memory_usage)

@@ -16,22 +16,22 @@ from enum import Enum
 import json
 
 # Import existing utilities
-try:
-    from src.utils.ml_common import (
-        ParetoOptimizer, ParetoFront, ParetoFrontAnalyzer,
-        RegimeSpecificTPSLOptimizer
-    )
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    ParetoFront,
+    ParetoFrontAnalyzer,
+    ParetoOptimizer,
+    RegimeSpecificTPSLOptimizer,
+)
 
-try:
-    from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-    )
-    HARDWARE_UTILS_AVAILABLE = True
-except ImportError:
-    HARDWARE_UTILS_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
+    COMMON_OPERATIONS_AVAILABLE,
+    get_m1_cpu_optimizer,
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+)
+
+HARDWARE_UTILS_AVAILABLE = COMMON_OPERATIONS_AVAILABLE
 
 try:
     from src.utils.matrix_operations import (

@@ -33,8 +33,8 @@ import json
 import os
 
 # Import existing grid utilities
-from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
-from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+from src.utils.nas_tas.shared_utils.ml_common_bridge import build_coarse_grid_from_search_space, build_fine_grid_around_best
+from src.utils.nas_tas.shared_utils.ml_common_bridge import HyperparameterOptimization
 
 # Optional dependencies with graceful fallback
 try:

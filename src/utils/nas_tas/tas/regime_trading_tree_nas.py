@@ -816,8 +816,8 @@ class RegimeTradingTreeNAS:
                 raise ValueError("Empty regime predictions for persistence calculation")
             
             # Import utilities for advanced calculations
-            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
-            from src.utils.common_operations import safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_divide
             
             # Validate input
             regime_predictions = validate_numeric_array(regime_predictions, "regime_predictions")
@@ -902,8 +902,8 @@ class RegimeTradingTreeNAS:
                 raise ValueError("Empty regime predictions for transition calculation")
             
             # Import utilities for advanced calculations
-            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
-            from src.utils.common_operations import safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_divide
             
             # Validate input
             regime_predictions = validate_numeric_array(regime_predictions, "regime_predictions")
@@ -1027,8 +1027,8 @@ class RegimeTradingTreeNAS:
                 return {'message': 'No results available', 'success': False}
             
             # Import utilities for validation and analysis
-            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
-            from src.utils.common_operations import safe_divide, safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_divide, safe_weighted_average
             from src.utils.common_utilities import validate_dataframe_columns
             
             # Validate regime results
@@ -1173,7 +1173,7 @@ class RegimeTradingTreeNAS:
                                    signals, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
         """Calculate comprehensive combined analysis."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             
             # Basic metrics
             n_regimes = len(np.unique(regime_predictions))
@@ -1233,7 +1233,7 @@ class RegimeTradingTreeNAS:
     def _calculate_regime_trading_alignment(self, regime_predictions, signals, signal_strengths) -> Dict[str, Any]:
         """Calculate alignment between regime detection and trading signals."""
         try:
-            from src.utils.math_validation import safe_correlation, safe_mean
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_correlation, safe_mean
             
             # Calculate regime-signal correlation
             regime_signal_correlation = safe_correlation(regime_predictions, signals)
@@ -1271,7 +1271,7 @@ class RegimeTradingTreeNAS:
     def _calculate_performance_metrics(self, regime_quality, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
         """Calculate performance metrics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
             
             # Signal performance
             signal_performance = {
@@ -1322,7 +1322,7 @@ class RegimeTradingTreeNAS:
     def _calculate_risk_adjusted_metrics(self, signal_strengths, risk_scores, position_sizes) -> Dict[str, Any]:
         """Calculate risk-adjusted metrics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
             
             # Risk-adjusted signal strength
             risk_adjusted_signals = signal_strengths / (1.0 + risk_scores)

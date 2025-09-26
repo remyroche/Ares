@@ -15,22 +15,25 @@ from datetime import datetime
 from enum import Enum
 
 # Import existing utilities
-try:
-    from src.utils.math_validation import (
-        safe_divide, safe_log, safe_sqrt, safe_power,
-        validate_finite, validate_positive, validate_range
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
+    MATH_VALIDATION_AVAILABLE,
+    safe_divide,
+    safe_log,
+    safe_power,
+    safe_sqrt,
+    validate_finite,
+    validate_positive,
+    validate_range,
+)
 
-try:
-    from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-    )
-    HARDWARE_UTILS_AVAILABLE = True
-except ImportError:
-    HARDWARE_UTILS_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
+    COMMON_OPERATIONS_AVAILABLE,
+    get_m1_cpu_optimizer,
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer,
+)
+
+HARDWARE_UTILS_AVAILABLE = COMMON_OPERATIONS_AVAILABLE
 
 try:
     from src.utils.matrix_operations import (

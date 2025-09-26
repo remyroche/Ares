@@ -26,7 +26,7 @@ from src.utils.tprint import (
 )
 
 # Import utility modules
-from src.utils.common_operations import (
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
     safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
     validate_finite, validate_positive, validate_range, safe_float, safe_int,
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -38,7 +38,7 @@ from src.utils.common_operations import (
     integrate_with_m1_optimizers, memory_checkpoint, gpu_context, optimize_memory
 )
 
-from src.utils.math_validation import (
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
     validate_numeric_array, safe_correlation, safe_covariance, safe_percentile,
     validate_correlation_matrix, safe_matrix_inverse, math_safe, MathValidation
 )

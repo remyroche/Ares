@@ -27,7 +27,7 @@ from pathlib import Path
 
 # Import shared utilities
 try:
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         safe_dataframe_operation, validate_dataframe_columns, 
         safe_convert_dtypes, calculate_data_quality_metrics,
         safe_merge_dataframes, create_summary_statistics,
@@ -35,7 +35,7 @@ try:
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         integrate_with_m1_optimizers, memory_checkpoint, gpu_context
     )
-    from src.utils.math_validation import (
+    from src.utils.nas_tas.shared_utils.math_validation_bridge import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
         validate_positive, validate_range, safe_correlation, safe_covariance,
         safe_mean, safe_std, MathValidation
@@ -959,7 +959,7 @@ class NASFeatureExtractor:
                 self.memory_optimizer.stop_monitoring()
             
             if SHARED_UTILS_AVAILABLE:
-                from src.utils.common_operations import cleanup_m1_optimizers
+                from src.utils.nas_tas.shared_utils.common_operations_bridge import cleanup_m1_optimizers
                 cleanup_m1_optimizers()
             
             self.logger.info("🧹 NAS Feature Extractor cleanup completed")

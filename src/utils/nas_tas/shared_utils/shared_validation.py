@@ -15,15 +15,17 @@ from datetime import datetime
 from enum import Enum
 
 # Import existing ml_common utilities
-try:
-    from src.utils.ml_common import (
-        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
-        nested_cross_validation, PurgedKFold, TemporalCrossValidator,
-        StabilityAnalyzer, ConfigurationValidator
-    )
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    ConfigurationValidator,
+    PurgedKFold,
+    StabilityAnalyzer,
+    TemporalCrossValidator,
+    UnifiedCrossValidator,
+    nested_cross_validation,
+    perform_cross_validation,
+    temporal_cross_validation,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -30,23 +30,38 @@ import numpy as np
 import pandas as pd
 
 # Import utility modules with comprehensive error handling
-try:
-    from src.utils.common_operations import (
-        safe_dataframe_operation, validate_dataframe_columns, 
-        safe_convert_dtypes, calculate_data_quality_metrics,
-        safe_merge_dataframes, create_summary_statistics,
-        optimize_dataframe_dtypes, get_dataframe_info,
-        integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
-        safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
-        validate_finite, validate_positive, validate_range, safe_divide,
-        get_current_datetime, format_datetime, safe_deepcopy,
-        safe_to_parquet, safe_read_parquet, list_parquet_files,
-        get_memory_usage, optimize_memory, cleanup_m1_optimizers
-    )
-    COMMON_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"⚠️ Common operations not available: {e}")
-    COMMON_OPERATIONS_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
+    COMMON_OPERATIONS_AVAILABLE,
+    calculate_data_quality_metrics,
+    cleanup_m1_optimizers,
+    create_data_quality_report,
+    create_summary_statistics,
+    ensure_directory,
+    format_datetime,
+    get_current_datetime,
+    get_dataframe_info,
+    get_memory_usage,
+    gpu_context,
+    integrate_with_m1_optimizers,
+    list_parquet_files,
+    memory_checkpoint,
+    optimize_dataframe_dtypes,
+    optimize_memory,
+    safe_convert_dtypes,
+    safe_dataframe_operation,
+    safe_deepcopy,
+    safe_divide,
+    safe_json_dump,
+    safe_json_load,
+    safe_merge_dataframes,
+    safe_read_parquet,
+    safe_to_parquet,
+    safe_file_exists,
+    validate_dataframe_columns,
+    validate_finite,
+    validate_positive,
+    validate_range,
+)
 
 try:
     from src.utils.common_utilities import (
@@ -62,19 +77,29 @@ except ImportError as e:
     logging.warning(f"⚠️ Common utilities not available: {e}")
     COMMON_UTILITIES_AVAILABLE = False
 
-try:
-    from src.utils.math_validation import (
-        safe_divide, safe_log, safe_sqrt, safe_power,
-        validate_finite, validate_positive, validate_range,
-        safe_correlation, safe_covariance, safe_mean, safe_std,
-        safe_percentile, safe_kelly_calculation, safe_weighted_average,
-        safe_percentage_change, validate_correlation_matrix,
-        safe_matrix_inverse, math_safe, MathValidation, MathValidationError
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"⚠️ Math validation not available: {e}")
-    MATH_VALIDATION_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
+    MATH_VALIDATION_AVAILABLE,
+    MathValidation,
+    MathValidationError,
+    math_safe,
+    safe_correlation,
+    safe_covariance,
+    safe_divide,
+    safe_kelly_calculation,
+    safe_log,
+    safe_matrix_inverse,
+    safe_mean,
+    safe_percentage_change,
+    safe_percentile,
+    safe_power,
+    safe_sqrt,
+    safe_std,
+    safe_weighted_average,
+    validate_correlation_matrix,
+    validate_finite,
+    validate_positive,
+    validate_range,
+)
 
 try:
     from src.utils.serialization_utils import (
@@ -153,13 +178,11 @@ except ImportError as e:
     logging.warning(f"⚠️ Matrix operations not available: {e}")
     MATRIX_OPERATIONS_AVAILABLE = False
 
-try:
-    from src.utils.ml_common.validation.cv import CrossValidationManager
-    from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimizer
-    ML_COMMON_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"⚠️ ML common utilities not available: {e}")
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    CrossValidationManager,
+    HyperparameterOptimizer,
+)
 
 # Import hierarchical HPO for advanced optimization
 try:

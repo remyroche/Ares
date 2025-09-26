@@ -34,14 +34,14 @@ from pathlib import Path
 
 # Import shared utilities
 try:
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
         validate_positive, validate_range, safe_mean, safe_std,
         safe_correlation, safe_covariance, safe_percentile,
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         memory_checkpoint, gpu_context, optimize_memory
     )
-    from src.utils.math_validation import (
+    from src.utils.nas_tas.shared_utils.math_validation_bridge import (
         MathValidation, validate_numeric_array, safe_matrix_inverse,
         validate_correlation_matrix, math_safe
     )

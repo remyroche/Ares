@@ -6,6 +6,7 @@ between TAS and NAS architectures, enabling rapid adaptation, few-shot learning,
 and continual learning across different market regimes.
 """
 
+import copy
 import logging
 import time
 import numpy as np
@@ -126,7 +127,8 @@ class UnifiedMetaLearner:
         
         # Performance tracking
         self.meta_performance_history: deque = deque(maxlen=1000)
-        self.regime_adaptation_speed: Dict[str, float] = {}
+        # Track adaptation speeds per regime for diagnostics
+        self.regime_adaptation_speeds: Dict[str, float] = {}
         self.convergence_patterns: Dict[str, List[float]] = defaultdict(list)
         
         # Device setup
@@ -154,7 +156,13 @@ class UnifiedMetaLearner:
                 self.meta_model = NASMetaModel(base_model, self.config)
             else:
                 self.meta_model = HybridMetaModel(base_model, self.config)
-            
+
+            # Ensure the wrapped model is located on the configured device before the optimizer is created
+            if hasattr(self.meta_model, "to"):
+                self.meta_model = self.meta_model.to(self.device)
+            if hasattr(self.meta_model, "base_model") and hasattr(self.meta_model.base_model, "to"):
+                self.meta_model.base_model = self.meta_model.base_model.to(self.device)
+
             # Initialize meta-optimizer
             self.meta_optimizer = optim.Adam(
                 self.meta_model.parameters(),
@@ -202,14 +210,16 @@ class UnifiedMetaLearner:
                 regime_data = {regime_id: (X[regime_mask], y[regime_mask]) 
                              for regime_id, (X, y) in data.items()}
                 
-                tasks.extend(self._create_regime_tasks(regime_data, regime, task_id))
-                task_id += len(tasks)
+                new_tasks = self._create_regime_tasks(regime_data, regime, task_id)
+                tasks.extend(new_tasks)
+                task_id += len(new_tasks)
         
         else:
             # Create general tasks
             for regime_id, (X, y) in data.items():
-                tasks.extend(self._create_general_tasks(X, y, regime_id, task_id))
-                task_id += len(tasks)
+                new_tasks = self._create_general_tasks(X, y, regime_id, task_id)
+                tasks.extend(new_tasks)
+                task_id += len(new_tasks)
         
         # Limit number of tasks if specified
         if num_tasks is not None:
@@ -494,7 +504,7 @@ class UnifiedMetaLearner:
         self.adaptation_history.append(result)
         
         # Update regime adaptation speed
-        self.regime_adaptation_speed[regime_id] = 1.0 / (adaptation_time + 1e-8)
+        self.regime_adaptation_speeds[regime_id] = 1.0 / (adaptation_time + 1e-8)
         
         self.logger.info(f"✅ Adaptation completed in {adaptation_time:.2f}s")
         self.logger.info(f"   Initial performance: {initial_performance}")
@@ -631,7 +641,7 @@ class UnifiedMetaLearner:
             'avg_adaptation_time': np.mean(adaptation_times),
             'convergence_rate': np.mean(convergence_rates),
             'avg_performance_improvement': np.mean(improvements) if improvements else 0.0,
-            'regime_adaptation_speeds': self.regime_adaptation_speed,
+            'regime_adaptation_speeds': self.regime_adaptation_speeds,
             'memory_usage': len(self.task_memory),
             'meta_training_sessions': len(self.meta_performance_history)
         }
@@ -686,19 +696,77 @@ class UnifiedMetaLearner:
 # Meta-model wrappers for different architectures
 class BaseMetaModel(nn.Module):
     """Base meta-model wrapper."""
-    
+
     def __init__(self, base_model: Any, config: MetaLearningConfig):
         super().__init__()
         self.base_model = base_model
         self.config = config
-    
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+    def _resolve_device(self) -> torch.device:
+        """Infer the current device for this module's parameters."""
+        try:
+            return next(self.parameters()).device
+        except StopIteration:
+            return torch.device("cuda" if torch.cuda.is_available() and self.config.enable_gpu else "cpu")
+
+    def _ensure_tensor(self, value: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """Convert arrays to float32 tensors on the active device."""
+        device = self._resolve_device()
+        if isinstance(value, torch.Tensor):
+            tensor = value.to(device=device, dtype=torch.float32)
+        else:
+            tensor = torch.as_tensor(value, dtype=torch.float32, device=device)
+        if tensor.dim() == 1:
+            tensor = tensor.unsqueeze(-1)
+        return tensor
+
     def clone(self):
         """Create a clone of the meta-model."""
-        raise NotImplementedError
-    
-    def compute_loss(self, X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        try:
+            # Deep copy the base model to avoid shared state between clones
+            cloned_base = copy.deepcopy(self.base_model)
+        except Exception as exc:  # pragma: no cover - defensive path
+            self._logger.debug("Failed to deepcopy base model (%s); using original reference", exc)
+            cloned_base = self.base_model
+
+        cloned_model = self.__class__(cloned_base, self.config)
+        cloned_model.load_state_dict(self.state_dict())
+        target_device = self._resolve_device()
+        if hasattr(cloned_model, "to"):
+            cloned_model = cloned_model.to(target_device)
+        if hasattr(cloned_model, "base_model") and hasattr(cloned_model.base_model, "to"):
+            cloned_model.base_model = cloned_model.base_model.to(target_device)
+        return cloned_model
+
+    def compute_loss(self, X: Union[np.ndarray, torch.Tensor], y: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """Compute loss for given inputs and targets."""
-        raise NotImplementedError
+        X_tensor = self._ensure_tensor(X)
+        y_tensor = self._ensure_tensor(y)
+
+        forward_impl = type(self).forward
+        if forward_impl is not nn.Module.forward:
+            predictions = forward_impl(self, X_tensor)
+        elif hasattr(self.base_model, "forward"):
+            predictions = self.base_model(X_tensor)
+        else:
+            raise RuntimeError(
+                "Neither the meta-model nor the wrapped base model provides a forward pass."
+            )
+
+        if hasattr(self.base_model, "compute_loss"):
+            return self.base_model.compute_loss(X_tensor, y_tensor)
+
+        if predictions.dtype != torch.float32:
+            predictions = predictions.float()
+        if y_tensor.dtype != predictions.dtype:
+            y_tensor = y_tensor.to(dtype=predictions.dtype)
+        if y_tensor.shape != predictions.shape and y_tensor.numel() == predictions.numel():
+            y_tensor = y_tensor.view_as(predictions)
+
+        # Default to mean squared error for numerical stability
+        criterion = nn.MSELoss()
+        return criterion(predictions, y_tensor)
 
 
 class TASMetaModel(BaseMetaModel):

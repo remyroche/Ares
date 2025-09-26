@@ -55,71 +55,55 @@ analyst_config:
           enable_multi_timeframe_attention: true
           regime_aware_training: true
   
-  # Meta model configuration - AdvancedMambaHybrid for multi-timeframe fusion
+  # Meta model configuration - Calibrated LightGBM stacker for probabilistic fusion
   meta_models:
     signal_strength:
-      model_type: "AdvancedMambaHybrid"
+      model_type: "stacker_lgbm_calibrated"
       params:
-        mamba_layers: 2
-        conv_layers: 4
-        attention_heads: 8
-        hidden_dim: 128
-        state_expansion: 4
-        multi_timeframe_fusion: true
-        dropout: 0.1
-        activation: "GELU"
-        batch_size: 64
-        epochs: 100
-        l2_regularization: 0.01
-        early_stopping_patience: 20
+        base_model: "LightGBM"
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 5
+        subsample: 0.8
+        colsample_bytree: 0.8
+        calibration_method: "isotonic"
+        cv_folds: 5
 
     confidence:
-      model_type: "AdvancedMambaHybrid"
+      model_type: "stacker_lgbm_calibrated"
       params:
-        mamba_layers: 2
-        conv_layers: 4
-        attention_heads: 8
-        hidden_dim: 128
-        state_expansion: 4
-        multi_timeframe_fusion: true
-        dropout: 0.1
-        activation: "GELU"
-        batch_size: 64
-        epochs: 100
-        l2_regularization: 0.01
-        early_stopping_patience: 20
+        base_model: "LightGBM"
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 5
+        subsample: 0.8
+        colsample_bytree: 0.8
+        calibration_method: "isotonic"
+        cv_folds: 5
 
     risk_score:
-      model_type: "AdvancedMambaHybrid"
+      model_type: "stacker_lgbm_calibrated"
       params:
-        mamba_layers: 2
-        conv_layers: 4
-        attention_heads: 8
-        hidden_dim: 128
-        state_expansion: 4
-        multi_timeframe_fusion: true
-        dropout: 0.1
-        activation: "GELU"
-        batch_size: 64
-        epochs: 100
-        l2_regularization: 0.01
-        early_stopping_patience: 20
+        base_model: "LightGBM"
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 5
+        subsample: 0.8
+        colsample_bytree: 0.8
+        calibration_method: "isotonic"
+        cv_folds: 5
 
     regime_label:
-      model_type: "AdvancedMambaHybrid"
+      model_type: "stacker_lgbm_calibrated"
       params:
-        mamba_layers: 2
-        conv_layers: 4
-        attention_heads: 8
-        hidden_dim: 128
-        state_expansion: 4
-        multi_timeframe_fusion: true
-        dropout: 0.1
-        activation: "GELU"
-        batch_size: 64
-        epochs: 100
-        l2_regularization: 0.01
-        early_stopping_patience: 20
+        base_model: "LightGBM"
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 5
+        subsample: 0.8
+        colsample_bytree: 0.8
+        calibration_method: "isotonic"
+        cv_folds: 5
   
   # Training configuration
   training:
@@ -136,7 +120,7 @@ analyst_config:
     enable_meta_learning: true
     meta_learning_rate: 0.01
     meta_learning_iterations: 1000
-    notes: "AdvancedMambaHybrid consumes NAS/TAS enhancer outputs as base learners"
+    notes: "stacker_lgbm_calibrated blends NAS/TAS/MultiScale N-BEATS outputs with calibrated probabilities"
   
   # Multi-output specific settings
   multi_output:

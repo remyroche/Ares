@@ -108,6 +108,8 @@ class NASTrainingStep(PerRegimeTrainingStep):
         if config.include_deepscaler:
             candidate_models = set(getattr(nas_config, "candidate_model_types", []) or [])
             candidate_models.add("DeepScaler")
+            candidate_models.add("AdvancedMambaHybrid")
+            candidate_models.add("advanced_mamba_hybrid")
             setattr(nas_config, "candidate_model_types", tuple(sorted(candidate_models)))
             setattr(nas_config, "max_model_contributions", config.max_model_contributions)
 

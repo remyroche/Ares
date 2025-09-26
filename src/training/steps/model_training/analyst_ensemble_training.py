@@ -7,23 +7,18 @@ plus NAS models to create robust ensemble predictions for trade decisions.
 
 Analyst Models Structure:
 Base Models:
-    "tcn": "Temporal Convolutional Network" - Deep learning model for temporal patterns
-    "lightgbm": "LightGBM Regressor" - Fast gradient boosting framework
-    "ridge": "Ridge Regression" - Linear model with L2 regularization
-    "elastic_net": "Elastic Net" - Linear model with L1+L2 regularization
-    "random_forest": "Random Forest" - Ensemble of decision trees
-
-NAS Models (Per-Regime):
-    "nas": "Neural Architecture Search" - Per-regime neural architectures for trading signals
+    "nas": "Neural Architecture System" - Per-regime neural architectures for trading signals
+    "tas": "Tree Architecture System" - Regime-aware tree-based specialist
+    "multiscale_nbeats": "MultiScale N-BEATS" - Deep forecasting backbone with multi-scale awareness
 
 Meta-learner:
-    "stacking": "Stacking Ensemble" - Combines base models + NAS models
+    "stacker_lgbm_calibrated": "Calibrated LightGBM stacker" - Meta-learner that blends base outputs with calibration
 
 Enhanced Features:
 - 5m base timeframe with cross-timeframe features (300+ features)
 - HMM regime outputs integration for comprehensive context
-- TCN + LightGBM + Ridge + ElasticNet + RandomForest base models
-- NAS models per-regime for enhanced trading signal generation
+- NAS + TAS + MultiScale N-BEATS base models for robust analyst coverage
+- Calibrated stacker meta-learner for probability-aligned ensemble outputs
 - Per-regime training for regime-specific optimization
 - Runs every 2 minutes for live trading
 - Decides IF we trade and emits green light for Tactician
@@ -92,17 +87,17 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     Analyst Models Structure:
     Base Models:
-        "tcn": "Temporal Convolutional Network" - Deep learning model for temporal patterns
-        "catboost": "CatBoost Regressor" - Gradient boosting with categorical features  
-        "lightgbm": "LightGBM Regressor" - Fast gradient boosting framework
-    
+        "NAS": "Neural Architecture System" - Neural discovery engine for analyst signals
+        "TAS": "Tree Architecture System" - Tree-based specialist leveraging CLVSA attention
+        "MULTISCALE_NBEATS": "MultiScale N-BEATS" - Multi-horizon deep forecasting component
+
     Meta-learner:
-        "elastic_net": "Elastic Net" - Linear combination of base model predictions
+        "stacker_lgbm_calibrated": "Calibrated LightGBM stacker" - Probabilistic stacking meta-learner
     
     Features:
     - 5m base timeframe with cross-timeframe features (300+ features)
     - HMM regime outputs integration for comprehensive context
-    - TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
+    - NAS + TAS + MultiScale N-BEATS base models with calibrated LightGBM stacker meta-learner
     - Per-regime training for regime-specific optimization
     - Runs every 2 minutes for live trading
     - Decides IF we trade and emits green light for Tactician
@@ -181,14 +176,15 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 config = EnsembleTrainingConfig(
                     model_name="analyst_ensemble_models_5m",
                     timeframe="5m",
-                    model_types=["tcn", "lightgbm", "ridge", "elastic_net", "random_forest"],
+                    model_types=["NAS", "TAS", "MULTISCALE_NBEATS"],
                     hpo_n_trials=100,
                     hpo_timeout_seconds=3600,
                     min_samples_per_regime=1000,
                     enable_data_augmentation=True,
                     augmentation_method="smote",
                     model_save_path="generated/model_training/models/analyst_ensemble_models_5m",
-                    evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                    evaluation_metrics=["mse", "mae", "r2", "mape", "smape"],
+                    meta_model="stacker_lgbm_calibrated"
                 )
                 tprint_success("✅ Default configuration created successfully")
             else:

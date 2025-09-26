@@ -114,11 +114,14 @@ class BaseTrainingConfig:
 @dataclass
 class PerRegimeTrainingConfig(BaseTrainingConfig):
     """Configuration for per-regime training steps."""
-    
+
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
         "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
     ])
+
+    # Meta learner configuration
+    meta_learner: str = "stacker_lgbm_calibrated"
     
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
@@ -161,12 +164,12 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
-        "NAS", "CatBoostClassifier", "XGBoostClassifier"
+        "NAS", "TAS", "MultiScaleNBEATS"
     ])
     meta_models: List[str] = field(default_factory=lambda: [
-        "XGBoostClassifier", "CatBoostClassifier", "NAS"
+        "stacker_lgbm_calibrated"
     ])
-    meta_model: str = "XGBoostClassifier"  # Default meta model for backward compatibility
+    meta_model: str = "stacker_lgbm_calibrated"  # Default meta model for calibrated stacking
 
     # Enable meta model comparison
     compare_meta_models: bool = True
@@ -207,11 +210,14 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 @dataclass
 class TacticianTrainingConfig(BaseTrainingConfig):
     """Configuration for Tactician training steps."""
-    
+
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet", "RandomSurvivalForest"
+        "TAS", "NAS", "RandomSurvivalForest"
     ])
+
+    # Meta learner architecture
+    meta_learner: str = "stacker_lgbm_calibrated"
     
     # Analyst integration
     analyst_model_path: str = "./models/analyst_ensemble"

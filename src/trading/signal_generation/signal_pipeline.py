@@ -16,6 +16,8 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.regime_config import RegimeType
 from ..config.trading_config import TradingConfig
+from .analyst_signals_refactored import NASSignalEnhancer
+from .tactician_signals_refactored import TASSignalEnhancer
 
 logger = system_logger.getChild('SignalGenerationPipeline')
 
@@ -119,6 +121,8 @@ class SignalGenerationPipeline:
         self.analyst_meta_model = None
         self.tactician_base_models = []
         self.tactician_meta_model = None
+        self.nas_enhancer: NASSignalEnhancer | None = None
+        self.tas_enhancer: TASSignalEnhancer | None = None
         
         # Optimization parameters (from backtesting)
         self.optimization_params = {
@@ -128,6 +132,10 @@ class SignalGenerationPipeline:
             'signal_confidence_threshold': 0.6,
             'meta_model_weight': 0.8,
             'base_model_weight': 0.2,
+            'stacking_meta_model': {
+                'intercept': 0.0,
+                'weights': []
+            },
             # Exit-specific parameters
             'exit_confidence_threshold': 0.5,
             'tactician_exit_confidence_weight': 0.6,
@@ -157,7 +165,10 @@ class SignalGenerationPipeline:
             
             # Initialize tactician models
             await self._initialize_tactician_models()
-            
+
+            # Initialize NAS/TAS enhancers for stacked ensembles
+            await self._initialize_enhancers()
+
             # Load optimization parameters
             await self._load_optimization_parameters()
             
@@ -271,11 +282,29 @@ class SignalGenerationPipeline:
                 self.tactician_base_models = []  # Fallback to empty list
             
             self.logger.info("✅ Tactician models initialized")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize tactician models: {e}")
             raise
-    
+
+    async def _initialize_enhancers(self) -> None:
+        """Initialize NAS and TAS enhancers used as stacked base learners."""
+        try:
+            nas_config = getattr(self.config, 'nas_config', {}) if hasattr(self.config, 'nas_config') else self.config.get('nas_config', {})
+            self.nas_enhancer = NASSignalEnhancer(nas_config)
+            await self.nas_enhancer.initialize(None)
+
+            tas_config = getattr(self.config, 'tas_config', {}) if hasattr(self.config, 'tas_config') else self.config.get('tas_config', {})
+            self.tas_enhancer = TASSignalEnhancer(tas_config)
+            await self.tas_enhancer.initialize(None)
+
+            self.logger.info("✅ NAS/TAS enhancers initialized for stacked ensembles")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize NAS/TAS enhancers: {e}")
+            self.nas_enhancer = None
+            self.tas_enhancer = None
+
     async def _load_optimization_parameters(self):
         """Load optimization parameters from backtesting results."""
         try:
@@ -301,6 +330,7 @@ class SignalGenerationPipeline:
                         'signal_confidence_threshold': conf_opt.get('signal_threshold', 0.6),
                         'meta_model_weight': conf_opt.get('meta_weight', 0.8),
                         'base_model_weight': conf_opt.get('base_weight', 0.2),
+                        'stacking_meta_model': conf_opt.get('stacking_meta_model', self.optimization_params['stacking_meta_model']),
                         # Exit-specific parameters
                         'exit_confidence_threshold': conf_opt.get('exit_threshold', 0.5),
                         'tactician_exit_confidence_weight': conf_opt.get('tactician_exit_weight', 0.6),
@@ -512,22 +542,50 @@ class SignalGenerationPipeline:
         try:
             # Use the existing analyst.analyze_regime method
             meta_result = await self.analyst_meta_model.analyze_regime(market_data)
-            
-            # Extract confidence from the result
-            analyst_confidence = meta_result.get('confidence', 0.5)
-            
+
+            # Extract confidence from the result with preference for Advanced Mamba payloads
+            analyst_confidence = self._resolve_meta_confidence(
+                meta_result,
+                default=meta_result.get('confidence', 0.5)
+            )
+
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
                 analyst_confidence,
                 hmm_output.regime_probabilities
             )
-            
+
+            nas_base_output = await self._generate_nas_base_output(
+                market_data,
+                hmm_output,
+                timestamp,
+                base_outputs
+            )
+            if nas_base_output:
+                base_outputs.append(nas_base_output)
+
+            tas_projection = await self._generate_tas_projection_for_analyst(
+                market_data,
+                hmm_output,
+                meta_result,
+                timestamp,
+                base_outputs
+            )
+            if tas_projection:
+                base_outputs.append(tas_projection)
+
+            augmented_meta = self._augment_meta_features(
+                meta_result,
+                [self._serialize_analyst_base_output(output) for output in base_outputs],
+                scope='analyst'
+            )
+
             return AnalystMetaOutput(
                 timestamp=timestamp,
-                analyst_confidence=regime_adjusted_confidence,
-                market_health_score=meta_result.get('market_health_score', 0.5),
+                analyst_confidence=analyst_confidence,
+                market_health_score=augmented_meta.get('market_health_score', 0.5),
                 regime_adjusted_confidence=regime_adjusted_confidence,
-                meta_features=meta_result,
+                meta_features=augmented_meta,
                 base_outputs=base_outputs
             )
             
@@ -613,35 +671,290 @@ class SignalGenerationPipeline:
             meta_result = await self.tactician_meta_model.generate_enhanced_predictions(
                 market_data, {}, symbol, "1m", analyst_output.analyst_confidence
             )
-            
-            # Extract confidence from the result
-            tactician_confidence = meta_result.get('confidence', 0.5)
-            
-            # Calculate combined confidence
-            combined_confidence = self._calculate_combined_confidence(
-                analyst_output.analyst_confidence, tactician_confidence
+
+            # Extract confidence from the result with preference for Advanced Mamba payloads
+            tactician_confidence = self._resolve_meta_confidence(
+                meta_result,
+                default=meta_result.get('confidence', 0.5)
             )
-            
+
+            nas_for_tactician = self._convert_nas_outputs_for_tactician(
+                analyst_output,
+                timestamp
+            )
+            if nas_for_tactician:
+                base_outputs.extend(nas_for_tactician)
+
+            tas_base_output = await self._generate_tas_base_output(
+                market_data,
+                hmm_output,
+                analyst_output,
+                timestamp,
+                base_outputs
+            )
+            if tas_base_output:
+                base_outputs.append(tas_base_output)
+
+            augmented_meta = self._augment_meta_features(
+                meta_result,
+                [self._serialize_tactician_base_output(output) for output in base_outputs],
+                scope='tactician'
+            )
+
             # Extract final signal from trading decisions
-            trading_decisions = meta_result.get('trading_decisions', {})
+            trading_decisions = augmented_meta.get('trading_decisions', {})
             final_signal = 'hold'
             if trading_decisions.get('entry_signal', False):
                 final_signal = 'buy' if trading_decisions.get('direction', '') == 'long' else 'sell'
-            
+
             return TacticianMetaOutput(
                 timestamp=timestamp,
                 tactician_confidence=tactician_confidence,
-                combined_confidence=combined_confidence,
+                combined_confidence=tactician_confidence,
                 final_signal=final_signal,
-                signal_strength=meta_result.get('signal_strength', 0.5),
-                meta_features=meta_result,
+                signal_strength=augmented_meta.get('signal_strength', 0.5),
+                meta_features=augmented_meta,
                 base_outputs=base_outputs
             )
             
         except Exception as e:
             self.logger.error(f"❌ Tactician meta model failed: {e}")
             raise
-    
+
+    async def _generate_nas_base_output(
+        self,
+        market_data: pd.DataFrame,
+        hmm_output: HMMRegimeOutput,
+        timestamp: datetime,
+        existing_outputs: List[AnalystBaseOutput]
+    ) -> Optional[AnalystBaseOutput]:
+        """Generate NAS-enhanced base output for stacking."""
+        if not self.nas_enhancer:
+            return None
+
+        try:
+            base_confidence = np.mean([output.base_confidence for output in existing_outputs]) if existing_outputs else 0.5
+            base_signal = {
+                'confidence_score': float(base_confidence),
+                'risk_metrics': {},
+                'analysis_metadata': {'source': 'analyst_base'}
+            }
+
+            regime_data = {
+                'primary_regime': getattr(hmm_output.primary_regime, 'name', hmm_output.primary_regime),
+                'regime_probabilities': hmm_output.regime_probabilities
+            }
+
+            enhancement_result = await self.nas_enhancer.enhance_signal(
+                base_signal,
+                market_data,
+                regime_data,
+                {'source': 'signal_pipeline'}
+            )
+
+            if not enhancement_result or not enhancement_result.success:
+                return None
+
+            return AnalystBaseOutput(
+                timestamp=timestamp,
+                market_health={},
+                volatility_analysis={},
+                liquidity_analysis={},
+                stress_analysis={},
+                base_confidence=enhancement_result.confidence_metrics.final_confidence,
+                features={
+                    'nas_prediction': enhancement_result.enhanced_signal.get('nas_prediction'),
+                    'nas_confidence': enhancement_result.enhancement_metadata.get('final_confidence'),
+                    'enhancement_metadata': enhancement_result.enhancement_metadata
+                }
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ NAS base output generation failed: {e}")
+            return None
+
+    async def _generate_tas_base_output(
+        self,
+        market_data: pd.DataFrame,
+        hmm_output: HMMRegimeOutput,
+        analyst_output: AnalystMetaOutput,
+        timestamp: datetime,
+        existing_outputs: List[TacticianBaseOutput]
+    ) -> Optional[TacticianBaseOutput]:
+        """Generate TAS-enhanced base output for stacking."""
+        if not self.tas_enhancer:
+            return None
+
+        try:
+            base_confidence = np.mean([output.base_confidence for output in existing_outputs]) if existing_outputs else 0.5
+            base_signal = {
+                'confidence_score': float(base_confidence),
+                'risk_metrics': {},
+                'analysis_metadata': {'source': 'tactician_base'},
+                'signal_type': analyst_output.meta_features.get('signal_direction', 'hold') if isinstance(analyst_output.meta_features, dict) else 'hold'
+            }
+
+            regime_data = {
+                'primary_regime': getattr(hmm_output.primary_regime, 'name', hmm_output.primary_regime),
+                'regime_probabilities': hmm_output.regime_probabilities
+            }
+
+            enhancement_result = await self.tas_enhancer.enhance_signal(
+                base_signal,
+                market_data,
+                regime_data,
+                {'source': 'signal_pipeline', 'analyst_confidence': analyst_output.analyst_confidence}
+            )
+
+            if not enhancement_result or not enhancement_result.success:
+                return None
+
+            enhanced_signal = enhancement_result.enhanced_signal
+            scenario_predictions = enhanced_signal.get('scenario_predictions', {}) if isinstance(enhanced_signal, dict) else {}
+
+            return TacticianBaseOutput(
+                timestamp=timestamp,
+                scenario_predictions=scenario_predictions,
+                price_targets=enhanced_signal.get('price_targets', {}),
+                adversarial_risks=enhanced_signal.get('risk_metrics', {}),
+                base_confidence=enhancement_result.confidence_metrics.final_confidence,
+                position_recommendations=enhanced_signal.get('position_recommendations', {})
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ TAS base output generation failed: {e}")
+            return None
+
+    async def _generate_tas_projection_for_analyst(
+        self,
+        market_data: pd.DataFrame,
+        hmm_output: HMMRegimeOutput,
+        meta_result: Dict[str, Any],
+        timestamp: datetime,
+        existing_outputs: List[AnalystBaseOutput]
+    ) -> Optional[AnalystBaseOutput]:
+        """Project TAS insights into the analyst stack so Advanced Mamba sees both enhancers."""
+        if not self.tas_enhancer:
+            return None
+
+        try:
+            base_confidence = np.mean([output.base_confidence for output in existing_outputs]) if existing_outputs else 0.5
+            tas_context = meta_result.get('trading_decisions', {}) if isinstance(meta_result, dict) else {}
+            direction = (tas_context.get('direction') if isinstance(tas_context, dict) else None) or meta_result.get('action_bias') if isinstance(meta_result, dict) else None
+            signal_type = 0
+            if isinstance(direction, str):
+                direction_lower = direction.lower()
+                if 'long' in direction_lower or 'bull' in direction_lower:
+                    signal_type = 1
+                elif 'short' in direction_lower or 'bear' in direction_lower:
+                    signal_type = -1
+
+            base_signal = {
+                'confidence_score': float(base_confidence),
+                'risk_metrics': {},
+                'analysis_metadata': {'source': 'analyst_stack'},
+                'signal_type': signal_type
+            }
+
+            regime_data = {
+                'primary_regime': getattr(hmm_output.primary_regime, 'name', hmm_output.primary_regime),
+                'regime_probabilities': hmm_output.regime_probabilities
+            }
+
+            enhancement_result = await self.tas_enhancer.enhance_signal(
+                base_signal,
+                market_data,
+                regime_data,
+                {'source': 'signal_pipeline:analyst'}
+            )
+
+            if not enhancement_result or not enhancement_result.success:
+                return None
+
+            enhanced_signal = enhancement_result.enhanced_signal
+            scenario_predictions = enhanced_signal.get('scenario_predictions', {}) if isinstance(enhanced_signal, dict) else {}
+
+            return AnalystBaseOutput(
+                timestamp=timestamp,
+                market_health={},
+                volatility_analysis={},
+                liquidity_analysis={},
+                stress_analysis={},
+                base_confidence=enhancement_result.confidence_metrics.final_confidence,
+                features={
+                    'tas_projection': scenario_predictions,
+                    'tas_confidence': enhancement_result.enhancement_metadata.get('final_confidence'),
+                    'enhancement_metadata': enhancement_result.enhancement_metadata
+                }
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ TAS projection for analyst failed: {e}")
+            return None
+
+    def _convert_nas_outputs_for_tactician(
+        self,
+        analyst_output: AnalystMetaOutput,
+        timestamp: datetime
+    ) -> List[TacticianBaseOutput]:
+        """Translate NAS contributions from the analyst stack into tactician-ready base outputs."""
+        tactician_ready: List[TacticianBaseOutput] = []
+
+        for base_output in analyst_output.base_outputs:
+            features = base_output.features or {}
+            nas_payload = features.get('nas_prediction') if isinstance(features, dict) else None
+            if not nas_payload:
+                continue
+
+            nas_confidence = features.get('nas_confidence', base_output.base_confidence)
+            scenario_predictions = {'nas_projection': nas_payload}
+
+            tactician_ready.append(
+                TacticianBaseOutput(
+                    timestamp=timestamp,
+                    scenario_predictions=scenario_predictions,
+                    price_targets={},
+                    adversarial_risks={},
+                    base_confidence=float(np.clip(nas_confidence if nas_confidence is not None else base_output.base_confidence, 0.0, 1.0)),
+                    position_recommendations={}
+                )
+            )
+
+        return tactician_ready
+
+    def _augment_meta_features(
+        self,
+        meta_result: Any,
+        serialized_base_outputs: List[Dict[str, Any]],
+        scope: str
+    ) -> Dict[str, Any]:
+        """Attach stacked base model details to the Advanced Mamba payload."""
+        base_meta = dict(meta_result) if isinstance(meta_result, dict) else {}
+        stacked_block = base_meta.get('stacked_base_models', {})
+        if not isinstance(stacked_block, dict):
+            stacked_block = {}
+
+        stacked_block[scope] = serialized_base_outputs
+        base_meta['stacked_base_models'] = stacked_block
+        return base_meta
+
+    def _serialize_analyst_base_output(self, base_output: AnalystBaseOutput) -> Dict[str, Any]:
+        return {
+            'timestamp': base_output.timestamp.isoformat(),
+            'base_confidence': base_output.base_confidence,
+            'features': base_output.features
+        }
+
+    def _serialize_tactician_base_output(self, base_output: TacticianBaseOutput) -> Dict[str, Any]:
+        return {
+            'timestamp': base_output.timestamp.isoformat(),
+            'base_confidence': base_output.base_confidence,
+            'scenario_predictions': base_output.scenario_predictions,
+            'price_targets': base_output.price_targets,
+            'adversarial_risks': base_output.adversarial_risks,
+            'position_recommendations': base_output.position_recommendations
+        }
+
     def _apply_regime_adjustment(self, base_confidence: float, regime_probabilities: Dict[RegimeType, float]) -> float:
         """Apply regime-based confidence adjustment."""
         try:
@@ -672,20 +985,47 @@ class SignalGenerationPipeline:
             self.logger.warning(f"⚠️ Regime adjustment failed: {e}")
             return base_confidence
     
-    def _calculate_combined_confidence(self, analyst_confidence: float, tactician_confidence: float) -> float:
-        """Calculate combined confidence using optimization parameters."""
-        try:
-            analyst_weight = self.optimization_params['analyst_confidence_weight']
-            tactician_weight = self.optimization_params['tactician_confidence_weight']
-            
-            combined = (analyst_confidence * analyst_weight + 
-                       tactician_confidence * tactician_weight)
-            
-            return max(0.0, min(1.0, combined))
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Combined confidence calculation failed: {e}")
-            return (analyst_confidence + tactician_confidence) / 2
+    def _extract_mamba_confidence(self, meta_payload: Any) -> Optional[float]:
+        """Extract confidence emitted by the advanced Mamba Hybrid meta-models."""
+        if not isinstance(meta_payload, dict):
+            return None
+
+        candidate_keys = [
+            'advanced_mamba_hybrid',
+            'advanced_mamba',
+            'meta_model_outputs',
+            'meta_model_confidence',
+            'meta_confidence'
+        ]
+
+        for key in candidate_keys:
+            if key not in meta_payload:
+                continue
+
+            value = meta_payload.get(key)
+
+            if isinstance(value, dict):
+                for inner_key in ('confidence', 'score', 'value'):
+                    inner_value = value.get(inner_key)
+                    if isinstance(inner_value, (int, float)):
+                        return float(inner_value)
+            elif isinstance(value, (int, float)):
+                return float(value)
+
+        return None
+
+    def _resolve_meta_confidence(self, meta_payload: Any, default: float = 0.5) -> float:
+        extracted = self._extract_mamba_confidence(meta_payload)
+        if extracted is None and isinstance(meta_payload, dict):
+            # Some payloads embed confidence directly
+            direct_conf = meta_payload.get('confidence')
+            if isinstance(direct_conf, (int, float)):
+                extracted = float(direct_conf)
+
+        if extracted is None:
+            extracted = default
+
+        return float(np.clip(extracted, 0.0, 1.0))
     
     def _calculate_exit_confidence(self, analyst_confidence: float, tactician_confidence: float) -> float:
         """

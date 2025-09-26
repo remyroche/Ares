@@ -7,7 +7,7 @@ with 15-25 regimes, 100 features, and proper model integration.
 Features:
 - 1h base timeframe with 15-25 regime detection
 - 100 features for comprehensive regime analysis
-- LightGBM + CatBoost + ElasticNet_CV base models with FinancialResNet meta-learner
+- XGBoost + Random_Forest + ElasticNet base models with stacker_lgbm_calibrated meta-learner
 - Runs every 15 minutes for live trading
 - Provides regime probabilities for Analyst and Tactician integration
 """
@@ -38,7 +38,7 @@ class HMMTrainingPipeline:
     Features:
     - 15m base timeframe with 15-25 regime detection
     - 4D analysis: volume, volatility, momentum, trend
-    - LightGBM + CatBoost + ElasticNet_CV base models with FinancialResNet meta-learner
+    - XGBoost + Random_Forest + ElasticNet base models with stacker_lgbm_calibrated meta-learner
     - Runs every 15 minutes for live trading
     - Provides regime probabilities for Analyst and Tactician integration
     - High accuracy regime detection for precise trading signals
@@ -60,18 +60,21 @@ class HMMTrainingPipeline:
         
         # Model configuration for 15m timeframe regime detection
         self.base_models = {
-            "lgbm": "LightGBM",
-            "catboost": "CatBoost",
-            "elasticnet": "ElasticNet_CV"
+            "xgboost": "XGBoost",
+            "random_forest": "Random_Forest",
+            "elasticnet": "ElasticNet"
         }
-        self.meta_learner = "financial_resnet"
+        self.meta_learner = "stacker_lgbm_calibrated"
         self.meta_learner_config = {
-            "architecture": "FinancialResNet",
-            "blocks": [32, 64, 128],           # Smaller for 15m data
-            "temporal_conv_layers": 3,          # Moderate temporal analysis
-            "attention_heads": 4,               # Efficient attention
-            "dropout": 0.15,                    # Good regularization
-            "regime_aware": True,               # Domain optimization
+            "architecture": "stacker_lgbm_calibrated",
+            "base_model": "LightGBM",
+            "n_estimators": 500,
+            "learning_rate": 0.05,
+            "max_depth": 5,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "calibration_method": "isotonic",
+            "cv_folds": 5,
         }
         
         # Training state
@@ -561,32 +564,49 @@ class HMMTrainingPipeline:
     ) -> Dict[str, Any]:
         """Train a base model for regime detection."""
         try:
-            if model_name == "lgbm":
-                from lightgbm import LGBMClassifier
-                model = LGBMClassifier(
-                    n_estimators=100,
-                    learning_rate=0.1,
+            if model_name == "xgboost":
+                try:
+                    from xgboost import XGBClassifier
+                except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+                    raise ImportError(
+                        "XGBoost is required for the regime XGBoost base model. Install with: pip install xgboost"
+                    ) from exc
+
+                model = XGBClassifier(
+                    n_estimators=400,
+                    learning_rate=0.05,
                     max_depth=6,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
                     random_state=42,
-                    verbose=-1
+                    n_jobs=-1,
+                    objective='multi:softprob',
+                    eval_metric='mlogloss',
+                    use_label_encoder=False,
                 )
-            elif model_name == "catboost":
-                from catboost import CatBoostClassifier
-                model = CatBoostClassifier(
-                    iterations=100,
-                    learning_rate=0.1,
-                    depth=6,
+            elif model_name == "random_forest":
+                from sklearn.ensemble import RandomForestClassifier
+
+                model = RandomForestClassifier(
+                    n_estimators=500,
+                    max_depth=10,
+                    min_samples_split=4,
+                    min_samples_leaf=2,
+                    max_features='sqrt',
                     random_state=42,
-                    verbose=False
+                    n_jobs=-1,
+                    class_weight='balanced_subsample',
                 )
             elif model_name == "elasticnet":
                 from sklearn.linear_model import LogisticRegression
+
                 model = LogisticRegression(
                     penalty='elasticnet',
                     l1_ratio=0.5,
                     solver='saga',
                     random_state=42,
-                    max_iter=2000
+                    max_iter=4000,
+                    multi_class='multinomial',
                 )
             else:
                 raise ValueError(f"Unknown base model: {model_name}")
@@ -618,14 +638,25 @@ class HMMTrainingPipeline:
     ) -> Dict[str, Any]:
         """Train meta-learner to combine base model predictions."""
         try:
-            if self.meta_learner == "xgboost":
-                from xgboost import XGBClassifier
-                meta_model = XGBClassifier(
-                    n_estimators=100,
-                    learning_rate=0.1,
-                    max_depth=6,
+            if self.meta_learner == "stacker_lgbm_calibrated":
+                from lightgbm import LGBMClassifier
+                from sklearn.calibration import CalibratedClassifierCV
+
+                params = self.meta_learner_config
+                base_model = LGBMClassifier(
+                    n_estimators=params.get('n_estimators', 500),
+                    learning_rate=params.get('learning_rate', 0.05),
+                    max_depth=params.get('max_depth', 5),
+                    subsample=params.get('subsample', 0.8),
+                    colsample_bytree=params.get('colsample_bytree', 0.8),
                     random_state=42,
-                    verbosity=0
+                    n_jobs=-1,
+                )
+
+                meta_model = CalibratedClassifierCV(
+                    base_estimator=base_model,
+                    method=params.get('calibration_method', 'isotonic'),
+                    cv=params.get('cv_folds', 5),
                 )
             else:
                 raise ValueError(f"Unknown meta-learner: {self.meta_learner}")

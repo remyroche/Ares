@@ -66,9 +66,9 @@ def print_live_trading_flow():
     
     tprint_structured("📈 Live Trading Flow", {
         "Analyst": "Generates signals using base models + NAS predictions",
-        "Tactician": "Generates timing using base models + TAS predictions", 
-        "Signal Combination": "Analyst (60%) + NAS (40%) for direction",
-        "Timing Combination": "Tactician (60%) + TAS (40%) for timing",
+        "Tactician": "Generates timing using base models + TAS predictions",
+        "Signal Combination": "Stacked meta-learner blends Analyst base learners with NAS outputs",
+        "Timing Combination": "Stacked meta-learner blends Tactician base learners with TAS outputs",
         "Execution": "python -m src.trading.nas_tas_trading_main"
     })
 

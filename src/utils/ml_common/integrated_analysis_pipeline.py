@@ -16,18 +16,20 @@ from pathlib import Path
 
 # Import enhanced features
 from ..feature_selection.feature_importance_analyzer import (
-    FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod,
-    analyze_feature_importance, get_important_features
+    FeatureImportanceAnalyzer,
+    FeatureImportanceConfig,
+    ImportanceMethod,
+    analyze_feature_importance,
+    get_important_features,
 )
 from .data_drift_detector import (
-    DataDriftDetector, DriftDetectionConfig, DriftMethod, DriftSeverity,
-    detect_data_drift, get_drifted_features
+    DataDriftDetector,
+    DriftDetectionConfig,
+    DriftMethod,
+    DriftSeverity,
+    detect_data_drift,
+    get_drifted_features,
 )
-
-# Import existing HMM tools
-from ..hmm_composite_manager import EnhancedHMMCompositeManager
-from .hmm_regime_detection import HMMRegimeDetector, RegimeDetectionMethod
-
 # Import system utilities
 from ..logger import get_logger
 
@@ -47,10 +49,12 @@ class IntegratedAnalysisConfig:
     warning_threshold: float = 0.1
     critical_threshold: float = 0.2
     
-    # HMM settings
+    # Legacy HMM settings (kept for backward compatibility; unused)
     hmm_n_components: int = 4
     hmm_covariance_type: str = "full"
-    
+    hmm_ensemble_members: int = 3
+    hmm_random_state: Optional[int] = None
+
     # Output settings
     save_results: bool = True
     output_directory: str = "integrated_analysis_results"
@@ -88,14 +92,12 @@ class IntegratedAnalysisPipeline:
         )
         self.drift_detector = DataDriftDetector(drift_config)
         
-        # HMM regime detector
-        self.hmm_manager = EnhancedHMMCompositeManager()
-        self.regime_detector = HMMRegimeDetector(
-            method=RegimeDetectionMethod.ENSEMBLE_HMM,
-            n_components=self.config.hmm_n_components,
-            covariance_type=self.config.hmm_covariance_type,
-            enable_gpu_acceleration=True
+        # Legacy HMM regime detector (deprecated)
+        self.logger.info(
+            "ℹ️ HMM-based regime detection is deprecated. "
+            "Use TAS/NAS pipelines for regime insights."
         )
+        self.regime_detector = None
     
     def analyze_comprehensive(self, 
                             current_data: pd.DataFrame,
@@ -122,8 +124,10 @@ class IntegratedAnalysisPipeline:
             self.logger.info("⏭️ Step 2: Skipping drift detection (no reference data)")
             results['drift_detection'] = {'status': 'skipped', 'reason': 'no_reference_data'}
         
-        # 3. HMM Regime Detection
-        self.logger.info("🔍 Step 3: HMM Regime Detection")
+        # 3. Regime Detection (legacy HMM support removed)
+        self.logger.info(
+            "⏭️ Step 3: Skipping legacy HMM regime detection in favor of TAS/NAS pipelines"
+        )
         regime_results = self._detect_regimes(current_data)
         results['regime_detection'] = regime_results
         
@@ -202,30 +206,31 @@ class IntegratedAnalysisPipeline:
             return {'status': 'error', 'error': str(e)}
     
     def _detect_regimes(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect market regimes using HMM."""
+        """Return status information for legacy HMM regime detection."""
+        if self.regime_detector is None:
+            return {
+                'status': 'skipped',
+                'reason': 'HMM regime detection deprecated; use TAS/NAS pipelines',
+            }
+
         try:
             # Prepare data for HMM
             numeric_data = data.select_dtypes(include=[np.number])
-            
+
             if len(numeric_data.columns) == 0:
                 return {'status': 'error', 'error': 'No numeric columns available'}
             
-            # Use existing HMM tools
-            # Note: This would need to be adapted based on the actual HMM interface
-            # For now, we'll simulate the regime detection
-            
-            # Simulate regime detection (replace with actual HMM call)
-            n_samples = len(numeric_data)
-            n_regimes = self.config.hmm_n_components
-            regime_labels = np.random.randint(0, n_regimes, n_samples)
-            
+            detection = self.regime_detector.detect_regimes(numeric_data)
+
             return {
                 'status': 'success',
-                'n_regimes': n_regimes,
-                'regime_labels': regime_labels.tolist(),
-                'regime_distribution': {str(i): int(np.sum(regime_labels == i)) for i in range(n_regimes)},
-                'regime_stability': 0.85,  # Simulated stability score
-                'detection_quality': 0.92  # Simulated quality score
+                'n_regimes': detection.n_regimes,
+                'regime_labels': detection.labels.tolist(),
+                'regime_distribution': detection.distribution,
+                'regime_probabilities': detection.probabilities.tolist(),
+                'regime_stability': detection.average_confidence,
+                'detection_quality': detection.average_log_likelihood,
+                'metadata': detection.metadata,
             }
             
         except Exception as e:

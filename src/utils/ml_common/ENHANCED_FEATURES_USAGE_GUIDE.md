@@ -2,7 +2,9 @@
 
 This guide provides comprehensive examples for using the newly implemented features in the ML Common utilities.
 
-**Note:** The HMM Ensemble Manager has been removed as it was redundant with existing sophisticated HMM implementations (`EnhancedHMMCompositeManager` and `HMMRegimeDetector`).
+**Note:** Legacy HMM utilities have been retired in favour of the NAS/TAS regime
+pipelines. The `hmm_*` settings remain in the configuration for backward
+compatibility but are ignored by the integrated analysis pipeline.
 
 ## Integration with Existing Pipeline
 
@@ -19,7 +21,7 @@ config = IntegratedAnalysisConfig(
     feature_importance_methods=[ImportanceMethod.RANDOM_FOREST, ImportanceMethod.LASSO],
     top_k_features=30,
     drift_threshold=0.05,
-    hmm_n_components=4
+    hmm_n_components=4  # Legacy setting retained for backwards compatibility
 )
 
 # Run comprehensive analysis
@@ -162,37 +164,13 @@ for result in report.drift_results:
         print(f"Regime drift detected: {result.feature_name}")
 ```
 
-## 3. Using Existing HMM Tools
+## 3. Legacy HMM Tools (Deprecated)
 
-**Note:** For HMM regime detection and ensemble methods, use the existing sophisticated tools:
-
-```python
-# Use existing EnhancedHMMCompositeManager for advanced HMM functionality
-from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
-
-# Use existing HMMRegimeDetector for regime detection
-from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector, RegimeDetectionMethod
-
-# Initialize the composite manager
-hmm_manager = EnhancedHMMCompositeManager()
-
-# Configure regime detection
-regime_detector = HMMRegimeDetector(
-    method=RegimeDetectionMethod.ENSEMBLE_HMM,
-    n_components=4,
-    enable_gpu_acceleration=True
-)
-
-# The existing tools provide:
-# - Bayesian optimization
-# - M1 hardware optimization  
-# - Memory management
-# - GPU acceleration
-# - Validation components
-# - Performance monitoring
-# - Multi-timeframe support
-# - Streaming capabilities
-```
+HMM-based regime detection has been deprecated in favour of the NAS/TAS
+pipelines. The previous integration snippet has been removed to prevent
+import errors. For regime-aware analysis, leverage the dedicated NAS/TAS
+workflows and their supporting utilities instead of the legacy HMM
+interfaces.
 
 ## 4. Integrated Pipeline Example
 
@@ -202,7 +180,6 @@ regime_detector = HMMRegimeDetector(
 from src.utils.ml_common import (
     FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod,
     DataDriftDetector, DriftDetectionConfig, DriftMethod,
-    HMMEnsembleManager, EnsembleConfig, EnsembleMethod
 )
 
 def complete_analysis_pipeline(reference_data, current_data, target_column='target'):
@@ -246,35 +223,8 @@ def complete_analysis_pipeline(reference_data, current_data, target_column='targ
     results['drift_detection'] = drift_report
     print(f"✅ Drift detection completed. Drifted features: {drift_report.drifted_features}/{drift_report.total_features}")
     
-    # 3. HMM Ensemble for Regime Detection
-    print("🔍 Step 3: HMM Ensemble Regime Detection")
-    
-    # Use only important features for HMM
-    important_features = importance_result.get_top_features("ensemble", k=15)
-    X_hmm = X_cur[important_features]
-    
-    hmm_config = EnsembleConfig(
-        method=EnsembleMethod.VOTING,
-        voting_type="soft",
-        save_results=True,
-        output_directory="analysis_results/hmm_ensemble"
-    )
-    
-    # Use existing sophisticated HMM tools
-    from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
-    from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector, RegimeDetectionMethod
-    
-    hmm_manager = EnhancedHMMCompositeManager()
-    regime_detector = HMMRegimeDetector(
-        method=RegimeDetectionMethod.ENSEMBLE_HMM,
-        n_components=4,
-        enable_gpu_acceleration=True
-    )
-    
-    # Perform regime detection (implementation depends on your specific needs)
-    # hmm_result = regime_detector.detect_regimes(X_hmm)
-    
-    print(f"✅ HMM regime detection completed using existing sophisticated tools")
+    # 3. Regime Detection (handled by NAS/TAS pipelines)
+    print("⏭️ Step 3: Regime detection is now provided by NAS/TAS workflows")
     
     # 4. Generate Summary Report
     print("📊 Step 4: Generating Summary Report")
@@ -289,12 +239,7 @@ def complete_analysis_pipeline(reference_data, current_data, target_column='targ
             'critical_features': [r.feature_name for r in drift_report.drift_results if r.severity.value == 'critical'],
             'recommendations': drift_report.recommendations
         },
-        'hmm_ensemble': {
-            'quality_score': hmm_result.overall_quality,
-            'diversity_score': hmm_result.diversity_score,
-            'stability_score': hmm_result.stability_score,
-            'n_regimes': len(np.unique(hmm_result.ensemble_labels))
-        }
+        'regime_analysis': 'Handled externally by NAS/TAS pipelines'
     }
     
     # Save summary
@@ -353,34 +298,11 @@ research_config = DriftDetectionConfig(
 )
 ```
 
-### HMM Ensemble Configuration
+### Legacy HMM Ensemble Configuration (Deprecated)
 
-```python
-# For stable regime detection
-stable_config = EnsembleConfig(
-    method=EnsembleMethod.BAYESIAN_AVERAGING,
-    base_configs=[
-        HMMConfig(n_components=3, covariance_type="full"),
-        HMMConfig(n_components=4, covariance_type="diag"),
-        HMMConfig(n_components=5, covariance_type="spherical")
-    ],
-    min_quality_score=0.7
-)
-
-# For exploratory analysis
-exploratory_config = EnsembleConfig(
-    method=EnsembleMethod.VOTING,
-    base_configs=[
-        HMMConfig(n_components=2, covariance_type="full"),
-        HMMConfig(n_components=3, covariance_type="diag"),
-        HMMConfig(n_components=4, covariance_type="spherical"),
-        HMMConfig(n_components=5, covariance_type="full"),
-        HMMConfig(n_components=6, covariance_type="diag"),
-        HMMConfig(n_components=7, covariance_type="spherical")
-    ],
-    voting_type="soft"
-)
-```
+HMM ensemble tuning examples have been retired alongside the detector
+implementation. Refer to the NAS/TAS documentation for contemporary
+regime-aware configuration patterns.
 
 ## 6. Performance Optimization Tips
 
@@ -394,9 +316,9 @@ exploratory_config = EnsembleConfig(
 
 ### Common Issues and Solutions
 
-1. **Import Errors**: Ensure all dependencies are installed (`scikit-learn`, `scipy`, `hmmlearn`)
+1. **Import Errors**: Ensure all dependencies are installed (`scikit-learn`, `scipy`)
 2. **Memory Issues**: Reduce `chunk_size` or use fewer parallel processes
-3. **Convergence Issues**: Adjust HMM parameters or use different covariance types
+3. **Regime Instability**: Review NAS/TAS configuration choices and data preprocessing steps
 4. **Poor Quality Scores**: Check data preprocessing and feature engineering steps
 
 ### Performance Monitoring

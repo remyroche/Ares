@@ -15,6 +15,7 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
+import pickle
 import time
 from datetime import datetime
 from enum import Enum
@@ -62,6 +63,24 @@ try:
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
+
+    def _log_fallback(level: int, message: str, *args, **kwargs) -> None:
+        logging.getLogger(__name__).log(level, message)
+
+    def tprint(message: str, *args, **kwargs):  # type: ignore
+        _log_fallback(logging.INFO, message)
+
+    def tprint_info(message: str, *args, **kwargs):  # type: ignore
+        _log_fallback(logging.INFO, message)
+
+    def tprint_warning(message: str, *args, **kwargs):  # type: ignore
+        _log_fallback(logging.WARNING, message)
+
+    def tprint_error(message: str, *args, **kwargs):  # type: ignore
+        _log_fallback(logging.ERROR, message)
+
+    def tprint_success(message: str, *args, **kwargs):  # type: ignore
+        _log_fallback(logging.INFO, message)
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +146,11 @@ class TreeArchitectureConfig:
 @dataclass
 class TreeArchitectureCandidate:
     """Candidate tree architecture."""
-    
+
     architecture_type: TreeArchitectureType
     model_instance: Any
     parameters: Dict[str, Any]
+    task_type: str = "classification"
     performance_score: float = 0.0
     diversity_score: float = 0.0
     hardware_efficiency: float = 0.0
@@ -161,7 +181,7 @@ class TreeArchitectureFactory:
     
     def _register_architectures(self):
         """Register available tree architectures."""
-        self.architecture_registry = {
+        registry: Dict[TreeArchitectureType, Callable] = {
             TreeArchitectureType.DECISION_TREE: self._create_decision_tree,
             TreeArchitectureType.RANDOM_FOREST: self._create_random_forest,
             TreeArchitectureType.GRADIENT_BOOSTING: self._create_gradient_boosting,
@@ -175,6 +195,74 @@ class TreeArchitectureFactory:
             TreeArchitectureType.CLVSA_OPTIMIZED: self._create_cvlsa_optimized,
             TreeArchitectureType.HARDWARE_AWARE: self._create_hardware_aware
         }
+
+        filtered: Dict[TreeArchitectureType, Callable] = {}
+
+        def register_if_enabled(arch_type: TreeArchitectureType,
+                                enabled: bool,
+                                dependency_available: bool = True) -> None:
+            if enabled and dependency_available:
+                filtered[arch_type] = registry[arch_type]
+            elif enabled and not dependency_available:
+                self.logger.debug(
+                    "Skipping %s architecture; required dependency unavailable.",
+                    arch_type.value
+                )
+
+        # Always register decision trees if sklearn is available
+        register_if_enabled(TreeArchitectureType.DECISION_TREE, SKLEARN_AVAILABLE)
+
+        register_if_enabled(
+            TreeArchitectureType.RANDOM_FOREST,
+            self.config.enable_random_forest and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.GRADIENT_BOOSTING,
+            self.config.enable_gradient_boosting and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.EXTRA_TREES,
+            self.config.enable_extra_trees and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.ADA_BOOST,
+            self.config.enable_ada_boost and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.BAGGING,
+            self.config.enable_bagging and SKLEARN_AVAILABLE
+        )
+
+        register_if_enabled(
+            TreeArchitectureType.XGBOOST,
+            self.config.enable_xgboost,
+            XGBOOST_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.LIGHTGBM,
+            self.config.enable_lightgbm,
+            LIGHTGBM_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.CATBOOST,
+            self.config.enable_catboost,
+            CATBOOST_AVAILABLE
+        )
+
+        register_if_enabled(
+            TreeArchitectureType.HYBRID_TREE_NEURAL,
+            self.config.enable_hybrid_tree_neural and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.CLVSA_OPTIMIZED,
+            self.config.enable_cvlsa_optimized and SKLEARN_AVAILABLE
+        )
+        register_if_enabled(
+            TreeArchitectureType.HARDWARE_AWARE,
+            self.config.enable_hardware_aware and SKLEARN_AVAILABLE
+        )
+
+        self.architecture_registry = filtered
     
     def create_architecture(self, 
                            architecture_type: TreeArchitectureType,
@@ -197,12 +285,13 @@ class TreeArchitectureFactory:
             
             # Create model instance
             model_instance = self.architecture_registry[architecture_type](parameters, task_type)
-            
+
             # Create candidate
             candidate = TreeArchitectureCandidate(
                 architecture_type=architecture_type,
                 model_instance=model_instance,
-                parameters=parameters or {},
+                parameters=(parameters or {}).copy(),
+                task_type=task_type,
                 creation_time=datetime.now()
             )
             
@@ -239,7 +328,19 @@ class TreeArchitectureFactory:
         try:
             architectures = []
             available_types = list(self.architecture_registry.keys())
-            
+
+            if not available_types:
+                raise RuntimeError("No architectures available with current configuration")
+
+            if not self.config.enable_architecture_diversity:
+                default_type = (
+                    TreeArchitectureType.RANDOM_FOREST
+                    if TreeArchitectureType.RANDOM_FOREST in self.architecture_registry
+                    else available_types[0]
+                )
+                architectures.append(self.create_architecture(default_type, task_type=task_type))
+                return architectures
+
             # Select diverse architecture types
             selected_types = self._select_diverse_types(available_types, n_architectures)
             
@@ -467,7 +568,7 @@ class TreeArchitectureEvaluator:
             model.fit(X, y)
             
             # Calculate performance score
-            performance_score = self._calculate_performance_score(model, X, y, cv_folds)
+            performance_score = self._calculate_performance_score(candidate, X, y, cv_folds)
             candidate.performance_score = performance_score
             
             # Calculate diversity score
@@ -503,16 +604,38 @@ class TreeArchitectureEvaluator:
             candidate.performance_score = 0.0
             return candidate
     
-    def _calculate_performance_score(self, model: Any, X: np.ndarray, y: np.ndarray, cv_folds: int) -> float:
+    def _calculate_performance_score(self,
+                                     candidate: TreeArchitectureCandidate,
+                                     X: np.ndarray,
+                                     y: np.ndarray,
+                                     cv_folds: int) -> float:
         """Calculate performance score."""
+        model = candidate.model_instance
+
+        if not SKLEARN_AVAILABLE:
+            try:
+                return float(model.score(X, y))
+            except Exception as e:
+                tprint_warning(f"⚠️ Unable to calculate score without scikit-learn: {e}")
+                return 0.0
+
+        from sklearn.model_selection import cross_val_score
+        from sklearn.metrics import accuracy_score, r2_score
+
+        scoring = 'accuracy' if candidate.task_type == 'classification' else 'r2'
+
         try:
-            from sklearn.model_selection import cross_val_score
-            from sklearn.metrics import accuracy_score, r2_score
-            
-            # Cross-validation score
-            cv_scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy' if len(np.unique(y)) > 2 else 'r2')
-            return np.mean(cv_scores)
-            
+            cv_scores = cross_val_score(model, X, y, cv=cv_folds, scoring=scoring)
+            return float(np.mean(cv_scores))
+        except ValueError:
+            try:
+                predictions = model.predict(X)
+                if candidate.task_type == 'classification':
+                    return float(accuracy_score(y, predictions))
+                return float(r2_score(y, predictions))
+            except Exception as inner_error:
+                tprint_error(f"❌ Performance score fallback failed: {inner_error}")
+                return 0.0
         except Exception as e:
             tprint_error(f"❌ Performance score calculation failed: {e}")
             return 0.0
@@ -560,8 +683,8 @@ class TreeArchitectureEvaluator:
     def _calculate_memory_usage(self, model: Any) -> float:
         """Calculate memory usage in MB."""
         try:
-            import sys
-            return sys.getsizeof(model) / (1024 * 1024)  # Convert to MB
+            serialized = pickle.dumps(model, protocol=pickle.HIGHEST_PROTOCOL)
+            return len(serialized) / (1024 * 1024)
         except Exception as e:
             tprint_warning(f"Memory usage calculation failed: {e}. Returning 0.0.")
             return 0.0

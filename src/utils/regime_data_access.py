@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - fallback
     system_logger = logging.getLogger(__name__)
 
 try:
-    from .utils.hmm_composite_manager import get_hmm_composite_manager
+    from .hmm import get_hmm_composite_manager
 
 except Exception:  # pragma: no cover - fallback
     get_hmm_composite_manager = None  # type: ignore

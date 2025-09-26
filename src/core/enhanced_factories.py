@@ -5,15 +5,24 @@ This module provides factory classes that create trading components
 using proper dependency injection patterns.
 """
 from typing import Any
-from .exchange.factory import ExchangeFactory
-from .core.dependency_injection import DependencyContainer
-from .database.firestore_manager import FirestoreManager
-from .database.influxdb_manager import InfluxDBManager
-from src.interfaces.base_interfaces import IAnalyst, IExchangeClient, IPerformanceReporter, IStateManager, IStrategist, ISupervisor, ITactician
+
+from exchange.factory import ExchangeFactory
+from src.database.firestore_manager import FirestoreManager
+from src.database.influxdb_manager import InfluxDBManager
+from src.interfaces.base_interfaces import (
+    IAnalyst,
+    IExchangeClient,
+    IPerformanceReporter,
+    IStateManager,
+    IStrategist,
+    ISupervisor,
+    ITactician,
+)
 from src.trading.reporting.performance_reporter import PerformanceReporter
-from .utils.logger import system_logger
-from .utils.state_manager import StateManager
-import logging
+from src.utils.logger import system_logger
+from src.utils.state_manager import StateManager
+
+from .dependency_injection import DependencyContainer
 
 class TradingSystemFactory:
     """
@@ -41,7 +50,12 @@ class TradingSystemFactory:
             self.container.register_instance(IExchangeClient, exchange_client)
             self.container.register_instance(IStateManager, state_manager)
             self.container.register_instance(IPerformanceReporter, performance_reporter)
-            components = {'analyst': self.container.resolve(IAnalyst), 'strategist': self.container.resolve(IStrategist), 'tactician': self.container.resolve(ITactician), 'supervisor': self.container.resolve(ISupervisor)}
+            components = {
+                "analyst": self.container.resolve(IAnalyst),
+                "strategist": self.container.resolve(IStrategist),
+                "tactician": self.container.resolve(ITactician),
+                "supervisor": self.container.resolve(ISupervisor),
+            }
             for name, component in components.items():
                 if hasattr(component, 'initialize'):
                     success = await component.initialize()
@@ -51,7 +65,7 @@ class TradingSystemFactory:
             self.logger.info('Complete trading system created successfully')
             return components
         except Exception as e:
-            self.logger.exception(failed(f'Failed to create trading system: {e}'))
+            self.logger.exception("Failed to create trading system: %s", e)
             raise
 
 class ExchangeClientFactory:
@@ -150,5 +164,5 @@ class PerformanceReporterFactory:
             self.logger.info('Created performance reporter')
             return reporter
         except Exception as e:
-            self.logger.exception(f'Failed to create performance reporter: {e}')
+            self.logger.exception(f"Failed to create performance reporter: {e}")
             raise

@@ -685,6 +685,8 @@ class UnifiedSearchEngine:
         self.search_history = []
         self.performance_metrics = {}
         self.evaluation_cache: Dict[Tuple, StrategyEvaluation] = {}
+        self._cache_hits = 0
+        self._max_cache_size = 1000  # Limit cache size to prevent memory issues
 
         self.logger.info(
             "Unified Search Engine initialised",
@@ -699,6 +701,31 @@ class UnifiedSearchEngine:
         tprint_info(f"   Architecture type: {self.config.architecture_type.value}")
         tprint_info(f"   Search strategy: {self.config.search_strategy.value}")
         tprint_info(f"   Available strategies: {self.strategy_registry.available()}")
+    
+    def _manage_cache_size(self):
+        """Manage cache size to prevent memory issues."""
+        if len(self.evaluation_cache) > self._max_cache_size:
+            # Remove oldest entries (simple FIFO)
+            cache_items = list(self.evaluation_cache.items())
+            items_to_remove = len(cache_items) - self._max_cache_size
+            for key, _ in cache_items[:items_to_remove]:
+                del self.evaluation_cache[key]
+            self.logger.debug(f"Cleaned cache: removed {items_to_remove} entries")
+    
+    def clear_cache(self):
+        """Clear the evaluation cache."""
+        self.evaluation_cache.clear()
+        self._cache_hits = 0
+        self.logger.info("Evaluation cache cleared")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        return {
+            'cache_size': len(self.evaluation_cache),
+            'max_cache_size': self._max_cache_size,
+            'cache_hits': self._cache_hits,
+            'cache_hit_rate': self._cache_hits / max(1, len(self.evaluation_cache) + self._cache_hits)
+        }
 
     def _initialize_hardware_optimizers(self):
         """Initialize hardware optimization components."""
@@ -833,6 +860,7 @@ class UnifiedSearchEngine:
         evaluation = StrategyEvaluation(candidate=candidate, metrics=metrics)
         if self.config.cache_results:
             self.evaluation_cache[key] = evaluation
+            self._manage_cache_size()  # Manage cache size after adding new entry
         return evaluation
 
     def _normalize_metrics(self, raw_result: Any) -> Dict[str, float]:

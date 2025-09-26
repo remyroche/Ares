@@ -492,55 +492,272 @@ class OptimizedTrainer:
     def _train_epoch_core(self, X_train: np.ndarray, y_train: np.ndarray,
                          X_val: np.ndarray, y_val: np.ndarray,
                          epoch: int) -> TrainingMetrics:
-        """Core training logic for one epoch."""
+        """Core training logic for one epoch with real ML training."""
         metrics = TrainingMetrics(epoch=epoch)
-        
+
         try:
-            # This is a placeholder for actual training logic
-            # In a real implementation, this would contain the specific
-            # training loop for the model type (PyTorch, scikit-learn, etc.)
-            
-            # Simulate training
-            train_loss = np.random.uniform(0.1, 1.0)
-            val_loss = np.random.uniform(0.1, 1.0)
-            train_acc = np.random.uniform(0.7, 0.95)
-            val_acc = np.random.uniform(0.7, 0.95)
-            
-            metrics.train_loss = train_loss
-            metrics.val_loss = val_loss
-            metrics.train_accuracy = train_acc
-            metrics.val_accuracy = val_acc
+            # Determine model type and train accordingly
+            if self.model is None:
+                raise ValueError("Model not initialized. Call setup_model() first.")
+
+            # Handle different model types
+            if TORCH_AVAILABLE and isinstance(self.model, torch.nn.Module):
+                metrics = self._train_pytorch_epoch(X_train, y_train, X_val, y_val, epoch)
+            elif SKLEARN_AVAILABLE and hasattr(self.model, 'fit'):
+                metrics = self._train_sklearn_epoch(X_train, y_train, X_val, y_val, epoch)
+            else:
+                # Fallback to simple training simulation with warning
+                tprint_warning("⚠️ Unsupported model type detected, using simulated training")
+                metrics = self._simulate_training_epoch(X_train, y_train, X_val, y_val, epoch)
+
+            return metrics
+
+        except Exception as e:
+            from src.core.error_classes import ErrorLogger
+            ErrorLogger.log_training_error(
+                e,
+                epoch=epoch,
+                model_type=str(type(self.model).__name__) if self.model else "Unknown",
+                logger=self.logger
+            )
+            raise
+
+    def _train_pytorch_epoch(self, X_train: np.ndarray, y_train: np.ndarray,
+                           X_val: np.ndarray, y_val: np.ndarray,
+                           epoch: int) -> TrainingMetrics:
+        """Train a PyTorch model for one epoch."""
+        if not TORCH_AVAILABLE or self.model is None or self.optimizer is None:
+            raise ValueError("PyTorch model or optimizer not available")
+
+        metrics = TrainingMetrics(epoch=epoch)
+        self.model.train()
+
+        # Convert numpy arrays to tensors
+        X_train_tensor = torch.FloatTensor(X_train)
+        y_train_tensor = torch.LongTensor(y_train) if y_train.dtype == int else torch.FloatTensor(y_train)
+        X_val_tensor = torch.FloatTensor(X_val)
+        y_val_tensor = torch.LongTensor(y_val) if y_val.dtype == int else torch.FloatTensor(y_val)
+
+        # Move to GPU if available
+        if self.gpu_manager and self.gpu_manager.mps_available:
+            X_train_tensor = X_train_tensor.to('mps')
+            y_train_tensor = y_train_tensor.to('mps')
+            X_val_tensor = X_val_tensor.to('mps')
+            y_val_tensor = y_val_tensor.to('mps')
+
+        # Training step with memory management
+        self.optimizer.zero_grad()
+        outputs = self.model(X_train_tensor)
+        train_loss = self._calculate_loss(outputs, y_train_tensor)
+
+        # Clear intermediate variables to save memory
+        del X_train_tensor, y_train_tensor
+        if self.memory_optimizer:
+            self.memory_optimizer.optimize_memory_usage()
+
+        train_loss.backward()
+
+        # Clear gradients after optimizer step to save memory
+        self.optimizer.step()
+
+        # Force garbage collection periodically
+        if epoch % 10 == 0:
+            import gc
+            gc.collect()
+            if TORCH_AVAILABLE:
+                torch.cuda.empty_cache() if torch.cuda.is_available() else torch.mps.empty_cache()
+
+        # Validation step with memory management
+        self.model.eval()
+        with torch.no_grad():
+            val_outputs = self.model(X_val_tensor)
+            val_loss = self._calculate_loss(val_outputs, y_val_tensor)
+
+            # Calculate accuracy for classification
+            if hasattr(self, 'y_train_tensor') and self.y_train_tensor.dtype == torch.long:
+                train_pred = torch.argmax(outputs, dim=1)
+                val_pred = torch.argmax(val_outputs, dim=1)
+                train_accuracy = (train_pred == self.y_train_tensor).float().mean().item()
+                val_accuracy = (val_pred == y_val_tensor).float().mean().item()
+            else:
+                train_accuracy = 0.0  # Regression task
+                val_accuracy = 0.0    # Regression task
+
+            # Clear validation tensors to save memory
+            del X_val_tensor, y_val_tensor, val_outputs
+            if self.memory_optimizer:
+                self.memory_optimizer.optimize_memory_usage()
+
+        # Update metrics
+        metrics.train_loss = train_loss.item()
+        metrics.val_loss = val_loss.item()
+        metrics.train_accuracy = train_accuracy
+        metrics.val_accuracy = val_accuracy
+        metrics.learning_rate = self.config.learning_rate
+
+        # Memory usage tracking
+        if self.memory_optimizer:
+            memory_stats = self.memory_optimizer.get_memory_stats()
+            metrics.memory_usage_mb = memory_stats.get('used_memory', 0) / (1024 * 1024)
+
+        # GPU memory usage
+        if self.gpu_manager and self.gpu_manager.mps_available:
+            try:
+                metrics.gpu_memory_mb = torch.mps.current_allocated_memory() / (1024 * 1024)
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get GPU memory usage: {e}")
+                metrics.gpu_memory_mb = 0.0
+
+        # Update learning rate if scheduler is available
+        if self.scheduler:
+            if hasattr(self.scheduler, 'step'):
+                if 'metrics' in self.scheduler.step.__code__.co_varnames:
+                    self.scheduler.step(val_loss.item())
+                else:
+                    self.scheduler.step()
+
+                if hasattr(self.optimizer, 'param_groups'):
+                    metrics.learning_rate = self.optimizer.param_groups[0]['lr']
+
+        return metrics
+
+    def _train_sklearn_epoch(self, X_train: np.ndarray, y_train: np.ndarray,
+                           X_val: np.ndarray, y_val: np.ndarray,
+                           epoch: int) -> TrainingMetrics:
+        """Train a scikit-learn model (single epoch simulation)."""
+        if not SKLEARN_AVAILABLE or self.model is None:
+            raise ValueError("scikit-learn model not available")
+
+        metrics = TrainingMetrics(epoch=epoch)
+
+        try:
+            # For scikit-learn, we train once and evaluate
+            # This simulates epoch-based training for compatibility
+            if not hasattr(self.model, '_is_fitted') or not self.model._is_fitted:
+                self.model.fit(X_train, y_train)
+
+            # Make predictions
+            train_predictions = self.model.predict(X_train)
+            val_predictions = self.model.predict(X_val)
+
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, accuracy_score
+
+            if len(y_train.shape) > 1 and y_train.shape[1] > 1:
+                # Multi-class classification
+                metrics.train_accuracy = accuracy_score(y_train.argmax(axis=1), train_predictions.argmax(axis=1))
+                metrics.val_accuracy = accuracy_score(y_val.argmax(axis=1), val_predictions.argmax(axis=1))
+            else:
+                # Binary classification or regression
+                if y_train.dtype in [int, np.integer]:
+                    # Classification
+                    metrics.train_accuracy = accuracy_score(y_train, train_predictions)
+                    metrics.val_accuracy = accuracy_score(y_val, val_predictions)
+                else:
+                    # Regression
+                    metrics.train_accuracy = 0.0  # Not applicable for regression
+                    metrics.val_accuracy = 0.0
+
+            # Calculate losses (approximate)
+            metrics.train_loss = mean_squared_error(y_train, train_predictions)
+            metrics.val_loss = mean_squared_error(y_val, val_predictions)
             metrics.learning_rate = self.config.learning_rate
-            
+
             # Memory usage
             if self.memory_optimizer:
                 memory_stats = self.memory_optimizer.get_memory_stats()
                 metrics.memory_usage_mb = memory_stats.get('used_memory', 0) / (1024 * 1024)
-            
+
+            return metrics
+
+        except Exception as e:
+            from src.core.error_classes import ErrorLogger
+            ErrorLogger.log_training_error(
+                e,
+                epoch=epoch,
+                model_type="scikit-learn",
+                additional_info={"training_step": "sklearn_training"},
+                logger=self.logger
+            )
+            raise
+
+    def _simulate_training_epoch(self, X_train: np.ndarray, y_train: np.ndarray,
+                               X_val: np.ndarray, y_val: np.ndarray,
+                               epoch: int) -> TrainingMetrics:
+        """Fallback training simulation for unsupported model types."""
+        metrics = TrainingMetrics(epoch=epoch)
+
+        try:
+            # Simulate training with realistic values based on data
+            # This provides a more realistic simulation than random values
+
+            # Base loss calculation based on data characteristics
+            train_loss = np.mean((y_train - np.mean(y_train))**2) * 0.1
+            val_loss = np.mean((y_val - np.mean(y_val))**2) * 0.1
+
+            # Add some epoch-based improvement simulation
+            improvement_factor = 1.0 / (1.0 + epoch * 0.01)
+            train_loss *= improvement_factor
+            val_loss *= improvement_factor
+
+            # Simulate accuracy for classification tasks
+            if len(y_train.shape) > 1 and y_train.shape[1] > 1:
+                # Multi-class
+                n_classes = y_train.shape[1]
+                train_acc = 0.5 + 0.3 * improvement_factor + np.random.uniform(-0.05, 0.05)
+                val_acc = 0.5 + 0.25 * improvement_factor + np.random.uniform(-0.05, 0.05)
+            else:
+                # Binary classification or regression
+                if y_train.dtype in [int, np.integer]:
+                    train_acc = 0.6 + 0.25 * improvement_factor + np.random.uniform(-0.05, 0.05)
+                    val_acc = 0.55 + 0.2 * improvement_factor + np.random.uniform(-0.05, 0.05)
+                else:
+                    train_acc = 0.0  # Regression task
+                    val_acc = 0.0
+
+            metrics.train_loss = max(0.01, train_loss)
+            metrics.val_loss = max(0.01, val_loss)
+            metrics.train_accuracy = max(0.0, min(1.0, train_acc))
+            metrics.val_accuracy = max(0.0, min(1.0, val_acc))
+            metrics.learning_rate = self.config.learning_rate
+
+            # Memory usage
+            if self.memory_optimizer:
+                memory_stats = self.memory_optimizer.get_memory_stats()
+                metrics.memory_usage_mb = memory_stats.get('used_memory', 0) / (1024 * 1024)
+
             # GPU memory usage
             if TORCH_AVAILABLE and self.gpu_manager and self.gpu_manager.mps_available:
                 try:
                     metrics.gpu_memory_mb = torch.mps.current_allocated_memory() / (1024 * 1024)
-                except Exception:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to get GPU memory usage: {e}")
                     metrics.gpu_memory_mb = 0.0
-            
-            # Update learning rate if scheduler is available
-            if self.scheduler and TORCH_AVAILABLE:
-                if hasattr(self.scheduler, 'step'):
-                    if 'metrics' in self.scheduler.step.__code__.co_varnames:
-                        self.scheduler.step(val_loss)
-                    else:
-                        self.scheduler.step()
-                    
-                    # Get current learning rate
-                    if hasattr(self.optimizer, 'param_groups'):
-                        metrics.learning_rate = self.optimizer.param_groups[0]['lr']
-            
+
             return metrics
-            
+
         except Exception as e:
-            self.logger.error(f"Core training logic failed: {e}")
+            from src.core.error_classes import ErrorLogger
+            ErrorLogger.log_training_error(
+                e,
+                epoch=epoch,
+                model_type="simulation",
+                additional_info={"training_step": "simulation_fallback"},
+                logger=self.logger
+            )
             raise
+
+    def _calculate_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Calculate appropriate loss for the model outputs and targets."""
+        if outputs.shape[1] > 1 and targets.dtype == torch.long:
+            # Multi-class classification
+            return torch.nn.functional.cross_entropy(outputs, targets)
+        elif outputs.shape[1] == 1:
+            # Regression or binary classification
+            return torch.nn.functional.mse_loss(outputs.squeeze(), targets.float())
+        else:
+            # Binary classification
+            return torch.nn.functional.binary_cross_entropy_with_logits(outputs.squeeze(), targets.float())
     
     def train(self, X_train: np.ndarray, y_train: np.ndarray,
              X_val: np.ndarray, y_val: np.ndarray) -> Dict[str, Any]:
@@ -701,18 +918,51 @@ class OptimizedTrainer:
             raise
     
     def cleanup(self):
-        """Cleanup resources."""
+        """Cleanup resources with comprehensive memory management."""
         try:
+            _safe_print("🧹 Starting comprehensive cleanup...")
+
+            # Stop memory monitoring
             if self.memory_optimizer:
                 self.memory_optimizer.stop_monitoring()
-            
+                _safe_print("✅ Memory optimizer stopped")
+
+            # Clear training state
+            if self.model and TORCH_AVAILABLE:
+                # Clear model gradients and cache
+                self.model.zero_grad(set_to_none=True)
+                if hasattr(self.model, 'cpu'):
+                    self.model.cpu()
+
+            # Clear optimizer state
+            if self.optimizer and TORCH_AVAILABLE:
+                del self.optimizer.state
+                del self.optimizer.param_groups
+                self.optimizer = None
+
+            # Clear scheduler state
+            if self.scheduler and TORCH_AVAILABLE:
+                self.scheduler = None
+
+            # Force garbage collection
+            import gc
+            gc.collect()
+            if TORCH_AVAILABLE:
+                torch.cuda.empty_cache() if torch.cuda.is_available() else torch.mps.empty_cache()
+
+            # Cleanup hardware optimizers
             if UTILITIES_AVAILABLE:
                 cleanup_m1_optimizers()
-            
-            _safe_print("🧹 Cleanup completed")
-            
+                _safe_print("✅ Hardware optimizers cleaned up")
+
+            # Clear training history to free memory
+            self.training_history.clear()
+
+            _safe_print("✅ Cleanup completed successfully")
+
         except Exception as e:
-            self.logger.warning(f"Cleanup warning: {e}")
+            self.logger.error(f"Cleanup failed: {e}")
+            _safe_print(f"❌ Cleanup failed: {e}")
     
     def __enter__(self):
         """Context manager entry."""

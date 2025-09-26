@@ -14,8 +14,8 @@ import logging
 
 from .config import TradingConfig, TradingMode, OrderType, OrderSide
 from .trading_engine import TradingEngine
-from ..exchanges import TradingReceiver, TradingMessage, MessageType
-from ..src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult
+from exchanges import TradingReceiver, TradingMessage, MessageType
+from src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult
 
 
 @dataclass

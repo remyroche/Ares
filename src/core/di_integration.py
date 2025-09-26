@@ -5,16 +5,22 @@ This module demonstrates how to integrate all dependency injection patterns
 throughout the Ares trading system.
 """
 from typing import Any
-from .analyst.di_analyst import DIAnalyst
-from .config import CONFIG
-from .core.dependency_injection import DependencyContainer, ServiceLifetime
-from .core.enhanced_factories import TradingSystemFactory
-from .core.service_registry import ServiceRegistry
-from src.interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
-from .training.di_training_manager import DITrainingManager
-from .utils.logger import system_logger
-import logging
-import time
+
+from src.analyst.di_analyst import DIAnalyst
+from src.config import CONFIG
+from src.interfaces.base_interfaces import (
+    IAnalyst,
+    IEventBus,
+    IStrategist,
+    ISupervisor,
+    ITactician,
+)
+from src.training.core.training_manager import TrainingManager
+from src.utils.logger import system_logger
+
+from .dependency_injection import DependencyContainer, ServiceLifetime
+from .enhanced_factories import TradingSystemFactory
+from .service_registry import ServiceRegistry
 
 class DIIntegration:
     """
@@ -57,8 +63,18 @@ class DIIntegration:
         """Register all services in the DI container."""
         self.logger.info('Registering all services')
         self.registry.register_all_services(self.config)
-        self.container.register(IAnalyst, DIAnalyst, lifetime = ServiceLifetime.SINGLETON, config = self.config.get('analyst', {}))
-        self.container.register(DITrainingManager, DITrainingManager, lifetime = ServiceLifetime.SINGLETON, config = self.config.get('training', {}))
+        self.container.register(
+            IAnalyst,
+            DIAnalyst,
+            lifetime=ServiceLifetime.SINGLETON,
+            config=self.config.get("analyst", {}),
+        )
+        self.container.register(
+            TrainingManager,
+            TrainingManager,
+            lifetime=ServiceLifetime.SINGLETON,
+            config=self.config.get("training", {}),
+        )
         self.logger.info('All services registered successfully')
 
     async def _create_infrastructure(self) -> dict[str, Any]:
@@ -72,15 +88,20 @@ class DIIntegration:
     async def _create_trading_components(self) -> dict[str, Any]:
         """Create trading components using DI."""
         self.logger.info('Creating trading components')
-        components = {'analyst': self.container.resolve(IAnalyst), 'strategist': self.container.resolve(IStrategist), 'tactician': self.container.resolve(ITactician), 'supervisor': self.container.resolve(ISupervisor)}
+        components = {
+            "analyst": self.container.resolve(IAnalyst),
+            "strategist": self.container.resolve(IStrategist),
+            "tactician": self.container.resolve(ITactician),
+            "supervisor": self.container.resolve(ISupervisor),
+        }
         self.logger.info('Trading components created')
         return components
 
     async def _create_specialized_services(self) -> dict[str, Any]:
         """Create specialized services."""
         self.logger.info('Creating specialized services')
-        training_manager = self.container.resolve(DITrainingManager)
-        specialized_services = {'training_manager': training_manager}
+        training_manager = self.container.resolve(TrainingManager)
+        specialized_services = {"training_manager": training_manager}
         self.logger.info('Specialized services created')
         return specialized_services
 

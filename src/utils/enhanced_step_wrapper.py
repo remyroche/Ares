@@ -7,9 +7,8 @@ import traceback
 from datetime import datetime
 from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
-from src.utils.data_streaming_manager import DataStreamingManager
-from src.utils.cross_step_validator import CrossStepValidator
-from src.utils.data_quality.advanced_quality_metrics import AdvancedQualityMetrics
+from src.utils.data import DataStreamingManager, CrossStepValidator
+from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
 
 import logging
 import time

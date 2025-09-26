@@ -354,8 +354,17 @@ class AresPipeline:
             self.start_time = datetime.now()
             tprint(f'📅 Pipeline start time: {self.start_time}')
             self.logger.info(f'📅 Pipeline start time: {self.start_time}')
-            max_cycles = 10
-            max_duration = 300
+
+            # Get configuration values with proper fallbacks
+            try:
+                config_service = self.container.resolve('ConfigurationService')
+                max_cycles = config_service.get_value('pipeline.max_cycles', 10)
+                max_duration = config_service.get_value('pipeline.max_duration_seconds', 300)
+                tprint_info(f'📊 Pipeline limits: max_cycles={max_cycles}, max_duration={max_duration}s')
+            except Exception as e:
+                tprint_warning(f'⚠️ Error getting pipeline configuration, using defaults: {e}')
+                max_cycles = 10
+                max_duration = 300
             while self.is_running:
                 try:
                     current_time = datetime.now()
@@ -381,9 +390,10 @@ class AresPipeline:
                         tprint(f'⏱️ Waiting {cycle_interval} seconds before next cycle...')
                         self.logger.info(f'⏱️ Waiting {cycle_interval} seconds before next cycle...')
                     except Exception as e:
-                        tprint(warning('Error getting cycle interval, using default'))
+                        tprint_warning(f'⚠️ Error getting cycle interval, using default: {e}')
                         self.logger.warning(f'Error getting cycle interval, using default: {e}')
-                        cycle_interval = 10
+                        # Use configurable default instead of hard-coded value
+                        cycle_interval = config_service.get_value('pipeline.loop_interval_seconds', 10) if 'config_service' in locals() else 10
                     await asyncio.sleep(cycle_interval)
                 except asyncio.CancelledError:
                     tprint(error('Pipeline cancelled'))
@@ -429,7 +439,18 @@ class AresPipeline:
                 bias_detector = get_global_detector()
                 bias_detector.set_current_timestamp(current_time)
                 
-                analysis_input = {'symbol': 'ETHUSDT', 'timeframe': '1h', 'limit': 100, 'analysis_type': 'technical', 'include_indicators': True, 'include_patterns': True}
+                # Get analysis configuration with defaults
+                default_symbol = config_service.get_value('analyst.default_symbol', 'ETHUSDT')
+                default_timeframe = config_service.get_value('analyst.default_timeframe', '1h')
+                default_limit = config_service.get_value('analyst.default_limit', 100)
+                analysis_input = {
+                    'symbol': default_symbol,
+                    'timeframe': default_timeframe,
+                    'limit': default_limit,
+                    'analysis_type': 'technical',
+                    'include_indicators': True,
+                    'include_patterns': True
+                }
                 analysis_result = await self.analyst.execute_analysis(analysis_input)
                 
                 # Handle regime transitions with position protection
@@ -463,8 +484,20 @@ class AresPipeline:
             if self.strategist:
                 tprint('   🎯 Developing trading strategy...')
                 self.logger.info('   🎯 Developing trading strategy...')
-                strategy_market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
-                strategy_current_price = 100.5
+                # Get strategy configuration with defaults
+                default_price = config_service.get_value('strategist.default_price', 100.5)
+                default_spread = config_service.get_value('strategist.default_spread', 1.0)
+                default_volume = config_service.get_value('strategist.default_volume', 1000.0)
+                default_data_points = config_service.get_value('strategist.default_data_points', 100)
+
+                strategy_market_data = pd.DataFrame({
+                    'open': [default_price - default_spread] * default_data_points,
+                    'high': [default_price + default_spread] * default_data_points,
+                    'low': [default_price - default_spread] * default_data_points,
+                    'close': [default_price] * default_data_points,
+                    'volume': [default_volume] * default_data_points
+                })
+                strategy_current_price = default_price
                 strategy_result = await self.strategist.generate_strategy(market_data = strategy_market_data, current_price = strategy_current_price)
                 if strategy_result:
                     tprint('   ✅ Strategy development completed successfully')

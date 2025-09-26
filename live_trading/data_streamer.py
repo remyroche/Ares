@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import logging
 
 from .config import TradingConfig
-from ..src.interfaces.base_interfaces import MarketData
+from src.interfaces.base_interfaces import MarketData
 
 
 @dataclass

@@ -1019,7 +1019,9 @@ class TacticianDualTrainingStep:
             # ROC-AUC for probability predictions
             try:
                 metrics[f'{signal_type}_roc_auc'] = roc_auc_score(y_train_binary, avg_predictions)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate ROC-AUC for {signal_type}: {e}")
+                tprint_debug(f"ROC-AUC calculation failed - using default value 0.5 for {signal_type}")
                 metrics[f'{signal_type}_roc_auc'] = 0.5
 
             # Regression metrics
@@ -1386,5 +1388,6 @@ class TacticianDualTrainingStep:
                 tprint_info(f"  🎯 Long Ensemble: {training['long_ensemble_models_trained']}")
                 tprint_info(f"  🎯 Short Ensemble: {training['short_ensemble_models_trained']}")
                 tprint_info(f"  🔢 Total Models: {training['total_models_trained']}")
-            except:
-                pass
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to log training summary metrics: {e}")
+                tprint_debug("Training summary logging failed - continuing execution")

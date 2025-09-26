@@ -456,8 +456,8 @@ class UnsupervisedRegimeDetector:
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
             except Exception as e:
-                tprint_debug(f"🔍 Failed to score silhouette for k={k}: {e}")
-                silhouette_scores.append(0.0)
+                tprint_debug(f"🔍 Failed to score silhouette: {e}")
+                silhouette_scores.append(0)
         
         if not silhouette_scores:
             return 3
@@ -558,18 +558,35 @@ class UnsupervisedRegimeDetector:
     
     def _calculate_regime_statistics(self, regimes: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate overall regime statistics."""
-        if not regimes:
-            return {}
-        
-        stats = {
-            'n_regimes': len(regimes),
-            'total_duration': sum(regime['duration'] for regime in regimes.values()),
-            'regime_distribution': {name: regime['duration'] for name, regime in regimes.items()},
-            'volatility_distribution': {name: regime.get('price_volatility', 0) for name, regime in regimes.items()},
-            'trend_distribution': {name: regime.get('price_trend', 0) for name, regime in regimes.items()}
-        }
-        
-        return stats
+        try:
+            if not regimes:
+                self.logger.warning("No regimes provided for statistics calculation")
+                return {
+                    'n_regimes': 0,
+                    'total_duration': 0,
+                    'regime_distribution': {},
+                    'volatility_distribution': {},
+                    'trend_distribution': {},
+                    'error': 'No regimes available'
+                }
+            
+            # Validate market_data
+            if market_data is None or market_data.empty:
+                raise ValueError("Market data is required for regime statistics calculation")
+            
+            stats = {
+                'n_regimes': len(regimes),
+                'total_duration': sum(regime.get('duration', 0) for regime in regimes.values()),
+                'regime_distribution': {name: regime.get('duration', 0) for name, regime in regimes.items()},
+                'volatility_distribution': {name: regime.get('price_volatility', 0) for name, regime in regimes.items()},
+                'trend_distribution': {name: regime.get('price_trend', 0) for name, regime in regimes.items()}
+            }
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate regime statistics: {e}")
+            raise RuntimeError(f"Regime statistics calculation failed: {e}") from e
     
     def _detect_regime_transitions(self, regimes: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Detect regime transitions."""
@@ -581,58 +598,90 @@ class UnsupervisedRegimeDetector:
     
     def _assess_detection_quality(self, regimes: Dict[str, Any]) -> Dict[str, float]:
         """Assess the quality of regime detection."""
-        if not regimes:
-            return {'quality_score': 0.0, 'stability': 0.0, 'separation': 0.0}
-        
-        # Calculate quality metrics
-        n_regimes = len(regimes)
-        total_duration = sum(regime['duration'] for regime in regimes.values())
-        
-        # Stability score (based on regime duration consistency)
-        durations = [regime['duration'] for regime in regimes.values()]
-        stability = 1.0 - (np.std(durations) / np.mean(durations)) if durations else 0.0
-        
-        # Separation score (based on regime characteristics)
-        volatilities = [regime.get('price_volatility', 0) for regime in regimes.values()]
-        separation = 1.0 - (np.std(volatilities) / np.mean(volatilities)) if volatilities else 0.0
-        
-        # Overall quality score
-        quality_score = (stability + separation) / 2.0
-        
-        return {
-            'quality_score': quality_score,
-            'stability': stability,
-            'separation': separation,
-            'n_regimes': n_regimes,
-            'total_duration': total_duration
-        }
+        try:
+            if not regimes:
+                self.logger.warning("No regimes provided for quality assessment")
+                return {
+                    'quality_score': 0.0, 
+                    'stability': 0.0, 
+                    'separation': 0.0,
+                    'error': 'No regimes available for quality assessment'
+                }
+            
+            # Calculate quality metrics
+            n_regimes = len(regimes)
+            total_duration = sum(regime.get('duration', 0) for regime in regimes.values())
+            
+            # Stability score (based on regime duration consistency)
+            durations = [regime.get('duration', 0) for regime in regimes.values()]
+            stability = 1.0 - (np.std(durations) / np.mean(durations)) if durations and np.mean(durations) > 0 else 0.0
+            
+            # Separation score (based on regime characteristics)
+            volatilities = [regime.get('price_volatility', 0) for regime in regimes.values()]
+            separation = 1.0 - (np.std(volatilities) / np.mean(volatilities)) if volatilities and np.mean(volatilities) > 0 else 0.0
+            
+            # Overall quality score
+            quality_score = (stability + separation) / 2.0
+            
+            return {
+                'quality_score': quality_score,
+                'stability': stability,
+                'separation': separation,
+                'n_regimes': n_regimes,
+                'total_duration': total_duration
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to assess detection quality: {e}")
+            raise RuntimeError(f"Detection quality assessment failed: {e}") from e
     
     def _calculate_feature_importance(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
         """Calculate feature importance for regime detection."""
-        if len(self.feature_names) != features.shape[1]:
-            return {}
-        
-        # Simple feature importance based on variance between regimes
-        unique_labels = np.unique(labels)
-        importance_scores = {}
-        
-        for i, feature_name in enumerate(self.feature_names):
-            feature_values = features[:, i]
-            regime_means = []
+        try:
+            # Input validation
+            if features is None or labels is None:
+                raise ValueError("Features and labels are required for importance calculation")
             
-            for label in unique_labels:
-                if label != -1:  # Skip noise
-                    regime_mask = labels == label
-                    regime_mean = np.mean(feature_values[regime_mask])
-                    regime_means.append(regime_mean)
+            if len(features) != len(labels):
+                raise ValueError(f"Features length ({len(features)}) must match labels length ({len(labels)})")
             
-            if len(regime_means) > 1:
-                importance = np.std(regime_means) / (np.mean(regime_means) + 1e-8)
-                importance_scores[feature_name] = importance
-            else:
-                importance_scores[feature_name] = 0.0
-        
-        return importance_scores
+            if len(self.feature_names) != features.shape[1]:
+                self.logger.warning(f"Feature names count ({len(self.feature_names)}) doesn't match features shape ({features.shape[1]})")
+                return {
+                    'error': f'Feature count mismatch: expected {len(self.feature_names)}, got {features.shape[1]}'
+                }
+            
+            # Simple feature importance based on variance between regimes
+            unique_labels = np.unique(labels)
+            importance_scores = {}
+            
+            for i, feature_name in enumerate(self.feature_names):
+                try:
+                    feature_values = features[:, i]
+                    regime_means = []
+                    
+                    for label in unique_labels:
+                        if label != -1:  # Skip noise
+                            regime_mask = labels == label
+                            if np.any(regime_mask):
+                                regime_mean = np.mean(feature_values[regime_mask])
+                                regime_means.append(regime_mean)
+                    
+                    if len(regime_means) > 1:
+                        importance = np.std(regime_means) / (np.mean(regime_means) + 1e-8)
+                        importance_scores[feature_name] = importance
+                    else:
+                        importance_scores[feature_name] = 0.0
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate importance for feature {feature_name}: {e}")
+                    importance_scores[feature_name] = 0.0
+            
+            return importance_scores
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate feature importance: {e}")
+            raise RuntimeError(f"Feature importance calculation failed: {e}") from e
     
     def _select_best_method(self, results: Dict[str, Any], features: np.ndarray, market_data: pd.DataFrame) -> str:
         """Select the best detection method based on quality metrics."""

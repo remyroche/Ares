@@ -493,7 +493,7 @@ class RegimeQualifier:
             jb_passed = jb_pvalue > self.config.significance_level
             jb_score = jb_pvalue  # Higher p-value = more normal
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             jb_passed = True
             jb_score = 1.0
             jb_stat = 0
@@ -524,7 +524,7 @@ class RegimeQualifier:
                 'passed': jb_pvalue > self.config.significance_level
             }
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             tests['jarque_bera'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 2. Kolmogorov-Smirnov test
@@ -536,7 +536,7 @@ class RegimeQualifier:
                 'passed': ks_pvalue > self.config.significance_level
             }
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             tests['kolmogorov_smirnov'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 3. Anderson-Darling test
@@ -549,7 +549,7 @@ class RegimeQualifier:
                 'passed': ad_stat < ad_critical[2]  # 5% significance level
             }
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             tests['anderson_darling'] = {'statistic': 0, 'critical_values': [0, 0, 0], 'passed': True}
         
         # 4. Shapiro-Wilk test (for small samples)
@@ -563,7 +563,7 @@ class RegimeQualifier:
                     'passed': sw_pvalue > self.config.significance_level
                 }
             except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                tprint_warning(f"⚠️ Operation failed: {e}")
                 tests['shapiro_wilk'] = {'statistic': 0, 'pvalue': 1.0, 'passed': True}
         
         # 5. Visual normality tests
@@ -608,7 +608,7 @@ class RegimeQualifier:
                 'score': r_value ** 2
             }
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             tests['qq_plot'] = {'r_squared': 0.5, 'passed': False, 'score': 0.5}
         
         return tests
@@ -664,7 +664,7 @@ class RegimeQualifier:
             passed = autocorr_score >= 0.5
             
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             autocorr = 0
             autocorr_score = 1.0
             passed = True
@@ -1254,7 +1254,7 @@ class RegimeQualifier:
             normality_score = jb_pvalue  # Higher p-value = more normal
             factors.append(normality_score)
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             factors.append(0.5)
         
         # 2. Stationarity
@@ -1263,7 +1263,7 @@ class RegimeQualifier:
             stationarity_score = adf_pvalue  # Higher p-value = more stationary
             factors.append(stationarity_score)
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             factors.append(0.5)
         
         # 3. Autocorrelation
@@ -1273,7 +1273,7 @@ class RegimeQualifier:
             autocorr_score = 1.0 - abs(autocorr)  # Lower autocorrelation = better
             factors.append(autocorr_score)
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             factors.append(0.5)
         
         return np.mean(factors)

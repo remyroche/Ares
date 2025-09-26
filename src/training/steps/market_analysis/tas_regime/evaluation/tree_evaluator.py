@@ -138,7 +138,7 @@ except ImportError as e:
         try:
             return func(*args, **kwargs)
         except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+            tprint_warning(f"⚠️ Operation failed: {e}")
             return default
     class CommonUtilities:
         def __init__(self):
@@ -625,7 +625,7 @@ class AdvancedTreeEvaluator:
                         roc_auc_score(y_test, y_pred_proba), 1.0, 0.0
                     )
                 except Exception as e:
-                            tprint_warning(f"⚠️ Operation failed: {e}")
+                    tprint_warning(f"⚠️ Operation failed: {e}")
                     results.roc_auc = 0.0
             
             # Confusion matrix

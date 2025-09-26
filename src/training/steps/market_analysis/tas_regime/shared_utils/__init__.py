@@ -264,38 +264,56 @@ except ImportError as e:
 
 # Data processing utilities
 try:
-    from src.utils.data.unified_data_utils import *
-    from src.utils.data.klines_parquet import *
-    from src.utils.data.optimized_parquet_storage import *
-    from src.utils.data.historical_data_pipeline import *
-    from src.utils.data.real_data_loader import *
+    # Explicit imports instead of wildcard imports
+    from src.utils.data.unified_data_utils import UnifiedDataUtils
+    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
+    from src.utils.data.optimized_parquet_storage import OptimizedParquetStorage
+    from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+    from src.utils.data.real_data_loader import RealDataLoader
     DATA_UTILS_AVAILABLE = True
     logger.info("✅ Data utilities loaded successfully")
 except ImportError as e:
     logger.warning(f"⚠️ Data utilities not available: {e}")
     DATA_UTILS_AVAILABLE = False
+    # Create fallback dummy classes
+    class UnifiedDataUtils: pass
+    class KlinesParquetManager: pass
+    class OptimizedParquetStorage: pass
+    class HistoricalDataPipeline: pass
+    class RealDataLoader: pass
+    def get_klines_manager(*args, **kwargs): return None
 
 # Data quality utilities
 try:
-    from src.utils.data.quality.data_quality import *
-    from src.utils.data.quality.advanced_quality_metrics import *
-    from src.utils.data.quality.comprehensive_quality_scorer import *
-    from src.utils.data.quality.data_cleaning import *
-    from src.utils.data.quality.statistical_distribution_validation import *
+    # Explicit imports instead of wildcard imports
+    from src.utils.data.quality.data_quality import DataQualityValidator
+    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+    from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer
+    from src.utils.data.quality.data_cleaning import DataCleaner
+    from src.utils.data.quality.statistical_distribution_validation import StatisticalDistributionValidator
     DATA_QUALITY_AVAILABLE = True
     logger.info("✅ Data quality utilities loaded successfully")
 except ImportError as e:
     logger.warning(f"⚠️ Data quality utilities not available: {e}")
     DATA_QUALITY_AVAILABLE = False
+    # Create fallback dummy classes
+    class DataQualityValidator: pass
+    class AdvancedQualityMetrics: pass
+    class ComprehensiveQualityScorer: pass
+    class DataCleaner: pass
+    class StatisticalDistributionValidator: pass
 
 # Data validation utilities
 try:
-    from src.utils.data.validation.validators import *
+    # Explicit imports instead of wildcard imports
+    from src.utils.data.validation.validators import DataValidator
     DATA_VALIDATION_AVAILABLE = True
     logger.info("✅ Data validation utilities loaded successfully")
 except ImportError as e:
     logger.warning(f"⚠️ Data validation utilities not available: {e}")
     DATA_VALIDATION_AVAILABLE = False
+    # Create fallback dummy class
+    class DataValidator: pass
 
 # =============================================================================
 # MATRIX OPERATIONS IMPORTS

@@ -156,14 +156,19 @@ class ExchangeMessageHandler:
     Provides routing, queuing, and processing capabilities.
     """
 
-    def __init__(self):
+    def __init__(self, exchange_registry: Optional[Any] = None):
         self.logger = logging.getLogger("ExchangeMessageHandler")
+        self.exchange_registry = exchange_registry
         self.message_queue = MessageQueue()
         self.pending_messages: Dict[str, ExchangeMessage] = {}
         self.message_handlers: Dict[MessageType, List[Callable]] = defaultdict(list)
         self.response_handlers: Dict[str, Callable] = {}
         self._processing_task: Optional[asyncio.Task] = None
         self._running = False
+        
+        # Order ID mapping system
+        self.order_id_mapping: Dict[str, Dict[str, str]] = {}  # internal_order_id -> {exchange: exchange_order_id}
+        self.exchange_order_mapping: Dict[str, str] = {}  # exchange_order_id -> internal_order_id
 
     async def start(self) -> None:
         """Start the message handler"""
@@ -315,8 +320,15 @@ class ExchangeMessageHandler:
 
         # If no target exchanges specified, send to all
         if not target_exchanges:
-            # This would be determined by the exchange registry
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # Get active exchanges from registry if available
+            if hasattr(self, 'exchange_registry') and self.exchange_registry:
+                try:
+                    target_exchanges = await self.exchange_registry.get_active_exchanges()
+                except Exception as e:
+                    self.logger.warning(f"Failed to get active exchanges from registry: {e}")
+                    target_exchanges = ["binance", "okx"]  # Fallback
+            else:
+                target_exchanges = ["binance", "okx"]  # Fallback
 
         return await self.send_message(order_message, target_exchanges)
 
@@ -348,7 +360,15 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # Get active exchanges from registry if available
+            if hasattr(self, 'exchange_registry') and self.exchange_registry:
+                try:
+                    target_exchanges = await self.exchange_registry.get_active_exchanges()
+                except Exception as e:
+                    self.logger.warning(f"Failed to get active exchanges from registry: {e}")
+                    target_exchanges = ["binance", "okx"]  # Fallback
+            else:
+                target_exchanges = ["binance", "okx"]  # Fallback
 
         return await self.send_message(data_message, target_exchanges)
 
@@ -377,7 +397,15 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # Get active exchanges from registry if available
+            if hasattr(self, 'exchange_registry') and self.exchange_registry:
+                try:
+                    target_exchanges = await self.exchange_registry.get_active_exchanges()
+                except Exception as e:
+                    self.logger.warning(f"Failed to get active exchanges from registry: {e}")
+                    target_exchanges = ["binance", "okx"]  # Fallback
+            else:
+                target_exchanges = ["binance", "okx"]  # Fallback
 
         return await self.send_message(batch_message, target_exchanges)
 
@@ -494,6 +522,65 @@ class ExchangeMessageHandler:
         except Exception as e:
             self.logger.error(f"Error processing message {message.id}: {e}")
 
+    async def handle_order_response(
+        self,
+        internal_order_id: str,
+        exchange_name: str,
+        response: Dict[str, Any]
+    ) -> None:
+        """
+        Handle order response from an exchange and update order ID mapping.
+        
+        Args:
+            internal_order_id: Internal order ID
+            exchange_name: Name of the exchange
+            response: Response from the exchange
+        """
+        try:
+            if response.get("success") and "data" in response:
+                # Extract exchange order ID from response
+                exchange_order_id = response["data"].get("id") or response["data"].get("orderId")
+                if exchange_order_id:
+                    # Map the order IDs
+                    self._map_order_id(internal_order_id, exchange_name, str(exchange_order_id))
+                    self.logger.info(f"Order {internal_order_id} mapped to {exchange_name}:{exchange_order_id}")
+                else:
+                    self.logger.warning(f"No exchange order ID found in response from {exchange_name}")
+            else:
+                self.logger.warning(f"Order {internal_order_id} failed on {exchange_name}: {response.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            self.logger.error(f"Error handling order response for {internal_order_id}: {e}")
+
+    async def get_order_status_by_internal_id(self, internal_order_id: str) -> Dict[str, Any]:
+        """
+        Get order status using internal order ID.
+        
+        Args:
+            internal_order_id: Internal order ID
+            
+        Returns:
+            Order status information
+        """
+        try:
+            exchange_order_ids = self._get_exchange_order_ids(internal_order_id)
+            
+            if not exchange_order_ids:
+                return {"error": f"No exchange order IDs found for internal order {internal_order_id}"}
+            
+            # This would need to be implemented to actually query the exchanges
+            # For now, return the mapping information
+            return {
+                "internal_order_id": internal_order_id,
+                "exchange_order_ids": exchange_order_ids,
+                "total_exchanges": len(exchange_order_ids),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting order status for {internal_order_id}: {e}")
+            return {"error": str(e)}
+
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get status of message queues"""
         queue_sizes = self.message_queue.get_all_queue_sizes()
@@ -537,6 +624,78 @@ class ExchangeMessageHandler:
 
         self.logger.info(f"Cleared {cleared_count} messages from queue")
         return cleared_count
+
+    def _map_order_id(self, internal_order_id: str, exchange_name: str, exchange_order_id: str) -> None:
+        """
+        Map an internal order ID to an exchange-specific order ID.
+        
+        Args:
+            internal_order_id: Internal order ID
+            exchange_name: Name of the exchange
+            exchange_order_id: Order ID returned by the exchange
+        """
+        if internal_order_id not in self.order_id_mapping:
+            self.order_id_mapping[internal_order_id] = {}
+        
+        self.order_id_mapping[internal_order_id][exchange_name] = exchange_order_id
+        self.exchange_order_mapping[exchange_order_id] = internal_order_id
+        
+        self.logger.debug(f"Mapped order {internal_order_id} -> {exchange_name}:{exchange_order_id}")
+
+    def _get_internal_order_id(self, exchange_order_id: str) -> Optional[str]:
+        """
+        Get the internal order ID from an exchange order ID.
+        
+        Args:
+            exchange_order_id: Order ID from exchange
+            
+        Returns:
+            Internal order ID if found, None otherwise
+        """
+        return self.exchange_order_mapping.get(exchange_order_id)
+
+    def _get_exchange_order_ids(self, internal_order_id: str) -> Dict[str, str]:
+        """
+        Get all exchange order IDs for an internal order ID.
+        
+        Args:
+            internal_order_id: Internal order ID
+            
+        Returns:
+            Dictionary mapping exchange names to their order IDs
+        """
+        return self.order_id_mapping.get(internal_order_id, {})
+
+    def _remove_order_mapping(self, internal_order_id: str) -> None:
+        """
+        Remove order ID mapping for an internal order ID.
+        
+        Args:
+            internal_order_id: Internal order ID to remove
+        """
+        if internal_order_id in self.order_id_mapping:
+            # Remove exchange order mappings
+            for exchange_name, exchange_order_id in self.order_id_mapping[internal_order_id].items():
+                self.exchange_order_mapping.pop(exchange_order_id, None)
+            
+            # Remove internal order mapping
+            del self.order_id_mapping[internal_order_id]
+            
+            self.logger.debug(f"Removed order mapping for {internal_order_id}")
+
+    async def get_order_mapping_status(self) -> Dict[str, Any]:
+        """
+        Get the current status of order ID mappings.
+        
+        Returns:
+            Dictionary containing mapping statistics
+        """
+        return {
+            "total_internal_orders": len(self.order_id_mapping),
+            "total_exchange_orders": len(self.exchange_order_mapping),
+            "internal_orders": list(self.order_id_mapping.keys()),
+            "exchange_orders": list(self.exchange_order_mapping.keys())
+        }
 
 
 class MessageRouter:
@@ -589,6 +748,9 @@ class MessageRouter:
         **kwargs
     ) -> List[str]:
         """Route to exchanges in round-robin fashion"""
+        if not self.exchange_registry:
+            raise RuntimeError("Exchange registry not available")
+            
         available_exchanges = await self.exchange_registry.get_active_exchanges()
         if not available_exchanges:
             raise RuntimeError("No active exchanges available")
@@ -603,6 +765,9 @@ class MessageRouter:
         **kwargs
     ) -> List[str]:
         """Route to the least loaded exchange"""
+        if not self.exchange_registry:
+            raise RuntimeError("Exchange registry not available")
+            
         active_exchanges = await self.exchange_registry.get_active_exchanges()
         if not active_exchanges:
             raise RuntimeError("No active exchanges available")
@@ -616,6 +781,9 @@ class MessageRouter:
         **kwargs
     ) -> List[str]:
         """Broadcast to all available exchanges"""
+        if not self.exchange_registry:
+            raise RuntimeError("Exchange registry not available")
+            
         return await self.exchange_registry.get_active_exchanges()
 
     async def _primary_only_routing(
@@ -635,6 +803,9 @@ class MessageRouter:
         **kwargs
     ) -> List[str]:
         """Route with failover support"""
+        if not self.exchange_registry:
+            raise RuntimeError("Exchange registry not available")
+            
         if failover_exchanges is None:
             failover_exchanges = ["okx", "gateio"]
 
@@ -651,10 +822,11 @@ class MessageBroker:
     Manages message routing, queuing, and delivery.
     """
 
-    def __init__(self):
+    def __init__(self, exchange_registry: Optional[Any] = None):
         self.logger = logging.getLogger("MessageBroker")
-        self.message_handler = ExchangeMessageHandler()
-        self.message_router = MessageRouter(None)  # Will be set by trading receiver
+        self.exchange_registry = exchange_registry
+        self.message_handler = ExchangeMessageHandler(exchange_registry)
+        self.message_router = MessageRouter(exchange_registry)
         self._started = False
 
     async def start(self) -> None:

@@ -5,9 +5,10 @@ from datetime import datetime
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 from src.utils.tprint import tprint
 
-from typing import Any
+from typing import Any, Dict, List, Optional
 import logging
 import time
+import asyncio
 
 
 class BaseExchange(IExchangeClient, ABC):
@@ -837,13 +838,66 @@ class ExchangeMessageHandler:
 
         order_info = self.pending_orders[order_id]
         symbol = order_info["symbol"]
-
-        # This would need to be implemented based on how order IDs are mapped
-        # For now, return a placeholder
+        
+        # Get responses from all exchanges that were sent this order
+        order_responses = self.order_responses.get(order_id, {})
+        
+        # Check status on each exchange that received the order
+        status_results = {}
+        successful_exchanges = []
+        failed_exchanges = []
+        
+        for exchange_name, response in order_responses.items():
+            if response.get("success"):
+                try:
+                    # Get the actual exchange instance
+                    exchange = self.multi_exchange.exchanges.get(exchange_name)
+                    if exchange:
+                        # Try to get order status from the exchange
+                        # This assumes the exchange response contains the actual order ID
+                        exchange_order_id = response.get("data", {}).get("id")
+                        if exchange_order_id:
+                            order_status = await exchange.get_order_status(symbol, exchange_order_id)
+                            status_results[exchange_name] = {
+                                "status": "success",
+                                "order_status": order_status,
+                                "exchange_order_id": exchange_order_id
+                            }
+                            successful_exchanges.append(exchange_name)
+                        else:
+                            status_results[exchange_name] = {
+                                "status": "error",
+                                "error": "No exchange order ID found in response"
+                            }
+                            failed_exchanges.append(exchange_name)
+                    else:
+                        status_results[exchange_name] = {
+                            "status": "error",
+                            "error": "Exchange instance not found"
+                        }
+                        failed_exchanges.append(exchange_name)
+                except Exception as e:
+                    status_results[exchange_name] = {
+                        "status": "error",
+                        "error": str(e)
+                    }
+                    failed_exchanges.append(exchange_name)
+            else:
+                status_results[exchange_name] = {
+                    "status": "error",
+                    "error": response.get("error", "Unknown error")
+                }
+                failed_exchanges.append(exchange_name)
+        
         return {
             "order_id": order_id,
-            "status": "checking",
-            "exchanges": list(self.multi_exchange.exchanges.keys())
+            "symbol": symbol,
+            "order_info": order_info,
+            "status_results": status_results,
+            "successful_exchanges": successful_exchanges,
+            "failed_exchanges": failed_exchanges,
+            "total_exchanges": len(status_results),
+            "timestamp": datetime.now().isoformat()
         }
 
     async def cancel_order_all_exchanges(self, order_id: str) -> Dict[str, Any]:
@@ -859,12 +913,72 @@ class ExchangeMessageHandler:
         if order_id not in self.pending_orders:
             return {"error": "Order not found in pending orders"}
 
-        # This would need to be implemented with proper order ID mapping
-        # For now, return a placeholder
+        order_info = self.pending_orders[order_id]
+        symbol = order_info["symbol"]
+        
+        # Get responses from all exchanges that were sent this order
+        order_responses = self.order_responses.get(order_id, {})
+        
+        # Cancel order on each exchange that received the order
+        cancellation_results = {}
+        cancelled_exchanges = []
+        failed_exchanges = []
+        
+        for exchange_name, response in order_responses.items():
+            if response.get("success"):
+                try:
+                    # Get the actual exchange instance
+                    exchange = self.multi_exchange.exchanges.get(exchange_name)
+                    if exchange:
+                        # Get the exchange order ID from the response
+                        exchange_order_id = response.get("data", {}).get("id")
+                        if exchange_order_id:
+                            # Cancel the order on the exchange
+                            cancel_result = await exchange.cancel_order(symbol, exchange_order_id)
+                            cancellation_results[exchange_name] = {
+                                "status": "success",
+                                "cancel_result": cancel_result,
+                                "exchange_order_id": exchange_order_id
+                            }
+                            cancelled_exchanges.append(exchange_name)
+                        else:
+                            cancellation_results[exchange_name] = {
+                                "status": "error",
+                                "error": "No exchange order ID found in response"
+                            }
+                            failed_exchanges.append(exchange_name)
+                    else:
+                        cancellation_results[exchange_name] = {
+                            "status": "error",
+                            "error": "Exchange instance not found"
+                        }
+                        failed_exchanges.append(exchange_name)
+                except Exception as e:
+                    cancellation_results[exchange_name] = {
+                        "status": "error",
+                        "error": str(e)
+                    }
+                    failed_exchanges.append(exchange_name)
+            else:
+                cancellation_results[exchange_name] = {
+                    "status": "error",
+                    "error": response.get("error", "Original order failed")
+                }
+                failed_exchanges.append(exchange_name)
+        
+        # Remove from pending orders if all cancellations were successful
+        if len(cancelled_exchanges) > 0 and len(failed_exchanges) == 0:
+            self.pending_orders.pop(order_id, None)
+            self.order_responses.pop(order_id, None)
+        
         return {
             "order_id": order_id,
-            "cancelled_exchanges": [],
-            "failed_exchanges": list(self.multi_exchange.exchanges.keys())
+            "symbol": symbol,
+            "cancellation_results": cancellation_results,
+            "cancelled_exchanges": cancelled_exchanges,
+            "failed_exchanges": failed_exchanges,
+            "total_exchanges": len(cancellation_results),
+            "timestamp": datetime.now().isoformat()
         }
 
 

@@ -191,7 +191,8 @@ class ExchangeMessageHandler:
             try:
                 await self._processing_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Message processing task cancelled during shutdown")
+                # Task was cancelled as expected during shutdown
 
         # Clear all pending messages and handlers
         self.pending_messages.clear()

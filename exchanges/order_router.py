@@ -92,7 +92,8 @@ class OrderRouter:
             try:
                 await self._monitoring_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Order monitoring task cancelled during shutdown")
+                # Task was cancelled as expected during shutdown
         
         # Clear all order data
         self.routed_orders.clear()

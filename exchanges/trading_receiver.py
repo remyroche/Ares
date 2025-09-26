@@ -178,7 +178,8 @@ class TradingReceiver:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Response cleanup task cancelled during shutdown")
+                # Task was cancelled as expected during shutdown
 
         # Stop base exchange components
         await self.message_handler.stop()

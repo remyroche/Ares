@@ -84,39 +84,97 @@ class UnifiedRegimeResult:
     
     def get_regime_distribution(self) -> Dict[str, int]:
         """Get distribution of regime predictions."""
-        if not self.success:
-            return {}
-        
-        unique_regimes, counts = np.unique(self.regime_predictions, return_counts=True)
-        return {f'regime_{regime}': int(count) for regime, count in zip(unique_regimes, counts)}
+        try:
+            if not self.success:
+                return {
+                    'error': 'Cannot get regime distribution from failed result',
+                    'error_message': self.error_message
+                }
+            
+            if self.regime_predictions is None or len(self.regime_predictions) == 0:
+                return {
+                    'error': 'No regime predictions available',
+                    'n_samples': 0
+                }
+            
+            unique_regimes, counts = np.unique(self.regime_predictions, return_counts=True)
+            return {f'regime_{regime}': int(count) for regime, count in zip(unique_regimes, counts)}
+            
+        except Exception as e:
+            return {
+                'error': f'Failed to calculate regime distribution: {str(e)}',
+                'n_samples': len(self.regime_predictions) if self.regime_predictions is not None else 0
+            }
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary."""
-        if not self.success or self.performance_metrics is None:
-            return {}
-        
-        return {
-            'accuracy': self.performance_metrics.get('accuracy', 0.0),
-            'precision': self.performance_metrics.get('precision', 0.0),
-            'recall': self.performance_metrics.get('recall', 0.0),
-            'f1_score': self.performance_metrics.get('f1_score', 0.0),
-            'method': self.performance_metrics.get('method', 'unknown')
-        }
+        try:
+            if not self.success:
+                return {
+                    'error': 'Cannot get performance summary from failed result',
+                    'error_message': self.error_message
+                }
+            
+            if self.performance_metrics is None:
+                return {
+                    'error': 'No performance metrics available',
+                    'success': False
+                }
+            
+            return {
+                'accuracy': self.performance_metrics.get('accuracy', 0.0),
+                'precision': self.performance_metrics.get('precision', 0.0),
+                'recall': self.performance_metrics.get('recall', 0.0),
+                'f1_score': self.performance_metrics.get('f1_score', 0.0),
+                'method': self.performance_metrics.get('method', 'unknown'),
+                'success': True
+            }
+            
+        except Exception as e:
+            return {
+                'error': f'Failed to get performance summary: {str(e)}',
+                'success': False
+            }
     
     def get_quality_metrics(self) -> Dict[str, float]:
         """Get quality metrics for the results."""
-        if not self.success:
-            return {}
-        
-        return {
-            'mean_economic_significance': float(np.mean(self.economic_significance_scores)),
-            'std_economic_significance': float(np.std(self.economic_significance_scores)),
-            'mean_trading_viability': float(np.mean(self.trading_viability_scores)),
-            'std_trading_viability': float(np.std(self.trading_viability_scores)),
-            'mean_regime_stability': float(np.mean(self.regime_stability_scores)),
-            'std_regime_stability': float(np.std(self.regime_stability_scores)),
-            'regime_transitions': int(np.sum(np.diff(self.regime_predictions) != 0)) if len(self.regime_predictions) > 1 else 0
-        }
+        try:
+            if not self.success:
+                return {
+                    'error': 'Cannot get quality metrics from failed result',
+                    'error_message': self.error_message
+                }
+            
+            # Validate required arrays
+            required_arrays = [
+                self.economic_significance_scores,
+                self.trading_viability_scores,
+                self.regime_stability_scores,
+                self.regime_predictions
+            ]
+            
+            for i, arr in enumerate(required_arrays):
+                if arr is None or len(arr) == 0:
+                    return {
+                        'error': f'Required array {i} is None or empty',
+                        'array_index': i
+                    }
+            
+            return {
+                'mean_economic_significance': float(np.mean(self.economic_significance_scores)),
+                'std_economic_significance': float(np.std(self.economic_significance_scores)),
+                'mean_trading_viability': float(np.mean(self.trading_viability_scores)),
+                'std_trading_viability': float(np.std(self.trading_viability_scores)),
+                'mean_regime_stability': float(np.mean(self.regime_stability_scores)),
+                'std_regime_stability': float(np.std(self.regime_stability_scores)),
+                'regime_transitions': int(np.sum(np.diff(self.regime_predictions) != 0)) if len(self.regime_predictions) > 1 else 0
+            }
+            
+        except Exception as e:
+            return {
+                'error': f'Failed to calculate quality metrics: {str(e)}',
+                'n_samples': len(self.regime_predictions) if self.regime_predictions is not None else 0
+            }
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""

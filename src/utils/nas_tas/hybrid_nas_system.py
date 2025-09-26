@@ -258,6 +258,75 @@ class HybridNASSystem:
         tprint(f"✅ [HYBRID_NAS] Hybrid NAS System initialized with strategy: {config.hybrid_strategy}", color="green", bold=True)
         self.logger.info(f"✅ Hybrid NAS System initialized with strategy: {config.hybrid_strategy}")
     
+    def _validate_search_inputs(self, X_train: np.ndarray, y_train: np.ndarray, 
+                               X_val: Optional[np.ndarray], y_val: Optional[np.ndarray],
+                               regime_labels: Optional[np.ndarray]) -> None:
+        """Validate search input parameters."""
+        # Validate X_train
+        if X_train is None:
+            raise ValueError("X_train cannot be None")
+        if not isinstance(X_train, np.ndarray):
+            raise ValueError(f"X_train must be numpy array, got {type(X_train)}")
+        if X_train.ndim != 2:
+            raise ValueError(f"X_train must be 2D array, got {X_train.ndim}D")
+        if X_train.shape[0] == 0:
+            raise ValueError("X_train cannot be empty")
+        if X_train.shape[1] == 0:
+            raise ValueError("X_train must have at least one feature")
+        
+        # Validate y_train
+        if y_train is None:
+            raise ValueError("y_train cannot be None")
+        if not isinstance(y_train, np.ndarray):
+            raise ValueError(f"y_train must be numpy array, got {type(y_train)}")
+        if y_train.ndim != 1:
+            raise ValueError(f"y_train must be 1D array, got {y_train.ndim}D")
+        if len(y_train) == 0:
+            raise ValueError("y_train cannot be empty")
+        
+        # Check shape consistency
+        if len(X_train) != len(y_train):
+            raise ValueError(f"X_train and y_train must have same length: {len(X_train)} vs {len(y_train)}")
+        
+        # Validate X_val if provided
+        if X_val is not None:
+            if not isinstance(X_val, np.ndarray):
+                raise ValueError(f"X_val must be numpy array, got {type(X_val)}")
+            if X_val.ndim != 2:
+                raise ValueError(f"X_val must be 2D array, got {X_val.ndim}D")
+            if X_val.shape[1] != X_train.shape[1]:
+                raise ValueError(f"X_val must have same number of features as X_train: {X_val.shape[1]} vs {X_train.shape[1]}")
+        
+        # Validate y_val if provided
+        if y_val is not None:
+            if not isinstance(y_val, np.ndarray):
+                raise ValueError(f"y_val must be numpy array, got {type(y_val)}")
+            if y_val.ndim != 1:
+                raise ValueError(f"y_val must be 1D array, got {y_val.ndim}D")
+            if len(y_val) != len(X_val):
+                raise ValueError(f"X_val and y_val must have same length: {len(X_val)} vs {len(y_val)}")
+        
+        # Validate regime_labels if provided
+        if regime_labels is not None:
+            if not isinstance(regime_labels, np.ndarray):
+                raise ValueError(f"regime_labels must be numpy array, got {type(regime_labels)}")
+            if regime_labels.ndim != 1:
+                raise ValueError(f"regime_labels must be 1D array, got {regime_labels.ndim}D")
+            if len(regime_labels) != len(X_train):
+                raise ValueError(f"regime_labels must have same length as X_train: {len(regime_labels)} vs {len(X_train)}")
+        
+        # Check for NaN values
+        if np.any(np.isnan(X_train)):
+            raise ValueError("X_train contains NaN values")
+        if np.any(np.isnan(y_train)):
+            raise ValueError("y_train contains NaN values")
+        if X_val is not None and np.any(np.isnan(X_val)):
+            raise ValueError("X_val contains NaN values")
+        if y_val is not None and np.any(np.isnan(y_val)):
+            raise ValueError("y_val contains NaN values")
+        if regime_labels is not None and np.any(np.isnan(regime_labels)):
+            raise ValueError("regime_labels contains NaN values")
+    
     def search(self, 
                X_train: np.ndarray, 
                y_train: np.ndarray,
@@ -278,13 +347,20 @@ class HybridNASSystem:
             
         Returns:
             Best hybrid architecture candidate
+            
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If search fails
         """
         tprint("🚀 [HYBRID_NAS] Starting Hybrid NAS Search", color="cyan", bold=True)
-        tprint(f"📊 [HYBRID_NAS] Training data shape: {X_train.shape}, labels: {y_train.shape}", color="blue")
         self.logger.info("🚀 Starting Hybrid NAS Search...")
         start_time = time.time()
         
         try:
+            # Input validation
+            self._validate_search_inputs(X_train, y_train, X_val, y_val, regime_labels)
+            
+            tprint(f"📊 [HYBRID_NAS] Training data shape: {X_train.shape}, labels: {y_train.shape}", color="blue")
             # Prepare validation data
             if X_val is None or y_val is None:
                 tprint("🔧 [HYBRID_NAS] Splitting training data for validation", color="yellow")
@@ -324,9 +400,33 @@ class HybridNASSystem:
             
             return best_candidate
             
+        except ValueError as e:
+            # Input validation errors
+            error_msg = f"Input validation failed: {e}"
+            self.logger.error(error_msg)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise ValueError(error_msg) from e
+            
+        except RuntimeError as e:
+            # Runtime errors (e.g., from data analysis)
+            error_msg = f"Runtime error during search: {e}"
+            self.logger.error(error_msg)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise RuntimeError(error_msg) from e
+            
+        except ImportError as e:
+            # Missing dependencies
+            error_msg = f"Missing required dependency: {e}"
+            self.logger.error(error_msg)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise ImportError(error_msg) from e
+            
         except Exception as e:
-            self.logger.error(f"Hybrid NAS Search failed: {e}")
-            raise
+            # Unexpected errors
+            error_msg = f"Unexpected error during hybrid NAS search: {e}"
+            self.logger.error(error_msg, exc_info=True)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def _analyze_data_characteristics(self, X_train: np.ndarray, y_train: np.ndarray) -> Dict[str, Any]:
         """Analyze data characteristics to guide routing decisions with comprehensive analysis."""
@@ -404,12 +504,26 @@ class HybridNASSystem:
             self.logger.debug(f"Data characteristics: {characteristics}")
             return characteristics
             
+        except ImportError as e:
+            error_msg = f"Missing required dependency for data analysis: {e}"
+            self.logger.error(error_msg)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise ImportError(error_msg) from e
+            
+        except ValueError as e:
+            error_msg = f"Invalid data for analysis: {e}"
+            self.logger.error(error_msg)
+            tprint_error(f"❌ [HYBRID_NAS] {error_msg}")
+            raise ValueError(error_msg) from e
+            
         except Exception as e:
-            self.logger.warning(f"Advanced data analysis failed: {e}")
-            # Fallback to basic characteristics
+            error_msg = f"Advanced data analysis failed: {e}"
+            self.logger.warning(error_msg, exc_info=True)
+            tprint_warning(f"⚠️ [HYBRID_NAS] {error_msg}")
+            # Fallback to basic characteristics with error context
             return {
-                'n_samples': X_train.shape[0], 
-                'n_features': X_train.shape[1],
+                'n_samples': X_train.shape[0] if X_train is not None else 0, 
+                'n_features': X_train.shape[1] if X_train is not None else 0,
                 'tabular_ratio': 0.5,
                 'sequential_ratio': 0.3,
                 'complexity_ratio': 0.5,
@@ -418,7 +532,9 @@ class HybridNASSystem:
                 'is_tabular_dominant': False,
                 'is_sequential_dominant': False,
                 'is_complex_dominant': False,
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'fallback_used': True
             }
     
     def _calculate_advanced_tabular_ratio(self, X: np.ndarray) -> Dict[str, Any]:

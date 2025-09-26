@@ -31,6 +31,67 @@ from src.utils.tprint import (
 logger = get_system_logger().getChild('HMMTrainingPipeline')
 
 
+class _PerRegimeCalibrator:
+    """Lightweight per-regime calibration wrapper supporting Platt or isotonic scaling."""
+
+    def __init__(self, base_model: Any, n_classes: int, method: str = 'sigmoid') -> None:
+        self.base_model = base_model
+        self.n_classes = n_classes
+        self.method = method
+        self._calibrators: List[Any] = []
+
+    def fit(self, X: pd.DataFrame, y: np.ndarray) -> '_PerRegimeCalibrator':
+        raw_probs = self.base_model.predict_proba(X.values)
+        self._calibrators = []
+
+        for class_idx in range(self.n_classes):
+            binary_labels = (y == class_idx).astype(int)
+            unique_labels = np.unique(binary_labels)
+            if unique_labels.size < 2:
+                # Not enough variation to calibrate this regime – fall back to identity mapping
+                self._calibrators.append(None)
+                continue
+
+            if self.method == 'isotonic':
+                from sklearn.isotonic import IsotonicRegression  # pragma: no cover - optional dependency
+
+                calibrator = IsotonicRegression(out_of_bounds='clip')
+                calibrator.fit(raw_probs[:, class_idx], binary_labels)
+            else:
+                from sklearn.linear_model import LogisticRegression
+
+                calibrator = LogisticRegression(max_iter=1000)
+                calibrator.fit(raw_probs[:, [class_idx]], binary_labels)
+
+            self._calibrators.append(calibrator)
+
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        raw_probs = self.base_model.predict_proba(X)
+        calibrated = np.zeros_like(raw_probs)
+
+        for idx, calibrator in enumerate(self._calibrators):
+            if calibrator is None:
+                calibrated[:, idx] = raw_probs[:, idx]
+            else:
+                if self.method == 'isotonic':
+                    calibrated[:, idx] = calibrator.predict(raw_probs[:, idx])
+                else:
+                    calibrated[:, idx] = calibrator.predict_proba(raw_probs[:, [idx]])[:, 1]
+
+        # Normalise to ensure a valid probability simplex
+        row_sums = calibrated.sum(axis=1, keepdims=True)
+        valid_mask = row_sums.squeeze() > 0
+        calibrated[valid_mask] = calibrated[valid_mask] / row_sums[valid_mask]
+        calibrated[~valid_mask] = raw_probs[~valid_mask]
+        return calibrated
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        probs = self.predict_proba(X)
+        return np.argmax(probs, axis=1)
+
+
 class HMMTrainingPipeline:
     """
     Enhanced HMM Training Pipeline for 15m timeframe regime detection with 4D analysis.
@@ -68,13 +129,22 @@ class HMMTrainingPipeline:
         self.meta_learner_config = {
             "architecture": "stacker_lgbm_calibrated",
             "base_model": "LightGBM",
-            "n_estimators": 500,
-            "learning_rate": 0.05,
-            "max_depth": 5,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "calibration_method": "isotonic",
-            "cv_folds": 5,
+            # Shallow tree configuration to prevent re-learning markets
+            "n_estimators": 400,
+            "learning_rate": 0.03,
+            "max_depth": 3,
+            "num_leaves": 7,
+            "min_child_samples": 300,
+            "feature_fraction": 0.7,
+            "bagging_fraction": 0.7,
+            "bagging_freq": 1,
+            "lambda_l2": 10.0,
+            "early_stopping_rounds": 50,
+            # Calibration and data splitting
+            "calibration_method": "sigmoid",  # Platt scaling by default
+            "validation_fraction": 0.2,
+            "calibration_fraction": 0.1,
+            "per_regime_calibration": False,
         }
         
         # Training state
@@ -636,62 +706,341 @@ class HMMTrainingPipeline:
         regime_labels: np.ndarray,
         base_model_results: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Train meta-learner to combine base model predictions."""
+        """Train stacker meta-learner using only model outputs and calibrated probabilities."""
         try:
-            if self.meta_learner == "stacker_lgbm_calibrated":
-                from lightgbm import LGBMClassifier
-                from sklearn.calibration import CalibratedClassifierCV
-
-                params = self.meta_learner_config
-                base_model = LGBMClassifier(
-                    n_estimators=params.get('n_estimators', 500),
-                    learning_rate=params.get('learning_rate', 0.05),
-                    max_depth=params.get('max_depth', 5),
-                    subsample=params.get('subsample', 0.8),
-                    colsample_bytree=params.get('colsample_bytree', 0.8),
-                    random_state=42,
-                    n_jobs=-1,
-                )
-
-                meta_model = CalibratedClassifierCV(
-                    base_estimator=base_model,
-                    method=params.get('calibration_method', 'isotonic'),
-                    cv=params.get('cv_folds', 5),
-                )
-            else:
+            if self.meta_learner != "stacker_lgbm_calibrated":
                 raise ValueError(f"Unknown meta-learner: {self.meta_learner}")
-            
-            # Create meta-features from base model predictions
-            meta_features = []
-            for model_name, results in base_model_results.items():
-                if 'error' not in results and 'probabilities' in results:
-                    meta_features.append(results['probabilities'])
-            
-            if not meta_features:
-                raise ValueError("No valid base model results for meta-learner")
-            
-            # Combine meta-features
-            X_meta = np.column_stack(meta_features)
-            
-            # Train meta-learner
-            meta_model.fit(X_meta, regime_labels)
-            
-            # Get meta-learner predictions
-            meta_predictions = meta_model.predict(X_meta)
-            meta_probabilities = meta_model.predict_proba(X_meta)
-            
+
+            from lightgbm import LGBMClassifier  # pragma: no cover - optional dependency
+            import lightgbm as lgb  # pragma: no cover - optional dependency
+
+            params = self.meta_learner_config
+
+            # Build meta feature frame using only model outputs (no raw market data)
+            meta_feature_frame, monotonic_constraints, feature_roles = self._build_meta_feature_frame(
+                base_model_results,
+                len(regime_labels)
+            )
+
+            if meta_feature_frame.empty:
+                raise ValueError("No valid meta-features constructed from base model outputs")
+
+            # Apply robust scaling to unbounded features (μ and volatility proxies)
+            scaled_frame = self._apply_meta_feature_scaling(meta_feature_frame, feature_roles)
+
+            # Replace any remaining NaNs/Infs that might arise from degenerate inputs
+            scaled_frame.replace([np.inf, -np.inf], 0.0, inplace=True)
+            scaled_frame.fillna(0.0, inplace=True)
+
+            # Prepare dataset splits (train/validation/calibration) using chronological order
+            splits = self._split_meta_dataset(
+                n_samples=len(scaled_frame),
+                validation_fraction=params.get('validation_fraction', 0.2),
+                calibration_fraction=params.get('calibration_fraction', 0.1)
+            )
+
+            train_slice, validation_slice, calibration_slice = (
+                splits['train'],
+                splits['validation'],
+                splits['calibration']
+            )
+
+            X_train = scaled_frame.iloc[train_slice].values
+            y_train = regime_labels[train_slice]
+
+            X_val = scaled_frame.iloc[validation_slice].values
+            y_val = regime_labels[validation_slice]
+
+            X_calibration = scaled_frame.iloc[calibration_slice].values
+            y_calibration = regime_labels[calibration_slice]
+
+            if X_calibration.shape[0] == 0:
+                raise ValueError("Calibration split is empty – increase data size or adjust calibration_fraction")
+
+            # Configure shallow LightGBM stacker with monotonic constraints
+            base_model = LGBMClassifier(
+                objective='multiclass',
+                num_class=self.n_regimes,
+                metric='multi_logloss',
+                n_estimators=params.get('n_estimators', 400),
+                learning_rate=params.get('learning_rate', 0.03),
+                max_depth=params.get('max_depth', 3),
+                num_leaves=params.get('num_leaves', 7),
+                min_child_samples=params.get('min_child_samples', 300),
+                feature_fraction=params.get('feature_fraction', 0.7),
+                bagging_fraction=params.get('bagging_fraction', 0.7),
+                bagging_freq=params.get('bagging_freq', 1),
+                lambda_l2=params.get('lambda_l2', 10.0),
+                monotone_constraints=monotonic_constraints,
+                random_state=42,
+                n_jobs=-1,
+            )
+
+            eval_set = [(X_train, y_train)]
+            if X_val.size > 0:
+                eval_set.append((X_val, y_val))
+
+            base_model.fit(
+                X_train,
+                y_train,
+                eval_set=eval_set,
+                eval_metric='multi_logloss',
+                callbacks=[
+                    lgb.early_stopping(params.get('early_stopping_rounds', 50)),
+                    lgb.log_evaluation(0),
+                ]
+            )
+
+            # Fit calibration layer on final hold-out block
+            meta_model = self._fit_meta_calibrator(
+                base_model=base_model,
+                calibration_features=scaled_frame.iloc[calibration_slice],
+                calibration_labels=y_calibration,
+                method=params.get('calibration_method', 'sigmoid'),
+                per_regime=params.get('per_regime_calibration', False)
+            )
+
+            # Generate calibrated predictions for the full dataset
+            meta_predictions = meta_model.predict(scaled_frame.values)
+            meta_probabilities = meta_model.predict_proba(scaled_frame.values)
+
             return {
                 'model': meta_model,
+                'base_model': base_model,
                 'model_type': self.meta_learner,
                 'predictions': meta_predictions,
                 'probabilities': meta_probabilities,
-                'accuracy': np.mean(meta_predictions == regime_labels),
-                'meta_features_shape': X_meta.shape
+                'accuracy': float(np.mean(meta_predictions == regime_labels)),
+                'meta_features_shape': scaled_frame.shape,
+                'meta_feature_names': list(scaled_frame.columns),
+                'meta_feature_roles': feature_roles,
+                'monotonic_constraints': monotonic_constraints,
+                'calibration_slice': (calibration_slice.start, calibration_slice.stop),
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to train meta-learner: {e}")
             return {'error': str(e)}
+
+    def _build_meta_feature_frame(
+        self,
+        base_model_results: Dict[str, Any],
+        n_samples: int
+    ) -> Tuple[pd.DataFrame, List[int], Dict[str, List[str]]]:
+        """Create structured meta-features derived purely from model outputs."""
+
+        regime_count = self.n_regimes
+        regime_grid = np.linspace(-1.0, 1.0, regime_count)
+
+        ordered_models = [
+            ("xgboost", "A"),
+            ("random_forest", "B"),
+            ("elasticnet", "C"),
+        ]
+
+        feature_entries: List[Tuple[str, np.ndarray, int]] = []
+        feature_roles: Dict[str, List[str]] = {
+            'p_features': [],
+            'mu_features': [],
+            'iqr_features': [],
+            'regime_prob_features': [],
+            'vol_features': [],
+            'disagreement_features': [],
+        }
+
+        probability_stack: List[np.ndarray] = []
+        top_probability_stack: List[np.ndarray] = []
+
+        for model_key, label in ordered_models:
+            results = base_model_results.get(model_key, {})
+            probabilities = np.asarray(results.get('probabilities')) if 'probabilities' in results else None
+
+            if probabilities is None or probabilities.shape[0] != n_samples:
+                probabilities = np.full((n_samples, regime_count), 1.0 / max(regime_count, 1))
+            elif probabilities.shape[1] != regime_count:
+                adjusted = np.full((n_samples, regime_count), 1.0 / max(regime_count, 1))
+                cols_to_copy = min(regime_count, probabilities.shape[1])
+                adjusted[:, :cols_to_copy] = probabilities[:, :cols_to_copy]
+                probabilities = adjusted
+
+            probability_stack.append(probabilities)
+            top_probabilities = probabilities.max(axis=1)
+            top_probability_stack.append(top_probabilities)
+
+            mu_values = self._extract_array_from_results(
+                results,
+                keys=['mu', 'predicted_mu', 'expected_return', 'mean_prediction']
+            )
+            if mu_values is None or mu_values.shape[0] != n_samples:
+                mu_values = probabilities @ regime_grid
+
+            iqr_values = self._extract_array_from_results(
+                results,
+                keys=['iqr', 'prediction_iqr', 'uncertainty', 'iqr_prediction']
+            )
+            if iqr_values is None or iqr_values.shape[0] != n_samples:
+                upper_quartile = np.quantile(probabilities, 0.75, axis=1)
+                lower_quartile = np.quantile(probabilities, 0.25, axis=1)
+                iqr_values = upper_quartile - lower_quartile
+
+            p_name = f'p{label}'
+            mu_name = f'mu{label}'
+            iqr_name = f'IQR{label}'
+
+            feature_entries.extend([
+                (p_name, top_probabilities, 1),
+                (mu_name, mu_values, 1),
+                (iqr_name, iqr_values, -1),
+            ])
+
+            feature_roles['p_features'].append(p_name)
+            feature_roles['mu_features'].append(mu_name)
+            feature_roles['iqr_features'].append(iqr_name)
+
+        if probability_stack:
+            aggregated_probabilities = np.mean(np.stack(probability_stack, axis=0), axis=0)
+        else:
+            aggregated_probabilities = np.full((n_samples, regime_count), 1.0 / max(regime_count, 1))
+
+        for regime_idx in range(regime_count):
+            feature_name = f'regime_prob_{regime_idx}'
+            feature_entries.append((feature_name, aggregated_probabilities[:, regime_idx], 0))
+            feature_roles['regime_prob_features'].append(feature_name)
+
+        if top_probability_stack:
+            top_matrix = np.column_stack(top_probability_stack)
+            disagreement_range = top_matrix.max(axis=1) - top_matrix.min(axis=1)
+            disagreement_std = top_matrix.std(axis=1)
+            disagreement_mean = top_matrix.mean(axis=1)
+        else:
+            disagreement_range = np.zeros(n_samples)
+            disagreement_std = np.zeros(n_samples)
+            disagreement_mean = np.zeros(n_samples)
+
+        feature_entries.append(('disagreement_range', disagreement_range, 0))
+        feature_entries.append(('disagreement_std', disagreement_std, 0))
+        feature_entries.append(('disagreement_mean', disagreement_mean, 0))
+        feature_roles['disagreement_features'].extend([
+            'disagreement_range',
+            'disagreement_std',
+            'disagreement_mean'
+        ])
+
+        vol_proxy = disagreement_std
+        feature_entries.append(('vol_proxy', vol_proxy, 0))
+        feature_roles['vol_features'].append('vol_proxy')
+
+        ordered_columns = [name for name, _, _ in feature_entries]
+        feature_dict = {name: values for name, values, _ in feature_entries}
+        feature_frame = pd.DataFrame(feature_dict)
+        feature_frame = feature_frame.loc[:, ordered_columns]
+        monotonic_constraints = [constraint for _, _, constraint in feature_entries]
+
+        return feature_frame, monotonic_constraints, feature_roles
+
+    def _extract_array_from_results(self, results: Dict[str, Any], keys: List[str]) -> Optional[np.ndarray]:
+        """Extract a numpy array from nested result dictionaries for provided keys."""
+
+        for key in keys:
+            if key in results:
+                value = results[key]
+                if isinstance(value, (list, tuple)):
+                    return np.asarray(value)
+                if isinstance(value, np.ndarray):
+                    return value
+
+            metadata = results.get('metadata') if isinstance(results, dict) else None
+            if isinstance(metadata, dict) and key in metadata:
+                value = metadata[key]
+                if isinstance(value, (list, tuple)):
+                    return np.asarray(value)
+                if isinstance(value, np.ndarray):
+                    return value
+
+        return None
+
+    def _apply_meta_feature_scaling(
+        self,
+        feature_frame: pd.DataFrame,
+        feature_roles: Dict[str, List[str]]
+    ) -> pd.DataFrame:
+        """Robust scale μ and volatility proxy features to stabilise the meta learner."""
+
+        scaled = feature_frame.copy()
+
+        def _robust_scale(series: pd.Series) -> pd.Series:
+            if series.empty:
+                return series
+            q1 = np.nanpercentile(series, 25)
+            q3 = np.nanpercentile(series, 75)
+            scale = q3 - q1
+            if not np.isfinite(scale) or scale == 0:
+                scale = 1.0
+            median = np.nanmedian(series)
+            return (series - median) / scale
+
+        for column in feature_roles.get('mu_features', []):
+            if column in scaled.columns:
+                scaled[column] = _robust_scale(scaled[column])
+
+        for column in feature_roles.get('vol_features', []):
+            if column in scaled.columns:
+                scaled[column] = _robust_scale(scaled[column])
+
+        return scaled
+
+    def _split_meta_dataset(
+        self,
+        n_samples: int,
+        validation_fraction: float,
+        calibration_fraction: float
+    ) -> Dict[str, slice]:
+        """Create chronological dataset splits for training, validation, and calibration."""
+
+        validation_count = max(int(n_samples * validation_fraction), 1)
+        calibration_count = max(int(n_samples * calibration_fraction), 1)
+
+        if validation_count + calibration_count >= n_samples:
+            calibration_count = max(1, min(calibration_count, max(1, n_samples // 5)))
+            validation_count = max(1, n_samples - calibration_count - 1)
+
+        train_end = n_samples - validation_count - calibration_count
+        if train_end <= 0:
+            raise ValueError("Not enough samples to create training/validation/calibration splits for meta learner")
+
+        validation_end = train_end + validation_count
+
+        return {
+            'train': slice(0, train_end),
+            'validation': slice(train_end, validation_end),
+            'calibration': slice(validation_end, n_samples)
+        }
+
+    def _fit_meta_calibrator(
+        self,
+        base_model: Any,
+        calibration_features: pd.DataFrame,
+        calibration_labels: np.ndarray,
+        method: str,
+        per_regime: bool
+    ) -> Any:
+        """Fit calibration layer on top of the base meta model."""
+
+        unique_labels = np.unique(calibration_labels)
+        if unique_labels.size < 2:
+            tprint_warning("⚠️ Calibration set has limited class diversity – using per-regime fallback calibrator")
+            per_regime = True
+
+        if per_regime:
+            calibrator = _PerRegimeCalibrator(base_model, self.n_regimes, method)
+            calibrator.fit(calibration_features, calibration_labels)
+            return calibrator
+
+        from sklearn.calibration import CalibratedClassifierCV
+
+        calibrator = CalibratedClassifierCV(base_estimator=base_model, method=method, cv='prefit')
+        calibrator.fit(calibration_features.values, calibration_labels)
+        return calibrator
 
     async def _generate_regime_probabilities(
         self,

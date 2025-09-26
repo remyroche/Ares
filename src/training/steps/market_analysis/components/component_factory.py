@@ -1008,16 +1008,22 @@ class SimpleRegimeMetaModelTrainer:
         'display_name': 'stacker_lgbm_calibrated',
         'hyperparameters': {
             'model_class': 'lightgbm.LGBMClassifier',
-            'max_depth': 4,
-            'min_child_samples': 25,
-            'n_estimators': 200,
-            'learning_rate': 0.05,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8
+            'objective': 'multiclass',
+            'max_depth': 3,
+            'num_leaves': 7,
+            'min_child_samples': 300,
+            'n_estimators': 400,
+            'learning_rate': 0.03,
+            'feature_fraction': 0.7,
+            'bagging_fraction': 0.7,
+            'bagging_freq': 1,
+            'lambda_l2': 10.0
         },
         'calibration': {
-            'method': 'isotonic',
-            'cv_folds': 3
+            'method': 'sigmoid',
+            'validation_fraction': 0.2,
+            'calibration_fraction': 0.1,
+            'per_regime': False
         }
     }
 

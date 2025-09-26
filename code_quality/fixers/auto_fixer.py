@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 """
 Main auto-fixer module that orchestrates all code fixing operations.
@@ -15,9 +15,9 @@ import numpy as np
 
 try:
     import toml
-except Exception:  # pragma: no cover
+except ImportError as e:  # pragma: no cover
     toml = None
-    tprint("Warning: toml not available")
+    tprint_warning(f"toml not available: {e}")
 
 from core.config import AnalysisConfig, CodeQualityConfig, get_default_config
 from core.plugins import PluginManager
@@ -124,7 +124,8 @@ class AutoFixer:
                         fmt = ruff.get("format", {})
                         if isinstance(fmt, dict) and "line-length" in fmt:
                             line_length = int(fmt["line-length"])  # type: ignore[arg-type]
-                except Exception:
+                except (ValueError, TypeError, KeyError) as e:
+                    tprint_warning(f"Error parsing pyproject.toml format config: {e}")
                     pass
 
             if line_length is None and setup_cfg.exists():
@@ -133,13 +134,15 @@ class AutoFixer:
                     parser.read(setup_cfg)
                     if parser.has_section("flake8") and parser.has_option("flake8", "max-line-length"):
                         line_length = parser.getint("flake8", "max-line-length")
-                except Exception:
+                except (configparser.Error, ValueError) as e:
+                    tprint_warning(f"Error parsing setup.cfg config: {e}")
                     pass
 
             if line_length and line_length != self.config.auto_fix.max_line_length:
                 self.config.auto_fix.max_line_length = int(line_length)
-        except Exception:
+        except (OSError, IOError, PermissionError) as e:
             # Non-fatal
+            tprint_warning(f"Error loading configuration files: {e}")
             pass
 
     def _register_builtin_plugins(self):

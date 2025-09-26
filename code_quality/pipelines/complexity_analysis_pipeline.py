@@ -27,6 +27,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+# Import tprint for error logging
+try:
+    from src.utils.tprint import tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_error(msg): print(f"ERROR: {msg}")
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -225,7 +232,8 @@ class ComplexityAnalysisPipeline(BasePipeline):
                         metrics["comment_lines"] += 1
                     else:
                         metrics["logical_lines"] += 1
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint_error(f"Error analyzing complexity metrics: {e}")
             pass
         
         # Count functions and classes

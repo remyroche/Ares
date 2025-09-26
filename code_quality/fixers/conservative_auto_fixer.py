@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 """
 Conservative Auto-Fixer - A safer version of the auto-fixer that prioritizes not breaking code.
@@ -109,7 +109,8 @@ class ConservativeAutoFixer:
                 )
                 return result.returncode == 0
             return False
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
+            tprint_error(f"Error running subprocess command: {e}")
             return False
     
     def _run_isort(self, file_path: str) -> Dict[str, Any]:
@@ -320,7 +321,8 @@ class ConservativeAutoFixer:
             try:
                 os.remove(backup_path)
                 results["backup_removed"] = True
-            except Exception:
+            except (OSError, PermissionError) as e:
+                tprint_warning(f"Failed to remove backup file {backup_path}: {e}")
                 pass
         
         return results

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 """
 Code Interaction Mapping Script
@@ -2058,8 +2058,9 @@ class CodeInteractionMapper:
                                 if module_name not in dependency_map['dynamic_imports']:
                                     dependency_map['dynamic_imports'][module_name] = []
                                 dependency_map['dynamic_imports'][module_name].append((file_str, i + 1))
-                    except Exception:
+                    except (ValueError, TypeError, AttributeError) as e:
                         # Skip problematic regex matches
+                        tprint_warning(f"Error processing regex match for dynamic import: {e}")
                         continue
                         
         except Exception as e:
@@ -2275,7 +2276,8 @@ class CodeInteractionMapper:
                 if module_parts[-1].endswith('.py'):
                     module_parts[-1] = module_parts[-1][:-3]
                 return '.'.join(module_parts)
-        except Exception:
+        except (ValueError, IndexError, AttributeError) as e:
+            tprint_warning(f"Error extracting module from file path: {e}")
             pass
         return None
 

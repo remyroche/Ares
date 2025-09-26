@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Rich progress tracking for code quality tools.
@@ -262,7 +262,8 @@ class ProgressManager:
             self.progress.end_operation(operation_name, success=True)
             return result
 
-        except Exception:
+        except Exception as e:
+            tprint_error(f"Operation '{operation_name}' failed: {e}")
             self.progress.end_operation(operation_name, success=False)
             raise
 

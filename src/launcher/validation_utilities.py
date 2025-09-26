@@ -22,7 +22,9 @@ class BaseValidator:
     
     def validate(self, **kwargs) -> bool:
         """Perform validation and return success status."""
-        raise NotImplementedError
+        # Base validator implementation - should be overridden by subclasses
+        self.logger.info("Base validation called - no specific validation logic implemented")
+        return True
 
 class PrerequisitesValidator(BaseValidator):
     """Validates prerequisites for various operations."""

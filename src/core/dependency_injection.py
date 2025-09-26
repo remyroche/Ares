@@ -253,23 +253,43 @@ class ComponentFactory:
 
     def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
         """Create an analyst component."""
-        msg = 'Analyst creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.components.modular_analyst import ModularAnalyst
+            config = config or {}
+            return ModularAnalyst(config)
+        except ImportError:
+            self.logger.error("Failed to import ModularAnalyst")
+            raise NotImplementedError("Analyst creation not implemented - ModularAnalyst not available")
 
     def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
         """Create a strategist component."""
-        msg = 'Strategist creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.components.modular_strategist import ModularStrategist
+            config = config or {}
+            return ModularStrategist(config)
+        except ImportError:
+            self.logger.error("Failed to import ModularStrategist")
+            raise NotImplementedError("Strategist creation not implemented - ModularStrategist not available")
 
     def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""
-        msg = 'Tactician creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.components.modular_tactician import ModularTactician
+            config = config or {}
+            return ModularTactician(config)
+        except ImportError:
+            self.logger.error("Failed to import ModularTactician")
+            raise NotImplementedError("Tactician creation not implemented - ModularTactician not available")
 
     def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
         """Create a supervisor component."""
-        msg = 'Supervisor creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.components.modular_supervisor import ModularSupervisor
+            config = config or {}
+            return ModularSupervisor(config)
+        except ImportError:
+            self.logger.error("Failed to import ModularSupervisor")
+            raise NotImplementedError("Supervisor creation not implemented - ModularSupervisor not available")
 
 class ModularTradingSystem:
     """Modular trading system using dependency injection."""

@@ -31,6 +31,7 @@ from sklearn.model_selection import TimeSeriesSplit
 import warnings
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 
 class VolatilityDimension(Enum):
@@ -724,7 +725,11 @@ class VolatilityImpactAnalyzer:
                     bootstrap_market_data, bootstrap_vol_measure, impact_type
                 )
                 bootstrap_impacts.append(bootstrap_impact['impact_strength'])
-            except:
+            except ValueError as e:
+                tprint_warning(f"Bootstrap impact calculation failed due to invalid data: {e}")
+                pass
+            except Exception as e:
+                tprint_warning(f"Bootstrap impact calculation failed with unexpected error: {e}")
                 pass
         
         # Statistical tests
@@ -826,7 +831,11 @@ class VolatilityImpactAnalyzer:
                         subsample_data, subsample_vol, impact_type
                     )
                     subsample_impacts.append(subsample_impact['impact_strength'])
-                except:
+                except ValueError as e:
+                    tprint_warning(f"Subsample impact calculation failed due to invalid data: {e}")
+                    pass
+                except Exception as e:
+                    tprint_warning(f"Subsample impact calculation failed with unexpected error: {e}")
                     pass
             
             if subsample_impacts:
@@ -850,7 +859,11 @@ class VolatilityImpactAnalyzer:
                         period_data, period_vol, impact_type
                     )
                     period_impacts.append(period_impact['impact_strength'])
-                except:
+                except ValueError as e:
+                    tprint_warning(f"Period impact calculation failed due to invalid data: {e}")
+                    pass
+                except Exception as e:
+                    tprint_warning(f"Period impact calculation failed with unexpected error: {e}")
                     pass
             
             if period_impacts:

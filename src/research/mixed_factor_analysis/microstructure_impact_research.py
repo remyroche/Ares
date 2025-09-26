@@ -33,6 +33,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score
 import warnings
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 
 class MicrostructureDimension(Enum):
@@ -760,7 +761,12 @@ class MicrostructureImpactAnalyzer:
             
             statistical_tests['max_lag_correlation'] = float(max(lag_correlations)) if lag_correlations else 0.0
             statistical_tests['avg_lag_correlation'] = float(np.mean(lag_correlations)) if lag_correlations else 0.0
-        except:
+        except ValueError as e:
+            tprint_warning(f"Predictive power test failed due to invalid data: {e}")
+            statistical_tests['max_lag_correlation'] = 0.0
+            statistical_tests['avg_lag_correlation'] = 0.0
+        except Exception as e:
+            tprint_warning(f"Predictive power test failed with unexpected error: {e}")
             statistical_tests['max_lag_correlation'] = 0.0
             statistical_tests['avg_lag_correlation'] = 0.0
         
@@ -847,7 +853,11 @@ class MicrostructureImpactAnalyzer:
                         subsample_data, subsample_micro, impact_type
                     )
                     subsample_impacts.append(subsample_impact['impact_strength'])
-                except:
+                except ValueError as e:
+                    tprint_warning(f"Microstructure subsample impact calculation failed due to invalid data: {e}")
+                    pass
+                except Exception as e:
+                    tprint_warning(f"Microstructure subsample impact calculation failed with unexpected error: {e}")
                     pass
             
             if subsample_impacts:
@@ -876,7 +886,11 @@ class MicrostructureImpactAnalyzer:
                         regime_data, regime_micro, impact_type
                     )
                     regime_impacts.append(regime_impact['impact_strength'])
-                except:
+                except ValueError as e:
+                    tprint_warning(f"Microstructure regime impact calculation failed due to invalid data: {e}")
+                    pass
+                except Exception as e:
+                    tprint_warning(f"Microstructure regime impact calculation failed with unexpected error: {e}")
                     pass
         
         if len(regime_impacts) > 1:

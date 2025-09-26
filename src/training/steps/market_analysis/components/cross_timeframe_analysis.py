@@ -28,4 +28,9 @@ from .base_component import BaseMarketAnalysisComponent, ComponentConfig, Compon
 CrossTimeframeAnalysisComponent = _PIDBasedFeatureGenerationComponent
 
 # Maintain backward compatibility by providing the same interface
-__all__ = ['CrossTimeframeAnalysisComponent', 'BaseMarketAnalysisComponent', 'ComponentConfig', 'ComponentResult']
+__all__ = [
+    "CrossTimeframeAnalysisComponent",
+    "BaseMarketAnalysisComponent",
+    "ComponentConfig",
+    "ComponentResult",
+]

@@ -76,12 +76,12 @@ class BasePurePricePatternDiscoverer(ABC):
     @abstractmethod
     def discover_pattern(self, prices: pd.Series, **kwargs) -> PurePatternResult:
         """Discover pattern in pure price data."""
-        raise NotImplementedError("Subclasses must implement discover_pattern method")
+        pass
     
     @abstractmethod
     def get_pattern_definition(self) -> PurePricePattern:
         """Get mathematical definition of the pattern."""
-        raise NotImplementedError("Subclasses must implement get_pattern_definition method")
+        pass
     
     def _calculate_pattern_statistics(self, 
                                     labels: pd.Series, 

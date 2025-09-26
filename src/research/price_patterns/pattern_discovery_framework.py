@@ -86,12 +86,12 @@ class BasePatternDiscoverer(ABC):
     @abstractmethod
     def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
         """Discover and define pattern in price data."""
-        raise NotImplementedError("Subclasses must implement discover_pattern method")
+        pass
     
     @abstractmethod
     def get_pattern_definition(self) -> PatternDefinition:
         """Get mathematical definition of the pattern."""
-        raise NotImplementedError("Subclasses must implement get_pattern_definition method")
+        pass
     
     def _calculate_pattern_statistics(self, 
                                     labels: pd.Series,
@@ -1344,6 +1344,723 @@ class ExtremeMovementDiscoverer(BasePatternDiscoverer):
         pattern_magnitudes = pd.Series(magnitudes, index=prices.index[volatility_window:volatility_window+len(magnitudes)])
         
         stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class MomentumExhaustionDiscoverer(BasePatternDiscoverer):
+    """Discover momentum exhaustion patterns."""
+    
+    def __init__(self):
+        super().__init__("MomentumExhaustion", PatternType.MOMENTUM)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Momentum Exhaustion",
+            pattern_type=PatternType.MOMENTUM,
+            description="Momentum weakens and reverses after strong directional move",
+            mathematical_formula="""
+            Let momentum(t) = mean(returns[t-window+1:t])
+            Let momentum_strength = |momentum(t)|
+            Let exhaustion_window = E
+            
+            Pattern exists at time t IF:
+            1. momentum_strength > strong_threshold
+            2. momentum(t+k) decreases for ≥60% of k∈[1,E]
+            3. Final momentum sign opposite to initial
+            """,
+            parameters={
+                'momentum_window': 10,
+                'strong_threshold': 0.01,
+                'exhaustion_window': 8,
+                'decrease_rate': 0.6
+            },
+            frequency_threshold=0.03
+        )
+    
+    def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
+        """Discover momentum exhaustion patterns."""
+        self.logger.info("📉 Discovering momentum exhaustion patterns")
+        
+        returns = prices.pct_change().fillna(0)
+        momentum = returns.rolling(10).mean()
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(10, len(momentum) - 8):
+            current_momentum = momentum.iloc[i]
+            
+            if abs(current_momentum) > 0.01:
+                future_momentum = momentum.iloc[i+1:i+9]
+                
+                # Check for momentum decrease
+                decreasing_count = (abs(future_momentum) < abs(current_momentum)).sum()
+                exhaustion_rate = decreasing_count / len(future_momentum)
+                
+                # Check for sign reversal
+                sign_reversal = np.sign(current_momentum) != np.sign(future_momentum.iloc[-1])
+                
+                pattern_exists = exhaustion_rate >= 0.6 and sign_reversal
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(abs(current_momentum) if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[10:10+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[10:10+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class VolatilityClusteringDiscoverer(BasePatternDiscoverer):
+    """Discover volatility clustering patterns."""
+    
+    def __init__(self):
+        super().__init__("VolatilityClustering", PatternType.VOLATILITY)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Volatility Clustering",
+            pattern_type=PatternType.VOLATILITY,
+            description="High volatility periods cluster together",
+            mathematical_formula="""
+            Let vol(t) = std(returns[t-window+1:t])
+            Let vol_percentile(t) = percentile_rank(vol(t), lookback)
+            Let cluster_window = C
+            
+            Pattern exists at time t IF:
+            1. vol_percentile(t) > high_threshold
+            2. ≥70% of vol_percentile(t+k) for k∈[1,C] also > high_threshold
+            """,
+            parameters={
+                'vol_window': 10,
+                'lookback': 50,
+                'cluster_window': 5,
+                'high_threshold': 0.8
+            },
+            frequency_threshold=0.05
+        )
+    
+    def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
+        """Discover volatility clustering patterns."""
+        self.logger.info("📊 Discovering volatility clustering patterns")
+        
+        returns = prices.pct_change().fillna(0)
+        volatility = returns.rolling(10).std()
+        vol_percentile = volatility.rolling(50).rank(pct=True)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(50, len(volatility) - 5):
+            current_vol_pct = vol_percentile.iloc[i]
+            
+            if current_vol_pct > 0.8:
+                future_vol_pct = vol_percentile.iloc[i+1:i+6]
+                high_vol_count = (future_vol_pct > 0.8).sum()
+                clustering_rate = high_vol_count / len(future_vol_pct)
+                
+                pattern_exists = clustering_rate >= 0.7
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(current_vol_pct if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[50:50+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[50:50+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class SupportResistanceTestDiscoverer(BasePatternDiscoverer):
+    """Discover support/resistance test patterns."""
+    
+    def __init__(self):
+        super().__init__("SupportResistanceTest", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Support/Resistance Test",
+            pattern_type=PatternType.BREAKOUT,
+            description="Price tests key support/resistance levels",
+            mathematical_formula="""
+            Let level = identify_key_level(prices, lookback)
+            Let test_threshold = 0.005
+            Let test_window = T
+            
+            Pattern exists at time t IF:
+            1. |price(t) - level| / level < test_threshold
+            2. Price bounces or breaks level within T periods
+            """,
+            parameters={
+                'lookback': 100,
+                'test_threshold': 0.005,
+                'test_window': 5
+            },
+            frequency_threshold=0.08
+        )
+    
+    def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
+        """Discover support/resistance test patterns."""
+        self.logger.info("🎯 Discovering support/resistance test patterns")
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(100, len(prices) - 5):
+            # Find key levels in recent history
+            recent_prices = prices.iloc[i-100:i]
+            key_levels = []
+            
+            # Find levels that were touched multiple times
+            for level in recent_prices:
+                touch_count = (abs(recent_prices - level) / level < 0.01).sum()
+                if touch_count >= 3:
+                    key_levels.append(level)
+            
+            if key_levels:
+                current_price = prices.iloc[i]
+                
+                # Check if price is near any key level
+                for level in key_levels:
+                    distance = abs(current_price - level) / level
+                    if distance < 0.005:
+                        # Check what happens next
+                        future_prices = prices.iloc[i+1:i+6]
+                        
+                        # Check for bounce or break
+                        if current_price > level:
+                            # Testing resistance from below
+                            bounce = (future_prices < level).any()
+                            break_through = (future_prices > level * 1.01).any()
+                        else:
+                            # Testing support from above
+                            bounce = (future_prices > level).any()
+                            break_through = (future_prices < level * 0.99).any()
+                        
+                        pattern_exists = bounce or break_through
+                        
+                        labels.append(1 if pattern_exists else 0)
+                        magnitudes.append(distance if pattern_exists else 0)
+                        break
+                else:
+                    labels.append(0)
+                    magnitudes.append(0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[100:100+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[100:100+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class VolumeClimaxDiscoverer(BasePatternDiscoverer):
+    """Discover volume climax patterns."""
+    
+    def __init__(self):
+        super().__init__("VolumeClimax", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Volume Climax",
+            pattern_type=PatternType.BREAKOUT,
+            description="Extreme volume spikes often mark trend reversals",
+            mathematical_formula="""
+            Let vol_ratio(t) = volume(t) / mean(volume[t-19:t])
+            Let climax_threshold = 3.0
+            Let reversal_window = R
+            
+            Pattern exists at time t IF:
+            1. vol_ratio(t) > climax_threshold
+            2. Price reverses direction within R periods
+            """,
+            parameters={
+                'volume_window': 20,
+                'climax_threshold': 3.0,
+                'reversal_window': 5
+            },
+            frequency_threshold=0.02
+        )
+    
+    def discover_pattern(self, market_data: pd.DataFrame, **kwargs) -> PatternDiscoveryResult:
+        """Discover volume climax patterns."""
+        self.logger.info("📈 Discovering volume climax patterns")
+        
+        if 'volume' not in market_data.columns:
+            # Return empty result if no volume data
+            empty_labels = pd.Series(0, index=market_data.index)
+            return PatternDiscoveryResult(
+                definition=self.get_pattern_definition(),
+                labels=empty_labels,
+                frequency=0.0,
+                duration_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                magnitude_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                predictability_score=0.0,
+                noise_ratio=1.0,
+                statistical_significance={'p_value': 1.0, 't_statistic': 0.0}
+            )
+        
+        avg_volume = market_data['volume'].rolling(20).mean()
+        volume_ratios = market_data['volume'] / avg_volume
+        returns = market_data['close'].pct_change().fillna(0)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(20, len(market_data) - 5):
+            current_vol_ratio = volume_ratios.iloc[i]
+            
+            if current_vol_ratio > 3.0:
+                # Check for reversal in next 5 periods
+                future_returns = returns.iloc[i+1:i+6]
+                current_return = returns.iloc[i]
+                
+                # Check if direction reverses
+                if current_return > 0:
+                    reversal = (future_returns < 0).any()
+                else:
+                    reversal = (future_returns > 0).any()
+                
+                pattern_exists = reversal
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(current_vol_ratio if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[20:20+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[20:20+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class PriceRejectionDiscoverer(BasePatternDiscoverer):
+    """Discover price rejection patterns."""
+    
+    def __init__(self):
+        super().__init__("PriceRejection", PatternType.REVERSION)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Price Rejection",
+            pattern_type=PatternType.REVERSION,
+            description="Price is rejected from key levels with long wicks",
+            mathematical_formula="""
+            Let wick_ratio = (high - max(open,close)) / (high - low)
+            Let rejection_threshold = 0.3
+            Let follow_window = F
+            
+            Pattern exists at time t IF:
+            1. wick_ratio > rejection_threshold
+            2. Price moves away from rejection level in F periods
+            """,
+            parameters={
+                'rejection_threshold': 0.3,
+                'follow_window': 3
+            },
+            frequency_threshold=0.1
+        )
+    
+    def discover_pattern(self, market_data: pd.DataFrame, **kwargs) -> PatternDiscoveryResult:
+        """Discover price rejection patterns."""
+        self.logger.info("🚫 Discovering price rejection patterns")
+        
+        if not all(col in market_data.columns for col in ['high', 'low', 'open', 'close']):
+            # Return empty result if no OHLC data
+            empty_labels = pd.Series(0, index=market_data.index)
+            return PatternDiscoveryResult(
+                definition=self.get_pattern_definition(),
+                labels=empty_labels,
+                frequency=0.0,
+                duration_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                magnitude_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                predictability_score=0.0,
+                noise_ratio=1.0,
+                statistical_significance={'p_value': 1.0, 't_statistic': 0.0}
+            )
+        
+        # Calculate wick ratios
+        upper_wick = market_data['high'] - np.maximum(market_data['open'], market_data['close'])
+        lower_wick = np.minimum(market_data['open'], market_data['close']) - market_data['low']
+        total_range = market_data['high'] - market_data['low']
+        
+        upper_wick_ratio = upper_wick / (total_range + 1e-10)
+        lower_wick_ratio = lower_wick / (total_range + 1e-10)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(len(market_data) - 3):
+            # Check for upper rejection (long upper wick)
+            if upper_wick_ratio.iloc[i] > 0.3:
+                # Check if price moves down in next periods
+                future_closes = market_data['close'].iloc[i+1:i+4]
+                current_close = market_data['close'].iloc[i]
+                
+                rejection = (future_closes < current_close).any()
+                
+                labels.append(1 if rejection else 0)
+                magnitudes.append(upper_wick_ratio.iloc[i] if rejection else 0)
+            
+            # Check for lower rejection (long lower wick)
+            elif lower_wick_ratio.iloc[i] > 0.3:
+                # Check if price moves up in next periods
+                future_closes = market_data['close'].iloc[i+1:i+4]
+                current_close = market_data['close'].iloc[i]
+                
+                rejection = (future_closes > current_close).any()
+                
+                labels.append(1 if rejection else 0)
+                magnitudes.append(lower_wick_ratio.iloc[i] if rejection else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[:len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[:len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class AccumulationDistributionDiscoverer(BasePatternDiscoverer):
+    """Discover accumulation/distribution patterns."""
+    
+    def __init__(self):
+        super().__init__("AccumulationDistribution", PatternType.TREND)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Accumulation/Distribution",
+            pattern_type=PatternType.TREND,
+            description="Volume-based accumulation or distribution patterns",
+            mathematical_formula="""
+            Let AD = sum(volume * (close - low - (high - close)) / (high - low))
+            Let AD_trend = slope(AD, window)
+            Let trend_window = T
+            
+            Pattern exists at time t IF:
+            1. |AD_trend| > trend_threshold
+            2. AD_trend consistent for T periods
+            """,
+            parameters={
+                'ad_window': 20,
+                'trend_threshold': 0.1,
+                'trend_window': 10
+            },
+            frequency_threshold=0.08
+        )
+    
+    def discover_pattern(self, market_data: pd.DataFrame, **kwargs) -> PatternDiscoveryResult:
+        """Discover accumulation/distribution patterns."""
+        self.logger.info("📊 Discovering accumulation/distribution patterns")
+        
+        if not all(col in market_data.columns for col in ['high', 'low', 'close', 'volume']):
+            # Return empty result if no OHLCV data
+            empty_labels = pd.Series(0, index=market_data.index)
+            return PatternDiscoveryResult(
+                definition=self.get_pattern_definition(),
+                labels=empty_labels,
+                frequency=0.0,
+                duration_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                magnitude_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                predictability_score=0.0,
+                noise_ratio=1.0,
+                statistical_significance={'p_value': 1.0, 't_statistic': 0.0}
+            )
+        
+        # Calculate Accumulation/Distribution Line
+        clv = ((market_data['close'] - market_data['low']) - (market_data['high'] - market_data['close'])) / (market_data['high'] - market_data['low'])
+        clv = clv.fillna(0)
+        ad = (clv * market_data['volume']).cumsum()
+        
+        # Calculate AD trend
+        ad_trend = ad.rolling(20).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 20 else 0)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(20, len(market_data) - 10):
+            current_trend = ad_trend.iloc[i]
+            
+            if abs(current_trend) > 0.1:
+                # Check trend consistency
+                future_trends = ad_trend.iloc[i+1:i+11]
+                consistent_trend = (np.sign(future_trends) == np.sign(current_trend)).sum()
+                consistency_rate = consistent_trend / len(future_trends)
+                
+                pattern_exists = consistency_rate >= 0.7
+                
+                labels.append(1 if pattern_exists else 0)
+                magnitudes.append(abs(current_trend) if pattern_exists else 0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[20:20+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[20:20+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class DivergencePatternDiscoverer(BasePatternDiscoverer):
+    """Discover divergence patterns between price and indicators."""
+    
+    def __init__(self):
+        super().__init__("DivergencePattern", PatternType.REVERSION)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Divergence Pattern",
+            pattern_type=PatternType.REVERSION,
+            description="Divergence between price and momentum indicators",
+            mathematical_formula="""
+            Let RSI = calculate_rsi(prices, window)
+            Let price_trend = slope(prices, window)
+            Let rsi_trend = slope(RSI, window)
+            Let divergence_window = D
+            
+            Pattern exists at time t IF:
+            1. sign(price_trend) != sign(rsi_trend)
+            2. |price_trend| > trend_threshold
+            3. |rsi_trend| > rsi_threshold
+            """,
+            parameters={
+                'rsi_window': 14,
+                'trend_window': 10,
+                'trend_threshold': 0.001,
+                'rsi_threshold': 0.1
+            },
+            frequency_threshold=0.05
+        )
+    
+    def discover_pattern(self, prices: pd.Series, **kwargs) -> PatternDiscoveryResult:
+        """Discover divergence patterns."""
+        self.logger.info("🔄 Discovering divergence patterns")
+        
+        # Calculate RSI
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        # Calculate trends
+        price_trend = prices.rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 10 else 0)
+        rsi_trend = rsi.rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 10 else 0)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(24, len(prices)):
+            p_trend = price_trend.iloc[i]
+            r_trend = rsi_trend.iloc[i]
+            
+            # Check for divergence
+            if (abs(p_trend) > 0.001 and abs(r_trend) > 0.1 and 
+                np.sign(p_trend) != np.sign(r_trend)):
+                
+                pattern_exists = True
+                magnitude = abs(p_trend) + abs(r_trend)
+            else:
+                pattern_exists = False
+                magnitude = 0
+            
+            labels.append(1 if pattern_exists else 0)
+            magnitudes.append(magnitude)
+        
+        pattern_labels = pd.Series(labels, index=prices.index[24:24+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=prices.index[24:24+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, prices, pattern_magnitudes)
+        
+        return PatternDiscoveryResult(
+            definition=self.get_pattern_definition(),
+            labels=pattern_labels,
+            frequency=stats['frequency'],
+            duration_stats=stats['duration_stats'],
+            magnitude_stats=stats['magnitude_stats'],
+            predictability_score=stats['predictability_score'],
+            noise_ratio=stats['noise_ratio'],
+            statistical_significance=stats['statistical_significance']
+        )
+
+
+class ExhaustionGapDiscoverer(BasePatternDiscoverer):
+    """Discover exhaustion gap patterns."""
+    
+    def __init__(self):
+        super().__init__("ExhaustionGap", PatternType.BREAKOUT)
+    
+    def get_pattern_definition(self) -> PatternDefinition:
+        return PatternDefinition(
+            name="Exhaustion Gap",
+            pattern_type=PatternType.BREAKOUT,
+            description="Gap that marks the end of a trend",
+            mathematical_formula="""
+            Let gap(t) = (open(t) - close(t-1)) / close(t-1)
+            Let trend = sign(MA_short(t) - MA_long(t))
+            Let gap_threshold = 0.02
+            Let reversal_window = R
+            
+            Pattern exists at time t IF:
+            1. |gap(t)| > gap_threshold
+            2. gap(t) in same direction as trend
+            3. Price reverses within R periods
+            """,
+            parameters={
+                'gap_threshold': 0.02,
+                'ma_short': 10,
+                'ma_long': 30,
+                'reversal_window': 5
+            },
+            frequency_threshold=0.01
+        )
+    
+    def discover_pattern(self, market_data: pd.DataFrame, **kwargs) -> PatternDiscoveryResult:
+        """Discover exhaustion gap patterns."""
+        self.logger.info("⚡ Discovering exhaustion gap patterns")
+        
+        if not all(col in market_data.columns for col in ['open', 'close']):
+            # Return empty result if no OHLC data
+            empty_labels = pd.Series(0, index=market_data.index)
+            return PatternDiscoveryResult(
+                definition=self.get_pattern_definition(),
+                labels=empty_labels,
+                frequency=0.0,
+                duration_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                magnitude_stats={'mean': 0, 'median': 0, 'std': 0, 'min': 0, 'max': 0},
+                predictability_score=0.0,
+                noise_ratio=1.0,
+                statistical_significance={'p_value': 1.0, 't_statistic': 0.0}
+            )
+        
+        # Calculate gaps
+        gaps = (market_data['open'] - market_data['close'].shift(1)) / market_data['close'].shift(1)
+        
+        # Calculate trend
+        ma_short = market_data['close'].rolling(10).mean()
+        ma_long = market_data['close'].rolling(30).mean()
+        trend = np.sign(ma_short - ma_long)
+        
+        labels = []
+        magnitudes = []
+        
+        for i in range(30, len(market_data) - 5):
+            current_gap = gaps.iloc[i]
+            current_trend = trend.iloc[i]
+            
+            if abs(current_gap) > 0.02:
+                # Check if gap is in same direction as trend
+                gap_direction = np.sign(current_gap)
+                
+                if gap_direction == current_trend:
+                    # Check for reversal
+                    future_prices = market_data['close'].iloc[i+1:i+6]
+                    current_price = market_data['close'].iloc[i]
+                    
+                    if current_trend > 0:  # Uptrend
+                        reversal = (future_prices < current_price).any()
+                    else:  # Downtrend
+                        reversal = (future_prices > current_price).any()
+                    
+                    pattern_exists = reversal
+                    
+                    labels.append(1 if pattern_exists else 0)
+                    magnitudes.append(abs(current_gap) if pattern_exists else 0)
+                else:
+                    labels.append(0)
+                    magnitudes.append(0)
+            else:
+                labels.append(0)
+                magnitudes.append(0)
+        
+        pattern_labels = pd.Series(labels, index=market_data.index[30:30+len(labels)])
+        pattern_magnitudes = pd.Series(magnitudes, index=market_data.index[30:30+len(magnitudes)])
+        
+        stats = self._calculate_pattern_statistics(pattern_labels, market_data['close'], pattern_magnitudes)
         
         return PatternDiscoveryResult(
             definition=self.get_pattern_definition(),

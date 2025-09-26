@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
+
+from src.utils.tprint import tprint
 from pathlib import Path
 import json
 
@@ -349,7 +351,13 @@ class FractionalDifferentiationPipeline:
                         if p_value < best_p_value:
                             best_d = d
                             best_p_value = p_value
-                    except:
+                    except (ValueError, TypeError, AttributeError) as e:
+                        tprint(f"⚠️ Fractional differentiation failed for d={d}: {e}")
+                        self.logger.warning(f"⚠️ Fractional differentiation failed for d={d}: {e}")
+                        continue
+                    except Exception as e:
+                        tprint(f"❌ Unexpected error in fractional differentiation for d={d}: {e}")
+                        self.logger.error(f"❌ Unexpected error in fractional differentiation for d={d}: {e}")
                         continue
             
             self.logger.info(f"🔍 Optimal d parameter: {best_d:.3f} (p-value: {best_p_value:.4f})")

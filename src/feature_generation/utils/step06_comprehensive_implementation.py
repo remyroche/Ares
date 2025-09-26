@@ -60,19 +60,31 @@ from .step06_utility_container import (
 def safe_divide(a, b, default=0.0):
     try:
         return a / b if b != 0 else default
-    except:
+    except (ValueError, TypeError, ZeroDivisionError) as e:
+        tprint(f"⚠️ Safe divide failed: {e}")
+        return default
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe divide: {e}")
         return default
 
 def safe_log(x, default=0.0):
     try:
         return np.log(x) if x > 0 else default
-    except:
+    except (ValueError, TypeError, OverflowError) as e:
+        tprint(f"⚠️ Safe log failed: {e}")
+        return default
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe log: {e}")
         return default
 
 def safe_sqrt(x, default=0.0):
     try:
         return np.sqrt(x) if x >= 0 else default
-    except:
+    except (ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe sqrt failed: {e}")
+        return default
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe sqrt: {e}")
         return default
 
 def validate_positive(value, name="value"):

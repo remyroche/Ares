@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 import time
 import traceback
+
+from src.utils.tprint import tprint
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -860,7 +862,11 @@ class CrossTimeframeAnalysisPipeline:
                             if len(aligned_data) > 10:
                                 corr = aligned_data[col].corr(aligned_data['base_returns'])
                                 feature_importance[col] = abs(corr)
-                        except:
+                        except (ValueError, TypeError, KeyError) as e:
+                            tprint(f"⚠️ Feature importance calculation failed for {col}: {e}")
+                            feature_importance[col] = 0.0
+                        except Exception as e:
+                            tprint(f"❌ Unexpected error calculating feature importance for {col}: {e}")
                             feature_importance[col] = 0.0
                 
                 # Sort by importance

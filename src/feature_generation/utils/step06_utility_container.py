@@ -63,21 +63,33 @@ def safe_rolling(series: pd.Series, window: int, func: str = 'mean') -> pd.Serie
     """Safely apply rolling function."""
     try:
         return getattr(series.rolling(window), func)()
-    except:
+    except (ValueError, TypeError, AttributeError) as e:
+        tprint(f"⚠️ Safe rolling function failed: {e}")
+        return pd.Series([np.nan] * len(series), index=series.index)
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe rolling: {e}")
         return pd.Series([np.nan] * len(series), index=series.index)
 
 def safe_mean(series: pd.Series) -> float:
     """Safely calculate mean."""
     try:
         return series.mean()
-    except:
+    except (ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe mean calculation failed: {e}")
+        return 0.0
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe mean: {e}")
         return 0.0
 
 def safe_std(series: pd.Series) -> float:
     """Safely calculate standard deviation."""
     try:
         return series.std()
-    except:
+    except (ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe std calculation failed: {e}")
+        return 0.0
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe std: {e}")
         return 0.0
 
 def ensure_directory(path: Union[str, Path]) -> None:
@@ -88,7 +100,11 @@ def safe_file_exists(path: Union[str, Path]) -> bool:
     """Safely check if file exists."""
     try:
         return Path(path).exists()
-    except:
+    except (OSError, ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe file exists check failed: {e}")
+        return False
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe file exists: {e}")
         return False
 
 def safe_json_dump(data: Any, filepath: Union[str, Path]) -> None:
@@ -128,77 +144,117 @@ def safe_append(lst: List[Any], item: Any) -> None:
     """Safely append to list."""
     try:
         lst.append(item)
-    except:
-        pass
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe append failed: {e}")
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe append: {e}")
 
 def safe_extend(lst: List[Any], items: List[Any]) -> None:
     """Safely extend list."""
     try:
         lst.extend(items)
-    except:
-        pass
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe extend failed: {e}")
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe extend: {e}")
 
 def safe_dict_get(d: Dict[Any, Any], key: Any, default: Any = None) -> Any:
     """Safely get from dict."""
     try:
         return d.get(key, default)
-    except:
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe dict get failed: {e}")
+        return default
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe dict get: {e}")
         return default
 
 def safe_dict_items(d: Dict[Any, Any]) -> List[tuple]:
     """Safely get dict items."""
     try:
         return list(d.items())
-    except:
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe dict items failed: {e}")
+        return []
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe dict items: {e}")
         return []
 
 def safe_lower(s: str) -> str:
     """Safely convert to lowercase."""
     try:
         return s.lower()
-    except:
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe lower failed: {e}")
+        return s
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe lower: {e}")
         return s
 
 def safe_upper(s: str) -> str:
     """Safely convert to uppercase."""
     try:
         return s.upper()
-    except:
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Safe upper failed: {e}")
+        return s
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe upper: {e}")
         return s
 
 def safe_join(sep: str, items: List[str]) -> str:
     """Safely join strings."""
     try:
         return sep.join(str(item) for item in items)
-    except:
+    except (TypeError, AttributeError) as e:
+        tprint(f"⚠️ Safe join failed: {e}")
+        return ""
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe join: {e}")
         return ""
 
 def validate_dataframe(df: pd.DataFrame) -> bool:
     """Validate dataframe."""
     try:
         return isinstance(df, pd.DataFrame) and not df.empty
-    except:
+    except (AttributeError, TypeError) as e:
+        tprint(f"⚠️ Dataframe validation failed: {e}")
+        return False
+    except Exception as e:
+        tprint(f"❌ Unexpected error in dataframe validation: {e}")
         return False
 
 def validate_numeric_range(value: float, min_val: float, max_val: float) -> bool:
     """Validate numeric range."""
     try:
         return min_val <= value <= max_val
-    except:
+    except (TypeError, ValueError) as e:
+        tprint(f"⚠️ Numeric range validation failed: {e}")
+        return False
+    except Exception as e:
+        tprint(f"❌ Unexpected error in numeric range validation: {e}")
         return False
 
 def safe_float(value: Any) -> float:
     """Safely convert to float."""
     try:
         return float(value)
-    except:
+    except (ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe float conversion failed: {e}")
+        return 0.0
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe float: {e}")
         return 0.0
 
 def safe_int(value: Any) -> int:
     """Safely convert to int."""
     try:
         return int(value)
-    except:
+    except (ValueError, TypeError) as e:
+        tprint(f"⚠️ Safe int conversion failed: {e}")
+        return 0
+    except Exception as e:
+        tprint(f"❌ Unexpected error in safe int: {e}")
         return 0
 
 def timed_operation(func: Callable) -> Callable:

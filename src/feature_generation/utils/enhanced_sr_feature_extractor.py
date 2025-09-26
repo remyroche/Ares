@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+
+from src.utils.tprint import tprint
 import time
 from pathlib import Path
 import json
@@ -238,7 +240,11 @@ class HistoricalSRAnalyzer:
                         diff_hours = (t2 - t1).total_seconds() / 3600
                         if diff_hours > 0:
                             time_diffs.append(diff_hours)
-                    except:
+                    except (ValueError, TypeError, AttributeError) as e:
+                        tprint(f"⚠️ Time difference calculation failed: {e}")
+                        continue
+                    except Exception as e:
+                        tprint(f"❌ Unexpected error in time difference calculation: {e}")
                         continue
                 
                 if time_diffs:

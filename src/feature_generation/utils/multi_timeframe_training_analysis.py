@@ -14,6 +14,7 @@ from pathlib import Path
 import json
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('MultiTimeframeTrainingAnalysis')
 
@@ -235,7 +236,13 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import precision_score
             return float(precision_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except (ImportError, ValueError, TypeError) as e:
+            tprint(f"⚠️ Precision calculation failed: {e}")
+            self.logger.warning(f"⚠️ Precision calculation failed: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"❌ Unexpected error in precision calculation: {e}")
+            self.logger.error(f"❌ Unexpected error in precision calculation: {e}")
             return 0.0
     
     def _calculate_recall(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -243,7 +250,13 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import recall_score
             return float(recall_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except (ImportError, ValueError, TypeError) as e:
+            tprint(f"⚠️ Recall calculation failed: {e}")
+            self.logger.warning(f"⚠️ Recall calculation failed: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"❌ Unexpected error in recall calculation: {e}")
+            self.logger.error(f"❌ Unexpected error in recall calculation: {e}")
             return 0.0
     
     def _calculate_f1_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -251,7 +264,13 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import f1_score
             return float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except (ImportError, ValueError, TypeError) as e:
+            tprint(f"⚠️ F1 score calculation failed: {e}")
+            self.logger.warning(f"⚠️ F1 score calculation failed: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"❌ Unexpected error in F1 score calculation: {e}")
+            self.logger.error(f"❌ Unexpected error in F1 score calculation: {e}")
             return 0.0
     
     def _calculate_output_correlations(
@@ -533,7 +552,13 @@ class MultiTimeframeTrainingAnalyzer:
                             corr = features[feature].corr(target)
                             if not np.isnan(corr):
                                 category_importance[feature] = abs(corr)
-                        except:
+                        except (ValueError, TypeError, KeyError) as e:
+                            tprint(f"⚠️ Feature importance calculation failed for {feature}: {e}")
+                            self.logger.warning(f"⚠️ Feature importance calculation failed for {feature}: {e}")
+                            category_importance[feature] = 0.0
+                        except Exception as e:
+                            tprint(f"❌ Unexpected error calculating feature importance for {feature}: {e}")
+                            self.logger.error(f"❌ Unexpected error calculating feature importance for {feature}: {e}")
                             category_importance[feature] = 0.0
                 
                 if category_importance:
@@ -622,7 +647,13 @@ class MultiTimeframeTrainingAnalyzer:
                     corr = features[col].corr(target)
                     if not np.isnan(corr):
                         information_content['mutual_information'][col] = abs(corr)
-                except:
+                except (ValueError, TypeError, KeyError) as e:
+                    tprint(f"⚠️ Mutual information calculation failed for {col}: {e}")
+                    self.logger.warning(f"⚠️ Mutual information calculation failed for {col}: {e}")
+                    information_content['mutual_information'][col] = 0.0
+                except Exception as e:
+                    tprint(f"❌ Unexpected error calculating mutual information for {col}: {e}")
+                    self.logger.error(f"❌ Unexpected error calculating mutual information for {col}: {e}")
                     information_content['mutual_information'][col] = 0.0
             
             # Calculate variance explained

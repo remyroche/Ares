@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 
+from src.utils.tprint import tprint
+
 logger = logging.getLogger(__name__)
 
 # Import statsmodels with fallback
@@ -219,7 +221,13 @@ class StatsmodelsIntegration:
             result = adfuller(series.dropna())
             p_value = result[1]
             return p_value < significance
-        except:
+        except (ValueError, TypeError) as e:
+            tprint(f"⚠️ ADF test failed for stationarity check: {e}")
+            self.logger.warning(f"⚠️ ADF test failed for stationarity check: {e}")
+            return False
+        except Exception as e:
+            tprint(f"❌ Unexpected error in stationarity test: {e}")
+            self.logger.error(f"❌ Unexpected error in stationarity test: {e}")
             return False
 
     def _select_var_order(self, data: pd.DataFrame, maxlags: int) -> int:
@@ -228,7 +236,13 @@ class StatsmodelsIntegration:
             model = VAR(data)
             lag_selection = model.select_order(maxlags=maxlags)
             return lag_selection.aic  # Use AIC for selection
-        except:
+        except (ValueError, TypeError) as e:
+            tprint(f"⚠️ VAR order selection failed: {e}, using fallback")
+            self.logger.warning(f"⚠️ VAR order selection failed: {e}, using fallback")
+            return min(2, maxlags)  # Fallback
+        except Exception as e:
+            tprint(f"❌ Unexpected error in VAR order selection: {e}")
+            self.logger.error(f"❌ Unexpected error in VAR order selection: {e}")
             return min(2, maxlags)  # Fallback
 
     def _granger_causality_matrix(self, data: pd.DataFrame, maxlag: int = 5) -> Dict[str, Any]:
@@ -247,11 +261,23 @@ class StatsmodelsIntegration:
                             'p_values': p_values,
                             'significant_lags': [lag for lag, p in enumerate(p_values, 1) if p < 0.05]
                         }
-                    except:
+                    except (ValueError, TypeError) as e:
+                        tprint(f"⚠️ Granger causality test failed for {var1} -> {var2}: {e}")
+                        self.logger.warning(f"⚠️ Granger causality test failed for {var1} -> {var2}: {e}")
+                        continue
+                    except Exception as e:
+                        tprint(f"❌ Unexpected error in Granger causality test for {var1} -> {var2}: {e}")
+                        self.logger.error(f"❌ Unexpected error in Granger causality test for {var1} -> {var2}: {e}")
                         continue
 
             return results
-        except:
+        except (ValueError, TypeError) as e:
+            tprint(f"⚠️ Granger causality matrix calculation failed: {e}")
+            self.logger.warning(f"⚠️ Granger causality matrix calculation failed: {e}")
+            return {}
+        except Exception as e:
+            tprint(f"❌ Unexpected error in Granger causality matrix calculation: {e}")
+            self.logger.error(f"❌ Unexpected error in Granger causality matrix calculation: {e}")
             return {}
 
 # Example usage functions

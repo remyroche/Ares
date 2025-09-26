@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import logging
 
-from ..exchange.factory import ExchangeFactory
+from exchange.factory import ExchangeFactory
 
 
 class ExchangeRegistry:

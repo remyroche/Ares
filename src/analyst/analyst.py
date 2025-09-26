@@ -270,8 +270,11 @@ class Analyst:
             self.logger.info("Analyst configuration validation passed")
             return True
 
-        except Exception:
-            self.logger.exception("Configuration validation failed")
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            self.logger.error(f"Configuration validation failed: {e}")
+            return False
+        except Exception as e:
+            self.logger.exception(f"Unexpected error during configuration validation: {e}")
             return False
 
     @handles_errors(
@@ -511,7 +514,11 @@ class Analyst:
                         features_df,
                         current_price,
                     )
-                except Exception:
+                except (ValueError, AttributeError, RuntimeError) as e:
+                    self.logger.warning(f"Failed to get price target probabilities: {e}")
+                    price_target_probabilities = {}
+                except Exception as e:
+                    self.logger.error(f"Unexpected error getting price target probabilities: {e}")
                     price_target_probabilities = {}
 
             # 3. Perform liquidation risk analysis
@@ -585,9 +592,14 @@ class Analyst:
             self.logger.info("✅ Comprehensive analysis completed successfully")
             return True
 
-        except Exception:
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
             self.is_analyzing = False
-            self.logger.error(failed("❌ Analysis failed: {e}"))
+            self.logger.error(f"Analysis failed due to data error: {e}")
+            return False
+        except Exception as e:
+            self.is_analyzing = False
+            self.logger.exception(f"Unexpected error during analysis: {e}")
+            return False
 
             return False
 

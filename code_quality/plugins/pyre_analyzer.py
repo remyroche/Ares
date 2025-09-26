@@ -1,4 +1,11 @@
 from typing import Set, List, Dict, Any, Optional
+
+# Import tprint for error logging
+try:
+    from src.utils.tprint import tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_error(msg): print(f"ERROR: {msg}")
 """
 Pyre type checker plugin for code quality tools.
 """
@@ -56,7 +63,8 @@ class PyreAnalyzer(BaseCodeAnalyzer):
                             issues = json.loads(result.stdout)
                         except json.JSONDecodeError:
                             issues = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError, TypeError) as e:
+                        tprint_error(f"Failed to parse Pyre output for {file_path}: {e}")
                         issues = []
                 return {
                     "success": True,

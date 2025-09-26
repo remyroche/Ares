@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Enhanced type hint adder to increase type coverage to 90%+.
@@ -387,7 +387,8 @@ class EnhancedTypeHintAdder:
 
             return False
 
-        except Exception:
+        except (ValueError, TypeError, AttributeError, SyntaxError) as e:
+            tprint_error(f"Error processing file {file_path} for type hints: {e}")
             self.failed_files.append(file_path)
             return False
 

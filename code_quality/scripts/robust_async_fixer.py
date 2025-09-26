@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Robust async/await fixer that handles complex cases.
@@ -138,7 +138,8 @@ class RobustAsyncFixer:
 
             return False
 
-        except Exception:
+        except (ValueError, TypeError, AttributeError, SyntaxError) as e:
+            tprint_error(f"Error processing file for async fixes: {e}")
             return False
 
     def fix_async_issues(self, directory: str = None) -> dict:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Safe Indentation Error Fixer
@@ -103,7 +103,8 @@ class SafeIndentationFixer:
             
             return False
             
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint_error(f"Error fixing indentation in file: {e}")
             return False
     
     def _fix_missing_import_statements(self, content: str) -> str:

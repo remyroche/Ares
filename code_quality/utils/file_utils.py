@@ -9,6 +9,14 @@ from typing import List, Optional, Dict, Any
 
 from .gitignore_parser import GitignoreParser, should_ignore_file, filter_ignored_files
 
+# Import tprint for error logging
+try:
+    from src.utils.tprint import tprint_error, tprint_warning
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_error(msg): print(f"ERROR: {msg}")
+    def tprint_warning(msg): print(f"WARNING: {msg}")
+
 
 def find_python_files(directory: str, exclude_dirs: List[str] = None, respect_gitignore: bool = True) -> List[Path]:
     """Find all Python files in directory, excluding specified directories and .gitignore patterns."""
@@ -37,13 +45,16 @@ def read_file_safely(file_path: Path) -> Optional[str]:
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
-    except UnicodeDecodeError:
+    except UnicodeDecodeError as e:
+        tprint_warning(f"Unicode decode error reading {file_path}: {e}")
         try:
             with open(file_path, 'r', encoding='latin-1') as f:
                 return f.read()
-        except Exception:
+        except (OSError, IOError, PermissionError) as e:
+            tprint_error(f"Failed to read file {file_path} with latin-1 encoding: {e}")
             return None
-    except Exception:
+    except (OSError, IOError, PermissionError) as e:
+        tprint_error(f"Failed to read file {file_path}: {e}")
         return None
 
 
@@ -51,9 +62,11 @@ def parse_ast_safely(content: str, file_path: Path) -> Optional[ast.AST]:
     """Parse AST with error handling."""
     try:
         return ast.parse(content, filename=str(file_path))
-    except SyntaxError:
+    except SyntaxError as e:
+        tprint_warning(f"Syntax error parsing {file_path}: {e}")
         return None
-    except Exception:
+    except (ValueError, TypeError) as e:
+        tprint_error(f"Invalid content for AST parsing in {file_path}: {e}")
         return None
 
 
@@ -82,7 +95,8 @@ def get_module_from_file_path(file_path: str) -> Optional[str]:
             if module_parts[-1].endswith('.py'):
                 module_parts[-1] = module_parts[-1][:-3]
             return '.'.join(module_parts)
-    except Exception:
+    except (ValueError, IndexError, AttributeError) as e:
+        tprint_warning(f"Error extracting module from file path {file_path}: {e}")
         pass
     return None
 
@@ -148,7 +162,8 @@ def get_directory_stats(directory: str) -> Dict[str, Any]:
             "total_directories": total_dirs,
             "directory_path": str(project_root)
         }
-    except Exception as e:
+    except (OSError, IOError, PermissionError) as e:
+        tprint_error(f"Error getting directory stats for {directory}: {e}")
         return {"error": str(e)}
 
 
@@ -158,7 +173,8 @@ def backup_file(file_path: Path) -> Optional[Path]:
         backup_path = file_path.with_suffix(file_path.suffix + '.backup')
         shutil.copy2(file_path, backup_path)
         return backup_path
-    except Exception:
+    except (OSError, IOError, PermissionError, shutil.Error) as e:
+        tprint_error(f"Failed to create backup of {file_path}: {e}")
         return None
 
 
@@ -167,7 +183,8 @@ def restore_file(backup_path: Path, original_path: Path) -> bool:
     try:
         shutil.copy2(backup_path, original_path)
         return True
-    except Exception:
+    except (OSError, IOError, PermissionError, shutil.Error) as e:
+        tprint_error(f"Failed to restore file from {backup_path} to {original_path}: {e}")
         return False
 
 
@@ -210,7 +227,8 @@ def find_unused_imports(file_path: Path) -> List[str]:
                 unused.append(imp)
         
         return unused
-    except Exception:
+    except (ValueError, TypeError, AttributeError) as e:
+        tprint_warning(f"Error finding unused imports in {file_path}: {e}")
         return []
 
 
@@ -249,9 +267,11 @@ class FileUtils:
             try:
                 with open(file_path, 'r', encoding='latin-1') as f:
                     return f.read()
-            except Exception:
+            except (OSError, IOError, PermissionError) as e:
+                tprint_error(f"Failed to read file {file_path} with latin-1 encoding: {e}")
                 return None
-        except Exception:
+        except (OSError, IOError, PermissionError) as e:
+            tprint_error(f"Failed to read file {file_path}: {e}")
             return None
     
     @staticmethod
@@ -261,7 +281,8 @@ class FileUtils:
             return ast.parse(content, filename=str(file_path))
         except SyntaxError:
             return None
-        except Exception:
+        except (ValueError, TypeError) as e:
+            tprint_error(f"Invalid content for AST parsing in {file_path}: {e}")
             return None
     
     @staticmethod
@@ -290,7 +311,8 @@ class FileUtils:
                 if module_parts[-1].endswith('.py'):
                     module_parts[-1] = module_parts[-1][:-3]
                 return '.'.join(module_parts)
-        except Exception:
+        except (ValueError, IndexError, AttributeError) as e:
+            tprint_warning(f"Error extracting module from file path {file_path}: {e}")
             pass
         return None
     

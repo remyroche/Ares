@@ -13,6 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Import tprint for error logging
+try:
+    from src.utils.tprint import tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_error(msg): print(f"ERROR: {msg}")
+
 from core.config import ReportingConfig
 import numpy as np
 import logging
@@ -342,7 +349,8 @@ class ErrorReporter:
                 with open(full_path, encoding="utf-8") as f:
                     line_count = len(f.readlines())
                     return error_count / line_count if line_count > 0 else 0.0
-        except Exception:
+        except (OSError, IOError, PermissionError) as e:
+            tprint_error(f"Failed to read file {full_path} for error density calculation: {e}")
             pass
 
         return 0.0

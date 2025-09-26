@@ -27,6 +27,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+# Import tprint for error logging
+try:
+    from src.utils.tprint import tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_error(msg): print(f"ERROR: {msg}")
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -457,7 +464,8 @@ class ImportFreeAnalysisPipeline(BasePipeline):
         try:
             with open(file_path, 'r') as f:
                 metrics["line_count"] = len(f.readlines())
-        except Exception:
+        except (OSError, IOError, PermissionError) as e:
+            tprint_error(f"Failed to read file {file_path} for line count: {e}")
             metrics["line_count"] = 0
         
         return metrics

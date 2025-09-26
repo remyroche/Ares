@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Advanced syntax fixer for Python files with complex syntax errors.
@@ -116,7 +116,8 @@ class AdvancedSyntaxFixer:
             self.failed_files.append(file_path)
             return False
 
-        except Exception:
+        except (ValueError, TypeError, AttributeError, SyntaxError) as e:
+            tprint_error(f"Error processing file {file_path} for syntax fixes: {e}")
             self.failed_files.append(file_path)
             return False
 

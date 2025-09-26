@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 """
 Trend Reporter
@@ -154,7 +154,8 @@ class TrendReporter:
         try:
             with open(self.history_file, encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except (OSError, IOError, PermissionError, json.JSONDecodeError) as e:
+            tprint_error(f"Failed to load history from {self.history_file}: {e}")
             return {}
 
     def _save_history(self, history: dict[str, list]) -> None:

@@ -5,32 +5,58 @@ This module provides Bayesian optimization for Markov State Model parameters
 including transition matrix, lag times, clustering parameters, and attention networks.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
-from sklearn.base import BaseEstimator
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import make_scorer
 import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
 
-try:
-    from skopt import gp_minimize
-    from skopt.space import Real, Integer, Categorical
-    from skopt.utils import use_named_args
-    SKOPT_AVAILABLE = True
-except ImportError:
-    SKOPT_AVAILABLE = False
-    gp_minimize = None
+import numpy as np
+import pandas as pd
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from sklearn.base import BaseEstimator
+from sklearn.metrics import make_scorer
+from sklearn.model_selection import cross_val_score
+
+
+class OptionalDependencyNotAvailableError(ImportError):
+    """Raised when an optional dependency required for MSM optimization is missing."""
+
+
+SKOPT_AVAILABLE = False
+OPTUNA_AVAILABLE = False
+_SKOPT_IMPORT_ERROR: Optional[ImportError] = None
+_OPTUNA_IMPORT_ERROR: Optional[ImportError] = None
+_SKOPT_ERROR_MESSAGE = (
+    "scikit-optimize is required for MSM Bayesian optimization. Install it with `pip install scikit-optimize`."
+)
+_OPTUNA_ERROR_MESSAGE = (
+    "Optuna is required for MSM Bayesian optimization. Install it with `pip install optuna`."
+)
 
 try:
-    from optuna import create_study, Trial
+    from skopt import gp_minimize
+    from skopt.space import Categorical, Integer, Real
+    from skopt.utils import use_named_args
+    SKOPT_AVAILABLE = True
+except ImportError as exc:
+    _SKOPT_IMPORT_ERROR = exc
+
+    def _raise_skopt_unavailable(*args: Any, **kwargs: Any) -> Any:
+        raise OptionalDependencyNotAvailableError(_SKOPT_ERROR_MESSAGE) from _SKOPT_IMPORT_ERROR
+
+    gp_minimize = use_named_args = Categorical = Integer = Real = _raise_skopt_unavailable  # type: ignore
+
+try:
+    from optuna import Trial, create_study
     from optuna.samplers import TPESampler
     OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
+except ImportError as exc:
+    _OPTUNA_IMPORT_ERROR = exc
+
+    def _raise_optuna_unavailable(*args: Any, **kwargs: Any) -> Any:
+        raise OptionalDependencyNotAvailableError(_OPTUNA_ERROR_MESSAGE) from _OPTUNA_IMPORT_ERROR
+
+    create_study = Trial = TPESampler = _raise_optuna_unavailable  # type: ignore
 
 # Import new Bayesian TPE optimizer
 from src.utils.nas_tas.bayesian_tpe_optimizer import (
@@ -79,6 +105,46 @@ class MSMOptimizationConfig:
     ergodic_cutoff_min: float = 1e-6
     ergodic_cutoff_max: float = 1e-4  # Narrower range for efficiency
 
+    def __post_init__(self) -> None:
+        self._validate_config()
+
+    def _validate_config(self) -> None:
+        """Validate configuration values to prevent silent misconfiguration."""
+
+        if self.n_trials <= 0:
+            raise ValueError("n_trials must be positive")
+
+        if self.timeout is not None and self.timeout <= 0:
+            raise ValueError("timeout must be a positive integer representing seconds")
+
+        if self.n_jobs == 0:
+            raise ValueError("n_jobs cannot be zero; specify a positive number or -1 for all cores")
+
+        allowed_objectives = {item.value for item in MSMOptimizationObjective}
+        if self.optimization_objective not in allowed_objectives:
+            raise ValueError(f"optimization_objective must be one of {sorted(allowed_objectives)}")
+
+        if self.use_two_step_optimization and self.grid_search_n_points <= 0:
+            raise ValueError("grid_search_n_points must be positive when two-step optimization is enabled")
+
+        if self.n_states_min <= 0 or self.n_states_max <= 0:
+            raise ValueError("Number of states must be positive")
+
+        if self.n_states_min > self.n_states_max:
+            raise ValueError("n_states_min cannot be greater than n_states_max")
+
+        if self.lag_time_min <= 0 or self.lag_time_max <= 0:
+            raise ValueError("Lag times must be positive integers")
+
+        if self.lag_time_min > self.lag_time_max:
+            raise ValueError("lag_time_min cannot be greater than lag_time_max")
+
+        if not (0 < self.connectivity_threshold_min < self.connectivity_threshold_max):
+            raise ValueError("Connectivity thresholds must be positive with min < max")
+
+        if not (0 < self.ergodic_cutoff_min < self.ergodic_cutoff_max):
+            raise ValueError("Ergodic cutoffs must be positive with min < max")
+
 
 class MSMBayesianOptimizer:
     """Bayesian optimization for MSM parameters - computationally efficient implementation."""
@@ -92,8 +158,16 @@ class MSMBayesianOptimizer:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        if self.config.use_skopt and not SKOPT_AVAILABLE:
+            raise OptionalDependencyNotAvailableError(_SKOPT_ERROR_MESSAGE) from _SKOPT_IMPORT_ERROR
+
+        if not self.config.use_skopt and not OPTUNA_AVAILABLE:
+            raise OptionalDependencyNotAvailableError(_OPTUNA_ERROR_MESSAGE) from _OPTUNA_IMPORT_ERROR
+
         if not SKOPT_AVAILABLE and not OPTUNA_AVAILABLE:
-            raise ImportError("Either scikit-optimize or Optuna must be installed for Bayesian optimization")
+            raise OptionalDependencyNotAvailableError(
+                "scikit-optimize or Optuna must be installed for Bayesian optimization"
+            )
 
         # Track optimization history - limit memory usage
         self.optimization_history = []

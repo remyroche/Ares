@@ -41,15 +41,18 @@ ENHANCED FEATURES:
 - Full feature integration in ensemble models
 """
 
-import numpy as np
-import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 import time
 import traceback
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+
+from .exceptions import ConfigurationError, MissingDependencyError
 
 # Enhanced imports with comprehensive error handling
 try:
@@ -97,6 +100,8 @@ try:
 except ImportError as e:
     TACTICIAN_TRAINING_AVAILABLE = False
     tprint_warning(f"⚠️ Tactician training components not available: {e}")
+
+from .memory_utils import aggressive_gc, memory_guard
 
 
 class TrainingPhase(Enum):
@@ -169,6 +174,39 @@ class DualTrainingConfig:
                 'short': 4         # 20 minutes
             }
 
+        self._validate_config()
+
+    def _validate_config(self) -> None:
+        """Validate configuration values to catch mistakes early."""
+
+        if not (0.0 <= self.min_analyst_confidence <= 1.0):
+            raise ConfigurationError("min_analyst_confidence must be between 0 and 1")
+
+        if self.subsequent_minutes <= 0:
+            raise ConfigurationError("subsequent_minutes must be positive")
+
+        if self.max_lookback_periods <= 0:
+            raise ConfigurationError("max_lookback_periods must be positive")
+
+        if any(limit <= 0 for limit in (
+            self.max_interaction_features,
+            self.max_polynomial_features,
+            self.max_cross_timeframe_features,
+        )):
+            raise ConfigurationError("Feature limits must be positive integers")
+
+        if not (0 < self.validation_split < 1):
+            raise ConfigurationError("validation_split must be between 0 and 1")
+
+        if self.min_training_samples <= 0:
+            raise ConfigurationError("min_training_samples must be positive")
+
+        if self.output_directory.strip() == "":
+            raise ConfigurationError("output_directory must not be empty")
+
+        if self.memory_limit_gb <= 0:
+            raise ConfigurationError("memory_limit_gb must be positive")
+
 
 @dataclass
 class DualTrainingResult:
@@ -221,48 +259,52 @@ class TacticianDualTrainingStep:
             self.config = config or DualTrainingConfig()
             self.logger = system_logger.getChild('TacticianDualTrainingStep')
 
+            if not COMMON_OPS_AVAILABLE:
+                raise MissingDependencyError(
+                    "Common operations utilities are required for tactician dual training"
+                )
+
             # Initialize hardware optimizers
-            if COMMON_OPS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
-                tprint_success("✅ Hardware optimizers initialized")
-            else:
-                self.gpu_manager = None
-                self.memory_optimizer = None
-                self.cpu_optimizer = None
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_success("✅ Hardware optimizers initialized")
+            ensure_directory(self.config.output_directory)
 
             # Initialize pre-ML orchestrator
-            if PRE_ML_ORCHESTRATOR_AVAILABLE:
-                orchestrator_config = OrchestratorConfig(
-                    min_analyst_confidence=self.config.min_analyst_confidence,
-                    subsequent_minutes=self.config.subsequent_minutes,
-                    output_directory=self.config.output_directory,
-                    max_lookback_periods=self.config.max_lookback_periods,
-                    max_interaction_features=self.config.max_interaction_features,
-                    max_polynomial_features=self.config.max_polynomial_features,
-                    max_cross_timeframe_features=self.config.max_cross_timeframe_features,
-                    enable_feature_optimization=self.config.enable_feature_optimization,
-                    enable_pid_generation=self.config.enable_pid_generation,
-                    enable_horizon_labeling=self.config.enable_horizon_labeling,
-                    enable_feature_selection=self.config.enable_feature_selection,
-                    enable_parallel_processing=self.config.enable_parallel_processing,
-                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-                    memory_limit_gb=self.config.memory_limit_gb
+            if not PRE_ML_ORCHESTRATOR_AVAILABLE:
+                raise MissingDependencyError(
+                    "Tactician pre-ML orchestrator is required for tactician dual training"
                 )
-                self.pre_ml_orchestrator = TacticianPreMLOrchestrator(orchestrator_config)
-                tprint_success("✅ Pre-ML orchestrator initialized")
-            else:
-                self.pre_ml_orchestrator = None
+
+            orchestrator_config = OrchestratorConfig(
+                min_analyst_confidence=self.config.min_analyst_confidence,
+                subsequent_minutes=self.config.subsequent_minutes,
+                output_directory=self.config.output_directory,
+                max_lookback_periods=self.config.max_lookback_periods,
+                max_interaction_features=self.config.max_interaction_features,
+                max_polynomial_features=self.config.max_polynomial_features,
+                max_cross_timeframe_features=self.config.max_cross_timeframe_features,
+                enable_feature_optimization=self.config.enable_feature_optimization,
+                enable_pid_generation=self.config.enable_pid_generation,
+                enable_horizon_labeling=self.config.enable_horizon_labeling,
+                enable_feature_selection=self.config.enable_feature_selection,
+                enable_parallel_processing=self.config.enable_parallel_processing,
+                enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                memory_limit_gb=self.config.memory_limit_gb
+            )
+            self.pre_ml_orchestrator = TacticianPreMLOrchestrator(orchestrator_config)
+            tprint_success("✅ Pre-ML orchestrator initialized")
 
             # Initialize training components
-            if TACTICIAN_TRAINING_AVAILABLE:
-                self.base_trainer = TacticianModelsTrainingStep()
-                self.ensemble_trainer = TacticianEnsembleTrainingStep()
-                tprint_success("✅ Training components initialized")
-            else:
-                self.base_trainer = None
-                self.ensemble_trainer = None
+            if not TACTICIAN_TRAINING_AVAILABLE:
+                raise MissingDependencyError(
+                    "Tactician training components are required for tactician dual training"
+                )
+
+            self.base_trainer = TacticianModelsTrainingStep()
+            self.ensemble_trainer = TacticianEnsembleTrainingStep()
+            tprint_success("✅ Training components initialized")
 
             tprint_success("✅ TacticianDualTrainingStep initialized successfully")
             tprint_info(f"Min analyst confidence: {self.config.min_analyst_confidence}")
@@ -405,6 +447,8 @@ class TacticianDualTrainingStep:
             tprint_error(f"❌ Tactician dual training failed: {e}")
             tprint_error(f"Error details: {traceback.format_exc()}")
             raise
+        finally:
+            aggressive_gc(self.logger, "dual tactician training cleanup")
 
     async def _run_pre_ml_orchestration(
         self,
@@ -469,6 +513,8 @@ class TacticianDualTrainingStep:
             ]
 
             # Train each base model type
+            training_start = time.perf_counter()
+
             for model_type in base_model_types:
                 try:
                     tprint_info(f"   🔧 Training {model_type} model for {signal_type} signals...")
@@ -486,9 +532,13 @@ class TacticianDualTrainingStep:
                     }
 
                     # Call the existing base trainer with specific model type
-                    training_result = await self.base_trainer.train_tactician_models(
-                        **training_config
-                    )
+                    with memory_guard(
+                        f"{signal_type}_{model_type.lower()}_training",
+                        logger=self.logger,
+                    ):
+                        training_result = await self.base_trainer.train_tactician_models(
+                            **training_config
+                        )
 
                     # Store results with model type prefix
                     if training_result.get('models'):
@@ -507,10 +557,13 @@ class TacticianDualTrainingStep:
             if not all_models:
                 raise ValueError(f"Failed to train any base models for {signal_type}")
 
+            training_time = time.perf_counter() - training_start
+            aggressive_gc(self.logger, f"{signal_type} base training cleanup")
+
             return {
                 'models': all_models,
                 'metrics': all_metrics,
-                'training_time': 0.0,  # TODO: Track total time
+                'training_time': training_time,
                 'features_used': selected_features,
                 'samples_used': len(training_data),
                 'model_types_trained': base_model_types,
@@ -519,6 +572,8 @@ class TacticianDualTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ Base model training for {signal_type} failed: {e}")
+            aggressive_gc(self.logger, f"{signal_type} base training failure cleanup")
+
             return {
                 'models': {},
                 'metrics': {},
@@ -551,6 +606,7 @@ class TacticianDualTrainingStep:
 
             # Train ensemble models using existing trainer
             if self.ensemble_trainer:
+                training_start = time.perf_counter()
                 # Create training configuration for this signal type with full feature integration
                 training_config = {
                     'signal_type': signal_type,
@@ -581,19 +637,23 @@ class TacticianDualTrainingStep:
                 regime_labels = training_data.get('hmm_regime', training_data.get('regime', np.zeros(len(training_data)))).values
 
                 # Call the ensemble training with full feature integration
-                training_result = await execute_tactician_ensemble_training(
-                    X=X_base,
-                    y=y_targets,
-                    regime_labels=regime_labels,
-                    config=None,  # Use default config
-                    feature_names=selected_features,
-                    base_tactician_models=base_models,  # Pass base models for OOF predictions
-                    analyst_green_light_periods=np.ones(len(training_data)),  # All samples are valid
-                    confidence_scores=training_data.get('analyst_confidence', np.ones(len(training_data))).values,
-                    timestamps=training_data.get('timestamp', pd.date_range('2024-01-01', periods=len(training_data), freq='1min')).values,
-                    confidence_threshold=0.5,
-                    ride_duration_minutes=45
-                )
+                with memory_guard(
+                    f"{signal_type}_ensemble_training",
+                    logger=self.logger,
+                ):
+                    training_result = await execute_tactician_ensemble_training(
+                        X=X_base,
+                        y=y_targets,
+                        regime_labels=regime_labels,
+                        config=None,  # Use default config
+                        feature_names=selected_features,
+                        base_tactician_models=base_models,  # Pass base models for OOF predictions
+                        analyst_green_light_periods=np.ones(len(training_data)),  # All samples are valid
+                        confidence_scores=training_data.get('analyst_confidence', np.ones(len(training_data))).values,
+                        timestamps=training_data.get('timestamp', pd.date_range('2024-01-01', periods=len(training_data), freq='1min')).values,
+                        confidence_threshold=0.5,
+                        ride_duration_minutes=45
+                    )
 
                 # Log what features were included
                 if training_result.get('metadata'):
@@ -605,10 +665,13 @@ class TacticianDualTrainingStep:
                     tprint_info(f"      - OOF predictions: {metadata.get('oof_predictions_count', 'N/A')}")
                     tprint_info(f"      - Total features: {metadata.get('total_features', 'N/A')}")
 
+                training_time = training_result.get('execution_time', time.perf_counter() - training_start)
+                aggressive_gc(self.logger, f"{signal_type} ensemble training cleanup")
+
                 return {
                     'models': training_result.get('models', {}),
                     'metrics': training_result.get('metrics', {}),
-                    'training_time': training_result.get('execution_time', 0.0),
+                    'training_time': training_time,
                     'features_used': selected_features,
                     'samples_used': len(training_data),
                     'metadata': training_result.get('metadata', {}),
@@ -626,6 +689,8 @@ class TacticianDualTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ Ensemble model training for {signal_type} failed: {e}")
+            aggressive_gc(self.logger, f"{signal_type} ensemble training failure cleanup")
+
             return {
                 'models': {},
                 'metrics': {},

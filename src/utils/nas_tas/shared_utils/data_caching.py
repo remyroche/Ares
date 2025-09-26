@@ -518,7 +518,7 @@ class DataCache:
             try:
                 data = load_dataframe(str(cache_file))
             except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+                tprint_debug(f"🔍 Operation failed: {e}")
                 data = load_object(str(cache_file))
             
             return CacheResult(

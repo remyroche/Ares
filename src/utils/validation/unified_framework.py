@@ -17,6 +17,7 @@ the preconfigured frameworks defined here.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import re
 from dataclasses import dataclass
@@ -844,8 +845,12 @@ class HMMValidatorAdapter:
         self.logger = logger or logging.getLogger(__name__)
         self._hmm = None
         try:
-            from src.utils.ml_common.hmm_validation_metrics import HMMValidationFramework  # noqa: WPS433
-
+            hmm_module = importlib.import_module(
+                "src.utils.ml_common.hmm_validation_metrics"
+            )
+            HMMValidationFramework = getattr(
+                hmm_module, "HMMValidationFramework"
+            )
             self._hmm = HMMValidationFramework()
         except Exception as e:  # pragma: no cover - optional dependency
             self.logger.warning(f"HMM validation metrics not available: {e}")

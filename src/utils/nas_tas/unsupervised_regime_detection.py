@@ -456,7 +456,7 @@ class UnsupervisedRegimeDetector:
                 score = silhouette_score(features, labels)
                 silhouette_scores.append(score)
             except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+                tprint_debug(f"🔍 Operation failed: {e}")
                 silhouette_scores.append(0)
         
         if not silhouette_scores:
@@ -653,12 +653,12 @@ class UnsupervisedRegimeDetector:
             # Calculate silhouette score
             try:
                 score = silhouette_score(features, labels)
-                
+
                 if score > best_score:
                     best_score = score
                     best_method = method
             except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+                tprint_debug(f"🔍 Operation failed: {e}")
                 continue
         
         return best_method

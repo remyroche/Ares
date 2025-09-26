@@ -1,0 +1,15 @@
+{
+  "setup_script": "./setup_codex.sh",
+  "python_version": "3.11",
+  "environment_variables": {
+    "PYTHONPATH": "/workspace",
+    "POETRY_VENV_IN_PROJECT": "true"
+  },
+  "dependencies": {
+    "source": "poetry",
+    "lock_file": "poetry.lock",
+    "config_file": "pyproject.toml"
+  },
+  "working_directory": "/workspace",
+  "description": "Ares trading and optimization platform with Poetry dependencies"
+}

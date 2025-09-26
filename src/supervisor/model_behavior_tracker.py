@@ -2,6 +2,7 @@
 from logging import error
 from ..utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.tprint import tprint
 '\nModel Behavior Tracker\n\nThis module enhances the existing performance monitoring system with comprehensive\nmodel behavior tracking, feature importance monitoring, and decision path analysis.\n'
 import asyncio
 import json
@@ -111,8 +112,12 @@ class ModelBehaviorTracker:
         try:
             self.reference_behavior = {'prediction_consistency': 0.85, 'confidence_trend_stability': 0.78, 'feature_importance_stability': 0.82, 'prediction_drift_threshold': 0.05, 'ensemble_diversity_target': 0.65, 'decision_path_stability': 0.8}
             self.logger.info('📊 Reference behavior data loaded')
-        except Exception:
-            self.logger.exception(error('Error loading reference behavior: {e}'))
+        except (ValueError, KeyError) as e:
+            tprint(f"Error loading reference behavior - Invalid configuration: {e}")
+            self.logger.exception(f"Error loading reference behavior: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error loading reference behavior: {e}")
+            self.logger.exception(f"Unexpected error loading reference behavior: {e}")
 
     @handles_errors(fallback = None)
     async def _initialize_behavior_tracking(self) -> None:
@@ -120,8 +125,12 @@ class ModelBehaviorTracker:
         try:
             self.behavior_thresholds = {BehaviorMetricType.PREDICTION_CONSISTENCY: 0.8, BehaviorMetricType.CONFIDENCE_TREND: 0.75, BehaviorMetricType.FEATURE_IMPORTANCE_STABILITY: 0.8, BehaviorMetricType.PREDICTION_DRIFT: 0.05, BehaviorMetricType.ENSEMBLE_DIVERSITY: 0.6, BehaviorMetricType.DECISION_PATH_STABILITY: 0.75}
             self.logger.info('🔍 Behavior tracking initialized')
-        except Exception:
-            self.logger.exception(initialization_error('Error initializing behavior tracking: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error initializing behavior tracking - Invalid threshold values: {e}")
+            self.logger.exception(f"Error initializing behavior tracking: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error initializing behavior tracking: {e}")
+            self.logger.exception(f"Unexpected error initializing behavior tracking: {e}")
 
     @handles_errors(fallback = None)
     async def _initialize_feature_tracking(self) -> None:
@@ -129,8 +138,12 @@ class ModelBehaviorTracker:
         try:
             self.feature_importance_history = {}
             self.logger.info('📈 Feature importance tracking initialized')
-        except Exception:
-            self.logger.exception(initialization_error('Error initializing feature tracking: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error initializing feature tracking - Invalid configuration: {e}")
+            self.logger.exception(f"Error initializing feature tracking: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error initializing feature tracking: {e}")
+            self.logger.exception(f"Unexpected error initializing feature tracking: {e}")
 
     @handles_errors(fallback = None)
     async def _initialize_decision_path_tracking(self) -> None:
@@ -138,8 +151,12 @@ class ModelBehaviorTracker:
         try:
             self.decision_path_history = {}
             self.logger.info('🛤️ Decision path tracking initialized')
-        except Exception:
-            self.logger.exception(initialization_error('Error initializing decision path tracking: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error initializing decision path tracking - Invalid configuration: {e}")
+            self.logger.exception(f"Error initializing decision path tracking: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error initializing decision path tracking: {e}")
+            self.logger.exception(f"Unexpected error initializing decision path tracking: {e}")
 
     @handles_errors(error_handlers={Exception: (False, 'Behavior tracking failed')}, default_return = False, context='behavior tracking')
     async def start_tracking(self) -> bool:
@@ -150,8 +167,13 @@ class ModelBehaviorTracker:
             self.tracking_task = asyncio.create_task(self._behavior_tracking_loop())
             self.logger.info('✅ Model Behavior Tracker started successfully')
             return True
-        except Exception:
-            self.logger.exception(failed('❌ Failed to start Model Behavior Tracker: {e}'))
+        except (asyncio.CancelledError, RuntimeError) as e:
+            tprint(f"Failed to start Model Behavior Tracker - Task management error: {e}")
+            self.logger.exception(f"Failed to start Model Behavior Tracker: {e}")
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error starting Model Behavior Tracker: {e}")
+            self.logger.exception(f"Unexpected error starting Model Behavior Tracker: {e}")
             return False
 
     @handles_errors(fallback = None)
@@ -161,8 +183,13 @@ class ModelBehaviorTracker:
             try:
                 await self._capture_behavior_snapshots()
                 await asyncio.sleep(self.tracking_interval)
-            except Exception:
-                self.logger.exception(error('Error in behavior tracking loop: {e}'))
+            except (asyncio.CancelledError, RuntimeError) as e:
+                tprint(f"Error in behavior tracking loop - Task error: {e}")
+                self.logger.exception(f"Error in behavior tracking loop: {e}")
+                await asyncio.sleep(60)
+            except Exception as e:
+                tprint(f"Unexpected error in behavior tracking loop: {e}")
+                self.logger.exception(f"Unexpected error in behavior tracking loop: {e}")
                 await asyncio.sleep(60)
 
     @handles_errors(fallback = None)
@@ -186,8 +213,15 @@ class ModelBehaviorTracker:
                 if len(self.behavior_history[model_id]) > self.max_history_size:
                     self.behavior_history[model_id] = self.behavior_history[model_id][-self.max_history_size // 2:]
             self.logger.debug('📊 Behavior snapshots captured')
-        except Exception:
-            self.logger.exception(error('Error capturing behavior snapshots: {e}'))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error capturing behavior snapshots - Missing performance data: {e}")
+            self.logger.exception(f"Error capturing behavior snapshots: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error capturing behavior snapshots - Invalid calculation data: {e}")
+            self.logger.exception(f"Error capturing behavior snapshots: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error capturing behavior snapshots: {e}")
+            self.logger.exception(f"Unexpected error capturing behavior snapshots: {e}")
 
     def _calculate_prediction_consistency(self, model_id: str, performance: dict[str, Any]) -> float:
         """Calculate prediction consistency."""
@@ -196,8 +230,17 @@ class ModelBehaviorTracker:
             reference_accuracy = self.reference_behavior.get('prediction_consistency', 0.85)
             consistency = 1.0 - abs(accuracy - reference_accuracy) / reference_accuracy
             return max(0.0, min(1.0, consistency))
-        except Exception:
-            self.logger.exception(error('Error calculating prediction consistency: {e}'))
+        except (KeyError, TypeError) as e:
+            tprint(f"Error calculating prediction consistency - Invalid performance data: {e}")
+            self.logger.exception(f"Error calculating prediction consistency: {e}")
+            return 0.0
+        except (ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating prediction consistency - Invalid calculation: {e}")
+            self.logger.exception(f"Error calculating prediction consistency: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"Unexpected error calculating prediction consistency: {e}")
+            self.logger.exception(f"Unexpected error calculating prediction consistency: {e}")
             return 0.0
 
     def _calculate_confidence_trend(self, model_id: str, performance: dict[str, Any]) -> list[float]:
@@ -206,8 +249,17 @@ class ModelBehaviorTracker:
             confidence = performance.get('confidence', 0.0)
             trend = [confidence + np.random.normal(0, 0.05) for _ in range(10)]
             return [max(0.0, min(1.0, c)) for c in trend]
-        except Exception:
-            self.logger.exception(error('Error calculating confidence trend: {e}'))
+        except (KeyError, TypeError) as e:
+            tprint(f"Error calculating confidence trend - Invalid performance data: {e}")
+            self.logger.exception(f"Error calculating confidence trend: {e}")
+            return [0.0] * 10
+        except (ValueError, ImportError) as e:
+            tprint(f"Error calculating confidence trend - Invalid calculation or missing numpy: {e}")
+            self.logger.exception(f"Error calculating confidence trend: {e}")
+            return [0.0] * 10
+        except Exception as e:
+            tprint(f"Unexpected error calculating confidence trend: {e}")
+            self.logger.exception(f"Unexpected error calculating confidence trend: {e}")
             return [0.0] * 10
 
     def _calculate_feature_importance_stability(self, model_id: str, performance: dict[str, Any]) -> float:
@@ -227,8 +279,17 @@ class ModelBehaviorTracker:
             accuracy = performance.get('accuracy', 0.0)
             reference_accuracy = self.reference_behavior.get('prediction_consistency', 0.85)
             return max(0.0, reference_accuracy - accuracy) / reference_accuracy
-        except Exception:
-            self.logger.exception(error('Error calculating prediction drift: {e}'))
+        except (KeyError, TypeError) as e:
+            tprint(f"Error calculating prediction drift - Invalid performance data: {e}")
+            self.logger.exception(f"Error calculating prediction drift: {e}")
+            return 0.0
+        except (ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating prediction drift - Invalid calculation: {e}")
+            self.logger.exception(f"Error calculating prediction drift: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"Unexpected error calculating prediction drift: {e}")
+            self.logger.exception(f"Unexpected error calculating prediction drift: {e}")
             return 0.0
 
     def _calculate_ensemble_diversity(self, model_id: str, performance: dict[str, Any]) -> float | None:
@@ -237,8 +298,13 @@ class ModelBehaviorTracker:
             if 'ensemble' in model_id.lower():
                 return performance.get('diversity_score', 0.65)
             return None
-        except Exception:
-            self.logger.exception(error('Error calculating ensemble diversity: {e}'))
+        except (KeyError, TypeError) as e:
+            tprint(f"Error calculating ensemble diversity - Invalid performance data: {e}")
+            self.logger.exception(f"Error calculating ensemble diversity: {e}")
+            return None
+        except Exception as e:
+            tprint(f"Unexpected error calculating ensemble diversity: {e}")
+            self.logger.exception(f"Unexpected error calculating ensemble diversity: {e}")
             return None
 
     def _calculate_decision_path_stability(self, model_id: str, performance: dict[str, Any]) -> float | None:
@@ -248,8 +314,17 @@ class ModelBehaviorTracker:
             reference_stability = self.reference_behavior.get('decision_path_stability', 0.8)
             stability = 1.0 - abs(path_stability - reference_stability) / reference_stability
             return max(0.0, min(1.0, stability))
-        except Exception:
-            self.logger.exception(error('Error calculating decision path stability: {e}'))
+        except (KeyError, TypeError) as e:
+            tprint(f"Error calculating decision path stability - Invalid performance data: {e}")
+            self.logger.exception(f"Error calculating decision path stability: {e}")
+            return None
+        except (ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating decision path stability - Invalid calculation: {e}")
+            self.logger.exception(f"Error calculating decision path stability: {e}")
+            return None
+        except Exception as e:
+            tprint(f"Unexpected error calculating decision path stability: {e}")
+            self.logger.exception(f"Unexpected error calculating decision path stability: {e}")
             return None
 
     def _calculate_confidence_calibration(self, model_id: str, performance: dict[str, Any]) -> float | None:
@@ -278,8 +353,12 @@ class ModelBehaviorTracker:
                 self.tracking_task.cancel()
                 await self.tracking_task
             self.logger.info('✅ Model Behavior Tracker stopped successfully')
-        except Exception:
-            self.logger.exception(error('Error stopping behavior tracker: {e}'))
+        except (asyncio.CancelledError, RuntimeError) as e:
+            tprint(f"Error stopping behavior tracker - Task management error: {e}")
+            self.logger.exception(f"Error stopping behavior tracker: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error stopping behavior tracker: {e}")
+            self.logger.exception(f"Unexpected error stopping behavior tracker: {e}")
 
     def get_behavior_history(self, model_id: str, limit: int | None = None) -> list[ModelBehaviorSnapshot]:
         """Get behavior history for a specific model."""
@@ -301,8 +380,17 @@ class ModelBehaviorTracker:
             if any((s.decision_path_stability is not None for s in recent_snapshots)):
                 summary['avg_decision_path_stability'] = np.mean([s.decision_path_stability for s in recent_snapshots if s.decision_path_stability is not None])
             return summary
-        except Exception:
-            self.logger.exception(error('Error generating behavior summary: {e}'))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error generating behavior summary - Missing behavior data: {e}")
+            self.logger.exception(f"Error generating behavior summary: {e}")
+            return {}
+        except (ValueError, TypeError) as e:
+            tprint(f"Error generating behavior summary - Invalid calculation data: {e}")
+            self.logger.exception(f"Error generating behavior summary: {e}")
+            return {}
+        except Exception as e:
+            tprint(f"Unexpected error generating behavior summary: {e}")
+            self.logger.exception(f"Unexpected error generating behavior summary: {e}")
             return {}
 
     def _calculate_behavior_trend(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
@@ -317,8 +405,17 @@ class ModelBehaviorTracker:
             if recent_avg < older_avg - 0.05:
                 return 'declining'
             return 'stable'
-        except Exception:
-            self.logger.exception(error('Error calculating behavior trend: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error calculating behavior trend - Invalid snapshot data: {e}")
+            self.logger.exception(f"Error calculating behavior trend: {e}")
+            return 'unknown'
+        except (ImportError, AttributeError) as e:
+            tprint(f"Error calculating behavior trend - Missing numpy or invalid data: {e}")
+            self.logger.exception(f"Error calculating behavior trend: {e}")
+            return 'unknown'
+        except Exception as e:
+            tprint(f"Unexpected error calculating behavior trend: {e}")
+            self.logger.exception(f"Unexpected error calculating behavior trend: {e}")
             return 'unknown'
 
     def _calculate_overall_stability(self, snapshots: list[ModelBehaviorSnapshot]) -> float:
@@ -332,8 +429,17 @@ class ModelBehaviorTracker:
             weights = [0.4, 0.3, 0.3]
             stability = np.mean(consistency_scores) * weights[0] + np.mean(feature_stability_scores) * weights[1] + np.mean(drift_scores) * weights[2]
             return max(0.0, min(1.0, stability))
-        except Exception:
-            self.logger.exception(error('Error calculating overall stability: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error calculating overall stability - Invalid snapshot data: {e}")
+            self.logger.exception(f"Error calculating overall stability: {e}")
+            return 0.0
+        except (ImportError, AttributeError) as e:
+            tprint(f"Error calculating overall stability - Missing numpy or invalid data: {e}")
+            self.logger.exception(f"Error calculating overall stability: {e}")
+            return 0.0
+        except Exception as e:
+            tprint(f"Unexpected error calculating overall stability: {e}")
+            self.logger.exception(f"Unexpected error calculating overall stability: {e}")
             return 0.0
 
     def _determine_alert_level(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
@@ -351,8 +457,17 @@ class ModelBehaviorTracker:
             if avg_consistency < 0.85 or avg_drift > 0.05 or avg_stability < 0.85:
                 return 'notice'
             return 'normal'
-        except Exception:
-            self.logger.exception(error('Error determining alert level: {e}'))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error determining alert level - Invalid snapshot data: {e}")
+            self.logger.exception(f"Error determining alert level: {e}")
+            return 'unknown'
+        except (ImportError, AttributeError) as e:
+            tprint(f"Error determining alert level - Missing numpy or invalid data: {e}")
+            self.logger.exception(f"Error determining alert level: {e}")
+            return 'unknown'
+        except Exception as e:
+            tprint(f"Unexpected error determining alert level: {e}")
+            self.logger.exception(f"Unexpected error determining alert level: {e}")
             return 'unknown'
 
     def get_all_behavior_summaries(self) -> dict[str, dict[str, Any]]:
@@ -373,8 +488,17 @@ class ModelBehaviorTracker:
                 json.dump(export_data, f, indent = 2, default = str)
             self.logger.info(f'📊 Behavior data exported to {filepath}')
             return filepath
-        except Exception:
-            self.logger.exception(error('Error exporting behavior data: {e}'))
+        except (OSError, IOError) as e:
+            tprint(f"Error exporting behavior data - File system error: {e}")
+            self.logger.exception(f"Error exporting behavior data: {e}")
+            return ''
+        except (TypeError, ValueError) as e:
+            tprint(f"Error exporting behavior data - Invalid data format: {e}")
+            self.logger.exception(f"Error exporting behavior data: {e}")
+            return ''
+        except Exception as e:
+            tprint(f"Unexpected error exporting behavior data: {e}")
+            self.logger.exception(f"Unexpected error exporting behavior data: {e}")
             return ''
 
 async def setup_model_behavior_tracker(config: dict[str, Any], performance_monitor: PerformanceMonitor) -> ModelBehaviorTracker | None:
@@ -394,6 +518,11 @@ async def setup_model_behavior_tracker(config: dict[str, Any], performance_monit
         if success:
             return tracker
         return None
-    except Exception:
-        system_logger.exception(error('Error setting up model behavior tracker: {e}'))
+    except (ValueError, AttributeError) as e:
+        tprint(f"Error setting up model behavior tracker - Invalid configuration: {e}")
+        system_logger.exception(f"Error setting up model behavior tracker: {e}")
+        return None
+    except Exception as e:
+        tprint(f"Unexpected error setting up model behavior tracker: {e}")
+        system_logger.exception(f"Unexpected error setting up model behavior tracker: {e}")
         return None

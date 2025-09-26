@@ -55,8 +55,13 @@ class Monitoring:
                 return False
             self.logger.info("✅ Monitoring initialization completed successfully")
             return True
-        except Exception:
-            tprint(failed("❌ Monitoring initialization failed: {e}"))
+        except (ValueError, AttributeError, KeyError) as e:
+            tprint(f"Monitoring initialization failed - Configuration error: {e}")
+            self.logger.exception(f"Monitoring initialization failed: {e}")
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error during monitoring initialization: {e}")
+            self.logger.exception(f"Unexpected error during monitoring initialization: {e}")
             return False
 
     @handles_errors(
@@ -71,8 +76,15 @@ class Monitoring:
             self.check_interval = self.monitoring_config["check_interval"]
             self.max_history = self.monitoring_config["max_history"]
             self.logger.info("Monitoring configuration loaded successfully")
-        except Exception:
-            tprint(error("Error loading monitoring configuration: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error loading monitoring configuration - Missing keys: {e}")
+            self.logger.exception(f"Error loading monitoring configuration: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error loading monitoring configuration - Invalid values: {e}")
+            self.logger.exception(f"Error loading monitoring configuration: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error loading monitoring configuration: {e}")
+            self.logger.exception(f"Unexpected error loading monitoring configuration: {e}")
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -89,8 +101,13 @@ class Monitoring:
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            tprint(error("Error validating configuration: {e}"))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error validating configuration - Invalid values: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error validating configuration: {e}")
+            self.logger.exception(f"Unexpected error validating configuration: {e}")
             return False
 
     @handle_specific_errors(
@@ -108,8 +125,14 @@ class Monitoring:
                 await self._perform_monitoring()
                 await asyncio.sleep(self.check_interval)
             return True
-        except Exception:
-            tprint(error("Error in monitoring run: {e}"))
+        except (asyncio.CancelledError, RuntimeError) as e:
+            tprint(f"Error in monitoring run - Task management error: {e}")
+            self.logger.exception(f"Error in monitoring run: {e}")
+            self.is_running = False
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error in monitoring run: {e}")
+            self.logger.exception(f"Unexpected error in monitoring run: {e}")
             self.is_running = False
             return False
 
@@ -128,8 +151,15 @@ class Monitoring:
             await self._check_system_health()
             await self._update_metrics()
             self.logger.info(f"Monitoring tick at {now}")
-        except Exception:
-            tprint(error("Error in monitoring step: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error in monitoring step - Missing data: {e}")
+            self.logger.exception(f"Error in monitoring step: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error in monitoring step - Invalid data: {e}")
+            self.logger.exception(f"Error in monitoring step: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error in monitoring step: {e}")
+            self.logger.exception(f"Unexpected error in monitoring step: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -147,8 +177,15 @@ class Monitoring:
             }
             self.metrics["system_health"] = health_status
             self.logger.info("System health check completed")
-        except Exception:
-            tprint(error("Error checking system health: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error checking system health - Missing system data: {e}")
+            self.logger.exception(f"Error checking system health: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error checking system health - Invalid system metrics: {e}")
+            self.logger.exception(f"Error checking system health: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error checking system health: {e}")
+            self.logger.exception(f"Unexpected error checking system health: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -161,8 +198,15 @@ class Monitoring:
             self.metrics["last_update"] = datetime.now().isoformat()
             self.metrics["uptime"] = "2h 15m 30s"
             self.logger.info("Metrics updated successfully")
-        except Exception:
-            tprint(error("Error updating metrics: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error updating metrics - Missing metric data: {e}")
+            self.logger.exception(f"Error updating metrics: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error updating metrics - Invalid metric values: {e}")
+            self.logger.exception(f"Error updating metrics: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error updating metrics: {e}")
+            self.logger.exception(f"Unexpected error updating metrics: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -175,8 +219,12 @@ class Monitoring:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Monitoring stopped successfully")
-        except Exception:
-            tprint(error("Error stopping monitoring: {e}"))
+        except (RuntimeError, AttributeError) as e:
+            tprint(f"Error stopping monitoring - State management error: {e}")
+            self.logger.exception(f"Error stopping monitoring: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error stopping monitoring: {e}")
+            self.logger.exception(f"Unexpected error stopping monitoring: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

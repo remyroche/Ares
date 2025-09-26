@@ -657,30 +657,147 @@ class UnifiedMultiObjectiveOptimizer:
         return best_solution or ParetoSolution({}, {})
 
     def _calculate_hypervolume(self, pareto_frontier: List[ParetoSolution]) -> float:
-        """Calculate hypervolume of Pareto frontier."""
+        """Calculate hypervolume of Pareto frontier for any number of objectives."""
         if len(pareto_frontier) < 2:
             return 0.0
         
-        # Simple hypervolume calculation (2D case)
-        if len(self.config.objectives) == 2:
-            obj1_values = [sol.objectives[list(sol.objectives.keys())[0]] for sol in pareto_frontier]
-            obj2_values = [sol.objectives[list(sol.objectives.keys())[1]] for sol in pareto_frontier]
-            
-            # Sort by first objective
-            sorted_indices = np.argsort(obj1_values)
-            hypervolume = 0.0
-            
-            for i in range(len(sorted_indices)):
-                if i == 0:
-                    hypervolume += obj1_values[sorted_indices[i]] * obj2_values[sorted_indices[i]]
-                else:
-                    prev_idx = sorted_indices[i-1]
-                    curr_idx = sorted_indices[i]
-                    hypervolume += (obj1_values[curr_idx] - obj1_values[prev_idx]) * obj2_values[curr_idx]
-            
-            return hypervolume
+        n_objectives = len(self.config.objectives)
         
-        return 0.0  # Placeholder for higher dimensions
+        # Extract objective values
+        objective_values = []
+        for sol in pareto_frontier:
+            values = []
+            for obj_type in self.config.objectives:
+                values.append(sol.objectives.get(obj_type, 0.0))
+            objective_values.append(values)
+        
+        objective_values = np.array(objective_values)
+        
+        # Handle different dimensional cases
+        if n_objectives == 1:
+            # 1D case: hypervolume is just the range
+            return float(np.max(objective_values) - np.min(objective_values))
+        
+        elif n_objectives == 2:
+            # 2D case: use the existing implementation
+            return self._calculate_2d_hypervolume(objective_values)
+        
+        elif n_objectives == 3:
+            # 3D case: use Monte Carlo approximation
+            return self._calculate_3d_hypervolume(objective_values)
+        
+        else:
+            # Higher dimensions: use Monte Carlo approximation
+            return self._calculate_nd_hypervolume(objective_values)
+    
+    def _calculate_2d_hypervolume(self, objective_values: np.ndarray) -> float:
+        """Calculate 2D hypervolume using the standard algorithm."""
+        if objective_values.shape[1] != 2:
+            return 0.0
+        
+        # Sort by first objective
+        sorted_indices = np.argsort(objective_values[:, 0])
+        sorted_values = objective_values[sorted_indices]
+        
+        hypervolume = 0.0
+        
+        for i in range(len(sorted_values)):
+            if i == 0:
+                # First point contributes its full area
+                hypervolume += sorted_values[i, 0] * sorted_values[i, 1]
+            else:
+                # Subsequent points contribute the area between current and previous
+                prev_obj1 = sorted_values[i-1, 0]
+                curr_obj1 = sorted_values[i, 0]
+                curr_obj2 = sorted_values[i, 1]
+                hypervolume += (curr_obj1 - prev_obj1) * curr_obj2
+        
+        return float(hypervolume)
+    
+    def _calculate_3d_hypervolume(self, objective_values: np.ndarray) -> float:
+        """Calculate 3D hypervolume using Monte Carlo approximation."""
+        if objective_values.shape[1] != 3:
+            return 0.0
+        
+        # Find bounding box
+        min_vals = np.min(objective_values, axis=0)
+        max_vals = np.max(objective_values, axis=0)
+        
+        # Generate random points in bounding box
+        n_samples = 10000
+        random_points = np.random.uniform(
+            min_vals, max_vals, (n_samples, 3)
+        )
+        
+        # Count points dominated by at least one Pareto solution
+        dominated_count = 0
+        for point in random_points:
+            for sol_values in objective_values:
+                if self._is_dominated_by(point, sol_values):
+                    dominated_count += 1
+                    break
+        
+        # Calculate hypervolume as fraction of bounding box volume
+        bounding_volume = np.prod(max_vals - min_vals)
+        hypervolume = (dominated_count / n_samples) * bounding_volume
+        
+        return float(hypervolume)
+    
+    def _calculate_nd_hypervolume(self, objective_values: np.ndarray) -> float:
+        """Calculate n-dimensional hypervolume using Monte Carlo approximation."""
+        n_dims = objective_values.shape[1]
+        
+        # Find bounding box
+        min_vals = np.min(objective_values, axis=0)
+        max_vals = np.max(objective_values, axis=0)
+        
+        # Generate random points in bounding box
+        n_samples = min(50000, 10000 * n_dims)  # Scale with dimension
+        random_points = np.random.uniform(
+            min_vals, max_vals, (n_samples, n_dims)
+        )
+        
+        # Count points dominated by at least one Pareto solution
+        dominated_count = 0
+        for point in random_points:
+            for sol_values in objective_values:
+                if self._is_dominated_by(point, sol_values):
+                    dominated_count += 1
+                    break
+        
+        # Calculate hypervolume as fraction of bounding box volume
+        bounding_volume = np.prod(max_vals - min_vals)
+        hypervolume = (dominated_count / n_samples) * bounding_volume
+        
+        return float(hypervolume)
+    
+    def _is_dominated_by(self, point: np.ndarray, reference: np.ndarray) -> bool:
+        """Check if point is dominated by reference point."""
+        # For maximization objectives, point is dominated if reference is better in all objectives
+        # For minimization objectives, point is dominated if reference is better in all objectives
+        
+        better_in_all = True
+        at_least_one_better = False
+        
+        for i, obj_type in enumerate(self.config.objectives):
+            direction = self._objective_direction(obj_type)
+            point_val = point[i]
+            ref_val = reference[i]
+            
+            if direction == 'maximize':
+                if ref_val < point_val:
+                    better_in_all = False
+                    break
+                elif ref_val > point_val:
+                    at_least_one_better = True
+            else:  # minimize
+                if ref_val > point_val:
+                    better_in_all = False
+                    break
+                elif ref_val < point_val:
+                    at_least_one_better = True
+        
+        return better_in_all and at_least_one_better
     
     def _update_performance_metrics(self, result: UnifiedOptimizationResult):
         """Update performance metrics."""

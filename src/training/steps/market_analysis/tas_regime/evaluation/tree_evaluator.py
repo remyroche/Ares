@@ -141,8 +141,50 @@ except ImportError as e:
             tprint_warning(f"⚠️ Operation failed: {e}")
             return default
     class CommonUtilities:
+        """Fallback common utilities class for tree evaluation."""
         def __init__(self):
-            pass
+            self.logger = logging.getLogger(self.__class__.__name__)
+        
+        def safe_operation(self, operation, *args, **kwargs):
+            """Safely execute an operation with error handling."""
+            try:
+                return operation(*args, **kwargs)
+            except Exception as e:
+                self.logger.warning(f"Operation failed: {e}")
+                return None
+        
+        def validate_input(self, data, data_type=None):
+            """Validate input data."""
+            if data is None:
+                self.logger.warning("Input data is None")
+                return False
+            if data_type and not isinstance(data, data_type):
+                self.logger.warning(f"Input data type mismatch: expected {data_type}, got {type(data)}")
+                return False
+            return True
+        
+        def get_memory_usage(self):
+            """Get current memory usage."""
+            try:
+                import psutil
+                return psutil.virtual_memory().percent
+            except ImportError:
+                return 0.0
+        
+        def format_time(self, seconds):
+            """Format time in seconds to human readable format."""
+            if seconds < 60:
+                return f"{seconds:.2f}s"
+            elif seconds < 3600:
+                return f"{seconds/60:.2f}m"
+            else:
+                return f"{seconds/3600:.2f}h"
+        
+        def log_performance(self, operation_name, duration, **kwargs):
+            """Log performance metrics."""
+            self.logger.info(f"Performance: {operation_name} took {self.format_time(duration)}")
+            if kwargs:
+                self.logger.info(f"Additional metrics: {kwargs}")
 
 # Import math validation utilities
 try:

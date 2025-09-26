@@ -728,7 +728,11 @@ class StreamlinedRegimeDataSplitting:
                         issues.append(f"Object column '{col}' may contain numeric data")
                     except Exception as e:
                         tprint_debug(f"🔍 Failed to check if column '{col}' contains numeric data: {e}")
-                        pass
+                        # Log the specific error and continue with the validation
+                        logger = logging.getLogger(self.__class__.__name__)
+                        logger.warning(f"Error checking numeric data in column '{col}': {e}")
+                        # Add a generic warning to the issues list
+                        issues.append(f"Could not verify numeric data in column '{col}'")
 
             # Check for mixed data types in numeric columns
             numeric_columns = data.select_dtypes(include=[np.number]).columns

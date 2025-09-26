@@ -40,10 +40,46 @@ except ImportError:
     PANDAS_AVAILABLE = False
     # Create a mock pandas for basic functionality
     class MockPandas:
+        """Mock pandas class for fallback functionality."""
         def __init__(self):
-            pass
+            self.logger = logging.getLogger(self.__class__.__name__)
+        
         def __getattr__(self, name):
-            return lambda *args, **kwargs: None
+            """Return mock functions for pandas operations."""
+            def mock_function(*args, **kwargs):
+                self.logger.warning(f"MockPandas.{name} called but pandas not available")
+                return None
+            return mock_function
+        
+        def DataFrame(self, *args, **kwargs):
+            """Mock DataFrame creation."""
+            self.logger.warning("MockPandas.DataFrame called but pandas not available")
+            return None
+        
+        def Series(self, *args, **kwargs):
+            """Mock Series creation."""
+            self.logger.warning("MockPandas.Series called but pandas not available")
+            return None
+        
+        def read_csv(self, *args, **kwargs):
+            """Mock CSV reading."""
+            self.logger.warning("MockPandas.read_csv called but pandas not available")
+            return None
+        
+        def read_parquet(self, *args, **kwargs):
+            """Mock parquet reading."""
+            self.logger.warning("MockPandas.read_parquet called but pandas not available")
+            return None
+        
+        def concat(self, *args, **kwargs):
+            """Mock concatenation."""
+            self.logger.warning("MockPandas.concat called but pandas not available")
+            return None
+        
+        def merge(self, *args, **kwargs):
+            """Mock merge operation."""
+            self.logger.warning("MockPandas.merge called but pandas not available")
+            return None
     pd = MockPandas()
 
 try:

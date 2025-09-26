@@ -77,9 +77,26 @@ def extract_function_name_from_issue(issue) -> Optional[str]:
             r"unused function '([^']+)'",
             r"function '([^']+)'",
             r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+            r"undefined name '([^']+)'",
+            r"undefined function '([^']+)'",
+            r"missing function '([^']+)'",
         ]
         for pattern in patterns:
             match = re.search(pattern, issue.description.lower())
+            if match:
+                return match.group(1)
+    elif hasattr(issue, 'message'):
+        # Try to extract from message field
+        patterns = [
+            r"unused function '([^']+)'",
+            r"function '([^']+)'",
+            r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+            r"undefined name '([^']+)'",
+            r"undefined function '([^']+)'",
+            r"missing function '([^']+)'",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, issue.message.lower())
             if match:
                 return match.group(1)
     return None
@@ -293,9 +310,26 @@ class FileUtils:
                 r"unused function '([^']+)'",
                 r"function '([^']+)'",
                 r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+                r"undefined name '([^']+)'",
+                r"undefined function '([^']+)'",
+                r"missing function '([^']+)'",
             ]
             for pattern in patterns:
                 match = re.search(pattern, issue.description.lower())
+                if match:
+                    return match.group(1)
+        elif hasattr(issue, 'message'):
+            # Try to extract from message field
+            patterns = [
+                r"unused function '([^']+)'",
+                r"function '([^']+)'",
+                r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+                r"undefined name '([^']+)'",
+                r"undefined function '([^']+)'",
+                r"missing function '([^']+)'",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, issue.message.lower())
                 if match:
                     return match.group(1)
         return None

@@ -311,8 +311,15 @@ class ReportAggregator:
             path = Path(file_path)
             if path.exists() and path.suffix == ".py":
                 with open(path, encoding="utf-8") as f:
-                    return len(f.readlines())
-        except:
+                    lines = f.readlines()
+                    # Count non-empty, non-comment lines
+                    code_lines = 0
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith('#'):
+                            code_lines += 1
+                    return code_lines
+        except (OSError, IOError, PermissionError, UnicodeDecodeError):
             pass
         return 0
 

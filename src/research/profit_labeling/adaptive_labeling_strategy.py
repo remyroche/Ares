@@ -29,6 +29,8 @@ from sklearn.metrics import silhouette_score
 from scipy import stats
 import warnings
 
+from src.utils.tprint import tprint
+
 from src.utils.logger import get_logger
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
 
@@ -444,7 +446,9 @@ class MarketRegimeDetector:
                     regime = MarketRegime.CONSOLIDATION
                     confidence = 0.6
                     
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error detecting market regime: {e}'
+            tprint(f"⚠️ {error_msg}")
             regime = MarketRegime.UNKNOWN
             confidence = 0.0
         

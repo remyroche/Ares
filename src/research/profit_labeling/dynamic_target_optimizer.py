@@ -26,6 +26,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Optimization imports
+from src.utils.tprint import tprint
 from scipy.optimize import minimize, differential_evolution, basinhopping
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
@@ -372,7 +373,9 @@ class DynamicTargetDiscovery:
                 var = abs(returns.quantile(1 - confidence))
                 if self.config.target_range[0] <= var <= self.config.target_range[1]:
                     targets.append(var)
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating VaR-based targets: {e}'
+            tprint(f"⚠️ {error_msg}")
             pass
         
         return sorted(list(set(targets)))
@@ -453,7 +456,9 @@ class DynamicTargetDiscovery:
                         best_score = score
                         best_n_clusters = n_clusters
                         
-            except Exception:
+            except Exception as e:
+                error_msg = f'Error calculating silhouette score for {n_clusters} clusters: {e}'
+                tprint(f"⚠️ {error_msg}")
                 continue
         
         return best_n_clusters

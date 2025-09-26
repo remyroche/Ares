@@ -27,6 +27,7 @@ import hashlib
 from scipy.optimize import minimize_scalar
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, Matern
+from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +427,11 @@ class TreeArchitectureSearch:
                     accuracy = model.score(X_val_boot, y_val_boot)
 
                 bootstrap_scores.append(accuracy)
-            except:
+            except (ValueError, TypeError, AttributeError, IndexError) as e:
+                tprint(f"⚠️ Bootstrap evaluation failed: {type(e).__name__}: {e}")
+                continue
+            except Exception as e:
+                tprint(f"💥 Unexpected error in bootstrap evaluation: {type(e).__name__}: {e}")
                 continue
 
         if bootstrap_scores:
@@ -466,7 +471,11 @@ class TreeArchitectureSearch:
         try:
             with open(self.config.meta_learning_path, 'r') as f:
                 return json.load(f)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
+            tprint(f"⚠️ Failed to load meta-learning data: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error loading meta-learning data: {type(e).__name__}: {e}")
             return []
 
     def _extract_meta_features(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:

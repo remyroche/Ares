@@ -45,6 +45,7 @@ from src.core.errors import (
     ConfigurationError, ModelTrainingError
 )
 from src.utils.ml_common.logger import get_ml_logger
+from src.utils.tprint import tprint
 
 # ML validation
 from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
@@ -362,7 +363,11 @@ class ModelValidator:
         try:
             unique_values = len(np.unique(y))
             return unique_values <= 10  # Assume classification if <= 10 unique values
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"⚠️ Error determining classification task: {type(e).__name__}: {e}")
+            return False
+        except Exception as e:
+            tprint(f"💥 Unexpected error in classification task determination: {type(e).__name__}: {e}")
             return False
     
     def _check_validation_thresholds(self, result: ValidationResult) -> bool:

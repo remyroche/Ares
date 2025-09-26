@@ -63,6 +63,7 @@ except ImportError:
     HDBSCAN_AVAILABLE = False
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 # Import existing components
 from .regime_clusterer import RegimeClusterer, ClusteringMethod, ClusteringResult
@@ -158,7 +159,8 @@ class ClusteringMetrics:
             return -1.0
         try:
             return silhouette_score(X, labels)
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate silhouette score: {e}")
             return -1.0
     
     @staticmethod
@@ -168,7 +170,8 @@ class ClusteringMetrics:
             return 0.0
         try:
             return calinski_harabasz_score(X, labels)
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate Calinski-Harabasz score: {e}")
             return 0.0
     
     @staticmethod
@@ -178,7 +181,8 @@ class ClusteringMetrics:
             return float('inf')
         try:
             return -davies_bouldin_score(X, labels)  # Negative for maximization
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate Davies-Bouldin score: {e}")
             return float('-inf')
     
     @staticmethod
@@ -215,7 +219,8 @@ class ClusteringMetrics:
             
             gap = np.log(np.mean(ref_wss)) - np.log(actual_wss)
             return gap
-        except:
+        except (ValueError, TypeError, RuntimeError, ZeroDivisionError) as e:
+            tprint(f"Warning: Failed to calculate gap statistic: {e}")
             return 0.0
     
     @staticmethod
@@ -237,7 +242,8 @@ class ClusteringMetrics:
                     ari_scores.append(ari)
             
             return np.mean(ari_scores)
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate stability score: {e}")
             return 0.0
 
 
@@ -615,7 +621,8 @@ class ReinforcementClusteringAgent:
             reward += 0.3 * normalized_db
             
             return reward
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate clustering reward: {e}")
             return -1.0  # Penalty for failed clustering
     
     def store_experience(self, state, action, reward, next_state, done):
@@ -793,7 +800,8 @@ class AdaptiveEnsembleClusterer:
             score = 0.4 * silhouette + 0.3 * np.tanh(ch_score / 1000) + 0.3 * np.tanh(db_score)
             return score
         
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to calculate composite clustering score: {e}")
             return 0.0
     
     def _update_performance_history(self, results: Dict):

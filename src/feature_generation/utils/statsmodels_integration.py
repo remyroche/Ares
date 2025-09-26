@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 
+from src.utils.tprint import tprint
+
 logger = logging.getLogger(__name__)
 
 # Import statsmodels with fallback
@@ -219,7 +221,8 @@ class StatsmodelsIntegration:
             result = adfuller(series.dropna())
             p_value = result[1]
             return p_value < significance
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to perform ADF test for stationarity: {e}")
             return False
 
     def _select_var_order(self, data: pd.DataFrame, maxlags: int) -> int:
@@ -228,7 +231,8 @@ class StatsmodelsIntegration:
             model = VAR(data)
             lag_selection = model.select_order(maxlags=maxlags)
             return lag_selection.aic  # Use AIC for selection
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to select VAR order: {e}")
             return min(2, maxlags)  # Fallback
 
     def _granger_causality_matrix(self, data: pd.DataFrame, maxlag: int = 5) -> Dict[str, Any]:
@@ -247,11 +251,13 @@ class StatsmodelsIntegration:
                             'p_values': p_values,
                             'significant_lags': [lag for lag, p in enumerate(p_values, 1) if p < 0.05]
                         }
-                    except:
+                    except (ValueError, TypeError, RuntimeError) as e:
+                        tprint(f"Warning: Failed to test Granger causality between {var1} and {var2}: {e}")
                         continue
 
             return results
-        except:
+        except (ValueError, TypeError, RuntimeError) as e:
+            tprint(f"Warning: Failed to compute Granger causality matrix: {e}")
             return {}
 
 # Example usage functions

@@ -28,6 +28,7 @@ import logging
 from scipy import stats
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class PriceActionInfluence(Enum):
@@ -409,8 +410,9 @@ class DimensionEconomicRelevanceAnalyzer:
             if lag_correlations:
                 significance_tests['max_lag_correlation'] = float(max(lag_correlations))
                 significance_tests['predictive_power'] = float(np.mean(lag_correlations))
-        except:
-            pass
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Warning: Failed to calculate lag correlations for dimension significance test: {e}")
+            # Continue with default values
         
         # Test 3: Regime-based significance
         if len(price_influences) > 0:

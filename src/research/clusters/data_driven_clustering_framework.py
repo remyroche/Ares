@@ -19,6 +19,7 @@ import logging
 import warnings
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 # Import new clustering components
 from .similarity_matrix_clustering import (
@@ -287,7 +288,8 @@ class DataDrivenClusteringFramework:
                 scaler = StandardScaler()
                 features_scaled = scaler.fit_transform(features.fillna(0))
                 metrics['silhouette_score'] = float(silhouette_score(features_scaled, labels))
-            except:
+            except (ValueError, TypeError, RuntimeError) as e:
+                tprint(f"Warning: Failed to calculate silhouette score: {e}")
                 metrics['silhouette_score'] = 0.0
             
         except Exception as e:

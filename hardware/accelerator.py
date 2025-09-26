@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
+from src.utils.tprint import tprint
 
 # Handle optional dependencies gracefully
 try:
@@ -622,7 +623,8 @@ class HardwareAccelerator:
             if self.gpu_manager and hasattr(self.gpu_manager, 'get_gpu_usage'):
                 return self.gpu_manager.get_gpu_usage()
             return None
-        except Exception:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint(f"Error getting GPU usage: {e}", level="warning")
             return None
     
     def get_performance_summary(self) -> Dict[str, Any]:

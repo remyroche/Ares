@@ -1550,7 +1550,8 @@ class RL_NAS_Optimizer:
             if len(returns) == 0 or np.std(returns) == 0:
                 return 0.0
             return np.mean(returns) / np.std(returns)
-        except Exception:
+        except (ValueError, ZeroDivisionError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating Sharpe ratio: {e}", level="error")
             return 0.0
     
     def _calculate_max_drawdown(self, predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -1561,7 +1562,8 @@ class RL_NAS_Optimizer:
             running_max = np.maximum.accumulate(cumulative)
             drawdown = cumulative - running_max
             return np.min(drawdown)
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating max drawdown: {e}", level="error")
             return 0.0
     
     def _calculate_profit_factor(self, predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -1575,7 +1577,8 @@ class RL_NAS_Optimizer:
                 return 1.0
             
             return np.sum(profits) / abs(np.sum(losses))
-        except Exception:
+        except (ValueError, ZeroDivisionError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating profit factor: {e}", level="error")
             return 1.0
     
     def _calculate_win_rate(self, predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -1585,7 +1588,8 @@ class RL_NAS_Optimizer:
             wins = np.sum(returns > 0)
             total = len(returns)
             return wins / total if total > 0 else 0.5
-        except Exception:
+        except (ValueError, ZeroDivisionError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating win rate: {e}", level="error")
             return 0.5
     
     def _calculate_total_return(self, predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -1593,7 +1597,8 @@ class RL_NAS_Optimizer:
         try:
             returns = predictions - targets
             return np.sum(returns)
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating total return: {e}", level="error")
             return 0.0
     
     def _get_default_fitness(self) -> Dict[str, float]:
@@ -1664,7 +1669,8 @@ class RL_NAS_Optimizer:
             # and not worse in any objective
             return better_count > 0 and worse_count == 0
             
-        except Exception:
+        except (TypeError, AttributeError, KeyError) as e:
+            tprint(f"Error in fitness dominance check: {e}", level="error")
             return False
     
     def _check_convergence(self) -> bool:
@@ -1847,7 +1853,8 @@ class RL_NAS_Optimizer:
             
             return result
             
-        except Exception:
+        except (TypeError, AttributeError, IndexError) as e:
+            tprint(f"Error in list crossover: {e}", level="error")
             return list1
     
     def _crossover_dicts(self, dict1: Dict, dict2: Dict) -> Dict:
@@ -1866,7 +1873,8 @@ class RL_NAS_Optimizer:
             
             return result
             
-        except Exception:
+        except (TypeError, AttributeError, KeyError) as e:
+            tprint(f"Error in dict crossover: {e}", level="error")
             return dict1
     
     def _mutate(self, individual: Tuple[ArchitectureConfig, Dict[str, float]]) -> Tuple:

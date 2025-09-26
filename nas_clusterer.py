@@ -1215,8 +1215,8 @@ class NASClusterer:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup()
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as e:
+            tprint(f"Error in cleanup: {e}", level="error")
 
 
 # Convenience functions

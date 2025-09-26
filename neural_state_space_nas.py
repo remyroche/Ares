@@ -111,14 +111,16 @@ except ImportError:
             with open(filepath, 'w') as f:
                 json.dump(data, f, **kwargs)
             return True
-        except Exception:
+        except (IOError, OSError, TypeError, ValueError) as e:
+            tprint(f"Error saving JSON to {filepath}: {e}", level="error")
             return False
     
     def safe_json_load(filepath, default=None):
         try:
             with open(filepath, 'r') as f:
                 return json.load(f)
-        except Exception:
+        except (IOError, OSError, json.JSONDecodeError, TypeError) as e:
+            tprint(f"Error loading JSON from {filepath}: {e}", level="error")
             return default
     
     def safe_file_exists(path):
@@ -172,14 +174,16 @@ except ImportError:
     def safe_dataframe_operation(df, operation, *args, **kwargs):
         try:
             return operation(df, *args, **kwargs)
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            tprint(f"Error in dataframe operation: {e}", level="error")
             return df
     
     def validate_dataframe_columns(df, required_columns):
         try:
             missing_columns = set(required_columns) - set(df.columns)
             return len(missing_columns) == 0
-        except Exception:
+        except (AttributeError, TypeError) as e:
+            tprint(f"Error validating dataframe columns: {e}", level="error")
             return False
     
     def calculate_data_quality_metrics(df):
@@ -199,27 +203,31 @@ except ImportError:
     def safe_divide(a, b, default=0.0):
         try:
             return a / b if b != 0 else default
-        except Exception:
+        except (TypeError, ZeroDivisionError, ValueError) as e:
+            tprint(f"Error in safe division: {e}", level="error")
             return default
     
     def safe_log(x, default=0.0):
         try:
             import math
             return math.log(x) if x > 0 else default
-        except Exception:
+        except (ValueError, TypeError, OverflowError) as e:
+            tprint(f"Error in safe log: {e}", level="error")
             return default
     
     def safe_sqrt(x, default=0.0):
         try:
             import math
             return math.sqrt(x) if x >= 0 else default
-        except Exception:
+        except (ValueError, TypeError) as e:
+            tprint(f"Error in safe sqrt: {e}", level="error")
             return default
     
     def safe_power(x, y, default=0.0):
         try:
             return x ** y
-        except Exception:
+        except (ValueError, TypeError, OverflowError) as e:
+            tprint(f"Error in safe power: {e}", level="error")
             return default
     
     def validate_finite(value, name="value"):
@@ -252,7 +260,8 @@ except ImportError:
     def safe_mean(x, default=0.0):
         try:
             return sum(x) / len(x) if x else default
-        except Exception:
+        except (TypeError, ZeroDivisionError, ValueError) as e:
+            tprint(f"Error in safe mean: {e}", level="error")
             return default
     
     def safe_std(x, default=0.0):
@@ -262,7 +271,8 @@ except ImportError:
             mean_val = safe_mean(x)
             variance = sum((item - mean_val) ** 2 for item in x) / (len(x) - 1)
             return variance ** 0.5
-        except Exception:
+        except (TypeError, ZeroDivisionError, ValueError) as e:
+            tprint(f"Error in safe std: {e}", level="error")
             return default
     
     class MathValidation:
@@ -293,7 +303,8 @@ except ImportError:
                 with open(filepath, 'w') as f:
                     json.dump(data, f, indent=2, default=str)
                 return True
-            except Exception:
+            except (IOError, OSError, TypeError, ValueError) as e:
+                tprint(f"Error saving JSON to {filepath}: {e}", level="error")
                 return False
         
         @staticmethod
@@ -301,7 +312,8 @@ except ImportError:
             try:
                 with open(filepath, 'r') as f:
                     return json.load(f)
-            except Exception:
+            except (IOError, OSError, json.JSONDecodeError, TypeError) as e:
+                tprint(f"Error loading JSON from {filepath}: {e}", level="error")
                 return None
     
     class PickleSerializer:
@@ -311,7 +323,8 @@ except ImportError:
                 with open(filepath, 'wb') as f:
                     pickle.dump(data, f)
                 return True
-            except Exception:
+            except (IOError, OSError, TypeError, pickle.PickleError) as e:
+                tprint(f"Error saving pickle to {filepath}: {e}", level="error")
                 return False
         
         @staticmethod
@@ -319,7 +332,8 @@ except ImportError:
             try:
                 with open(filepath, 'rb') as f:
                     return pickle.load(f)
-            except Exception:
+            except (IOError, OSError, TypeError, pickle.PickleError) as e:
+                tprint(f"Error loading pickle from {filepath}: {e}", level="error")
                 return None
     
     class ParquetSerializer:
@@ -1318,8 +1332,8 @@ class NeuralSSM_NAS_Optimizer:
         """Destructor."""
         try:
             self.cleanup()
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as e:
+            tprint(f"Error in cleanup: {e}", level="error")
 
 
 # Convenience functions

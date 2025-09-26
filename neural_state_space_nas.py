@@ -277,7 +277,9 @@ except ImportError:
     
     class MathValidation:
         def __init__(self):
-            pass
+            self.validation_cache = {}
+            self.error_count = 0
+            self.warning_count = 0
         
         def validate_finite(self, value, name="value"):
             return validate_finite(value, name)
@@ -289,7 +291,20 @@ except ImportError:
             return validate_range(value, min_val, max_val, name)
     
     class MathValidationError(Exception):
-        pass
+        """Custom exception for math validation errors."""
+        def __init__(self, message: str, value=None, expected_type=None):
+            super().__init__(message)
+            self.value = value
+            self.expected_type = expected_type
+            self.timestamp = time.time()
+        
+        def __str__(self):
+            base_msg = super().__str__()
+            if self.value is not None:
+                base_msg += f" (value: {self.value})"
+            if self.expected_type is not None:
+                base_msg += f" (expected: {self.expected_type})"
+            return base_msg
 
 try:
     from src.utils.serialization_utils import (
@@ -347,7 +362,10 @@ except ImportError:
     
     class UniversalSerializer:
         def __init__(self):
-            pass
+            self.supported_formats = ['json', 'pickle', 'pkl']
+            self.compression_enabled = False
+            self.encoding = 'utf-8'
+            self.default_format = 'pickle'
         
         def save(self, data, filepath, format='auto'):
             if filepath.endswith('.json'):
@@ -413,10 +431,40 @@ except ImportError:
         return _timer()
     
     def configure_tprint(config):
-        pass
+        """Configure tprint logging system."""
+        try:
+            if hasattr(config, 'log_level'):
+                import logging
+                logging.getLogger().setLevel(getattr(logging, config.log_level.upper(), logging.INFO))
+            if hasattr(config, 'enable_colors'):
+                # Enable/disable colored output if supported
+                # Note: Color support depends on terminal capabilities
+                # This is a placeholder for future color configuration
+                pass
+            if hasattr(config, 'output_file'):
+                # Configure file output if specified
+                try:
+                    import logging
+                    file_handler = logging.FileHandler(config.output_file)
+                    logging.getLogger().addHandler(file_handler)
+                except Exception as e:
+                    print(f"Warning: Failed to configure file output: {e}")
+            return True
+        except Exception as e:
+            print(f"Warning: Failed to configure tprint: {e}")
+            return False
     
     class TPrintConfig:
-        pass
+        """Configuration class for tprint logging system."""
+        def __init__(self, log_level: str = "INFO", enable_colors: bool = True, 
+                     output_file: str = None, max_line_length: int = 120):
+            self.log_level = log_level
+            self.enable_colors = enable_colors
+            self.output_file = output_file
+            self.max_line_length = max_line_length
+            self.timestamp_format = "%H:%M:%S"
+            self.show_module = False
+            self.show_function = False
     
     class LogLevel:
         DEBUG = "DEBUG"

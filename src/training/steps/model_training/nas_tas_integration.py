@@ -42,6 +42,11 @@ from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine impo
     TASConfig, TreeSearchStrategy
 )
 
+from src.utils.nas_tas.unified_regime_pipeline import (
+    RegimeUnifiedPipeline,
+    UnifiedRegimePipelineConfig,
+)
+
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
 
@@ -74,6 +79,10 @@ class NASTASIntegrationConfig:
     enable_architecture_adaptation: bool = True
     enable_performance_monitoring: bool = True
 
+    # Unified regime pipeline
+    enable_unified_pipeline: bool = True
+    unified_pipeline_config: Optional[UnifiedRegimePipelineConfig] = None
+
 class NASTASIntegration:
     """
     NAS-TAS Integration for Training Pipeline.
@@ -101,13 +110,24 @@ class NASTASIntegration:
         self.integration_results = {}
         self.performance_metrics = {}
         self.adaptation_history = []
-        
+        self.unified_pipeline: Optional[RegimeUnifiedPipeline] = None
+        self.unified_results: Optional[Dict[str, Any]] = None
+
         self.logger.info("✅ NAS-TAS Integration initialized")
         self.logger.info(f"   NAS Analyst enabled: {config.enable_nas_analyst}")
         self.logger.info(f"   TAS Tactician enabled: {config.enable_tas_tactician}")
         self.logger.info(f"   TAS Analyst enabled: {config.enable_tas_analyst}")
         self.logger.info(f"   CatBoost removed: {config.remove_catboost}")
         self.logger.info(f"   XGBoost removed: {config.remove_xgboost}")
+
+        if self.config.enable_unified_pipeline:
+            pipeline_config = (
+                self.config.unified_pipeline_config
+                if self.config.unified_pipeline_config is not None
+                else UnifiedRegimePipelineConfig()
+            )
+            self.unified_pipeline = RegimeUnifiedPipeline(pipeline_config)
+            self.logger.info("   Unified NAS/TAS pipeline enabled")
     
     async def execute_integrated_training(self, 
                                         training_input: Dict[str, Any], 
@@ -128,7 +148,10 @@ class NASTASIntegration:
         try:
             # Step 1: Initialize NAS-TAS training steps
             await self._initialize_nas_tas_steps()
-            
+
+            # Step 1.5: Run unified NAS/TAS pipeline if available
+            unified_output = self._prepare_unified_regime_context(training_input)
+
             # Step 2: Execute NAS-Enhanced Analyst training
             analyst_results = await self._execute_nas_analyst_training(
                 training_input, pipeline_state
@@ -160,6 +183,7 @@ class NASTASIntegration:
                 'tactician_results': tactician_results,
                 'tas_analyst_results': tas_analyst_results,
                 'integration_summary': integration_summary,
+                'unified_pipeline_output': unified_output,
                 'metadata': {
                     'nas_analyst_enabled': self.config.enable_nas_analyst,
                     'tas_tactician_enabled': self.config.enable_tas_tactician,
@@ -167,7 +191,9 @@ class NASTASIntegration:
                     'catboost_removed': self.config.remove_catboost,
                     'xgboost_removed': self.config.remove_xgboost,
                     'analyst_timeframe': self.config.analyst_timeframe,
-                    'tactician_timeframe': self.config.tactician_timeframe
+                    'tactician_timeframe': self.config.tactician_timeframe,
+                    'unified_pipeline_enabled': self.config.enable_unified_pipeline,
+                    'regime_source': (unified_output or {}).get('regime_assignments', {}).get('source') if unified_output else None,
                 }
             }
             
@@ -191,7 +217,7 @@ class NASTASIntegration:
     async def _initialize_nas_tas_steps(self) -> None:
         """Initialize NAS-TAS training steps."""
         self.logger.info("🔧 Initializing NAS-TAS training steps...")
-        
+
         try:
             # Initialize NAS-Enhanced Analyst training
             if self.config.enable_nas_analyst:
@@ -229,10 +255,51 @@ class NASTASIntegration:
                 )
                 self.tas_analyst_training = NASEnhancedAnalystTrainingStep(tas_analyst_config)
                 self.logger.info("✅ TAS-Enhanced Analyst training step initialized")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize NAS-TAS training steps: {e}")
             raise
+
+    def _prepare_unified_regime_context(self, training_input: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Run the unified NAS/TAS pipeline and enrich training input with its outputs."""
+
+        if not self.unified_pipeline:
+            return None
+
+        market_data = training_input.get('market_data')
+        if not isinstance(market_data, pd.DataFrame) or market_data.empty:
+            self.logger.warning("⚠️ Unified pipeline skipped - market data missing or empty")
+            return None
+
+        target_variable = training_input.get('target_variable')
+        feature_columns = training_input.get('feature_columns')
+        timestamps = training_input.get('timestamps')
+
+        try:
+            unified_output = self.unified_pipeline.run(
+                market_data,
+                target_variable=target_variable,
+                feature_columns=feature_columns,
+                timestamps=timestamps,
+            )
+            self.unified_results = unified_output
+
+            assignments = unified_output.get('regime_assignments', {})
+            regime_labels = assignments.get('regime_predictions')
+            if regime_labels is not None:
+                training_input.setdefault('regime_labels', regime_labels)
+
+            training_input.setdefault('unified_pipeline_output', unified_output)
+
+            self.logger.info(
+                "✅ Unified pipeline prepared regime context | source=%s",
+                assignments.get('source'),
+            )
+            return unified_output
+
+        except Exception as exc:
+            self.logger.error(f"❌ Unified pipeline execution failed: {exc}")
+            return None
     
     async def _execute_nas_analyst_training(self, 
                                           training_input: Dict[str, Any], 

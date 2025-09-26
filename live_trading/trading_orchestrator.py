@@ -75,6 +75,9 @@ class TradingOrchestrator:
             "win_rate": 0.0
         }
 
+        # Unified regime context
+        self.unified_regime_artifacts: Dict[str, Any] = {}
+
     async def start(self) -> None:
         """Start the trading orchestrator"""
         if self._running:
@@ -130,6 +133,13 @@ class TradingOrchestrator:
 
             self.logger.info(f"Processing signal: {signal.symbol} {signal.action} {signal.quantity}")
 
+            if self.unified_regime_artifacts:
+                regime_context = self.unified_regime_artifacts.get('regime_assignments', {})
+                signal.metadata.setdefault('unified_regime', {
+                    'source': regime_context.get('source'),
+                    'n_regimes': regime_context.get('n_regimes'),
+                })
+
             # Validate signal
             if not await self._validate_signal(signal):
                 self.logger.warning(f"Signal validation failed: {signal.symbol}")
@@ -153,6 +163,15 @@ class TradingOrchestrator:
             self.logger.error(f"Error processing signal: {e}")
             self.stats["failed_trades"] += 1
             return False
+
+    def load_unified_regime_artifacts(self, artifacts: Dict[str, Any]) -> None:
+        """Attach unified NAS/TAS outputs for contextual decision making."""
+
+        self.unified_regime_artifacts = artifacts or {}
+        self.logger.info(
+            "Unified regime artifacts loaded | source=%s",
+            self.unified_regime_artifacts.get('regime_assignments', {}).get('source'),
+        )
 
     async def execute_trade_decision(self, decision: TradeDecision) -> bool:
         """Execute a trade decision"""

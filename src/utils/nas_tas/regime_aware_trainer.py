@@ -333,11 +333,12 @@ class RegimeAwareTrainer:
                     mt for mt in self.config.model_types if mt != ModelType.CATBOOST
                 ]
     
-    def train_models(self, 
+    def train_models(self,
                     market_data: pd.DataFrame,
                     target_variable: str,
                     feature_columns: Optional[List[str]] = None,
-                    timestamps: Optional[pd.Series] = None) -> RegimeTrainingResult:
+                    timestamps: Optional[pd.Series] = None,
+                    unified_regime_output: Optional[Dict[str, Any]] = None) -> RegimeTrainingResult:
         """
         Train regime-aware models.
         
@@ -354,9 +355,16 @@ class RegimeAwareTrainer:
         self.logger.info("🚀 Starting regime-aware model training")
         
         try:
-            # Step 1: Detect regimes
-            self.logger.info("🔍 Detecting market regimes...")
-            regime_results = self._detect_regimes(market_data, timestamps)
+            # Step 1: Detect regimes or reuse unified pipeline output
+            if unified_regime_output:
+                self.logger.info("🔍 Using precomputed regimes from unified pipeline...")
+                regime_results = self._build_regime_results_from_unified_output(
+                    unified_regime_output,
+                    market_data,
+                )
+            else:
+                self.logger.info("🔍 Detecting market regimes...")
+                regime_results = self._detect_regimes(market_data, timestamps)
             
             if not regime_results['success']:
                 return RegimeTrainingResult(
@@ -505,12 +513,53 @@ class RegimeAwareTrainer:
         except Exception as e:
             self.logger.error(f"Regime detection failed: {e}")
             return {'success': False, 'error': str(e)}
-    
+
+    def _build_regime_results_from_unified_output(self,
+                                                 unified_output: Dict[str, Any],
+                                                 market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Adapt unified pipeline output to the trainer's regime result schema."""
+
+        try:
+            assignments = unified_output.get('regime_assignments', {})
+            predictions = assignments.get('regime_predictions')
+
+            if predictions is None:
+                raise ValueError("Unified pipeline output does not include regime predictions")
+
+            regime_predictions = np.asarray(predictions)
+            if len(regime_predictions) != len(market_data):
+                raise ValueError(
+                    "Unified pipeline regime predictions length does not match market data"
+                )
+
+            regime_statistics = self._calculate_regime_statistics(regime_predictions, market_data)
+
+            result = {
+                'success': True,
+                'regime_predictions': regime_predictions,
+                'regime_probabilities': assignments.get('regime_probabilities'),
+                'n_regimes': int(assignments.get('n_regimes', len(np.unique(regime_predictions)))),
+                'regime_statistics': regime_statistics,
+                'source': assignments.get('source'),
+                'metadata': unified_output.get('metadata', {}),
+            }
+
+            if 'nas' in unified_output:
+                result['nas'] = unified_output['nas']
+            if 'tas' in unified_output:
+                result['tas'] = unified_output['tas']
+
+            return result
+
+        except Exception as exc:
+            self.logger.error(f"Failed to use unified regime output: {exc}")
+            return {'success': False, 'error': str(exc)}
+
     def _fallback_regime_detection(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Fallback regime detection using simple clustering."""
         try:
             from sklearn.cluster import KMeans
-            
+
             # Use price and volume features for clustering
             features = ['close', 'volume'] if 'close' in market_data.columns and 'volume' in market_data.columns else market_data.select_dtypes(include=[np.number]).columns[:2]
             data = market_data[features].values

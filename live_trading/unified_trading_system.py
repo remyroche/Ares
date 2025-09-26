@@ -65,6 +65,9 @@ class UnifiedTradingSystem:
             "warnings": 0
         }
 
+        # Unified regime artifacts handling
+        self._pending_regime_artifacts: Optional[Dict[str, Any]] = None
+
     async def initialize(self) -> None:
         """Initialize the unified trading system"""
         if self._initialized:
@@ -298,11 +301,28 @@ class UnifiedTradingSystem:
                 self.trading_receiver
             )
 
+            if self._pending_regime_artifacts:
+                self.trading_orchestrator.load_unified_regime_artifacts(self._pending_regime_artifacts)
+                self._pending_regime_artifacts = None
+
             self.logger.info("Trading orchestrator initialized")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize trading orchestrator: {e}")
             raise
+
+    def load_unified_regime_artifacts(self, artifacts: Dict[str, Any]) -> None:
+        """Expose unified NAS/TAS outputs to the live trading system."""
+
+        if self.trading_orchestrator:
+            self.trading_orchestrator.load_unified_regime_artifacts(artifacts)
+        else:
+            self._pending_regime_artifacts = artifacts
+
+        self.logger.info(
+            "Unified trading system loaded regime artifacts | source=%s",
+            artifacts.get('regime_assignments', {}).get('source') if isinstance(artifacts, dict) else None,
+        )
 
     async def _configure_exchanges(self) -> None:
         """Configure exchanges for the trading system"""

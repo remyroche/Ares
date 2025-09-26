@@ -156,12 +156,12 @@ class BaseLabelingStrategy(ABC):
     @abstractmethod
     def generate_labels(self, market_data: pd.DataFrame) -> StrategyResult:
         """Generate labels using this strategy."""
-        pass
+        raise NotImplementedError("Subclasses must implement generate_labels method")
     
     @abstractmethod
     def calculate_confidence(self, labels: pd.DataFrame, market_data: pd.DataFrame) -> pd.Series:
         """Calculate confidence scores for labels."""
-        pass
+        raise NotImplementedError("Subclasses must implement calculate_confidence method")
 
 
 class MultiHorizonStrategy(BaseLabelingStrategy):

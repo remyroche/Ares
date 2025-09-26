@@ -189,6 +189,20 @@ class TradingReceiver:
         await self.exchange_registry.close_all()
         await self.multi_exchange_base.close_all_exchanges()
 
+        # Clear all pending data
+        self.pending_multi_exchange_orders.clear()
+        self.pending_responses.clear()
+        self.message_handlers.clear()
+        
+        # Reset statistics
+        self.message_stats = {
+            "total_received": 0,
+            "total_processed": 0,
+            "total_errors": 0,
+            "by_type": {},
+            "by_exchange": {}
+        }
+
         self.logger.info("Trading receiver stopped")
     
     def register_handler(self, message_type: MessageType, handler: Callable[[TradingMessage], Awaitable[TradingResponse]]) -> None:

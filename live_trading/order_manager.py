@@ -109,6 +109,23 @@ class OrderManager:
             except asyncio.CancelledError:
                 pass
         
+        # Cancel all active orders if in live trading mode
+        if self.config.mode.value != "paper":
+            for order_id, order in list(self.active_orders.items()):
+                try:
+                    if order.is_active and order.exchange_order_id:
+                        await self.exchange_client.cancel_order(order.symbol, order.exchange_order_id)
+                        order.status = OrderStatus.CANCELLED
+                        order.updated_at = datetime.now()
+                        await self._notify_handlers("on_order_cancelled", order)
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to cancel order {order_id} during shutdown: {e}")
+        
+        # Clear all order data
+        self.orders.clear()
+        self.active_orders.clear()
+        self.order_handlers.clear()
+        
         self.logger.info("Order manager stopped")
     
     def register_handler(self, event_type: str, handler: Callable[[Order], Awaitable[None]]) -> None:

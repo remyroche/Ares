@@ -94,6 +94,20 @@ class OrderRouter:
             except asyncio.CancelledError:
                 pass
         
+        # Clear all order data
+        self.routed_orders.clear()
+        self.active_orders.clear()
+        
+        # Reset statistics
+        self.order_stats = {
+            "total_routed": 0,
+            "successful_orders": 0,
+            "failed_orders": 0,
+            "by_exchange": {},
+            "by_symbol": {},
+            "by_status": {}
+        }
+        
         self.logger.info("Order router stopped")
     
     async def route_order(

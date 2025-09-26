@@ -1,21 +1,31 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from .exceptions import DataQualityError, MissingDependencyError
 
 # Required dependencies - fail fast if not available
 try:
     import numpy as np
+except ImportError as exc:
+    raise MissingDependencyError(
+        "numpy is required for the model training pipeline. "
+        "Install it with `pip install numpy`."
+    ) from exc
+else:
     NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
 
 try:
     import pandas as pd
+except ImportError as exc:
+    raise MissingDependencyError(
+        "pandas is required for the model training pipeline. "
+        "Install it with `pip install pandas`."
+    ) from exc
+else:
     PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
 
 from src.utils.logger import system_logger
 # Import decorators - fail fast if not available
@@ -62,20 +72,20 @@ def validate_training_data(data: Any, data_name: str, required_columns: Optional
         True if validation passes
         
     Raises:
-        ValueError: If validation fails
+        DataQualityError: If validation fails
     """
     if data is None:
-        raise ValueError(f"{data_name} cannot be None")
+        raise DataQualityError(f"{data_name} cannot be None")
     
     if isinstance(data, pd.DataFrame):
         if data.empty:
-            raise ValueError(f"{data_name} DataFrame is empty")
+            raise DataQualityError(f"{data_name} DataFrame is empty")
         
         # Check for required columns
         if required_columns:
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
-                raise ValueError(f"{data_name} missing required columns: {missing_columns}")
+                raise DataQualityError(f"{data_name} missing required columns: {missing_columns}")
         
         # Check for NaN values
         if data.isnull().any().any():
@@ -87,26 +97,26 @@ def validate_training_data(data: Any, data_name: str, required_columns: Optional
         if len(numeric_cols) > 0:
             inf_mask = np.isinf(data[numeric_cols]).any().any()
             if inf_mask:
-                raise ValueError(f"{data_name} contains infinite values")
+                raise DataQualityError(f"{data_name} contains infinite values")
         
         tprint(f"✅ {data_name} validation passed: {len(data)} rows, {len(data.columns)} columns")
         
     elif isinstance(data, np.ndarray):
         if data.size == 0:
-            raise ValueError(f"{data_name} array is empty")
-        
+            raise DataQualityError(f"{data_name} array is empty")
+
         if np.any(np.isnan(data)):
-            raise ValueError(f"{data_name} contains NaN values")
-        
+            raise DataQualityError(f"{data_name} contains NaN values")
+
         if np.any(np.isinf(data)):
-            raise ValueError(f"{data_name} contains infinite values")
+            raise DataQualityError(f"{data_name} contains infinite values")
         
         tprint(f"✅ {data_name} validation passed: shape {data.shape}")
         
     else:
         # Basic validation for other types
         if hasattr(data, '__len__') and len(data) == 0:
-            raise ValueError(f"{data_name} is empty")
+            raise DataQualityError(f"{data_name} is empty")
         
         tprint(f"✅ {data_name} validation passed: type {type(data).__name__}")
     
@@ -125,32 +135,33 @@ def validate_model_inputs(X: np.ndarray, y: np.ndarray, feature_names: Optional[
         True if validation passes
         
     Raises:
-        ValueError: If validation fails
+        DataQualityError: If validation fails
     """
     validate_training_data(X, "Feature matrix X")
     validate_training_data(y, "Target values y")
-    
+
     if X.shape[0] != y.shape[0]:
-        raise ValueError(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
-    
+        raise DataQualityError(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
+
     if X.ndim != 2:
-        raise ValueError(f"X must be 2D array, got shape {X.shape}")
-    
+        raise DataQualityError(f"X must be 2D array, got shape {X.shape}")
+
     if y.ndim != 1:
-        raise ValueError(f"y must be 1D array, got shape {y.shape}")
-    
+        raise DataQualityError(f"y must be 1D array, got shape {y.shape}")
+
     if feature_names and len(feature_names) != X.shape[1]:
-        raise ValueError(f"feature_names length ({len(feature_names)}) must match X features ({X.shape[1]})")
+        raise DataQualityError(f"feature_names length ({len(feature_names)}) must match X features ({X.shape[1]})")
     
     tprint(f"✅ Model inputs validation passed: {X.shape[0]} samples, {X.shape[1]} features")
     return True
 # Import from simplified model training structure
 try:
-    # from .simplified.general_model_training import GeneralModelTrainer  # Removed from pipeline
-    SIMPLIFIED_TRAINING_AVAILABLE = True
+    from .simplified.general_model_training import GeneralModelTrainer
 except ImportError:
     SIMPLIFIED_TRAINING_AVAILABLE = False
     GeneralModelTrainer = None
+else:
+    SIMPLIFIED_TRAINING_AVAILABLE = True
 
 # Import refactored training steps using common dependencies
 try:
@@ -198,8 +209,8 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         from src.utils.common_operations import get_current_datetime, format_datetime
     except Exception:
         pass
-    from .utils.validator_orchestrator import ValidatorOrchestrator
-    from .utils.step_dependency_validator import StepDependencyValidator
+    from src.utils.validator_orchestrator import ValidatorOrchestrator
+    from src.utils.step_dependency_validator import StepDependencyValidator
     logger = system_logger.getChild('ModelTrainingPipeline')
 
     @handles_errors(Exception, fallback = False, log_level='ERROR')
@@ -873,7 +884,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             trained_models, feature_names, X_train, X_test, y_train, y_test = await _extract_models_and_data(step_instance, step_name, model_type, data_dir, symbol, exchange)
             if X_train is None or X_test is None:
                 try:
-                    from .utils.common_operations import safe_read_parquet
+                    from src.utils.common_operations import safe_read_parquet
                     features_file = f'{data_dir}/features_{exchange}_{symbol}_consolidated.parquet'
                     if safe_file_exists(features_file):
                         features_df = safe_read_parquet(features_file)

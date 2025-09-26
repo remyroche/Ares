@@ -16,37 +16,68 @@ Key Enhancements:
 - Enhanced early stopping and convergence detection
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
-from sklearn.base import BaseEstimator
-from sklearn.model_selection import cross_val_score, TimeSeriesSplit, KFold
-from sklearn.metrics import make_scorer, mean_squared_error, r2_score
-from sklearn.linear_model import LinearRegression
 import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 import warnings
 
+import numpy as np
+import pandas as pd
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from sklearn.base import BaseEstimator
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import make_scorer, mean_squared_error, r2_score
+from sklearn.model_selection import KFold, TimeSeriesSplit, cross_val_score
+
 logger = logging.getLogger(__name__)
+
+
+class OptionalDependencyNotAvailableError(ImportError):
+    """Raised when an optional dependency required for HPO is missing."""
+
+
+SKOPT_AVAILABLE = False
+OPTUNA_AVAILABLE = False
+_SKOPT_IMPORT_ERROR: Optional[ImportError] = None
+_OPTUNA_IMPORT_ERROR: Optional[ImportError] = None
+_SKOPT_ERROR_MESSAGE = (
+    "scikit-optimize is required for the enhanced regime-aware hyperparameter "
+    "optimization features. Install it with `pip install scikit-optimize`."
+)
+_OPTUNA_ERROR_MESSAGE = (
+    "Optuna is required for the enhanced regime-aware hyperparameter "
+    "optimization features. Install it with `pip install optuna`."
+)
 
 try:
     from skopt import gp_minimize, forest_minimize
-    from skopt.space import Real, Integer, Categorical
-    from skopt.utils import use_named_args
     from skopt.callbacks import EarlyStopper
+    from skopt.space import Categorical, Integer, Real
+    from skopt.utils import use_named_args
     SKOPT_AVAILABLE = True
-except ImportError:
-    SKOPT_AVAILABLE = False
+except ImportError as exc:
+    _SKOPT_IMPORT_ERROR = exc
+
+    def _raise_skopt_unavailable(*args: Any, **kwargs: Any) -> Any:
+        raise OptionalDependencyNotAvailableError(_SKOPT_ERROR_MESSAGE) from _SKOPT_IMPORT_ERROR
+
+    gp_minimize = forest_minimize = _raise_skopt_unavailable  # type: ignore
+    EarlyStopper = Categorical = Integer = Real = use_named_args = _raise_skopt_unavailable  # type: ignore
 
 try:
-    from optuna import create_study, Trial, samplers
-    from optuna.samplers import TPESampler, RandomSampler
+    from optuna import Trial, create_study, samplers
     from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
+    from optuna.samplers import RandomSampler, TPESampler
     OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
+except ImportError as exc:
+    _OPTUNA_IMPORT_ERROR = exc
+
+    def _raise_optuna_unavailable(*args: Any, **kwargs: Any) -> Any:
+        raise OptionalDependencyNotAvailableError(_OPTUNA_ERROR_MESSAGE) from _OPTUNA_IMPORT_ERROR
+
+    create_study = _raise_optuna_unavailable  # type: ignore
+    Trial = samplers = TPESampler = RandomSampler = MedianPruner = SuccessiveHalvingPruner = _raise_optuna_unavailable  # type: ignore
 
 # Import new Bayesian TPE optimizer
 from src.utils.nas_tas.bayesian_tpe_optimizer import (
@@ -58,6 +89,7 @@ from src.utils.nas_tas.bayesian_tpe_optimizer import (
 
 class RegimeType(Enum):
     """Market regime types for adaptive HPO."""
+
     HIGH_VOLATILITY = "high_volatility"
     LOW_VOLATILITY = "low_volatility"
     TRENDING = "trending"
@@ -65,6 +97,32 @@ class RegimeType(Enum):
     BREAKOUT = "breakout"
     CONSOLIDATION = "consolidation"
     UNKNOWN = "unknown"
+
+
+def _normalize_regime_label(regime: Any) -> str:
+    """Normalize arbitrary regime labels to a stable, case-insensitive key."""
+
+    if isinstance(regime, RegimeType):
+        return regime.value
+
+    if isinstance(regime, str):
+        return regime.strip().lower()
+
+    return str(regime).strip().lower()
+
+
+def _coerce_regime_type(regime: Any) -> RegimeType:
+    """Convert a raw regime label to the closest :class:`RegimeType`."""
+
+    if isinstance(regime, RegimeType):
+        return regime
+
+    normalized = _normalize_regime_label(regime)
+    for member in RegimeType:
+        if normalized == member.value or normalized == member.name.lower():
+            return member
+
+    return RegimeType.UNKNOWN
 
 
 @dataclass
@@ -200,6 +258,49 @@ class EnhancedHPOConfig:
         'gamma': {'min': 0.0, 'max': 5.0}
     })
 
+    def __post_init__(self) -> None:
+        self._validate_config()
+
+    def _validate_config(self) -> None:
+        """Validate configuration values to catch misconfiguration early."""
+
+        if self.n_trials <= 0:
+            raise ValueError("n_trials must be a positive integer")
+
+        if self.timeout is not None and self.timeout <= 0:
+            raise ValueError("timeout must be a positive integer representing seconds")
+
+        if self.n_jobs == 0:
+            raise ValueError("n_jobs cannot be zero; use a positive value or -1 for all cores")
+
+        if self.cv_folds < 2:
+            raise ValueError("cv_folds must be at least 2 for cross-validation")
+
+        valid_strategies = {'regime_aware', 'time_series', 'rolling', 'expanding'}
+        if self.cv_strategy not in valid_strategies:
+            raise ValueError(f"cv_strategy must be one of {sorted(valid_strategies)}")
+
+        weights = [self.accuracy_weight, self.robustness_weight, self.efficiency_weight]
+        if any(weight < 0 for weight in weights):
+            raise ValueError("Multi-objective weights must be non-negative")
+
+        if sum(weights) == 0:
+            raise ValueError("At least one multi-objective weight must be greater than zero")
+
+        for param_name, bounds in self.search_space.items():
+            if not isinstance(bounds, dict):
+                raise ValueError(f"Search space entry for '{param_name}' must be a dictionary")
+
+            min_value = bounds.get('min')
+            max_value = bounds.get('max')
+            if min_value is None or max_value is None:
+                raise ValueError(f"Search space for '{param_name}' requires 'min' and 'max' keys")
+
+            if max_value <= min_value:
+                raise ValueError(
+                    f"Invalid range for '{param_name}': max ({max_value}) must be greater than min ({min_value})"
+                )
+
 
 class RegimeAnalyzer:
     """Analyzes market regimes to provide characteristics for adaptive HPO."""
@@ -207,8 +308,12 @@ class RegimeAnalyzer:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def analyze_regime_characteristics(self, X: np.ndarray, y: np.ndarray,
-                                     regime_labels: np.ndarray) -> Dict[RegimeType, RegimeCharacteristics]:
+    def analyze_regime_characteristics(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        regime_labels: np.ndarray,
+    ) -> Dict[str, RegimeCharacteristics]:
         """Analyze characteristics of each regime for adaptive HPO.
 
         Args:
@@ -217,15 +322,16 @@ class RegimeAnalyzer:
             regime_labels: Regime labels for each sample
 
         Returns:
-            Dictionary mapping regime types to their characteristics
+            Dictionary mapping normalized regime labels to their characteristics
         """
-        unique_regimes = np.unique(regime_labels)
-        regime_stats = {}
+        regime_array = np.asarray(regime_labels)
+        unique_regimes = np.unique(regime_array)
+        regime_stats: Dict[str, RegimeCharacteristics] = {}
 
         self.logger.info(f"🔬 Analyzing characteristics for {len(unique_regimes)} regimes")
 
         for regime in unique_regimes:
-            mask = regime_labels == regime
+            mask = regime_array == regime
             X_regime = X[mask]
             y_regime = y[mask]
 
@@ -233,8 +339,15 @@ class RegimeAnalyzer:
                 self.logger.warning(f"⚠️ Regime {regime} has insufficient data ({len(X_regime)} samples)")
                 continue
 
-            regime_char = self._calculate_regime_characteristics(regime, X_regime, y_regime)
-            regime_stats[RegimeType(regime)] = regime_char
+            regime_type = _coerce_regime_type(regime)
+            if regime_type is RegimeType.UNKNOWN:
+                self.logger.warning(
+                    "⚠️ Regime %s is not a known regime type; defaulting to UNKNOWN characteristics.",
+                    regime,
+                )
+
+            regime_char = self._calculate_regime_characteristics(regime_type, X_regime, y_regime)
+            regime_stats[_normalize_regime_label(regime)] = regime_char
 
             self.logger.info(f"📊 Regime {regime}: vol={regime_char.volatility_level:.3f}, "
                            f"trend={regime_char.trend_strength:.3f}, noise={regime_char.noise_level:.3f}, "
@@ -242,8 +355,12 @@ class RegimeAnalyzer:
 
         return regime_stats
 
-    def _calculate_regime_characteristics(self, regime: str, X_regime: np.ndarray,
-                                        y_regime: np.ndarray) -> RegimeCharacteristics:
+    def _calculate_regime_characteristics(
+        self,
+        regime_type: RegimeType,
+        X_regime: np.ndarray,
+        y_regime: np.ndarray,
+    ) -> RegimeCharacteristics:
         """Calculate detailed characteristics for a single regime."""
 
         # Volatility calculation
@@ -273,7 +390,7 @@ class RegimeAnalyzer:
         volume_profile = min(1.0, max(0.0, volume_profile))
 
         return RegimeCharacteristics(
-            regime_type=RegimeType(regime),
+            regime_type=regime_type,
             volatility_level=volatility,
             trend_strength=trend_strength,
             noise_level=noise_level,
@@ -285,9 +402,20 @@ class RegimeAnalyzer:
 
     def _calculate_volatility(self, y: np.ndarray) -> float:
         """Calculate normalized volatility."""
-        returns = np.diff(y) / y[:-1]
-        volatility = np.std(returns)
-        return volatility / (np.mean(np.abs(returns)) + 1e-8)
+
+        if len(y) < 2:
+            return 0.0
+
+        prev_values = np.asarray(y[:-1])
+        prev_values = np.where(np.abs(prev_values) < 1e-8, 1e-8, prev_values)
+        returns = np.diff(y) / prev_values
+
+        if returns.size == 0:
+            return 0.0
+
+        volatility = float(np.std(returns))
+        mean_abs_returns = float(np.mean(np.abs(returns)))
+        return volatility / (mean_abs_returns + 1e-8)
 
     def _calculate_trend_strength(self, X: np.ndarray, y: np.ndarray) -> float:
         """Calculate trend strength using linear regression R²."""
@@ -339,16 +467,32 @@ class RegimeAnalyzer:
     def _calculate_volume_profile(self, X: np.ndarray) -> float:
         """Calculate volume profile indicator."""
         # Assume volume is in the last column or calculate from price movements
+        if X.size == 0:
+            return 0.0
+
         if X.shape[1] > 1:
             # If volume data is available
             volume_col = X[:, -1]  # Last column as volume
-            volume_profile = np.std(volume_col) / (np.mean(volume_col) + 1e-8)
+            if volume_col.size == 0:
+                return 0.0
+
+            mean_volume = float(np.mean(volume_col))
+            denominator = mean_volume if abs(mean_volume) > 1e-8 else 1e-8
+            volume_profile = float(np.std(volume_col) / denominator)
         else:
             # Calculate from price movements (rough estimate)
-            returns = np.abs(np.diff(X[:, 0]) / X[:-1, 0])
-            volume_profile = np.mean(returns)
+            base_series = X[:, 0]
+            if base_series.size < 2:
+                return 0.0
 
-        return min(1.0, volume_profile)
+            prev_values = np.where(np.abs(base_series[:-1]) < 1e-8, 1e-8, base_series[:-1])
+            returns = np.abs(np.diff(base_series) / prev_values)
+            if returns.size == 0:
+                return 0.0
+
+            volume_profile = float(np.mean(returns))
+
+        return float(min(1.0, volume_profile))
 
 
 class EnhancedRegimeAwareHPO:
@@ -364,8 +508,8 @@ class EnhancedRegimeAwareHPO:
             raise ImportError("❌ Enhanced HPO requires either scikit-optimize or Optuna. Install with: pip install scikit-optimize optuna")
 
         # Track optimization history
-        self.optimization_history = []
-        self.regime_characteristics = {}
+        self.optimization_history: List[Dict[str, Any]] = []
+        self.regime_characteristics: Dict[str, RegimeCharacteristics] = {}
 
     def optimize_for_regime(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray,
                           model_factory: Callable, regime_id: str) -> Dict[str, Any]:
@@ -387,12 +531,17 @@ class EnhancedRegimeAwareHPO:
         if self.config.enable_regime_analysis:
             self.regime_characteristics = self.regime_analyzer.analyze_regime_characteristics(X, y, regime_labels)
 
-        if regime_id not in self.regime_characteristics:
+        regime_key = _normalize_regime_label(regime_id)
+
+        if regime_key not in self.regime_characteristics:
             error_msg = f"❌ Enhanced HPO failed: No characteristics found for regime {regime_id}. Regime analysis required for enhanced HPO."
             self.logger.error(error_msg)
             raise ValueError(error_msg)
 
-        regime_char = self.regime_characteristics[RegimeType(regime_id)]
+        regime_char = self.regime_characteristics[regime_key]
+
+        regime_array = np.asarray(regime_labels)
+        regime_mask = np.vectorize(_normalize_regime_label)(regime_array) == regime_key
 
         # Get adaptive search space
         adaptive_space = self._get_adaptive_search_space(regime_char)
@@ -402,7 +551,9 @@ class EnhancedRegimeAwareHPO:
 
         # Perform multi-objective optimization
         best_params = self._multi_objective_optimization(
-            X, y, regime_labels == regime_id,
+            X,
+            y,
+            regime_mask,
             model_factory, adaptive_space, cv_strategy
         )
 

@@ -57,9 +57,8 @@ class GateioExchange(BaseExchange):
         """Initialize the GateIO exchange client."""
         try:
             if aiohttp is None:
-                self.logger.warning("⚠️ aiohttp not available, using mock session")
-                self.session = None
-                return
+                self.logger.error("❌ aiohttp is required for GateIO exchange functionality")
+                raise ImportError("aiohttp is required but not available. Please install aiohttp: pip install aiohttp")
 
             # Initialize aiohttp session with SSL configuration
             timeout = aiohttp.ClientTimeout(total=30)
@@ -117,9 +116,13 @@ class GateioExchange(BaseExchange):
         payload: str = ""
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make HTTP request to GateIO API."""
-        if aiohttp is None or not self.session:
-            self.logger.warning("⚠️ aiohttp not available, returning mock data")
-            return []
+        if aiohttp is None:
+            self.logger.error("❌ aiohttp is required for API requests")
+            raise ImportError("aiohttp is required but not available. Please install aiohttp: pip install aiohttp")
+        
+        if not self.session:
+            self.logger.error("❌ Exchange session not initialized")
+            raise RuntimeError("Exchange session not initialized. Call _initialize_exchange() first.")
 
         url = f"{self.base_url}{endpoint}"
         

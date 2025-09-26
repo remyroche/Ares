@@ -28,7 +28,8 @@ def calculate_correct_kelly_position_size(price_target_confidences: dict[str, fl
         
         position_size = kelly_fraction * kelly_multiplier
         return max(min_position_size, min(max_position_size, position_size))
-    except Exception:
+    except (ValueError, TypeError, ZeroDivisionError) as e:
+        tprint(f"Error calculating Kelly position size: {e}")
         return min_position_size
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.linear_confidence_scaling import LinearConfidenceScaler

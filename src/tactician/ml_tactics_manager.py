@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import invalid, warning, failed
+from src.utils.tprint import tprint
 
 import numpy as np
 from ..core.decorators import handles_errors
@@ -14,7 +15,8 @@ try:
     from src.training.steps.market_analysis.model_persistence_components.model_serializer import ModelSerializer
     from src.training.steps.market_analysis.model_persistence_components.version_manager import VersionManager
     _PERSISTENCE_AVAILABLE = True
-except Exception:
+except (ImportError, ModuleNotFoundError) as e:
+    tprint(f"Model persistence components not available: {e}")
     _PERSISTENCE_AVAILABLE = False
 
 import json
@@ -107,7 +109,8 @@ class MLTacticsManager:
                     if proba.ndim == 1:
                         proba = np.vstack([1 - proba, proba]).T
                     probs.append(proba)
-                except Exception:
+                except (AttributeError, ValueError, TypeError) as e:
+                    tprint(f"Error in model prediction: {e}")
                     continue
             if not probs:
                 if hasattr(X, 'shape') and len(getattr(X, 'shape', [])) > 0:
@@ -886,7 +889,8 @@ class MLTacticsManager:
                 pred = target.predict(features.reshape(1, -1))
                 try:
                     return float(np.clip(float(pred[0]), 0.0, 1.0))
-                except Exception:
+                except (ValueError, TypeError, IndexError) as e:
+                    tprint(f"Error in model prediction conversion: {e}")
                     return self._generate_fallback_confidence(barrier_type, features)
             return self._generate_fallback_confidence(barrier_type, features)
         except Exception as e:
@@ -1473,7 +1477,8 @@ class ExitStrategyOptimizer:
             # If recent trend is stronger and consistent, consider it trending
             return abs(recent_trend) > abs(older_trend) * 0.5
 
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint(f"Error in trend detection: {e}")
             return False
 
     def _calculate_trend_strength(self, market_data: pd.DataFrame, window: int = 20) -> float:
@@ -1486,7 +1491,8 @@ class ExitStrategyOptimizer:
             trend_strength = abs(np.polyfit(np.arange(window), prices, 1)[0])
             return min(1.0, trend_strength * 100)  # Normalize
 
-        except Exception:
+        except (ValueError, TypeError, IndexError) as e:
+            tprint(f"Error calculating trend strength: {e}")
             return 0.5
 
     def _get_base_exit_signals(self, current_predictions: dict[str, Any], position_context: dict[str, Any]) -> dict[str, Any]:

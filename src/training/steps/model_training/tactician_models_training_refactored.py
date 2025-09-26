@@ -2789,7 +2789,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             # Log cleanup errors in destructor but don't raise to avoid issues during garbage collection
             tprint_error(f"❌ Resource cleanup failed in destructor: {e}")
-            pass
+            # Ensure we don't leave any hanging resources
+            try:
+                if hasattr(self, 'training_data') and self.training_data is not None:
+                    del self.training_data
+                if hasattr(self, 'models') and self.models is not None:
+                    del self.models
+                if hasattr(self, 'results') and self.results is not None:
+                    del self.results
+            except Exception:
+                pass  # Ignore cleanup errors in destructor
     
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """

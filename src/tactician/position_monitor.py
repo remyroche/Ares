@@ -312,6 +312,9 @@ class PositionMonitor:
 
                 # Auto-refresh step12 configuration if enabled
                 await self._auto_refresh_step12_config()
+                
+                # Refresh step17 configuration if available
+                await self._auto_refresh_step17_config()
 
                 # Wait for next monitoring cycle
                 await asyncio.sleep(self.monitoring_interval)
@@ -1626,6 +1629,113 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None
+
+    async def _auto_refresh_step17_config(self) -> None:
+        """
+        Automatically refresh step17 configuration and optimized parameters.
+        This method is called periodically to check for new step17 results.
+        """
+        try:
+            # Check if auto-refresh is enabled
+            step17_config = self.config.get("step17_optimization", {})
+            auto_refresh = step17_config.get("auto_refresh", True)
+            
+            if not auto_refresh:
+                return
+            
+            # Check if we need to refresh (based on interval)
+            current_time = datetime.now()
+            if hasattr(self, '_last_step17_refresh'):
+                time_since_refresh = (current_time - self._last_step17_refresh).total_seconds()
+                refresh_interval = step17_config.get("refresh_interval", 600)  # 10 minutes default
+                
+                if time_since_refresh < refresh_interval:
+                    return
+            
+            # Try to load updated step17 configuration
+            updated_config = self._load_updated_step17_config()
+            if updated_config:
+                # Update optimized parameters
+                self.refresh_optimized_parameters(updated_config)
+                self._last_step17_refresh = current_time
+                self.logger.info("✅ Refreshed step17 optimized parameters automatically")
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error in step17 auto-refresh: {e}"))
+
+    def _load_updated_step17_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Load updated step17 configuration from results files.
+        
+        Returns:
+            Dict: Updated configuration or None if no updates found
+        """
+        try:
+            step17_config = self.config.get("step17_optimization", {})
+            result_paths = step17_config.get("step17_results_paths", [
+                "results/final_parameters_optimization.json",
+                "src/training/steps/backtesting/results/final_parameters_optimization.json",
+                "results/exit_strategy_optimization.json"
+            ])
+            
+            for path in result_paths:
+                if Path(path).exists():
+                    try:
+                        with open(path, 'r') as f:
+                            import json
+                            updated_config = json.load(f)
+                            
+                        # Check if this is newer than our current config
+                        if "timestamp" in updated_config:
+                            config_time = datetime.fromisoformat(updated_config["timestamp"])
+                            if hasattr(self, '_last_step17_refresh'):
+                                if config_time > self._last_step17_refresh:
+                                    return updated_config
+                            else:
+                                return updated_config
+                        else:
+                            return updated_config
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Could not load step17 config from {path}: {e}")
+                        continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error loading updated step17 config: {e}"))
+            return None
+
+    def refresh_step17_configuration(self, step17_results: Dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            self.logger.info('🔄 Refreshing position monitor configuration from step17 results...')
+            
+            # Update optimized parameters
+            self.refresh_optimized_parameters(step17_results)
+            
+            # Update monitoring configuration if available
+            if 'position_monitor' in step17_results:
+                monitor_config = step17_results['position_monitor']
+                
+                # Update monitoring interval if provided
+                if 'monitoring_interval' in monitor_config:
+                    self.monitoring_interval = monitor_config['monitoring_interval']
+                
+                # Update max position age if provided
+                if 'max_position_age' in monitor_config:
+                    self.max_position_age = monitor_config['max_position_age']
+            
+            self.logger.info('✅ Position monitor configuration refreshed from step17 results')
+            
+        except Exception as e:
+            self.logger.error(failed(f'❌ Error refreshing step17 configuration: {e}'))
 
     def add_position(self, position_data: Dict[str, Any]) -> None:
         """

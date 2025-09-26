@@ -425,7 +425,7 @@ class TacticsOrchestrator:
             if self.decision_policy:
                 self.decision_policy.refresh_step17_configuration(step17_results)
             if self.position_monitor:
-                pass
+                self.position_monitor.refresh_step17_configuration(step17_results)
             if self.position_closer:
                 self.position_closer.refresh_step17_configuration(step17_results)
             if hasattr(self.order_manager, 'refresh_step17_configuration'):
@@ -849,9 +849,50 @@ class TacticsOrchestrator:
         Execute pending trade decisions.
         """
         try:
-            pass
+            # Execute pending trade decisions
+            for decision in self.decision_history[-10:]:  # Process last 10 decisions
+                if decision.action in ['BUY', 'SELL'] and decision.confidence > 0.7:
+                    await self._execute_trade_decision(decision)
+            
+            # Clean up old decisions
+            if len(self.decision_history) > 100:
+                self.decision_history = self.decision_history[-50:]
         except Exception as e:
             self.logger.exception(failed(f'❌ Error executing decisions: {e}'))
+
+    async def _execute_trade_decision(self, decision: TradeDecision) -> None:
+        """Execute a trade decision."""
+        try:
+            if not self.order_manager:
+                self.logger.warning('Order manager not available for trade execution')
+                return
+            
+            # Create order request
+            from .enhanced_order_manager import OrderRequest, OrderSide, OrderType
+            
+            order_side = OrderSide.BUY if decision.action == 'BUY' else OrderSide.SELL
+            
+            order_request = OrderRequest(
+                symbol='BTCUSDT',  # Default symbol, should be configurable
+                side=order_side,
+                order_type=OrderType.MARKET,
+                quantity=decision.position_size,
+                metadata={
+                    'confidence': decision.confidence,
+                    'leverage': decision.leverage,
+                    'decision_metadata': decision.metadata
+                }
+            )
+            
+            # Place order
+            order_response = await self.order_manager.place_order(order_request)
+            if order_response:
+                self.logger.info(f'✅ Trade executed: {decision.action} {decision.position_size} (confidence: {decision.confidence:.3f})')
+            else:
+                self.logger.error(f'❌ Trade execution failed: {decision.action}')
+                
+        except Exception as e:
+            self.logger.error(f'❌ Error executing trade decision: {e}')
 
     def get_tactics_results(self) -> dict[str, Any]:
         """Return the latest decision and associated predictions/metrics."""

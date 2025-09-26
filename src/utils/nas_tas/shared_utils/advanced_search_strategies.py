@@ -109,8 +109,62 @@ class BaseAdvancedSearchStrategy:
                performance_evaluator: Callable,
                constraint_validator: Callable,
                n_iterations: int = 100) -> SearchStrategyResult:
-        """Perform advanced search."""
-        raise NotImplementedError("Subclasses must implement search")
+        """Perform advanced search with basic random sampling fallback."""
+        start_time = time.time()
+        search_history = []
+        best_architecture = None
+        best_score = -np.inf
+
+        self.logger.info(f"Starting basic search with {n_iterations} iterations")
+
+        for iteration in range(n_iterations):
+            # Generate random architecture
+            architecture = architecture_generator()
+            
+            # Validate constraints
+            if not constraint_validator(architecture).is_valid:
+                search_history.append({
+                    'iteration': iteration,
+                    'architecture': architecture,
+                    'score': -np.inf,
+                    'type': 'invalid'
+                })
+                continue
+
+            # Evaluate performance
+            score = performance_evaluator(architecture)
+
+            # Update best if improved
+            if score > best_score:
+                best_architecture = architecture
+                best_score = score
+
+            # Store in history
+            search_history.append({
+                'iteration': iteration,
+                'architecture': architecture,
+                'score': score,
+                'type': 'random_sampling'
+            })
+
+            # Log progress
+            if iteration % 10 == 0:
+                self.logger.info(f"Basic Search - Iteration {iteration}: Best Score = {best_score:.4f}")
+
+        execution_time = time.time() - start_time
+
+        return SearchStrategyResult(
+            best_architecture=best_architecture,
+            best_score=best_score,
+            search_history=search_history,
+            strategy_used="basic_random_sampling",
+            convergence_info={
+                'n_evaluations': len(search_history),
+                'valid_architectures': len([h for h in search_history if h['score'] > -np.inf])
+            },
+            execution_time=execution_time,
+            metadata={'fallback_strategy': True}
+        )
 
     def reset(self):
         """Reset the search strategy state."""

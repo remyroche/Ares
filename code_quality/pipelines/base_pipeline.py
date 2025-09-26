@@ -196,12 +196,18 @@ class BasePipeline(ABC):
     @abstractmethod
     def get_stages(self) -> List[PipelineStage]:
         """Get the list of stages for this pipeline."""
-        pass
-    
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement 'get_stages' to define the"
+            " pipeline execution flow."
+        )
+
     @abstractmethod
     async def execute_stage(self, stage: PipelineStage, context: Dict[str, Any]) -> StageResult:
         """Execute a specific pipeline stage."""
-        pass
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement 'execute_stage' so stages"
+            " can run with real logic instead of placeholders."
+        )
     
     async def run(self, context: Dict[str, Any] = None) -> PipelineResult:
         """Run the complete pipeline."""

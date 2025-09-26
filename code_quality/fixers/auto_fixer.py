@@ -126,7 +126,6 @@ class AutoFixer:
                             line_length = int(fmt["line-length"])  # type: ignore[arg-type]
                 except (ValueError, TypeError, KeyError) as e:
                     tprint_warning(f"Error parsing pyproject.toml format config: {e}")
-                    pass
 
             if line_length is None and setup_cfg.exists():
                 try:
@@ -136,14 +135,12 @@ class AutoFixer:
                         line_length = parser.getint("flake8", "max-line-length")
                 except (configparser.Error, ValueError) as e:
                     tprint_warning(f"Error parsing setup.cfg config: {e}")
-                    pass
 
             if line_length and line_length != self.config.auto_fix.max_line_length:
                 self.config.auto_fix.max_line_length = int(line_length)
         except (OSError, IOError, PermissionError) as e:
             # Non-fatal
             tprint_warning(f"Error loading configuration files: {e}")
-            pass
 
     def _register_builtin_plugins(self):
         """Register built-in code fixing plugins."""

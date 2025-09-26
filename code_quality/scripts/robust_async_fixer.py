@@ -63,7 +63,9 @@ class RobustAsyncFixer:
                         if "Async function '" in msg:
                             func_name = msg.split("'")[1]
                             async_funcs.add(func_name)
-            except:
+            except (json.JSONDecodeError, KeyError, FileNotFoundError, PermissionError) as e:
+                # Handle JSON parsing errors, missing keys, or file access issues
+                tprint_error(f"Failed to load async issues from {issues_file}: {e}")
                 pass
 
         return async_funcs
@@ -194,7 +196,9 @@ class RobustAsyncFixer:
                                 issues_found += 1
                                 sample_files.append(file_path)
                                 break
-                except:
+                except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
+                    # Handle file access or encoding issues
+                    tprint_error(f"Failed to analyze file {file_path}: {e}")
                     pass
 
             tprint(f"\nFound potential async/await issues in {issues_found} files")

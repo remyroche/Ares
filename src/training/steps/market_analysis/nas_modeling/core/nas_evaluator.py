@@ -1091,8 +1091,11 @@ class LegacyNASEvaluator:
         """Destructor."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during destruction
+        except (AttributeError, RuntimeError, OSError) as e:
+            # Handle cleanup errors in destructor (object may be partially destroyed)
+            if TPRINT_AVAILABLE:
+                tprint_error(f"Cleanup failed in NASEvaluator destructor: {e}")
+            pass
     
     def evaluate_with_enhanced_utilities(self, 
                                        architecture: Dict[str, Any], 

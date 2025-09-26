@@ -195,8 +195,11 @@ class UnifiedComponentManager:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during cleanup in destructor
+        except (AttributeError, RuntimeError, OSError) as e:
+            # Handle cleanup errors in destructor (object may be partially destroyed)
+            if UTILITY_MODULES_AVAILABLE:
+                tprint_error(f"Cleanup failed in UnifiedComponentManager destructor: {e}")
+            pass
 
 
 # Convenience functions for easy access to unified components

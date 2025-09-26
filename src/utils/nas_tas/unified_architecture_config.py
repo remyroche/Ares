@@ -25,6 +25,14 @@ from ._validation import (
     ensure_sequence_not_empty,
     normalize_weights,
 )
+from .common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -492,12 +500,12 @@ class NASArchitectureConfig(BaseArchitectureConfig):
     system_name: str = "Neural Architecture Search"
     
     # Neural architecture parameters
-    min_layers: int = 2
-    max_layers: int = 20
-    min_hidden_size: int = 32
-    max_hidden_size: int = 1024
-    min_parameters: int = 1000
-    max_parameters: int = 10000000
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_hidden_size: int = RECOMMENDED_MIN_UNITS
+    max_hidden_size: int = RECOMMENDED_MAX_UNITS
+    min_parameters: int = RECOMMENDED_MIN_UNITS * ESTIMATED_INPUT_FEATURES
+    max_parameters: int = DATA_AWARE_PARAMETER_CAPACITY
     
     # Neural architecture types
     architecture_types: List[str] = field(default_factory=lambda: [

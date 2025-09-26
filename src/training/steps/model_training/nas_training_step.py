@@ -30,6 +30,14 @@ from src.training.steps.model_training.nas_tas_per_regime_training_base import (
 from src.training.steps.model_training.tactician_lookback_optimization import (
     TacticianLookbackOptimization,
 )
+from src.utils.nas_tas.common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    RECOMMENDED_HIDDEN_SIZE_OPTIONS,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 
 @dataclass
@@ -257,8 +265,10 @@ class NASTrainingStep(PerRegimeTrainingStep):
                     "learning_rate": np.random.uniform(0.001, 0.01),
                     "batch_size": int(np.random.choice([32, 64, 128])),
                     "dropout_rate": np.random.uniform(0.1, 0.5),
-                    "num_layers": int(np.random.randint(2, 8)),
-                    "hidden_size": int(np.random.randint(64, 512)),
+                    "num_layers": int(
+                        np.random.randint(RECOMMENDED_MIN_LAYERS, RECOMMENDED_MAX_LAYERS + 1)
+                    ),
+                    "hidden_size": int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS)),
                 },
                 "optimization_time": float(np.random.uniform(10, 60)),
                 "n_trials": int(np.random.randint(20, 100)),
@@ -280,8 +290,8 @@ class NASTrainingStep(PerRegimeTrainingStep):
             "learning_rate": 0.001,
             "batch_size": 64,
             "dropout_rate": 0.2,
-            "num_layers": 4,
-            "hidden_size": 256,
+            "num_layers": min(4, RECOMMENDED_MAX_LAYERS),
+            "hidden_size": RECOMMENDED_MAX_UNITS,
         }
 
     async def _train_models(

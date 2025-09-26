@@ -21,6 +21,14 @@ from src.utils.nas_tas.shared_utils.common_operations_bridge import (
     safe_divide, safe_log, safe_sqrt, validate_finite, validate_positive,
     get_current_datetime, optimize_dataframe_dtypes
 )
+from src.utils.nas_tas.common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 from src.utils.common_utilities import (
     validate_dataframe_columns, safe_convert_dtypes,
     calculate_data_quality_metrics, get_dataframe_info
@@ -947,8 +955,19 @@ def create_default_nas_search_space() -> SearchSpace:
     # Add neural architecture parameters
     search_space.add_continuous_parameter("learning_rate", 1e-5, 1e-1, log_scale=True, 
                                          description="Learning rate for optimizer")
-    search_space.add_discrete_parameter("hidden_layers", 1, 10, description="Number of hidden layers")
-    search_space.add_discrete_parameter("hidden_units", 32, 1024, step=32, description="Units per hidden layer")
+    search_space.add_discrete_parameter(
+        "hidden_layers",
+        RECOMMENDED_MIN_LAYERS,
+        RECOMMENDED_MAX_LAYERS,
+        description="Number of hidden layers",
+    )
+    search_space.add_discrete_parameter(
+        "hidden_units",
+        RECOMMENDED_MIN_UNITS,
+        RECOMMENDED_MAX_UNITS,
+        step=16,
+        description="Units per hidden layer",
+    )
     search_space.add_categorical_parameter("activation", ["relu", "tanh", "sigmoid", "leaky_relu", "gelu"],
                                           description="Activation function")
     search_space.add_categorical_parameter("optimizer", ["adam", "sgd", "rmsprop", "adamw"],

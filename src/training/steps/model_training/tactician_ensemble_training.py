@@ -54,6 +54,11 @@ try:
     from src.training.steps.model_training.tactician_nas_integration import (
         TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
     )
+    from src.utils.nas_tas.common_constants import (
+        RECOMMENDED_MAX_LAYERS,
+        RECOMMENDED_MAX_UNITS,
+        RECOMMENDED_MIN_UNITS,
+    )
     NAS_AVAILABLE = True
 except ImportError as e:
     print(f"❌ CRITICAL: Failed to import NAS integration: {e}")
@@ -2103,9 +2108,9 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
         nas_config = TacticianNASConfig(
             n_trials=30,  # Reduced for faster training
             timeout_seconds=1800,  # 30 minutes max
-            max_layers=6,  # Shallow networks for 1m timeframe speed
-            max_units=256,  # Moderate complexity
-            min_units=32,  # Minimum for meaningful learning
+            max_layers=RECOMMENDED_MAX_LAYERS,  # Data-aware depth limit
+            max_units=RECOMMENDED_MAX_UNITS,  # Data-aware width limit
+            min_units=RECOMMENDED_MIN_UNITS,  # Minimum for meaningful learning
             objectives=['accuracy', 'efficiency', 'robustness'],
             objective_weights=[0.5, 0.3, 0.2],  # Balance for 1m timeframe
             enable_regime_awareness=True,

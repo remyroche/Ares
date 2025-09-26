@@ -22,6 +22,13 @@ import time
 import json
 from datetime import datetime
 
+from src.utils.nas_tas.common_constants import (
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
+
 # Import shared utilities
 try:
     from src.utils.common_operations import (
@@ -94,10 +101,10 @@ class NeuralSSMConfig:
     """Configuration for Neural State Space Model NAS."""
     
     # Architecture search parameters
-    max_layers: int = 10
-    min_layers: int = 2
-    max_hidden_units: int = 512
-    min_hidden_units: int = 16
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_hidden_units: int = RECOMMENDED_MAX_UNITS
+    min_hidden_units: int = RECOMMENDED_MIN_UNITS
     
     # State space model parameters
     state_dim: int = 8

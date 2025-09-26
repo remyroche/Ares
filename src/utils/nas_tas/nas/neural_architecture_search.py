@@ -89,6 +89,15 @@ from src.utils.nas_tas.bayesian_tpe_optimizer import (
     BayesianTPEConfig,
     optimize_with_bayesian_tpe
 )
+from src.utils.nas_tas.common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_HIDDEN_SIZE_OPTIONS,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,14 +107,14 @@ class ArchitectureConfig:
     """Configuration for neural architecture search."""
     
     # Search space
-    min_layers: int = 2
-    max_layers: int = 8
-    min_units: int = 32
-    max_units: int = 512
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_units: int = RECOMMENDED_MIN_UNITS
+    max_units: int = RECOMMENDED_MAX_UNITS
     activation_functions: List[str] = field(
         default_factory=lambda: ['relu', 'tanh', 'swish', 'gelu', 'sigmoid']
     )
-    dropout_rates: List[float] = field(default_factory=lambda: [0.0, 0.1, 0.2, 0.3, 0.5])
+    dropout_rates: List[float] = field(default_factory=lambda: [0.0, 0.1, 0.2, 0.3, 0.4])
     layer_types: List[str] = field(
         default_factory=lambda: [
             'dense', 'lstm', 'gru', 'conv1d', 'conv2d', 'batchnorm', 'dropout', 'self_attention'
@@ -220,10 +229,11 @@ class ArchitectureSearchSpace:
 
                 # Sample layer parameters
                 if layer_type == 'dense':
-                    units = np.random.randint(self.config.min_units, self.config.max_units + 1)
+                    units = int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS))
+                    units = int(np.clip(units, self.config.min_units, self.config.max_units))
                     activation = np.random.choice(self.config.activation_functions)
                     dropout = np.random.choice(self.config.dropout_rates)
-                    
+
                     layer_config = {
                         'type': 'dense',
                         'units': units,
@@ -231,37 +241,36 @@ class ArchitectureSearchSpace:
                         'dropout': dropout
                     }
                     
-                    # Estimate parameters (simplified)
-                    if i == 0:
-                        # Input layer - assume input features
-                        layer_params = units * 100  # Simplified estimate
-                    else:
-                        # Hidden layer
-                        prev_units = layers[-1].get('units', 100)
-                        layer_params = prev_units * units
-                    
+                    prev_units = (
+                        ESTIMATED_INPUT_FEATURES if not layers
+                        else layers[-1].get('units', ESTIMATED_INPUT_FEATURES)
+                    )
+                    layer_params = prev_units * units
+
                     total_params += layer_params
                     estimated_flops += layer_params * 2  # Simplified FLOP estimate
-                
+
                 elif layer_type in ['lstm', 'gru']:
-                    units = np.random.randint(32, 256)
+                    units = int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS))
+                    units = int(np.clip(units, self.config.min_units, self.config.max_units))
                     return_sequences = i < n_layers - 1  # Only last layer returns sequences
                     dropout = np.random.choice(self.config.dropout_rates)
-                    
+
                     layer_config = {
                         'type': layer_type,
                         'units': units,
                         'return_sequences': return_sequences,
                         'dropout': dropout
                     }
-                    
+
                     # Estimate parameters for RNN layers
                     layer_params = 4 * units * units if layer_type == 'lstm' else 3 * units * units
                     total_params += layer_params
                     estimated_flops += layer_params * 4  # RNN operations are more expensive
-                
+
                 elif layer_type == 'conv1d':
-                    filters = np.random.randint(32, 256)
+                    filters = int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS))
+                    filters = int(np.clip(filters, self.config.min_units, self.config.max_units))
                     kernel_size = np.random.choice([1, 3, 5, 7])
                     activation = np.random.choice(self.config.activation_functions)
 
@@ -272,12 +281,13 @@ class ArchitectureSearchSpace:
                         'activation': activation
                     }
 
-                    layer_params = max(filters * kernel_size * 32, 0)
+                    layer_params = max(filters * kernel_size * ESTIMATED_INPUT_FEATURES, 0)
                     total_params += layer_params
                     estimated_flops += layer_params * 2
 
                 elif layer_type == 'conv2d':
-                    filters = np.random.randint(16, 256)
+                    filters = int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS))
+                    filters = int(np.clip(filters, self.config.min_units, self.config.max_units))
                     kernel_size = tuple(np.random.choice([3, 5], size=2))
                     strides = tuple(np.random.choice([1, 2], size=2))
                     activation = np.random.choice(self.config.activation_functions)
@@ -290,7 +300,7 @@ class ArchitectureSearchSpace:
                         'activation': activation
                     }
 
-                    layer_params = max(filters * np.prod(kernel_size) * 16, 0)
+                    layer_params = max(filters * int(np.prod(kernel_size)) * ESTIMATED_INPUT_FEATURES, 0)
                     total_params += layer_params
                     estimated_flops += layer_params * 4
 
@@ -316,7 +326,8 @@ class ArchitectureSearchSpace:
 
                 elif layer_type == 'self_attention':
                     heads = int(np.random.choice([2, 4, 8]))
-                    key_dim = int(np.random.randint(16, 128))
+                    key_dim = int(np.random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS))
+                    key_dim = int(np.clip(key_dim, self.config.min_units, self.config.max_units))
                     dropout = float(np.random.choice(self.config.dropout_rates))
 
                     layer_config = {
@@ -326,7 +337,7 @@ class ArchitectureSearchSpace:
                         'dropout': max(min(dropout, 0.5), 0.0)
                     }
 
-                    layer_params = max(heads * key_dim * 2, 0)
+                    layer_params = max(heads * key_dim * ESTIMATED_INPUT_FEATURES, 0)
                     total_params += layer_params
                     estimated_flops += layer_params * 4
 
@@ -346,7 +357,14 @@ class ArchitectureSearchSpace:
                 data_type=data_type,
                 preprocessing_steps=preprocessing_steps
             )
-            
+
+            if total_params > DATA_AWARE_PARAMETER_CAPACITY:
+                self.logger.debug(
+                    "Sampled architecture above data-aware parameter budget (%s > %s)",
+                    total_params,
+                    DATA_AWARE_PARAMETER_CAPACITY,
+                )
+
             self.logger.debug(f"Sampled architecture with {n_layers} layers, {total_params} parameters")
             return candidate
             
@@ -402,17 +420,17 @@ class ArchitectureSearchSpace:
             dropout = layer_config.get('dropout', 0.0)
             layer_config['dropout'] = float(np.clip(dropout, 0.0, 0.9))
         elif layer_type in {'lstm', 'gru'}:
-            units = layer_config.get('units', 32)
-            layer_config['units'] = int(np.clip(units, 16, 512))
+            units = layer_config.get('units', self.config.min_units)
+            layer_config['units'] = int(np.clip(units, self.config.min_units, self.config.max_units))
             layer_config['dropout'] = float(np.clip(layer_config.get('dropout', 0.0), 0.0, 0.9))
         elif layer_type.startswith('conv'):
-            filters = layer_config.get('filters', 32)
-            layer_config['filters'] = int(np.clip(filters, 8, 1024))
+            filters = layer_config.get('filters', self.config.min_units)
+            layer_config['filters'] = int(np.clip(filters, self.config.min_units, self.config.max_units))
         elif layer_type == 'self_attention':
             heads = layer_config.get('heads', 2)
             layer_config['heads'] = int(np.clip(heads, 1, 16))
-            key_dim = layer_config.get('key_dim', 32)
-            layer_config['key_dim'] = int(np.clip(key_dim, 8, 256))
+            key_dim = layer_config.get('key_dim', self.config.min_units)
+            layer_config['key_dim'] = int(np.clip(key_dim, self.config.min_units, self.config.max_units))
 
 
 class NeuralArchitectureSearch:
@@ -813,13 +831,13 @@ class NeuralArchitectureSearch:
             },
             'rnn_units': {
                 'type': 'int',
-                'low': 32,
-                'high': 256
+                'low': self.config.min_units,
+                'high': self.config.max_units
             },
             'conv_filters': {
                 'type': 'int',
-                'low': 16,
-                'high': 256
+                'low': self.config.min_units,
+                'high': self.config.max_units
             },
             'activation': {
                 'type': 'categorical',
@@ -926,19 +944,18 @@ class NeuralArchitectureSearch:
                     'activation': activation,
                     'dropout': dropout
                 }
-                
-                # Estimate parameters
-                if i == 0:
-                    layer_params = units * 100
-                else:
-                    prev_units = layers[-1].get('units', 100)
-                    layer_params = prev_units * units
-                
+
+                prev_units = (
+                    ESTIMATED_INPUT_FEATURES if not layers
+                    else layers[-1].get('units', ESTIMATED_INPUT_FEATURES)
+                )
+                layer_params = prev_units * units
+
                 total_params += layer_params
                 estimated_flops += layer_params * 2
-            
+
             elif layer_type in ['lstm', 'gru']:
-                units = trial.suggest_int('rnn_units', 32, 256)
+                units = trial.suggest_int('rnn_units', self.config.min_units, self.config.max_units)
                 return_sequences = trial.suggest_categorical('return_sequences', [True, False])
                 dropout = trial.suggest_categorical('rnn_dropout', self.config.dropout_rates)
                 
@@ -954,7 +971,7 @@ class NeuralArchitectureSearch:
                 estimated_flops += layer_params * 4
 
             elif layer_type == 'conv1d':
-                filters = trial.suggest_int(f'filters_{i}', 32, 256)
+                filters = trial.suggest_int(f'filters_{i}', self.config.min_units, self.config.max_units)
                 kernel_size = trial.suggest_categorical(f'kernel_{i}', [1, 3, 5, 7])
                 activation = trial.suggest_categorical(f'conv_activation_{i}', self.config.activation_functions)
 
@@ -965,12 +982,12 @@ class NeuralArchitectureSearch:
                     'activation': activation
                 }
 
-                layer_params = filters * kernel_size * 32
+                layer_params = filters * kernel_size * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 2
 
             elif layer_type == 'conv2d':
-                filters = trial.suggest_int(f'conv2d_filters_{i}', 16, 256)
+                filters = trial.suggest_int(f'conv2d_filters_{i}', self.config.min_units, self.config.max_units)
                 kernel = trial.suggest_categorical(f'conv2d_kernel_{i}', [(3, 3), (5, 5)])
                 layer_config = {
                     'type': 'conv2d',
@@ -979,7 +996,7 @@ class NeuralArchitectureSearch:
                     'strides': (1, 1),
                     'activation': trial.suggest_categorical(f'conv2d_activation_{i}', self.config.activation_functions)
                 }
-                layer_params = filters * np.prod(kernel) * 16
+                layer_params = filters * int(np.prod(kernel)) * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 4
 
@@ -998,7 +1015,9 @@ class NeuralArchitectureSearch:
 
             elif layer_type == 'self_attention':
                 heads = trial.suggest_categorical(f'attention_heads_{i}', [2, 4, 8])
-                key_dim = trial.suggest_int(f'attention_keydim_{i}', 16, 128)
+                key_dim = trial.suggest_int(
+                    f'attention_keydim_{i}', self.config.min_units, self.config.max_units
+                )
                 dropout = trial.suggest_float(f'attention_dropout_{i}', 0.0, 0.5)
                 layer_config = {
                     'type': 'self_attention',
@@ -1006,11 +1025,18 @@ class NeuralArchitectureSearch:
                     'key_dim': key_dim,
                     'dropout': dropout
                 }
-                layer_params = heads * key_dim * 2
+                layer_params = heads * key_dim * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 4
 
             layers.append(layer_config)
+
+        if total_params > DATA_AWARE_PARAMETER_CAPACITY:
+            self.logger.debug(
+                "Trial-sampled architecture above data-aware parameter budget (%s > %s)",
+                total_params,
+                DATA_AWARE_PARAMETER_CAPACITY,
+            )
 
         return ArchitectureCandidate(
             layers=layers,
@@ -1054,15 +1080,18 @@ class NeuralArchitectureSearch:
                     'activation': activation,
                     'dropout': dropout
                 }
-                prev_units = layers[-1].get('units', units) if layers else units
+                prev_units = (
+                    layers[-1].get('units', ESTIMATED_INPUT_FEATURES)
+                    if layers else ESTIMATED_INPUT_FEATURES
+                )
                 layer_params = prev_units * units
                 total_params += layer_params
                 estimated_flops += layer_params * 2
 
             elif layer_type in {'lstm', 'gru'}:
-                base_units = params.get('rnn_units', 128)
+                base_units = params.get('rnn_units', self.config.max_units)
                 noise = rng.integers(-16, 16)
-                units = int(np.clip(base_units + noise, 16, 512))
+                units = int(np.clip(base_units + noise, self.config.min_units, self.config.max_units))
                 layer_config = {
                     'type': layer_type,
                     'units': units,
@@ -1074,7 +1103,13 @@ class NeuralArchitectureSearch:
                 estimated_flops += layer_params * 4
 
             elif layer_type == 'conv1d':
-                filters = int(np.clip(params.get('conv_filters', 64) + rng.integers(-8, 8), 16, 256))
+                filters = int(
+                    np.clip(
+                        params.get('conv_filters', self.config.max_units) + rng.integers(-8, 8),
+                        self.config.min_units,
+                        self.config.max_units,
+                    )
+                )
                 kernel = int(rng.choice([1, 3, 5, 7]))
                 layer_config = {
                     'type': 'conv1d',
@@ -1082,12 +1117,18 @@ class NeuralArchitectureSearch:
                     'kernel_size': kernel,
                     'activation': params.get('activation', rng.choice(self.config.activation_functions))
                 }
-                layer_params = filters * kernel * 32
+                layer_params = filters * kernel * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 2
 
             elif layer_type == 'conv2d':
-                filters = int(np.clip(params.get('conv_filters', 32) + rng.integers(-8, 8), 8, 256))
+                filters = int(
+                    np.clip(
+                        params.get('conv_filters', self.config.max_units // 2) + rng.integers(-8, 8),
+                        self.config.min_units,
+                        self.config.max_units,
+                    )
+                )
                 kernel = rng.choice([(3, 3), (5, 5)])
                 layer_config = {
                     'type': 'conv2d',
@@ -1096,7 +1137,7 @@ class NeuralArchitectureSearch:
                     'strides': (1, 1),
                     'activation': params.get('activation', 'relu')
                 }
-                layer_params = filters * np.prod(kernel) * 16
+                layer_params = filters * int(np.prod(kernel)) * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 4
 
@@ -1115,14 +1156,20 @@ class NeuralArchitectureSearch:
 
             elif layer_type == 'self_attention':
                 heads = int(rng.choice([2, 4, 8]))
-                key_dim = int(rng.integers(16, 128))
+                key_dim = int(
+                    np.clip(
+                        rng.integers(self.config.min_units, self.config.max_units + 1),
+                        self.config.min_units,
+                        self.config.max_units,
+                    )
+                )
                 layer_config = {
                     'type': 'self_attention',
                     'heads': heads,
                     'key_dim': key_dim,
                     'dropout': float(np.clip(params.get('dropout_rate', rng.choice(self.config.dropout_rates)), 0.0, 0.5))
                 }
-                layer_params = heads * key_dim * 2
+                layer_params = heads * key_dim * ESTIMATED_INPUT_FEATURES
                 total_params += layer_params
                 estimated_flops += layer_params * 4
 
@@ -1131,6 +1178,13 @@ class NeuralArchitectureSearch:
 
             self.search_space._validate_layer_config(layer_config)
             layers.append(layer_config)
+
+        if total_params > DATA_AWARE_PARAMETER_CAPACITY:
+            self.logger.debug(
+                "Parameter budget exceeded when reconstructing architecture (%s > %s)",
+                total_params,
+                DATA_AWARE_PARAMETER_CAPACITY,
+            )
 
         return ArchitectureCandidate(
             layers=layers,
@@ -1454,7 +1508,8 @@ class NeuralArchitectureSearch:
                 val_accuracy = (torch.argmax(val_pred, dim=1) == torch.argmax(y_val_tensor, dim=1)).float().mean().item()
 
         total_params = sum(p.numel() for p in model.parameters())
-        efficiency_score = 1.0 / (1.0 + total_params / 1_000_000)
+        budget = max(DATA_AWARE_PARAMETER_CAPACITY, 1)
+        efficiency_score = 1.0 / (1.0 + total_params / budget)
         robustness_score = 1.0 - abs(train_accuracy - val_accuracy)
 
         return {
@@ -1563,7 +1618,8 @@ class NeuralArchitectureSearch:
         train_accuracy = history.history.get('accuracy', [0.0])[-1]
 
         total_params = model.count_params()
-        efficiency_score = 1.0 / (1.0 + total_params / 1_000_000)
+        budget = max(DATA_AWARE_PARAMETER_CAPACITY, 1)
+        efficiency_score = 1.0 / (1.0 + total_params / budget)
         robustness_score = 1.0 - abs(train_accuracy - val_accuracy)
 
         return {

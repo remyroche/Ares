@@ -19,6 +19,14 @@ from .thread_guard import limit_blas_threads, get_thread_info, validate_thread_e
 from .lookahead_protection import LookaheadProtection
 from .base_safeguards import MLTrainingSafeguards
 from .enhanced_error_handling import RobustErrorHandler
+from .dependency_management import manager as dependency_manager, OptionalDependencyError
+from .error_handling import (
+    log_and_raise,
+    log_and_return_default,
+    suppress_with_logging,
+    guard_execution,
+)
+from .performance import bounded_sleep
 
 __all__ = [
     # Logging
@@ -38,9 +46,16 @@ __all__ = [
     
     # Protection
     'LookaheadProtection', 'MLTrainingSafeguards',
-    
+
     # Error Handling
-    'RobustErrorHandler'
+    'RobustErrorHandler', 'log_and_raise', 'log_and_return_default',
+    'suppress_with_logging', 'guard_execution',
+
+    # Optional dependencies
+    'dependency_manager', 'OptionalDependencyError',
+
+    # Performance safeguards
+    'bounded_sleep'
 ]
 
 
@@ -76,4 +91,26 @@ def __getattr__(name: str):
     if name == 'RobustErrorHandler':
         from .enhanced_error_handling import RobustErrorHandler as _RobustErrorHandler
         return _RobustErrorHandler
+    if name == 'dependency_manager':
+        from .dependency_management import manager as _manager
+        return _manager
+    if name == 'OptionalDependencyError':
+        from .dependency_management import OptionalDependencyError as _OptionalDependencyError
+        return _OptionalDependencyError
+    if name in ('log_and_raise', 'log_and_return_default', 'suppress_with_logging', 'guard_execution'):
+        from .error_handling import (
+            log_and_raise as _log_and_raise,
+            log_and_return_default as _log_and_return_default,
+            suppress_with_logging as _suppress_with_logging,
+            guard_execution as _guard_execution,
+        )
+        return {
+            'log_and_raise': _log_and_raise,
+            'log_and_return_default': _log_and_return_default,
+            'suppress_with_logging': _suppress_with_logging,
+            'guard_execution': _guard_execution,
+        }[name]
+    if name == 'bounded_sleep':
+        from .performance import bounded_sleep as _bounded_sleep
+        return _bounded_sleep
     raise AttributeError(f"module 'utils.ml_common.utils' has no attribute {name!r}")

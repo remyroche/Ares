@@ -17,6 +17,16 @@ import warnings
 
 logger = logging.getLogger(__name__)
 
+
+class FutureCorrelationComputationError(RuntimeError):
+    """Raised when the future correlation calculation cannot be completed safely."""
+
+    def __init__(self, feature_name: str, original_error: Exception):
+        message = f"Unable to compute future correlation for feature '{feature_name}': {original_error}"
+        super().__init__(message)
+        self.feature_name = feature_name
+        self.original_error = original_error
+
 @dataclass
 class DataLeakageConfig:
     """Configuration for data leakage prevention."""
@@ -341,7 +351,7 @@ class DataLeakagePrevention:
                         try:
                             # Calculate correlation with future target values
                             future_correlation = self._calculate_future_correlation(
-                                data[col], targets, timestamps
+                                col, data[col], targets, timestamps
                             )
 
                             if abs(future_correlation) > 0.8:  # High correlation with future
@@ -352,6 +362,14 @@ class DataLeakagePrevention:
                                     'description': f'Feature {col} highly correlated with future target',
                                     'severity': 'high'
                                 })
+                        except FutureCorrelationComputationError as exc:
+                            logger.error(str(exc))
+                            issues.append({
+                                'type': 'lookahead_detection_failed',
+                                'feature': col,
+                                'description': str(exc),
+                                'severity': 'high'
+                            })
                         except Exception as e:
                             logger.warning(f"Could not check lookahead bias for feature {col}: {e}")
 
@@ -365,28 +383,57 @@ class DataLeakagePrevention:
 
         return issues
 
-    def _calculate_future_correlation(self, feature: pd.Series, target: pd.Series, timestamps: pd.Series) -> float:
-        """Calculate correlation between feature and future target values."""
+    def _calculate_future_correlation(
+        self,
+        feature_name: str,
+        feature: pd.Series,
+        target: pd.Series,
+        timestamps: pd.Series
+    ) -> float:
+        """Calculate correlation between a feature and the subsequent target values."""
         try:
-            # For each point, check if feature correlates with future target
-            correlations = []
+            feature_series = feature.reset_index(drop=True) if isinstance(feature, pd.Series) else pd.Series(feature)
+            target_series = target.reset_index(drop=True) if isinstance(target, pd.Series) else pd.Series(target)
+            timestamp_series = pd.to_datetime(timestamps).reset_index(drop=True)
+        except Exception as exc:
+            raise FutureCorrelationComputationError(feature_name, exc) from exc
 
-            for i in range(len(feature) - 1):
-                current_time = timestamps.iloc[i]
-                future_target = target.iloc[i + 1:].values
-                current_feature = feature.iloc[i]
-
-                if len(future_target) > 0:
-                    # Check correlation with immediate future
-                    if len(future_target) > 0:
-                        corr = np.corrcoef([current_feature] * len(future_target), future_target)[0, 1]
-                        correlations.append(abs(corr))
-
-            return np.mean(correlations) if correlations else 0.0
-
-        except Exception as e:
-            logger.error(f"Future correlation calculation failed: {e}")
+        min_length = min(len(feature_series), len(target_series), len(timestamp_series))
+        if min_length < 3:
             return 0.0
+
+        feature_series = feature_series.iloc[:min_length]
+        target_series = target_series.iloc[:min_length]
+        timestamp_series = timestamp_series.iloc[:min_length]
+
+        if not timestamp_series.is_monotonic_increasing:
+            raise FutureCorrelationComputationError(
+                feature_name,
+                ValueError("Timestamps must be strictly increasing for future correlation analysis")
+            )
+
+        future_target = target_series.shift(-1)
+        valid_mask = (~feature_series.isna()) & (~future_target.isna())
+
+        valid_features = feature_series[valid_mask]
+        valid_future_target = future_target[valid_mask]
+
+        if len(valid_features) < 3:
+            return 0.0
+
+        if valid_features.nunique() < 2 or valid_future_target.nunique() < 2:
+            # Correlation would be undefined for constant series
+            return 0.0
+
+        try:
+            correlation = valid_features.corr(valid_future_target)
+        except Exception as exc:
+            raise FutureCorrelationComputationError(feature_name, exc) from exc
+
+        if pd.isna(correlation):
+            return 0.0
+
+        return float(correlation)
 
     def _check_feature_temporal_validity(self, data: pd.DataFrame, timestamp_column: str) -> List[Dict[str, Any]]:
         """Check if features have valid temporal relationships."""

@@ -420,7 +420,12 @@ class ModelPersistence:
                     version_parts = version[1:].split('.')
                     if len(version_parts) == 3:
                         version_numbers.append([int(x) for x in version_parts])
-                except:
+                except ValueError as exc:
+                    self.logger.debug(
+                        "Skipping malformed version string \"%s\" while generating next version: %s",
+                        version,
+                        exc,
+                    )
                     continue
             
             if not version_numbers:
@@ -455,7 +460,12 @@ class ModelPersistence:
                     version_parts = version[1:].split('.')
                     if len(version_parts) == 3:
                         version_numbers.append((version, [int(x) for x in version_parts]))
-                except:
+                except ValueError as exc:
+                    self.logger.debug(
+                        "Skipping malformed version directory \"%s\" when locating latest version: %s",
+                        version,
+                        exc,
+                    )
                     continue
             
             if not version_numbers:

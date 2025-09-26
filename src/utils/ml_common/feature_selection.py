@@ -437,8 +437,12 @@ class FeatureSelectionFramework:
                     error_context['data_quality_issues'] = data_quality.get('issues', [])
                     error_context['data_quality_warnings'] = data_quality.get('warnings', [])
                     error_context['suspicious_features'] = data_quality.get('suspicious_features', [])
-            except:
-                error_context['input_validation'] = 'Unable to validate inputs'
+            except (AttributeError, IndexError, TypeError, ValueError) as e:
+                tprint(f"⚠️ Input validation failed: {type(e).__name__}: {e}")
+                error_context['input_validation'] = f'Unable to validate inputs: {type(e).__name__}: {e}'
+            except Exception as e:
+                tprint(f"💥 Unexpected error during input validation: {type(e).__name__}: {e}")
+                error_context['input_validation'] = f'Unexpected error during input validation: {type(e).__name__}: {e}'
             
             # Log error with comprehensive context
             self.log_error_with_context(error_context, "ERROR")
@@ -598,7 +602,11 @@ class FeatureSelectionFramework:
                 if safe_std(X[:, i]) == 0:
                     constant_indices.append(i)
             return constant_indices
-        except:
+        except (IndexError, AttributeError) as e:
+            tprint(f"⚠️ Error detecting constant features: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in constant feature detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_high_correlation_features(self, X: np.ndarray, threshold: float = 0.99) -> List[Tuple[int, int, float]]:
@@ -611,7 +619,11 @@ class FeatureSelectionFramework:
                     if corr > threshold:
                         high_corr_pairs.append((i, j, corr))
             return high_corr_pairs
-        except:
+        except (IndexError, AttributeError, ValueError) as e:
+            tprint(f"⚠️ Error detecting high correlation features: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in high correlation detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray, 
@@ -629,7 +641,11 @@ class FeatureSelectionFramework:
                     suspicious.append((i, corr))
                     _LOGGER.warning(f"⚠️ Suspiciously low correlation with target: Feature {i} = {corr:.4f}")
             return suspicious
-        except:
+        except (IndexError, AttributeError, ValueError) as e:
+            tprint(f"⚠️ Error detecting suspicious target correlations: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in suspicious correlation detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_nan_inf_features(self, X: np.ndarray) -> List[int]:
@@ -640,7 +656,11 @@ class FeatureSelectionFramework:
                 if np.any(np.isnan(X[:, i])) or np.any(np.isinf(X[:, i])):
                     nan_inf_indices.append(i)
             return nan_inf_indices
-        except:
+        except (IndexError, AttributeError) as e:
+            tprint(f"⚠️ Error detecting NaN/Inf features: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in NaN/Inf detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_zero_variance_features(self, X: np.ndarray) -> List[int]:
@@ -651,7 +671,11 @@ class FeatureSelectionFramework:
                 if safe_std(X[:, i]) == 0:
                     zero_var_indices.append(i)
             return zero_var_indices
-        except:
+        except (IndexError, AttributeError) as e:
+            tprint(f"⚠️ Error detecting zero variance features: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in zero variance detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.999) -> List[Tuple[int, int, float]]:
@@ -665,7 +689,11 @@ class FeatureSelectionFramework:
                         perfect_corr_pairs.append((i, j, corr))
                         _LOGGER.warning(f"⚠️ Perfect correlation detected: Features {i}-{j} = {corr:.6f}")
             return perfect_corr_pairs
-        except:
+        except (IndexError, AttributeError, ValueError) as e:
+            tprint(f"⚠️ Error detecting perfect correlations: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in perfect correlation detection: {type(e).__name__}: {e}")
             return []
 
     def _detect_suspicious_mutual_information(self, X: np.ndarray, y: np.ndarray, 
@@ -679,7 +707,11 @@ class FeatureSelectionFramework:
                     suspicious.append((i, mi))
                     _LOGGER.warning(f"⚠️ Suspiciously high mutual information: Feature {i} = {mi:.4f} (potential data leakage)")
             return suspicious
-        except:
+        except (IndexError, AttributeError, ValueError) as e:
+            tprint(f"⚠️ Error detecting suspicious mutual information: {type(e).__name__}: {e}")
+            return []
+        except Exception as e:
+            tprint(f"💥 Unexpected error in suspicious mutual information detection: {type(e).__name__}: {e}")
             return []
 
     def _enhance_existing_methods(self):
@@ -3780,10 +3812,20 @@ class FeatureSelectionFramework:
             explainer = None
             try:
                 explainer = shap.Explainer(model, X)
-            except Exception:
+            except (ValueError, TypeError, AttributeError) as e:
+                tprint(f"⚠️ SHAP Explainer creation failed: {type(e).__name__}: {e}")
                 try:
                     explainer = shap.KernelExplainer(lambda data: model.predict(data), X[: min(len(X), 200)])
                 except Exception as e:
+                    tprint(f"💥 SHAP KernelExplainer also failed: {type(e).__name__}: {e}")
+                    self.logger.warning(f"SHAP explainer creation failed: {e}")
+                    return {'importance_scores': {}, 'error': str(e)}
+            except Exception as e:
+                tprint(f"💥 Unexpected error creating SHAP explainer: {type(e).__name__}: {e}")
+                try:
+                    explainer = shap.KernelExplainer(lambda data: model.predict(data), X[: min(len(X), 200)])
+                except Exception as e:
+                    tprint(f"💥 SHAP KernelExplainer also failed: {type(e).__name__}: {e}")
                     self.logger.warning(f"SHAP explainer creation failed: {e}")
                     return {'importance_scores': {}, 'error': str(e)}
 
@@ -5082,7 +5124,11 @@ class FeatureSelectionFramework:
                 from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                 cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=cv_folds, scoring='accuracy' if is_classification else 'r2')
                 cv_score = float(cv_res.get('mean', 0.0))
-            except Exception:
+            except (ImportError, AttributeError, ValueError) as e:
+                tprint(f"⚠️ Cross-validation failed: {type(e).__name__}: {e}")
+                cv_score = 0.0
+            except Exception as e:
+                tprint(f"💥 Unexpected error in cross-validation: {type(e).__name__}: {e}")
                 cv_score = 0.0
             
             return {
@@ -8280,7 +8326,16 @@ class FeatureSelectionFramework:
                             else:
                                 mi_score = mutual_info_regression(X_chunk[:, i:i+1], y, random_state=self.random_state)[0]
                             scores[feature_name] = float(mi_score)
-                        except Exception:
+                        except (ValueError, TypeError, IndexError) as e:
+                            tprint(f"⚠️ Mutual information calculation failed for feature {feature_name}: {type(e).__name__}: {e}")
+                            # Fallback to correlation
+                            corr_matrix = np.corrcoef(X_chunk[:, i], y)
+                            if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                                scores[feature_name] = abs(float(corr_matrix[0, 1]))
+                            else:
+                                scores[feature_name] = 0.0
+                        except Exception as e:
+                            tprint(f"💥 Unexpected error in mutual information calculation for feature {feature_name}: {type(e).__name__}: {e}")
                             # Fallback to correlation
                             corr_matrix = np.corrcoef(X_chunk[:, i], y)
                             if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
@@ -8321,10 +8376,17 @@ class FeatureSelectionFramework:
                 'scores': scores
             }
             
-        except Exception as e:
+        except (ValueError, TypeError, IndexError, AttributeError) as e:
+            tprint(f"⚠️ Error calculating relevance scores for chunk {params.get('chunk_idx', -1)}: {type(e).__name__}: {e}")
             return {
                 'chunk_idx': params.get('chunk_idx', -1),
-                'error': str(e)
+                'error': f"{type(e).__name__}: {e}"
+            }
+        except Exception as e:
+            tprint(f"💥 Unexpected error in relevance score calculation for chunk {params.get('chunk_idx', -1)}: {type(e).__name__}: {e}")
+            return {
+                'chunk_idx': params.get('chunk_idx', -1),
+                'error': f"{type(e).__name__}: {e}"
             }
 
     def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray,

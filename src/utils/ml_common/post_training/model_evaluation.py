@@ -45,6 +45,7 @@ from src.core.errors import (
     ConfigurationError, ModelTrainingError
 )
 from src.utils.ml_common.logger import get_ml_logger
+from src.utils.tprint import tprint
 from src.utils.ml_common.evaluation.unified_evaluator import (
     compute_classification_metrics,
     compute_regression_metrics,
@@ -365,7 +366,11 @@ class ModelEvaluator:
             
             # If we have few unique values, it's likely classification
             return unique_test <= 10 and unique_pred <= 10
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"⚠️ Error determining task type: {type(e).__name__}: {e}")
+            return False
+        except Exception as e:
+            tprint(f"💥 Unexpected error in task type determination: {type(e).__name__}: {e}")
             return False
     
     @handles_errors(default_return=None, context='Classification metrics')

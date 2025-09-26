@@ -14,6 +14,7 @@ Key Features:
 """
 
 import json
+import math
 import os
 import pickle
 import time
@@ -745,38 +746,39 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'confidence_force_hold_threshold': {'type': 'float', 'min': 0.6, 'max': 0.95},
 
                 # Profit-taking parameters
-                'base_profit_target': {'type': 'float', 'min': 0.02, 'max': 0.08},
-                'min_confidence_for_profit': {'type': 'float', 'min': 0.5, 'max': 0.8},
-                'confidence_profit_multiplier': {'type': 'float', 'min': 0.2, 'max': 0.8},
-                'profit_tier_1': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'profit_tier_2': {'type': 'float', 'min': 0.4, 'max': 0.6},
-                'profit_tier_3': {'type': 'float', 'min': 0.6, 'max': 0.8},
-                'tp_confidence_threshold': {'type': 'float', 'min': 0.4, 'max': 0.8},
-                'tp_exit_percentage': {'type': 'float', 'min': 0.2, 'max': 1.0},
-                'use_tp_atr_log_scaling': {'type': 'bool'},
-                'tp_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+                'trailing_profit_v': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_profit_w': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_profit_x': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_profit_y': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_profit_z': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_profit_min_pct': {'type': 'float', 'min': 0.002, 'max': 0.05},
+                'trailing_profit_max_pct': {'type': 'float', 'min': 0.02, 'max': 0.25},
+                'trailing_profit_atr_period': {'type': 'int', 'min': 7, 'max': 28},
+                'trailing_profit_atr_timeframe': {'type': 'categorical', 'choices': ['1m', '5m', '15m', '1h']},
+                'trailing_profit_confidence_floor': {'type': 'float', 'min': 0.01, 'max': 0.2},
 
                 # Stop-loss parameters
-                'base_stop_loss': {'type': 'float', 'min': -0.08, 'max': -0.02},
-                'atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
-                'volatility_adjustment_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
-                'sl_confidence_threshold': {'type': 'float', 'min': 0.2, 'max': 0.6},
-                'sl_exit_percentage': {'type': 'float', 'min': 0.2, 'max': 1.0},
-                'use_sl_atr_log_scaling': {'type': 'bool'},
-                'sl_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+                'trailing_stop_v': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_stop_w': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_stop_x': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_stop_y': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_stop_z': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_stop_min_pct': {'type': 'float', 'min': 0.002, 'max': 0.05},
+                'trailing_stop_max_pct': {'type': 'float', 'min': 0.01, 'max': 0.2},
+                'trailing_stop_atr_period': {'type': 'int', 'min': 7, 'max': 28},
+                'trailing_stop_atr_timeframe': {'type': 'categorical', 'choices': ['1m', '5m', '15m', '1h']},
+                'trailing_stop_confidence_floor': {'type': 'float', 'min': 0.01, 'max': 0.2},
+                'trailing_stop_hard_value': {'type': 'float', 'min': 0.005, 'max': 0.12},
+                'trailing_stop_hard_atr_multiplier': {'type': 'float', 'min': 0.5, 'max': 4.0},
+                'trailing_stop_use_atr_hard_value': {'type': 'bool'},
 
                 # Time-based parameters
                 'max_hold_time': {'type': 'int', 'min': 3600, 'max': 14400},  # 1-4 hours
                 'min_hold_time': {'type': 'int', 'min': 60, 'max': 1800},     # 1-30 minutes
                 'confidence_time_scaling_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
-                
+
                 # Trailing stop parameters
-                'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
-                'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
-                'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
-                'trailing_reversal_pct': {'type': 'float', 'min': 0.005, 'max': 0.05},
-                'trailing_use_atr_log_scaling': {'type': 'bool'},
-                'trailing_atr_log_multiplier': {'type': 'float', 'min': 0.0, 'max': 3.0},
+                'trailing_review_interval': {'type': 'int', 'min': 60, 'max': 900},
 
                 # Regime-aware parameters
                 'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
@@ -1969,110 +1971,76 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 else:
                     score += 0.1  # Partial credit for having all parameters
             
-            # 2. Profit-taking parameters validation (0.25 weight)
-            profit_params = ['base_profit_target', 'min_confidence_for_profit', 'confidence_profit_multiplier']
-            if all(param in params for param in profit_params):
-                base_target = params['base_profit_target']
-                min_conf = params['min_confidence_for_profit']
-                conf_mult = params['confidence_profit_multiplier']
+            # 2. Trailing profit parameters validation (0.25 weight)
+            trailing_profit_params = [
+                'trailing_profit_v', 'trailing_profit_w', 'trailing_profit_x',
+                'trailing_profit_y', 'trailing_profit_z', 'trailing_profit_min_pct',
+                'trailing_profit_max_pct', 'trailing_profit_atr_period'
+            ]
+            if all(param in params for param in trailing_profit_params):
+                coeffs = [params[p] for p in trailing_profit_params[:5]]
+                min_pct = params['trailing_profit_min_pct']
+                max_pct = params['trailing_profit_max_pct']
+                atr_period = params['trailing_profit_atr_period']
 
-                # Validate profit target is positive and reasonable
-                if 0.02 <= base_target <= 0.08:
-                    score += 0.1
-                # Validate confidence threshold is reasonable
-                if 0.5 <= min_conf <= 0.8:
-                    score += 0.1
-                # Validate confidence multiplier is reasonable
-                if 0.2 <= conf_mult <= 0.8:
+                if all(-1.5 <= c <= 1.5 for c in coeffs):
+                    score += 0.12
+
+                if 0.0 < min_pct < max_pct <= 0.3:
+                    score += 0.08
+
+                if 5 <= atr_period <= 40:
                     score += 0.05
 
-            # 2b. Enhanced profit-taking confidence controls (0.1 weight)
-            if all(param in params for param in ['tp_confidence_threshold', 'tp_exit_percentage']):
-                tp_conf_threshold = params['tp_confidence_threshold']
-                tp_exit_percentage = params['tp_exit_percentage']
-
-                if 0.4 <= tp_conf_threshold <= 0.8:
+            # 2b. Confidence floor validation for trailing profit (0.05 weight)
+            if 'trailing_profit_confidence_floor' in params:
+                confidence_floor = params['trailing_profit_confidence_floor']
+                if 0.0 <= confidence_floor <= 0.2:
                     score += 0.05
-
-                if 0.2 <= tp_exit_percentage <= 1.0:
-                    score += 0.03
-
-                # Encourage partial exits below 100% when confidence threshold is high
-                if tp_exit_percentage < 1.0 and tp_conf_threshold > 0.55:
-                    score += 0.02
-
-            # 2c. ATR log scaling exploration for TP (0.05 weight)
-            if 'use_tp_atr_log_scaling' in params and 'tp_atr_log_multiplier' in params:
-                use_log_scaling = params['use_tp_atr_log_scaling']
-                atr_multiplier = params['tp_atr_log_multiplier']
-
-                if isinstance(use_log_scaling, bool):
-                    score += 0.01
-
-                    if use_log_scaling and 0.0 <= atr_multiplier <= 3.0:
-                        average_atr = calibration_results.get('average_atr', 0.01)
-                        if average_atr > 0:
-                            log_adjustment = np.log1p(average_atr * max(atr_multiplier, 0.0))
-                            if 0.05 <= log_adjustment <= 0.5:
-                                score += 0.03
-                            else:
-                                score += 0.01
-                        else:
-                            score += 0.01
-                    elif not use_log_scaling:
-                        score += 0.01
 
             # 3. Stop-loss parameters validation (0.2 weight)
-            stop_params = ['base_stop_loss', 'atr_multiplier', 'volatility_adjustment_factor']
+            stop_params = [
+                'trailing_stop_v', 'trailing_stop_w', 'trailing_stop_x',
+                'trailing_stop_y', 'trailing_stop_z', 'trailing_stop_min_pct',
+                'trailing_stop_max_pct', 'trailing_stop_atr_period'
+            ]
             if all(param in params for param in stop_params):
-                stop_loss = params['base_stop_loss']
-                atr_mult = params['atr_multiplier']
-                vol_adj = params['volatility_adjustment_factor']
-                
-                # Validate stop loss is negative and reasonable
-                if -0.08 <= stop_loss <= -0.02:
+                coeffs = [params[p] for p in stop_params[:5]]
+                min_pct = params['trailing_stop_min_pct']
+                max_pct = params['trailing_stop_max_pct']
+                atr_period = params['trailing_stop_atr_period']
+
+                if all(-1.5 <= c <= 1.5 for c in coeffs):
                     score += 0.1
-                # Validate ATR multiplier is reasonable
-                if 1.0 <= atr_mult <= 3.0:
-                    score += 0.05
-                # Validate volatility adjustment is reasonable
-                if 0.5 <= vol_adj <= 2.0:
-                    score += 0.05
 
-            # 3b. Enhanced stop-loss confidence controls (0.1 weight)
-            if all(param in params for param in ['sl_confidence_threshold', 'sl_exit_percentage']):
-                sl_conf_threshold = params['sl_confidence_threshold']
-                sl_exit_percentage = params['sl_exit_percentage']
+                if 0.0 < min_pct < max_pct <= 0.25:
+                    score += 0.07
 
-                if 0.2 <= sl_conf_threshold <= 0.6:
-                    score += 0.05
-
-                if 0.2 <= sl_exit_percentage <= 1.0:
+                if 5 <= atr_period <= 40:
                     score += 0.03
 
-                if sl_exit_percentage < 1.0 and sl_conf_threshold < 0.45:
+            # 3b. Stop-loss confidence floor and hard stop exploration (0.15 weight)
+            hard_stop_params = [
+                'trailing_stop_confidence_floor', 'trailing_stop_hard_value',
+                'trailing_stop_hard_atr_multiplier', 'trailing_stop_use_atr_hard_value'
+            ]
+            if all(param in params for param in hard_stop_params):
+                confidence_floor = params['trailing_stop_confidence_floor']
+                hard_value = params['trailing_stop_hard_value']
+                hard_multiplier = params['trailing_stop_hard_atr_multiplier']
+                use_atr = params['trailing_stop_use_atr_hard_value']
+
+                if 0.0 <= confidence_floor <= 0.2:
+                    score += 0.05
+
+                if 0.003 <= hard_value <= 0.15:
+                    score += 0.05
+
+                if 0.5 <= hard_multiplier <= 4.0:
+                    score += 0.03
+
+                if isinstance(use_atr, bool):
                     score += 0.02
-
-            # 3c. ATR log scaling exploration for SL (0.05 weight)
-            if 'use_sl_atr_log_scaling' in params and 'sl_atr_log_multiplier' in params:
-                use_sl_log = params['use_sl_atr_log_scaling']
-                sl_atr_multiplier = params['sl_atr_log_multiplier']
-
-                if isinstance(use_sl_log, bool):
-                    score += 0.01
-
-                    if use_sl_log and 0.0 <= sl_atr_multiplier <= 3.0:
-                        average_atr = calibration_results.get('average_atr', 0.01)
-                        if average_atr > 0:
-                            log_adjustment = np.log1p(average_atr * max(sl_atr_multiplier, 0.0))
-                            if 0.05 <= log_adjustment <= 0.5:
-                                score += 0.03
-                            else:
-                                score += 0.01
-                        else:
-                            score += 0.01
-                    elif not use_sl_log:
-                        score += 0.01
 
             # 4. Time-based parameters validation (0.15 weight)
             time_params = ['max_hold_time', 'min_hold_time', 'confidence_time_scaling_factor']
@@ -2089,18 +2057,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     score += 0.05
             
             # 5. Trailing stop parameters validation (0.1 weight)
-            trailing_params = ['trailing_atr_multiplier', 'trailing_min_distance', 'trailing_confidence_activation']
-            if all(param in params for param in trailing_params):
-                trailing_atr = params['trailing_atr_multiplier']
-                min_dist = params['trailing_min_distance']
-                conf_act = params['trailing_confidence_activation']
-                
-                # Validate trailing stop parameters
-                if (1.0 <= trailing_atr <= 3.0 and 
-                    0.005 <= min_dist <= 0.03 and 
-                    0.6 <= conf_act <= 0.9):
-                    score += 0.1
-            
+            if 'trailing_review_interval' in params:
+                review_interval = params['trailing_review_interval']
+                if 60 <= review_interval <= 1200:
+                    score += 0.08
+
             # 6. Regime-aware parameters validation (0.1 weight)
             regime_params = ['regime_transition_penalty', 'regime_specific_scaling']
             if all(param in params for param in regime_params):
@@ -2112,14 +2073,66 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     score += 0.1
             
             # 7. Profit tier validation (bonus)
-            tier_params = ['profit_tier_1', 'profit_tier_2', 'profit_tier_3']
+            tier_params = ['trailing_profit_min_pct', 'trailing_profit_max_pct', 'trailing_stop_min_pct', 'trailing_stop_max_pct']
             if all(param in params for param in tier_params):
-                tiers = [params[param] for param in tier_params]
-                # Check if tiers are in ascending order
-                if all(tiers[i] <= tiers[i+1] for i in range(len(tiers)-1)):
-                    score += 0.05
+                if params['trailing_profit_min_pct'] < params['trailing_profit_max_pct']:
+                    score += 0.02
+                if params['trailing_stop_min_pct'] < params['trailing_stop_max_pct']:
+                    score += 0.02
 
-            # 9. Confidence-driven exit boundaries (0.1 weight)
+            thresholds = self._estimate_trailing_thresholds(params, calibration_results)
+
+            if thresholds:
+                take_profit_estimate = thresholds['take_profit_pct']
+                trailing_stop_estimate = thresholds['trailing_stop_pct']
+                hard_stop_estimate = thresholds['hard_stop_pct']
+                effective_stop_estimate = thresholds['effective_stop_pct']
+
+                # 8. Trailing vs hard stop interplay (0.12 weight)
+                if hard_stop_estimate is not None:
+                    if math.isclose(
+                        effective_stop_estimate,
+                        min(trailing_stop_estimate, hard_stop_estimate),
+                        rel_tol=1e-3,
+                        abs_tol=1e-4
+                    ):
+                        score += 0.05
+
+                    if hard_stop_estimate >= trailing_stop_estimate * 0.5:
+                        score += 0.03
+
+                    if hard_stop_estimate <= trailing_stop_estimate * 1.25:
+                        score += 0.02
+
+                    min_stop_floor = params.get('trailing_stop_min_pct', effective_stop_estimate)
+                    if effective_stop_estimate >= max(min_stop_floor, 1e-6):
+                        score += 0.02
+                else:
+                    min_stop_floor = params.get('trailing_stop_min_pct', effective_stop_estimate)
+                    if effective_stop_estimate >= max(min_stop_floor, 1e-6):
+                        score += 0.03
+
+                # 9. Trailing profit fallback alignment (0.04 weight)
+                min_profit_floor = params.get('trailing_profit_min_pct', take_profit_estimate)
+                if take_profit_estimate >= max(min_profit_floor, 1e-6):
+                    score += 0.02
+
+                max_profit_ceiling = params.get('trailing_profit_max_pct', take_profit_estimate)
+                if take_profit_estimate <= max(max_profit_ceiling, min_profit_floor, 1e-6):
+                    score += 0.02
+
+                # 10. Risk-reward ratio validation (bonus)
+                if effective_stop_estimate > 0:
+                    risk_reward_ratio = take_profit_estimate / effective_stop_estimate
+
+                    if 1.5 <= risk_reward_ratio <= 3.0:
+                        score += 0.1
+                    elif 1.0 <= risk_reward_ratio < 1.5:
+                        score += 0.05
+                    elif risk_reward_ratio > 0.0:
+                        score += 0.02
+
+            # 11. Confidence-driven exit boundaries (0.1 weight)
             boundary_params = ['confidence_force_exit_threshold', 'confidence_force_hold_threshold']
             if all(param in params for param in boundary_params):
                 force_exit = params['confidence_force_exit_threshold']
@@ -2134,25 +2147,302 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 else:
                     score += 0.02
 
-            # 8. Risk-reward ratio validation (bonus)
-            if 'base_profit_target' in params and 'base_stop_loss' in params:
-                profit_target = params['base_profit_target']
-                stop_loss = abs(params['base_stop_loss'])
-                risk_reward_ratio = profit_target / stop_loss
-                
-                # Bonus for good risk-reward ratio
-                if 1.5 <= risk_reward_ratio <= 3.0:
-                    score += 0.1
-                elif 1.0 <= risk_reward_ratio < 1.5:
-                    score += 0.05
-            
+            # 12. Trailing TP/SL joint optimization consistency (0.08 weight)
+            if all(param in params for param in trailing_profit_params) and all(param in params for param in stop_params):
+                profit_coeffs = [abs(params[p]) for p in trailing_profit_params[:5]]
+                stop_coeffs = [abs(params[p]) for p in stop_params[:5]]
+                profit_norm = sum(profit_coeffs)
+                stop_norm = sum(stop_coeffs)
+
+                if profit_norm > 0 and stop_norm > 0:
+                    score += 0.04
+                    ratio = profit_norm / max(stop_norm, 1e-6)
+                    if 0.5 <= ratio <= 2.0:
+                        score += 0.04
+
         except Exception as e:
             self.logger.error(f"❌ Error evaluating exit strategy parameters: {e}")
             score = 0.0
-        
+
         return min(score, 1.0)  # Cap at 1.0
-    
-    def _evaluate_ensemble_params(self, params: Dict[str, Any], 
+
+    def _safe_log_value(self, value: Any, floor: float = 1e-9) -> float:
+        """Safely compute logarithm for optimisation heuristics."""
+        try:
+            if value is None:
+                return 0.0
+            numeric_value = float(value)
+            if not math.isfinite(numeric_value):
+                return 0.0
+            return math.log(max(numeric_value, floor))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _coerce_numeric_metric(self, value: Any, timeframe: Optional[str] = None) -> Optional[float]:
+        """Extract a numeric metric from calibration artefacts."""
+        if value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            if math.isfinite(value):
+                return float(value)
+            return None
+
+        if isinstance(value, np.ndarray):
+            finite_values = value[np.isfinite(value)]
+            if finite_values.size > 0:
+                return float(np.median(finite_values))
+            return None
+
+        if isinstance(value, (list, tuple, set)):
+            numeric_values = [float(v) for v in value if isinstance(v, (int, float)) and math.isfinite(v)]
+            if numeric_values:
+                return float(np.median(numeric_values))
+
+            for candidate in value:
+                coerced = self._coerce_numeric_metric(candidate, timeframe=timeframe)
+                if coerced is not None:
+                    return coerced
+            return None
+
+        if isinstance(value, dict):
+            candidates: List[Any] = []
+
+            if timeframe and timeframe in value:
+                candidates.append(value.get(timeframe))
+
+            # Handle nested timeframe dictionaries
+            if timeframe and 'timeframes' in value and isinstance(value['timeframes'], dict):
+                candidates.append(value['timeframes'].get(timeframe))
+
+            for alias in ('median', 'p50', 'p_50', 'mean', 'value', 'typical', 'mid', 'midpoint'):
+                if alias in value:
+                    candidates.append(value.get(alias))
+
+            candidates.extend(value.values())
+
+            for candidate in candidates:
+                coerced = self._coerce_numeric_metric(candidate, timeframe=None)
+                if coerced is not None:
+                    return coerced
+
+            return None
+
+        return None
+
+    def _extract_calibrated_metric(
+        self,
+        calibration_results: Dict[str, Any],
+        keys: List[str],
+        timeframe: Optional[str] = None,
+        default: float = 0.0
+    ) -> float:
+        """Extract a representative calibrated metric."""
+        if not calibration_results:
+            return float(default)
+
+        for key in keys:
+            if key in calibration_results:
+                coerced = self._coerce_numeric_metric(calibration_results[key], timeframe=timeframe)
+                if coerced is not None:
+                    return coerced
+
+            if timeframe:
+                timeframe_key = f"{key}_{timeframe}"
+                if timeframe_key in calibration_results:
+                    coerced = self._coerce_numeric_metric(calibration_results[timeframe_key], timeframe=timeframe)
+                    if coerced is not None:
+                        return coerced
+
+        return float(default)
+
+    def _estimate_trailing_thresholds(
+        self,
+        params: Dict[str, Any],
+        calibration_results: Dict[str, Any]
+    ) -> Optional[Dict[str, float]]:
+        """Estimate dynamic trailing thresholds mirroring live trading logic."""
+        try:
+            profit_timeframe = params.get('trailing_profit_atr_timeframe', '1m')
+            stop_timeframe = params.get('trailing_stop_atr_timeframe', profit_timeframe)
+
+            profit_min = max(params.get('trailing_profit_min_pct', 0.005), 1e-6)
+            profit_max = max(params.get('trailing_profit_max_pct', profit_min), profit_min)
+            stop_min = max(params.get('trailing_stop_min_pct', 0.005), 1e-6)
+            stop_max = max(params.get('trailing_stop_max_pct', stop_min), stop_min)
+
+            profit_conf_floor = max(params.get('trailing_profit_confidence_floor', 0.05), 1e-6)
+            stop_conf_floor = max(params.get('trailing_stop_confidence_floor', 0.05), 1e-6)
+
+            atr_profit = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        f'median_atr_pct_{profit_timeframe}',
+                        'median_atr_pct',
+                        'atr_pct_median',
+                        'atr_percentile_50',
+                        'atr_pct'
+                    ],
+                    timeframe=profit_timeframe,
+                    default=0.01
+                ),
+                1e-6
+            )
+
+            atr_stop = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        f'median_atr_pct_{stop_timeframe}',
+                        'median_atr_pct',
+                        'atr_pct_median',
+                        'atr_percentile_50',
+                        'atr_pct'
+                    ],
+                    timeframe=stop_timeframe,
+                    default=0.01
+                ),
+                1e-6
+            )
+
+            tact_conf_profit = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_tactician_exit_confidence',
+                        'median_tactician_confidence',
+                        'tactician_confidence_median',
+                        'tactician_confidence'
+                    ],
+                    default=profit_conf_floor
+                ),
+                profit_conf_floor
+            )
+
+            tact_conf_stop = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_tactician_exit_confidence',
+                        'median_tactician_confidence',
+                        'tactician_confidence_median',
+                        'tactician_confidence'
+                    ],
+                    default=stop_conf_floor
+                ),
+                stop_conf_floor
+            )
+
+            analyst_conf_profit = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_analyst_exit_confidence',
+                        'median_analyst_confidence',
+                        'analyst_confidence_median',
+                        'analyst_confidence'
+                    ],
+                    default=profit_conf_floor
+                ),
+                profit_conf_floor
+            )
+
+            analyst_conf_stop = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_analyst_exit_confidence',
+                        'median_analyst_confidence',
+                        'analyst_confidence_median',
+                        'analyst_confidence'
+                    ],
+                    default=stop_conf_floor
+                ),
+                stop_conf_floor
+            )
+
+            realized_pct = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_realized_profit_pct',
+                        'realized_profit_pct_median',
+                        'median_profit_since_entry',
+                        'profit_capture_median'
+                    ],
+                    default=profit_min * 1.2
+                ),
+                profit_min
+            )
+
+            adverse_pct = max(
+                self._extract_calibrated_metric(
+                    calibration_results,
+                    [
+                        'median_adverse_move_pct',
+                        'adverse_move_pct_median',
+                        'median_drawdown_pct',
+                        'drawdown_capture_median'
+                    ],
+                    default=stop_min * 1.2
+                ),
+                stop_min
+            )
+
+            take_profit_raw = (
+                params.get('trailing_profit_w', 0.0) * self._safe_log_value(atr_profit) +
+                params.get('trailing_profit_x', 0.0) * self._safe_log_value(tact_conf_profit) +
+                params.get('trailing_profit_y', 0.0) * self._safe_log_value(analyst_conf_profit) +
+                params.get('trailing_profit_z', 0.0) * self._safe_log_value(realized_pct) +
+                params.get('trailing_profit_v', 0.0)
+            )
+
+            take_profit_pct = abs(take_profit_raw)
+            take_profit_pct = max(take_profit_pct, profit_min)
+            take_profit_pct = min(take_profit_pct, max(profit_max, profit_min))
+
+            trailing_stop_raw = (
+                params.get('trailing_stop_w', 0.0) * self._safe_log_value(atr_stop) +
+                params.get('trailing_stop_x', 0.0) * self._safe_log_value(tact_conf_stop) +
+                params.get('trailing_stop_y', 0.0) * self._safe_log_value(analyst_conf_stop) +
+                params.get('trailing_stop_z', 0.0) * self._safe_log_value(adverse_pct) +
+                params.get('trailing_stop_v', 0.0)
+            )
+
+            trailing_stop_pct = abs(trailing_stop_raw)
+            trailing_stop_pct = max(trailing_stop_pct, stop_min)
+            trailing_stop_pct = min(trailing_stop_pct, max(stop_max, stop_min))
+
+            hard_stop_pct = params.get('trailing_stop_hard_value', stop_min)
+            hard_stop_pct = max(hard_stop_pct, stop_min)
+
+            if params.get('trailing_stop_use_atr_hard_value', False):
+                multiplier = params.get('trailing_stop_hard_atr_multiplier', 1.0)
+                if isinstance(multiplier, (int, float)) and math.isfinite(multiplier):
+                    hard_stop_pct = max(hard_stop_pct, atr_stop * max(multiplier, 0.0))
+
+            if hard_stop_pct <= 0:
+                hard_stop_pct = None
+                effective_stop_pct = trailing_stop_pct
+            else:
+                effective_stop_pct = min(trailing_stop_pct, hard_stop_pct)
+
+            return {
+                'take_profit_pct': take_profit_pct,
+                'trailing_stop_pct': trailing_stop_pct,
+                'hard_stop_pct': hard_stop_pct,
+                'effective_stop_pct': effective_stop_pct
+            }
+
+        except Exception as exc:
+            self.logger.debug(
+                "Failed to estimate trailing thresholds due to %s. Using heuristic defaults.",
+                exc
+            )
+            return None
+
+    def _evaluate_ensemble_params(self, params: Dict[str, Any],
                                 calibration_results: Dict[str, Any]) -> float:
         """Evaluate ensemble parameters."""
         score = 0.0

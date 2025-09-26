@@ -7,6 +7,7 @@ order execution, and risk management.
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, field
@@ -14,6 +15,9 @@ from enum import Enum
 
 import pandas as pd
 import numpy as np
+
+from src.feature_generation.base_calculations import BaseCalculationType
+from src.feature_generation.categories.volatility import ATRGenerator
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -58,6 +62,7 @@ class Position:
     realized_pnl: float
     timestamp: datetime
     orders: List[str] = field(default_factory=list)  # Related order IDs
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class TradingSession:
@@ -115,6 +120,42 @@ class LiveTrader:
         self.max_position_size = config.get('max_position_size', 0.1)  # 10% of portfolio
         self.stop_loss_threshold = config.get('stop_loss_threshold', 0.05)  # 5%
         self.take_profit_threshold = config.get('take_profit_threshold', 0.10)  # 10%
+        self.min_take_profit_pct = config.get('min_take_profit_pct', 0.005)
+        self.min_stop_loss_pct = config.get('min_stop_loss_pct', 0.005)
+
+        trailing_profit_config = config.get('trailing_profit_config', {})
+        self.trailing_profit_coefficients = {
+            'V': trailing_profit_config.get('v', 0.0),
+            'W': trailing_profit_config.get('w', 0.0),
+            'X': trailing_profit_config.get('x', 0.0),
+            'Y': trailing_profit_config.get('y', 0.0),
+            'Z': trailing_profit_config.get('z', 0.0)
+        }
+        self.trailing_profit_min_pct = trailing_profit_config.get('min_pct', self.min_take_profit_pct)
+        self.trailing_profit_max_pct = trailing_profit_config.get('max_pct', 0.2)
+        self.trailing_profit_confidence_floor = trailing_profit_config.get('confidence_floor', 0.05)
+        self.trailing_profit_atr_period = trailing_profit_config.get('atr_period', 14)
+        self.trailing_profit_atr_timeframe = trailing_profit_config.get('atr_timeframe', '1m')
+
+        trailing_stop_config = config.get('trailing_stop_config', {})
+        self.trailing_stop_coefficients = {
+            'V': trailing_stop_config.get('v', 0.0),
+            'W': trailing_stop_config.get('w', 0.0),
+            'X': trailing_stop_config.get('x', 0.0),
+            'Y': trailing_stop_config.get('y', 0.0),
+            'Z': trailing_stop_config.get('z', 0.0)
+        }
+        self.trailing_stop_min_pct = trailing_stop_config.get('min_pct', self.min_stop_loss_pct)
+        self.trailing_stop_max_pct = trailing_stop_config.get('max_pct', 0.12)
+        self.trailing_stop_confidence_floor = trailing_stop_config.get('confidence_floor', 0.05)
+        self.trailing_stop_atr_period = trailing_stop_config.get('atr_period', self.trailing_profit_atr_period)
+        self.trailing_stop_atr_timeframe = trailing_stop_config.get('atr_timeframe', self.trailing_profit_atr_timeframe)
+        self.trailing_stop_hard_value = trailing_stop_config.get('hard_value', 0.02)
+        self.trailing_stop_hard_atr_multiplier = trailing_stop_config.get('hard_atr_multiplier', 1.0)
+        self.trailing_stop_use_atr_hard_value = trailing_stop_config.get('use_atr_hard_value', False)
+        self.trailing_review_interval = trailing_stop_config.get('review_interval', config.get('trailing_review_interval', 300))
+        self.atr_cache_seconds = config.get('atr_cache_seconds', 120)
+        self._atr_generators: Dict[Tuple[str, int], ATRGenerator] = {}
 
         # Performance tracking
         self.total_trades = 0
@@ -481,6 +522,9 @@ class LiveTrader:
                 else:
                     position.unrealized_pnl = (position.entry_price - current_price) * position.quantity
 
+                self._update_position_extremes(position)
+                self._calculate_trade_progress(position)
+
         except Exception as e:
             tprint_warning(f"⚠️ Failed to update positions: {str(e)}")
 
@@ -507,10 +551,19 @@ class LiveTrader:
 
     async def _check_stop_loss(self, position: Position) -> bool:
         """Check if position should be stopped out."""
+        stop_loss_pct = await self._compute_trailing_stop_loss_pct(position)
+
+        if stop_loss_pct <= 0:
+            return False
+
         if position.side == 'long':
-            stop_triggered = position.current_price <= position.entry_price * (1 - self.stop_loss_threshold)
+            stop_price = position.entry_price * (1 - stop_loss_pct)
+            position.metadata['computed_stop_loss_price'] = stop_price
+            stop_triggered = position.current_price <= stop_price
         else:
-            stop_triggered = position.current_price >= position.entry_price * (1 + self.stop_loss_threshold)
+            stop_price = position.entry_price * (1 + stop_loss_pct)
+            position.metadata['computed_stop_loss_price'] = stop_price
+            stop_triggered = position.current_price >= stop_price
 
         if stop_triggered:
             tprint_warning(f"🛡️ Stop loss triggered for {position.symbol} @ {position.current_price}")
@@ -520,16 +573,215 @@ class LiveTrader:
 
     async def _check_take_profit(self, position: Position) -> bool:
         """Check if position should take profit."""
+        take_profit_pct = await self._compute_trailing_take_profit_pct(position)
+
+        if take_profit_pct <= 0:
+            return False
+
         if position.side == 'long':
-            profit_triggered = position.current_price >= position.entry_price * (1 + self.take_profit_threshold)
+            take_profit_price = position.entry_price * (1 + take_profit_pct)
+            position.metadata['computed_take_profit_price'] = take_profit_price
+            profit_triggered = position.current_price >= take_profit_price
         else:
-            profit_triggered = position.current_price <= position.entry_price * (1 - self.take_profit_threshold)
+            take_profit_price = position.entry_price * (1 - take_profit_pct)
+            position.metadata['computed_take_profit_price'] = take_profit_price
+            profit_triggered = position.current_price <= take_profit_price
 
         if profit_triggered:
             tprint_success(f"🎯 Take profit triggered for {position.symbol} @ {position.current_price}")
             return True
 
         return False
+
+    def _update_position_extremes(self, position: Position) -> None:
+        """Track price extremes for trailing calculations."""
+        try:
+            extremes = position.metadata.setdefault('price_extremes', {
+                'max_price': position.entry_price,
+                'min_price': position.entry_price
+            })
+
+            extremes['max_price'] = max(extremes['max_price'], position.current_price)
+            extremes['min_price'] = min(extremes['min_price'], position.current_price)
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to update price extremes for {position.symbol}: {str(e)}")
+
+    def _calculate_trade_progress(self, position: Position) -> Tuple[float, float]:
+        """Calculate realized and adverse movement percentages."""
+        extremes = position.metadata.setdefault('price_extremes', {
+            'max_price': position.entry_price,
+            'min_price': position.entry_price
+        })
+
+        entry_price = max(position.entry_price, 1e-9)
+        favorable_move = 0.0
+        adverse_move = 0.0
+
+        if position.side == 'long':
+            favorable_move = max(0.0, extremes['max_price'] - entry_price)
+            adverse_move = max(0.0, entry_price - extremes['min_price'])
+        else:
+            favorable_move = max(0.0, entry_price - extremes['min_price'])
+            adverse_move = max(0.0, extremes['max_price'] - entry_price)
+
+        realized_pct = favorable_move / entry_price
+        adverse_pct = adverse_move / entry_price
+
+        position.metadata['realized_profit_pct'] = realized_pct
+        position.metadata['adverse_move_pct'] = adverse_pct
+
+        return realized_pct, adverse_pct
+
+    def _safe_log(self, value: float, floor: float = 1e-9) -> float:
+        """Safely compute logarithm for optimization inputs."""
+        try:
+            if value is None or not math.isfinite(value):
+                return 0.0
+            return math.log(max(value, floor))
+        except ValueError:
+            return 0.0
+
+    async def _compute_trailing_take_profit_pct(self, position: Position) -> float:
+        """Compute trailing take profit percentage based on dynamic factors."""
+        try:
+            realized_pct, _ = self._calculate_trade_progress(position)
+            atr_pct = await self._get_position_atr(position, for_take_profit=True)
+
+            tact_conf = max(
+                position.metadata.get('tactician_confidence', self.trailing_profit_confidence_floor),
+                self.trailing_profit_confidence_floor
+            )
+            analyst_conf = max(
+                position.metadata.get('analyst_confidence', self.trailing_profit_confidence_floor),
+                self.trailing_profit_confidence_floor
+            )
+
+            trailing_value = (
+                self.trailing_profit_coefficients['W'] * self._safe_log(atr_pct) +
+                self.trailing_profit_coefficients['X'] * self._safe_log(tact_conf) +
+                self.trailing_profit_coefficients['Y'] * self._safe_log(analyst_conf) +
+                self.trailing_profit_coefficients['Z'] * self._safe_log(max(realized_pct, self.trailing_profit_min_pct)) +
+                self.trailing_profit_coefficients['V']
+            )
+
+            take_profit_pct = abs(trailing_value)
+            take_profit_pct = max(take_profit_pct, self.trailing_profit_min_pct, self.min_take_profit_pct)
+            take_profit_pct = min(take_profit_pct, self.trailing_profit_max_pct)
+            position.metadata['computed_take_profit_pct'] = take_profit_pct
+            return take_profit_pct
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to compute trailing take profit for {position.symbol}: {str(e)}")
+            return max(self.trailing_profit_min_pct, self.min_take_profit_pct)
+
+    async def _compute_trailing_stop_loss_pct(self, position: Position) -> float:
+        """Compute trailing stop loss percentage based on dynamic factors."""
+        try:
+            _, adverse_pct = self._calculate_trade_progress(position)
+            atr_pct = await self._get_position_atr(position, for_take_profit=False)
+
+            tact_conf = max(
+                position.metadata.get('tactician_confidence', self.trailing_stop_confidence_floor),
+                self.trailing_stop_confidence_floor
+            )
+            analyst_conf = max(
+                position.metadata.get('analyst_confidence', self.trailing_stop_confidence_floor),
+                self.trailing_stop_confidence_floor
+            )
+
+            trailing_value = (
+                self.trailing_stop_coefficients['W'] * self._safe_log(atr_pct) +
+                self.trailing_stop_coefficients['X'] * self._safe_log(tact_conf) +
+                self.trailing_stop_coefficients['Y'] * self._safe_log(analyst_conf) +
+                self.trailing_stop_coefficients['Z'] * self._safe_log(max(adverse_pct, self.trailing_stop_min_pct)) +
+                self.trailing_stop_coefficients['V']
+            )
+
+            trailing_stop_pct = abs(trailing_value)
+            trailing_stop_pct = max(trailing_stop_pct, self.trailing_stop_min_pct, self.min_stop_loss_pct)
+            trailing_stop_pct = min(trailing_stop_pct, self.trailing_stop_max_pct)
+
+            hard_stop_pct = max(self.trailing_stop_hard_value, 0.0)
+            if self.trailing_stop_use_atr_hard_value:
+                hard_stop_pct = max(hard_stop_pct, atr_pct * self.trailing_stop_hard_atr_multiplier)
+
+            hard_stop_pct = max(hard_stop_pct, self.trailing_stop_min_pct, self.min_stop_loss_pct)
+
+            stop_loss_pct = min(trailing_stop_pct, hard_stop_pct) if hard_stop_pct > 0 else trailing_stop_pct
+            position.metadata['computed_trailing_stop_pct'] = trailing_stop_pct
+            position.metadata['computed_hard_stop_pct'] = hard_stop_pct if hard_stop_pct > 0 else None
+            position.metadata['computed_stop_loss_pct'] = stop_loss_pct
+            return stop_loss_pct
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to compute trailing stop loss for {position.symbol}: {str(e)}")
+            return max(self.trailing_stop_min_pct, self.min_stop_loss_pct)
+
+    async def _get_position_atr(self, position: Position, for_take_profit: bool = True) -> float:
+        """Get cached ATR for a position or compute a fresh value."""
+        cache_key = 'atr_cache_tp' if for_take_profit else 'atr_cache_sl'
+        cache = position.metadata.get(cache_key)
+        now = datetime.now()
+
+        if cache:
+            age = (now - cache.get('timestamp', now)).total_seconds()
+            if age < self.atr_cache_seconds:
+                cached_value = cache.get('value', 0.0)
+                if cached_value is not None:
+                    return cached_value
+
+        if not self.exchange_interface:
+            return 0.0
+
+        interval = self.trailing_profit_atr_timeframe if for_take_profit else self.trailing_stop_atr_timeframe
+        period = self.trailing_profit_atr_period if for_take_profit else self.trailing_stop_atr_period
+        atr_value = await self._calculate_atr(position.symbol, interval, period)
+
+        position.metadata[cache_key] = {
+            'value': atr_value,
+            'timestamp': now
+        }
+
+        return atr_value
+
+    async def _calculate_atr(self, symbol: str, interval: str, period: int = 14) -> float:
+        """Calculate ATR for a symbol using feature_generation utilities."""
+        try:
+            klines = await self.exchange_interface.get_klines(symbol, interval=interval, limit=period + 1)
+            if not klines or len(klines) < period + 1:
+                return 0.0
+
+            klines_sorted = sorted(klines, key=lambda k: k.timestamp)
+            data = pd.DataFrame({
+                'high': [k.high_price for k in klines_sorted],
+                'low': [k.low_price for k in klines_sorted],
+                'close': [k.close_price for k in klines_sorted]
+            })
+
+            generator_key = (interval, period)
+            atr_generator = self._atr_generators.get(generator_key)
+            if atr_generator is None:
+                atr_generator = ATRGenerator(period=period, base_calculation=BaseCalculationType.PRICE_LEVELS)
+                self._atr_generators[generator_key] = atr_generator
+
+            atr_result = atr_generator.generate(data)
+            if not atr_result.success or atr_result.data.empty:
+                return 0.0
+
+            atr_series = atr_result.data.dropna()
+            if atr_series.empty:
+                return 0.0
+
+            atr_value = float(atr_series.iloc[-1])
+            latest_close = float(data['close'].iloc[-1]) if not data.empty else 0.0
+            if latest_close <= 0:
+                return atr_value
+
+            return atr_value / latest_close
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate ATR for {symbol}: {str(e)}")
+            return 0.0
 
     async def _check_position_risk(self, position: Position) -> bool:
         """Check if position exceeds risk limits."""

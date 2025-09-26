@@ -159,8 +159,13 @@ class PerformanceMonitor:
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            self.tprint(error("Error validating configuration: {e}"))
+        except (ValueError, TypeError) as e:
+            tprint(f"Error validating configuration - Invalid values: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error validating configuration: {e}")
+            self.logger.exception(f"Unexpected error validating configuration: {e}")
             return False
 
     @handle_specific_errors(
@@ -178,8 +183,14 @@ class PerformanceMonitor:
                 await self._perform_monitoring()
                 await asyncio.sleep(self.monitor_interval)
             return True
-        except Exception:
-            self.tprint(error("Error in performance monitor run: {e}"))
+        except (asyncio.CancelledError, RuntimeError) as e:
+            tprint(f"Error in performance monitor run - Task management error: {e}")
+            self.logger.exception(f"Error in performance monitor run: {e}")
+            self.is_running = False
+            return False
+        except Exception as e:
+            tprint(f"Unexpected error in performance monitor run: {e}")
+            self.logger.exception(f"Unexpected error in performance monitor run: {e}")
             self.is_running = False
             return False
 
@@ -198,8 +209,15 @@ class PerformanceMonitor:
             await self._collect_performance_metrics()
             await self._check_performance_alerts()
             self.logger.info(f"Performance monitoring tick at {now}")
-        except Exception:
-            self.tprint(error("Error in performance monitoring step: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error in performance monitoring step - Missing data: {e}")
+            self.logger.exception(f"Error in performance monitoring step: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error in performance monitoring step - Invalid data: {e}")
+            self.logger.exception(f"Error in performance monitoring step: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error in performance monitoring step: {e}")
+            self.logger.exception(f"Unexpected error in performance monitoring step: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -218,8 +236,15 @@ class PerformanceMonitor:
             }
             self.performance_metrics.update(metrics)
             self.logger.info("Performance metrics collected successfully")
-        except Exception:
-            self.tprint(error("Error collecting performance metrics: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error collecting performance metrics - Missing data: {e}")
+            self.logger.exception(f"Error collecting performance metrics: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error collecting performance metrics - Invalid data: {e}")
+            self.logger.exception(f"Error collecting performance metrics: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error collecting performance metrics: {e}")
+            self.logger.exception(f"Unexpected error collecting performance metrics: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -248,8 +273,15 @@ class PerformanceMonitor:
                 self.tprint(warning("Performance alert: Sharpe ratio below threshold"))
 
             self.logger.info("Performance alerts checked successfully")
-        except Exception:
-            self.tprint(error("Error checking performance alerts: {e}"))
+        except (KeyError, AttributeError) as e:
+            tprint(f"Error checking performance alerts - Missing metrics: {e}")
+            self.logger.exception(f"Error checking performance alerts: {e}")
+        except (ValueError, TypeError) as e:
+            tprint(f"Error checking performance alerts - Invalid metric values: {e}")
+            self.logger.exception(f"Error checking performance alerts: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error checking performance alerts: {e}")
+            self.logger.exception(f"Unexpected error checking performance alerts: {e}")
 
     @handles_errors(
         exceptions=(Exception,),
@@ -262,8 +294,12 @@ class PerformanceMonitor:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Performance Monitor stopped successfully")
-        except Exception:
-            self.tprint(error("Error stopping performance monitor: {e}"))
+        except (RuntimeError, AttributeError) as e:
+            tprint(f"Error stopping performance monitor - State management error: {e}")
+            self.logger.exception(f"Error stopping performance monitor: {e}")
+        except Exception as e:
+            tprint(f"Unexpected error stopping performance monitor: {e}")
+            self.logger.exception(f"Unexpected error stopping performance monitor: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()

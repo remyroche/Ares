@@ -197,7 +197,8 @@ class BayesianTreeSearch:
                 try:
                     optimize_memory()
                 except (RuntimeError, OSError, AttributeError) as e:
-                    # Silently handle memory optimization failures
+                    # Handle memory optimization failures
+                    tprint_warning(f"Memory optimization failed during Bayesian search: {e}")
                     pass
         
         tprint_success(f"✅ Bayesian search completed - Best score: {self.best_score:.4f}")

@@ -1092,7 +1092,9 @@ class LegacyNASEvaluator:
         try:
             self.cleanup()
         except (AttributeError, RuntimeError, OSError) as e:
-            # Silently handle cleanup errors in destructor (object may be partially destroyed)
+            # Handle cleanup errors in destructor (object may be partially destroyed)
+            if TPRINT_AVAILABLE:
+                tprint_error(f"Cleanup failed in NASEvaluator destructor: {e}")
             pass
     
     def evaluate_with_enhanced_utilities(self, 

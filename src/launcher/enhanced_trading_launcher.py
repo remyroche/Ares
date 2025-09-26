@@ -57,6 +57,17 @@ except ImportError:
         pass
     def setup_paper_trading_integration():
         pass
+
+try:
+    from live_trading.trading_orchestrator import TradingOrchestrator
+    from live_trading.config import TradingConfig
+    from exchanges import TradingReceiver
+    LIVE_TRADING_AVAILABLE = True
+except ImportError:
+    TradingOrchestrator = None
+    TradingConfig = None
+    TradingReceiver = None
+    LIVE_TRADING_AVAILABLE = False
 if TYPE_CHECKING:
     pass
 
@@ -77,6 +88,8 @@ class EnhancedTradingLauncher:
         # Trading components
         self.paper_trading_integration: PaperTradingIntegration | None = None
         self.enhanced_backtester: Any = None
+        self.trading_orchestrator: TradingOrchestrator | None = None
+        self.trading_receiver: TradingReceiver | None = None
 
         # Launcher state
         self.is_initialized: bool = False
@@ -283,9 +296,40 @@ class EnhancedTradingLauncher:
             if trading_config:
                 self.config.update(trading_config)
 
-            # TODO: Initialize live trading components
-            # This would integrate with the existing live trading system
-            self.logger.warning(warning("⚠️ Live trading not yet implemented"))
+            # Initialize live trading components
+            if not LIVE_TRADING_AVAILABLE:
+                self.logger.error(initialization_error("❌ Live trading components not available"))
+                return False
+            
+            try:
+                # Create trading configuration
+                trading_config = TradingConfig(
+                    exchange=self.config.get("exchange", "binance"),
+                    symbols=self.config.get("symbols", ["BTCUSDT"]),
+                    mode="live",
+                    api_key=self.config.get("api_key"),
+                    api_secret=self.config.get("api_secret"),
+                    testnet=self.config.get("testnet", True)
+                )
+                
+                # Initialize trading receiver
+                self.trading_receiver = TradingReceiver()
+                await self.trading_receiver.initialize()
+                
+                # Initialize trading orchestrator
+                self.trading_orchestrator = TradingOrchestrator(
+                    config=trading_config,
+                    trading_receiver=self.trading_receiver
+                )
+                
+                # Start the orchestrator
+                await self.trading_orchestrator.start()
+                
+                self.logger.info("✅ Live trading components initialized successfully")
+                
+            except Exception as e:
+                self.logger.error(initialization_error(f"❌ Failed to initialize live trading: {e}"))
+                return False
 
             return True
 
@@ -401,9 +445,28 @@ class EnhancedTradingLauncher:
                     trade_metadata=trade_metadata,
                 )
             if self.current_mode == "live":
-                # TODO: Implement live trading execution
-                self.logger.error(execution_error("⚠️ Live trading execution not yet implemented"))
-                return False
+                # Implement live trading execution
+                if not self.trading_orchestrator:
+                    self.logger.error(execution_error("❌ Trading orchestrator not initialized"))
+                    return False
+                
+                try:
+                    # Execute the trade decision through the orchestrator
+                    execution_result = await self.trading_orchestrator.execute_trade_decision(
+                        decision=trade_decision,
+                        metadata=trade_metadata
+                    )
+                    
+                    if execution_result.get("success", False):
+                        self.logger.info(f"✅ Live trade executed successfully: {execution_result}")
+                        return True
+                    else:
+                        self.logger.error(execution_error(f"❌ Live trade execution failed: {execution_result}"))
+                        return False
+                        
+                except Exception as e:
+                    self.logger.error(execution_error(f"❌ Live trading execution error: {e}"))
+                    return False
             self.logger.error(
                 f"Trade execution not available for mode: {self.current_mode}",
             )
@@ -421,8 +484,33 @@ class EnhancedTradingLauncher:
             if self.current_mode == "backtest" and self.enhanced_backtester:
                 return self.enhanced_backtester.get_backtest_results()
             if self.current_mode == "live":
-                # TODO: Implement live trading metrics
-                return {"mode": "live", "status": "not_implemented"}
+                # Implement live trading metrics
+                if not self.trading_orchestrator:
+                    return {"mode": "live", "status": "not_initialized", "error": "Trading orchestrator not available"}
+                
+                try:
+                    # Get live trading metrics from orchestrator
+                    live_metrics = {
+                        "mode": "live",
+                        "status": "active",
+                        "positions": self.trading_orchestrator.positions,
+                        "active_orders": len(self.trading_orchestrator.active_orders),
+                        "performance_metrics": self.trading_orchestrator.performance_metrics,
+                        "statistics": self.trading_orchestrator.stats,
+                        "trade_history_count": len(self.trading_orchestrator.trade_history),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Add position summary
+                    if self.trading_orchestrator.positions:
+                        total_pnl = sum(pos.pnl for pos in self.trading_orchestrator.positions.values())
+                        live_metrics["total_pnl"] = total_pnl
+                        live_metrics["position_count"] = len(self.trading_orchestrator.positions)
+                    
+                    return live_metrics
+                    
+                except Exception as e:
+                    return {"mode": "live", "status": "error", "error": str(e)}
             return {"mode": self.current_mode, "status": "no_metrics_available"}
 
         except Exception as e:

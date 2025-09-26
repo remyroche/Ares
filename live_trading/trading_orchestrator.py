@@ -500,9 +500,50 @@ class TradingOrchestrator:
 
         try:
             # Cancel all active orders
+            cancellation_results = []
             for symbol in self.config.symbols:
-                # This would need to be implemented to cancel all orders for a symbol
-                pass
+                try:
+                    # Get all active orders for this symbol
+                    symbol_orders = [order_id for order_id, order in self.active_orders.items() 
+                                   if order.get('symbol') == symbol and order.get('status') in ['pending', 'open', 'partially_filled']]
+                    
+                    if symbol_orders:
+                        self.logger.info(f"Cancelling {len(symbol_orders)} active orders for {symbol}")
+                        
+                        # Cancel each order
+                        for order_id in symbol_orders:
+                            try:
+                                # Use the trading receiver to cancel the order
+                                cancel_response = await self.trading_receiver.cancel_order(
+                                    exchange=self.config.exchange,
+                                    symbol=symbol,
+                                    order_id=order_id
+                                )
+                                
+                                if cancel_response.success:
+                                    self.logger.info(f"Successfully cancelled order {order_id} for {symbol}")
+                                    # Remove from active orders
+                                    if order_id in self.active_orders:
+                                        del self.active_orders[order_id]
+                                    cancellation_results.append({"order_id": order_id, "symbol": symbol, "status": "cancelled"})
+                                else:
+                                    self.logger.warning(f"Failed to cancel order {order_id} for {symbol}: {cancel_response.error}")
+                                    cancellation_results.append({"order_id": order_id, "symbol": symbol, "status": "failed", "error": cancel_response.error})
+                                    
+                            except Exception as e:
+                                self.logger.error(f"Error cancelling order {order_id} for {symbol}: {e}")
+                                cancellation_results.append({"order_id": order_id, "symbol": symbol, "status": "error", "error": str(e)})
+                    else:
+                        self.logger.info(f"No active orders found for {symbol}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error processing orders for {symbol}: {e}")
+                    cancellation_results.append({"symbol": symbol, "status": "error", "error": str(e)})
+            
+            # Log cancellation summary
+            successful_cancellations = len([r for r in cancellation_results if r.get("status") == "cancelled"])
+            failed_cancellations = len([r for r in cancellation_results if r.get("status") in ["failed", "error"]])
+            self.logger.info(f"Emergency stop cancellation summary: {successful_cancellations} successful, {failed_cancellations} failed")
 
             # Pause trading
             await self.pause_trading()

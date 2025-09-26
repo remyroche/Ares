@@ -615,16 +615,140 @@ class APIClient:
         # Common rate limit headers
         rate_limit_headers = [
             "X-RateLimit-Limit",
-            "X-RateLimit-Remaining",
+            "X-RateLimit-Remaining", 
             "X-RateLimit-Reset",
             "Retry-After"
         ]
         
-        for header in rate_limit_headers:
-            if header in headers:
-                # Parse rate limit information
-                # This would be exchange-specific implementation
-                pass
+        # Exchange-specific rate limit parsing
+        if self.exchange_name.lower() == "binance":
+            await self._parse_binance_rate_limits(headers)
+        elif self.exchange_name.lower() == "coinbase":
+            await self._parse_coinbase_rate_limits(headers)
+        elif self.exchange_name.lower() == "kraken":
+            await self._parse_kraken_rate_limits(headers)
+        else:
+            # Generic rate limit parsing
+            await self._parse_generic_rate_limits(headers)
+    
+    async def _parse_binance_rate_limits(self, headers: Dict[str, str]) -> None:
+        """Parse Binance-specific rate limit headers"""
+        try:
+            # Binance uses X-MBX-USED-WEIGHT and X-MBX-ORDER-COUNT
+            if "X-MBX-USED-WEIGHT" in headers:
+                used_weight = int(headers["X-MBX-USED-WEIGHT"])
+                # Binance weight limit is typically 1200 per minute
+                remaining_weight = max(0, 1200 - used_weight)
+                
+                # Update rate limits for all endpoints
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["remaining"] = remaining_weight
+                    self.rate_limits[endpoint]["used"] = used_weight
+                    # Calculate interval based on remaining weight
+                    if remaining_weight < 100:  # Low remaining weight
+                        self.rate_limits[endpoint]["interval"] = 1.0  # 1 second between requests
+                    elif remaining_weight < 500:
+                        self.rate_limits[endpoint]["interval"] = 0.5  # 0.5 seconds between requests
+                    else:
+                        self.rate_limits[endpoint]["interval"] = 0.1  # 0.1 seconds between requests
+            
+            # Handle order count limits
+            if "X-MBX-ORDER-COUNT" in headers:
+                order_count = int(headers["X-MBX-ORDER-COUNT"])
+                # Binance allows 10 orders per second
+                if order_count >= 8:  # Close to limit
+                    for endpoint in self.rate_limits:
+                        if "order" in endpoint.lower():
+                            self.rate_limits[endpoint]["interval"] = 1.0  # 1 second between order requests
+                            
+        except (ValueError, KeyError) as e:
+            self.logger.warning(f"Error parsing Binance rate limits: {e}")
+    
+    async def _parse_coinbase_rate_limits(self, headers: Dict[str, str]) -> None:
+        """Parse Coinbase-specific rate limit headers"""
+        try:
+            # Coinbase uses standard rate limit headers
+            if "X-RateLimit-Limit" in headers and "X-RateLimit-Remaining" in headers:
+                limit = int(headers["X-RateLimit-Limit"])
+                remaining = int(headers["X-RateLimit-Remaining"])
+                
+                # Update rate limits
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["limit"] = limit
+                    self.rate_limits[endpoint]["remaining"] = remaining
+                    
+                    # Calculate interval based on remaining requests
+                    if remaining < limit * 0.1:  # Less than 10% remaining
+                        self.rate_limits[endpoint]["interval"] = 2.0  # 2 seconds between requests
+                    elif remaining < limit * 0.3:  # Less than 30% remaining
+                        self.rate_limits[endpoint]["interval"] = 1.0  # 1 second between requests
+                    else:
+                        self.rate_limits[endpoint]["interval"] = 0.5  # 0.5 seconds between requests
+            
+            # Handle retry-after header
+            if "Retry-After" in headers:
+                retry_after = int(headers["Retry-After"])
+                self.logger.warning(f"Rate limit exceeded, retry after {retry_after} seconds")
+                # Update all endpoints to wait for retry period
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["retry_after"] = retry_after
+                    
+        except (ValueError, KeyError) as e:
+            self.logger.warning(f"Error parsing Coinbase rate limits: {e}")
+    
+    async def _parse_kraken_rate_limits(self, headers: Dict[str, str]) -> None:
+        """Parse Kraken-specific rate limit headers"""
+        try:
+            # Kraken uses custom headers
+            if "X-RateLimit-Limit" in headers:
+                limit = int(headers["X-RateLimit-Limit"])
+                
+                # Kraken typically allows 1 request per second for public endpoints
+                # and 0.1 requests per second for private endpoints
+                for endpoint in self.rate_limits:
+                    if "private" in endpoint.lower() or "order" in endpoint.lower():
+                        self.rate_limits[endpoint]["interval"] = 10.0  # 10 seconds between private requests
+                    else:
+                        self.rate_limits[endpoint]["interval"] = 1.0  # 1 second between public requests
+                        
+        except (ValueError, KeyError) as e:
+            self.logger.warning(f"Error parsing Kraken rate limits: {e}")
+    
+    async def _parse_generic_rate_limits(self, headers: Dict[str, str]) -> None:
+        """Parse generic rate limit headers"""
+        try:
+            # Standard rate limit headers
+            if "X-RateLimit-Limit" in headers:
+                limit = int(headers["X-RateLimit-Limit"])
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["limit"] = limit
+            
+            if "X-RateLimit-Remaining" in headers:
+                remaining = int(headers["X-RateLimit-Remaining"])
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["remaining"] = remaining
+                    
+                    # Conservative interval calculation
+                    if remaining < 10:
+                        self.rate_limits[endpoint]["interval"] = 2.0
+                    elif remaining < 50:
+                        self.rate_limits[endpoint]["interval"] = 1.0
+                    else:
+                        self.rate_limits[endpoint]["interval"] = 0.5
+            
+            if "X-RateLimit-Reset" in headers:
+                reset_time = int(headers["X-RateLimit-Reset"])
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["reset_time"] = reset_time
+            
+            if "Retry-After" in headers:
+                retry_after = int(headers["Retry-After"])
+                self.logger.warning(f"Rate limit exceeded, retry after {retry_after} seconds")
+                for endpoint in self.rate_limits:
+                    self.rate_limits[endpoint]["retry_after"] = retry_after
+                    
+        except (ValueError, KeyError) as e:
+            self.logger.warning(f"Error parsing generic rate limits: {e}")
     
     async def _notify_handlers(self, event_type: str, response: APIResponse) -> None:
         """Notify registered handlers"""

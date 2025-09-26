@@ -4,17 +4,19 @@ from src.utils.tprint import tprint
 from datetime import datetime, timedelta
 from typing import Any
 import numpy as np
+import asyncio
 
 from logging import error
 
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid, missing
 from ..core.decorators import handles_errors
+from ..interfaces.base_interfaces import IStrategist, AnalysisResult, StrategyResult
 import time
 
 # src/components/modular_strategist.py
 
-class ModularStrategist:
+class ModularStrategist(IStrategist):
     """
     Enhanced modular strategist with comprehensive error handling and type safety.
     """
@@ -993,6 +995,245 @@ class ModularStrategist:
 
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular strategist: {e}"))
+
+    # IStrategist interface implementation
+
+    async def start(self) -> None:
+        """Start the strategist (IStrategist interface)."""
+        await self.initialize()
+
+    async def formulate_strategy(self, analysis_result: AnalysisResult) -> StrategyResult:
+        """Formulate trading strategy based on analysis (IStrategist interface)."""
+        try:
+            # Convert AnalysisResult to dict format for existing method
+            market_data_dict = {
+                "symbol": analysis_result.symbol,
+                "price": 100.0,  # Default price for strategy formulation
+                "volume": 1000.0,  # Default volume
+                "timestamp": analysis_result.timestamp.isoformat(),
+            }
+            
+            analysis_data_dict = {
+                "signal": analysis_result.signal,
+                "confidence": analysis_result.confidence,
+                "technical": analysis_result.technical_indicators,
+                "fundamental": analysis_result.features,
+                "risk": analysis_result.risk_metrics
+            }
+            
+            # Execute strategy using existing method
+            success = await self.execute_strategy(market_data_dict, analysis_data_dict)
+            
+            if not success:
+                # Return default strategy if execution failed
+                return StrategyResult(
+                    timestamp=analysis_result.timestamp,
+                    symbol=analysis_result.symbol,
+                    position_bias="NEUTRAL",
+                    leverage_cap=1.0,
+                    max_notional_size=1000.0,
+                    risk_parameters={},
+                    market_conditions={}
+                )
+            
+            # Extract strategy results
+            position_sizing = self.strategy_results.get("position_sizing", {})
+            risk_management = self.strategy_results.get("risk_management", {})
+            
+            # Determine position bias based on analysis signal
+            position_bias = self._determine_position_bias(analysis_result.signal, analysis_result.confidence)
+            
+            # Calculate leverage cap based on risk parameters
+            leverage_cap = self._calculate_leverage_cap(risk_management, analysis_result.risk_metrics)
+            
+            # Calculate max notional size based on position sizing
+            max_notional_size = self._calculate_max_notional_size(position_sizing, analysis_result.confidence)
+            
+            return StrategyResult(
+                timestamp=analysis_result.timestamp,
+                symbol=analysis_result.symbol,
+                position_bias=position_bias,
+                leverage_cap=leverage_cap,
+                max_notional_size=max_notional_size,
+                risk_parameters=risk_management,
+                market_conditions={
+                    "market_regime": analysis_result.market_regime,
+                    "volatility": analysis_result.risk_metrics.get("volatility", 0.0),
+                    "confidence": analysis_result.confidence
+                }
+            )
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error in formulate_strategy interface method: {e}"))
+            return StrategyResult(
+                timestamp=analysis_result.timestamp,
+                symbol=analysis_result.symbol,
+                position_bias="NEUTRAL",
+                leverage_cap=1.0,
+                max_notional_size=1000.0,
+                risk_parameters={},
+                market_conditions={}
+            )
+
+    async def update_strategy_parameters(self, parameters: dict[str, Any]) -> None:
+        """Update strategy parameters (IStrategist interface)."""
+        try:
+            self.logger.info("Updating strategy parameters...")
+            
+            # Update configuration with new parameters
+            if "strategy_interval" in parameters:
+                self.strategy_interval = parameters["strategy_interval"]
+                self.strategist_config["strategy_interval"] = parameters["strategy_interval"]
+            
+            if "enable_position_sizing" in parameters:
+                self.enable_position_sizing = parameters["enable_position_sizing"]
+                self.strategist_config["enable_position_sizing"] = parameters["enable_position_sizing"]
+            
+            if "enable_risk_management" in parameters:
+                self.enable_risk_management = parameters["enable_risk_management"]
+                self.strategist_config["enable_risk_management"] = parameters["enable_risk_management"]
+            
+            # Update other strategy-specific parameters
+            for key, value in parameters.items():
+                if key not in ["strategy_interval", "enable_position_sizing", "enable_risk_management"]:
+                    self.strategist_config[key] = value
+            
+            self.logger.info("✅ Strategy parameters updated successfully")
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error updating strategy parameters: {e}"))
+
+    async def get_strategy_performance(self) -> dict[str, Any]:
+        """Get strategy performance metrics (IStrategist interface)."""
+        try:
+            # Calculate performance metrics from strategy history
+            if not self.strategy_history:
+                return {
+                    "total_strategies": 0,
+                    "success_rate": 0.0,
+                    "avg_confidence": 0.0,
+                    "risk_metrics": {},
+                    "performance_score": 0.0
+                }
+            
+            # Calculate basic metrics
+            total_strategies = len(self.strategy_history)
+            successful_strategies = sum(1 for strategy in self.strategy_history 
+                                      if strategy.get("success", False))
+            success_rate = successful_strategies / total_strategies if total_strategies > 0 else 0.0
+            
+            # Calculate average confidence
+            confidences = [strategy.get("confidence", 0.0) for strategy in self.strategy_history]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+            
+            # Calculate risk metrics
+            risk_metrics = {}
+            for strategy in self.strategy_history:
+                risk_data = strategy.get("risk_management", {})
+                for key, value in risk_data.items():
+                    if key not in risk_metrics:
+                        risk_metrics[key] = []
+                    if isinstance(value, (int, float)):
+                        risk_metrics[key].append(value)
+            
+            # Calculate averages for risk metrics
+            avg_risk_metrics = {}
+            for key, values in risk_metrics.items():
+                if values:
+                    avg_risk_metrics[key] = sum(values) / len(values)
+            
+            # Calculate performance score
+            performance_score = (success_rate * 0.4 + avg_confidence * 0.6)
+            
+            return {
+                "total_strategies": total_strategies,
+                "success_rate": success_rate,
+                "avg_confidence": avg_confidence,
+                "risk_metrics": avg_risk_metrics,
+                "performance_score": performance_score,
+                "last_updated": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error getting strategy performance: {e}"))
+            return {
+                "total_strategies": 0,
+                "success_rate": 0.0,
+                "avg_confidence": 0.0,
+                "risk_metrics": {},
+                "performance_score": 0.0
+            }
+
+    # Helper methods for interface implementation
+
+    def _determine_position_bias(self, signal: str, confidence: float) -> str:
+        """Determine position bias based on signal and confidence."""
+        try:
+            if signal == "BUY" and confidence > 0.7:
+                return "BULLISH"
+            elif signal == "SELL" and confidence > 0.7:
+                return "BEARISH"
+            elif signal == "BUY" and confidence > 0.5:
+                return "SLIGHTLY_BULLISH"
+            elif signal == "SELL" and confidence > 0.5:
+                return "SLIGHTLY_BEARISH"
+            else:
+                return "NEUTRAL"
+                
+        except Exception as e:
+            self.logger.exception(error(f"Error determining position bias: {e}"))
+            return "NEUTRAL"
+
+    def _calculate_leverage_cap(self, risk_management: dict, risk_metrics: dict) -> float:
+        """Calculate leverage cap based on risk parameters."""
+        try:
+            base_leverage = 1.0
+            
+            # Adjust based on risk management parameters
+            if "position_limits" in risk_management:
+                position_limits = risk_management["position_limits"]
+                if isinstance(position_limits, dict):
+                    max_leverage = position_limits.get("max_leverage", 1.0)
+                    base_leverage = min(base_leverage, max_leverage)
+            
+            # Adjust based on risk metrics
+            volatility = risk_metrics.get("volatility", 0.0)
+            if volatility > 0.3:  # High volatility
+                base_leverage *= 0.5
+            elif volatility > 0.2:  # Medium volatility
+                base_leverage *= 0.75
+            
+            return max(min(base_leverage, 3.0), 0.1)  # Cap between 0.1 and 3.0
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating leverage cap: {e}"))
+            return 1.0
+
+    def _calculate_max_notional_size(self, position_sizing: dict, confidence: float) -> float:
+        """Calculate max notional size based on position sizing and confidence."""
+        try:
+            base_size = 1000.0
+            
+            # Adjust based on position sizing strategies
+            if "kelly_criterion" in position_sizing:
+                kelly_fraction = position_sizing["kelly_criterion"]
+                if isinstance(kelly_fraction, (int, float)):
+                    base_size *= kelly_fraction
+            
+            if "fixed_fraction" in position_sizing:
+                fixed_fraction = position_sizing["fixed_fraction"]
+                if isinstance(fixed_fraction, (int, float)):
+                    base_size *= fixed_fraction
+            
+            # Adjust based on confidence
+            confidence_multiplier = 0.5 + (confidence * 0.5)  # Range: 0.5 to 1.0
+            base_size *= confidence_multiplier
+            
+            return max(min(base_size, 10000.0), 100.0)  # Cap between 100 and 10000
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating max notional size: {e}"))
+            return 1000.0
 
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None

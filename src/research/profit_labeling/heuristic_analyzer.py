@@ -342,22 +342,104 @@ class HeuristicAnalyzer:
         """Analyze sensitivity to parameter changes."""
         self.logger.info('🔧 Analyzing parameter sensitivity')
         
-        # This would require running the labeler with different parameters
-        # For now, return a placeholder analysis
-        
-        return HeuristicAnalysisResult(
-            analysis_type=AnalysisMetric.PARAMETER_SENSITIVITY,
-            metric_value=0.5,  # Placeholder
-            confidence_interval=None,
-            statistical_significance=None,
-            interpretation="Parameter sensitivity analysis requires multiple labeling runs",
-            recommendations=[
-                "Implement systematic parameter variation testing",
-                "Test sensitivity to profit targets, time horizons, and quality weights",
-                "Use grid search or Bayesian optimization for parameter tuning"
-            ],
-            metadata={'status': 'placeholder_implementation'}
-        )
+        try:
+            # Extract base market data for re-labeling
+            market_data = labeled_data[['open', 'high', 'low', 'close', 'volume']].copy()
+            
+            # Define parameter variations to test
+            parameter_variations = self._generate_parameter_variations(config)
+            
+            # Store original results for comparison
+            original_results = self._extract_key_metrics(labeled_data)
+            
+            # Test each parameter variation
+            sensitivity_results = {}
+            for param_name, param_config in parameter_variations.items():
+                try:
+                    # Generate labels with modified parameters
+                    labeler = MultiHorizonProfitLabeler(param_config)
+                    modified_labels = labeler.generate_labels(market_data.copy())
+                    
+                    # Extract metrics for this variation
+                    variation_results = self._extract_key_metrics(modified_labels)
+                    
+                    # Calculate sensitivity (difference from original)
+                    sensitivity = self._calculate_parameter_sensitivity(
+                        original_results, variation_results
+                    )
+                    
+                    sensitivity_results[param_name] = {
+                        'sensitivity': sensitivity,
+                        'variation_results': variation_results,
+                        'config_changes': self._get_config_changes(config, param_config)
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(f'Parameter variation {param_name} failed: {e}')
+                    continue
+            
+            # Calculate overall sensitivity score
+            if sensitivity_results:
+                sensitivity_scores = [result['sensitivity'] for result in sensitivity_results.values()]
+                overall_sensitivity = np.mean(sensitivity_scores)
+                
+                # Identify most sensitive parameters
+                most_sensitive = max(sensitivity_results.items(), 
+                                   key=lambda x: x[1]['sensitivity'])
+                
+                interpretation = (
+                    f"Parameter sensitivity analysis shows {overall_sensitivity:.2%} average sensitivity. "
+                    f"Most sensitive parameter: {most_sensitive[0]} "
+                    f"(sensitivity: {most_sensitive[1]['sensitivity']:.2%})"
+                )
+                
+                recommendations = self._generate_sensitivity_recommendations(
+                    sensitivity_results, overall_sensitivity
+                )
+                
+                metadata = {
+                    'parameter_variations_tested': len(sensitivity_results),
+                    'overall_sensitivity': overall_sensitivity,
+                    'most_sensitive_parameter': most_sensitive[0],
+                    'sensitivity_details': {
+                        name: {
+                            'sensitivity': result['sensitivity'],
+                            'config_changes': result['config_changes']
+                        }
+                        for name, result in sensitivity_results.items()
+                    }
+                }
+                
+            else:
+                overall_sensitivity = 0.0
+                interpretation = "Parameter sensitivity analysis failed - no valid variations tested"
+                recommendations = ["Check parameter variation generation logic", "Verify labeler configuration"]
+                metadata = {'error': 'no_valid_variations'}
+            
+            return HeuristicAnalysisResult(
+                analysis_type=AnalysisMetric.PARAMETER_SENSITIVITY,
+                metric_value=overall_sensitivity,
+                confidence_interval=None,
+                statistical_significance=None,
+                interpretation=interpretation,
+                recommendations=recommendations,
+                metadata=metadata
+            )
+            
+        except Exception as e:
+            error_msg = f'Parameter sensitivity analysis failed: {e}'
+            self.logger.error(f'❌ {error_msg}')
+            tprint(f"⚠️ {error_msg}")
+            
+            return HeuristicAnalysisResult(
+                analysis_type=AnalysisMetric.PARAMETER_SENSITIVITY,
+                metric_value=0.0,
+                confidence_interval=None,
+                statistical_significance=None,
+                interpretation=f"Parameter sensitivity analysis failed: {e}",
+                recommendations=["Review parameter variation logic", "Check labeler configuration"],
+                metadata={'error': str(e)}
+            )
     
     def _calculate_predictive_power(self, 
                                   values: pd.Series, 
@@ -663,6 +745,231 @@ class HeuristicAnalyzer:
             }, f, indent=2)
         
         self.logger.info(f'💾 Analysis results saved to {output_path}')
+    
+    def _generate_parameter_variations(self, base_config: MultiHorizonConfig) -> Dict[str, MultiHorizonConfig]:
+        """Generate parameter variations for sensitivity testing."""
+        variations = {}
+        
+        # 1. Profit target variations
+        if hasattr(base_config, 'profit_targets') and base_config.profit_targets:
+            # Conservative targets (20% smaller)
+            conservative_config = MultiHorizonConfig()
+            conservative_config.profit_targets = {
+                k: v * 0.8 for k, v in base_config.profit_targets.items()
+            }
+            variations['conservative_targets'] = conservative_config
+            
+            # Aggressive targets (20% larger)
+            aggressive_config = MultiHorizonConfig()
+            aggressive_config.profit_targets = {
+                k: v * 1.2 for k, v in base_config.profit_targets.items()
+            }
+            variations['aggressive_targets'] = aggressive_config
+        
+        # 2. Time horizon variations
+        if hasattr(base_config, 'time_horizons') and base_config.time_horizons:
+            # Shorter horizons
+            short_config = MultiHorizonConfig()
+            short_config.time_horizons = {
+                k: max(1, int(v * 0.7)) for k, v in base_config.time_horizons.items()
+            }
+            variations['shorter_horizons'] = short_config
+            
+            # Longer horizons
+            long_config = MultiHorizonConfig()
+            long_config.time_horizons = {
+                k: int(v * 1.5) for k, v in base_config.time_horizons.items()
+            }
+            variations['longer_horizons'] = long_config
+        
+        # 3. Quality scoring weight variations
+        if hasattr(base_config, 'enable_quality_scoring') and base_config.enable_quality_scoring:
+            # Speed-focused weights
+            speed_config = MultiHorizonConfig()
+            speed_config.enable_quality_scoring = True
+            speed_config.speed_weight = 0.6
+            speed_config.risk_weight = 0.2
+            speed_config.profitability_weight = 0.2
+            variations['speed_focused_weights'] = speed_config
+            
+            # Risk-focused weights
+            risk_config = MultiHorizonConfig()
+            risk_config.enable_quality_scoring = True
+            risk_config.speed_weight = 0.2
+            risk_config.risk_weight = 0.6
+            risk_config.profitability_weight = 0.2
+            variations['risk_focused_weights'] = risk_config
+            
+            # Profitability-focused weights
+            profit_config = MultiHorizonConfig()
+            profit_config.enable_quality_scoring = True
+            profit_config.speed_weight = 0.2
+            profit_config.risk_weight = 0.2
+            profit_config.profitability_weight = 0.6
+            variations['profitability_focused_weights'] = profit_config
+        
+        # 4. Fee structure variations
+        if hasattr(base_config, 'transaction_fee_rate'):
+            # Higher fees
+            high_fee_config = MultiHorizonConfig()
+            high_fee_config.transaction_fee_rate = base_config.transaction_fee_rate * 1.5
+            variations['higher_fees'] = high_fee_config
+            
+            # Lower fees
+            low_fee_config = MultiHorizonConfig()
+            low_fee_config.transaction_fee_rate = base_config.transaction_fee_rate * 0.5
+            variations['lower_fees'] = low_fee_config
+        
+        return variations
+    
+    def _extract_key_metrics(self, labeled_data: pd.DataFrame) -> Dict[str, float]:
+        """Extract key metrics from labeled data for comparison."""
+        metrics = {}
+        
+        # Extract probability columns
+        prob_columns = [col for col in labeled_data.columns if col.endswith('_prob')]
+        
+        if prob_columns:
+            # Average hit rate across all targets
+            hit_rates = []
+            for col in prob_columns:
+                prob_values = labeled_data[col].dropna()
+                if len(prob_values) > 0:
+                    hit_rate = (prob_values > 0.5).mean()
+                    hit_rates.append(hit_rate)
+            
+            metrics['average_hit_rate'] = np.mean(hit_rates) if hit_rates else 0.0
+            metrics['hit_rate_std'] = np.std(hit_rates) if len(hit_rates) > 1 else 0.0
+        
+        # Extract quality score columns
+        quality_columns = [col for col in labeled_data.columns if col.endswith('_quality_score')]
+        
+        if quality_columns:
+            quality_scores = []
+            for col in quality_columns:
+                quality_values = labeled_data[col].dropna()
+                if len(quality_values) > 0:
+                    quality_scores.extend(quality_values.tolist())
+            
+            metrics['average_quality_score'] = np.mean(quality_scores) if quality_scores else 0.0
+            metrics['quality_score_std'] = np.std(quality_scores) if len(quality_scores) > 1 else 0.0
+        
+        # Extract composite scores
+        composite_columns = ['overall_opportunity', 'immediate_opportunity', 'short_term_opportunity']
+        for col in composite_columns:
+            if col in labeled_data.columns:
+                values = labeled_data[col].dropna()
+                if len(values) > 0:
+                    metrics[f'{col}_mean'] = float(values.mean())
+                    metrics[f'{col}_std'] = float(values.std())
+        
+        return metrics
+    
+    def _calculate_parameter_sensitivity(self, 
+                                       original_results: Dict[str, float], 
+                                       variation_results: Dict[str, float]) -> float:
+        """Calculate sensitivity score between original and variation results."""
+        if not original_results or not variation_results:
+            return 0.0
+        
+        # Find common metrics
+        common_metrics = set(original_results.keys()) & set(variation_results.keys())
+        
+        if not common_metrics:
+            return 0.0
+        
+        # Calculate relative differences
+        relative_differences = []
+        for metric in common_metrics:
+            original_val = original_results[metric]
+            variation_val = variation_results[metric]
+            
+            if original_val != 0:
+                relative_diff = abs(variation_val - original_val) / abs(original_val)
+                relative_differences.append(relative_diff)
+            elif variation_val != 0:
+                # If original is 0 but variation is not, use absolute difference
+                relative_differences.append(abs(variation_val))
+        
+        # Return average relative difference as sensitivity score
+        return np.mean(relative_differences) if relative_differences else 0.0
+    
+    def _get_config_changes(self, 
+                          original_config: MultiHorizonConfig, 
+                          variation_config: MultiHorizonConfig) -> Dict[str, Any]:
+        """Get the specific changes made to configuration."""
+        changes = {}
+        
+        # Compare profit targets
+        if (hasattr(original_config, 'profit_targets') and hasattr(variation_config, 'profit_targets') and
+            original_config.profit_targets != variation_config.profit_targets):
+            changes['profit_targets'] = {
+                'original': original_config.profit_targets,
+                'variation': variation_config.profit_targets
+            }
+        
+        # Compare time horizons
+        if (hasattr(original_config, 'time_horizons') and hasattr(variation_config, 'time_horizons') and
+            original_config.time_horizons != variation_config.time_horizons):
+            changes['time_horizons'] = {
+                'original': original_config.time_horizons,
+                'variation': variation_config.time_horizons
+            }
+        
+        # Compare quality weights
+        if (hasattr(original_config, 'speed_weight') and hasattr(variation_config, 'speed_weight')):
+            weight_changes = {}
+            for weight_name in ['speed_weight', 'risk_weight', 'profitability_weight']:
+                if (hasattr(original_config, weight_name) and hasattr(variation_config, weight_name) and
+                    getattr(original_config, weight_name) != getattr(variation_config, weight_name)):
+                    weight_changes[weight_name] = {
+                        'original': getattr(original_config, weight_name),
+                        'variation': getattr(variation_config, weight_name)
+                    }
+            if weight_changes:
+                changes['quality_weights'] = weight_changes
+        
+        # Compare fee rates
+        if (hasattr(original_config, 'transaction_fee_rate') and hasattr(variation_config, 'transaction_fee_rate') and
+            original_config.transaction_fee_rate != variation_config.transaction_fee_rate):
+            changes['transaction_fee_rate'] = {
+                'original': original_config.transaction_fee_rate,
+                'variation': variation_config.transaction_fee_rate
+            }
+        
+        return changes
+    
+    def _generate_sensitivity_recommendations(self, 
+                                            sensitivity_results: Dict[str, Any], 
+                                            overall_sensitivity: float) -> List[str]:
+        """Generate recommendations based on sensitivity analysis results."""
+        recommendations = []
+        
+        if overall_sensitivity < 0.1:
+            recommendations.append("✅ Low parameter sensitivity - system is robust to parameter changes")
+        elif overall_sensitivity < 0.3:
+            recommendations.append("📊 Moderate parameter sensitivity - monitor key parameters")
+        else:
+            recommendations.append("⚠️ High parameter sensitivity - parameters need careful tuning")
+        
+        # Find most and least sensitive parameters
+        if sensitivity_results:
+            most_sensitive = max(sensitivity_results.items(), key=lambda x: x[1]['sensitivity'])
+            least_sensitive = min(sensitivity_results.items(), key=lambda x: x[1]['sensitivity'])
+            
+            recommendations.append(f"🎯 Most sensitive parameter: {most_sensitive[0]} - focus tuning efforts here")
+            recommendations.append(f"🛡️ Most robust parameter: {least_sensitive[0]} - stable across variations")
+        
+        # Specific recommendations based on sensitivity patterns
+        high_sensitivity_params = [
+            name for name, result in sensitivity_results.items() 
+            if result['sensitivity'] > 0.2
+        ]
+        
+        if high_sensitivity_params:
+            recommendations.append(f"🔧 High sensitivity parameters need careful calibration: {', '.join(high_sensitivity_params)}")
+        
+        return recommendations
 
 
 # Convenience functions

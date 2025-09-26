@@ -563,14 +563,15 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     config = PerRegimeTrainingConfig(
                         model_name="analyst_models",
                         timeframe="5m",
-                        model_types=["DEEPSCALER", "CATBOOST", "XGBOOST", "MULTISCALE_NBEATS"],
+                        model_types=["NAS", "TAS", "MULTISCALE_NBEATS"],
                         hpo_n_trials=100,
                         hpo_timeout_seconds=3600,
                         min_samples_per_regime=1000,
                         enable_data_augmentation=True,
                         augmentation_method="smote",
                         model_save_path="./models/analyst_models",
-                        evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+                        evaluation_metrics=["mse", "mae", "r2", "mape", "smape"],
+                        meta_learner="stacker_lgbm_calibrated"
                     )
                 
                 # Initialize parent class

@@ -240,7 +240,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config = TacticianTrainingConfig(
                 model_name="tactician_models",
                 timeframe="1m",
-                model_types=["XGBOOST", "LIGHTGBM", "DEEPSCALER_1M", "FINANCIAL_RESNET", "RandomSurvivalForest"],
+                model_types=["TAS", "NAS", "RandomSurvivalForest"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,
@@ -252,7 +252,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 single_model_name="tactician_unified_model",
                 enable_ensemble_training=True,
                 ensemble_method="stacking",
-                meta_model="ElasticNetCV",
+                meta_model="stacker_lgbm_calibrated",
                 ensemble_name="tactician_ensemble",
                 enable_entry_timing_optimization=True,
                 entry_timing_range=0.004,
@@ -2345,9 +2345,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger.warning("⚠️ No valid confidence-aware models for ensemble training")
                 return {}
             
-            # Create meta model (LightGBM as meta-learner)
-            meta_model_type = getattr(self.config, 'meta_model', 'LightGBM')
-            if meta_model_type == 'LightGBM':
+            # Create meta model (Calibrated LightGBM stacker as meta-learner)
+            meta_model_type = getattr(self.config, 'meta_model', 'stacker_lgbm_calibrated')
+            if meta_model_type in {'LightGBM', 'stacker_lgbm_calibrated'}:
                 meta_model = LGBMRegressor(
                     n_estimators=1000,
                     learning_rate=0.05,
@@ -2453,7 +2453,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             # Train ensemble model
             ensemble_method = getattr(self.config, 'ensemble_method', 'stacking')
-            meta_model_type = getattr(self.config, 'meta_model', 'ElasticNetCV')
+            meta_model_type = getattr(self.config, 'meta_model', 'stacker_lgbm_calibrated')
             ensemble_name = getattr(self.config, 'ensemble_name', 'tactician_ensemble')
             
             if ensemble_method == 'stacking':
@@ -2515,13 +2515,23 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 base_estimator = self.training_utils.create_model('Ridge')
                 base_estimators.append((f'base_{i}', base_estimator))
             
-            # Create meta-model (ElasticNetCV for better performance)
+            # Create meta-model (Calibrated LightGBM stacker by default)
             if meta_model_type == 'ElasticNetCV':
                 meta_model = ElasticNetCV(
                     cv=5,
                     random_state=42,
                     l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],
                     alphas=np.logspace(-4, 1, 50)
+                )
+            elif meta_model_type == 'stacker_lgbm_calibrated':
+                meta_model = LGBMRegressor(
+                    n_estimators=400,
+                    learning_rate=0.03,
+                    max_depth=6,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbose=-1
                 )
             else:
                 meta_model = self.training_utils.create_model(meta_model_type)
@@ -2546,7 +2556,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Fallback to simple meta-model with ElasticNetCV
             if meta_model_type == 'ElasticNetCV':
                 from sklearn.model_selection import cross_val_score
-                
+
                 # Create and train ElasticNetCV directly
                 elastic_net = ElasticNetCV(
                     cv=5,
@@ -2556,6 +2566,18 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 )
                 elastic_net.fit(X_ensemble, y)
                 return elastic_net
+            elif meta_model_type == 'stacker_lgbm_calibrated':
+                fallback_meta = LGBMRegressor(
+                    n_estimators=400,
+                    learning_rate=0.03,
+                    max_depth=6,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbose=-1
+                )
+                fallback_meta.fit(X_ensemble, y)
+                return fallback_meta
             else:
                 return self.training_utils.train_single_model(
                     model_type=meta_model_type,
@@ -2990,7 +3012,7 @@ if __name__ == "__main__":
         single_model_name="tactician_unified_model",
         enable_ensemble_training=True,
         ensemble_method="stacking",
-        meta_model="ElasticNetCV",
+        meta_model="stacker_lgbm_calibrated",
         ensemble_name="tactician_ensemble"
     )
     

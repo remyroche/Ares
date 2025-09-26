@@ -18,42 +18,44 @@ global_settings:
       analyst:
         type: multi_output_stacking
         base_models:
-          - type: time_series_transformer
-            weight: 0.3
+          - type: nas
+            weight: 0.4
             hyperparameters:
-              d_model: 64
-              n_heads: 8
-              n_layers: 4
+              population_size: 36
+              generations: 48
+              max_layers: 6
+              max_units: 160
+              include_deepscaler: true
+              enable_state_space_models: true
+          - type: tas
+            weight: 0.35
+            hyperparameters:
+              search_strategy: hybrid
+              enable_clvsa_attention: true
+              population_size: 40
+              generations: 60
+              max_model_contributions: 3
+          - type: multiscale_nbeats
+            weight: 0.25
+            hyperparameters:
+              backcast_length: 120
+              forecast_length: 1
+              n_blocks: [2, 2, 1]
+              n_layers: [3, 3, 2]
+              layer_widths: [256, 512, 1024]
               dropout: 0.1
-              max_length: 100
-          - type: catboost
-            weight: 0.25
-            hyperparameters:
-              n_estimators: 2000
-              learning_rate: 0.05
-              max_depth: 8
-              subsample: 0.8
-              colsample_bytree: 0.8
-          - type: lightgbm
-            weight: 0.25
-            hyperparameters:
-              n_estimators: 2000
-              learning_rate: 0.05
-              max_depth: 8
-              subsample: 0.8
-              colsample_bytree: 0.8
-          - type: random_forest
-            weight: 0.2
-            hyperparameters:
-              n_estimators: 500
-              max_depth: 10
-              min_samples_split: 5
-              min_samples_leaf: 2
+              learning_rate: 0.0008
         meta_learner:
-          type: ridge
+          type: stacker_lgbm_calibrated
           hyperparameters:
-            alpha: 1.0
-            fit_intercept: true
+            base_model: LightGBM
+            n_estimators: 500
+            learning_rate: 0.05
+            max_depth: 5
+            subsample: 0.8
+            colsample_bytree: 0.8
+            calibration_method: isotonic
+            cv_folds: 5
         outputs:
           - signal_strength
           - confidence
@@ -66,40 +68,41 @@ global_settings:
       tactician:
         type: multi_output_stacking
         base_models:
-          - type: tabnet
-            weight: 0.3
+          - type: tas
+            weight: 0.4
             hyperparameters:
-              n_d: 64
-              n_a: 64
-              n_steps: 5
-              gamma: 1.5
-              lambda_sparse: 1e-3
-          - type: catboost
+              search_strategy: hybrid
+              enable_tree_ensemble: true
+              enable_boosted_trees: true
+              enable_random_forest: true
+          - type: nas
+            weight: 0.35
+            hyperparameters:
+              population_size: 24
+              generations: 32
+              max_layers: 4
+              max_units: 96
+              include_deepscaler: true
+              meta_learner: stacker_lgbm_calibrated
+          - type: random_survival_forest
             weight: 0.25
             hyperparameters:
-              n_estimators: 1500
-              learning_rate: 0.05
-              max_depth: 6
-              subsample: 0.8
-              colsample_bytree: 0.8
-          - type: lightgbm
-            weight: 0.25
-            hyperparameters:
-              n_estimators: 1500
-              learning_rate: 0.05
-              max_depth: 6
-              subsample: 0.8
-              colsample_bytree: 0.8
-          - type: ridge
-            weight: 0.2
-            hyperparameters:
-              alpha: 1.0
-              fit_intercept: true
+              n_estimators: 400
+              max_depth: 12
+              min_samples_split: 5
+              min_samples_leaf: 3
+              max_features: "sqrt"
         meta_learner:
-          type: ridge
+          type: stacker_lgbm_calibrated
           hyperparameters:
-            alpha: 0.5
-            fit_intercept: true
+            base_model: LightGBM
+            n_estimators: 400
+            learning_rate: 0.03
+            max_depth: 6
+            subsample: 0.8
+            colsample_bytree: 0.8
+            calibration_method: isotonic
+            cv_folds: 5
         outputs:
           - entry_timing
           - position_size

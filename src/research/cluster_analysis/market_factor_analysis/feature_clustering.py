@@ -28,6 +28,13 @@ from collections import defaultdict
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class ClusteringMethod(Enum):
     """Feature clustering methods."""
     CORRELATION = "correlation"
@@ -173,7 +180,8 @@ class FeatureClusterer:
                         )[0]
                         # Normalize to [0, 1] range
                         mi_matrix.loc[col1, col2] = min(1.0, mi_score)
-                    except:
+                    except Exception as e:
+                                        tprint_warning(f"⚠️ Operation failed: {e}")
                         mi_matrix.loc[col1, col2] = 0.0
         
         mi_matrix = mi_matrix.astype(float)

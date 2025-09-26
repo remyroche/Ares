@@ -31,6 +31,13 @@ import warnings
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class MLPatternDiscoveryMethod(Enum):
     """ML-based pattern discovery methods."""
     CLUSTERING_BASED = "clustering_based"
@@ -244,7 +251,8 @@ class ClusteringBasedPatternDiscovery:
                 'cluster_mean': float(cluster_mean),
                 'overall_mean': float(all_mean)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_cluster_formula(self, 
@@ -466,7 +474,8 @@ class AnomalyPatternDiscovery:
                 'anomaly_volatility': float(anomaly_vol),
                 'normal_volatility': float(normal_vol)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_anomaly_conditions(self, 
@@ -597,7 +606,8 @@ class ChangePointPatternDiscovery:
                 
                 if f_stat > critical_value or f_stat < 1/critical_value:
                     change_points.append(i)
-            except:
+            except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                 continue
         
         # Remove close change points
@@ -766,7 +776,8 @@ class ChangePointPatternDiscovery:
                 'mean_return': float(np.mean(segment_returns)),
                 'return_std': float(np.std(segment_returns))
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_segment_formula(self, segment_cluster: List[Dict[str, Any]]) -> str:

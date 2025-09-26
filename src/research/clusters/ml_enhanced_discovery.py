@@ -61,6 +61,13 @@ from .regime_clusterer import RegimeClusterer, ClusteringMethod
 from .validation_metrics import RegimeValidationMetrics
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class MLDiscoveryMethod(Enum):
     """ML methods for enhanced market discovery."""
     AUTOENCODER = "autoencoder"
@@ -682,7 +689,8 @@ class MLEnhancedDiscovery:
                 try:
                     hull = ConvexHull(embedded)
                     analysis['manifold_properties']['convex_hull_area'] = float(hull.volume)
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     analysis['manifold_properties']['convex_hull_area'] = 0.0
         
         # Cluster structure analysis
@@ -801,7 +809,8 @@ class MLEnhancedDiscovery:
                     score = 0.7 * score + 0.3 * ari
                 
                 return score
-            except:
+            except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                 return -1.0  # Bad score for failed clustering
         
         # Run optimization

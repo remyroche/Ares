@@ -245,7 +245,9 @@ class BasePatternDiscoverer(ABC):
                 t_stat, p_value = stats.ttest_ind(pattern_returns, no_pattern_returns)
                 results['t_statistic'] = float(t_stat)
                 results['p_value'] = float(p_value)
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"⚠️ Statistical test failed: {e}")
                 results['t_statistic'] = 0.0
                 results['p_value'] = 1.0
         else:

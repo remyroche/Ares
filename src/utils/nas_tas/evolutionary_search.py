@@ -151,7 +151,8 @@ class EvolutionaryTreeSearch:
             self.gpu_manager = get_m1_gpu_manager()
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
@@ -204,7 +205,8 @@ class EvolutionaryTreeSearch:
             if generation % 5 == 0:
                 try:
                     optimize_memory()
-                except:
+                except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                     pass
         
         tprint_success(f"✅ Evolution completed - Best score: {self.best_score:.4f}")
@@ -244,7 +246,8 @@ class EvolutionaryTreeSearch:
         
         try:
             max_workers = self.config.n_workers if self.cpu_optimizer is None else self.cpu_optimizer.get_optimal_worker_count()
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             max_workers = self.config.n_workers
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

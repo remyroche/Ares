@@ -26,6 +26,13 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Try to import existing framework components
 try:
     from src.research.clusters.dimension_economic_relevance import (
@@ -478,7 +485,9 @@ class PatternDimensionRelevanceAnalyzer:
             
             mi_scores = mutual_info_classif(features.fillna(0), target)
             relevance_scores.append(np.mean(mi_scores))
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         
         # 2. Correlation-based relevance
@@ -496,7 +505,9 @@ class PatternDimensionRelevanceAnalyzer:
             rf = RandomForestClassifier(n_estimators=50, random_state=42)
             rf.fit(features.fillna(0), target)
             relevance_scores.append(np.mean(rf.feature_importances_))
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         
         return np.mean(relevance_scores) if relevance_scores else 0.0

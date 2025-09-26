@@ -24,6 +24,13 @@ import yaml
 import os
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 @dataclass
 class ConfigurationIssue:
     """Represents a configuration issue."""
@@ -272,7 +279,8 @@ class ConfigurationAnalyzer:
                                 self._check_sensitive_value(
                                     file_path, node.lineno, key, str(value),
                                 )
-                            except:
+                            except Exception as e:
+                                                tprint_warning(f"⚠️ Operation failed: {e}")
                                 # Complex expressions
                                 pass
 
@@ -374,7 +382,8 @@ class ConfigurationAnalyzer:
                             if var_name:
                                 self.env_vars_used.add(var_name)
 
-            except:
+            except Exception as e:
+                                                tprint_warning(f"⚠️ Operation failed: {e}")
                 pass
 
     def _analyze_config_usage(self) -> None:
@@ -399,7 +408,8 @@ class ConfigurationAnalyzer:
                     if key in content:
                         self.config_keys_used.add(key)
 
-            except:
+            except Exception as e:
+                                                tprint_warning(f"⚠️ Operation failed: {e}")
                 pass
 
     def _check_configuration_issues(self) -> None:

@@ -16,6 +16,13 @@ import json
 import pickle
 from enum import Enum
 import warnings
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -706,7 +713,8 @@ class ScenarioTester:
             peak = np.maximum.accumulate(cumulative_returns)
             drawdown = (cumulative_returns - peak) / peak
             return np.min(drawdown)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _evaluate_stress_test(self, scenario_performance: Dict[str, Any], scenario: str) -> bool:

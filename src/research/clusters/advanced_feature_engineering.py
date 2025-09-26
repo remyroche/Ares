@@ -31,6 +31,13 @@ import talib
 
 from src.utils.logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 try:
     import ruptures as rpt
     RUPTURES_AVAILABLE = True
@@ -286,7 +293,8 @@ class AdvancedMarkovFeatureEngine:
                 try:
                     adx = talib.ADX(data['high'].values, data['low'].values, data['close'].values, timeperiod=horizon)
                     features[f'adx_{horizon}'] = pd.Series(adx, index=data.index)
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     features[f'adx_{horizon}'] = pd.Series(0.0, index=data.index)
             
             # Hurst exponent (simplified)
@@ -315,7 +323,8 @@ class AdvancedMarkovFeatureEngine:
             try:
                 rsi = talib.RSI(data['close'].values, timeperiod=horizon)
                 features[f'rsi_{horizon}'] = pd.Series(rsi, index=data.index)
-            except:
+            except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                 features[f'rsi_{horizon}'] = pd.Series(50.0, index=data.index)
             
             # MACD-like momentum
@@ -550,7 +559,8 @@ class AdvancedMarkovFeatureEngine:
                 # Simplified Hurst calculation using R/S statistic
                 hurst = self._rs_hurst(data_window)
                 hurst_values.append(hurst)
-            except:
+            except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                 hurst_values.append(0.5)
         
         return pd.Series(hurst_values, index=series.index[:len(hurst_values)])
@@ -602,7 +612,8 @@ class AdvancedMarkovFeatureEngine:
                 try:
                     autocorr = data_window.autocorr(lag=lag)
                     autocorrs.append(autocorr if not np.isnan(autocorr) else 0.0)
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     autocorrs.append(0.0)
             else:
                 autocorrs.append(0.0)
@@ -691,7 +702,8 @@ class AdvancedMarkovFeatureEngine:
                     stability = 1.0 - abs(corr1 - corr2)
                 else:
                     stability = 1.0
-            except:
+            except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                 stability = 1.0
             
             stabilities.append(stability)

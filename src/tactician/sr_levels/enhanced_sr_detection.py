@@ -807,7 +807,9 @@ class EnhancedSRDetector:
                         price_data, [closest_idx], wlen=20
                     )
                     prominence = prominences[0] if len(prominences) > 0 else level.strength * (price_range * 0.1)
-                except:
+                except Exception as e:
+                    from src.utils.tprint import tprint_debug
+                    tprint_debug(f"🔍 Peak prominence calculation failed: {e}")
                     prominence = level.strength * (price_range * 0.1)
             
             # Normalize by price range instead of ATR
@@ -842,7 +844,9 @@ class EnhancedSRDetector:
                         price_data, [closest_idx], wlen=20
                     )
                     prominence = prominences[0] if len(prominences) > 0 else level.strength * atr
-                except:
+                except Exception as e:
+                    from src.utils.tprint import tprint_debug
+                    tprint_debug(f"🔍 Peak prominence calculation failed (ATR method): {e}")
                     prominence = level.strength * atr
             
             return prominence / atr  # Normalize by ATR
@@ -871,7 +875,9 @@ class EnhancedSRDetector:
                     price_data, [closest_idx], rel_height=0.5
                 )
                 width = widths[0] if len(widths) > 0 else 1.0
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_debug
+                tprint_debug(f"🔍 Peak width calculation failed: {e}")
                 width = 1.0
             
             return width
@@ -4664,7 +4670,9 @@ class EnhancedSRDetector:
                     if len(set(labels)) > 1:
                         score = silhouette_score(level_data, labels)
                         return score
-                except:
+                except Exception as e:
+                    from src.utils.tprint import tprint_debug
+                    tprint_debug(f"🔍 Silhouette score calculation failed: {e}")
                     pass
 
             # Fallback metric: balance between clusters and noise

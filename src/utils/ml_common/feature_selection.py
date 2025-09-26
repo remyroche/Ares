@@ -1142,7 +1142,8 @@ class FeatureSelectionFramework:
                 error_context['data_quality_issues'] = data_quality.get('issues', [])
                 error_context['data_quality_warnings'] = data_quality.get('warnings', [])
                 error_context['suspicious_features'] = data_quality.get('suspicious_features', [])
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 error_context['data_quality_issues'] = ['Unable to validate data quality']
             
             # Log error with comprehensive context
@@ -5489,7 +5490,8 @@ class FeatureSelectionFramework:
                             )[0]
                             mi_redundancy += mi
                     mi_redundancy /= (len(selected_features) * (len(selected_features) - 1) / 2)
-                except:
+                except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                     mi_redundancy = 0.0
             
             return {
@@ -5529,7 +5531,8 @@ class FeatureSelectionFramework:
                         'f_statistic': f_stat,
                         'combined_relevance': (mi + f_stat / 100) / 2  # Normalize F-stat
                     })
-                except:
+                except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                     individual_relevance.append({
                         'mutual_information': 0.0,
                         'f_statistic': 0.0,
@@ -6032,7 +6035,8 @@ class FeatureSelectionFramework:
         try:
             from sklearn.base import clone
             return clone(model)
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             # Fallback: create a new instance
             return model.__class__(**model.get_params())
 
@@ -6650,7 +6654,8 @@ class FeatureSelectionFramework:
             
             return max(0.0, min(1.0, domain_score))
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_non_linearity(self, feature_values: np.ndarray, 
@@ -6671,7 +6676,8 @@ class FeatureSelectionFramework:
             
             return min(1.0, non_linearity)
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _causal_graph_filtering(self, feature_names: List[str], 
@@ -6813,7 +6819,8 @@ class FeatureSelectionFramework:
             corr, _ = pearsonr(x_residual, y_residual)
             return corr
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _instrumental_variable_test(self, X: np.ndarray, y: np.ndarray, 
@@ -6931,7 +6938,8 @@ class FeatureSelectionFramework:
             correlation = abs(safe_correlation(feature_values, target))
             return correlation if not np.isnan(correlation) else 0.0
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_information_content(self, feature_values: np.ndarray) -> float:
@@ -6952,7 +6960,8 @@ class FeatureSelectionFramework:
             cv = std_val / abs(mean_val)
             return min(1.0, cv)
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_temporal_stability(self, feature_values: np.ndarray, 
@@ -6982,7 +6991,8 @@ class FeatureSelectionFramework:
             
             return stability
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_feature_stability(self, feature_values: np.ndarray) -> float:
@@ -7003,7 +7013,8 @@ class FeatureSelectionFramework:
             
             return stability
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_redundancy_penalty(self, feature_values: np.ndarray, 
@@ -7037,7 +7048,8 @@ class FeatureSelectionFramework:
             # Penalty increases with redundancy
             return max_correlation
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _relaxed_causal_filtering(self, X: np.ndarray, y: np.ndarray, 
@@ -7179,7 +7191,8 @@ class FeatureSelectionFramework:
         try:
             mi = mutual_info_regression(x.reshape(-1, 1), y, discrete_features=False)[0]
             return mi
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             # Fallback to correlation
             corr = np.corrcoef(x, y)[0, 1]
             return abs(corr) if not np.isnan(corr) else 0.0
@@ -7201,7 +7214,8 @@ class FeatureSelectionFramework:
             
             return 1.0  # No boost
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 1.0
 
     def _calculate_crypto_relevance(self, x: np.ndarray, y: np.ndarray, feature: str) -> float:
@@ -7225,7 +7239,8 @@ class FeatureSelectionFramework:
             
             return max(0.0, min(1.0, crypto_relevance))
                 
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_relevance_metrics(self, x: np.ndarray, y: np.ndarray) -> Dict[str, float]:
@@ -7247,7 +7262,8 @@ class FeatureSelectionFramework:
             
             return metrics
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return {
                 'target_correlation': 0.0,
                 'information_content': 0.0,
@@ -7260,7 +7276,8 @@ class FeatureSelectionFramework:
         try:
             corr = safe_correlation(x, y)
             return abs(corr) if not np.isnan(corr) else 0.0
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     def _calculate_enhanced_mrmr_score(self, candidate_feature: str, selected_features: List[str],
                                      X: np.ndarray, y: np.ndarray, feature_names: List[str],
@@ -7332,7 +7349,8 @@ class FeatureSelectionFramework:
             
             return bonus
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_causal_bonus(self, candidate_feature: str, selected_features: List[str],
@@ -7352,7 +7370,8 @@ class FeatureSelectionFramework:
             
             return bonus
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _causal_aware_lasso_stability_selection(self, X: np.ndarray, y: np.ndarray,
@@ -7496,7 +7515,8 @@ class FeatureSelectionFramework:
             
             return centrality
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_interaction_weights(self, feature_names: List[str], 
@@ -7562,7 +7582,8 @@ class FeatureSelectionFramework:
                 lasso.fit(X, y)
                 selected_indices = np.where(lasso.coef_ != 0)[0]
                 return [feature_names[i] for i in selected_indices]
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return feature_names[:10]  # Ultimate fallback
 
     def _apply_causal_interaction_constraints(self, stability_scores: Dict[str, float],
@@ -7779,7 +7800,8 @@ class FeatureSelectionFramework:
             perm_importance = permutation_importance(model, X, y, random_state=42)
             return perm_importance.importances_mean
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             # Ultimate fallback: random importance
             return np.random.random(X.shape[1])
 
@@ -7846,7 +7868,8 @@ class FeatureSelectionFramework:
             
             return True
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return True  # Default: allow elimination
 
     def _breaks_critical_interactions(self, feature: str, interaction_network: Dict[str, Any],
@@ -7873,7 +7896,8 @@ class FeatureSelectionFramework:
             
             return False
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return False
 
     def _breaks_causal_relationships(self, feature: str, causal_graph: Dict[str, Any],
@@ -7892,7 +7916,8 @@ class FeatureSelectionFramework:
             
             return False
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return False
 
     def _depends_on_feature_for_causal_path(self, source_feature: str, dependency_feature: str,
@@ -7909,7 +7934,8 @@ class FeatureSelectionFramework:
             
             return len(paths) > 0  # True if there are paths and all go through dependency_feature
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return False
 
     def _find_all_paths(self, source: str, target: str, edges: List[Dict[str, Any]]) -> List[List[str]]:
@@ -7948,7 +7974,8 @@ class FeatureSelectionFramework:
             dfs(source, [])
             return paths
             
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return []
 
     def validate_feature_reduction_plan(self, initial_count: int, target_count: int, 
@@ -8623,7 +8650,8 @@ class FeatureSelectionFramework:
                 else:  # Regression
                     from sklearn.metrics import r2_score
                     return r2_score(y, predictions)
-        except:
+        except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _select_features_single_fold(self, X: np.ndarray, y: np.ndarray,

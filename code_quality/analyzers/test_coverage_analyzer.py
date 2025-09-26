@@ -19,6 +19,13 @@ from typing import Any
 import numpy as np
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 @dataclass
 class TestFileMetrics:
     """Metrics for a test file."""
@@ -235,7 +242,9 @@ class TestCoverageAnalyzer:
                             tested_item = node.name[5:]  # Remove 'test_'
                             tested.add(tested_item)
 
-            except:
+            except Exception as e:
+                                tprint_debug(f"🔍 Operation failed: {e}")
+                                pass
                 pass
 
             mapping[test_file] = tested

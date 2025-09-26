@@ -312,7 +312,9 @@ class ReportAggregator:
             if path.exists() and path.suffix == ".py":
                 with open(path, encoding="utf-8") as f:
                     return len(f.readlines())
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_debug
+            tprint_debug(f"🔍 Failed to count lines in {file_path}: {e}")
             pass
         return 0
 

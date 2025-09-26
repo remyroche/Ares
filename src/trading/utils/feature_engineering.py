@@ -390,7 +390,8 @@ class UnifiedFeatureEngine:
             normalized_slope = slope / market_data['close'].iloc[-1]
             return np.clip(normalized_slope * 100, -1, 1)  # Clamp to [-1, 1]
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _normalize_feature_set(self, feature_set: FeatureSet) -> FeatureSet:

@@ -59,7 +59,9 @@ class ProgressMetrics:
         try:
             process = psutil.Process()
             self.memory_usage_mb = process.memory_info().rss / 1024 / 1024
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_debug
+            tprint_debug(f"🔍 Failed to get memory usage: {e}")
             self.memory_usage_mb = 0.0
 
         self.last_update_time = current_time

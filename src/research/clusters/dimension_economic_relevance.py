@@ -30,6 +30,13 @@ from scipy import stats
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class PriceActionInfluence(Enum):
     """Types of price action influence."""
     MOMENTUM_SUPPORT = "momentum_support"
@@ -409,7 +416,9 @@ class DimensionEconomicRelevanceAnalyzer:
             if lag_correlations:
                 significance_tests['max_lag_correlation'] = float(max(lag_correlations))
                 significance_tests['predictive_power'] = float(np.mean(lag_correlations))
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         
         # Test 3: Regime-based significance

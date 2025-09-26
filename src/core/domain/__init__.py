@@ -12,6 +12,13 @@ for easy importing.
 """
 from ..decorators import compose, handles_errors, traced, validates
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 def with_tracing_span(*args, **kwargs) -> None:
     """Alias for traced to preserve backward compatibility with older imports."""
     return traced(*args, **kwargs)
@@ -90,7 +97,9 @@ def enforce_ndarray(arg_positions: list = None, kwargs_names: list = None, outpu
             if output and result is not None and (not isinstance(result, np.ndarray)):
                 try:
                     result = np.asarray(result)
-                except:
+                except Exception as e:
+                                    tprint_debug(f"🔍 Operation failed: {e}")
+                                    pass
                     pass
             return result
         return wrapper

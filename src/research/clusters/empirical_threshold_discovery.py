@@ -32,6 +32,13 @@ from src.utils.logger import system_logger
 from .similarity_matrix_clustering import SimilarityMatrixClusterer, SimilarityClusteringConfig, SimilarityMethod
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class EconomicRelevanceMetric(Enum):
     """Metrics for measuring economic relevance."""
     PRICE_PREDICTIVE_POWER = "price_predictive_power"
@@ -447,7 +454,8 @@ class EmpiricalThresholdDiscovery:
                                 random_state=42
                             )[0]
                             coupling_scores.append(mi_score)
-                        except:
+                        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
                             # Fallback to correlation
                             corr = abs(np.corrcoef(features[col].fillna(0), returns.fillna(0))[0, 1])
                             if not np.isnan(corr):

@@ -278,7 +278,8 @@ class RegimeDetector:
             normalized_slope = slope / market_data['close'].iloc[-1]
             return min(max(normalized_slope * 100, -1), 1)  # Clamp to [-1, 1]
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _classify_volatility_regime(self, market_data: pd.DataFrame) -> float:
@@ -294,7 +295,8 @@ class RegimeDetector:
                 return min(max(current_vol / historical_vol, 0), 2)  # Clamp to [0, 2]
             return 1.0
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 1.0
     
     def _calculate_momentum_score(self, market_data: pd.DataFrame) -> float:
@@ -313,7 +315,8 @@ class RegimeDetector:
             combined_momentum = (price_momentum + volume_momentum) / 2
             return min(max(combined_momentum, -1), 1)  # Clamp to [-1, 1]
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     async def _classify_regime(self, features: Dict[str, Any], market_data: pd.DataFrame) -> Dict[RegimeType, float]:
@@ -350,7 +353,8 @@ class RegimeDetector:
                 return sorted_probs[0] - sorted_probs[1]
             return sorted_probs[0] if sorted_probs else 0.0
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     async def _calculate_transition_probability(self, current_regime: RegimeType) -> float:
@@ -369,7 +373,8 @@ class RegimeDetector:
             
             return regime_changes / len(recent_detections)
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     async def _update_performance_metrics(self, detection: RegimeDetection):

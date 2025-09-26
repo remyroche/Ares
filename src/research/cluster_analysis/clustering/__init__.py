@@ -25,6 +25,13 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 class MarketStateClusterer:
     """Main orchestrator for market state clustering."""
     
@@ -134,7 +141,8 @@ class MarketStateClusterer:
             from sklearn.metrics import silhouette_score
             features_scaled = self.scaler.fit_transform(all_features_clean)
             silhouette = silhouette_score(features_scaled, cluster_labels)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             silhouette = 0.0
         
         # Calculate cluster statistics

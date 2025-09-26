@@ -63,7 +63,9 @@ class RobustAsyncFixer:
                         if "Async function '" in msg:
                             func_name = msg.split("'")[1]
                             async_funcs.add(func_name)
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_debug
+                tprint_debug(f"🔍 Failed to parse async function data: {e}")
                 pass
 
         return async_funcs
@@ -194,7 +196,9 @@ class RobustAsyncFixer:
                                 issues_found += 1
                                 sample_files.append(file_path)
                                 break
-                except:
+                except Exception as e:
+                    from src.utils.tprint import tprint_debug
+                    tprint_debug(f"🔍 Failed to check async issues in {file_path}: {e}")
                     pass
 
             tprint(f"\nFound potential async/await issues in {issues_found} files")

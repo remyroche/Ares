@@ -16,6 +16,13 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 # Import statsmodels with fallback
@@ -219,7 +226,8 @@ class StatsmodelsIntegration:
             result = adfuller(series.dropna())
             p_value = result[1]
             return p_value < significance
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return False
 
     def _select_var_order(self, data: pd.DataFrame, maxlags: int) -> int:
@@ -228,7 +236,8 @@ class StatsmodelsIntegration:
             model = VAR(data)
             lag_selection = model.select_order(maxlags=maxlags)
             return lag_selection.aic  # Use AIC for selection
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return min(2, maxlags)  # Fallback
 
     def _granger_causality_matrix(self, data: pd.DataFrame, maxlag: int = 5) -> Dict[str, Any]:
@@ -247,11 +256,13 @@ class StatsmodelsIntegration:
                             'p_values': p_values,
                             'significant_lags': [lag for lag, p in enumerate(p_values, 1) if p < 0.05]
                         }
-                    except:
+                    except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                         continue
 
             return results
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {}
 
 # Example usage functions

@@ -195,7 +195,9 @@ class UnifiedComponentManager:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup()
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass  # Ignore errors during cleanup in destructor
 
 

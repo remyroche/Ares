@@ -521,7 +521,8 @@ class EnhancedDeadCodeAnalyzer:
                     end = min(len(lines), line_number + context)
                     snippet_lines = lines[start:end]
                     return '\\n'.join(snippet_lines)
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     return f"Line {line_number}"
             
             def visit_FunctionDef(self, node: ast.FunctionDef) -> None:

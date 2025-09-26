@@ -42,6 +42,13 @@ from .performance_monitoring import PerformanceMonitor, MonitoringConfig, AlertC
 from .results_visualization import ResultsVisualizer, VisualizationConfig
 from .configuration_management import ConfigurationManager, ConfigurationEntry, ConfigurationScope, ConfigurationFormat
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -278,7 +285,8 @@ class TPSLManager:
                 return "sideways"
             else:
                 return "trending"
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return "normal"
     
     def _calculate_base_tpsl(self, entry_price: float, config: TPSLConfig, position_side: OrderSide) -> Tuple[float, float]:

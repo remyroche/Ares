@@ -14,6 +14,13 @@ from typing import Any, Dict, List, Optional, Union, BinaryIO
 import pandas as pd
 import numpy as np
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 class SerializationError(Exception):
@@ -305,7 +312,8 @@ class UniversalSerializer:
                     with open(file_path, 'r') as f:
                         json.load(f)
                     format_type = 'json'
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     format_type = 'pickle'
         
         # Choose deserializer based on format

@@ -68,7 +68,9 @@ class SafeIndentationFixer:
         try:
             if file_path.stat().st_size > 10 * 1024 * 1024:
                 return True
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_debug
+            tprint_debug(f"🔍 Failed to check file size for {file_path}: {e}")
             pass
             
         return False

@@ -19,6 +19,13 @@ import threading
 from contextlib import contextmanager
 import numpy as np
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import the main logger for fallback
 try:
     from src.utils.logger import system_logger, get_logger
@@ -299,7 +306,8 @@ class FinancialMetricsLogger:
                     return f"{value:.3f}"
                 else:
                     return f"{value:,.0f}"
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return f"{value:.6f}"
     
     def _extract_context_info(self, additional_data: Dict[str, Any], metric_name: str) -> str:
@@ -335,7 +343,8 @@ class FinancialMetricsLogger:
                     context_parts.append(f"Cluster #{additional_data['cluster_id']}")
             
             return " | ".join(context_parts) if context_parts else ""
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return ""
     
     def _format_step_name(self, step_name: str) -> str:
@@ -353,7 +362,8 @@ class FinancialMetricsLogger:
             }
             
             return step_mapping.get(step_name, step_name.replace("_", " ").upper())
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return step_name
     
     def log_financial_metric(self, 

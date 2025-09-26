@@ -19,6 +19,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.utils.logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import UnifiedGapFiller for critical gap handling
 try:
     from src.training.steps.data_collection.unified_gap_filler import UnifiedGapFiller
@@ -538,7 +545,8 @@ class DataCleaner:
                                 try:
                                     # Try direct conversion to unix timestamp
                                     downloaded_data['timestamp'] = dt_series.astype('int64') // 10**9
-                                except:
+                                except Exception as e:
+                                                    tprint_warning(f"⚠️ Operation failed: {e}")
                                     # Last resort: use pandas timestamp conversion without explicit 1970 reference
                                     downloaded_data['timestamp'] = pd.to_datetime(dt_series).astype('int64') // 10**9
                         except Exception as conv_e:

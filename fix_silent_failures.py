@@ -119,7 +119,8 @@ from src.utils.tprint import (
                         print(f"✅ Fixed {len(bare_matches)} bare except clauses in {file_path}")
 
                 except Exception as e:
-                    print(f"❌ Error processing {file_path}: {e}")
+                    from src.utils.tprint import tprint_error
+                    tprint_error(f"❌ Error processing {file_path}: {e}")
 
     print(f"\n🎉 Fixed {exceptions_fixed} bare except clauses in {files_fixed} files")
 

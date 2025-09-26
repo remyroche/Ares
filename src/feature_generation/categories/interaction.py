@@ -17,6 +17,13 @@ from ..core.feature_generator import (
     VectorizedFeatureGenerator
 )
 from ..base_calculations import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     BaseCalculationType,
     create_base_calculator
 )
@@ -186,7 +193,8 @@ class MomentumTrendGenerator(FeatureGenerator):
                 # Calculate linear regression slope
                 slope = np.polyfit(range(len(series)), series, 1)[0]
                 return slope
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return 0.0
         
         trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
@@ -368,7 +376,8 @@ class VolatilityTrendGenerator(FeatureGenerator):
                 # Calculate linear regression slope
                 slope = np.polyfit(range(len(series)), series, 1)[0]
                 return slope
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return 0.0
         
         trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)

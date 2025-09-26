@@ -63,21 +63,24 @@ def safe_rolling(series: pd.Series, window: int, func: str = 'mean') -> pd.Serie
     """Safely apply rolling function."""
     try:
         return getattr(series.rolling(window), func)()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return pd.Series([np.nan] * len(series), index=series.index)
 
 def safe_mean(series: pd.Series) -> float:
     """Safely calculate mean."""
     try:
         return series.mean()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return 0.0
 
 def safe_std(series: pd.Series) -> float:
     """Safely calculate standard deviation."""
     try:
         return series.std()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return 0.0
 
 def ensure_directory(path: Union[str, Path]) -> None:
@@ -88,7 +91,8 @@ def safe_file_exists(path: Union[str, Path]) -> bool:
     """Safely check if file exists."""
     try:
         return Path(path).exists()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return False
 
 def safe_json_dump(data: Any, filepath: Union[str, Path]) -> None:
@@ -128,77 +132,88 @@ def safe_append(lst: List[Any], item: Any) -> None:
     """Safely append to list."""
     try:
         lst.append(item)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         pass
 
 def safe_extend(lst: List[Any], items: List[Any]) -> None:
     """Safely extend list."""
     try:
         lst.extend(items)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         pass
 
 def safe_dict_get(d: Dict[Any, Any], key: Any, default: Any = None) -> Any:
     """Safely get from dict."""
     try:
         return d.get(key, default)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return default
 
 def safe_dict_items(d: Dict[Any, Any]) -> List[tuple]:
     """Safely get dict items."""
     try:
         return list(d.items())
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return []
 
 def safe_lower(s: str) -> str:
     """Safely convert to lowercase."""
     try:
         return s.lower()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return s
 
 def safe_upper(s: str) -> str:
     """Safely convert to uppercase."""
     try:
         return s.upper()
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return s
 
 def safe_join(sep: str, items: List[str]) -> str:
     """Safely join strings."""
     try:
         return sep.join(str(item) for item in items)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return ""
 
 def validate_dataframe(df: pd.DataFrame) -> bool:
     """Validate dataframe."""
     try:
         return isinstance(df, pd.DataFrame) and not df.empty
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return False
 
 def validate_numeric_range(value: float, min_val: float, max_val: float) -> bool:
     """Validate numeric range."""
     try:
         return min_val <= value <= max_val
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return False
 
 def safe_float(value: Any) -> float:
     """Safely convert to float."""
     try:
         return float(value)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return 0.0
 
 def safe_int(value: Any) -> int:
     """Safely convert to int."""
     try:
         return int(value)
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return 0
 
 def timed_operation(func: Callable) -> Callable:

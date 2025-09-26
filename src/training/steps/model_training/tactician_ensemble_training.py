@@ -1351,7 +1351,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                             )
                         else:
                             X_enhanced[:, current_col:current_col + pred_cols] = predictions
-                    except:
+                    except Exception as e:
+                        from src.utils.tprint import tprint_warning
+                        tprint_warning(f"⚠️ Memory optimization failed, using standard copy: {e}")
                         X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     current_col += pred_cols
                     self.logger.info(f"📊 Added {pred_cols} features from base tactician model: {base_name}")

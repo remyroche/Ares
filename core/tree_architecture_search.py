@@ -264,7 +264,9 @@ class TreeArchitectureSearch:
         if self.memory_optimizer and getattr(self.memory_optimizer, "optimize_array", None):
             try:
                 return self.memory_optimizer.optimize_array(data)
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"⚠️ Memory optimization failed: {e}")
                 return data
         return data
     

@@ -31,6 +31,13 @@ from .sr_feature_extractor import SRFeatureExtractor, SRFeatureConfig, get_sr_fe
 # Import math validation utilities
 from .math_validation import safe_divide, validate_positive
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -238,7 +245,8 @@ class HistoricalSRAnalyzer:
                         diff_hours = (t2 - t1).total_seconds() / 3600
                         if diff_hours > 0:
                             time_diffs.append(diff_hours)
-                    except:
+                    except Exception as e:
+                                        tprint_warning(f"⚠️ Operation failed: {e}")
                         continue
                 
                 if time_diffs:

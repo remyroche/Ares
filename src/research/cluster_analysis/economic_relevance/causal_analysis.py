@@ -31,6 +31,13 @@ from sklearn.metrics import mean_squared_error, r2_score
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class PriceMovementPattern(Enum):
     """Types of price movement patterns to analyze."""
     TREND_CONTINUATION = "trend_continuation"
@@ -432,7 +439,8 @@ class CausalImpactResearchMethodology(BaseResearchMethodology):
             composite_signal = pca.fit_transform(features_scaled)
             
             return pd.Series(composite_signal.flatten(), index=dimension_features.index)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             # Fallback to mean
             return dimension_features.mean(axis=1)
     
@@ -930,7 +938,8 @@ class PatternPredictionResearchMethodology(BaseResearchMethodology):
                         
                         accuracy = np.mean(y_pred_binary == y_test_binary)
                         period_accuracies.append(accuracy)
-                    except:
+                    except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                         pass
             
             if period_accuracies:

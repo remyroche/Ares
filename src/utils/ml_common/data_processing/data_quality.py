@@ -1122,7 +1122,8 @@ class DataQualityUtilities:
         try:
             ks_statistic, _ = stats.ks_2samp(ref_data, curr_data)
             return ks_statistic
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_wasserstein_drift(self, ref_data: np.ndarray, curr_data: np.ndarray) -> float:
@@ -1130,7 +1131,8 @@ class DataQualityUtilities:
         try:
             from scipy.stats import wasserstein_distance
             return wasserstein_distance(ref_data, curr_data)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return self._calculate_ks_drift(ref_data, curr_data)
 
     def _calculate_js_drift(self, ref_data: np.ndarray, curr_data: np.ndarray) -> float:
@@ -1154,7 +1156,8 @@ class DataQualityUtilities:
             js_divergence = 0.5 * (stats.entropy(ref_hist, m) + stats.entropy(curr_hist, m))
 
             return js_divergence
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return self._calculate_ks_drift(ref_data, curr_data)
 
     def _classify_drift_severity(self, drift_score: float) -> str:
@@ -1211,7 +1214,8 @@ class DataQualityUtilities:
             slope, _, r_value, p_value, _ = stats.linregress(x, values)
 
             return 1.0 - p_value  # Convert p-value to significance score
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_completeness_score(self, df: pd.DataFrame) -> float:
@@ -1219,7 +1223,8 @@ class DataQualityUtilities:
         try:
             missing_ratio = df.isnull().sum().sum() / (df.shape[0] * df.shape[1])
             return 1.0 - missing_ratio
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_accuracy_score(self, df: pd.DataFrame) -> float:
@@ -1243,7 +1248,8 @@ class DataQualityUtilities:
                     accuracy_indicators.append(1.0 - outlier_ratio)
 
             return np.mean(accuracy_indicators) if accuracy_indicators else 0.8
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _calculate_consistency_score(self, df: pd.DataFrame) -> float:
@@ -1260,11 +1266,13 @@ class DataQualityUtilities:
                 try:
                     pd.to_numeric(df[col], errors='coerce')
                     consistency_indicators.append(0.9)  # Successfully converted
-                except:
+                except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                     consistency_indicators.append(0.7)  # Mixed types
 
             return np.mean(consistency_indicators) if consistency_indicators else 0.7
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
 
     def _calculate_timeliness_score(self, df: pd.DataFrame) -> float:
@@ -1292,7 +1300,8 @@ class DataQualityUtilities:
                 timeliness_indicators.append(0.6)  # No clear temporal information
 
             return np.mean(timeliness_indicators)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.6
 
     def _score_to_grade(self, score: float) -> str:
@@ -1327,7 +1336,8 @@ class DataQualityUtilities:
                         col_data = df[[col]]
                         imputed = imputer.fit_transform(col_data)
                         cleaned_df[col] = imputed.flatten()
-                    except:
+                    except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                         # Fallback to median imputation
                         median_val = df[col].median()
                         cleaned_df[col] = df[col].fillna(median_val)
@@ -1395,7 +1405,8 @@ class DataQualityUtilities:
                         unstable_features.append(col)
 
             return unstable_features
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return []
 
     def _adaptive_drift_correction(self, df: pd.DataFrame) -> Dict[str, Any]:

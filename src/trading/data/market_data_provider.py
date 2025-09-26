@@ -17,6 +17,13 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.execution_config import ExchangeType
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = system_logger.getChild('MarketDataProvider')
 
 @dataclass
@@ -309,7 +316,8 @@ class MarketDataProvider:
             cache_age = (datetime.now() - cache_end).total_seconds()
             return cache_age < self.cache_ttl
             
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return False
     
     def _filter_cached_data(

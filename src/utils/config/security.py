@@ -26,6 +26,13 @@ import numpy as np
 import time
 import typing
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 class ConfigurationSecurityManager:
     """Manages secure configuration operations."""
 
@@ -145,7 +152,8 @@ class ConfigurationSecurityManager:
                         return 'ini'
                     else:
                         return 'yaml'
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return 'yaml'
 
     def _validate_file_permissions(self, file_path: Path) -> bool:

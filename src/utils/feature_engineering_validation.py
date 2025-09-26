@@ -8,6 +8,13 @@ import logging
 import pandas as pd
 import typing
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 class FeatureEngineeringValidator:
     """Validates engineered features for quality and correctness."""
 
@@ -218,7 +225,9 @@ class FeatureEngineeringValidator:
                     corr = features_df[column].corr(target)
                     if abs(corr) > 0.99:
                         potential_leakage.append({'feature': column, 'reason': 'perfect_correlation', 'correlation': float(corr)})
-                except:
+                except Exception as e:
+                                    tprint_debug(f"🔍 Operation failed: {e}")
+                                    pass
                     pass
         return {'potential_leakage': len(potential_leakage) > 0, 'suspicious_features': potential_leakage}
 

@@ -22,6 +22,13 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class ValidationMetric(Enum):
     """Types of pattern validation metrics."""
     STATISTICAL_SIGNIFICANCE = "statistical_significance"
@@ -201,7 +208,8 @@ class PatternValidator:
                 't_statistic': float(abs(t_stat)),
                 'effect_size': float(effect_size)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0, 'effect_size': 0.0}
     
     def _test_economic_significance(self, pattern_labels: pd.Series, price_data: pd.Series) -> Dict[str, float]:
@@ -244,7 +252,8 @@ class PatternValidator:
                 'sharpe_improvement': float(sharpe_improvement),
                 'hit_rate': float(hit_rate)
             }
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'economic_score': 0.0, 'sharpe_improvement': 0.0, 'hit_rate': 0.5}
     
     def _analyze_pattern_frequency(self, pattern_labels: pd.Series) -> Dict[str, float]:

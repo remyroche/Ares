@@ -237,7 +237,9 @@ class TypeHintEnhancer(ast.NodeTransformer):
                         arg.annotation = ast.parse(type_hint).body[0].value
                         self.changes_made.append(f"Added type hint {type_hint} for parameter {arg.arg}")
                         self._add_imports_for_type(type_hint)
-                    except:
+                    except Exception as e:
+                        from src.utils.tprint import tprint_debug
+                        tprint_debug(f"🔍 Failed to add type hint {type_hint} for parameter {arg.arg}: {e}")
                         pass
 
         # Add return type hint
@@ -248,7 +250,9 @@ class TypeHintEnhancer(ast.NodeTransformer):
                     node.returns = ast.parse(return_type).body[0].value
                     self.changes_made.append(f"Added return type {return_type} for {node.name}")
                     self._add_imports_for_type(return_type)
-                except:
+                except Exception as e:
+                    from src.utils.tprint import tprint_debug
+                    tprint_debug(f"🔍 Failed to add return type {return_type} for {node.name}: {e}")
                     pass
 
         return node
@@ -429,7 +433,9 @@ class EnhancedTypeHintAdder:
                             functions_with_hints += 1
                         elif file_path not in files_needing_hints:
                             files_needing_hints.append(file_path)
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_debug
+                tprint_debug(f"🔍 Failed to analyze file {file_path}: {e}")
                 pass
 
         current_coverage = functions_with_hints / total_functions if total_functions > 0 else 0

@@ -102,6 +102,13 @@ class DataQualityReport:
 # Math validation functions available in data_qualification_imports
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = system_logger.getChild('FractionalDifferentiationPipeline')
 
 @dataclass
@@ -349,7 +356,8 @@ class FractionalDifferentiationPipeline:
                         if p_value < best_p_value:
                             best_d = d
                             best_p_value = p_value
-                    except:
+                    except Exception as e:
+                                        tprint_warning(f"⚠️ Operation failed: {e}")
                         continue
             
             self.logger.info(f"🔍 Optimal d parameter: {best_d:.3f} (p-value: {best_p_value:.4f})")

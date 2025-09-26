@@ -423,7 +423,8 @@ class LiveDataCollector:
                 prev_close = self.data_buffer[-1].raw_data.get('close', data['close'])
                 return (data['close'] - prev_close) / prev_close
             return 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_volatility(self) -> float:
@@ -434,7 +435,8 @@ class LiveDataCollector:
                 returns = np.diff(closes) / closes[:-1]
                 return np.std(returns)
             return 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     def _calculate_volume_ma(self) -> float:
@@ -444,7 +446,8 @@ class LiveDataCollector:
                 volumes = [dp.raw_data['volume'] for dp in self.data_buffer[-10:]]
                 return np.mean(volumes)
             return 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
 
     async def _engineer_features(self, data: Dict[str, Any]) -> Dict[str, Any]:

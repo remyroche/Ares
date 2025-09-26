@@ -24,6 +24,13 @@ from scipy import stats
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class EconomicMetric(Enum):
     """Economic metrics for regime validation."""
     # Risk-Return Metrics
@@ -1800,7 +1807,8 @@ class EconomicValidator:
         try:
             tail_autocorr = extreme_returns.autocorr(1)
             return float(tail_autocorr) if not np.isnan(tail_autocorr) else 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def generate_economic_report(self, 

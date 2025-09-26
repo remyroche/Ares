@@ -20,6 +20,13 @@ from src.utils.logger import system_logger
 from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.memory_optimization import MemoryMonitor, MemoryConfig
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = system_logger.getChild('StreamingDataProcessor')
 
 @dataclass
@@ -76,7 +83,9 @@ class StreamingDataProcessor:
         """Cleanup on destruction."""
         try:
             self.memory_optimizer.stop_monitoring()
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
     
     def process_dataframe_in_chunks(self, 

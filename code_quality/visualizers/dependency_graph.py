@@ -270,7 +270,9 @@ class DependencyGraphVisualizer(CodeVisualizer):
         # Try to create a hierarchical layout
         try:
             pos = nx.nx_agraph.graphviz_layout(self.graph, prog='dot')
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Graphviz layout failed, using spring layout: {e}")
             # Fallback to spring layout if graphviz not available
             pos = nx.spring_layout(self.graph, k=3, iterations=50)
         
@@ -325,7 +327,9 @@ class DependencyGraphVisualizer(CodeVisualizer):
         # Use spring layout as default
         try:
             return layouts['spring']()
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Spring layout failed, using random layout: {e}")
             return nx.random_layout(graph)
     
     def _calculate_dependency_levels(self) -> Dict[str, int]:

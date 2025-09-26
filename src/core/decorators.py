@@ -183,7 +183,8 @@ def log_execution_time(func_or_callable=None, **kwargs):
                 try:
                     logger = logging.getLogger(func.__module__)
                     logger.info(f"{func.__name__} executed in {duration:.2f}s")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     tprint(f"{func.__name__} executed in {duration:.2f}s")
                 return result
             except Exception as e:
@@ -191,7 +192,8 @@ def log_execution_time(func_or_callable=None, **kwargs):
                 try:
                     logger = logging.getLogger(func.__module__)
                     logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     tprint(f"{func.__name__} failed after {duration:.2f}s: {e}")
                 raise
 
@@ -205,7 +207,8 @@ def log_execution_time(func_or_callable=None, **kwargs):
                 try:
                     logger = logging.getLogger(func.__module__)
                     logger.info(f"{func.__name__} executed in {duration:.2f}s")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     tprint(f"{func.__name__} executed in {duration:.2f}s")
                 return result
             except Exception as e:
@@ -213,7 +216,8 @@ def log_execution_time(func_or_callable=None, **kwargs):
                 try:
                     logger = logging.getLogger(func.__module__)
                     logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     tprint(f"{func.__name__} failed after {duration:.2f}s: {e}")
                 raise
 

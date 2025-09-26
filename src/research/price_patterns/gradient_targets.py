@@ -334,7 +334,9 @@ class GradientPatternTargetGenerator:
         try:
             correlation, _ = stats.pearsonr(aligned_data.iloc[:, 0], aligned_data.iloc[:, 1])
             return float(abs(correlation)) if not np.isnan(correlation) else 0.0
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Correlation calculation failed: {e}")
             return 0.0
     
     def export_ml_ready_targets(self, 

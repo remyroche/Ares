@@ -21,6 +21,13 @@ import logging
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class DimensionalityMethod(Enum):
     """Statistical methods for dimensionality analysis."""
     PCA = "principal_component_analysis"
@@ -369,7 +376,8 @@ class StatisticalDimensionAnalyzer:
                     count += 1
             
             return float(mi_sum / count) if count > 0 else 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _interpret_loadings(self, loadings: np.ndarray, feature_names: pd.Index, n_components: int) -> Dict[str, List[Tuple[str, float]]]:

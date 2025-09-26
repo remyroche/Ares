@@ -49,6 +49,13 @@ from core.config import AnalysisConfig, CodeQualityConfig
 from utils.file_utils import find_python_files
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 @dataclass
 class TrulyEnhancedDeadCodeIssue:
     """Enhanced container for dead code analysis results with advanced metadata."""
@@ -786,7 +793,8 @@ class TrulyEnhancedDeadCodeAnalyzer:
                 return f"class {node.name}:"
             else:
                 return str(node)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return ""
     
     def _get_decorator_name(self, decorator: ast.AST) -> str:

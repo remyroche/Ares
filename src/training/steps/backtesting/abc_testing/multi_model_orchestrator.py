@@ -53,6 +53,13 @@ from src.core.decorators import (
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
 from src.core.errors import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
 )
@@ -341,7 +348,8 @@ class TaskScheduler:
                         # Put task back in queue
                         queue.put((priority_score, task_id, task))
                         
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     continue  # Queue is empty
         
         return None

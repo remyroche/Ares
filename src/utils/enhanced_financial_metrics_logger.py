@@ -20,6 +20,13 @@ from dataclasses import dataclass, asdict
 import threading
 from contextlib import contextmanager
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import the base financial metrics logger
 try:
     from src.utils.financial_metrics_logger import (
@@ -484,7 +491,9 @@ class EnhancedFinancialMetricsLogger:
                 # Extract numeric part
                 step_num = int(''.join(filter(str.isdigit, step_num_str)))
                 return step_num > 8
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         return False
     

@@ -569,7 +569,8 @@ class GradientFlowAnalyzer:
             
             r2 = 1 - (ss_res / ss_tot)
             return max(0.0, min(1.0, r2))  # Clamp between 0 and 1
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5  # Default value
     
     def _calculate_information_gain(self, data: np.ndarray, targets: np.ndarray) -> float:
@@ -598,7 +599,8 @@ class GradientFlowAnalyzer:
             # Information gain
             info_gain = target_entropy - (split_entropy / data.shape[1])
             return max(0.0, info_gain)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.1  # Default value
     
     def _calculate_feature_importance_variance(self, data: np.ndarray, targets: np.ndarray) -> float:
@@ -610,7 +612,8 @@ class GradientFlowAnalyzer:
                 importances.append(abs(correlation))
             
             return np.var(importances)
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.1  # Default value
     
     def _calculate_optimal_tree_depth(self, data: np.ndarray, targets: np.ndarray) -> float:
@@ -622,7 +625,8 @@ class GradientFlowAnalyzer:
             
             optimal_depth = 2 + int(feature_complexity * target_complexity * 10)
             return min(10, max(2, optimal_depth))  # Clamp between 2 and 10
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 5.0  # Default value
     
     def _calculate_feature_relationship_learning(self) -> float:

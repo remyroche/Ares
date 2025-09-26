@@ -437,7 +437,9 @@ class LiquidityDryUpDiscoverer(BasePatternDiscoverer):
                 labels.append(1 if pattern_exists else 0)
                 magnitudes.append(dryup_magnitude if pattern_exists else 0)
                 
-            except:
+            except Exception as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"⚠️ Pattern detection failed: {e}")
                 labels.append(0)
                 magnitudes.append(0)
         

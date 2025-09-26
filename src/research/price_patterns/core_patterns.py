@@ -191,7 +191,9 @@ class BasePurePricePatternDiscoverer(ABC):
         try:
             t_stat, p_value = stats.ttest_ind(pattern_returns, no_pattern_returns)
             return {'p_value': float(p_value), 't_statistic': float(t_stat)}
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Statistical test failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
 
 

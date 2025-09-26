@@ -19,6 +19,13 @@ from abc import ABC, abstractmethod
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class PurePatternType(Enum):
     """Pure price action pattern categories."""
     MOMENTUM = "momentum"
@@ -191,7 +198,8 @@ class BasePurePricePatternDiscoverer(ABC):
         try:
             t_stat, p_value = stats.ttest_ind(pattern_returns, no_pattern_returns)
             return {'p_value': float(p_value), 't_statistic': float(t_stat)}
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
 
 

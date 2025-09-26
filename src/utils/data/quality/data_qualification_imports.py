@@ -695,19 +695,22 @@ class DataQualificationImportManager:
         def safe_divide(a, b, default=0.0):
             try:
                 return a / b if b != 0 else default
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return default
         
         def safe_log(x, default=0.0):
             try:
                 return np.log(x) if x > 0 else default
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return default
         
         def safe_sqrt(x, default=0.0):
             try:
                 return np.sqrt(x) if x >= 0 else default
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return default
         
         def validate_positive(value, name="value"):
@@ -738,13 +741,15 @@ class DataQualificationImportManager:
         def safe_float(value, default=0.0):
             try:
                 return float(value)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return default
         
         def safe_int(value, default=0):
             try:
                 return int(value)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return default
         
         def safe_dict_get(d, key, default=None):

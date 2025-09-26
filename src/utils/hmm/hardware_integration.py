@@ -14,6 +14,13 @@ import pandas as pd
 
 from ..logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Optional hardware optimization imports
 try:
     import torch
@@ -288,7 +295,8 @@ class HMMHardwareManager:
                 emission_probs[:, k] = torch.exp(-0.5 * mahal_dist) / torch.sqrt(
                     (2 * torch.pi) ** n_features * det_cov
                 )
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 # Fallback to diagonal covariance
                 var = torch.diag(params['covars'][k])
                 emission_probs[:, k] = torch.exp(-0.5 * torch.sum(diff**2 / var, dim=1)) / torch.sqrt(

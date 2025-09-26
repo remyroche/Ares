@@ -1027,7 +1027,8 @@ class HybridNASSystem:
             correlations = [np.corrcoef(X[:, i], position)[0, 1] for i in range(X.shape[1])]
             tabular_features = sum(1 for corr in correlations if abs(corr) < 0.3)
             return tabular_features / X.shape[1]
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5  # Default assumption
     
     def _calculate_sequential_ratio(self, X: np.ndarray) -> float:
@@ -1043,7 +1044,8 @@ class HybridNASSystem:
             
             sequential_features = sum(1 for ac in autocorrelations if ac > 0.3)
             return sequential_features / len(autocorrelations) if autocorrelations else 0.0
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.3  # Default assumption
     
     def _calculate_complexity_ratio(self, X: np.ndarray) -> float:
@@ -1064,7 +1066,8 @@ class HybridNASSystem:
             max_complexity = max(complexities) if complexities else 1.0
             complex_features = sum(1 for c in complexities if c > 0.5 * max_complexity)
             return complex_features / len(complexities) if complexities else 0.5
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5  # Default assumption
     
     def _calculate_sparsity(self, X: np.ndarray) -> float:
@@ -1073,7 +1076,8 @@ class HybridNASSystem:
             zero_count = np.sum(X == 0)
             total_elements = X.size
             return zero_count / total_elements
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _choose_search_strategy(self, data_characteristics: Dict[str, Any]) -> str:

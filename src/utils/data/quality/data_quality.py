@@ -23,6 +23,13 @@ import psutil
 # Import our custom utilities
 from src.utils.logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import comprehensive duplicate analyzer
 try:
     from src.utils.data.quality.comprehensive_duplicate_analyzer import (
@@ -518,7 +525,8 @@ class DataQualityFramework:
                     std_val = df[feature].std()
                     unique_val = df[feature].nunique()
                     variance_details.append(f"{feature}(unique={unique_val}, std={std_val:.6f})")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     variance_details.append(f"{feature}(low_variance)")
             warning_msg = f'Found {len(low_variance_features)} low variance features: {", ".join(variance_details)}'
             if len(low_variance_features) > 5:
@@ -537,7 +545,8 @@ class DataQualityFramework:
                     std_val = df[feature].std()
                     unique_val = df[feature].nunique()
                     all_constant_details.append(f"{feature}(unique={unique_val}, std={std_val:.6f})")
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     all_constant_details.append(f"{feature}(constant)")
             result.add_info('all_constant_features', f'All constant features: {", ".join(all_constant_details)}')
 

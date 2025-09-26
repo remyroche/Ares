@@ -563,7 +563,9 @@ class InteractionNetworkVisualizer(CodeVisualizer):
                 ax.text(0.5, 0.5, 'Not enough data for clustering', 
                        ha='center', va='center', fontsize=14)
                 ax.axis('off')
-        except:
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Clustering analysis failed: {e}")
             ax.text(0.5, 0.5, 'Clustering analysis not available', 
                    ha='center', va='center', fontsize=14)
             ax.axis('off')

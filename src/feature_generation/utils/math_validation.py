@@ -11,6 +11,13 @@ from typing import Any, Dict, List, Optional, Union, Callable
 from functools import wraps
 import warnings
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -18,21 +25,24 @@ def safe_divide(a, b, default=0.0):
     """Safely divide two numbers, returning default if division by zero or error occurs."""
     try:
         return a / b if b != 0 else default
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return default
 
 def safe_log(x, default=0.0):
     """Safely calculate logarithm, returning default if x <= 0 or error occurs."""
     try:
         return np.log(x) if x > 0 else default
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return default
 
 def safe_sqrt(x, default=0.0):
     """Safely calculate square root, returning default if x < 0 or error occurs."""
     try:
         return np.sqrt(x) if x >= 0 else default
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         return default
 
 def validate_positive(value, name="value"):

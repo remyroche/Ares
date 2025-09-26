@@ -30,6 +30,13 @@ import json
 
 from src.utils.logger import system_logger
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import feature engineering components
 try:
     from src.feature_engineering.feature_generators import FeatureGenerators
@@ -1072,7 +1079,8 @@ class MarketDimensionAnalyzer:
             
             stability = (corr_means + corr_stds) / 2
             return float(np.nan_to_num(stability, 0.5))
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5
     
     def _calculate_predictive_power(self, 

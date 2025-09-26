@@ -96,6 +96,13 @@ class CommonOperations:
 # Math validation functions available in data_qualification_imports
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = system_logger.getChild('CrossTimeframeAnalysisPipeline')
 
 @dataclass
@@ -860,7 +867,8 @@ class CrossTimeframeAnalysisPipeline:
                             if len(aligned_data) > 10:
                                 corr = aligned_data[col].corr(aligned_data['base_returns'])
                                 feature_importance[col] = abs(corr)
-                        except:
+                        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
                             feature_importance[col] = 0.0
                 
                 # Sort by importance

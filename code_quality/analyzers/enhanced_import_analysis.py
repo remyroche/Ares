@@ -288,7 +288,9 @@ class EnhancedImportAnalyzer:
             lines = content.split('\n')
             if 0 <= line_number - 1 < len(lines):
                 return lines[line_number - 1].strip()
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         return ""
     
@@ -656,7 +658,9 @@ class EnhancedUndefinedAnalyzer:
             lines = content.split('\n')
             if 0 <= line_number - 1 < len(lines):
                 return lines[line_number - 1].strip()
-        except:
+        except Exception as e:
+                            tprint_debug(f"🔍 Operation failed: {e}")
+                            pass
             pass
         return ""
     

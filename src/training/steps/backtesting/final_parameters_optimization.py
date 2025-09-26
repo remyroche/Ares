@@ -39,6 +39,13 @@ from src.utils.nonlinear_optimization_helpers import (
     create_enhanced_search_space, convert_parameters_to_original_space
 )
 from src.config.config_technical_indicators import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     get_technical_indicators_config,
     get_technical_indicators_search_space,
 )
@@ -1665,7 +1672,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     (analyst_conf ** analyst_exit_weight)
                 )
                 exit_confidences['multiplicative'] = min(1.0, multiplicative_exit)
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 exit_confidences['multiplicative'] = 0.5
             
             # Method 2: Logarithmic
@@ -1678,7 +1686,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 )
                 logarithmic_exit = np.exp(log_combination)
                 exit_confidences['logarithmic'] = min(1.0, max(0.0, logarithmic_exit))
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 exit_confidences['logarithmic'] = 0.5
             
             # Method 3: Weighted Average

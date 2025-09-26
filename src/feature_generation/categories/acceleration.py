@@ -17,6 +17,13 @@ from ..core.feature_generator import (
     VectorizedFeatureGenerator
 )
 from ..base_calculations import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     BaseCalculationType,
     create_base_calculator
 )
@@ -180,7 +187,8 @@ class TrendStrengthGenerator(FeatureGenerator):
                 # Calculate linear regression slope
                 slope = np.polyfit(range(len(series)), series, 1)[0]
                 return slope
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return 0.0
         
         trend_strength = base_values.rolling(window=self.window).apply(calculate_trend_strength, raw=False)
@@ -222,7 +230,8 @@ class TrendConsistencyGenerator(FeatureGenerator):
                 # Calculate linear regression slope and return 1 if positive, 0 otherwise
                 slope = np.polyfit(range(len(series)), series, 1)[0]
                 return 1 if slope > 0 else 0
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 return 0
         
         trend_consistency = base_values.rolling(window=self.window).apply(calculate_trend_consistency, raw=False)

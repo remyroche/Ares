@@ -41,6 +41,13 @@ from sklearn.metrics import silhouette_score
 from src.utils.logger import system_logger
 
 
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+
 class RegimeDiscoveryMethod(Enum):
     """Methods focused purely on regime discovery."""
     AUTOENCODER = "autoencoder"
@@ -612,7 +619,8 @@ class RefinedMLDiscovery:
                     labels = kmeans.fit_predict(regime_features)
                     score = silhouette_score(regime_features, labels)
                     clustering_scores[n_clusters] = float(score)
-                except:
+                except Exception as e:
+                                    tprint_warning(f"⚠️ Operation failed: {e}")
                     continue
             
             if clustering_scores:

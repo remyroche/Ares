@@ -430,7 +430,8 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
                         else:
                             return f"in {type(parent).__name__}"
             return "unknown context"
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return "unknown context"
 
 

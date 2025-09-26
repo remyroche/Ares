@@ -12,7 +12,8 @@ def test_bare_except_fix():
         except Exception as e:
             print(f"✅ Exception handling working: {e}")
             return True
-    except:
+    except Exception as e:
+                        tprint_warning(f"⚠️ Operation failed: {e}")
         print("❌ Bare except still present - this should not happen")
         return False
 

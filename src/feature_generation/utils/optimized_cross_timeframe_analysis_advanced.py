@@ -14,6 +14,13 @@ import time
 
 from src.utils.logger import system_logger
 from src.utils.math_validation import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     validate_finite, validate_positive, validate_range,
     safe_divide, safe_log, safe_sqrt, safe_power,
     MathValidationError
@@ -110,7 +117,8 @@ class OptimizedCrossTimeframeAdvanced:
                             if len(aligned_data) > 10:
                                 corr = aligned_data[col].corr(aligned_data['base_returns'])
                                 feature_importance[col] = abs(corr) if not np.isnan(corr) else 0.0
-                        except:
+                        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
                             feature_importance[col] = 0.0
                 
                 # Sort by importance and select top features
@@ -411,7 +419,8 @@ class OptimizedCrossTimeframeAdvanced:
                         feature_importance[col] = abs(corr) if not np.isnan(corr) else 0.0
                     else:
                         feature_importance[col] = 0.0
-                except:
+                except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
                     feature_importance[col] = 0.0
             
             return feature_importance
@@ -479,7 +488,8 @@ class OptimizedCrossTimeframeAdvanced:
             running_max = cumulative.expanding().max()
             drawdown = (cumulative - running_max) / running_max
             return drawdown.min()
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_concentration_risk(self, features: pd.DataFrame) -> float:
@@ -492,7 +502,8 @@ class OptimizedCrossTimeframeAdvanced:
             # Calculate concentration (Herfindahl index)
             concentration = (variances / total_variance).pow(2).sum()
             return concentration
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_model_risk(self, features: pd.DataFrame) -> float:
@@ -504,7 +515,8 @@ class OptimizedCrossTimeframeAdvanced:
             
             # Higher correlation indicates higher model risk
             return avg_correlation
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_overfitting_risk(self, features: pd.DataFrame) -> float:
@@ -517,7 +529,8 @@ class OptimizedCrossTimeframeAdvanced:
             # Higher ratio indicates higher overfitting risk
             ratio = feature_count / sample_count
             return min(ratio, 1.0)  # Cap at 1.0
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_overall_risk_score(self, risk_metrics: Dict[str, Any]) -> float:
@@ -537,7 +550,8 @@ class OptimizedCrossTimeframeAdvanced:
                     overall_score += risk_metrics[metric] * weight
             
             return overall_score
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     async def _generate_quality_report(
@@ -596,7 +610,8 @@ class OptimizedCrossTimeframeAdvanced:
             upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
             high_corr_pairs = (upper_triangle > 0.95).sum().sum()
             return high_corr_pairs
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0
     
     def _calculate_quality_score(self, quality_report: Dict[str, Any]) -> float:
@@ -631,5 +646,6 @@ class OptimizedCrossTimeframeAdvanced:
                 score -= min(0.3, high_corr_pairs / 100)  # Penalty for high correlations
             
             return max(0.0, score)  # Ensure non-negative score
-        except:
+        except Exception as e:
+                                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.5  # Default score

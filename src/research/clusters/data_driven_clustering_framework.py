@@ -28,6 +28,13 @@ from .similarity_matrix_clustering import (
     similarity_matrix_clustering
 )
 from .empirical_threshold_discovery import (
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
     EmpiricalThresholdDiscovery,
     EmpiricalDiscoveryConfig,
     discover_optimal_clustering_thresholds
@@ -287,7 +294,8 @@ class DataDrivenClusteringFramework:
                 scaler = StandardScaler()
                 features_scaled = scaler.fit_transform(features.fillna(0))
                 metrics['silhouette_score'] = float(silhouette_score(features_scaled, labels))
-            except:
+            except Exception as e:
+                                tprint_warning(f"⚠️ Operation failed: {e}")
                 metrics['silhouette_score'] = 0.0
             
         except Exception as e:

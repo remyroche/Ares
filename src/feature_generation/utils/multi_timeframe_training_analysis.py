@@ -235,7 +235,8 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import precision_score
             return float(precision_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_recall(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -243,7 +244,8 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import recall_score
             return float(recall_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_f1_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -251,7 +253,8 @@ class MultiTimeframeTrainingAnalyzer:
         try:
             from sklearn.metrics import f1_score
             return float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
-        except:
+        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
             return 0.0
     
     def _calculate_output_correlations(
@@ -533,7 +536,8 @@ class MultiTimeframeTrainingAnalyzer:
                             corr = features[feature].corr(target)
                             if not np.isnan(corr):
                                 category_importance[feature] = abs(corr)
-                        except:
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                             category_importance[feature] = 0.0
                 
                 if category_importance:
@@ -622,7 +626,8 @@ class MultiTimeframeTrainingAnalyzer:
                     corr = features[col].corr(target)
                     if not np.isnan(corr):
                         information_content['mutual_information'][col] = abs(corr)
-                except:
+                except Exception as e:
+                            tprint_warning(f"⚠️ Operation failed: {e}")
                     information_content['mutual_information'][col] = 0.0
             
             # Calculate variance explained
@@ -789,6 +794,13 @@ selected_features = result.selected_features['final']
 # Train single model with cross-timeframe features
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
+
+
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Prepare data
 X = features[selected_features]

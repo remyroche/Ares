@@ -408,6 +408,47 @@ class MLTargetUpdater:
                         "volume": [float(ticker.get('volume', 1000))],
                     })
             
+            # Try additional fallback methods
+            if self.exchange_client and hasattr(self.exchange_client, 'get_order_book'):
+                try:
+                    order_book = await self.exchange_client.get_order_book(symbol, limit=5)
+                    if order_book and order_book.get('bids') and order_book.get('asks'):
+                        best_bid = float(order_book['bids'][0][0]) if order_book['bids'] else 100.0
+                        best_ask = float(order_book['asks'][0][0]) if order_book['asks'] else 101.0
+                        mid_price = (best_bid + best_ask) / 2
+                        
+                        # Create synthetic OHLC data from order book
+                        return pd.DataFrame({
+                            "timestamp": [datetime.now()],
+                            "open": [mid_price * 0.999],
+                            "high": [best_ask],
+                            "low": [best_bid],
+                            "close": [mid_price],
+                            "volume": [1000],
+                        })
+                except Exception as e:
+                    self.logger.debug(f"Order book fallback failed for {symbol}: {e}")
+            
+            # Try to get any available price data
+            if self.exchange_client and hasattr(self.exchange_client, 'get_best_price'):
+                try:
+                    price_data = await self.exchange_client.get_best_price(symbol)
+                    if price_data and price_data.get('best_bid') and price_data.get('best_ask'):
+                        best_bid = float(price_data['best_bid'])
+                        best_ask = float(price_data['best_ask'])
+                        mid_price = (best_bid + best_ask) / 2
+                        
+                        return pd.DataFrame({
+                            "timestamp": [datetime.now()],
+                            "open": [mid_price * 0.999],
+                            "high": [best_ask],
+                            "low": [best_bid],
+                            "close": [mid_price],
+                            "volume": [1000],
+                        })
+                except Exception as e:
+                    self.logger.debug(f"Best price fallback failed for {symbol}: {e}")
+            
             # Final fallback: return placeholder with warning
             self.logger.warning(f"Using placeholder data for {symbol} - exchange client not available")
             return pd.DataFrame({

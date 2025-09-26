@@ -286,21 +286,143 @@ class BaseExchange(IExchangeClient, ABC):
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time trade data stream.
+        
+        This is an optional streaming hook that subclasses can implement
+        to provide real-time trade data. The default implementation
+        provides a fallback using polling.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle trade data
+        """
+        self.logger.warning(f"Real-time trade streaming not implemented for {symbol}, using polling fallback")
+        
+        # Fallback implementation using polling
+        if not self.exchange:
+            self.logger.error("Exchange client not initialized")
+            return
+            
+        try:
+            market_id = await self._get_market_id(symbol)
+            
+            # Poll for recent trades every 1 second as fallback
+            last_trade_id = None
+            while True:
+                try:
+                    # Get recent trades
+                    if hasattr(self.exchange, 'fetch_trades'):
+                        trades = await self.exchange.fetch_trades(market_id, limit=10)
+                        
+                        # Filter new trades
+                        if last_trade_id:
+                            new_trades = [t for t in trades if t.get('id', 0) > last_trade_id]
+                        else:
+                            new_trades = trades[-1:] if trades else []
+                        
+                        # Process new trades
+                        for trade in new_trades:
+                            await callback(trade)
+                            last_trade_id = max(last_trade_id or 0, trade.get('id', 0))
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(1.0)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in trade polling: {e}")
+                    await asyncio.sleep(5.0)  # Wait longer on error
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to setup trade subscription for {symbol}: {e}")
 
     async def subscribe_ticker(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time ticker data stream.
+        
+        This is an optional streaming hook that subclasses can implement
+        to provide real-time ticker data. The default implementation
+        provides a fallback using polling.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle ticker data
+        """
+        self.logger.warning(f"Real-time ticker streaming not implemented for {symbol}, using polling fallback")
+        
+        # Fallback implementation using polling
+        if not self.exchange:
+            self.logger.error("Exchange client not initialized")
+            return
+            
+        try:
+            market_id = await self._get_market_id(symbol)
+            
+            # Poll for ticker data every 2 seconds as fallback
+            while True:
+                try:
+                    # Get ticker data
+                    if hasattr(self.exchange, 'fetch_ticker'):
+                        ticker = await self.exchange.fetch_ticker(market_id)
+                        await callback(ticker)
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(2.0)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in ticker polling: {e}")
+                    await asyncio.sleep(5.0)  # Wait longer on error
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to setup ticker subscription for {symbol}: {e}")
 
     async def subscribe_order_book(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time order book data stream.
+        
+        This is an optional streaming hook that subclasses can implement
+        to provide real-time order book data. The default implementation
+        provides a fallback using polling.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle order book data
+        """
+        self.logger.warning(f"Real-time order book streaming not implemented for {symbol}, using polling fallback")
+        
+        # Fallback implementation using polling
+        if not self.exchange:
+            self.logger.error("Exchange client not initialized")
+            return
+            
+        try:
+            market_id = await self._get_market_id(symbol)
+            
+            # Poll for order book data every 1 second as fallback
+            while True:
+                try:
+                    # Get order book data
+                    if hasattr(self.exchange, 'fetch_order_book'):
+                        order_book = await self.exchange.fetch_order_book(market_id, limit=20)
+                        await callback(order_book)
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(1.0)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in order book polling: {e}")
+                    await asyncio.sleep(5.0)  # Wait longer on error
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to setup order book subscription for {symbol}: {e}")
 
     # --- Convenience polling helpers ---
     async def fetch_price(self, symbol: str) -> float | None:

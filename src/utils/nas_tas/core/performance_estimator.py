@@ -490,7 +490,7 @@ class UnifiedPerformanceEstimator:
                             pred = estimator.predict(X_scaled[i:i+1])[0]
                             base_preds.append(pred)
                         except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+                            tprint_debug(f"🔍 Operation failed: {e}")
                             base_preds.append(0.5)
                     meta_features.append(base_preds)
 
@@ -540,7 +540,7 @@ class UnifiedPerformanceEstimator:
                                 pred = estimator.predict(X_scaled[i:i+1])[0]
                                 base_preds.append(pred)
                             except Exception as e:
-                    tprint_debug(f"🔍 Operation failed: {e}")
+                                tprint_debug(f"🔍 Operation failed: {e}")
                                 base_preds.append(0.5)
                         meta_features.append(base_preds)
 

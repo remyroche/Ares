@@ -255,76 +255,76 @@ class TASRegimeDetector:
             )
 
         except Exception as e:
-                if self.config.enable_statistical_methods:
-                    self.logger.info("📊 Performing statistical validation...")
-                    if self.enhanced_hardware_optimizer:
-                        statistical_config = {
-                            'enable_bootstrap': self.config.enable_bootstrap_analysis,
-                            'bootstrap_iterations': self.config.bootstrap_iterations
-                        }
-                        statistical_results = self.enhanced_hardware_optimizer.optimize_statistical_operations(
-                            processed_data, statistical_config
-                        )
-                        # Merge with tree results
-                        statistical_results.update(tree_results)
-                    else:
-                        statistical_results = self._perform_statistical_validation(
-                            processed_data, tree_results
-                        )
-                else:
-                    statistical_results = tree_results
-
-                # Step 3: CLVSA enhancement
-                if enable_clvsa_enhancement and self.clvsa_model:
-                    self.logger.info("🧠 Enhancing with CLVSA architecture...")
-                    clvsa_results = self._perform_clvsa_enhancement(
-                        processed_data, statistical_results
+            if self.config.enable_statistical_methods:
+                self.logger.info("📊 Performing statistical validation...")
+                if self.enhanced_hardware_optimizer:
+                    statistical_config = {
+                        'enable_bootstrap': self.config.enable_bootstrap_analysis,
+                        'bootstrap_iterations': self.config.bootstrap_iterations
+                    }
+                    statistical_results = self.enhanced_hardware_optimizer.optimize_statistical_operations(
+                        processed_data, statistical_config
                     )
+                    # Merge with tree results
+                    statistical_results.update(tree_results)
                 else:
-                    clvsa_results = statistical_results
-
-                # Step 4: Regime stability analysis
-                self.logger.info("🔒 Analyzing regime stability...")
-                stability_scores = self._calculate_regime_stability(clvsa_results)
-
-                # Step 5: Economic significance evaluation
-                if self.config.enable_economic_evaluation:
-                    self.logger.info("💰 Evaluating economic significance...")
-                    economic_scores = self._evaluate_economic_significance(
-                        processed_data, clvsa_results
+                    statistical_results = self._perform_statistical_validation(
+                        processed_data, tree_results
                     )
-                else:
-                    economic_scores = np.ones(len(processed_data)) * 0.7
+            else:
+                statistical_results = tree_results
 
-                # Step 6: Trading viability assessment
-                if self.config.enable_economic_evaluation:
-                    self.logger.info("📈 Assessing trading viability...")
-                    trading_scores = self._evaluate_trading_viability(
-                        processed_data, clvsa_results
-                    )
-                else:
-                    trading_scores = np.ones(len(processed_data)) * 0.6
+            # Step 3: CLVSA enhancement
+            if enable_clvsa_enhancement and self.clvsa_model:
+                self.logger.info("🧠 Enhancing with CLVSA architecture...")
+                clvsa_results = self._perform_clvsa_enhancement(
+                    processed_data, statistical_results
+                )
+            else:
+                clvsa_results = statistical_results
 
-                # Step 7: Transition probability calculation
-                self.logger.info("🔄 Calculating regime transitions...")
-                transition_probs = self._calculate_transition_probabilities(clvsa_results)
+            # Step 4: Regime stability analysis
+            self.logger.info("🔒 Analyzing regime stability...")
+            stability_scores = self._calculate_regime_stability(clvsa_results)
 
-                # Step 8: Uncertainty quantification
-                uncertainty_estimates = None
-                if self.config.enable_uncertainty_quantification:
-                    self.logger.info("🎯 Quantifying uncertainty...")
-                    uncertainty_estimates = self._quantify_uncertainty(
-                        processed_data, clvsa_results
-                    )
+            # Step 5: Economic significance evaluation
+            if self.config.enable_economic_evaluation:
+                self.logger.info("💰 Evaluating economic significance...")
+                economic_scores = self._evaluate_economic_significance(
+                    processed_data, clvsa_results
+                )
+            else:
+                economic_scores = np.ones(len(processed_data)) * 0.7
 
-                # Step 9: Meta-learning adaptation
-                if self.config.enable_meta_learning:
-                    self.logger.info("🧠 Performing meta-learning adaptation...")
-                    adapted_results = self._perform_meta_learning_adaptation(
-                        processed_data, clvsa_results
-                    )
-                else:
-                    adapted_results = clvsa_results
+            # Step 6: Trading viability assessment
+            if self.config.enable_economic_evaluation:
+                self.logger.info("📈 Assessing trading viability...")
+                trading_scores = self._evaluate_trading_viability(
+                    processed_data, clvsa_results
+                )
+            else:
+                trading_scores = np.ones(len(processed_data)) * 0.6
+
+            # Step 7: Transition probability calculation
+            self.logger.info("🔄 Calculating regime transitions...")
+            transition_probs = self._calculate_transition_probabilities(clvsa_results)
+
+            # Step 8: Uncertainty quantification
+            uncertainty_estimates = None
+            if self.config.enable_uncertainty_quantification:
+                self.logger.info("🎯 Quantifying uncertainty...")
+                uncertainty_estimates = self._quantify_uncertainty(
+                    processed_data, clvsa_results
+                )
+
+            # Step 9: Meta-learning adaptation
+            if self.config.enable_meta_learning:
+                self.logger.info("🧠 Performing meta-learning adaptation...")
+                adapted_results = self._perform_meta_learning_adaptation(
+                    processed_data, clvsa_results
+                )
+            else:
+                adapted_results = clvsa_results
 
             # Create result
             execution_time = time.time() - start_time

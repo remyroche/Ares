@@ -52,7 +52,9 @@ from ..matrix_operations import (
 )
 from ..performance_utils import PerformanceMonitor, performance_timer, get_memory_usage
 from ..caching import intelligent_caching
-from .optimization.memory_optimization import MemoryEfficientTraining
+from src.utils.ml_common.optimization.memory_optimization import (
+    MemoryEfficientTraining,
+)
 from src.utils.unified_cache import get_unified_cache
 from .validation.stability import StabilityAnalyzer
 

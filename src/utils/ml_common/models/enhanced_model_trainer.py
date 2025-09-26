@@ -27,7 +27,6 @@ from src.utils.common_operations import (
 )
 
 # Import evaluation result types
-from src.utils.nas_tas.shared_utils.unified_evaluation_framework import EvaluationResult
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,

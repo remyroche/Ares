@@ -138,7 +138,9 @@ class UnifiedVectorizationManager:
 
         try:
             # Technical indicators
-            from ..utils.feature_generators import FeatureGenerators
+            from src.feature_generation.utils.feature_generators import (
+                FeatureGenerators,
+            )
             self.technical_indicators = FeatureGenerators()
             self.technical_indicators_available = True
         except Exception:

@@ -295,11 +295,11 @@ class PerformanceMonitor:
         """Calculate accuracy."""
         try:
             if isinstance(prediction, (list, np.ndarray)) and isinstance(actual, (list, np.ndarray)):
-            return np.mean(np.array(prediction) == np.array(actual))
-        return 0.0
-    except Exception as e:
-        tprint_warning(f"Performance evaluation failed: {e}. Returning 0.0.")
-        return 0.0
+                return np.mean(np.array(prediction) == np.array(actual))
+            return 0.0
+        except Exception as e:
+            tprint_warning(f"Performance evaluation failed: {e}. Returning 0.0.")
+            return 0.0
     
     def _calculate_precision(self, prediction: Any, actual: Any) -> float:
         """Calculate precision."""

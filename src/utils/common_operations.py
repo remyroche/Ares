@@ -44,8 +44,10 @@ except ImportError:  # pragma: no cover - fallback implementations
             if np.allclose(np.std(x_arr), 0) or np.allclose(np.std(y_arr), 0):
                 return default
             return float(np.corrcoef(x_arr, y_arr)[0, 1])
-        except Exception:
+        except (ValueError, TypeError, np.linalg.LinAlgError) as e:
             logger.warning("⚠️ Failed to compute correlation; returning default")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Correlation computation failed: {e}")
             return default
 
     def safe_covariance(x, y, default: float = 0.0):
@@ -55,8 +57,10 @@ except ImportError:  # pragma: no cover - fallback implementations
             if x_arr.size == 0 or y_arr.size == 0:
                 return default
             return float(np.cov(x_arr, y_arr, ddof=1)[0, 1])
-        except Exception:
+        except (ValueError, TypeError, np.linalg.LinAlgError) as e:
             logger.warning("⚠️ Failed to compute covariance; returning default")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Covariance computation failed: {e}")
             return default
 
     def safe_percentile(values, q: float, default: float = 0.0):
@@ -65,8 +69,10 @@ except ImportError:  # pragma: no cover - fallback implementations
             if values_arr.size == 0:
                 return default
             return float(np.nanpercentile(values_arr, q))
-        except Exception:
+        except (ValueError, TypeError, IndexError) as e:
             logger.warning("⚠️ Failed to compute percentile; returning default")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Percentile computation failed: {e}")
             return default
 
     def validate_correlation_matrix(matrix, tol: float = 1e-8) -> bool:
@@ -81,15 +87,19 @@ except ImportError:  # pragma: no cover - fallback implementations
             if np.any(np.abs(arr) > 1 + tol):
                 return False
             return True
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Correlation matrix validation failed: {e}")
             return False
 
     def safe_matrix_inverse(matrix, default: Optional[np.ndarray] = None):
         try:
             arr = np.asarray(matrix, dtype=float)
             return np.linalg.inv(arr)
-        except Exception:
+        except (np.linalg.LinAlgError, ValueError, TypeError) as e:
             logger.warning("⚠️ Failed to invert matrix; returning default")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Matrix inversion failed: {e}")
             if default is not None:
                 return default
             raise
@@ -97,7 +107,9 @@ except ImportError:  # pragma: no cover - fallback implementations
     def math_safe(func, *args, default=0.0, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception:
+        except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Math operation failed: {e}")
             return default
 
 # Import M1 utilities
@@ -274,22 +286,25 @@ def safe_log_metric(name: str, value: float) -> None:
     """Safely log metric."""
     try:
         logger.info(f"📊 Metric {name}: {value}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to log metric {name}: {e}")
 
 def safe_log_params(params: Dict[str, Any]) -> None:
     """Safely log parameters."""
     try:
         logger.info(f"⚙️ Parameters: {params}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to log parameters: {e}")
 
 def safe_log_artifact(name: str, path: str) -> None:
     """Safely log artifact."""
     try:
         logger.info(f"📁 Artifact {name} saved to {path}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to log artifact {name}: {e}")
 
 # =============================================================================
 # DATETIME UTILITIES
@@ -328,7 +343,9 @@ def safe_file_exists(path: Union[str, Path]) -> bool:
     """Safely check if file exists."""
     try:
         return Path(path).exists()
-    except Exception:
+    except (OSError, ValueError, TypeError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to check file existence for {path}: {e}")
         return False
 
 def safe_json_dump(data: Any, file_path: Union[str, Path], **kwargs) -> bool:
@@ -555,21 +572,27 @@ def safe_divide(a: float, b: float, default: float = 0.0) -> float:
     """Safely divide two numbers."""
     try:
         return a / b if b != 0 else default
-    except Exception:
+    except (TypeError, ValueError, ZeroDivisionError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Division failed for {a}/{b}: {e}")
         return default
 
 def safe_log(x: float, default: float = 0.0) -> float:
     """Safely calculate logarithm."""
     try:
         return np.log(x) if x > 0 else default
-    except Exception:
+    except (ValueError, TypeError, OverflowError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Logarithm calculation failed for {x}: {e}")
         return default
 
 def safe_sqrt(x: float, default: float = 0.0) -> float:
     """Safely calculate square root."""
     try:
         return np.sqrt(x) if x >= 0 else default
-    except Exception:
+    except (ValueError, TypeError, OverflowError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Square root calculation failed for {x}: {e}")
         return default
 
 def safe_power(x: float, y: float, default: float = 0.0) -> float:
@@ -1315,7 +1338,9 @@ def validate_file_path(file_path: Union[str, Path]) -> bool:
     try:
         path = Path(file_path)
         return path.exists() and path.is_file()
-    except Exception:
+    except (OSError, ValueError, TypeError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"File path validation failed for {file_path}: {e}")
         return False
 
 
@@ -1333,7 +1358,9 @@ def get_file_size(file_path: Union[str, Path]) -> int:
         if path.exists() and path.is_file():
             return path.stat().st_size
         return 0
-    except Exception:
+    except (OSError, ValueError, TypeError) as e:
+        from src.utils.tprint import tprint_warning
+        tprint_warning(f"Failed to get file size for {file_path}: {e}")
         return 0
 
 

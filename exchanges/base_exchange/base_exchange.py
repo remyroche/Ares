@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
+from src.utils.tprint import tprint
 
 from typing import Any
 import logging
@@ -202,7 +203,8 @@ class BaseExchange(IExchangeClient, ABC):
         """Best-effort leverage setter using underlying client if supported."""
         try:
             market_id = await self._get_market_id(symbol)
-        except Exception:
+        except (TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error getting market ID for {symbol}: {e}", level="warning")
             market_id = symbol
 
         if not self.exchange:
@@ -219,7 +221,8 @@ class BaseExchange(IExchangeClient, ABC):
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
                     return True
-                except Exception:
+                except (AttributeError, TypeError, ValueError) as e:
+                    tprint(f"Error calling {method}: {e}", level="warning")
                     continue
         return False
 
@@ -227,7 +230,8 @@ class BaseExchange(IExchangeClient, ABC):
         """Best-effort margin mode setter using underlying client if supported."""
         try:
             market_id = await self._get_market_id(symbol)
-        except Exception:
+        except (TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error getting market ID for {symbol}: {e}", level="warning")
             market_id = symbol
 
         if not self.exchange:
@@ -244,7 +248,8 @@ class BaseExchange(IExchangeClient, ABC):
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
                     return True
-                except Exception:
+                except (AttributeError, TypeError, ValueError) as e:
+                    tprint(f"Error calling {method}: {e}", level="warning")
                     continue
         return False
 
@@ -325,7 +330,8 @@ class BaseExchange(IExchangeClient, ABC):
                     return best_bid
                 if best_ask is not None:
                     return best_ask
-        except Exception:
+        except (TypeError, AttributeError, ValueError, KeyError) as e:
+            tprint(f"Error getting best price: {e}", level="warning")
             return None
         return None
 
@@ -353,7 +359,8 @@ class BaseExchange(IExchangeClient, ABC):
                 liq = pos0.get("liquidationPrice") or pos0.get("liqPrice") or pos0.get("liquidation_price")
                 if liq:
                     return float(liq)
-        except Exception:
+        except (TypeError, AttributeError, ValueError, KeyError) as e:
+            tprint(f"Error getting liquidation price: {e}", level="warning")
             return None
         return None
 
@@ -369,7 +376,8 @@ class BaseExchange(IExchangeClient, ABC):
             # All tickers fallback
             tickers = await self.exchange.fetch_tickers()  # type: ignore[union-attr]
             return tickers or {}
-        except Exception:
+        except (TypeError, AttributeError, ValueError, KeyError) as e:
+            tprint(f"Error fetching tickers: {e}", level="warning")
             return {}
 
     async def get_order_book(self, symbol: str, limit: int = 10) -> dict[str, Any]:
@@ -379,7 +387,8 @@ class BaseExchange(IExchangeClient, ABC):
                 return {}
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order_book(market_id, limit)  # type: ignore[union-attr]
-        except Exception:
+        except (TypeError, AttributeError, ValueError, KeyError) as e:
+            tprint(f"Error fetching order book: {e}", level="warning")
             return {}
 
 

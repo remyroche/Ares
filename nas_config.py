@@ -1057,8 +1057,8 @@ class NASClusteringConfig:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup_resources()
-        except Exception:
-            pass  # Ignore errors in destructor
+        except (AttributeError, TypeError) as e:
+            tprint(f"Error in cleanup: {e}", level="error")
 
 
 # Configuration presets

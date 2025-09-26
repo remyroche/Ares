@@ -11,6 +11,7 @@ This is the primary HMM training implementation - extensively using ml_commons t
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 import time
+from src.utils.tprint import tprint
 
 # Core imports - using common utilities
 from src.utils.logger import system_logger
@@ -169,7 +170,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                     unique, counts = np.unique(y_train, return_counts=True)
                     if len(unique) > 1 and np.all(counts >= 2):
                         stratify_labels = y_train
-                except Exception:
+                except (ValueError, TypeError, AttributeError) as e:
+                    tprint(f"Error determining stratification labels: {e}", level="error")
                     stratify_labels = None
 
                 try:

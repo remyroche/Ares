@@ -1106,7 +1106,8 @@ class Analyst:
 
             return True
 
-        except Exception:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Analysis inputs validation failed: {e}", level="error")
             self.logger.exception("Analysis inputs validation failed")
             return False
 
@@ -1169,9 +1170,9 @@ class Analyst:
                 else "bearish",
             }
 
-        except Exception:
-            self.logger.error("Error performing price analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing price analysis: {e}", level="error")
+            self.logger.error("Error performing price analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1198,9 +1199,9 @@ class Analyst:
                 else "low",
             }
 
-        except Exception:
-            self.logger.error("Error performing volume analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError, ZeroDivisionError) as e:
+            tprint(f"Error performing volume analysis: {e}", level="error")
+            self.logger.error("Error performing volume analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1232,9 +1233,9 @@ class Analyst:
                 else None,
             }
 
-        except Exception:
-            self.logger.error("Error performing indicator analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing indicator analysis: {e}", level="error")
+            self.logger.error("Error performing indicator analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1251,9 +1252,9 @@ class Analyst:
                 "pattern_confidence": 0.0,
             }
 
-        except Exception:
-            self.logger.error("Error performing pattern analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing pattern analysis: {e}", level="error")
+            self.logger.error("Error performing pattern analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1278,9 +1279,9 @@ class Analyst:
                 else "decreasing",
             }
 
-        except Exception:
-            self.logger.error("Error performing volatility analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing volatility analysis: {e}", level="error")
+            self.logger.error("Error performing volatility analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1297,9 +1298,9 @@ class Analyst:
                 "correlation_regime": "normal",
             }
 
-        except Exception:
-            self.logger.error("Error performing correlation analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing correlation analysis: {e}", level="error")
+            self.logger.error("Error performing correlation analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1322,9 +1323,9 @@ class Analyst:
                 else "normal",
             }
 
-        except Exception:
-            self.logger.error("Error performing drawdown analysis: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing drawdown analysis: {e}", level="error")
+            self.logger.error("Error performing drawdown analysis: %s", e)
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -1339,9 +1340,9 @@ class Analyst:
                 "risk_factors": [],
             }
 
-        except Exception:
-            self.logger.error("Error performing risk scoring: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error performing risk scoring: {e}", level="error")
+            self.logger.error("Error performing risk scoring: %s", e)
             return {}
 
     @handles_errors(
@@ -1384,9 +1385,9 @@ class Analyst:
             self.logger.info("ML predictions completed successfully")
             return ml_results
 
-        except Exception:
-            self.logger.error("Error performing ML predictions: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError, ImportError) as e:
+            tprint(f"Error performing ML predictions: {e}", level="error")
+            self.logger.error("Error performing ML predictions: %s", e)
             return {}
 
     @handles_errors(
@@ -1641,9 +1642,9 @@ class Analyst:
             )
             return regime_results
 
-        except Exception:
-            self.logger.error("Error performing regime classification: {e}")
-
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError, ImportError) as e:
+            tprint(f"Error performing regime classification: {e}", level="error")
+            self.logger.error("Error performing regime classification: %s", e)
             return {}
 
     @handles_errors(
@@ -1664,8 +1665,9 @@ class Analyst:
                 self.analysis_history.pop(0)
 
             self.logger.info("Analysis results stored successfully")
-        except Exception:
-            self.logger.error("Error storing analysis results: {e}")
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error storing analysis results: {e}", level="error")
+            self.logger.error("Error storing analysis results: %s", e)
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -1687,9 +1689,9 @@ class Analyst:
                 return self.analysis_results
             return self.analysis_results.get(analysis_type, {})
 
-        except Exception:
-            self.logger.error("Error getting analysis results: {e}")
-
+        except (KeyError, TypeError, AttributeError) as e:
+            tprint(f"Error getting analysis results: {e}", level="error")
+            self.logger.error("Error getting analysis results: %s", e)
             return {}
 
     @handles_errors(
@@ -1712,9 +1714,9 @@ class Analyst:
                 return self.analysis_history
             return self.analysis_history[-limit:]
 
-        except Exception:
-            self.logger.error("Error getting analysis history: {e}")
-
+        except (KeyError, TypeError, AttributeError, IndexError) as e:
+            tprint(f"Error getting analysis history: {e}", level="error")
+            self.logger.error("Error getting analysis history: %s", e)
             return []
 
     def get_analysis_status(self) -> dict[str, Any]:

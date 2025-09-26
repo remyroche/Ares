@@ -34,6 +34,7 @@ import threading
 from datetime import datetime
 import warnings
 from itertools import count
+from src.utils.tprint import tprint
 
 # Core dependencies
 import numpy as np
@@ -213,8 +214,8 @@ except ImportError as e:
             unique_values = np.unique(y)
             if len(unique_values) > 20 and np.issubdtype(unique_values.dtype, np.floating):
                 return "regression"
-        except Exception:
-            pass
+        except (TypeError, AttributeError, ValueError) as e:
+            tprint(f"Error determining task type: {e}", level="error")
         return "classification"
 
     def create_model(model_type='random_forest', *, task_type: Optional[str] = None, **params):
@@ -1124,7 +1125,8 @@ class NASTrainer:
 
             try:  # Compile if this is a Keras model
                 from tensorflow import keras as tf_keras  # type: ignore
-            except Exception:
+            except (ImportError, ModuleNotFoundError, AttributeError) as e:
+                tprint(f"TensorFlow/Keras not available: {e}", level="warning")
                 tf_keras = None  # type: ignore
 
             if tf_keras is not None and isinstance(model, tf_keras.Model):

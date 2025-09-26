@@ -577,7 +577,8 @@ class MetaNAS_Optimizer:
             # Simple similarity check based on data dimensions
             key = f"{input_shape}_{output_shape}"
             return self.meta_knowledge_base.get(key)
-        except Exception:
+        except (TypeError, AttributeError, KeyError) as e:
+            tprint(f"Error loading meta-knowledge: {e}", level="error")
             return None
     
     def _apply_meta_knowledge(self, meta_knowledge: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray) -> Optional[Dict[str, Any]]:
@@ -586,7 +587,8 @@ class MetaNAS_Optimizer:
             # Use meta-knowledge to create a guided architecture
             # This is a simplified implementation
             return meta_knowledge.get('best_architecture')
-        except Exception:
+        except (TypeError, AttributeError, KeyError) as e:
+            tprint(f"Error applying meta-knowledge: {e}", level="error")
             return None
     
     def _update_meta_knowledge(self, architecture: Dict[str, Any], input_shape: Tuple, output_shape: Tuple):

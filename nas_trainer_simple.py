@@ -37,51 +37,51 @@ except ImportError as e:
     def tprint(*args, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]", *args, **kwargs)
-        except Exception:
-            print(*args, **kwargs)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint error: {e}", *args, **kwargs)
     
     def tprint_info(*args, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO:", *args, **kwargs)
-        except Exception:
-            print("INFO:", *args, **kwargs)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_info error: {e}", "INFO:", *args, **kwargs)
     
     def tprint_warning(*args, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] WARNING:", *args, **kwargs)
-        except Exception:
-            print("WARNING:", *args, **kwargs)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_warning error: {e}", "WARNING:", *args, **kwargs)
     
     def tprint_error(*args, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR:", *args, **kwargs)
-        except Exception:
-            print("ERROR:", *args, **kwargs)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_error error: {e}", "ERROR:", *args, **kwargs)
     
     def tprint_success(*args, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] SUCCESS:", *args, **kwargs)
-        except Exception:
-            print("SUCCESS:", *args, **kwargs)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_success error: {e}", "SUCCESS:", *args, **kwargs)
     
     def tprint_progress(step, total, message="", **kwargs):
         try:
             percentage = (step / total) * 100 if total > 0 else 0
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] PROGRESS: {step}/{total} ({percentage:.1f}%) {message}")
-        except Exception:
-            print(f"PROGRESS: {step}/{total} {message}")
+        except (TypeError, AttributeError, ValueError, ZeroDivisionError) as e:
+            print(f"tprint_progress error: {e}", f"PROGRESS: {step}/{total} {message}")
     
     def tprint_performance(operation, duration, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] PERFORMANCE: {operation} took {duration:.3f}s")
-        except Exception:
-            print(f"PERFORMANCE: {operation} took {duration:.3f}s")
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_performance error: {e}", f"PERFORMANCE: {operation} took {duration:.3f}s")
     
     def tprint_structured(data, level=None, **kwargs):
         try:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] STRUCTURED:", data)
-        except Exception:
-            print("STRUCTURED:", data)
+        except (TypeError, AttributeError, ValueError) as e:
+            print(f"tprint_structured error: {e}", "STRUCTURED:", data)
     
     def tprint_timer(operation, level=None):
         from contextlib import contextmanager

@@ -498,7 +498,8 @@ class BacktestingSubPipeline:
         artifacts = {
             'optimization_results': {},
             'optimized_parameters': {},
-            'optimization_metrics': {}
+            'optimization_metrics': {},
+            'persistent_config_path': None,
         }
         
         if config.mode == ExecutionMode.BLANK:
@@ -531,6 +532,7 @@ class BacktestingSubPipeline:
                 'optimization_report': optimization_result.get('optimization_report', {}),
                 'validation_passed': optimization_result.get('validation_passed', False)
             }
+            artifacts['persistent_config_path'] = optimization_result.get('persistent_config_path')
             
         except ImportError:
             self.logger.warning("⚠️ Final parameters optimization not available, using mock optimization")
@@ -576,7 +578,7 @@ class BacktestingSubPipeline:
                 engine = RealBacktestingEngine(backtest_config)
                 data = await engine.load_market_data()
                 data = engine.calculate_technical_indicators(data)
-                signals = engine.generate_trading_signals(data)
+                signals = await engine.generate_trading_signals(data)
                 backtest_results = await engine.execute_backtest(data, signals)
                 
             elif config.mode == ExecutionMode.LIGHT:
@@ -598,7 +600,7 @@ class BacktestingSubPipeline:
                 engine = RealBacktestingEngine(backtest_config)
                 data = await engine.load_market_data()
                 data = engine.calculate_technical_indicators(data)
-                signals = engine.generate_trading_signals(data)
+                signals = await engine.generate_trading_signals(data)
                 backtest_results = await engine.execute_backtest(data, signals)
                 
             else:  # FULL mode
@@ -620,7 +622,7 @@ class BacktestingSubPipeline:
                 engine = RealBacktestingEngine(backtest_config)
                 data = await engine.load_market_data()
                 data = engine.calculate_technical_indicators(data)
-                signals = engine.generate_trading_signals(data)
+                signals = await engine.generate_trading_signals(data)
                 backtest_results = await engine.execute_backtest(data, signals)
             
             # Store real results

@@ -19,6 +19,7 @@ import os
 import pickle
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
 import optuna
 import numpy as np
@@ -36,6 +37,10 @@ from src.utils.version_manager import get_version_manager
 from src.utils.nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space, convert_parameters_to_original_space
+)
+from src.config.config_technical_indicators import (
+    get_technical_indicators_config,
+    get_technical_indicators_search_space,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +104,17 @@ class FinalParametersOptimizer:
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+
+        default_persistence_dir = os.path.join('config', 'final_parameters')
+        self.persistent_config_dir = self.config.get(
+            'persistent_config_dir', default_persistence_dir
+        )
+
+        # Cache for signal weight optimization results keyed by activation threshold
+        self._signal_weight_cache: Dict[float, Dict[str, Any]] = {}
+        self.signal_weight_optimization_summary: Dict[str, Any] = {}
+        self._confidence_context: Dict[str, Any] = {}
+        self._technical_indicator_config = get_technical_indicators_config()
 
 
 class AsymmetricParametersOptimizer(FinalParametersOptimizer):
@@ -694,32 +710,25 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     
     def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Get default search spaces for parameter categories."""
+        technical_search_space = get_technical_indicators_search_space()
+
         return {
             'confidence': {
                 'base_entry_threshold': {'type': 'float', 'min': 0.5, 'max': 0.9},
                 'analyst_confidence_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
-                'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
+                'tactician_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.9},
                 'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
                 'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
                 'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']},
                 # 0.3% Micro Movement Entry Thresholds (immediate only)
                 'micro_immediate_long_threshold': {'type': 'float', 'min': 0.65, 'max': 0.85},
                 'micro_immediate_short_threshold': {'type': 'float', 'min': 0.68, 'max': 0.88},
-                # Exit-specific confidence parameters for 0.3% micro movements
-                'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
-                'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
-                'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
-                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']},
-                # 0.3% Micro Movement Exit Thresholds (immediate only)
-                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
-                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 # Directional Reversal Detection (MAIN EXIT TRIGGER)
                 'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.5}
             },
             'intensity': {
                 # Signal intensity and strength parameters
                 'signal_intensity_threshold': {'type': 'float', 'min': 0.4, 'max': 0.8},
-                'intensity_decay_factor': {'type': 'float', 'min': 0.85, 'max': 0.99},
                 'intensity_amplification_factor': {'type': 'float', 'min': 1.05, 'max': 1.25},
                 'min_intensity_duration': {'type': 'int', 'min': 3, 'max': 15},
                 'max_intensity_duration': {'type': 'int', 'min': 30, 'max': 120},
@@ -744,6 +753,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'confidence_high': {'type': 'float', 'min': 0.7, 'max': 0.9},
                 'confidence_force_exit_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
                 'confidence_force_hold_threshold': {'type': 'float', 'min': 0.6, 'max': 0.95},
+                'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'exit_confidence_combination_method': {
+                    'type': 'categorical',
+                    'choices': ['multiplicative', 'logarithmic', 'weighted_average']
+                },
+                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
 
                 # Profit-taking parameters
                 'trailing_profit_v': {'type': 'float', 'min': -1.0, 'max': 1.0},
@@ -808,12 +826,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'timing_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9}
             },
             'technical_indicators': {
-                'rsi_period': {'type': 'int', 'min': 10, 'max': 20},
-                'macd_fast_period': {'type': 'int', 'min': 8, 'max': 16},
-                'macd_slow_period': {'type': 'int', 'min': 20, 'max': 30},
-                'adx_trend_threshold': {'type': 'float', 'min': 20.0, 'max': 35.0},
-                'adx_sideways_threshold': {'type': 'float', 'min': 15.0, 'max': 30.0},
-                'volatility_threshold': {'type': 'float', 'min': 0.015, 'max': 0.035}
+                name: {
+                    'type': config['type'],
+                    'min': config.get('min'),
+                    'max': config.get('max'),
+                    'choices': config.get('choices')
+                }
+                for name, config in technical_search_space.items()
             },
             'system_monitoring': {
                 'analysis_interval': {'type': 'int', 'min': 1800, 'max': 7200},
@@ -1084,45 +1103,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         return tpe_space
     
-    def _objective_function_for_tpe(self, params: Dict[str, Any], category: str, 
+    def _objective_function_for_tpe(self, params: Dict[str, Any], category: str,
                                    calibration_results: Dict[str, Any]) -> float:
         """Objective function for Bayesian TPE optimizer."""
-        try:
-            # Use the existing objective function logic but adapted for TPE
-            return self._evaluate_parameters(params, category, calibration_results)
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error evaluating parameters for {category}: {e}")
-            return 0.0
-    
-    def _evaluate_parameters(self, params: Dict[str, Any], category: str, 
-                           calibration_results: Dict[str, Any]) -> float:
-        """Evaluate parameters and return optimization score."""
-        try:
-            # This is a simplified version - in practice, you'd implement the full evaluation logic
-            # based on your specific requirements for each category
-            
-            # For now, return a mock score based on parameter values
-            # In real implementation, this would evaluate the actual performance
-            score = 0.0
-            
-            # Add some basic scoring logic based on parameter ranges
-            for param_name, param_value in params.items():
-                if isinstance(param_value, (int, float)):
-                    # Simple scoring based on parameter value (this is just an example)
-                    if 0 <= param_value <= 1:
-                        score += 0.1
-                    elif 1 < param_value <= 10:
-                        score += 0.2
-                    else:
-                        score += 0.05
-                elif isinstance(param_value, bool):
-                    score += 0.1
-            
-            return score
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error in parameter evaluation: {e}")
-            return 0.0
+        score = self._evaluate_configuration(category, params, calibration_results)
+        if not math.isfinite(score):
+            raise ValueError(f"Non-finite score produced for category '{category}'")
+        return score
     
     def _objective_function(self, trial: optuna.Trial, category: str, 
                           search_space: Dict[str, Dict[str, Any]], 
@@ -1256,14 +1243,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return base_score
 
         except Exception as e:
-            self.logger.error(f"Error evaluating configuration for {category}: {e}")
-            return 0.0
+            self.logger.error(f"Error evaluating configuration for {category}: {e}", exc_info=True)
+            raise
     
-    def _evaluate_confidence_params(self, params: Dict[str, Any], 
+    def _evaluate_confidence_params(self, params: Dict[str, Any],
                                   calibration_results: Dict[str, Any]) -> float:
         """Evaluate confidence threshold parameters with optimal confidence calculation."""
         score = 0.0
-        
+        self._confidence_context = {}
+
         # Base entry threshold evaluation
         if 'base_entry_threshold' in params:
             threshold = params['base_entry_threshold']
@@ -1278,59 +1266,48 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         if 'analyst_confidence_threshold' in params and 'tactician_confidence_threshold' in params:
             analyst_thresh = params['analyst_confidence_threshold']
             tactician_thresh = params['tactician_confidence_threshold']
-            
+
             # Basic threshold validation
             if tactician_thresh > analyst_thresh:
                 score += 0.2
             if 0.1 <= tactician_thresh - analyst_thresh <= 0.2:
                 score += 0.1
-            
+
+            # Normalize tactician range to requested bounds
+            if 0.3 <= tactician_thresh <= 0.9:
+                score += 0.1
+            else:
+                tactician_thresh = min(0.9, max(0.3, tactician_thresh))
+
             # Extract confidence weights from parameters if available
             tactician_weight = params.get('tactician_confidence_weight', 0.6)
             analyst_weight = params.get('analyst_confidence_weight', 0.4)
-            
+
             # Validate weight constraints
             if 0.1 <= tactician_weight <= 0.9 and 0.1 <= analyst_weight <= 0.9:
                 score += 0.1
                 if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
                     score += 0.1  # Bonus for weights that sum close to 1.0
-            
+
             # Extract exit confidence parameters
-            exit_threshold = params.get('exit_confidence_threshold', 0.5)
-            tactician_exit_weight = params.get('tactician_exit_confidence_weight', 0.6)
-            analyst_exit_weight = params.get('analyst_exit_confidence_weight', 0.4)
-            exit_combination_method = params.get('exit_confidence_combination_method', 'multiplicative')
-            
-            # Validate exit confidence parameters
-            if 0.3 <= exit_threshold <= 0.7:
-                score += 0.1
-            if 0.2 <= tactician_exit_weight <= 0.8 and 0.2 <= analyst_exit_weight <= 0.8:
-                score += 0.1
-                if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
-                    score += 0.1  # Bonus for exit weights that sum close to 1.0
-            
-            # Bonus for advanced exit combination methods
-            if exit_combination_method in ['multiplicative', 'logarithmic']:
-                score += 0.1
-            
+            exit_threshold = params.get('exit_confidence_threshold')
+            tactician_exit_weight = params.get('tactician_exit_confidence_weight')
+            analyst_exit_weight = params.get('analyst_exit_confidence_weight')
+            exit_combination_method = params.get('exit_confidence_combination_method')
+
             # Update calibration results with parameter weights
             enhanced_calibration = calibration_results.copy()
             enhanced_calibration.update({
                 'tactician_confidence_weight': tactician_weight,
                 'analyst_confidence_weight': analyst_weight,
                 'confidence_combination_method': params.get('confidence_combination_method', 'weighted_average'),
-                # Exit-specific parameters
-                'exit_confidence_threshold': exit_threshold,
-                'tactician_exit_confidence_weight': tactician_exit_weight,
-                'analyst_exit_confidence_weight': analyst_exit_weight,
-                'exit_confidence_combination_method': exit_combination_method
             })
-            
+
             # Calculate optimal confidence using multiplicative and logarithmic operations
             optimal_confidence = self._calculate_optimal_confidence(
                 analyst_thresh, tactician_thresh, enhanced_calibration
             )
-            
+
             if optimal_confidence is not None:
                 # Score based on optimal confidence quality
                 if optimal_confidence > 0.8:
@@ -1350,19 +1327,29 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 combination_method = params.get('confidence_combination_method', 'weighted_average')
                 if combination_method in ['multiplicative', 'logarithmic']:
                     score += 0.1  # Bonus for advanced methods
-                
-                # Evaluate exit confidence calculation using existing backtesting framework
-                exit_confidence_score = self._evaluate_exit_confidence_calculation(
-                    analyst_thresh, tactician_thresh, enhanced_calibration
-                )
-                score += exit_confidence_score * 0.2  # Weight exit confidence evaluation
-                
+
                 # Additional evaluation using the existing backtesting framework
                 backtesting_score = self._evaluate_using_existing_backtesting_framework(
                     enhanced_calibration, params
                 )
                 score += backtesting_score * 0.1  # Weight backtesting evaluation
-        
+
+            self._confidence_context = {
+                'analyst_threshold': analyst_thresh,
+                'tactician_threshold': tactician_thresh,
+                'tactician_weight': tactician_weight,
+                'analyst_weight': analyst_weight,
+                'combination_method': params.get('confidence_combination_method', 'weighted_average'),
+                'exit_parameters': {
+                    'exit_confidence_threshold': exit_threshold,
+                    'tactician_exit_confidence_weight': tactician_exit_weight,
+                    'analyst_exit_confidence_weight': analyst_exit_weight,
+                    'exit_confidence_combination_method': exit_combination_method,
+                    'exit_micro_immediate_long_threshold': params.get('exit_micro_immediate_long_threshold'),
+                    'exit_micro_immediate_short_threshold': params.get('exit_micro_immediate_short_threshold'),
+                }
+            }
+
         return score
     
     def _calculate_optimal_confidence(self, analyst_threshold: float, tactician_threshold: float, 
@@ -1635,7 +1622,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             # Check if thresholds are in reasonable ranges
             if 0.5 <= analyst_threshold <= 0.9:
                 stability_score += 0.3
-            if 0.6 <= tactician_threshold <= 0.95:
+            if 0.3 <= tactician_threshold <= 0.9:
                 stability_score += 0.3
             
             return min(1.0, stability_score)
@@ -1952,11 +1939,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         return score
     
-    def _evaluate_exit_strategy_params(self, params: Dict[str, Any], 
+    def _evaluate_exit_strategy_params(self, params: Dict[str, Any],
                                      calibration_results: Dict[str, Any]) -> float:
         """Evaluate exit strategy parameters."""
-        score = 0.0
-        
+        score = self._score_exit_confidence_parameters(params, calibration_results)
+
         try:
             # 1. Confidence thresholds validation (0.3 weight)
             confidence_params = ['confidence_very_low', 'confidence_low', 'confidence_medium', 'confidence_high']
@@ -2165,6 +2152,116 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             score = 0.0
 
         return min(score, 1.0)  # Cap at 1.0
+
+    def _score_exit_confidence_parameters(
+        self,
+        params: Dict[str, Any],
+        calibration_results: Dict[str, Any]
+    ) -> float:
+        """Score exit confidence-related parameters using the latest confidence context."""
+
+        confidence_context = getattr(self, '_confidence_context', {}) or {}
+        exit_context = confidence_context.get('exit_parameters', {})
+
+        exit_threshold = params.get(
+            'exit_confidence_threshold',
+            exit_context.get('exit_confidence_threshold')
+        )
+        tactician_exit_weight = params.get(
+            'tactician_exit_confidence_weight',
+            exit_context.get('tactician_exit_confidence_weight', 0.6)
+        )
+        analyst_exit_weight = params.get(
+            'analyst_exit_confidence_weight',
+            exit_context.get('analyst_exit_confidence_weight', 0.4)
+        )
+        exit_combination_method = params.get(
+            'exit_confidence_combination_method',
+            exit_context.get('exit_confidence_combination_method', 'weighted_average')
+        )
+
+        score = 0.0
+
+        entry_anchor = confidence_context.get('tactician_threshold')
+        if entry_anchor is None:
+            entry_anchor = calibration_results.get('median_confidence')
+
+        preferred_exit = calibration_results.get('median_exit_confidence')
+        if preferred_exit is None and entry_anchor is not None:
+            preferred_exit = float(entry_anchor) * 0.85
+        if preferred_exit is None:
+            preferred_exit = 0.55
+
+        band_width = calibration_results.get(
+            'exit_confidence_band',
+            self.config.get('exit_confidence_band', 0.15)
+        )
+        band_width = max(float(band_width), 1e-4)
+
+        if exit_threshold is not None:
+            deviation = abs(float(exit_threshold) - float(preferred_exit))
+            normalized = max(0.0, 1.0 - deviation / band_width)
+            score += 0.2 * normalized
+
+        if tactician_exit_weight is not None and analyst_exit_weight is not None:
+            total_weight = tactician_exit_weight + analyst_exit_weight
+            if total_weight > 0:
+                normalized_tactician = tactician_exit_weight / total_weight
+                normalized_analyst = analyst_exit_weight / total_weight
+                balance_penalty = abs(normalized_tactician - normalized_analyst)
+                score += 0.15 * max(0.0, 1.0 - balance_penalty * 1.5)
+                if abs(total_weight - 1.0) <= 0.1:
+                    score += 0.05
+
+        if exit_combination_method in {'multiplicative', 'logarithmic'}:
+            score += 0.05
+
+        confidence_calibration = calibration_results.copy()
+        if confidence_context:
+            confidence_calibration.update({
+                'tactician_confidence_weight': confidence_context.get('tactician_weight', 0.6),
+                'analyst_confidence_weight': confidence_context.get('analyst_weight', 0.4),
+                'confidence_combination_method': confidence_context.get('combination_method', 'weighted_average'),
+            })
+
+        confidence_calibration.update({
+            'exit_confidence_threshold': exit_threshold,
+            'tactician_exit_confidence_weight': tactician_exit_weight,
+            'analyst_exit_confidence_weight': analyst_exit_weight,
+            'exit_confidence_combination_method': exit_combination_method,
+        })
+
+        analyst_threshold = confidence_context.get(
+            'analyst_threshold',
+            calibration_results.get('analyst_confidence_threshold', 0.6)
+        )
+        tactician_threshold = confidence_context.get(
+            'tactician_threshold',
+            calibration_results.get('tactician_confidence_threshold', 0.7)
+        )
+
+        exit_confidence_score = self._evaluate_exit_confidence_calculation(
+            analyst_threshold,
+            tactician_threshold,
+            confidence_calibration
+        )
+        score += 0.2 * exit_confidence_score
+
+        immediate_long = params.get(
+            'exit_micro_immediate_long_threshold',
+            exit_context.get('exit_micro_immediate_long_threshold')
+        )
+        immediate_short = params.get(
+            'exit_micro_immediate_short_threshold',
+            exit_context.get('exit_micro_immediate_short_threshold')
+        )
+
+        if immediate_long is not None and immediate_short is not None:
+            if 0 <= immediate_long <= 0.6 and 0 <= immediate_short <= 0.6:
+                symmetry_penalty = abs(float(immediate_long) - float(immediate_short))
+                score += 0.1 * max(0.0, 1.0 - symmetry_penalty / 0.2)
+
+        return score
 
     def _safe_log_value(self, value: Any, floor: float = 1e-9) -> float:
         """Safely compute logarithm for optimisation heuristics."""
@@ -2501,42 +2598,58 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         return score
     
-    def _evaluate_technical_indicators_params(self, params: Dict[str, Any], 
+    def _evaluate_technical_indicators_params(self, params: Dict[str, Any],
                                            calibration_results: Dict[str, Any]) -> float:
         """Evaluate technical indicator parameters."""
         score = 0.0
-        
-        if 'rsi_period' in params:
-            rsi_period = params['rsi_period']
-            if 10 <= rsi_period <= 20:
-                score += 0.2
-            else:
-                score += 0.1
-        
-        if 'macd_fast_period' in params and 'macd_slow_period' in params:
+        technical_config = self._technical_indicator_config
+        search_space = get_technical_indicators_search_space()
+
+        def parameter_score(name: str, value: float, weight: float) -> float:
+            target = getattr(technical_config, name, None)
+            bounds = search_space.get(name, {})
+            lower = bounds.get('min')
+            upper = bounds.get('max')
+
+            if target is None or lower is None or upper is None:
+                return 0.5 * weight
+
+            span = float(upper) - float(lower)
+            if span <= 0:
+                return 0.0
+
+            deviation = abs(float(value) - float(target))
+            normalized = max(0.0, 1.0 - deviation / span)
+            return weight * normalized
+
+        weights = {
+            'rsi_period': 0.2,
+            'macd_fast_period': 0.15,
+            'macd_slow_period': 0.15,
+            'adx_trend_threshold': 0.15,
+            'adx_sideways_threshold': 0.15,
+            'volatility_threshold': 0.2,
+        }
+
+        for name, weight in weights.items():
+            if name in params:
+                score += parameter_score(name, params[name], weight)
+
+        if {'macd_fast_period', 'macd_slow_period'}.issubset(params.keys()):
             fast = params['macd_fast_period']
             slow = params['macd_slow_period']
-            if fast < slow and 8 <= fast <= 16 and 20 <= slow <= 30:
-                score += 0.2
+            if fast < slow:
+                score += 0.05
             else:
-                score += 0.1
-        
-        if 'adx_trend_threshold' in params and 'adx_sideways_threshold' in params:
+                score -= 0.05
+
+        if {'adx_trend_threshold', 'adx_sideways_threshold'}.issubset(params.keys()):
             trend = params['adx_trend_threshold']
             sideways = params['adx_sideways_threshold']
             if trend > sideways:
-                score += 0.2
-            else:
-                score += 0.1
-        
-        if 'volatility_threshold' in params:
-            vol_thresh = params['volatility_threshold']
-            if 0.015 <= vol_thresh <= 0.035:
-                score += 0.2
-            else:
-                score += 0.1
-        
-        return score
+                score += 0.05
+
+        return max(0.0, score)
     
     def _evaluate_system_monitoring_params(self, params: Dict[str, Any], 
                                         calibration_results: Dict[str, Any]) -> float:
@@ -2662,11 +2775,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         return score
     
-    def _evaluate_signal_aggregation_params(self, params: Dict[str, Any], 
+    def _evaluate_signal_aggregation_params(self, params: Dict[str, Any],
                                          calibration_results: Dict[str, Any]) -> float:
         """Evaluate signal aggregation parameters."""
         score = 0.0
-        
+
         if all(key in params for key in ['analyst_weight', 'tactician_weight', 'scenario_weight', 
                                        'sr_breakout_weight', 'regime_weight']):
             total_weight = (params['analyst_weight'] + params['tactician_weight'] + 
@@ -2707,8 +2820,481 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         if 'use_multiplicative' in params and params['use_multiplicative']:
             score += 0.1
-        
+
+        activation_threshold = params.get(
+            'min_signal_confidence',
+            self.config.get('signal_activation_threshold', 0.5)
+        )
+
+        try:
+            activation_threshold = float(activation_threshold)
+        except (TypeError, ValueError):
+            activation_threshold = float(self.config.get('signal_activation_threshold', 0.5))
+
+        optimization_result = self._optimize_signal_component_weights(
+            calibration_results,
+            activation_threshold
+        )
+
+        if optimization_result:
+            best_score = optimization_result.get('score', float('-inf'))
+            if math.isfinite(best_score) and best_score > float('-inf'):
+                target_sharpe = float(self.config.get('signal_weight_target_sharpe', 3.0))
+                if target_sharpe > 0:
+                    normalized = max(0.0, min(1.0, best_score / target_sharpe))
+                else:
+                    normalized = 0.0
+                score += 0.3 * normalized
+            score += 0.1  # Reward availability of optimized weights
+
         return score
+
+    def _optimize_signal_component_weights(
+        self,
+        calibration_results: Dict[str, Any],
+        activation_threshold: float,
+        n_candidates: int = 64
+    ) -> Optional[Dict[str, Any]]:
+        """Optimize trend/mean-reversion/momentum signal weights using cached search."""
+
+        if not math.isfinite(activation_threshold):
+            activation_threshold = float(self.config.get('signal_activation_threshold', 0.5))
+
+        cache_key = round(float(activation_threshold), 4)
+        if cache_key in self._signal_weight_cache:
+            return self._signal_weight_cache[cache_key]
+
+        component_data = self._get_signal_component_data(calibration_results)
+        if not component_data:
+            self.logger.debug("Signal component data unavailable for weight optimization")
+            return None
+
+        weight_candidates = self._generate_signal_weight_candidates(n_candidates)
+        best_score = float('-inf')
+        best_weights: Optional[Dict[str, float]] = None
+
+        for candidate in weight_candidates:
+            normalized = self._normalize_signal_weight_dict(candidate)
+            score = self._score_signal_weight_set(normalized, component_data, activation_threshold)
+            if score > best_score:
+                best_score = score
+                best_weights = normalized
+
+        if best_weights is None:
+            return None
+
+        result = {
+            'weights': best_weights,
+            'score': float(best_score),
+            'threshold': float(activation_threshold),
+            'n_candidates': len(weight_candidates)
+        }
+
+        self._signal_weight_cache[cache_key] = result
+        explanation = (
+            "Sharpe-ranked search over trend/mean-reversion/momentum weights "
+            f"evaluated {len(weight_candidates)} candidates at activation threshold "
+            f"{activation_threshold:.2f}, rewarding diversification penalties and caching the "
+            "best performing blend for reuse."
+        )
+        self.signal_weight_optimization_summary = {
+            'best_result': result,
+            'evaluated_thresholds': sorted(self._signal_weight_cache.keys()),
+            'timestamp': datetime.utcnow().isoformat(),
+            'explanation': explanation
+        }
+
+        self.logger.info(
+            "🧠 Optimized signal component weights (threshold=%.2f): %s (score=%.4f)",
+            activation_threshold,
+            best_weights,
+            best_score
+        )
+
+        self._persist_signal_weight_result(result)
+        return result
+
+    def _get_signal_component_data(
+        self,
+        calibration_results: Dict[str, Any]
+    ) -> Optional[Dict[str, np.ndarray]]:
+        """Retrieve signal component series from calibration results or artifacts."""
+
+        alias_map = {
+            'trend': ['trend_signals', 'trend_signal', 'trend_component', 'trend_series'],
+            'mean_reversion': [
+                'mean_reversion_signals', 'mean_reversion_signal',
+                'reversion_component', 'mean_reversion_series'
+            ],
+            'momentum': ['momentum_signals', 'momentum_signal', 'momentum_component'],
+            'returns': ['future_returns', 'returns', 'forward_returns', 'price_returns', 'asset_returns']
+        }
+
+        components: Dict[str, np.ndarray] = {}
+
+        for key, candidates in alias_map.items():
+            array = self._extract_array_from_candidates(calibration_results, candidates)
+            if array is not None:
+                components[key] = array
+
+        finalized = self._finalize_component_data(components)
+        if finalized:
+            return finalized
+
+        artifact_components = self._load_signal_components_from_artifacts()
+        if artifact_components:
+            return artifact_components
+
+        return None
+
+    def _finalize_component_data(
+        self,
+        components: Dict[str, np.ndarray]
+    ) -> Optional[Dict[str, np.ndarray]]:
+        """Ensure component arrays are aligned and valid."""
+
+        required_keys = {'trend', 'mean_reversion', 'momentum', 'returns'}
+        if not required_keys.issubset(components.keys()):
+            return None
+
+        lengths = [len(components[key]) for key in required_keys]
+        if not lengths or min(lengths) < 10:
+            return None
+
+        min_len = min(lengths)
+        aligned = {key: components[key][:min_len].astype(float) for key in required_keys}
+        return aligned
+
+    def _load_signal_components_from_artifacts(self) -> Optional[Dict[str, np.ndarray]]:
+        """Attempt to load signal components from stored artifacts."""
+
+        artifact_candidates = [
+            ('artifacts', 'final_signal_components'),
+            ('artifacts', 'signal_component_snapshot'),
+            ('artifacts', 'signal_component_timeseries'),
+            ('output', 'signal_component_snapshot'),
+        ]
+
+        for directory, base_name in artifact_candidates:
+            try:
+                payload, _ = self.pickup_utils.load_most_recent_artifact(
+                    base_name,
+                    directory=directory
+                )
+            except Exception as exc:
+                self.logger.debug(
+                    "Failed to load signal component artifact %s/%s: %s",
+                    directory,
+                    base_name,
+                    exc
+                )
+                continue
+
+            if not payload:
+                continue
+
+            parsed = self._parse_signal_component_payload(payload)
+            if parsed:
+                return parsed
+
+        return None
+
+    def _parse_signal_component_payload(self, payload: Any) -> Optional[Dict[str, np.ndarray]]:
+        """Parse artifact payloads into aligned component arrays."""
+
+        if isinstance(payload, dict):
+            alias_map = {
+                'trend': ['trend', 'trend_signal', 'trend_component'],
+                'mean_reversion': ['mean_reversion', 'reversion', 'mean_reversion_signal'],
+                'momentum': ['momentum', 'momentum_signal'],
+                'returns': ['returns', 'future_returns', 'forward_returns', 'price_returns']
+            }
+
+            components: Dict[str, np.ndarray] = {}
+            for key, candidates in alias_map.items():
+                array = self._extract_array_from_candidates(payload, candidates)
+                if array is not None:
+                    components[key] = array
+
+            return self._finalize_component_data(components)
+
+        if hasattr(payload, 'to_dict'):
+            try:
+                return self._parse_signal_component_payload(payload.to_dict())
+            except Exception:
+                return None
+
+        return None
+
+    def _extract_array_from_candidates(
+        self,
+        source: Dict[str, Any],
+        candidates: List[str]
+    ) -> Optional[np.ndarray]:
+        """Extract first available numpy array for the provided candidate keys."""
+
+        for candidate in candidates:
+            if candidate in source:
+                array = self._convert_to_numpy(source[candidate])
+                if array is not None:
+                    return array
+        return None
+
+    def _convert_to_numpy(self, values: Any) -> Optional[np.ndarray]:
+        """Convert supported data structures to 1D numpy arrays."""
+
+        if values is None:
+            return None
+
+        if isinstance(values, np.ndarray):
+            array = values.astype(float)
+        elif isinstance(values, (list, tuple)):
+            array = np.asarray(values, dtype=float)
+        elif hasattr(values, 'values'):
+            array = np.asarray(values.values if hasattr(values, 'values') else values, dtype=float)
+        else:
+            return None
+
+        if array.ndim == 0:
+            return None
+        if array.ndim > 1:
+            array = array.reshape(-1)
+
+        if len(array) == 0:
+            return None
+
+        return array.astype(float)
+
+    def _generate_signal_weight_candidates(self, n_samples: int = 64) -> List[Dict[str, float]]:
+        """Generate candidate weight combinations for optimization search."""
+
+        rng_seed = int(self.config.get('signal_weight_seed', 42))
+        rng = np.random.default_rng(rng_seed)
+
+        candidates: List[Dict[str, float]] = [
+            {'trend': 1 / 3, 'mean_reversion': 1 / 3, 'momentum': 1 / 3},
+            {'trend': 0.5, 'mean_reversion': 0.3, 'momentum': 0.2},
+            {'trend': 0.4, 'mean_reversion': 0.2, 'momentum': 0.4},
+            {'trend': 0.2, 'mean_reversion': 0.5, 'momentum': 0.3},
+            {'trend': 0.25, 'mean_reversion': 0.25, 'momentum': 0.5},
+        ]
+
+        dirichlet_alpha = np.array(self.config.get(
+            'signal_weight_dirichlet_alpha', [1.2, 1.2, 1.2]
+        ), dtype=float)
+
+        for _ in range(max(0, n_samples - len(candidates))):
+            sample = rng.dirichlet(dirichlet_alpha)
+            candidates.append({
+                'trend': float(sample[0]),
+                'mean_reversion': float(sample[1]),
+                'momentum': float(sample[2])
+            })
+
+        return candidates
+
+    def _score_signal_weight_set(
+        self,
+        weights: Dict[str, float],
+        components: Dict[str, np.ndarray],
+        activation_threshold: float
+    ) -> float:
+        """Evaluate weight combination using Sharpe ratio-style metric."""
+
+        trend = components['trend']
+        mean_rev = components['mean_reversion']
+        momentum = components['momentum']
+        returns = components['returns']
+
+        combined_signal = (
+            weights['trend'] * trend +
+            weights['mean_reversion'] * mean_rev +
+            weights['momentum'] * momentum
+        )
+
+        signal_mask = np.abs(combined_signal) > activation_threshold
+        positions = np.where(signal_mask, np.sign(combined_signal), 0.0)
+
+        if len(positions) != len(returns):
+            min_len = min(len(positions), len(returns))
+            positions = positions[:min_len]
+            returns = returns[:min_len]
+
+        shifted_positions = np.roll(positions, 1)
+        shifted_positions[0] = 0.0
+
+        strategy_returns = shifted_positions * returns
+
+        volatility = float(np.std(strategy_returns))
+        if volatility <= 0 or not math.isfinite(volatility):
+            return float('-inf')
+
+        mean_return = float(np.mean(strategy_returns))
+        if not math.isfinite(mean_return):
+            return float('-inf')
+
+        sharpe_ratio = (mean_return / volatility) * math.sqrt(252)
+
+        if not math.isfinite(sharpe_ratio):
+            return float('-inf')
+
+        concentration_penalty = max(weights.values())
+        penalty = max(0.0, concentration_penalty - 0.7) * 2.0
+
+        return float(sharpe_ratio - penalty)
+
+    def _normalize_signal_weight_dict(self, weights: Dict[str, float]) -> Dict[str, float]:
+        """Normalize weight dictionary to ensure positive values sum to one."""
+
+        trend = max(0.0, float(weights.get('trend', 0.0)))
+        mean_rev = max(0.0, float(weights.get('mean_reversion', 0.0)))
+        momentum = max(0.0, float(weights.get('momentum', 0.0)))
+
+        vector = np.array([trend, mean_rev, momentum], dtype=float)
+        if vector.sum() <= 0:
+            return {'trend': 1 / 3, 'mean_reversion': 1 / 3, 'momentum': 1 / 3}
+
+        normalized = vector / vector.sum()
+        return {
+            'trend': float(normalized[0]),
+            'mean_reversion': float(normalized[1]),
+            'momentum': float(normalized[2])
+        }
+
+    def _sanitize_identifier(self, value: str, fallback: str = "unknown") -> str:
+        """Sanitize identifiers for filesystem usage."""
+
+        if not value:
+            return fallback
+
+        sanitized = ''.join(
+            ch if ch.isalnum() or ch in {'-', '_'} else '_'
+            for ch in str(value)
+        )
+
+        return sanitized or fallback
+
+    def _persist_signal_weight_result(self, result: Dict[str, Any]) -> None:
+        """Persist optimized signal weights for downstream consumers."""
+
+        try:
+            payload = {
+                'weights': result.get('weights', {}),
+                'score': result.get('score'),
+                'threshold': result.get('threshold'),
+                'n_candidates': result.get('n_candidates'),
+                'generated_at': datetime.utcnow().isoformat()
+            }
+            self.artifact_manager.save_artifact(
+                payload,
+                base_name='final_signal_weight_optimization',
+                extension='.json',
+                directory='artifacts'
+            )
+        except Exception as exc:
+            self.logger.debug("Failed to persist signal weight optimization result: %s", exc)
+
+    def _persist_final_parameters_config(
+        self,
+        optimization_results: Dict[str, Any],
+        exchange: str,
+        symbol: str
+    ) -> Optional[str]:
+        """Persist optimization results to a timestamped config file."""
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            sanitized_exchange = self._sanitize_identifier(exchange.upper(), "EXCHANGE")
+            sanitized_symbol = self._sanitize_identifier(symbol.upper(), "TOKEN")
+
+            directory = Path(self.persistent_config_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+
+            file_name = f"{sanitized_exchange}_{sanitized_symbol}_{timestamp}.json"
+            file_path = directory / file_name
+
+            payload = {
+                'metadata': {
+                    'exchange': exchange,
+                    'token': symbol,
+                    'generated_at': datetime.utcnow().isoformat(),
+                    'source': 'final_parameters_optimization',
+                },
+                'parameters': optimization_results,
+            }
+
+            with file_path.open('w', encoding='utf-8') as handle:
+                json.dump(payload, handle, indent=2, default=str)
+
+            self.logger.info(
+                "💾 Persistent final-parameter config saved: %s",
+                file_path.as_posix(),
+            )
+
+            return file_path.as_posix()
+
+        except Exception as exc:
+            self.logger.error(
+                "❌ Failed to persist final parameter config for %s/%s: %s",
+                exchange,
+                symbol,
+                exc,
+            )
+            self.logger.debug("Persistence error details", exc_info=True)
+            return None
+
+    def load_latest_persisted_final_parameters(
+        self,
+        exchange: str,
+        symbol: str
+    ) -> Optional[Dict[str, Any]]:
+        """Load the most recent persisted final-parameter configuration."""
+
+        directory = Path(self.persistent_config_dir)
+        if not directory.exists():
+            self.logger.info(
+                "ℹ️ No persisted final-parameter configs found at %s",
+                directory.as_posix(),
+            )
+            return None
+
+        sanitized_exchange = self._sanitize_identifier(exchange.upper(), "EXCHANGE")
+        sanitized_symbol = self._sanitize_identifier(symbol.upper(), "TOKEN")
+        pattern = f"{sanitized_exchange}_{sanitized_symbol}_*.json"
+
+        candidates = sorted(directory.glob(pattern))
+        if not candidates:
+            self.logger.info(
+                "ℹ️ No persisted configs matching %s for %s/%s",
+                pattern,
+                exchange,
+                symbol,
+            )
+            return None
+
+        latest_file = max(candidates, key=lambda path: path.stat().st_mtime)
+
+        try:
+            with latest_file.open('r', encoding='utf-8') as handle:
+                payload = json.load(handle)
+
+            payload.setdefault('metadata', {})['file_path'] = latest_file.as_posix()
+
+            self.logger.info(
+                "📄 Loaded persisted final-parameter config: %s",
+                latest_file.as_posix(),
+            )
+
+            return payload
+
+        except Exception as exc:
+            self.logger.error(
+                "❌ Failed to load persisted config %s: %s",
+                latest_file.as_posix(),
+                exc,
+            )
+            self.logger.debug("Loading error details", exc_info=True)
+            return None
 
     def _evaluate_turnover_cost_penalty_params(self, params: Dict[str, Any],
                                              calibration_results: Dict[str, Any]) -> float:
@@ -2760,65 +3346,68 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
-        if 'intensity_decay_factor' in params:
-            decay = params['intensity_decay_factor']
-            if 0.9 <= decay <= 0.95:
-                score += 0.2
-            elif 0.85 <= decay <= 0.99:
-                score += 0.15
-            else:
-                score += 0.1
-        
+
         return score
     
     def _evaluate_entry_timing_optimization_params(self, params: Dict[str, Any], 
                                                  calibration_results: Dict[str, Any]) -> float:
         """Evaluate entry timing optimization parameters for updated Tactician models."""
         score = 0.0
-        
+
         if 'entry_timing_range' in params:
             range_val = params['entry_timing_range']
-            # Optimal range is around 0.003-0.004 (0.3%-0.4%)
-            if 0.003 <= range_val <= 0.004:
-                score += 0.3
-            elif 0.002 <= range_val <= 0.004:
-                score += 0.2
-            else:
-                score += 0.1
-        
+            target_range = float(self.config.get('entry_timing_target_range', 0.0035))
+            max_deviation = float(self.config.get('entry_timing_max_deviation', 0.0025))
+            deviation = abs(range_val - target_range)
+            normalized = max(0.0, 1.0 - deviation / max(max_deviation, 1e-6))
+            score += 0.35 * normalized
+
         if 'optimal_entry_reward_weight' in params and 'early_entry_penalty_weight' in params:
             reward_weight = params['optimal_entry_reward_weight']
             penalty_weight = params['early_entry_penalty_weight']
-            # Reward should be higher than penalty for optimal timing
-            if reward_weight > penalty_weight and reward_weight >= 0.4:
-                score += 0.25
+            margin = reward_weight - penalty_weight
+            desired_margin = float(self.config.get('entry_reward_margin_target', 0.15))
+            max_margin = float(self.config.get('entry_reward_margin_max', 0.4))
+            if margin <= 0:
+                score += 0.05 * max(0.0, 1.0 + margin / max(max_margin, 1e-6))
             else:
-                score += 0.15
-        
+                normalized_margin = min(1.0, margin / max(max_margin, 1e-6))
+                target_bonus = min(1.0, margin / max(desired_margin, 1e-6))
+                score += 0.15 * normalized_margin + 0.1 * target_bonus
+
         if 'directional_accuracy_threshold' in params:
             threshold = params['directional_accuracy_threshold']
-            if 0.6 <= threshold <= 0.7:
-                score += 0.2
-            else:
-                score += 0.1
-        
+            target_accuracy = float(self.config.get('directional_accuracy_target', 0.65))
+            tolerance = float(self.config.get('directional_accuracy_tolerance', 0.2))
+            deviation = abs(threshold - target_accuracy)
+            normalized = max(0.0, 1.0 - deviation / max(tolerance, 1e-6))
+            score += 0.2 * normalized
+
         return score
     
     def _evaluate_confidence_aware_ensemble_params(self, params: Dict[str, Any], 
                                                  calibration_results: Dict[str, Any]) -> float:
         """Evaluate confidence-aware ensemble parameters for updated models."""
         score = 0.0
-        
+
         if 'confidence_threshold_entry' in params and 'confidence_threshold_exit' in params:
             entry_thresh = params['confidence_threshold_entry']
             exit_thresh = params['confidence_threshold_exit']
-            # Entry threshold should typically be higher than exit threshold
-            if entry_thresh > exit_thresh and 0.65 <= entry_thresh <= 0.8:
-                score += 0.3
+            entry_target = float(calibration_results.get(
+                'confidence_ensemble_entry_target',
+                self.config.get('confidence_ensemble_entry_target', 0.72)
+            ))
+            entry_band = float(calibration_results.get(
+                'confidence_ensemble_entry_band',
+                self.config.get('confidence_ensemble_entry_band', 0.12)
+            ))
+            entry_band = max(entry_band, 1e-4)
+            if entry_thresh > exit_thresh:
+                entry_deviation = abs(entry_thresh - entry_target)
+                score += 0.3 * max(0.0, 1.0 - entry_deviation / entry_band)
             else:
-                score += 0.15
-        
+                score += 0.1
+
         if 'confidence_weight_tactician' in params and 'confidence_weight_analyst' in params:
             tactician_weight = params['confidence_weight_tactician']
             analyst_weight = params['confidence_weight_analyst']
@@ -2827,14 +3416,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.25
             else:
                 score += 0.15
-        
+
         if 'ensemble_confidence_threshold' in params:
             threshold = params['ensemble_confidence_threshold']
-            if 0.7 <= threshold <= 0.85:
-                score += 0.2
-            else:
-                score += 0.1
-        
+            ensemble_target = float(calibration_results.get(
+                'ensemble_confidence_target',
+                self.config.get('ensemble_confidence_target', 0.75)
+            ))
+            ensemble_band = float(calibration_results.get(
+                'ensemble_confidence_band',
+                self.config.get('ensemble_confidence_band', 0.1)
+            ))
+            ensemble_band = max(ensemble_band, 1e-4)
+            deviation = abs(threshold - ensemble_target)
+            score += 0.2 * max(0.0, 1.0 - deviation / ensemble_band)
+
         return score
     
     def _evaluate_model_specific_params(self, params: Dict[str, Any], 
@@ -3053,8 +3649,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return 0.5
 
     async def save_optimization_results(self, optimization_results: Dict[str, Any],
-                                      symbol: str, exchange: str, data_dir: str) -> None:
-        """Save optimization results."""
+                                      symbol: str, exchange: str, data_dir: str) -> Optional[str]:
+        """Save optimization results and persist them for live trading."""
+        persistent_path: Optional[str] = None
         try:
             self.logger.info(f"💾 Saving optimization results for {exchange}_{symbol}")
             optimization_dir = f'generated/backtesting/optimization_results'
@@ -3079,10 +3676,25 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info(f'📊 Pickle file size: {pickle_size:.1f} KB')
             self.logger.info(f'📊 JSON file size: {json_size:.1f} KB')
             self.logger.info(f'📁 Files saved to: {optimization_dir}')
-            
+
         except Exception as e:
             self.logger.error(f'❌ Error saving optimization results: {e}')
             self.logger.exception("Full traceback:")
+
+        try:
+            persistent_path = self._persist_final_parameters_config(
+                optimization_results,
+                exchange,
+                symbol,
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.error(
+                "❌ Unexpected error while persisting final parameters: %s",
+                exc,
+            )
+            self.logger.debug("Persistence traceback", exc_info=True)
+
+        return persistent_path
     
     async def load_optimization_results(self, symbol: str, exchange: str, 
                                       data_dir: str) -> Optional[Dict[str, Any]]:
@@ -3585,7 +4197,12 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
         logger.warning('⚠️ Optimization results validation failed, using fallback parameters')
     
     # Save results
-    await optimizer.save_optimization_results(optimization_results, symbol, exchange, data_dir)
+    persistent_path = await optimizer.save_optimization_results(
+        optimization_results,
+        symbol,
+        exchange,
+        data_dir,
+    )
     
     # Generate report
     start_time = datetime.now()
@@ -3594,7 +4211,8 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
     result = {
         'final_parameters': optimization_results,
         'optimization_report': report,
-        'validation_passed': validation_passed
+        'validation_passed': validation_passed,
+        'persistent_config_path': persistent_path,
     }
     
     # Add non-linear optimization summary if used

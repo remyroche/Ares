@@ -196,7 +196,8 @@ class BayesianTreeSearch:
             if iteration % 10 == 0:
                 try:
                     optimize_memory()
-                except:
+                except (RuntimeError, OSError, AttributeError) as e:
+                    # Silently handle memory optimization failures
                     pass
         
         tprint_success(f"✅ Bayesian search completed - Best score: {self.best_score:.4f}")

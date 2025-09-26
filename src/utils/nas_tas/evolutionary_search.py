@@ -204,7 +204,8 @@ class EvolutionaryTreeSearch:
             if generation % 5 == 0:
                 try:
                     optimize_memory()
-                except:
+                except (RuntimeError, OSError, AttributeError) as e:
+                    # Silently handle memory optimization failures
                     pass
         
         tprint_success(f"✅ Evolution completed - Best score: {self.best_score:.4f}")

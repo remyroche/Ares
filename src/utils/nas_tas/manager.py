@@ -195,8 +195,9 @@ class UnifiedComponentManager:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during cleanup in destructor
+        except (AttributeError, RuntimeError, OSError) as e:
+            # Silently handle cleanup errors in destructor (object may be partially destroyed)
+            pass
 
 
 # Convenience functions for easy access to unified components

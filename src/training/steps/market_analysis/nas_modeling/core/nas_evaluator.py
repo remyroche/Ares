@@ -1091,8 +1091,9 @@ class LegacyNASEvaluator:
         """Destructor."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during destruction
+        except (AttributeError, RuntimeError, OSError) as e:
+            # Silently handle cleanup errors in destructor (object may be partially destroyed)
+            pass
     
     def evaluate_with_enhanced_utilities(self, 
                                        architecture: Dict[str, Any], 

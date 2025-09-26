@@ -4763,7 +4763,8 @@ class EnhancedSRDetector:
                     if len(set(labels)) > 1:
                         score = silhouette_score(level_data, labels)
                         return score
-                except:
+                except (ImportError, ValueError, RuntimeError) as e:
+                    # Silently handle sklearn import issues, invalid data, or computation errors
                     pass
 
             # Fallback metric: balance between clusters and noise

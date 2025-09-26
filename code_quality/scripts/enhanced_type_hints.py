@@ -237,7 +237,8 @@ class TypeHintEnhancer(ast.NodeTransformer):
                         arg.annotation = ast.parse(type_hint).body[0].value
                         self.changes_made.append(f"Added type hint {type_hint} for parameter {arg.arg}")
                         self._add_imports_for_type(type_hint)
-                    except:
+                    except (SyntaxError, ValueError, AttributeError) as e:
+                        # Silently handle invalid type hint syntax or parsing errors
                         pass
 
         # Add return type hint
@@ -248,7 +249,8 @@ class TypeHintEnhancer(ast.NodeTransformer):
                     node.returns = ast.parse(return_type).body[0].value
                     self.changes_made.append(f"Added return type {return_type} for {node.name}")
                     self._add_imports_for_type(return_type)
-                except:
+                except (SyntaxError, ValueError, AttributeError) as e:
+                    # Silently handle invalid return type syntax or parsing errors
                     pass
 
         return node

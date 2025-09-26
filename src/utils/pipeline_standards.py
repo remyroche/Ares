@@ -31,6 +31,15 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
+
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_warning, tprint_debug
+except ImportError:
+    def tprint_warning(msg):
+        logging.warning(msg)
+    def tprint_debug(msg):
+        logging.debug(msg)
 import time
 
 project_root = Path(__file__).parent.parent.parent
@@ -495,7 +504,9 @@ class PipelineStandards:
                 time_diff = abs((timestamps - now).dt.total_seconds())
                 timeliness = 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)
                 scores.append(timeliness)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate timeliness score: {e}")
+                tprint_debug("Using default timeliness score of 0.5")
                 scores.append(0.5)
         if context == 'klines':
             required_cols = ['open', 'high', 'low', 'close', 'volume']

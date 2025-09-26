@@ -30,6 +30,7 @@ from src.utils.validation.unified_framework import (
     with_tracing_span
 )
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 import pandas as pd
 import logging
 import numpy as np
@@ -151,8 +152,16 @@ class DataPreparation:
                     dataframes.append(df)
                     logger.debug(f"✅ Loaded {file_path.name}: {len(df)} rows")
 
+            except (OSError, ValueError, TypeError, KeyError, pd.errors.EmptyDataError, 
+                    FileNotFoundError, PermissionError, pd.errors.ParserError, MemoryError) as e:
+                error_msg = f"Error loading {file_path.name}: {type(e).__name__}: {e}"
+                logger.exception(f"❌ {error_msg}")
+                tprint_error(f"Data loading failed for {file_path.name}: {error_msg}")
+                continue
             except Exception as e:
-                logger.exception(f"❌ Error loading {file_path.name}: {e}")
+                error_msg = f"Unexpected error loading {file_path.name}: {type(e).__name__}: {e}"
+                logger.exception(f"❌ {error_msg}")
+                tprint_error(f"Unexpected data loading error for {file_path.name}: {error_msg}")
                 continue
 
         if not dataframes:
@@ -244,10 +253,15 @@ class DataPreparation:
                         f"Invalid timestamp format in {file_path.name}",
                     )
 
+            except (OSError, ValueError, TypeError, KeyError, pd.errors.EmptyDataError, 
+                    FileNotFoundError, PermissionError, pd.errors.ParserError, MemoryError) as e:
+                error_msg = f"Error reading {file_path.name}: {type(e).__name__}: {e}"
+                preparation_result["issues"].append(error_msg)
+                tprint_error(f"Data preparation validation failed for {file_path.name}: {error_msg}")
             except Exception as e:
-                preparation_result["issues"].append(
-                    f"Error reading {file_path.name}: {e}",
-                )
+                error_msg = f"Unexpected error reading {file_path.name}: {type(e).__name__}: {e}"
+                preparation_result["issues"].append(error_msg)
+                tprint_error(f"Unexpected data preparation error for {file_path.name}: {error_msg}")
 
         if preparation_result["ready"]:
             logger.info("✅ Data preparation for step1_5 completed successfully")
@@ -336,8 +350,15 @@ class DataPreparation:
             logger.info(f"✅ Saved {timeframe} data: {output_path} ({len(df)} rows)")
             return output_path
 
+        except (OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError, MemoryError) as e:
+            error_msg = f"Error saving {timeframe} data: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Data saving failed for {timeframe}: {error_msg}")
+            return None
         except Exception as e:
-            logger.exception(f"❌ Error saving {timeframe} data: {e}")
+            error_msg = f"Unexpected error saving {timeframe} data: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unexpected data saving error for {timeframe}: {error_msg}")
             return None
 
     # @optimize_memory_usage - removed
@@ -393,8 +414,15 @@ class DataPreparation:
             )
             return dataset_dir
 
+        except (OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError, MemoryError) as e:
+            error_msg = f"Error creating partitioned dataset: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Partitioned dataset creation failed: {error_msg}")
+            return None
         except Exception as e:
-            logger.exception(f"❌ Error creating partitioned dataset: {e}")
+            error_msg = f"Unexpected error creating partitioned dataset: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unexpected partitioned dataset creation error: {error_msg}")
             return None
 
     @validates()
@@ -466,8 +494,16 @@ class DataPreparation:
             
             return result
             
+        except (OSError, ValueError, TypeError, KeyError, MemoryError, ImportError, AttributeError) as e:
+            error_msg = f"Error using unified resampler: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unified resampler failed: {error_msg}")
+            # Fallback to original implementation if needed
+            return self._fallback_resample_all_timeframes(symbol, exchange, timeframes, start_date, end_date, create_partitions)
         except Exception as e:
-            logger.exception(f"❌ Error using unified resampler: {e}")
+            error_msg = f"Unexpected error using unified resampler: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unexpected unified resampler error: {error_msg}")
             # Fallback to original implementation if needed
             return self._fallback_resample_all_timeframes(symbol, exchange, timeframes, start_date, end_date, create_partitions)
     
@@ -543,10 +579,19 @@ class DataPreparation:
                     f"✅ Completed {timeframe} resampling: {len(resampled_df)} rows",
                 )
 
-            except Exception as e:
-                logger.exception(f"❌ Error resampling to {timeframe}: {e}")
+            except (ValueError, TypeError, KeyError, MemoryError, pd.errors.EmptyDataError) as e:
+                error_msg = f"Error resampling to {timeframe}: {type(e).__name__}: {e}"
+                logger.exception(f"❌ {error_msg}")
+                tprint_error(f"Resampling failed for {timeframe}: {error_msg}")
                 results["success"] = False
-                results["error"] = str(e)
+                results["error"] = error_msg
+                break
+            except Exception as e:
+                error_msg = f"Unexpected error resampling to {timeframe}: {type(e).__name__}: {e}"
+                logger.exception(f"❌ {error_msg}")
+                tprint_error(f"Unexpected resampling error for {timeframe}: {error_msg}")
+                results["success"] = False
+                results["error"] = error_msg
                 break
 
         resampling_end = datetime.now()
@@ -685,8 +730,15 @@ class DataPreparation:
             )
             return validation_result
 
+        except (OSError, ValueError, TypeError, KeyError, pd.errors.EmptyDataError, 
+                FileNotFoundError, PermissionError, pd.errors.ParserError, MemoryError) as e:
+            error_msg = f"Error reading file: {type(e).__name__}: {e}"
+            tprint_error(f"Data validation failed - file read error: {error_msg}")
+            return {"valid": False, "error": error_msg}
         except Exception as e:
-            return {"valid": False, "error": f"Error reading file: {e}"}
+            error_msg = f"Unexpected error reading file: {type(e).__name__}: {e}"
+            tprint_error(f"Data validation failed - unexpected file read error: {error_msg}")
+            return {"valid": False, "error": error_msg}
 
     @validates()
     # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=0)
@@ -749,8 +801,15 @@ class DataPreparation:
             logger.info(f"✅ Resampled to {timeframe}: {len(resampled)} rows")
             return resampled
 
+        except (ValueError, TypeError, KeyError, pd.errors.EmptyDataError, MemoryError) as e:
+            error_msg = f"Error resampling to {timeframe}: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Timeframe resampling failed for {timeframe}: {error_msg}")
+            return pd.DataFrame()
         except Exception as e:
-            logger.exception(f"❌ Error resampling to {timeframe}: {e}")
+            error_msg = f"Unexpected error resampling to {timeframe}: {type(e).__name__}: {e}"
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unexpected timeframe resampling error for {timeframe}: {error_msg}")
             return pd.DataFrame()
 
     @validates()
@@ -851,8 +910,15 @@ class DataPreparation:
                 try:
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
-                except:
-                    report += f"• {timeframe}: ❌ Corrupted\n"
+                except (OSError, ValueError, TypeError, KeyError, pd.errors.EmptyDataError, 
+                        FileNotFoundError, PermissionError, pd.errors.ParserError, MemoryError) as e:
+                    error_msg = f"Error reading {timeframe} data: {type(e).__name__}: {e}"
+                    tprint_error(f"Report generation failed for {timeframe}: {error_msg}")
+                    report += f"• {timeframe}: ❌ Corrupted ({type(e).__name__})\n"
+                except Exception as e:
+                    error_msg = f"Unexpected error reading {timeframe} data: {type(e).__name__}: {e}"
+                    tprint_error(f"Unexpected report generation error for {timeframe}: {error_msg}")
+                    report += f"• {timeframe}: ❌ Corrupted (Unexpected: {type(e).__name__})\n"
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
@@ -957,8 +1023,16 @@ class DataPreparation:
                 f"✅ Created 1m consolidated data: {output_path} ({len(klines_df)} rows)",
             )
 
+        except (OSError, ValueError, TypeError, KeyError, pd.errors.EmptyDataError, 
+                FileNotFoundError, PermissionError, pd.errors.ParserError, MemoryError) as e:
+            error_msg = f"Error creating 1m consolidated data: {type(e).__name__}: {e}"
+            consolidation_result["error"] = error_msg
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"1m data consolidation failed: {error_msg}")
         except Exception as e:
-            consolidation_result["error"] = str(e)
-            logger.exception(f"❌ Error creating 1m consolidated data: {e}")
+            error_msg = f"Unexpected error creating 1m consolidated data: {type(e).__name__}: {e}"
+            consolidation_result["error"] = error_msg
+            logger.exception(f"❌ {error_msg}")
+            tprint_error(f"Unexpected 1m data consolidation error: {error_msg}")
 
         return consolidation_result

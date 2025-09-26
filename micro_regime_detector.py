@@ -1207,28 +1207,1169 @@ class MicroRegimeDetector:
     
     # Placeholder methods for additional detection types
     def _detect_enhanced_reversals(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Enhanced reversal detection - placeholder for full implementation."""
-        return []
+        """Enhanced reversal detection with RSI divergence, momentum confirmation, and volume analysis."""
+        reversals = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            rsi = data['rsi']
+            momentum_5 = data['momentum_5']
+            momentum_10 = data['momentum_10']
+            macd_line = data['macd_line']
+            macd_signal = data['macd_signal']
+            
+            # Multiple reversal signals
+            signals = []
+            
+            # RSI divergence detection
+            rsi_divergence = self._detect_rsi_divergence(price, rsi)
+            signals.append(('rsi_divergence', rsi_divergence))
+            
+            # RSI extreme levels
+            rsi_oversold = rsi < self.reversal_params['rsi_threshold']
+            rsi_overbought = rsi > (100 - self.reversal_params['rsi_threshold'])
+            rsi_extreme = rsi_oversold | rsi_overbought
+            signals.append(('rsi_extreme', rsi_extreme))
+            
+            # Momentum reversal
+            momentum_reversal = self._detect_momentum_reversal(momentum_5, momentum_10)
+            signals.append(('momentum_reversal', momentum_reversal))
+            
+            # MACD signal line crossover
+            macd_crossover = self._detect_macd_crossover(macd_line, macd_signal)
+            signals.append(('macd_crossover', macd_crossover))
+            
+            # Volume confirmation
+            volume_confirmation = data['volume_ratio'] > self.reversal_params['volume_confirmation']
+            signals.append(('volume_confirmation', volume_confirmation))
+            
+            # Combined reversal signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find reversal periods
+            reversal_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in reversal_periods:
+                if end_idx - start_idx >= 3:  # Minimum duration for reversal
+                    
+                    # Analyze reversal period
+                    reversal_data = self._analyze_reversal_period(data, start_idx, end_idx)
+                    
+                    if reversal_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine reversal direction
+                        reversal_direction = self._determine_reversal_direction(
+                            reversal_data['price_data'], reversal_data['momentum_data']
+                        )
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_reversal_risk_metrics(reversal_data)
+                        
+                        reversal_regime = MicroRegimeDetectionResult(
+                            regime_type=MicroRegimeType.REVERSAL,
+                            confidence=reversal_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=reversal_data['characteristics'],
+                            signal_strength=reversal_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=reversal_data['transition_probability'],
+                            feature_importance=reversal_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'reversal_direction': reversal_direction,
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        reversals.append(reversal_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced reversal detection failed: {e}")
+        
+        return reversals
     
     def _detect_enhanced_accelerations(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Enhanced acceleration detection - placeholder for full implementation."""
-        return []
+        """Enhanced acceleration/deceleration detection using price derivatives and momentum indicators."""
+        accelerations = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            price_velocity = data['price_velocity']
+            price_acceleration = data['price_acceleration']
+            price_jerk = data['price_jerk']
+            momentum_5 = data['momentum_5']
+            momentum_10 = data['momentum_10']
+            
+            # Multiple acceleration signals
+            signals = []
+            
+            # Price acceleration detection
+            acceleration_signal = abs(price_acceleration) > self.acceleration_params['momentum_acceleration']
+            signals.append(('price_acceleration', acceleration_signal))
+            
+            # Velocity trend detection
+            velocity_trend = self._detect_velocity_trend(price_velocity)
+            signals.append(('velocity_trend', velocity_trend))
+            
+            # Momentum acceleration
+            momentum_acceleration = self._detect_momentum_acceleration(momentum_5, momentum_10)
+            signals.append(('momentum_acceleration', momentum_acceleration))
+            
+            # Volume trend confirmation
+            volume_trend = data['volume_ratio'] > self.acceleration_params['volume_trend']
+            signals.append(('volume_trend', volume_trend))
+            
+            # Jerk detection (third derivative)
+            jerk_signal = abs(price_jerk) > abs(price_jerk).rolling(20).mean() * 2
+            signals.append(('jerk_signal', jerk_signal))
+            
+            # Combined acceleration signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find acceleration periods
+            acceleration_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in acceleration_periods:
+                if end_idx - start_idx >= self.acceleration_params['duration_threshold']:
+                    
+                    # Analyze acceleration period
+                    acceleration_data = self._analyze_acceleration_period(data, start_idx, end_idx)
+                    
+                    if acceleration_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine acceleration type
+                        acceleration_type = self._determine_acceleration_type(
+                            acceleration_data['velocity_data'], acceleration_data['acceleration_data']
+                        )
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_acceleration_risk_metrics(acceleration_data)
+                        
+                        # Determine regime type (acceleration or deceleration)
+                        regime_type = MicroRegimeType.ACCELERATION if acceleration_data['acceleration_strength'] > 0 else MicroRegimeType.DECELERATION
+                        
+                        acceleration_regime = MicroRegimeDetectionResult(
+                            regime_type=regime_type,
+                            confidence=acceleration_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=acceleration_data['characteristics'],
+                            signal_strength=acceleration_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=acceleration_data['transition_probability'],
+                            feature_importance=acceleration_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'acceleration_type': acceleration_type,
+                                'acceleration_strength': acceleration_data['acceleration_strength'],
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        accelerations.append(acceleration_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced acceleration detection failed: {e}")
+        
+        return accelerations
     
     def _detect_enhanced_volume_spikes(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Enhanced volume spike detection - placeholder for full implementation."""
-        return []
+        """Enhanced volume spike detection with isolation analysis and price confirmation."""
+        volume_spikes = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            volume_ratio = data['volume_ratio']
+            obv = data['obv']
+            
+            # Multiple volume spike signals
+            signals = []
+            
+            # Volume multiplier threshold
+            volume_spike_signal = volume_ratio > self.volume_spike_params['volume_multiplier']
+            signals.append(('volume_multiplier', volume_spike_signal))
+            
+            # Volume isolation analysis
+            volume_isolation = self._detect_volume_isolation(volume, volume_ratio)
+            signals.append(('volume_isolation', volume_isolation))
+            
+            # Price confirmation
+            price_confirmation = abs(returns) > self.volume_spike_params['price_confirmation']
+            signals.append(('price_confirmation', price_confirmation))
+            
+            # OBV divergence
+            obv_divergence = self._detect_obv_divergence(price, obv)
+            signals.append(('obv_divergence', obv_divergence))
+            
+            # Volume trend analysis
+            volume_trend = self._detect_volume_trend(volume)
+            signals.append(('volume_trend', volume_trend))
+            
+            # Combined volume spike signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find volume spike periods
+            spike_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in spike_periods:
+                if end_idx - start_idx >= self.volume_spike_params['duration_threshold']:
+                    
+                    # Analyze volume spike period
+                    spike_data = self._analyze_volume_spike_period(data, start_idx, end_idx)
+                    
+                    if spike_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine spike characteristics
+                        spike_type = self._classify_volume_spike_type(spike_data)
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_volume_spike_risk_metrics(spike_data)
+                        
+                        volume_spike_regime = MicroRegimeDetectionResult(
+                            regime_type=MicroRegimeType.VOLUME_SPIKE,
+                            confidence=spike_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=spike_data['characteristics'],
+                            signal_strength=spike_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=spike_data['transition_probability'],
+                            feature_importance=spike_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'spike_type': spike_type,
+                                'volume_multiplier': spike_data['volume_multiplier'],
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        volume_spikes.append(volume_spike_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced volume spike detection failed: {e}")
+        
+        return volume_spikes
     
     def _detect_enhanced_volatility_spikes(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Enhanced volatility spike detection - placeholder for full implementation."""
-        return []
+        """Enhanced volatility spike detection with statistical analysis and market impact assessment."""
+        volatility_spikes = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            volatility_20 = data['volatility_20']
+            volatility_50 = data['volatility_50']
+            atr = data['atr']
+            spread_estimate = data['spread_estimate']
+            price_impact = data['price_impact']
+            
+            # Multiple volatility spike signals
+            signals = []
+            
+            # Volatility multiplier threshold
+            vol_spike_signal = volatility_20 > volatility_50 * self.volatility_spike_params['volatility_multiplier']
+            signals.append(('volatility_multiplier', vol_spike_signal))
+            
+            # ATR-based volatility spike
+            atr_spike = atr > atr.rolling(20).mean() * 2
+            signals.append(('atr_spike', atr_spike))
+            
+            # Price impact threshold
+            price_impact_signal = price_impact > self.volatility_spike_params['price_impact_threshold']
+            signals.append(('price_impact', price_impact_signal))
+            
+            # Statistical volatility analysis
+            vol_statistical = self._detect_statistical_volatility_spike(volatility_20)
+            signals.append(('statistical_volatility', vol_statistical))
+            
+            # Spread expansion
+            spread_expansion = spread_estimate > spread_estimate.rolling(20).mean() * 1.5
+            signals.append(('spread_expansion', spread_expansion))
+            
+            # Volume-volatility relationship
+            vol_volume_relationship = self._detect_volatility_volume_relationship(volatility_20, volume)
+            signals.append(('vol_volume_relationship', vol_volume_relationship))
+            
+            # Combined volatility spike signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find volatility spike periods
+            spike_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in spike_periods:
+                if end_idx - start_idx >= self.volatility_spike_params['duration_threshold']:
+                    
+                    # Analyze volatility spike period
+                    spike_data = self._analyze_volatility_spike_period(data, start_idx, end_idx)
+                    
+                    if spike_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine spike characteristics
+                        spike_severity = self._classify_volatility_spike_severity(spike_data)
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_volatility_spike_risk_metrics(spike_data)
+                        
+                        volatility_spike_regime = MicroRegimeDetectionResult(
+                            regime_type=MicroRegimeType.VOLATILITY_SPIKE,
+                            confidence=spike_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=spike_data['characteristics'],
+                            signal_strength=spike_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=spike_data['transition_probability'],
+                            feature_importance=spike_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'spike_severity': spike_severity,
+                                'volatility_multiplier': spike_data['volatility_multiplier'],
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        volatility_spikes.append(volatility_spike_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced volatility spike detection failed: {e}")
+        
+        return volatility_spikes
     
     def _detect_momentum_shifts(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Detect momentum shifts - placeholder for full implementation."""
-        return []
+        """Detect momentum shifts using multiple momentum indicators and trend analysis."""
+        momentum_shifts = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            momentum_5 = data['momentum_5']
+            momentum_10 = data['momentum_10']
+            momentum_20 = data['momentum_20']
+            rsi = data['rsi']
+            macd_line = data['macd_line']
+            macd_signal = data['macd_signal']
+            macd_hist = data['macd_hist']
+            
+            # Multiple momentum shift signals
+            signals = []
+            
+            # Momentum crossover detection
+            momentum_crossover = self._detect_momentum_crossover(momentum_5, momentum_10, momentum_20)
+            signals.append(('momentum_crossover', momentum_crossover))
+            
+            # RSI momentum shift
+            rsi_momentum_shift = self._detect_rsi_momentum_shift(rsi)
+            signals.append(('rsi_momentum_shift', rsi_momentum_shift))
+            
+            # MACD momentum shift
+            macd_momentum_shift = self._detect_macd_momentum_shift(macd_line, macd_signal, macd_hist)
+            signals.append(('macd_momentum_shift', macd_momentum_shift))
+            
+            # Trend strength change
+            trend_strength_change = self._detect_trend_strength_change(price, returns)
+            signals.append(('trend_strength_change', trend_strength_change))
+            
+            # Volume momentum confirmation
+            volume_momentum = self._detect_volume_momentum(volume, returns)
+            signals.append(('volume_momentum', volume_momentum))
+            
+            # Combined momentum shift signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find momentum shift periods
+            shift_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in shift_periods:
+                if end_idx - start_idx >= 5:  # Minimum duration for momentum shift
+                    
+                    # Analyze momentum shift period
+                    shift_data = self._analyze_momentum_shift_period(data, start_idx, end_idx)
+                    
+                    if shift_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine shift characteristics
+                        shift_type = self._classify_momentum_shift_type(shift_data)
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_momentum_shift_risk_metrics(shift_data)
+                        
+                        momentum_shift_regime = MicroRegimeDetectionResult(
+                            regime_type=MicroRegimeType.MOMENTUM_SHIFT,
+                            confidence=shift_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=shift_data['characteristics'],
+                            signal_strength=shift_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=shift_data['transition_probability'],
+                            feature_importance=shift_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'shift_type': shift_type,
+                                'momentum_change': shift_data['momentum_change'],
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        momentum_shifts.append(momentum_shift_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Momentum shift detection failed: {e}")
+        
+        return momentum_shifts
     
     def _detect_liquidity_changes(self, data: Dict[str, Any]) -> List[MicroRegimeDetectionResult]:
-        """Detect liquidity changes - placeholder for full implementation."""
-        return []
+        """Detect liquidity changes using spread analysis and volume patterns."""
+        liquidity_changes = []
+        
+        try:
+            price = data['price']
+            returns = data['returns']
+            volume = data['volume']
+            spread_estimate = data['spread_estimate']
+            price_impact = data['price_impact']
+            obv = data['obv']
+            volume_ratio = data['volume_ratio']
+            
+            # Multiple liquidity change signals
+            signals = []
+            
+            # Spread change detection
+            spread_change = self._detect_spread_change(spread_estimate)
+            signals.append(('spread_change', spread_change))
+            
+            # Price impact analysis
+            price_impact_change = self._detect_price_impact_change(price_impact)
+            signals.append(('price_impact_change', price_impact_change))
+            
+            # Volume pattern analysis
+            volume_pattern = self._detect_volume_pattern_change(volume, volume_ratio)
+            signals.append(('volume_pattern', volume_pattern))
+            
+            # OBV trend analysis
+            obv_trend = self._detect_obv_trend_change(obv)
+            signals.append(('obv_trend', obv_trend))
+            
+            # Market depth analysis
+            market_depth = self._detect_market_depth_change(volume, returns)
+            signals.append(('market_depth', market_depth))
+            
+            # Liquidity stress indicators
+            liquidity_stress = self._detect_liquidity_stress(spread_estimate, volume, price_impact)
+            signals.append(('liquidity_stress', liquidity_stress))
+            
+            # Combined liquidity change signal
+            combined_signal = pd.Series(False, index=price.index)
+            for signal_name, signal in signals:
+                combined_signal |= signal
+            
+            # Find liquidity change periods
+            change_periods = self._find_contiguous_periods(combined_signal)
+            
+            for start_idx, end_idx in change_periods:
+                if end_idx - start_idx >= 5:  # Minimum duration for liquidity change
+                    
+                    # Analyze liquidity change period
+                    change_data = self._analyze_liquidity_change_period(data, start_idx, end_idx)
+                    
+                    if change_data['confidence'] >= self.config.detection_threshold:
+                        
+                        # Determine change characteristics
+                        change_type = self._classify_liquidity_change_type(change_data)
+                        
+                        # Calculate risk metrics
+                        risk_metrics = self._calculate_liquidity_change_risk_metrics(change_data)
+                        
+                        liquidity_change_regime = MicroRegimeDetectionResult(
+                            regime_type=MicroRegimeType.LIQUIDITY_CHANGE,
+                            confidence=change_data['confidence'],
+                            start_time=data['timestamp'][start_idx],
+                            end_time=data['timestamp'][end_idx],
+                            characteristics=change_data['characteristics'],
+                            signal_strength=change_data['signal_strength'],
+                            duration_minutes=(end_idx - start_idx) * 5,
+                            transition_probability=change_data['transition_probability'],
+                            feature_importance=change_data['feature_importance'],
+                            risk_metrics=risk_metrics,
+                            metadata={
+                                'change_type': change_type,
+                                'liquidity_change': change_data['liquidity_change'],
+                                'confirmation_signals': len([s for s in signals if s[1].iloc[start_idx:end_idx].any()]),
+                                'detection_method': 'enhanced_traditional'
+                            }
+                        )
+                        
+                        liquidity_changes.append(liquidity_change_regime)
+        
+        except Exception as e:
+            tprint_warning(f"⚠️ Liquidity change detection failed: {e}")
+        
+        return liquidity_changes
+    
+    # Helper methods for enhanced detection
+    def _detect_rsi_divergence(self, price: pd.Series, rsi: pd.Series) -> pd.Series:
+        """Detect RSI divergence with price."""
+        divergence = pd.Series(False, index=price.index)
+        
+        # Look for divergence over rolling windows
+        window = 20
+        for i in range(window, len(price)):
+            price_window = price.iloc[i-window:i]
+            rsi_window = rsi.iloc[i-window:i]
+            
+            # Price trend
+            price_trend = (price_window.iloc[-1] - price_window.iloc[0]) / price_window.iloc[0]
+            # RSI trend
+            rsi_trend = rsi_window.iloc[-1] - rsi_window.iloc[0]
+            
+            # Divergence: price and RSI moving in opposite directions
+            if abs(price_trend) > 0.02:  # Significant price movement
+                if (price_trend > 0 and rsi_trend < -5) or (price_trend < 0 and rsi_trend > 5):
+                    divergence.iloc[i] = True
+        
+        return divergence
+    
+    def _detect_momentum_reversal(self, momentum_5: pd.Series, momentum_10: pd.Series) -> pd.Series:
+        """Detect momentum reversal patterns."""
+        reversal = pd.Series(False, index=momentum_5.index)
+        
+        # Look for momentum crossover
+        momentum_diff = momentum_5 - momentum_10
+        crossover = momentum_diff.diff().abs() > 0.01
+        
+        # Look for momentum divergence
+        momentum_divergence = (momentum_5.diff() * momentum_10.diff()) < 0
+        
+        reversal = crossover | momentum_divergence
+        return reversal
+    
+    def _detect_macd_crossover(self, macd_line: pd.Series, macd_signal: pd.Series) -> pd.Series:
+        """Detect MACD signal line crossovers."""
+        crossover = pd.Series(False, index=macd_line.index)
+        
+        # MACD line crossing signal line
+        macd_diff = macd_line - macd_signal
+        crossover = macd_diff.diff().abs() > 0.001
+        
+        return crossover
+    
+    def _detect_velocity_trend(self, velocity: pd.Series) -> pd.Series:
+        """Detect velocity trend changes."""
+        trend = pd.Series(False, index=velocity.index)
+        
+        # Look for significant velocity changes
+        velocity_change = velocity.diff().abs() > velocity.rolling(20).std() * 2
+        trend = velocity_change
+        
+        return trend
+    
+    def _detect_momentum_acceleration(self, momentum_5: pd.Series, momentum_10: pd.Series) -> pd.Series:
+        """Detect momentum acceleration patterns."""
+        acceleration = pd.Series(False, index=momentum_5.index)
+        
+        # Look for acceleration in momentum
+        momentum_accel = momentum_5.diff() - momentum_10.diff()
+        acceleration = abs(momentum_accel) > momentum_accel.rolling(20).std() * 2
+        
+        return acceleration
+    
+    def _detect_volume_isolation(self, volume: pd.Series, volume_ratio: pd.Series) -> pd.Series:
+        """Detect volume isolation patterns."""
+        isolation = pd.Series(False, index=volume.index)
+        
+        # Volume spike that's isolated from surrounding periods
+        volume_spike = volume_ratio > 2.0
+        surrounding_low = (volume_ratio.shift(1) < 1.2) & (volume_ratio.shift(-1) < 1.2)
+        isolation = volume_spike & surrounding_low
+        
+        return isolation
+    
+    def _detect_obv_divergence(self, price: pd.Series, obv: pd.Series) -> pd.Series:
+        """Detect OBV divergence with price."""
+        divergence = pd.Series(False, index=price.index)
+        
+        # Look for divergence over rolling windows
+        window = 20
+        for i in range(window, len(price)):
+            price_window = price.iloc[i-window:i]
+            obv_window = obv.iloc[i-window:i]
+            
+            # Price trend
+            price_trend = (price_window.iloc[-1] - price_window.iloc[0]) / price_window.iloc[0]
+            # OBV trend
+            obv_trend = obv_window.iloc[-1] - obv_window.iloc[0]
+            
+            # Divergence: price and OBV moving in opposite directions
+            if abs(price_trend) > 0.02:  # Significant price movement
+                if (price_trend > 0 and obv_trend < 0) or (price_trend < 0 and obv_trend > 0):
+                    divergence.iloc[i] = True
+        
+        return divergence
+    
+    def _detect_volume_trend(self, volume: pd.Series) -> pd.Series:
+        """Detect volume trend changes."""
+        trend = pd.Series(False, index=volume.index)
+        
+        # Look for significant volume trend changes
+        volume_ma = volume.rolling(20).mean()
+        volume_trend = (volume - volume_ma) / volume_ma
+        trend = abs(volume_trend) > 0.5
+        
+        return trend
+    
+    def _detect_statistical_volatility_spike(self, volatility: pd.Series) -> pd.Series:
+        """Detect statistical volatility spikes."""
+        spike = pd.Series(False, index=volatility.index)
+        
+        # Z-score based detection
+        vol_mean = volatility.rolling(50).mean()
+        vol_std = volatility.rolling(50).std()
+        z_score = (volatility - vol_mean) / vol_std
+        spike = z_score > 2.0
+        
+        return spike
+    
+    def _detect_volatility_volume_relationship(self, volatility: pd.Series, volume: pd.Series) -> pd.Series:
+        """Detect volatility-volume relationship changes."""
+        relationship = pd.Series(False, index=volatility.index)
+        
+        # Correlation between volatility and volume
+        vol_vol_corr = volatility.rolling(20).corr(volume.rolling(20))
+        relationship = abs(vol_vol_corr) > 0.7
+        
+        return relationship
+    
+    def _detect_momentum_crossover(self, momentum_5: pd.Series, momentum_10: pd.Series, momentum_20: pd.Series) -> pd.Series:
+        """Detect momentum crossover patterns."""
+        crossover = pd.Series(False, index=momentum_5.index)
+        
+        # Multiple momentum crossovers
+        cross_5_10 = (momentum_5 - momentum_10).diff().abs() > 0.01
+        cross_10_20 = (momentum_10 - momentum_20).diff().abs() > 0.01
+        
+        crossover = cross_5_10 | cross_10_20
+        return crossover
+    
+    def _detect_rsi_momentum_shift(self, rsi: pd.Series) -> pd.Series:
+        """Detect RSI momentum shifts."""
+        shift = pd.Series(False, index=rsi.index)
+        
+        # RSI momentum change
+        rsi_momentum = rsi.diff()
+        shift = abs(rsi_momentum) > rsi_momentum.rolling(20).std() * 2
+        
+        return shift
+    
+    def _detect_macd_momentum_shift(self, macd_line: pd.Series, macd_signal: pd.Series, macd_hist: pd.Series) -> pd.Series:
+        """Detect MACD momentum shifts."""
+        shift = pd.Series(False, index=macd_line.index)
+        
+        # MACD histogram momentum change
+        hist_momentum = macd_hist.diff()
+        shift = abs(hist_momentum) > hist_momentum.rolling(20).std() * 2
+        
+        return shift
+    
+    def _detect_trend_strength_change(self, price: pd.Series, returns: pd.Series) -> pd.Series:
+        """Detect trend strength changes."""
+        change = pd.Series(False, index=price.index)
+        
+        # Trend strength using rolling correlation
+        trend_strength = returns.rolling(20).apply(lambda x: abs(x.corr(pd.Series(range(len(x))))))
+        change = trend_strength.diff().abs() > trend_strength.rolling(20).std() * 2
+        
+        return change
+    
+    def _detect_volume_momentum(self, volume: pd.Series, returns: pd.Series) -> pd.Series:
+        """Detect volume momentum patterns."""
+        momentum = pd.Series(False, index=volume.index)
+        
+        # Volume-return correlation momentum
+        vol_ret_corr = volume.rolling(20).corr(returns.rolling(20))
+        momentum = abs(vol_ret_corr.diff()) > 0.3
+        
+        return momentum
+    
+    def _detect_spread_change(self, spread: pd.Series) -> pd.Series:
+        """Detect spread changes."""
+        change = pd.Series(False, index=spread.index)
+        
+        # Significant spread changes
+        spread_change = spread.diff().abs() > spread.rolling(20).std() * 2
+        change = spread_change
+        
+        return change
+    
+    def _detect_price_impact_change(self, price_impact: pd.Series) -> pd.Series:
+        """Detect price impact changes."""
+        change = pd.Series(False, index=price_impact.index)
+        
+        # Significant price impact changes
+        impact_change = price_impact.diff().abs() > price_impact.rolling(20).std() * 2
+        change = impact_change
+        
+        return change
+    
+    def _detect_volume_pattern_change(self, volume: pd.Series, volume_ratio: pd.Series) -> pd.Series:
+        """Detect volume pattern changes."""
+        change = pd.Series(False, index=volume.index)
+        
+        # Volume pattern changes
+        volume_trend = volume_ratio.diff().abs() > 0.5
+        change = volume_trend
+        
+        return change
+    
+    def _detect_obv_trend_change(self, obv: pd.Series) -> pd.Series:
+        """Detect OBV trend changes."""
+        change = pd.Series(False, index=obv.index)
+        
+        # OBV trend changes
+        obv_trend = obv.diff().abs() > obv.rolling(20).std() * 2
+        change = obv_trend
+        
+        return change
+    
+    def _detect_market_depth_change(self, volume: pd.Series, returns: pd.Series) -> pd.Series:
+        """Detect market depth changes."""
+        change = pd.Series(False, index=volume.index)
+        
+        # Market depth proxy using volume-return relationship
+        depth_proxy = volume / abs(returns + 1e-8)
+        depth_change = depth_proxy.diff().abs() > depth_proxy.rolling(20).std() * 2
+        change = depth_change
+        
+        return change
+    
+    def _detect_liquidity_stress(self, spread: pd.Series, volume: pd.Series, price_impact: pd.Series) -> pd.Series:
+        """Detect liquidity stress indicators."""
+        stress = pd.Series(False, index=spread.index)
+        
+        # Combined liquidity stress indicators
+        spread_stress = spread > spread.rolling(20).mean() * 1.5
+        volume_stress = volume < volume.rolling(20).mean() * 0.7
+        impact_stress = price_impact > price_impact.rolling(20).mean() * 1.5
+        
+        stress = spread_stress | volume_stress | impact_stress
+        return stress
+    
+    # Analysis methods for detected periods
+    def _analyze_reversal_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze a reversal period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        price_data = period_data['price']
+        returns_data = period_data['returns']
+        rsi_data = period_data.get('rsi', pd.Series([50] * len(price_data)))
+        momentum_data = period_data.get('momentum_5', pd.Series([0] * len(price_data)))
+        
+        # Calculate reversal characteristics
+        price_change = (price_data.iloc[-1] / price_data.iloc[0] - 1)
+        rsi_change = rsi_data.iloc[-1] - rsi_data.iloc[0]
+        momentum_change = momentum_data.iloc[-1] - momentum_data.iloc[0]
+        
+        # Confidence calculation
+        confidence_factors = {
+            'price_reversal': min(1.0, abs(price_change) * 10),
+            'rsi_reversal': min(1.0, abs(rsi_change) / 50),
+            'momentum_reversal': min(1.0, abs(momentum_change) * 5),
+            'duration_factor': min(1.0, len(price_data) / 10)
+        }
+        
+        weights = {'price_reversal': 0.4, 'rsi_reversal': 0.3, 'momentum_reversal': 0.2, 'duration_factor': 0.1}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': abs(price_change),
+            'price_data': price_data,
+            'momentum_data': momentum_data,
+            'characteristics': {
+                'price_change': price_change,
+                'rsi_change': rsi_change,
+                'momentum_change': momentum_change,
+                'duration': len(price_data)
+            },
+            'feature_importance': {
+                'price_change': abs(price_change),
+                'rsi_change': abs(rsi_change),
+                'momentum_change': abs(momentum_change)
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.REVERSAL, data, start_idx
+            )
+        }
+    
+    def _analyze_acceleration_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze an acceleration period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        velocity_data = period_data.get('price_velocity', pd.Series([0] * len(period_data['price'])))
+        acceleration_data = period_data.get('price_acceleration', pd.Series([0] * len(period_data['price'])))
+        
+        # Calculate acceleration characteristics
+        avg_velocity = velocity_data.mean()
+        avg_acceleration = acceleration_data.mean()
+        acceleration_strength = avg_acceleration
+        
+        # Confidence calculation
+        confidence_factors = {
+            'acceleration_strength': min(1.0, abs(acceleration_strength) * 20),
+            'velocity_consistency': 1 - velocity_data.std(),
+            'duration_factor': min(1.0, len(velocity_data) / 20)
+        }
+        
+        weights = {'acceleration_strength': 0.5, 'velocity_consistency': 0.3, 'duration_factor': 0.2}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': abs(acceleration_strength),
+            'velocity_data': velocity_data,
+            'acceleration_data': acceleration_data,
+            'acceleration_strength': acceleration_strength,
+            'characteristics': {
+                'avg_velocity': avg_velocity,
+                'avg_acceleration': avg_acceleration,
+                'acceleration_strength': acceleration_strength,
+                'duration': len(velocity_data)
+            },
+            'feature_importance': {
+                'acceleration_strength': abs(acceleration_strength),
+                'velocity_consistency': 1 - velocity_data.std()
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.ACCELERATION, data, start_idx
+            )
+        }
+    
+    def _analyze_volume_spike_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze a volume spike period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        volume_data = period_data['volume']
+        volume_ratio_data = period_data.get('volume_ratio', pd.Series([1] * len(volume_data)))
+        
+        # Calculate volume spike characteristics
+        avg_volume_ratio = volume_ratio_data.mean()
+        max_volume_ratio = volume_ratio_data.max()
+        volume_multiplier = avg_volume_ratio
+        
+        # Confidence calculation
+        confidence_factors = {
+            'volume_multiplier': min(1.0, volume_multiplier / 3.0),
+            'spike_consistency': 1 - volume_ratio_data.std() / volume_ratio_data.mean(),
+            'duration_factor': min(1.0, len(volume_data) / 10)
+        }
+        
+        weights = {'volume_multiplier': 0.5, 'spike_consistency': 0.3, 'duration_factor': 0.2}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': volume_multiplier,
+            'volume_multiplier': volume_multiplier,
+            'characteristics': {
+                'avg_volume_ratio': avg_volume_ratio,
+                'max_volume_ratio': max_volume_ratio,
+                'volume_multiplier': volume_multiplier,
+                'duration': len(volume_data)
+            },
+            'feature_importance': {
+                'volume_multiplier': volume_multiplier,
+                'spike_consistency': 1 - volume_ratio_data.std() / volume_ratio_data.mean()
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.VOLUME_SPIKE, data, start_idx
+            )
+        }
+    
+    def _analyze_volatility_spike_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze a volatility spike period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        volatility_data = period_data.get('volatility_20', pd.Series([0.01] * len(period_data['price'])))
+        returns_data = period_data['returns']
+        
+        # Calculate volatility spike characteristics
+        avg_volatility = volatility_data.mean()
+        max_volatility = volatility_data.max()
+        volatility_multiplier = avg_volatility / data['volatility_20'].iloc[:start_idx].tail(20).mean()
+        
+        # Confidence calculation
+        confidence_factors = {
+            'volatility_multiplier': min(1.0, volatility_multiplier / 3.0),
+            'spike_consistency': 1 - volatility_data.std() / volatility_data.mean(),
+            'duration_factor': min(1.0, len(volatility_data) / 10)
+        }
+        
+        weights = {'volatility_multiplier': 0.5, 'spike_consistency': 0.3, 'duration_factor': 0.2}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': volatility_multiplier,
+            'volatility_multiplier': volatility_multiplier,
+            'characteristics': {
+                'avg_volatility': avg_volatility,
+                'max_volatility': max_volatility,
+                'volatility_multiplier': volatility_multiplier,
+                'duration': len(volatility_data)
+            },
+            'feature_importance': {
+                'volatility_multiplier': volatility_multiplier,
+                'spike_consistency': 1 - volatility_data.std() / volatility_data.mean()
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.VOLATILITY_SPIKE, data, start_idx
+            )
+        }
+    
+    def _analyze_momentum_shift_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze a momentum shift period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        momentum_5_data = period_data.get('momentum_5', pd.Series([0] * len(period_data['price'])))
+        momentum_10_data = period_data.get('momentum_10', pd.Series([0] * len(period_data['price'])))
+        
+        # Calculate momentum shift characteristics
+        momentum_change = momentum_5_data.iloc[-1] - momentum_5_data.iloc[0]
+        momentum_strength = abs(momentum_change)
+        
+        # Confidence calculation
+        confidence_factors = {
+            'momentum_change': min(1.0, momentum_strength * 10),
+            'shift_consistency': 1 - momentum_5_data.std(),
+            'duration_factor': min(1.0, len(momentum_5_data) / 10)
+        }
+        
+        weights = {'momentum_change': 0.5, 'shift_consistency': 0.3, 'duration_factor': 0.2}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': momentum_strength,
+            'momentum_change': momentum_change,
+            'characteristics': {
+                'momentum_change': momentum_change,
+                'momentum_strength': momentum_strength,
+                'duration': len(momentum_5_data)
+            },
+            'feature_importance': {
+                'momentum_change': momentum_strength,
+                'shift_consistency': 1 - momentum_5_data.std()
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.MOMENTUM_SHIFT, data, start_idx
+            )
+        }
+    
+    def _analyze_liquidity_change_period(self, data: Dict[str, Any], start_idx: int, end_idx: int) -> Dict[str, Any]:
+        """Analyze a liquidity change period."""
+        period_data = {key: values.iloc[start_idx:end_idx] for key, values in data.items() 
+                      if isinstance(values, pd.Series)}
+        
+        spread_data = period_data.get('spread_estimate', pd.Series([0.001] * len(period_data['price'])))
+        volume_data = period_data['volume']
+        
+        # Calculate liquidity change characteristics
+        avg_spread = spread_data.mean()
+        baseline_spread = data['spread_estimate'].iloc[:start_idx].tail(20).mean()
+        liquidity_change = (avg_spread - baseline_spread) / baseline_spread if baseline_spread > 0 else 0
+        
+        # Confidence calculation
+        confidence_factors = {
+            'liquidity_change': min(1.0, abs(liquidity_change) * 5),
+            'change_consistency': 1 - spread_data.std() / spread_data.mean(),
+            'duration_factor': min(1.0, len(spread_data) / 10)
+        }
+        
+        weights = {'liquidity_change': 0.5, 'change_consistency': 0.3, 'duration_factor': 0.2}
+        confidence = sum(confidence_factors[factor] * weights[factor] for factor in confidence_factors)
+        
+        return {
+            'confidence': confidence,
+            'signal_strength': abs(liquidity_change),
+            'liquidity_change': liquidity_change,
+            'characteristics': {
+                'avg_spread': avg_spread,
+                'liquidity_change': liquidity_change,
+                'duration': len(spread_data)
+            },
+            'feature_importance': {
+                'liquidity_change': abs(liquidity_change),
+                'change_consistency': 1 - spread_data.std() / spread_data.mean()
+            },
+            'transition_probability': self._calculate_transition_probability(
+                MicroRegimeType.LIQUIDITY_CHANGE, data, start_idx
+            )
+        }
+    
+    # Classification and risk calculation methods
+    def _determine_reversal_direction(self, price_data: pd.Series, momentum_data: pd.Series) -> str:
+        """Determine the direction of a reversal."""
+        price_change = (price_data.iloc[-1] / price_data.iloc[0] - 1)
+        momentum_change = momentum_data.iloc[-1] - momentum_data.iloc[0]
+        
+        if price_change > 0.01 and momentum_change > 0:
+            return "bullish_reversal"
+        elif price_change < -0.01 and momentum_change < 0:
+            return "bearish_reversal"
+        else:
+            return "neutral_reversal"
+    
+    def _determine_acceleration_type(self, velocity_data: pd.Series, acceleration_data: pd.Series) -> str:
+        """Determine the type of acceleration."""
+        avg_acceleration = acceleration_data.mean()
+        
+        if avg_acceleration > 0.01:
+            return "positive_acceleration"
+        elif avg_acceleration < -0.01:
+            return "negative_acceleration"
+        else:
+            return "neutral_acceleration"
+    
+    def _classify_volume_spike_type(self, spike_data: Dict[str, Any]) -> str:
+        """Classify the type of volume spike."""
+        volume_multiplier = spike_data['volume_multiplier']
+        
+        if volume_multiplier > 5.0:
+            return "extreme_spike"
+        elif volume_multiplier > 3.0:
+            return "major_spike"
+        elif volume_multiplier > 2.0:
+            return "moderate_spike"
+        else:
+            return "minor_spike"
+    
+    def _classify_volatility_spike_severity(self, spike_data: Dict[str, Any]) -> str:
+        """Classify the severity of volatility spike."""
+        volatility_multiplier = spike_data['volatility_multiplier']
+        
+        if volatility_multiplier > 4.0:
+            return "extreme_volatility"
+        elif volatility_multiplier > 2.5:
+            return "high_volatility"
+        elif volatility_multiplier > 1.5:
+            return "moderate_volatility"
+        else:
+            return "low_volatility"
+    
+    def _classify_momentum_shift_type(self, shift_data: Dict[str, Any]) -> str:
+        """Classify the type of momentum shift."""
+        momentum_change = shift_data['momentum_change']
+        
+        if momentum_change > 0.05:
+            return "strong_bullish_shift"
+        elif momentum_change > 0.02:
+            return "bullish_shift"
+        elif momentum_change < -0.05:
+            return "strong_bearish_shift"
+        elif momentum_change < -0.02:
+            return "bearish_shift"
+        else:
+            return "neutral_shift"
+    
+    def _classify_liquidity_change_type(self, change_data: Dict[str, Any]) -> str:
+        """Classify the type of liquidity change."""
+        liquidity_change = change_data['liquidity_change']
+        
+        if liquidity_change > 0.5:
+            return "liquidity_deterioration"
+        elif liquidity_change > 0.2:
+            return "liquidity_decline"
+        elif liquidity_change < -0.2:
+            return "liquidity_improvement"
+        else:
+            return "liquidity_stable"
+    
+    # Risk calculation methods
+    def _calculate_reversal_risk_metrics(self, reversal_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for reversal."""
+        returns_data = reversal_data['returns_data']
+        
+        return {
+            'volatility': returns_data.std(),
+            'max_drawdown': returns_data.cumsum().max() - returns_data.cumsum().min(),
+            'var_95': np.percentile(returns_data.dropna(), 5),
+            'expected_return': returns_data.mean()
+        }
+    
+    def _calculate_acceleration_risk_metrics(self, acceleration_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for acceleration."""
+        velocity_data = acceleration_data['velocity_data']
+        
+        return {
+            'velocity_volatility': velocity_data.std(),
+            'acceleration_risk': abs(acceleration_data['acceleration_strength']),
+            'momentum_risk': abs(velocity_data.mean()),
+            'stability': 1 - velocity_data.std()
+        }
+    
+    def _calculate_volume_spike_risk_metrics(self, spike_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for volume spike."""
+        return {
+            'volume_risk': spike_data['volume_multiplier'],
+            'liquidity_risk': 1 / spike_data['volume_multiplier'] if spike_data['volume_multiplier'] > 0 else 1,
+            'market_impact': spike_data['volume_multiplier'] * 0.1,
+            'stability': 1 - spike_data['characteristics'].get('spike_consistency', 0.5)
+        }
+    
+    def _calculate_volatility_spike_risk_metrics(self, spike_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for volatility spike."""
+        return {
+            'volatility_risk': spike_data['volatility_multiplier'],
+            'market_risk': spike_data['volatility_multiplier'] * 0.2,
+            'stability_risk': 1 - spike_data['characteristics'].get('spike_consistency', 0.5),
+            'expected_volatility': spike_data['characteristics']['avg_volatility']
+        }
+    
+    def _calculate_momentum_shift_risk_metrics(self, shift_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for momentum shift."""
+        return {
+            'momentum_risk': abs(shift_data['momentum_change']),
+            'trend_risk': abs(shift_data['momentum_change']) * 0.5,
+            'stability': 1 - shift_data['characteristics'].get('shift_consistency', 0.5),
+            'direction_risk': abs(shift_data['momentum_change'])
+        }
+    
+    def _calculate_liquidity_change_risk_metrics(self, change_data: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate risk metrics for liquidity change."""
+        return {
+            'liquidity_risk': abs(change_data['liquidity_change']),
+            'spread_risk': change_data['characteristics']['avg_spread'],
+            'market_impact': abs(change_data['liquidity_change']) * 0.3,
+            'stability': 1 - change_data['characteristics'].get('change_consistency', 0.5)
+        }
     
     # Serialization and persistence methods
     def save_model(self, filepath: str) -> bool:

@@ -15,6 +15,7 @@ Key Features:
 - Extensible plugin architecture for new search strategies
 """
 
+import copy
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Protocol
@@ -32,7 +33,7 @@ import warnings
 import random
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
-from collections import OrderedDict
+from collections import OrderedDict, deque
 import threading
 from math import isfinite
 
@@ -134,6 +135,17 @@ from .search_strategies import (
     OptunaSearchStrategy as PluginOptunaStrategy,
     HyperbandSearchStrategy as PluginHyperbandStrategy,
 )
+from .shared_utils.meta_warmstart import MetaWarmStartConfig, MetaWarmStarter
+from .shared_utils.uncertainty_surrogate import (
+    BayesianEnsembleConfig,
+    BayesianEnsembleSurrogate,
+)
+from .shared_utils.time_series_cv import BlockedPurgedCV, BlockedPurgedCVConfig
+from .shared_utils.hardware_costs import (
+    HardwareConstraintConfig,
+    HardwareCostEvaluator,
+)
+from .shared_utils.overfitting_tests import hansen_spa_test
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
@@ -169,6 +181,11 @@ class OptimizationObjective(Enum):
     TRADING_VIABILITY = "trading_viability"
     COMPLEXITY = "complexity"
     MEMORY_USAGE = "memory_usage"
+    SHARPE_RATIO = "sharpe_ratio"
+    DOWNSIDE_DEVIATION = "downside_deviation"
+    EXECUTION_LATENCY = "execution_latency"
+    TAIL_LATENCY = "tail_latency"
+    COLD_START_LATENCY = "cold_start_latency"
 
 
 @dataclass
@@ -187,9 +204,9 @@ class SearchConfig:
 
     # Optimization objectives
     objectives: List[OptimizationObjective] = field(default_factory=lambda: [
-        OptimizationObjective.ACCURACY,
-        OptimizationObjective.EFFICIENCY,
-        OptimizationObjective.PROFITABILITY
+        OptimizationObjective.SHARPE_RATIO,
+        OptimizationObjective.DOWNSIDE_DEVIATION,
+        OptimizationObjective.EXECUTION_LATENCY,
     ])
     objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
     objective_names: List[str] = field(default_factory=list)
@@ -233,6 +250,29 @@ class SearchConfig:
     early_stopping_patience: int = 20
     convergence_threshold: float = 0.01
     enable_adaptive_parameters: bool = True
+    enable_meta_warm_start: bool = True
+    meta_warm_start_config: Dict[str, Any] = field(default_factory=dict)
+    meta_warm_start_blueprints: List[Dict[str, Any]] = field(default_factory=list)
+    enable_progressive_search: bool = True
+    progressive_search_stages: List[Dict[str, Any]] = field(default_factory=lambda: [
+        {"max_depth": 2, "max_width": 32},
+        {"max_depth": 4, "max_width": 64},
+        {"max_depth": 8, "max_width": 128},
+    ])
+    progressive_stability_window: int = 5
+    progressive_stability_tolerance: float = 0.01
+    enable_uncertainty_guided_promotion: bool = True
+    uncertainty_bonus: float = 1.0
+    enable_time_series_cv: bool = True
+    time_series_cv_config: Dict[str, Any] = field(default_factory=dict)
+    enable_overfitting_defense: bool = True
+    spa_bootstrap_iterations: int = 500
+    spa_transaction_cost_bp: float = 1.0
+    enable_hardware_constraints: bool = True
+    hardware_latency_budget_ms: float = 5.0
+    hardware_tail_latency_ms: float = 10.0
+    hardware_cold_start_ms: float = 60.0
+    hardware_memory_budget_mb: float = 4096.0
 
     # Constraint handling
     enable_constraint_validation: bool = True
@@ -250,7 +290,19 @@ class SearchConfig:
                 for obj in self.objectives
             ]
         if not self.objective_directions:
-            self.objective_directions = ['maximize'] * len(self.objective_names)
+            self.objective_directions = [
+                'maximize'
+                if objective in {
+                    OptimizationObjective.ACCURACY,
+                    OptimizationObjective.EFFICIENCY,
+                    OptimizationObjective.PROFITABILITY,
+                    OptimizationObjective.ECONOMIC_SIGNIFICANCE,
+                    OptimizationObjective.TRADING_VIABILITY,
+                    OptimizationObjective.SHARPE_RATIO,
+                }
+                else 'minimize'
+                for objective in self.objectives
+            ]
 
         if len(self.objective_directions) != len(self.objective_names):
             raise ValueError("Objective directions must match the number of objective names")
@@ -327,15 +379,6 @@ class SearchConfig:
         _validate_positive(self.bayesian_config, ['n_initial_points'])
         _validate_positive(self.evolutionary_config, ['mutation_rate', 'crossover_rate'])
         _validate_positive(self.rl_config, ['learning_rate', 'exploration_rate', 'reward_decay'])
-
-    def __post_init__(self) -> None:
-        if not self.objective_names:
-            self.objective_names = [
-                obj.value if hasattr(obj, 'value') else str(obj)
-                for obj in self.objectives
-            ]
-        if not self.objective_directions:
-            self.objective_directions = ['maximize'] * len(self.objective_names)
 
 
 @dataclass
@@ -479,9 +522,17 @@ class BayesianSearchStrategy:
 
 class EvolutionarySearchStrategy:
     """Evolutionary algorithm search strategy."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.population_initializer: Optional[
+            Callable[[Dict[str, Any], int], List[Dict[str, Any]]]
+        ] = None
+
+    def set_population_initializer(
+        self, initializer: Callable[[Dict[str, Any], int], List[Dict[str, Any]]]
+    ) -> None:
+        self.population_initializer = initializer
         
     def search(self, 
                search_space: Dict[str, Any], 
@@ -584,7 +635,13 @@ class EvolutionarySearchStrategy:
             )
     
     def _initialize_population(self, search_space: Dict[str, Any], population_size: int) -> List[Dict[str, Any]]:
-        """Initialize random population."""
+        """Initialize population using optional warm start callback."""
+        if self.population_initializer is not None:
+            try:
+                return self.population_initializer(search_space, population_size)
+            except Exception as exc:  # pragma: no cover - fallback
+                self.logger.warning("Warm start initializer failed: %s", exc)
+
         population = []
         for _ in range(population_size):
             individual = {}
@@ -831,6 +888,9 @@ class UnifiedSearchEngine:
             SearchStrategy.ADAPTIVE_EVOLUTIONARY: EvolutionarySearchStrategy(),
             SearchStrategy.REINFORCEMENT_LEARNING: EvolutionarySearchStrategy(),
         }
+        for legacy_strategy in self.legacy_strategies.values():
+            if hasattr(legacy_strategy, "set_population_initializer"):
+                legacy_strategy.set_population_initializer(self._initialize_population)
 
         # Initialize hardware optimizers
         self.hardware_optimizers: Dict[str, Any] = {}
@@ -847,6 +907,36 @@ class UnifiedSearchEngine:
         self._max_cache_size = 1000  # Limit cache size to prevent memory issues
         self._cache_evictions = 0
         self._cache_requests = 0
+
+        # Meta-learning warm start utilities
+        self.meta_warm_starter: Optional[MetaWarmStarter] = None
+        if self.config.enable_meta_warm_start:
+            warm_config = MetaWarmStartConfig(
+                historical_blueprints=self.config.meta_warm_start_blueprints,
+            ).copy_with_overrides(self.config.meta_warm_start_config)
+            self.meta_warm_starter = MetaWarmStarter(warm_config)
+
+        # Progressive search tracking
+        self._progressive_stage_index = 0
+        self._validation_window: deque = deque(maxlen=self.config.progressive_stability_window)
+
+        # Uncertainty-aware surrogate
+        self.uncertainty_surrogate = BayesianEnsembleSurrogate(BayesianEnsembleConfig())
+
+        # Time-series cross validation helper
+        self.time_series_cv = None
+        if self.config.enable_time_series_cv:
+            cv_cfg = BlockedPurgedCVConfig(**self.config.time_series_cv_config)
+            self.time_series_cv = BlockedPurgedCV(cv_cfg)
+
+        # Hardware-aware evaluator
+        hw_config = HardwareConstraintConfig(
+            latency_budget_ms=self.config.hardware_latency_budget_ms,
+            tail_latency_budget_ms=self.config.hardware_tail_latency_ms,
+            cold_start_budget_ms=self.config.hardware_cold_start_ms,
+            memory_budget_mb=self.config.hardware_memory_budget_mb,
+        )
+        self.hardware_evaluator = HardwareCostEvaluator(hw_config)
 
         self.logger.info(
             "Unified Search Engine initialised",
@@ -895,6 +985,65 @@ class UnifiedSearchEngine:
             'cache_hit_rate': self._cache_hits / total_requests,
         }
 
+    def _wrap_objective_function(
+        self, objective_function: Callable[[Dict[str, Any]], Any]
+    ) -> Callable[[Dict[str, Any]], Dict[str, float]]:
+        """Augment the user objective with CV, uncertainty & hardware checks."""
+
+        def wrapped(params: Dict[str, Any]) -> Dict[str, float]:
+            candidate_params = self._apply_candidate_stage_constraints(dict(params))
+
+            if self.time_series_cv is not None:
+                raw_result = self.time_series_cv.evaluate(objective_function, candidate_params)
+            else:
+                raw_result = objective_function(candidate_params)
+
+            metrics = self._normalize_metrics(raw_result)
+
+            # Ensure required objectives exist
+            sharpe = float(metrics.get('sharpe_ratio', metrics.get('sharpe', 0.0)))
+            downside = float(metrics.get('downside_deviation', metrics.get('downside_risk', metrics.get('volatility', 0.0))))
+            latency_ms = float(metrics.get('latency_ms', metrics.get('execution_latency', 0.0)))
+
+            metrics['sharpe_ratio_raw'] = sharpe
+            metrics['downside_deviation'] = downside
+            metrics['execution_latency'] = latency_ms
+
+            # Hardware-aware evaluation
+            hardware_costs = self.hardware_evaluator.estimate(candidate_params, metrics)
+            metrics.update({
+                'latency_ms': hardware_costs['latency_ms'],
+                'tail_latency': hardware_costs['tail_latency_ms'],
+                'cold_start_latency': hardware_costs['cold_start_ms'],
+                'memory_mb': hardware_costs['memory_mb'],
+            })
+
+            penalty = 0.0
+            if self.config.enable_hardware_constraints and not self.hardware_evaluator.validate(hardware_costs):
+                penalty = self.hardware_evaluator.constraint_penalty(hardware_costs)
+                metrics['hardware_penalty'] = penalty
+            else:
+                metrics['hardware_penalty'] = 0.0
+
+            # Update surrogate and compute UCB
+            self.uncertainty_surrogate.update(candidate_params, sharpe)
+            if self.config.enable_uncertainty_guided_promotion:
+                ucb_score = self.uncertainty_surrogate.compute_ucb(candidate_params)
+                if ucb_score is not None:
+                    metrics['sharpe_ratio_ucb'] = float(ucb_score)
+                    sharpe = float(ucb_score)
+
+            # Apply penalty and ensure objective sign conventions
+            sharpe -= penalty
+            metrics['sharpe_ratio'] = sharpe
+            metrics['execution_latency'] = latency_ms + penalty
+
+            self._maybe_update_progressive_stage(metrics)
+
+            return metrics
+
+        return wrapped
+
     def _initialize_hardware_optimizers(self):
         """Initialize hardware optimization components."""
         try:
@@ -932,6 +1081,117 @@ class UnifiedSearchEngine:
             self.hardware_warnings.append(warning)
             tprint_warning(f"⚠️ {warning}")
             self.hardware_optimizers = {}
+
+    def _initialize_population(
+        self, search_space: Dict[str, Any], population_size: int
+    ) -> List[Dict[str, Any]]:
+        """Warm-start aware population initialization used by legacy strategies."""
+
+        effective_space = self._apply_progressive_search_space(search_space)
+
+        def _random_sample(space: Dict[str, Any]) -> Dict[str, Any]:
+            sample: Dict[str, Any] = {}
+            for param, values in space.items():
+                if isinstance(values, dict):
+                    if 'choices' in values:
+                        sample[param] = np.random.choice(values['choices'])
+                    elif {'low', 'high'}.issubset(values):
+                        sample[param] = np.random.uniform(values['low'], values['high'])
+                    else:
+                        sample[param] = values
+                elif isinstance(values, list):
+                    sample[param] = np.random.choice(values)
+                elif isinstance(values, tuple) and len(values) == 2:
+                    sample[param] = np.random.uniform(values[0], values[1])
+                else:
+                    sample[param] = values
+            return sample
+
+        if self.meta_warm_starter is not None:
+            try:
+                return self.meta_warm_starter.warm_start(
+                    effective_space, population_size, _random_sample
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.warning("Meta warm start failed, falling back to random: %s", exc)
+
+        return [_random_sample(effective_space) for _ in range(population_size)]
+
+    def _apply_progressive_search_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.config.enable_progressive_search or not self.config.progressive_search_stages:
+            return search_space
+
+        stage_idx = min(self._progressive_stage_index, len(self.config.progressive_search_stages) - 1)
+        stage = self.config.progressive_search_stages[stage_idx]
+        adjusted = copy.deepcopy(search_space)
+        max_depth = stage.get('max_depth')
+        max_width = stage.get('max_width')
+        unlocked = set(stage.get('unlocked_params', []))
+
+        for key, definition in adjusted.items():
+            if isinstance(definition, dict) and {'low', 'high'}.issubset(definition):
+                high = definition['high']
+                if max_depth is not None and ('depth' in key or 'layer' in key):
+                    definition['high'] = min(high, max_depth)
+                if max_width is not None and any(token in key for token in ('width', 'units', 'channels')):
+                    definition['high'] = min(definition['high'], max_width)
+            elif isinstance(definition, (list, tuple)) and len(definition) == 2:
+                low, high = definition
+                if max_depth is not None and ('depth' in key or 'layer' in key):
+                    adjusted[key] = (low, min(high, max_depth))
+                elif max_width is not None and any(token in key for token in ('width', 'units', 'channels')):
+                    adjusted[key] = (low, min(high, max_width))
+
+            if unlocked and key not in unlocked and stage_idx > 0:
+                # Freeze parameters not yet unlocked by stage
+                if isinstance(definition, dict) and 'choices' in definition and definition['choices']:
+                    adjusted[key] = {'choices': [definition['choices'][0]]}
+                elif isinstance(definition, (list, tuple)) and definition:
+                    adjusted[key] = definition[0]
+
+        return adjusted
+
+    def _apply_candidate_stage_constraints(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.config.enable_progressive_search or not self.config.progressive_search_stages:
+            return params
+
+        stage_idx = min(self._progressive_stage_index, len(self.config.progressive_search_stages) - 1)
+        stage = self.config.progressive_search_stages[stage_idx]
+        max_depth = stage.get('max_depth')
+        max_width = stage.get('max_width')
+        adjusted = dict(params)
+
+        for key, value in list(adjusted.items()):
+            if not isinstance(value, (int, float)):
+                continue
+            if max_depth is not None and ('depth' in key or 'layer' in key):
+                adjusted[key] = min(value, max_depth)
+            if max_width is not None and any(token in key for token in ('width', 'units', 'channels')):
+                adjusted[key] = min(value, max_width)
+
+        return adjusted
+
+    def _maybe_update_progressive_stage(self, metrics: Dict[str, float]) -> None:
+        if not self.config.enable_progressive_search:
+            return
+
+        score = metrics.get('sharpe_ratio')
+        if score is None:
+            return
+
+        self._validation_window.append(float(score))
+        if len(self._validation_window) < self.config.progressive_stability_window:
+            return
+
+        window = np.array(self._validation_window)
+        tolerance = self.config.progressive_stability_tolerance
+        if np.std(window) <= tolerance * max(abs(np.mean(window)), 1e-6):
+            if self._progressive_stage_index < len(self.config.progressive_search_stages) - 1:
+                self._progressive_stage_index += 1
+                self._validation_window.clear()
+                self.logger.info(
+                    "Progressive search advanced to stage %s", self._progressive_stage_index + 1
+                )
 
     def _register_default_strategies(self) -> None:
         """Register built-in strategy plugins."""
@@ -1085,6 +1345,31 @@ class UnifiedSearchEngine:
                 return False
         return True
 
+    def _run_overfitting_checks(self, result: SearchResult) -> None:
+        if not self.config.enable_overfitting_defense:
+            return
+        if not result.optimization_history:
+            return
+
+        scores = [entry.get('score') for entry in result.optimization_history if 'score' in entry]
+        scores = [float(score) for score in scores if score is not None]
+        if not scores:
+            return
+
+        spa = hansen_spa_test(
+            scores,
+            n_bootstrap=self.config.spa_bootstrap_iterations,
+            transaction_cost_bp=self.config.spa_transaction_cost_bp,
+        )
+        result.search_statistics.setdefault('overfitting_check', {})
+        result.search_statistics['overfitting_check'].update(
+            {
+                'p_value': spa.p_value,
+                'threshold': spa.threshold,
+                'passes': spa.passes,
+            }
+        )
+
     def _build_result_from_summary(
         self,
         summary: Dict[str, Any],
@@ -1144,23 +1429,31 @@ class UnifiedSearchEngine:
             self._validate_search_inputs(search_space, objective_function)
             strategy_impl = self._resolve_strategy(search_strategy)
 
+            self._progressive_stage_index = 0
+            self._validation_window.clear()
+
+            effective_space = self._apply_progressive_search_space(search_space)
+            wrapped_objective = self._wrap_objective_function(objective_function)
+
             tprint_info(f"🔍 Starting {search_strategy.value} search...")
             tprint_info(f"   Search space size: {len(search_space)} parameters")
             tprint_info(f"   Max iterations: {self.config.max_iterations}")
 
             if isinstance(strategy_impl, SearchStrategyInterface):
                 result = self._run_legacy_strategy(
-                    strategy_impl, search_space, objective_function
+                    strategy_impl, effective_space, wrapped_objective
                 )
             else:
                 result = self._run_plugin_strategy(
-                    strategy_impl, search_space, objective_function, search_strategy, start_time
+                    strategy_impl, effective_space, wrapped_objective, search_strategy, start_time
                 )
 
             self._update_performance_metrics(result)
             self.search_history.append(result)
             if self.config.save_intermediate_results:
                 self._save_intermediate_result(result)
+
+            self._run_overfitting_checks(result)
 
             tprint_success("✅ Search completed successfully")
             tprint_info(

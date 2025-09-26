@@ -202,13 +202,39 @@ def _configure_sklearn_model(cls_name: str, default_params: Dict[str, Any], conf
 def _build_random_forest(config: ModelConfig) -> Any:
     defaults = {"n_estimators": 500, "n_jobs": config.n_jobs, "random_state": config.random_state}
     cls_name = "RandomForestClassifier" if config.model_type.name.endswith("CLASSIFIER") else "RandomForestRegressor"
-    return _configure_sklearn_model(cls_name, defaults, config)
+    base_model = _configure_sklearn_model(cls_name, defaults, config)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 def _build_extra_trees(config: ModelConfig) -> Any:
     defaults = {"n_estimators": 500, "n_jobs": config.n_jobs, "random_state": config.random_state}
     cls_name = "ExtraTreesClassifier" if config.model_type.name.endswith("CLASSIFIER") else "ExtraTreesRegressor"
-    return _configure_sklearn_model(cls_name, defaults, config)
+    base_model = _configure_sklearn_model(cls_name, defaults, config)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 def _build_hist_gradient_boosting(config: ModelConfig) -> Any:
@@ -218,7 +244,20 @@ def _build_hist_gradient_boosting(config: ModelConfig) -> Any:
         else "HistGradientBoostingRegressor"
     )
     defaults: Dict[str, Any] = {"random_state": config.random_state}
-    return _configure_sklearn_model(cls_name, defaults, config)
+    base_model = _configure_sklearn_model(cls_name, defaults, config)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 def _build_logistic_regression(config: ModelConfig) -> Any:
@@ -267,7 +306,20 @@ def _build_lightgbm(config: ModelConfig) -> Any:
     cls_name = "LGBMClassifier" if config.model_type.name.endswith("CLASSIFIER") else "LGBMRegressor"
     defaults = {"n_estimators": 500, "random_state": config.random_state}
     params = {**defaults, **config.model_params}
-    return getattr(lgb, cls_name)(**params)
+    base_model = getattr(lgb, cls_name)(**params)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 def _build_catboost(config: ModelConfig) -> Any:
@@ -281,7 +333,20 @@ def _build_catboost(config: ModelConfig) -> Any:
         "verbose": False,
     }
     params = {**defaults, **config.model_params}
-    return getattr(catboost, cls_name)(**params)
+    base_model = getattr(catboost, cls_name)(**params)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 def _build_xgboost(config: ModelConfig) -> Any:
@@ -296,7 +361,20 @@ def _build_xgboost(config: ModelConfig) -> Any:
         "verbosity": 0,
     }
     params = {**defaults, **config.model_params}
-    return getattr(xgb, cls_name)(**params)
+    base_model = getattr(xgb, cls_name)(**params)
+
+    # Automatically wrap with CLVSA enhancement
+    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+
+        clvsa_config = config.model_params.get('clvsa_config', {})
+        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
+        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+    else:
+        return base_model
 
 
 _BUILTIN_BUILDERS: Dict[ModelType, ModelBuilder] = {

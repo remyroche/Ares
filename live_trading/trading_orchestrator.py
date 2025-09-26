@@ -296,13 +296,45 @@ class TradingOrchestrator:
     async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Get order status"""
         try:
-            # This would need to be implemented in the trading receiver
-            # For now, return a placeholder
-            return {"status": "unknown", "order_id": order_id}
+            # Check if this is a multi-exchange order
+            if order_id in self.trading_receiver.pending_multi_exchange_orders:
+                # Get multi-exchange order status
+                multi_order_status = await self.trading_receiver.get_multi_exchange_order_status(order_id)
+                if multi_order_status:
+                    return {
+                        "status": "multi_exchange",
+                        "order_id": order_id,
+                        "exchanges": multi_order_status.get("exchanges", {}),
+                        "overall_status": multi_order_status.get("overall_status", "unknown"),
+                        "timestamp": datetime.now().isoformat()
+                    }
+            
+            # For single exchange orders, we need to query the specific exchange
+            # Since TradingReceiver doesn't have a direct get_order_status method,
+            # we'll need to implement this through the exchange registry
+            try:
+                # Get the exchange instance from the registry
+                exchange_instance = self.trading_receiver.exchange_registry.get_exchange(self.config.exchange_name)
+                if exchange_instance and hasattr(exchange_instance, 'get_order_status'):
+                    order_status = await exchange_instance.get_order_status(symbol, order_id)
+                    return {
+                        "status": order_status.get("status", "unknown"),
+                        "order_id": order_id,
+                        "symbol": symbol,
+                        "exchange": self.config.exchange_name,
+                        "data": order_status,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self.logger.warning(f"Exchange {self.config.exchange_name} does not support order status queries")
+                    return {"status": "unsupported", "order_id": order_id, "error": "Exchange does not support order status queries"}
+            except Exception as exchange_error:
+                self.logger.error(f"Error querying exchange for order status: {exchange_error}")
+                return {"status": "error", "order_id": order_id, "error": str(exchange_error)}
 
         except Exception as e:
             self.logger.error(f"Error getting order status: {e}")
-            return {"status": "error", "error": str(e)}
+            return {"status": "error", "order_id": order_id, "error": str(e)}
 
     async def get_statistics(self) -> Dict[str, Any]:
         """Get trading statistics"""
@@ -437,9 +469,16 @@ class TradingOrchestrator:
             except Exception as e:
                 self.logger.error(f"Error in internal signal handler: {e}")
 
-        # Note: This would be registered with the signal source
-        # For now, this is a placeholder
-        self.logger.info("Signal handler registered")
+        # Register the signal handler with the trading receiver
+        # The trading receiver should have a method to register signal handlers
+        if hasattr(self.trading_receiver, 'register_signal_handler'):
+            self.trading_receiver.register_signal_handler(handle_signal)
+            self.logger.info("Signal handler registered with trading receiver")
+        else:
+            # If the trading receiver doesn't support signal handlers directly,
+            # we'll need to implement a polling mechanism or message-based approach
+            self.logger.warning("Trading receiver does not support signal handler registration")
+            self.logger.info("Signal handler registered (internal only)")
 
     async def pause_trading(self) -> None:
         """Pause trading operations"""

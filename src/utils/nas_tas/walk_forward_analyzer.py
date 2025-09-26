@@ -18,6 +18,15 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_warning, tprint_debug
+except ImportError:
+    def tprint_warning(msg):
+        logger.warning(msg)
+    def tprint_debug(msg):
+        logger.debug(msg)
+
 logger = logging.getLogger(__name__)
 
 
@@ -709,7 +718,9 @@ class WalkForwardAnalyzer:
                 try:
                     proba = model.predict_proba(X_val)
                     confidence = np.mean(np.max(proba, axis=1))
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate model confidence: {e}")
+                    tprint_debug("Using default confidence value of 0.5")
                     confidence = 0.5
             
             return {

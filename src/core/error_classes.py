@@ -52,6 +52,21 @@ class ServiceUnavailableError(AppError):
     def __init__(self, message: str = "Service unavailable", **kwargs):
         super().__init__(message, status_code=503, **kwargs)
 
+class TrainingError(AppError):
+    """Training-related error."""
+    def __init__(self, message: str = "Training failed", **kwargs):
+        super().__init__(message, status_code=500, **kwargs)
+
+class ModelError(AppError):
+    """Model-related error."""
+    def __init__(self, message: str = "Model operation failed", **kwargs):
+        super().__init__(message, status_code=500, **kwargs)
+
+class DataError(AppError):
+    """Data processing error."""
+    def __init__(self, message: str = "Data processing failed", **kwargs):
+        super().__init__(message, status_code=500, **kwargs)
+
 class AppTimeoutError(AppError):
     """Application timeout error."""
     def __init__(self, message: str = "Operation timed out", **kwargs):
@@ -82,7 +97,191 @@ class ErrorRecoveryStrategies:
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2 ** attempt)
-        return None
+
+    @staticmethod
+    def handle_with_logging(error: Exception, context: str = "", logger: Optional[logging.Logger] = None) -> None:
+        """Standardized error handling with comprehensive logging."""
+        try:
+            # Import tprint with fallback
+            try:
+                from src.utils.tprint import tprint_error, tprint_debug
+            except ImportError:
+                def tprint_error(msg): print(f"ERROR: {msg}")
+                def tprint_debug(msg): print(f"DEBUG: {msg}")
+
+            error_msg = f"Error in {context}: {str(error)}"
+            tprint_error(error_msg)
+
+            if logger:
+                logger.exception(error_msg)
+            else:
+                logging.exception(error_msg)
+
+            tprint_debug(f"Error type: {type(error).__name__}")
+            tprint_debug(f"Error context: {context}")
+
+        except Exception as log_error:
+            # Fallback if logging itself fails
+            print(f"CRITICAL: Failed to log error in {context}: {log_error}")
+            print(f"Original error: {error}")
+
+    @staticmethod
+    def safe_execute(func: Callable, *args, context: str = "", logger: Optional[logging.Logger] = None, **kwargs) -> Any:
+        """Safely execute a function with standardized error handling."""
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            ErrorRecoveryStrategies.handle_with_logging(e, context, logger)
+            raise  # Re-raise the original exception
+
+    @staticmethod
+    def with_fallback(primary_func: Callable, fallback_func: Callable, *args, context: str = "", logger: Optional[logging.Logger] = None, **kwargs) -> Any:
+        """Execute primary function with fallback on error."""
+        try:
+            return primary_func(*args, **kwargs)
+        except Exception as e:
+            try:
+                from src.utils.tprint import tprint_warning
+            except ImportError:
+                def tprint_warning(msg): print(f"WARNING: {msg}")
+
+            tprint_warning(f"⚠️ Primary function failed in {context}, using fallback: {e}")
+            if logger:
+                logger.warning(f"Using fallback in {context}: {e}")
+
+            return fallback_func(*args, **kwargs)
+
+    @staticmethod
+    def create_error_handler(context: str = "", logger: Optional[logging.Logger] = None):
+        """Create a standardized error handler function."""
+        def error_handler(error: Exception) -> None:
+            ErrorRecoveryStrategies.handle_with_logging(error, context, logger)
+        return error_handler
+
+# Comprehensive error logging utility
+class ErrorLogger:
+    """Centralized error logging utility with standardized formatting."""
+
+    @staticmethod
+    def log_error(error: Exception,
+                  context: str = "",
+                  severity: str = "ERROR",
+                  logger: Optional[logging.Logger] = None,
+                  include_traceback: bool = True,
+                  additional_info: Optional[Dict[str, Any]] = None) -> None:
+        """Log an error with standardized formatting and comprehensive context."""
+        try:
+            # Import tprint with fallback
+            try:
+                from src.utils.tprint import (
+                    tprint_error, tprint_debug, tprint_warning, tprint_info
+                )
+            except ImportError:
+                def tprint_error(msg): print(f"ERROR: {msg}")
+                def tprint_debug(msg): print(f"DEBUG: {msg}")
+                def tprint_warning(msg): print(f"WARNING: {msg}")
+                def tprint_info(msg): print(f"INFO: {msg}")
+
+            # Create error message
+            timestamp = datetime.datetime.now().isoformat()
+            error_type = type(error).__name__
+            error_msg = str(error)
+
+            # Format log message
+            log_message = f"[{timestamp}] {severity}: {context} - {error_msg}"
+            if additional_info:
+                log_message += f" | Additional Info: {additional_info}"
+
+            # Log to tprint with appropriate level
+            if severity == "ERROR":
+                tprint_error(log_message)
+            elif severity == "WARNING":
+                tprint_warning(log_message)
+            elif severity == "DEBUG":
+                tprint_debug(log_message)
+            else:
+                tprint_info(log_message)
+
+            # Log to Python logger
+            if logger:
+                if include_traceback:
+                    logger.exception(log_message)
+                else:
+                    if severity == "ERROR":
+                        logger.error(log_message)
+                    elif severity == "WARNING":
+                        logger.warning(log_message)
+                    elif severity == "DEBUG":
+                        logger.debug(log_message)
+                    else:
+                        logger.info(log_message)
+
+            # Log additional context information
+            tprint_debug(f"Error Type: {error_type}")
+            tprint_debug(f"Error Context: {context}")
+
+            if additional_info:
+                tprint_debug(f"Additional Info: {additional_info}")
+
+        except Exception as logging_error:
+            # Fallback if logging itself fails
+            print(f"CRITICAL: Failed to log error in {context}: {logging_error}")
+            print(f"Original error: {error}")
+
+    @staticmethod
+    def log_training_error(error: Exception,
+                          epoch: Optional[int] = None,
+                          model_type: str = "",
+                          additional_info: Optional[Dict[str, Any]] = None,
+                          logger: Optional[logging.Logger] = None) -> None:
+        """Log training-specific errors with enhanced context."""
+        context = "Training"
+        if model_type:
+            context += f" - {model_type}"
+        if epoch is not None:
+            context += f" - Epoch {epoch}"
+
+        additional = {"model_type": model_type, "epoch": epoch}
+        if additional_info:
+            additional.update(additional_info)
+
+        ErrorLogger.log_error(error, context, "ERROR", logger, True, additional)
+
+    @staticmethod
+    def log_data_error(error: Exception,
+                      operation: str = "",
+                      data_source: str = "",
+                      additional_info: Optional[Dict[str, Any]] = None,
+                      logger: Optional[logging.Logger] = None) -> None:
+        """Log data processing errors with enhanced context."""
+        context = "Data Processing"
+        if operation:
+            context += f" - {operation}"
+        if data_source:
+            context += f" - {data_source}"
+
+        additional = {"operation": operation, "data_source": data_source}
+        if additional_info:
+            additional.update(additional_info)
+
+        ErrorLogger.log_error(error, context, "ERROR", logger, True, additional)
+
+    @staticmethod
+    def log_memory_error(error: Exception,
+                        operation: str = "",
+                        memory_usage: Optional[float] = None,
+                        additional_info: Optional[Dict[str, Any]] = None,
+                        logger: Optional[logging.Logger] = None) -> None:
+        """Log memory-related errors with enhanced context."""
+        context = "Memory Management"
+        if operation:
+            context += f" - {operation}"
+
+        additional = {"memory_usage_mb": memory_usage}
+        if additional_info:
+            additional.update(additional_info)
+
+        ErrorLogger.log_error(error, context, "WARNING", logger, True, additional)
 
 # Error constants and mappings
 DATA_OPERATION_ERRORS = {

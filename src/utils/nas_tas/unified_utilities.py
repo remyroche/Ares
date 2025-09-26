@@ -17,21 +17,28 @@ import warnings
 import json
 import pickle
 from pathlib import Path
+from collections import OrderedDict
+import sys
+import threading
+from typing import TYPE_CHECKING, cast
 
-# Import existing utilities
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
-    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
-    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
-    check_disk_space, CommonUtilities
-)
+try:  # Optional dependency used for memory-aware caching
+    import psutil  # type: ignore
+    PSUTIL_AVAILABLE = True
+except ImportError:  # pragma: no cover - psutil is optional
+    PSUTIL_AVAILABLE = False
+    psutil = None  # type: ignore
+
+# Lazily imported utilities to avoid circular dependencies
+if TYPE_CHECKING:  # pragma: no cover - for static analysis only
+    from src.utils.common_operations import optimize_dataframe_dtypes, get_memory_usage
+    from src.utils.hardware import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+else:
+    optimize_dataframe_dtypes = None  # type: ignore
+    get_memory_usage = None  # type: ignore
+    get_m1_gpu_manager = None  # type: ignore
+    get_m1_memory_optimizer = None  # type: ignore
+    get_m1_cpu_optimizer = None  # type: ignore
 
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -47,12 +54,65 @@ from src.utils.serialization_utils import (
 )
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
+
+
+class UnifiedUtilityOperationError(RuntimeError):
+    """Raised when a protected operation executed by UnifiedUtilities fails."""
+
+
+class UnifiedCacheWarning(UserWarning):
+    """Warning emitted when cache pressure forces aggressive eviction."""
+
+
+def _load_optimize_dataframe_dtypes() -> Callable[[pd.DataFrame], pd.DataFrame]:
+    global optimize_dataframe_dtypes
+    if optimize_dataframe_dtypes is None:  # pragma: no branch - simple guard
+        from src.utils.common_operations import optimize_dataframe_dtypes as _impl
+
+        optimize_dataframe_dtypes = _impl
+    return cast(Callable[[pd.DataFrame], pd.DataFrame], optimize_dataframe_dtypes)
+
+
+def _load_get_memory_usage() -> Callable[[], float]:
+    global get_memory_usage
+    if get_memory_usage is None:  # pragma: no branch - simple guard
+        from src.utils.common_operations import get_memory_usage as _impl
+
+        get_memory_usage = _impl
+    return cast(Callable[[], float], get_memory_usage)
+
+
+def _load_m1_gpu_manager() -> Callable[..., Any]:
+    global get_m1_gpu_manager
+    if get_m1_gpu_manager is None:  # pragma: no branch - simple guard
+        from src.utils.hardware import get_m1_gpu_manager as _impl
+
+        get_m1_gpu_manager = _impl
+    return cast(Callable[..., Any], get_m1_gpu_manager)
+
+
+def _load_m1_memory_optimizer() -> Callable[..., Any]:
+    global get_m1_memory_optimizer
+    if get_m1_memory_optimizer is None:  # pragma: no branch - simple guard
+        from src.utils.hardware import get_m1_memory_optimizer as _impl
+
+        get_m1_memory_optimizer = _impl
+    return cast(Callable[..., Any], get_m1_memory_optimizer)
+
+
+def _load_m1_cpu_optimizer() -> Callable[..., Any]:
+    global get_m1_cpu_optimizer
+    if get_m1_cpu_optimizer is None:  # pragma: no branch - simple guard
+        from src.utils.hardware import get_m1_cpu_optimizer as _impl
+
+        get_m1_cpu_optimizer = _impl
+    return cast(Callable[..., Any], get_m1_cpu_optimizer)
 
 class ArchitectureType(Enum):
     """Types of architectures supported."""
@@ -105,14 +165,18 @@ class UnifiedUtilities:
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize hardware optimizers
-        self.hardware_optimizers = {}
+        self.hardware_optimizers: Dict[str, Any] = {}
         if self.config.enable_hardware_optimization:
             self._initialize_hardware_optimizers()
-        
-        # Initialize caching
-        self.cache = {}
-        self.cache_stats = {'hits': 0, 'misses': 0}
-        
+
+        # Initialize caching with memory-awareness
+        self._cache_lock = threading.RLock()
+        self.cache: "OrderedDict[str, Tuple[Any, int]]" = OrderedDict()
+        self.cache_stats = {'hits': 0, 'misses': 0, 'evictions': 0}
+        self._cache_bytes = 0
+        self._max_cache_bytes = max(1, int(self.config.cache_size_mb * 1024 * 1024))
+        self._cache_pressure_notified = False
+
         # Performance monitoring
         self.operation_history = []
         
@@ -125,12 +189,20 @@ class UnifiedUtilities:
         """Initialize hardware optimization components."""
         try:
             if self.config.memory_limit_gb:
-                self.hardware_optimizers['memory'] = get_m1_memory_optimizer(self.config.memory_limit_gb)
-            
-            self.hardware_optimizers['cpu'] = get_m1_cpu_optimizer()
-            
+                memory_optimizer_factory = _load_m1_memory_optimizer()
+                self.hardware_optimizers['memory'] = memory_optimizer_factory(self.config.memory_limit_gb)
+
+            try:
+                gpu_manager_factory = _load_m1_gpu_manager()
+                self.hardware_optimizers['gpu'] = gpu_manager_factory()
+            except Exception:  # pragma: no cover - GPU optional
+                self.logger.debug("GPU optimizer unavailable", exc_info=True)
+
+            cpu_optimizer_factory = _load_m1_cpu_optimizer()
+            self.hardware_optimizers['cpu'] = cpu_optimizer_factory()
+
             tprint_success("✅ Hardware optimizers initialized")
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Hardware optimization setup failed: {e}")
             self.hardware_optimizers = {}
@@ -392,8 +464,9 @@ class UnifiedUtilities:
     def _optimize_memory_usage(self, data: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
         """Optimize memory usage of data."""
         if isinstance(data, pd.DataFrame):
-            # Optimize DataFrame dtypes
-            return optimize_dataframe_dtypes(data)
+            # Optimize DataFrame dtypes using the lazily imported helper
+            optimizer = _load_optimize_dataframe_dtypes()
+            return optimizer(data)
         elif isinstance(data, np.ndarray):
             # Optimize array dtypes
             if data.dtype == np.float64:
@@ -455,11 +528,14 @@ class UnifiedUtilities:
         """
         execution_time = end_time - start_time
         
+        memory_usage_fn = _load_get_memory_usage()
+
         report = {
             'operation_name': operation_name,
             'execution_time': execution_time,
             'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
-            'memory_usage': get_memory_usage(),
+            'memory_usage': memory_usage_fn(),
+            'cache_bytes': self._cache_bytes,
             'additional_metrics': additional_metrics or {}
         }
         
@@ -479,80 +555,137 @@ class UnifiedUtilities:
         
         recent_operations = self.operation_history[-20:]  # Last 20 operations
         
+        total_requests = self.cache_stats['hits'] + self.cache_stats['misses']
+        cache_hit_rate = self.cache_stats['hits'] / total_requests if total_requests else 0.0
+
         summary = {
             'total_operations': len(self.operation_history),
             'avg_execution_time': np.mean([op['execution_time'] for op in recent_operations]),
             'max_execution_time': max([op['execution_time'] for op in recent_operations]),
             'min_execution_time': min([op['execution_time'] for op in recent_operations]),
-            'cache_hit_rate': self.cache_stats['hits'] / (self.cache_stats['hits'] + self.cache_stats['misses']) if (self.cache_stats['hits'] + self.cache_stats['misses']) > 0 else 0.0
+            'cache_hit_rate': cache_hit_rate,
+            'cache_evictions': self.cache_stats['evictions'],
+            'cache_memory_mb': round(self._cache_bytes / (1024 * 1024), 3),
         }
-        
+
         return summary
     
     def safe_operation(self, operation: Callable, *args, **kwargs) -> Any:
         """
-        Safely execute an operation with error handling and logging.
-        
+        Safely execute an operation with error handling, logging, and propagation.
+
         Args:
             operation: Function to execute
             *args: Arguments for the operation
             **kwargs: Keyword arguments for the operation
-            
+
         Returns:
-            Result of the operation or None if failed
+            Result of the operation.
+
+        Raises:
+            UnifiedUtilityOperationError: If the wrapped operation fails.
         """
+        start_time = time.time()
+
         try:
-            start_time = time.time()
-            
-            # Execute operation
             result = operation(*args, **kwargs)
-            
-            # Log performance
+        except Exception as exc:  # pragma: no cover - defensive logging path
             end_time = time.time()
             self.create_performance_report(
-                operation.__name__,
+                getattr(operation, '__name__', repr(operation)),
                 start_time,
                 end_time,
-                {'success': True}
+                {'success': False, 'error': str(exc)}
             )
-            
-            tprint_success(f"✅ Operation {operation.__name__} completed successfully")
-            
-            return result
-            
-        except Exception as e:
-            tprint_error(f"❌ Operation {operation.__name__} failed: {e}")
-            
-            # Log failure
-            end_time = time.time()
-            self.create_performance_report(
-                operation.__name__,
-                start_time,
-                end_time,
-                {'success': False, 'error': str(e)}
-            )
-            
-            return None
+            tprint_error(f"❌ Operation {getattr(operation, '__name__', repr(operation))} failed: {exc}")
+            raise UnifiedUtilityOperationError(str(exc)) from exc
+
+        end_time = time.time()
+        self.create_performance_report(
+            getattr(operation, '__name__', repr(operation)),
+            start_time,
+            end_time,
+            {'success': True}
+        )
+
+        tprint_success(
+            f"✅ Operation {getattr(operation, '__name__', repr(operation))} completed successfully"
+        )
+
+        return result
     
+    def _estimate_cache_entry_size(self, value: Any) -> int:
+        """Estimate the memory footprint of a cache entry."""
+        if isinstance(value, pd.DataFrame):
+            return int(value.memory_usage(deep=True).sum())
+        if isinstance(value, np.ndarray):
+            return int(value.nbytes)
+        if hasattr(value, "nbytes"):
+            try:
+                return int(value.nbytes)  # type: ignore[attr-defined]
+            except Exception:  # pragma: no cover - defensive
+                pass
+        try:
+            return sys.getsizeof(value)
+        except Exception:  # pragma: no cover - fallback when getsizeof fails
+            return 0
+
+    def _memory_pressure_exceeded(self) -> bool:
+        """Determine if system memory usage warrants cache eviction."""
+        if not PSUTIL_AVAILABLE:  # pragma: no cover - psutil optional
+            return False
+
+        try:
+            virtual_memory = psutil.virtual_memory()
+        except Exception:  # pragma: no cover - psutil failure safeguard
+            return False
+
+        return virtual_memory.percent >= 90 or virtual_memory.available < 0.1 * virtual_memory.total
+
+    def _enforce_cache_limits(self) -> None:
+        """Evict cache entries until limits are satisfied."""
+        over_limit = lambda: self._cache_bytes > self._max_cache_bytes or self._memory_pressure_exceeded()
+
+        while self.cache and over_limit():
+            key, (_, entry_size) = self.cache.popitem(last=False)
+            self._cache_bytes = max(0, self._cache_bytes - entry_size)
+            self.cache_stats['evictions'] += 1
+
+        if self._memory_pressure_exceeded():
+            if not self._cache_pressure_notified:
+                warnings.warn(
+                    "Unified utilities cache trimmed due to detected memory pressure",
+                    UnifiedCacheWarning,
+                )
+                self._cache_pressure_notified = True
+        else:
+            self._cache_pressure_notified = False
+
     def get_cached_result(self, key: str) -> Optional[Any]:
         """Get cached result if available."""
-        if key in self.cache:
-            self.cache_stats['hits'] += 1
-            return self.cache[key]
-        else:
+        with self._cache_lock:
+            if key in self.cache:
+                value, entry_size = self.cache.pop(key)
+                # Reinsert to maintain LRU ordering
+                self.cache[key] = (value, entry_size)
+                self.cache_stats['hits'] += 1
+                return value
+
             self.cache_stats['misses'] += 1
             return None
-    
-    def cache_result(self, key: str, result: Any):
-        """Cache a result."""
-        self.cache[key] = result
-        
-        # Manage cache size
-        if len(self.cache) > 1000:  # Limit cache size
-            # Remove oldest entries
-            oldest_keys = list(self.cache.keys())[:100]
-            for old_key in oldest_keys:
-                del self.cache[old_key]
+
+    def cache_result(self, key: str, result: Any) -> None:
+        """Cache a result with memory-aware eviction."""
+        entry_size = self._estimate_cache_entry_size(result)
+
+        with self._cache_lock:
+            if key in self.cache:
+                _, existing_size = self.cache.pop(key)
+                self._cache_bytes = max(0, self._cache_bytes - existing_size)
+
+            self.cache[key] = (result, entry_size)
+            self._cache_bytes += entry_size
+            self._enforce_cache_limits()
 
 def create_unified_utilities(config: Optional[UnifiedUtilityConfig] = None) -> UnifiedUtilities:
     """Create unified utilities with specified configuration."""

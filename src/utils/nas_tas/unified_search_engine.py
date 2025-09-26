@@ -32,21 +32,79 @@ import warnings
 import random
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
+from collections import OrderedDict
+import threading
+from math import isfinite
 
-# Import unified utilities
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    optimize_dataframe_dtypes, safe_to_parquet, safe_read_parquet,
-    align_dataframes, validate_dataframe_schema, guard_dataframe_nulls,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    integrate_with_m1_optimizers, memory_checkpoint, gpu_context,
-    optimize_memory, get_memory_usage, validate_file_path, get_file_size,
-    check_disk_space, CommonUtilities
-)
+# Import unified utilities lazily when needed to avoid circular dependencies
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - type checking helper only
+    from src.utils.common_operations import (
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    )
+else:
+    get_m1_gpu_manager = None  # type: ignore
+    get_m1_memory_optimizer = None  # type: ignore
+    get_m1_cpu_optimizer = None  # type: ignore
+
+
+def _load_m1_gpu_manager():
+    global get_m1_gpu_manager
+    if get_m1_gpu_manager is None:  # pragma: no branch - lazy load
+        from src.utils.common_operations import get_m1_gpu_manager as _impl
+
+        get_m1_gpu_manager = _impl
+    return get_m1_gpu_manager  # type: ignore[return-value]
+
+
+def _load_m1_memory_optimizer():
+    global get_m1_memory_optimizer
+    if get_m1_memory_optimizer is None:  # pragma: no branch - lazy load
+        from src.utils.common_operations import get_m1_memory_optimizer as _impl
+
+        get_m1_memory_optimizer = _impl
+    return get_m1_memory_optimizer  # type: ignore[return-value]
+
+
+def _load_m1_cpu_optimizer():
+    global get_m1_cpu_optimizer
+    if get_m1_cpu_optimizer is None:  # pragma: no branch - lazy load
+        from src.utils.common_operations import get_m1_cpu_optimizer as _impl
+
+        get_m1_cpu_optimizer = _impl
+    return get_m1_cpu_optimizer  # type: ignore[return-value]
+
+
+_BAYESIAN_DEPENDENCIES: Dict[str, Any] = {}
+
+
+def _get_bayesian_dependencies() -> Dict[str, Any]:
+    """Lazily import Bayesian optimizer dependencies to avoid circular imports."""
+    if not _BAYESIAN_DEPENDENCIES:
+        try:
+            from .bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+
+            _BAYESIAN_DEPENDENCIES.update(
+                {
+                    'optimizer_cls': BayesianTPEOptimizer,
+                    'config_cls': BayesianTPEConfig,
+                }
+            )
+        except ImportError as exc:
+            _BAYESIAN_DEPENDENCIES.update(
+                {
+                    'optimizer_cls': None,
+                    'config_cls': None,
+                    'error': exc,
+                }
+            )
+    return _BAYESIAN_DEPENDENCIES
+
+
+def _bayesian_available() -> bool:
+    deps = _get_bayesian_dependencies()
+    return bool(deps.get('optimizer_cls'))
 
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -76,16 +134,6 @@ from .search_strategies import (
     OptunaSearchStrategy as PluginOptunaStrategy,
     HyperbandSearchStrategy as PluginHyperbandStrategy,
 )
-
-# Import ML common utilities
-try:
-    from .bayesian_tpe_optimizer import (
-        BayesianTPEOptimizer, BayesianTPEConfig, OptimizationResult
-    )
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
-    warnings.warn("ML common utilities not available, using fallback implementations")
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
@@ -192,6 +240,95 @@ class SearchConfig:
     max_flops: Optional[float] = None
 
     def __post_init__(self) -> None:
+        self._validate_core_parameters()
+        self._validate_objectives()
+        self._validate_strategy_configs()
+
+        if not self.objective_names:
+            self.objective_names = [
+                obj.value if hasattr(obj, 'value') else str(obj)
+                for obj in self.objectives
+            ]
+        if not self.objective_directions:
+            self.objective_directions = ['maximize'] * len(self.objective_names)
+
+        if len(self.objective_directions) != len(self.objective_names):
+            raise ValueError("Objective directions must match the number of objective names")
+
+        if len(set(self.objective_names)) != len(self.objective_names):
+            raise ValueError("Objective names must be unique")
+
+        allowed_directions = {'maximize', 'minimize'}
+        invalid = [direction for direction in self.objective_directions if direction not in allowed_directions]
+        if invalid:
+            raise ValueError(f"Objective directions must be one of {allowed_directions}; invalid values: {invalid}")
+
+        # Normalize weights if they sum to approximately 1 and ensure positivity
+        if self.objective_weights:
+            if len(self.objective_weights) != len(self.objectives):
+                raise ValueError("Objective weights must match the number of objectives")
+            if any(weight <= 0 for weight in self.objective_weights):
+                raise ValueError("Objective weights must be strictly positive")
+            weight_sum = sum(self.objective_weights)
+            if not 0.99 <= weight_sum <= 1.01:
+                raise ValueError("Objective weights must sum to 1.0 within tolerance")
+
+    def _validate_core_parameters(self) -> None:
+        numeric_checks = {
+            'max_iterations': self.max_iterations,
+            'population_size': self.population_size,
+            'elite_size': self.elite_size,
+            'max_candidates_per_batch': self.max_candidates_per_batch,
+        }
+
+        for name, value in numeric_checks.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+
+        if self.random_seed is not None and (not isinstance(self.random_seed, int) or self.random_seed < 0):
+            raise ValueError("random_seed must be a non-negative integer when provided")
+
+        if self.memory_limit_gb is not None:
+            if not isinstance(self.memory_limit_gb, (int, float)) or self.memory_limit_gb <= 0:
+                raise ValueError("memory_limit_gb must be positive when provided")
+
+        if self.n_jobs == 0:
+            raise ValueError("n_jobs cannot be zero; use -1 for all cores or a positive integer")
+
+        if self.max_candidates_per_batch > self.population_size:
+            raise ValueError("max_candidates_per_batch cannot exceed population_size")
+
+    def _validate_objectives(self) -> None:
+        if not self.objectives:
+            raise ValueError("At least one optimization objective must be provided")
+
+        for objective in self.objectives:
+            if not isinstance(objective, OptimizationObjective):
+                raise TypeError("Objectives must be instances of OptimizationObjective")
+
+    def _validate_strategy_configs(self) -> None:
+        def _validate_positive(config: Dict[str, Any], keys: List[str]) -> None:
+            for key in keys:
+                value = config.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, (int, float)):
+                    if value <= 0 or not isfinite(float(value)):
+                        raise ValueError(f"{key} must be positive and finite")
+                    if key.endswith('rate') and value > 1:
+                        raise ValueError(f"{key} must be between 0 and 1")
+                    if key == 'reward_decay' and not 0 < value <= 1:
+                        raise ValueError("reward_decay must be between 0 and 1")
+                    if key.startswith('n_') and not float(value).is_integer():
+                        raise ValueError(f"{key} must be an integer value")
+                else:
+                    raise TypeError(f"{key} must be numeric")
+
+        _validate_positive(self.bayesian_config, ['n_initial_points'])
+        _validate_positive(self.evolutionary_config, ['mutation_rate', 'crossover_rate'])
+        _validate_positive(self.rl_config, ['learning_rate', 'exploration_rate', 'reward_decay'])
+
+    def __post_init__(self) -> None:
         if not self.objective_names:
             self.objective_names = [
                 obj.value if hasattr(obj, 'value') else str(obj)
@@ -246,13 +383,18 @@ class SearchStrategyInterface(Protocol):
 
 class BayesianSearchStrategy:
     """Bayesian optimization search strategy."""
-    
-    def __init__(self):
+
+    def __init__(
+        self,
+        dependency_resolver: Callable[[], Dict[str, Any]] = _get_bayesian_dependencies,
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.optimizer = None
-        
-    def search(self, 
-               search_space: Dict[str, Any], 
+        self._dependency_resolver = dependency_resolver
+        self._dependency_warning_emitted = False
+
+    def search(self,
+               search_space: Dict[str, Any],
                objective_function: Callable,
                config: SearchConfig) -> SearchResult:
         """Perform Bayesian optimization search."""
@@ -260,11 +402,25 @@ class BayesianSearchStrategy:
             tprint_info("🔍 Starting Bayesian optimization search...")
             start_time = time.time()
             
-            # Initialize Bayesian optimizer
-            if ML_COMMON_AVAILABLE:
-                bayesian_config = BayesianTPEConfig(**config.bayesian_config)
-                self.optimizer = BayesianTPEOptimizer(bayesian_config)
+            # Initialize Bayesian optimizer lazily to avoid circular imports
+            dependencies = self._dependency_resolver()
+            optimizer_cls = dependencies.get('optimizer_cls')
+            config_cls = dependencies.get('config_cls')
+
+            if optimizer_cls and config_cls:
+                bayesian_config = config_cls(**config.bayesian_config)
+                self.optimizer = optimizer_cls(bayesian_config)
             else:
+                if dependencies.get('error') and not self._dependency_warning_emitted:
+                    warnings.warn(
+                        "Bayesian optimizer dependencies unavailable; falling back to random search",
+                        RuntimeWarning,
+                    )
+                    self.logger.warning(
+                        "Bayesian optimizer unavailable, using fallback: %s",
+                        dependencies.get('error'),
+                    )
+                    self._dependency_warning_emitted = True
                 # Fallback implementation
                 self.optimizer = self._create_fallback_optimizer(config)
             
@@ -677,16 +833,20 @@ class UnifiedSearchEngine:
         }
 
         # Initialize hardware optimizers
-        self.hardware_optimizers = {}
+        self.hardware_optimizers: Dict[str, Any] = {}
+        self.hardware_warnings: List[str] = []
         if self.config.enable_parallel_processing:
             self._initialize_hardware_optimizers()
 
         # Performance monitoring
         self.search_history = []
         self.performance_metrics = {}
-        self.evaluation_cache: Dict[Tuple, StrategyEvaluation] = {}
+        self._cache_lock = threading.RLock()
+        self.evaluation_cache: "OrderedDict[Tuple, StrategyEvaluation]" = OrderedDict()
         self._cache_hits = 0
         self._max_cache_size = 1000  # Limit cache size to prevent memory issues
+        self._cache_evictions = 0
+        self._cache_requests = 0
 
         self.logger.info(
             "Unified Search Engine initialised",
@@ -704,44 +864,73 @@ class UnifiedSearchEngine:
     
     def _manage_cache_size(self):
         """Manage cache size to prevent memory issues."""
-        if len(self.evaluation_cache) > self._max_cache_size:
-            # Remove oldest entries (simple FIFO)
-            cache_items = list(self.evaluation_cache.items())
-            items_to_remove = len(cache_items) - self._max_cache_size
-            for key, _ in cache_items[:items_to_remove]:
-                del self.evaluation_cache[key]
-            self.logger.debug(f"Cleaned cache: removed {items_to_remove} entries")
-    
+        with self._cache_lock:
+            removed = 0
+            while len(self.evaluation_cache) > self._max_cache_size:
+                self.evaluation_cache.popitem(last=False)
+                self._cache_evictions += 1
+                removed += 1
+            if removed:
+                self.logger.debug("Cleaned cache: removed %s entries", removed)
+
     def clear_cache(self):
         """Clear the evaluation cache."""
-        self.evaluation_cache.clear()
-        self._cache_hits = 0
+        with self._cache_lock:
+            self.evaluation_cache.clear()
+            self._cache_hits = 0
+            self._cache_evictions = 0
+            self._cache_requests = 0
         self.logger.info("Evaluation cache cleared")
-    
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
+        with self._cache_lock:
+            cache_size = len(self.evaluation_cache)
+        total_requests = max(1, self._cache_requests)
         return {
-            'cache_size': len(self.evaluation_cache),
+            'cache_size': cache_size,
             'max_cache_size': self._max_cache_size,
             'cache_hits': self._cache_hits,
-            'cache_hit_rate': self._cache_hits / max(1, len(self.evaluation_cache) + self._cache_hits)
+            'cache_evictions': self._cache_evictions,
+            'cache_hit_rate': self._cache_hits / total_requests,
         }
 
     def _initialize_hardware_optimizers(self):
         """Initialize hardware optimization components."""
         try:
             if self.config.enable_gpu_acceleration:
-                self.hardware_optimizers['gpu'] = get_m1_gpu_manager()
-            
+                try:
+                    self.hardware_optimizers['gpu'] = _load_m1_gpu_manager()()
+                except Exception as exc:  # pragma: no cover - GPU optional
+                    warning = f"GPU optimizer unavailable: {exc}"
+                    self.hardware_warnings.append(warning)
+                    tprint_warning(f"⚠️ {warning}")
+                    self.logger.debug("GPU optimizer unavailable", exc_info=exc)
+
             if self.config.memory_limit_gb:
-                self.hardware_optimizers['memory'] = get_m1_memory_optimizer(self.config.memory_limit_gb)
-            
-            self.hardware_optimizers['cpu'] = get_m1_cpu_optimizer()
-            
+                try:
+                    memory_optimizer_factory = _load_m1_memory_optimizer()
+                    self.hardware_optimizers['memory'] = memory_optimizer_factory(self.config.memory_limit_gb)
+                except Exception as exc:  # pragma: no cover - memory optimizer optional
+                    warning = f"Memory optimizer unavailable: {exc}"
+                    self.hardware_warnings.append(warning)
+                    tprint_warning(f"⚠️ {warning}")
+
+            try:
+                cpu_optimizer_factory = _load_m1_cpu_optimizer()
+                self.hardware_optimizers['cpu'] = cpu_optimizer_factory()
+            except Exception as exc:  # pragma: no cover - CPU optimizer optional
+                warning = f"CPU optimizer unavailable: {exc}"
+                self.hardware_warnings.append(warning)
+                tprint_warning(f"⚠️ {warning}")
+                self.logger.debug("CPU optimizer unavailable", exc_info=exc)
+
             tprint_success("✅ Hardware optimizers initialized")
-            
+
         except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimization setup failed: {e}")
+            warning = f"Hardware optimization setup failed: {e}"
+            self.hardware_warnings.append(warning)
+            tprint_warning(f"⚠️ {warning}")
             self.hardware_optimizers = {}
 
     def _register_default_strategies(self) -> None:
@@ -846,9 +1035,16 @@ class UnifiedSearchEngine:
         objective_function: Callable[[Dict[str, Any]], Any],
     ) -> Optional[StrategyEvaluation]:
         key = candidate.cache_key()
-        if self.config.cache_results and key in self.evaluation_cache:
-            self._cache_hits += 1
-            return self.evaluation_cache[key]
+        if self.config.cache_results:
+            with self._cache_lock:
+                self._cache_requests += 1
+                cached = self.evaluation_cache.get(key)
+                if cached is not None:
+                    # Maintain LRU ordering by re-inserting
+                    self.evaluation_cache.pop(key)
+                    self.evaluation_cache[key] = cached
+                    self._cache_hits += 1
+                    return cached
 
         if self.config.enable_constraint_validation and not self._validate_candidate_constraints(candidate.params):
             self.logger.debug(
@@ -859,8 +1055,9 @@ class UnifiedSearchEngine:
         metrics = self._normalize_metrics(objective_function(candidate.params))
         evaluation = StrategyEvaluation(candidate=candidate, metrics=metrics)
         if self.config.cache_results:
-            self.evaluation_cache[key] = evaluation
-            self._manage_cache_size()  # Manage cache size after adding new entry
+            with self._cache_lock:
+                self.evaluation_cache[key] = evaluation
+                self._manage_cache_size()  # Manage cache size after adding new entry
         return evaluation
 
     def _normalize_metrics(self, raw_result: Any) -> Dict[str, float]:
@@ -940,10 +1137,11 @@ class UnifiedSearchEngine:
         search_strategy = strategy or self.config.search_strategy
         start_time = time.time()
         self._cache_hits = 0
-        self.evaluation_cache.clear()
+        with self._cache_lock:
+            self.evaluation_cache.clear()
 
         try:
-            self._validate_search_space(search_space)
+            self._validate_search_inputs(search_space, objective_function)
             strategy_impl = self._resolve_strategy(search_strategy)
 
             tprint_info(f"🔍 Starting {search_strategy.value} search...")
@@ -993,17 +1191,69 @@ class UnifiedSearchEngine:
                 error_message=str(e)
             )
     
-    def _validate_search_space(self, search_space: Dict[str, Any]):
+    def _validate_search_inputs(
+        self,
+        search_space: Dict[str, Any],
+        objective_function: Callable[[Dict[str, Any]], Any],
+    ) -> None:
+        if not isinstance(search_space, dict):
+            raise TypeError("Search space must be a dictionary")
+        if not callable(objective_function):
+            raise TypeError("Objective function must be callable")
+
+        self._validate_search_space(search_space)
+
+        if self.config.objective_weights and len(self.config.objective_weights) != len(self.config.objectives):
+            raise ValueError("Objective weights must match the number of objectives")
+
+    def _validate_search_space(self, search_space: Dict[str, Any]) -> None:
         """Validate search space definition."""
         if not search_space:
             raise ValueError("Search space cannot be empty")
 
         for param, values in search_space.items():
+            if not isinstance(param, str) or not param.strip():
+                raise TypeError("Search space keys must be non-empty strings")
+
             if isinstance(values, dict):
-                if not ({'low', 'high'} <= values.keys() or 'choices' in values):
+                has_bounds = {'low', 'high'}.issubset(values.keys())
+                has_choices = 'choices' in values
+                if not (has_bounds or has_choices):
                     raise ValueError(
-                        f"Parameter {param} dict must define either ['low', 'high'] or 'choices'"
+                        f"Parameter {param} must define bounds ['low', 'high'] or 'choices'"
                     )
+                if has_bounds:
+                    low = values['low']
+                    high = values['high']
+                    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+                        raise TypeError(f"Bounds for parameter {param} must be numeric")
+                    if not np.isfinite(low) or not np.isfinite(high):
+                        raise ValueError(f"Bounds for parameter {param} must be finite")
+                    if low >= high:
+                        raise ValueError(
+                            f"Lower bound must be less than upper bound for parameter {param}"
+                        )
+                    if high - low < 1e-9:
+                        raise ValueError(
+                            f"Bounds for parameter {param} are unrealistically narrow"
+                        )
+                    if abs(high) > 1e9 or abs(low) > 1e9:
+                        raise ValueError(
+                            f"Bounds for parameter {param} exceed realistic limits (|value| > 1e9)"
+                        )
+                    step = values.get('step')
+                    if step is not None and step <= 0:
+                        raise ValueError(
+                            f"Step for parameter {param} must be positive when provided"
+                        )
+                if has_choices:
+                    choices = values['choices']
+                    if not isinstance(choices, (list, tuple)) or not choices:
+                        raise ValueError(f"Parameter {param} choices must be a non-empty sequence")
+                    if any(choice is None for choice in choices):
+                        raise ValueError(f"Parameter {param} choices cannot contain None values")
+                    if len(set(choices)) != len(choices):
+                        raise ValueError(f"Parameter {param} choices contain duplicates")
                 continue
 
             if isinstance(values, tuple):
@@ -1011,11 +1261,26 @@ class UnifiedSearchEngine:
                     raise ValueError(
                         f"Parameter {param} tuple must have exactly 2 values (min, max)"
                     )
+                low, high = values
+                if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+                    raise TypeError(f"Bounds for parameter {param} must be numeric")
+                if not np.isfinite(low) or not np.isfinite(high):
+                    raise ValueError(f"Bounds for parameter {param} must be finite")
+                if low >= high:
+                    raise ValueError(
+                        f"Lower bound must be less than upper bound for parameter {param}"
+                    )
+                if abs(high) > 1e9 or abs(low) > 1e9:
+                    raise ValueError(
+                        f"Bounds for parameter {param} exceed realistic limits (|value| > 1e9)"
+                    )
                 continue
 
             if isinstance(values, list):
                 if not values:
                     raise ValueError(f"Parameter {param} list cannot be empty")
+                if any(value is None for value in values):
+                    raise ValueError(f"Parameter {param} list cannot contain None values")
                 continue
 
             raise ValueError(

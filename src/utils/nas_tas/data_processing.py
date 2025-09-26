@@ -6,21 +6,30 @@ This module provides a wrapper around the unified data preprocessing system
 for both NAS and TAS systems, maintaining backward compatibility.
 """
 
-# Import the unified data preprocessing system
-from src.utils.nas_tas.data_preprocessing import (
-    UnifiedDataPreprocessor,
-    PreprocessingConfig,
-    PreprocessingResult,
-    PreprocessingStep
-)
-
 # Import additional utilities for data splitting and cross-validation
+import importlib
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union, Tuple
+from sklearn.feature_selection import SelectKBest, mutual_info_classif, f_classif
 from sklearn.model_selection import train_test_split, TimeSeriesSplit, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.feature_selection import SelectKBest, mutual_info_classif, f_classif
+
+if TYPE_CHECKING:  # pragma: no cover - type checking helper
+    from src.utils.nas_tas.data_preprocessing import (
+        UnifiedDataPreprocessor,
+        PreprocessingConfig,
+        PreprocessingResult,
+        PreprocessingStep,
+    )
+else:
+    UnifiedDataPreprocessor = Any  # type: ignore
+    PreprocessingConfig = Any  # type: ignore
+    PreprocessingResult = Any  # type: ignore
+    PreprocessingStep = Any  # type: ignore
 
 # Import utility modules
 try:
@@ -45,17 +54,57 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class DataProcessorConfigurationError(ValueError):
+    """Raised when the provided configuration for the data processor is invalid."""
+
+
+class DataProcessingError(RuntimeError):
+    """Raised when the unified data processor fails to process data."""
+
+
+class DataSplitError(RuntimeError):
+    """Raised when the unified data processor fails to split data."""
+
+
+def _load_data_preprocessing_module():
+    return importlib.import_module("src.utils.nas_tas.data_preprocessing")
+
+
+def _get_preprocessing_config_cls():
+    module = _load_data_preprocessing_module()
+    return getattr(module, "PreprocessingConfig")
+
+
+def _get_preprocessor_cls():
+    module = _load_data_preprocessing_module()
+    return getattr(module, "UnifiedDataPreprocessor")
+
+
+@dataclass(frozen=True)
+class _ValidatedDataProcessorConfig:
+    validation_split: float
+    max_features: Optional[int]
+    allow_non_numeric: bool
+
+
 class UnifiedDataProcessor:
     """Unified data processing pipeline for both NAS and TAS systems."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: Dict[str, Any], preprocessor: Optional[Any] = None):
         """Initialize unified data processor."""
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
+        self._validated_config = self._validate_and_freeze_config(config)
+
         # Initialize the unified data preprocessor
-        preprocessing_config = PreprocessingConfig()
-        self.data_preprocessor = UnifiedDataPreprocessor(preprocessing_config)
+        if preprocessor is not None:
+            self.data_preprocessor = preprocessor
+        else:
+            preprocessing_config_cls = _get_preprocessing_config_cls()
+            preprocessing_config = preprocessing_config_cls()
+            preprocessor_cls = _get_preprocessor_cls()
+            self.data_preprocessor = preprocessor_cls(preprocessing_config)
         
         # Initialize preprocessing components
         self.scaler = None
@@ -66,6 +115,27 @@ class UnifiedDataProcessor:
         self.is_fitted = False
         self.feature_names = None
         self.target_encoder = None
+
+    def _validate_and_freeze_config(self, config: Dict[str, Any]) -> _ValidatedDataProcessorConfig:
+        """Validate incoming configuration and return an immutable view."""
+        validation_split = config.get('validation_split', 0.2)
+        if not isinstance(validation_split, (int, float)):
+            raise DataProcessorConfigurationError("validation_split must be numeric")
+        if not 0.0 < validation_split < 0.5:
+            raise DataProcessorConfigurationError("validation_split must be between 0 and 0.5 for stability")
+
+        max_features = config.get('max_features')
+        if max_features is not None:
+            if not isinstance(max_features, int) or max_features <= 0:
+                raise DataProcessorConfigurationError("max_features must be a positive integer when provided")
+
+        allow_non_numeric = bool(config.get('allow_non_numeric', True))
+
+        return _ValidatedDataProcessorConfig(
+            validation_split=float(validation_split),
+            max_features=max_features,
+            allow_non_numeric=allow_non_numeric,
+        )
     
     def process_data(self, 
                     X: np.ndarray, 
@@ -88,36 +158,39 @@ class UnifiedDataProcessor:
                 X_df = pd.DataFrame(X)
             else:
                 X_df = X.copy()
-            
+
+            if not self._validated_config.allow_non_numeric and not np.issubdtype(X_df.to_numpy().dtype, np.number):
+                raise DataProcessingError("Input features must be numeric when non-numeric data is disallowed")
+
             # Use the unified data preprocessor
             preprocessing_result = self.data_preprocessor.preprocess_data(X_df)
-            
+
             # Convert back to numpy arrays
             X_processed = preprocessing_result.processed_data.values
             y_processed = y  # Target remains unchanged
-            
+
             # Update processing info
             processing_info.update({
                 'final_shape': X_processed.shape,
                 'preprocessing_steps_applied': preprocessing_result.preprocessing_steps_applied,
-                'data_quality_improvement': preprocessing_result.data_quality_improvement,
-                'preprocessing_time': preprocessing_result.preprocessing_time,
-                'memory_usage': preprocessing_result.memory_usage,
-                'hardware_acceleration_used': preprocessing_result.hardware_acceleration_used,
-                'matrix_operations_used': preprocessing_result.matrix_operations_used
+                'data_quality_improvement': getattr(preprocessing_result, 'data_quality_improvement', None),
+                'preprocessing_time': getattr(preprocessing_result, 'preprocessing_time', None),
+                'memory_usage': getattr(preprocessing_result, 'memory_usage', None),
+                'hardware_acceleration_used': getattr(preprocessing_result, 'hardware_acceleration_used', None),
+                'matrix_operations_used': getattr(preprocessing_result, 'matrix_operations_used', None)
             })
-            
+
             if fit:
                 self.is_fitted = True
-            
+
             tprint_success(f"Data processing completed. Final shape: {X_processed.shape}")
-            
+
             return X_processed, y_processed, processing_info
-            
+
         except Exception as e:
-            tprint_error(f"Data processing failed: {e}")
             processing_info['error'] = str(e)
-            return X, y, processing_info
+            tprint_error(f"Data processing failed: {e}")
+            raise DataProcessingError(str(e)) from e
     
     def _handle_missing_values(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Handle missing values in data."""
@@ -140,8 +213,8 @@ class UnifiedDataProcessor:
     
     def _select_features(self, X: np.ndarray, y: np.ndarray, fit: bool = True) -> np.ndarray:
         """Select features using mutual information or F-test."""
-        max_features = self.config.get('max_features', X.shape[1])
-        
+        max_features = self._validated_config.max_features or X.shape[1]
+
         if X.shape[1] <= max_features:
             return X
         
@@ -234,12 +307,12 @@ class UnifiedDataProcessor:
                    data_type: str = "general") -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Split data into train/validation sets."""
         
-        validation_split = self.config.get('validation_split', 0.2)
-        
+        validation_split = self._validated_config.validation_split
+
         try:
             # Determine if classification or regression
             n_unique = len(np.unique(y))
-            
+
             if n_unique <= 10:  # Classification - use stratified split
                 X_train, X_val, y_train, y_val = train_test_split(
                     X, y, test_size=validation_split, random_state=42, stratify=y
@@ -248,16 +321,14 @@ class UnifiedDataProcessor:
                 X_train, X_val, y_train, y_val = train_test_split(
                     X, y, test_size=validation_split, random_state=42
                 )
-            
+
             tprint_success(f"Data split: train={X_train.shape[0]}, val={X_val.shape[0]}")
-            
+
             return X_train, X_val, y_train, y_val
-            
+
         except Exception as e:
             tprint_error(f"Data splitting failed: {e}")
-            # Fallback to simple split
-            split_idx = int(len(X) * (1 - validation_split))
-            return X[:split_idx], X[split_idx:], y[:split_idx], y[split_idx:]
+            raise DataSplitError(str(e)) from e
     
     def get_cross_validation_splits(self, 
                                    X: np.ndarray, 
@@ -307,3 +378,11 @@ class UnifiedDataProcessor:
     def set_feature_names(self, feature_names: List[str]):
         """Set feature names."""
         self.feature_names = feature_names
+
+
+__all__ = [
+    'UnifiedDataProcessor',
+    'DataProcessorConfigurationError',
+    'DataProcessingError',
+    'DataSplitError',
+]

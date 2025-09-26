@@ -596,7 +596,8 @@ class SRDetectionOptimizer:
             if self._operation_count % self._cleanup_frequency == 0:
                 self._cleanup_caches()
         except ImportError:
-            pass
+            # psutil not available, skip memory monitoring
+            self.logger.debug('psutil not available, skipping memory monitoring')
         except Exception as e:
             self.logger.warning(f'Memory monitoring failed: {e}')
 

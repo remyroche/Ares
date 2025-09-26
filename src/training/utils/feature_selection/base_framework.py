@@ -791,6 +791,163 @@ Stack Trace:
         else:
             return 'default'
 
+    def _validate_feature_selection_inputs(self, X: np.ndarray, y: np.ndarray, 
+                                         feature_names: List[str] = None) -> Dict[str, Any]:
+        """Validate inputs for feature selection methods."""
+        try:
+            validation_result = {
+                'is_valid': True,
+                'errors': [],
+                'warnings': [],
+                'data_info': {}
+            }
+            
+            # Check data types
+            if not isinstance(X, np.ndarray):
+                validation_result['errors'].append('X must be a numpy array')
+                validation_result['is_valid'] = False
+            
+            if not isinstance(y, np.ndarray):
+                validation_result['errors'].append('y must be a numpy array')
+                validation_result['is_valid'] = False
+            
+            # Check data shapes
+            if X.ndim != 2:
+                validation_result['errors'].append('X must be 2-dimensional')
+                validation_result['is_valid'] = False
+            
+            if y.ndim != 1:
+                validation_result['errors'].append('y must be 1-dimensional')
+                validation_result['is_valid'] = False
+            
+            if X.shape[0] != y.shape[0]:
+                validation_result['errors'].append('X and y must have same number of samples')
+                validation_result['is_valid'] = False
+            
+            # Check for sufficient data
+            if X.shape[0] < self.min_samples_for_analysis:
+                validation_result['warnings'].append(f'Very few samples: {X.shape[0]} < {self.min_samples_for_analysis}')
+            
+            if X.shape[1] > self.max_features_per_method:
+                validation_result['warnings'].append(f'Many features: {X.shape[1]} > {self.max_features_per_method}')
+            
+            # Check feature names
+            if feature_names and len(feature_names) != X.shape[1]:
+                validation_result['errors'].append('Feature names length must match number of features')
+                validation_result['is_valid'] = False
+            
+            # Store data info
+            validation_result['data_info'] = {
+                'n_samples': X.shape[0],
+                'n_features': X.shape[1],
+                'feature_names_provided': feature_names is not None,
+                'has_nan': np.isnan(X).any(),
+                'has_inf': np.isinf(X).any()
+            }
+            
+            return validation_result
+            
+        except Exception as e:
+            _LOGGER.error(f'Error validating feature selection inputs: {e}')
+            return {
+                'is_valid': False,
+                'errors': [f'Validation error: {e}'],
+                'warnings': [],
+                'data_info': {}
+            }
+
+    def _prepare_feature_selection_data(self, X: np.ndarray, y: np.ndarray, 
+                                      feature_names: List[str] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Prepare data for feature selection with cleaning and validation."""
+        try:
+            # Handle missing feature names
+            if feature_names is None:
+                feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            
+            # Clean data
+            X_clean, y_clean = self._clean_data(X, y)
+            
+            # Remove constant features
+            X_clean, feature_names_clean = self._remove_constant_features(X_clean, feature_names)
+            
+            # Handle infinite values
+            X_clean = self._handle_infinite_values(X_clean)
+            
+            _LOGGER.info(f'Data prepared: {X_clean.shape[0]} samples, {X_clean.shape[1]} features')
+            
+            return X_clean, y_clean, feature_names_clean
+            
+        except Exception as e:
+            _LOGGER.error(f'Error preparing feature selection data: {e}')
+            raise
+
+    def _clean_data(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Clean data by removing rows with NaN values."""
+        try:
+            # Find rows without NaN values
+            valid_rows = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+            
+            if not valid_rows.any():
+                raise ValueError('No valid rows found after cleaning')
+            
+            X_clean = X[valid_rows]
+            y_clean = y[valid_rows]
+            
+            if len(X_clean) < 10:
+                _LOGGER.warning(f'Very few samples after cleaning: {len(X_clean)}')
+            
+            return X_clean, y_clean
+            
+        except Exception as e:
+            _LOGGER.error(f'Error cleaning data: {e}')
+            raise
+
+    def _remove_constant_features(self, X: np.ndarray, feature_names: List[str]) -> Tuple[np.ndarray, List[str]]:
+        """Remove constant features from the dataset."""
+        try:
+            # Find constant features
+            constant_features = []
+            for i in range(X.shape[1]):
+                if np.std(X[:, i]) == 0:
+                    constant_features.append(i)
+            
+            if constant_features:
+                _LOGGER.info(f'Removing {len(constant_features)} constant features')
+                
+                # Remove constant features
+                X_clean = np.delete(X, constant_features, axis=1)
+                feature_names_clean = [name for i, name in enumerate(feature_names) if i not in constant_features]
+                
+                return X_clean, feature_names_clean
+            
+            return X, feature_names
+            
+        except Exception as e:
+            _LOGGER.error(f'Error removing constant features: {e}')
+            return X, feature_names
+
+    def _handle_infinite_values(self, X: np.ndarray) -> np.ndarray:
+        """Handle infinite values in the dataset."""
+        try:
+            # Replace infinite values with NaN, then with median
+            X_clean = X.copy()
+            
+            # Replace inf with NaN
+            X_clean[np.isinf(X_clean)] = np.nan
+            
+            # Replace NaN with median for each feature
+            for i in range(X_clean.shape[1]):
+                feature_values = X_clean[:, i]
+                if np.isnan(feature_values).any():
+                    median_val = np.nanmedian(feature_values)
+                    X_clean[np.isnan(X_clean[:, i]), i] = median_val
+            
+            return X_clean
+            
+        except Exception as e:
+            _LOGGER.error(f'Error handling infinite values: {e}')
+            return X
+
 
 # Alias for backward compatibility
 FeatureSelectionFramework = BaseFeatureSelectionFramework

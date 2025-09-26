@@ -978,9 +978,23 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             # Get indices
             final_indices = []
             for feature in final_features:
-                # Find feature index (this assumes feature_names is available in the calling context)
-                # For now, we'll return empty indices
-                pass
+                # Find feature index in the original feature list
+                try:
+                    if feature_names and feature in feature_names:
+                        feature_index = feature_names.index(feature)
+                        final_indices.append(feature_index)
+                    else:
+                        # If feature names not available, try to extract index from feature name
+                        if feature.startswith('feature_'):
+                            try:
+                                index = int(feature.split('_')[1])
+                                final_indices.append(index)
+                            except (ValueError, IndexError):
+                                # Skip if we can't determine index
+                                continue
+                except Exception as e:
+                    logger.warning(f"Could not determine index for feature {feature}: {e}")
+                    continue
             
             result = {
                 'selected_features': final_features,

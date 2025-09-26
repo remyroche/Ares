@@ -702,8 +702,8 @@ class StandardizedParquetHandler:
                         'end': timestamps.max().isoformat()
                     }
                 except (ValueError, TypeError, KeyError, pd.errors.ParserError) as e:
-                    tprint_warning(f"⚠️ Failed to extract timestamp metadata: {e}")
-                    pass
+                    tprint_warning(f"Could not parse timestamp range: {e}")
+                    metadata['timestamp_range'] = None
             
             import json
             with open(metadata_path, 'w') as f:

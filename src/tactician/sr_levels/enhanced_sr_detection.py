@@ -4662,55 +4662,73 @@ class EnhancedSRDetector:
         """
         try:
             if not levels:
-                # Fallback to overall dataset volatility
-                return data['close'].pct_change().std()
+                return 0.0
             
-            # Get time range of SR levels
-            level_times = []
+            # Extract time periods from levels
+            time_periods = []
             for level in levels:
-                if level.first_touch_time is not None:
-                    level_times.append(level.first_touch_time)
-                if level.last_touch_time is not None:
-                    level_times.append(level.last_touch_time)
+                if hasattr(level, 'formation_time') and level.formation_time:
+                    time_periods.append(level.formation_time)
+                elif hasattr(level, 'timestamp') and level.timestamp:
+                    time_periods.append(level.timestamp)
             
-            if not level_times:
-                # Fallback to overall dataset volatility
-                return data['close'].pct_change().std()
+            if not time_periods:
+                # Fallback to using recent data volatility
+                if len(data) > 20:
+                    recent_data = data.tail(20)
+                    returns = recent_data['close'].pct_change().dropna()
+                    return float(returns.std()) if len(returns) > 0 else 0.0
+                return 0.0
             
-            # Find the time range covering all levels
-            min_time = min(level_times)
-            max_time = max(level_times)
+            # Calculate volatility for the specific time periods
+            period_volatilities = []
+            for period in time_periods:
+                try:
+                    # Find data around this time period
+                    if 'timestamp' in data.columns:
+                        # Convert period to datetime if needed
+                        if isinstance(period, (int, float)):
+                            period_dt = pd.to_datetime(period, unit='ms')
+                        else:
+                            period_dt = pd.to_datetime(period)
+                        
+                        # Get data within a window around this period
+                        window_start = period_dt - pd.Timedelta(hours=1)
+                        window_end = period_dt + pd.Timedelta(hours=1)
+                        
+                        period_data = data[
+                            (data['timestamp'] >= window_start) & 
+                            (data['timestamp'] <= window_end)
+                        ]
+                        
+                        if len(period_data) > 5:
+                            returns = period_data['close'].pct_change().dropna()
+                            if len(returns) > 0:
+                                period_volatilities.append(returns.std())
+                except Exception as e:
+                    self.logger.debug(f'Error calculating volatility for period {period}: {e}')
+                    continue
             
-            # Add buffer to capture more context around level formation
-            time_buffer = pd.Timedelta(hours=24)  # 24-hour buffer
-            start_time = min_time - time_buffer
-            end_time = max_time + time_buffer
-            
-            # Filter data to level formation period
-            level_period_data = data[(data.index >= start_time) & (data.index <= end_time)]
-            
-            if len(level_period_data) < 10:
-                # Not enough data in level period, use overall volatility
-                self.logger.info('🔧 Insufficient data in level period, using overall volatility')
-                return data['close'].pct_change().std()
-            
-            # Calculate volatility for the level formation period
-            level_period_volatility = level_period_data['close'].pct_change().std()
-            
-            # Ensure we have a reasonable volatility value
-            if pd.isna(level_period_volatility) or level_period_volatility <= 0:
-                # Fallback to overall dataset volatility
-                level_period_volatility = data['close'].pct_change().std()
-            
-            self.logger.info(f'🔧 Level period volatility: {level_period_volatility:.4f} '
-                           f'(period: {start_time} to {end_time}, {len(level_period_data)} bars)')
-            
-            return level_period_volatility
+            # Return average volatility across all periods
+            if period_volatilities:
+                return float(np.mean(period_volatilities))
+            else:
+                # Fallback to overall data volatility
+                if len(data) > 20:
+                    returns = data['close'].pct_change().dropna()
+                    return float(returns.std()) if len(returns) > 0 else 0.0
+                return 0.0
             
         except Exception as e:
-            self.logger.warning(f'Failed to calculate level period volatility: {e}')
+            self.logger.warning(f'Error calculating level period volatility: {e}')
             # Fallback to overall dataset volatility
-            return data['close'].pct_change().std()
+            try:
+                if len(data) > 20:
+                    returns = data['close'].pct_change().dropna()
+                    return float(returns.std()) if len(returns) > 0 else 0.0
+                return 0.0
+            except Exception:
+                return 0.0
 
     def _optimize_dbscan_optuna(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Optimize DBSCAN parameters using Optuna."""

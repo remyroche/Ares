@@ -16,11 +16,21 @@ import logging
 # Simple error classes for SR operations
 class SROptimizationError(Exception):
     """SR optimization specific error."""
-    pass
+    def __init__(self, message: str, error_code: str = None, context: dict = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code or "SR_OPTIMIZATION_ERROR"
+        self.context = context or {}
+        self.timestamp = datetime.now()
 
 class SRDataError(Exception):
     """SR data specific error."""
-    pass
+    def __init__(self, message: str, error_code: str = None, context: dict = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code or "SR_DATA_ERROR"
+        self.context = context or {}
+        self.timestamp = datetime.now()
 
 @dataclass
 class ProgressMetrics:

@@ -29,6 +29,7 @@ from sklearn.ensemble import IsolationForest
 import warnings
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 
 class MLPatternDiscoveryMethod(Enum):
@@ -244,7 +245,11 @@ class ClusteringBasedPatternDiscovery:
                 'cluster_mean': float(cluster_mean),
                 'overall_mean': float(all_mean)
             }
-        except:
+        except ValueError as e:
+            tprint_warning(f"Statistical test failed due to invalid data: {e}")
+            return {'p_value': 1.0, 't_statistic': 0.0}
+        except Exception as e:
+            tprint_error(f"Unexpected error in statistical test: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_cluster_formula(self, 
@@ -466,7 +471,11 @@ class AnomalyPatternDiscovery:
                 'anomaly_volatility': float(anomaly_vol),
                 'normal_volatility': float(normal_vol)
             }
-        except:
+        except ValueError as e:
+            tprint_warning(f"Anomaly significance test failed due to invalid data: {e}")
+            return {'p_value': 1.0, 't_statistic': 0.0}
+        except Exception as e:
+            tprint_error(f"Unexpected error in anomaly significance test: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_anomaly_conditions(self, 
@@ -597,7 +606,11 @@ class ChangePointPatternDiscovery:
                 
                 if f_stat > critical_value or f_stat < 1/critical_value:
                     change_points.append(i)
-            except:
+            except ZeroDivisionError as e:
+                tprint_warning(f"Division by zero in change point detection: {e}")
+                continue
+            except Exception as e:
+                tprint_warning(f"Error in change point detection: {e}")
                 continue
         
         # Remove close change points
@@ -766,7 +779,11 @@ class ChangePointPatternDiscovery:
                 'mean_return': float(np.mean(segment_returns)),
                 'return_std': float(np.std(segment_returns))
             }
-        except:
+        except ValueError as e:
+            tprint_warning(f"Segment significance test failed due to invalid data: {e}")
+            return {'p_value': 1.0, 't_statistic': 0.0}
+        except Exception as e:
+            tprint_error(f"Unexpected error in segment significance test: {e}")
             return {'p_value': 1.0, 't_statistic': 0.0}
     
     def _approximate_segment_formula(self, segment_cluster: List[Dict[str, Any]]) -> str:
@@ -845,7 +862,16 @@ class MLPatternDiscoveryOrchestrator:
                 
                 self.logger.info(f"   ✅ {method_name}: {len(patterns)} significant patterns discovered")
                 
+            except ValueError as e:
+                tprint_error(f"Pattern discovery method '{method_name}' failed due to invalid data: {e}")
+                self.logger.error(f"   ❌ {method_name} failed: {e}")
+                all_discovered_patterns[method_name] = []
+            except MemoryError as e:
+                tprint_error(f"Pattern discovery method '{method_name}' failed due to insufficient memory: {e}")
+                self.logger.error(f"   ❌ {method_name} failed: {e}")
+                all_discovered_patterns[method_name] = []
             except Exception as e:
+                tprint_error(f"Pattern discovery method '{method_name}' failed with unexpected error: {e}")
                 self.logger.error(f"   ❌ {method_name} failed: {e}")
                 all_discovered_patterns[method_name] = []
         

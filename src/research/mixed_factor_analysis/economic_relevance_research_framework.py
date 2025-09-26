@@ -29,6 +29,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, r2_score
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 
 class PriceMovementPattern(Enum):
@@ -432,8 +433,14 @@ class CausalImpactResearchMethodology(BaseResearchMethodology):
             composite_signal = pca.fit_transform(features_scaled)
             
             return pd.Series(composite_signal.flatten(), index=dimension_features.index)
-        except:
-            # Fallback to mean
+        except ValueError as e:
+            tprint_warning(f"PCA failed due to invalid data, using mean fallback: {e}")
+            return dimension_features.mean(axis=1)
+        except ImportError as e:
+            tprint_warning(f"PCA import failed, using mean fallback: {e}")
+            return dimension_features.mean(axis=1)
+        except Exception as e:
+            tprint_error(f"Unexpected error in dimension signal creation, using mean fallback: {e}")
             return dimension_features.mean(axis=1)
     
     def _conduct_robustness_tests(self, 
@@ -930,7 +937,11 @@ class PatternPredictionResearchMethodology(BaseResearchMethodology):
                         
                         accuracy = np.mean(y_pred_binary == y_test_binary)
                         period_accuracies.append(accuracy)
-                    except:
+                    except ValueError as e:
+                        tprint_warning(f"Robustness test failed due to invalid data: {e}")
+                        pass
+                    except Exception as e:
+                        tprint_warning(f"Robustness test failed with unexpected error: {e}")
                         pass
             
             if period_accuracies:

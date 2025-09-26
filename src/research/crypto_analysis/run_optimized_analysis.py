@@ -14,6 +14,7 @@ import sys
 import argparse
 from pathlib import Path
 from datetime import datetime
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 # Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -194,19 +195,34 @@ def main():
             return 0
             
         except KeyboardInterrupt:
-            print("\n⚠️ Analysis interrupted by user")
+            tprint_warning("Analysis interrupted by user")
+            return 1
+        except FileNotFoundError as e:
+            tprint_error(f"Required file not found: {e}")
+            return 1
+        except PermissionError as e:
+            tprint_error(f"Permission denied accessing file: {e}")
+            return 1
+        except MemoryError as e:
+            tprint_error(f"Insufficient memory for analysis: {e}")
+            return 1
+        except ConnectionError as e:
+            tprint_error(f"Network connection error: {e}")
+            return 1
+        except ValueError as e:
+            tprint_error(f"Invalid data or configuration: {e}")
             return 1
         except Exception as e:
-            print(f"\n❌ Analysis failed: {e}")
+            tprint_error(f"Analysis failed with unexpected error: {e}")
             import traceback
-            traceback.print_exc()
+            tprint_error(f"Traceback: {traceback.format_exc()}")
             return 1
         finally:
             # Cleanup
             try:
                 processor.cleanup()
-            except:
-                pass
+            except Exception as cleanup_error:
+                tprint_warning(f"Cleanup failed: {cleanup_error}")
     
     # Run the async optimized analysis
     return asyncio.run(run_optimized_analysis())

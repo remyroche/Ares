@@ -25,6 +25,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning, tprint_info
 
 # Try to import existing framework components
 try:
@@ -478,7 +479,14 @@ class PatternDimensionRelevanceAnalyzer:
             
             mi_scores = mutual_info_classif(features.fillna(0), target)
             relevance_scores.append(np.mean(mi_scores))
-        except:
+        except ImportError as e:
+            tprint_warning(f"Mutual information calculation failed due to import error: {e}")
+            pass
+        except ValueError as e:
+            tprint_warning(f"Mutual information calculation failed due to invalid data: {e}")
+            pass
+        except Exception as e:
+            tprint_warning(f"Mutual information calculation failed with unexpected error: {e}")
             pass
         
         # 2. Correlation-based relevance
@@ -496,7 +504,11 @@ class PatternDimensionRelevanceAnalyzer:
             rf = RandomForestClassifier(n_estimators=50, random_state=42)
             rf.fit(features.fillna(0), target)
             relevance_scores.append(np.mean(rf.feature_importances_))
-        except:
+        except ValueError as e:
+            tprint_warning(f"Random Forest feature importance calculation failed due to invalid data: {e}")
+            pass
+        except Exception as e:
+            tprint_warning(f"Random Forest feature importance calculation failed with unexpected error: {e}")
             pass
         
         return np.mean(relevance_scores) if relevance_scores else 0.0

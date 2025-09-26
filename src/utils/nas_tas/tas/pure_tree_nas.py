@@ -939,7 +939,11 @@ class RotationForestModel:
                 return max(0.1, model.score(X_rotated, np.zeros(len(X_rotated))))
             else:
                 return 1.0
-        except Exception:
+        except (AttributeError, ValueError, RuntimeError) as e:
+            tprint_warning(f"⚠️ [PURE_TREE_NAS] Model weight calculation failed: {type(e).__name__}: {e}")
+            return 1.0
+        except Exception as e:
+            tprint_error(f"❌ [PURE_TREE_NAS] Unexpected error in model weight calculation: {type(e).__name__}: {e}")
             return 1.0
     
     def _calculate_feature_importances(self, X: np.ndarray, y: np.ndarray):
@@ -1635,7 +1639,11 @@ class PureTreeNAS:
                 return int(np.mean([tree.tree_.max_depth for tree in model.estimators_]))
             else:
                 return getattr(model, 'max_depth', 0)
-        except:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint_warning(f"⚠️ [PURE_TREE_NAS] Failed to get max depth: {type(e).__name__}: {e}")
+            return 0
+        except Exception as e:
+            tprint_error(f"❌ [PURE_TREE_NAS] Unexpected error getting max depth: {type(e).__name__}: {e}")
             return 0
     
     def _get_n_leaves(self, model) -> int:
@@ -1647,7 +1655,11 @@ class PureTreeNAS:
                 return int(np.mean([tree.tree_.n_leaves for tree in model.estimators_]))
             else:
                 return 0
-        except:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint_warning(f"⚠️ [PURE_TREE_NAS] Failed to get number of leaves: {type(e).__name__}: {e}")
+            return 0
+        except Exception as e:
+            tprint_error(f"❌ [PURE_TREE_NAS] Unexpected error getting number of leaves: {type(e).__name__}: {e}")
             return 0
     
     def _get_feature_importance(self, model) -> Dict[str, float]:
@@ -1658,7 +1670,11 @@ class PureTreeNAS:
                 return {f'feature_{i}': float(imp) for i, imp in enumerate(importance)}
             else:
                 return {}
-        except:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint_warning(f"⚠️ [PURE_TREE_NAS] Failed to get feature importance: {type(e).__name__}: {e}")
+            return {}
+        except Exception as e:
+            tprint_error(f"❌ [PURE_TREE_NAS] Unexpected error getting feature importance: {type(e).__name__}: {e}")
             return {}
     
     def _estimate_model_size(self, model) -> int:
@@ -1672,7 +1688,11 @@ class PureTreeNAS:
                 return model.n_estimators * 100  # Rough estimate
             else:
                 return 1000  # Default estimate
-        except:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint_warning(f"⚠️ [PURE_TREE_NAS] Failed to estimate model size: {type(e).__name__}: {e}")
+            return 1000
+        except Exception as e:
+            tprint_error(f"❌ [PURE_TREE_NAS] Unexpected error estimating model size: {type(e).__name__}: {e}")
             return 1000
     
     def get_search_summary(self) -> Dict[str, Any]:

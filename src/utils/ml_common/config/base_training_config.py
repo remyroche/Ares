@@ -114,10 +114,15 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'TCN': {
-            'hidden_size': {'type': 'int', 'low': 32, 'high': 128},
-            'num_layers': {'type': 'int', 'low': 1, 'high': 4},
-            'dropout': {'type': 'float', 'low': 0.1, 'high': 0.5},
-            'learning_rate': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True}
+            'channels': {'type': 'int', 'low': 48, 'high': 80},
+            'kernel_size': {'type': 'int', 'low': 3, 'high': 5},
+            'num_blocks': {'type': 'int', 'low': 3, 'high': 5},
+            'dropout': {'type': 'float', 'low': 0.05, 'high': 0.3},
+            'weight_decay': {'type': 'float', 'low': 1e-5, 'high': 1e-3, 'log': True},
+            'label_smoothing': {'type': 'float', 'low': 0.03, 'high': 0.1},
+            'patience': {'type': 'int', 'low': 5, 'high': 10},
+            'purge_window': {'type': 'int', 'low': 5, 'high': 20},
+            'embargo': {'type': 'int', 'low': 2, 'high': 10}
         },
         'CatBoostRegressor': {
             'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},

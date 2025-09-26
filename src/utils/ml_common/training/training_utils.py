@@ -818,11 +818,17 @@ class TrainingUtils:
         """
         default_params = {
             'TCN': {
-                'hidden_size': 64,
-                'num_layers': 2,
-                'dropout': 0.2,
-                'recurrent_dropout': 0.1,
-                'l2_regularization': 0.01
+                'channels': 64,
+                'kernel_size': 3,
+                'num_blocks': 4,
+                'dilations': [1, 2, 4, 8],
+                'dropout': 0.1,
+                'weight_decay': 1e-4,
+                'label_smoothing': 0.05,
+                'patience': 7,
+                'validation_fraction': 0.2,
+                'purge_window': 10,
+                'embargo': 5
             },
             'CATBOOST': {
                 'n_estimators': 1000,

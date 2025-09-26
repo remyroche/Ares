@@ -1513,9 +1513,6 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             raise ImportError(error_msg) from e
         
         try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import Conv1D, Dense, Dropout, GlobalMaxPooling1D
-            from tensorflow.keras.optimizers import Adam
             from sklearn.base import BaseEstimator, RegressorMixin
             import tensorflow as tf
         except ImportError as e:
@@ -1524,82 +1521,285 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             raise ImportError(error_msg) from e
         
         class TCNRegressor(BaseEstimator, RegressorMixin):
-            """Temporal Convolutional Network Regressor wrapper for sklearn compatibility."""
-            
-            def __init__(self, filters=64, kernel_size=3, dropout=0.2, epochs=50, batch_size=32, random_state=42):
-                self.filters = filters
+            """Temporal Convolutional Network classifier with trading-safe defaults."""
+
+            def __init__(
+                self,
+                channels: int = 64,
+                kernel_size: int = 3,
+                num_blocks: int = 4,
+                dilations: Optional[List[int]] = None,
+                dropout: float = 0.1,
+                learning_rate: float = 1e-3,
+                weight_decay: float = 1e-4,
+                label_smoothing: float = 0.05,
+                epochs: int = 150,
+                batch_size: int = 64,
+                validation_fraction: float = 0.2,
+                purge_window: int = 10,
+                embargo: int = 5,
+                patience: int = 7,
+                calibration_method: str = "platt",
+                use_class_weights: bool = True,
+                random_state: int = 42,
+            ):
+                self.channels = channels
                 self.kernel_size = kernel_size
+                self.num_blocks = num_blocks
+                self.dilations = dilations or [1, 2, 4, 8]
                 self.dropout = dropout
+                self.learning_rate = learning_rate
+                self.weight_decay = weight_decay
+                self.label_smoothing = label_smoothing
                 self.epochs = epochs
                 self.batch_size = batch_size
+                self.validation_fraction = validation_fraction
+                self.purge_window = purge_window
+                self.embargo = embargo
+                self.patience = patience
+                self.calibration_method = calibration_method
+                self.use_class_weights = use_class_weights
                 self.random_state = random_state
-                self.model_ = None
-                self.scaler_ = None
-            
+
+                self.model_: Optional[Any] = None
+                self.scaler_: Optional[Any] = None
+                self.calibrator_: Optional[Any] = None
+                self.sequence_length_: Optional[int] = None
+                self.n_features_: Optional[int] = None
+
+            @staticmethod
+            def _build_brier_metric():
+                import tensorflow as tf
+
+                def brier(y_true, y_pred):
+                    y_true = tf.cast(y_true, tf.float32)
+                    y_pred = tf.cast(y_pred, tf.float32)
+                    return tf.reduce_mean(tf.square(y_pred - y_true))
+
+                brier.__name__ = "brier_score"
+                return brier
+
+            def _build_model(self, input_shape: Tuple[int, int]) -> Any:
+                import tensorflow as tf
+                from tensorflow.keras import regularizers
+
+                tf.random.set_seed(self.random_state)
+
+                inputs = tf.keras.layers.Input(shape=input_shape)
+                x = inputs
+
+                dilation_cycle = (self.dilations * ((self.num_blocks + len(self.dilations) - 1) // len(self.dilations)))[: self.num_blocks]
+
+                for dilation in dilation_cycle:
+                    residual = x
+                    x = tf.keras.layers.Conv1D(
+                        filters=self.channels,
+                        kernel_size=self.kernel_size,
+                        padding="causal",
+                        dilation_rate=dilation,
+                        kernel_regularizer=regularizers.l2(self.weight_decay),
+                    )(x)
+                    x = tf.keras.layers.LayerNormalization()(x)
+                    x = tf.keras.layers.Activation("relu")(x)
+                    x = tf.keras.layers.Dropout(self.dropout)(x)
+                    x = tf.keras.layers.Conv1D(
+                        filters=self.channels,
+                        kernel_size=self.kernel_size,
+                        padding="causal",
+                        dilation_rate=dilation,
+                        kernel_regularizer=regularizers.l2(self.weight_decay),
+                    )(x)
+                    x = tf.keras.layers.LayerNormalization()(x)
+                    x = tf.keras.layers.Activation("relu")(x)
+                    x = tf.keras.layers.Dropout(self.dropout)(x)
+
+                    if residual.shape[-1] != x.shape[-1]:
+                        residual = tf.keras.layers.Conv1D(
+                            filters=self.channels,
+                            kernel_size=1,
+                            padding="same",
+                            kernel_regularizer=regularizers.l2(self.weight_decay),
+                        )(residual)
+
+                    x = tf.keras.layers.Add()([x, residual])
+                    x = tf.keras.layers.Activation("relu")(x)
+
+                x = tf.keras.layers.GlobalAveragePooling1D()(x)
+                x = tf.keras.layers.Dropout(self.dropout)(x)
+                x = tf.keras.layers.Dense(
+                    128,
+                    activation="relu",
+                    kernel_regularizer=regularizers.l2(self.weight_decay),
+                )(x)
+                x = tf.keras.layers.Dropout(self.dropout)(x)
+                outputs = tf.keras.layers.Dense(
+                    1,
+                    activation="sigmoid",
+                    kernel_regularizer=regularizers.l2(self.weight_decay),
+                )(x)
+
+                model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+                optimizer = tf.keras.optimizers.AdamW(learning_rate=self.learning_rate, weight_decay=self.weight_decay)
+                loss = tf.keras.losses.BinaryCrossentropy(label_smoothing=self.label_smoothing)
+
+                model.compile(
+                    optimizer=optimizer,
+                    loss=loss,
+                    metrics=["binary_crossentropy", self._build_brier_metric()],
+                )
+                return model
+
+            def _split_walk_forward(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                n_samples = X.shape[0]
+                if n_samples < 20:
+                    raise ValueError("Not enough samples for walk-forward split")
+
+                val_size = max(int(n_samples * self.validation_fraction), 1)
+                val_start = n_samples - val_size
+                train_end = max(val_start - self.embargo, 1)
+                purged_train_end = max(train_end - self.purge_window, 1)
+
+                if purged_train_end <= 1:
+                    raise ValueError("Purged training set is empty; reduce purge/embargo or increase data")
+
+                X_train, y_train = X[:purged_train_end], y[:purged_train_end]
+                X_val, y_val = X[val_start:], y[val_start:]
+
+                if len(X_val) == 0:
+                    raise ValueError("Validation set is empty after walk-forward split")
+
+                return X_train, X_val, y_train, y_val
+
+            def _compute_class_weights(self, y: np.ndarray) -> Optional[Dict[int, float]]:
+                if not self.use_class_weights:
+                    return None
+
+                unique, counts = np.unique(y, return_counts=True)
+                if len(unique) < 2:
+                    return None
+
+                class_weight = {int(cls): (len(y) / (len(unique) * count)) for cls, count in zip(unique, counts)}
+                return class_weight
+
             def fit(self, X, y):
                 from sklearn.preprocessing import StandardScaler
                 from sklearn.utils.validation import check_X_y
-                
-                X, y = check_X_y(X, y)
-                
-                # Reshape X for Conv1D (samples, timesteps, features)
+
+                X, y = check_X_y(X, y, accept_sparse=False, y_numeric=True)
+
                 if len(X.shape) == 2:
                     X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
                 else:
                     X_reshaped = X
-                
-                # Scale features
+
+                self.sequence_length_ = X_reshaped.shape[1]
+                self.n_features_ = X_reshaped.shape[2]
+
+                X_train, X_val, y_train, y_val = self._split_walk_forward(X_reshaped, y)
+
                 self.scaler_ = StandardScaler()
-                X_scaled = self.scaler_.fit_transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                
-                # Build TCN model
-                self.model_ = Sequential([
-                    Conv1D(self.filters, self.kernel_size, activation='relu', input_shape=(X_reshaped.shape[1], X_reshaped.shape[2])),
-                    Dropout(self.dropout),
-                    Conv1D(self.filters * 2, self.kernel_size, activation='relu'),
-                    Dropout(self.dropout),
-                    GlobalMaxPooling1D(),
-                    Dense(50, activation='relu'),
-                    Dropout(self.dropout),
-                    Dense(1, activation='linear')
-                ])
-                
-                self.model_.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
-                
-                # Set random seed
-                tf.random.set_seed(self.random_state)
-                
-                # Train model
-                self.model_.fit(X_scaled, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
+                X_train_scaled = self.scaler_.fit_transform(X_train.reshape(-1, self.n_features_)).reshape(X_train.shape)
+                X_val_scaled = self.scaler_.transform(X_val.reshape(-1, self.n_features_)).reshape(X_val.shape)
+
+                self.model_ = self._build_model((self.sequence_length_, self.n_features_))
+
+                callbacks = [
+                    tf.keras.callbacks.EarlyStopping(
+                        monitor="val_loss",
+                        patience=self.patience,
+                        restore_best_weights=True,
+                    ),
+                    tf.keras.callbacks.ReduceLROnPlateau(
+                        monitor="val_loss",
+                        factor=0.5,
+                        patience=max(2, self.patience // 2),
+                        min_lr=1e-5,
+                    ),
+                ]
+
+                class_weight = self._compute_class_weights(y_train)
+
+                self.model_.fit(
+                    X_train_scaled,
+                    y_train,
+                    validation_data=(X_val_scaled, y_val),
+                    epochs=self.epochs,
+                    batch_size=self.batch_size,
+                    class_weight=class_weight,
+                    verbose=0,
+                    callbacks=callbacks,
+                )
+
+                val_probs = self.model_.predict(X_val_scaled, verbose=0).flatten()
+
+                unique_val = np.unique(y_val)
+                if len(unique_val) < 2:
+                    self.calibrator_ = None
+                    return self
+
+                if self.calibration_method == "platt":
+                    from sklearn.linear_model import LogisticRegression
+
+                    calibrator = LogisticRegression(
+                        penalty="l2",
+                        C=1.0,
+                        solver="lbfgs",
+                        max_iter=1000,
+                        class_weight="balanced" if self.use_class_weights else None,
+                    )
+                    calibrator.fit(val_probs.reshape(-1, 1), y_val)
+                    self.calibrator_ = calibrator
+                elif self.calibration_method == "isotonic":
+                    from sklearn.isotonic import IsotonicRegression
+
+                    calibrator = IsotonicRegression(out_of_bounds="clip")
+                    calibrator.fit(val_probs, y_val)
+                    self.calibrator_ = calibrator
+                else:
+                    self.calibrator_ = None
+
                 return self
-            
-            def predict(self, X):
+
+            def _transform_inputs(self, X):
                 if self.model_ is None or self.scaler_ is None:
                     raise ValueError("Model must be fitted before prediction")
-                
-                # Reshape X for Conv1D
+
                 if len(X.shape) == 2:
                     X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
                 else:
                     X_reshaped = X
-                
-                # Scale features
-                X_scaled = self.scaler_.transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                
-                return self.model_.predict(X_scaled, verbose=0).flatten()
-        
+
+                if X_reshaped.shape[1] != self.sequence_length_:
+                    raise ValueError("Sequence length mismatch with fitted model")
+
+                X_scaled = self.scaler_.transform(X_reshaped.reshape(-1, self.n_features_)).reshape(X_reshaped.shape)
+                return X_scaled
+
+            def predict_proba(self, X):
+                import numpy as np
+
+                X_scaled = self._transform_inputs(X)
+                probs = self.model_.predict(X_scaled, verbose=0).flatten()
+
+                if self.calibrator_ is not None:
+                    if hasattr(self.calibrator_, "predict_proba"):
+                        probs = self.calibrator_.predict_proba(probs.reshape(-1, 1))[:, 1]
+                    else:
+                        probs = self.calibrator_.predict(probs)
+
+                probs = np.clip(probs, 1e-6, 1 - 1e-6)
+                return np.column_stack([1 - probs, probs])
+
+            def predict(self, X):
+                probs = self.predict_proba(X)[:, 1]
+                return probs
+
         # Create base models for Analyst (5m timeframe)
         base_models = {}
-        
+
         # TCN Model - Fast fail if TensorFlow not available
-        base_models['tcn'] = TCNRegressor(
-            filters=64,
-            kernel_size=3,
-            dropout=0.2,
-            epochs=50,
-            batch_size=32,
-            random_state=42
-        )
+        base_models['tcn'] = TCNRegressor()
         tprint_success("✅ TCN (Temporal Convolutional Network) model created")
         
         # CatBoost Model - Fast fail if CatBoost not available

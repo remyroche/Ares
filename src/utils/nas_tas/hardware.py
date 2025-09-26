@@ -335,9 +335,10 @@ class UnifiedHardwareOptimizer:
     def __init__(self, config: HardwareConfig):
         """Initialize hardware optimizer with existing tools and comprehensive management."""
         self.config = config
-            
+
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+        self.degradation_notices: List[str] = []
+
         # Initialize hardware managers using existing tools
         self.gpu_manager = None
         self.memory_optimizer = None
@@ -352,8 +353,17 @@ class UnifiedHardwareOptimizer:
         if HARDWARE_TOOLS_AVAILABLE and self.config.enable_adaptive_optimization:
             self._initialize_hardware_tools()
             self._initialize_comprehensive_management()
-    
-    
+
+    def _record_degradation(self, message: str, exc: Optional[Exception] = None) -> None:
+        notice = message if exc is None else f"{message}: {exc}"
+        self.degradation_notices.append(notice)
+        tprint_warning(f"⚠️ {notice}")
+        if exc is not None:
+            self.logger.warning(message, exc_info=exc)
+        else:
+            self.logger.warning(message)
+
+
     def _initialize_comprehensive_management(self):
         """Initialize comprehensive hardware management."""
         try:
@@ -367,9 +377,9 @@ class UnifiedHardwareOptimizer:
             if self.config.learning_enabled:
                 self.adaptive_learning_enabled = True
                 tprint_success("✅ Adaptive learning enabled")
-                
+
         except Exception as e:
-            tprint_warning(f"Could not initialize comprehensive management: {e}")
+            self._record_degradation("Could not initialize comprehensive management", e)
     
     def set_workload_type(self, workload_type: WorkloadType):
         """Set the current workload type for optimization."""
@@ -383,7 +393,7 @@ class UnifiedHardwareOptimizer:
         """Apply workload-specific optimizations."""
         if not HARDWARE_TOOLS_AVAILABLE:
             return
-            
+
         try:
             if self.workload_type == WorkloadType.NAS_SEARCH:
                 # NAS-specific optimizations
@@ -414,9 +424,9 @@ class UnifiedHardwareOptimizer:
                     self.memory_optimizer.optimize_for_backtesting()
                     
             tprint_success(f"✅ Applied {self.workload_type.value} optimizations")
-            
+
         except Exception as e:
-            tprint_warning(f"Could not apply workload optimizations: {e}")
+            self._record_degradation("Could not apply workload optimizations", e)
     
     def get_optimization_recommendations(self) -> Dict[str, Any]:
         """Get optimization recommendations based on current performance."""
@@ -460,12 +470,12 @@ class UnifiedHardwareOptimizer:
                 self.gpu_manager = get_m1_gpu_manager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
-                
+
                 tprint_info("Hardware tools initialized using existing hardware/ modules")
             else:
                 tprint_info("Hardware optimization disabled")
         except Exception as e:
-            tprint_warning(f"Could not initialize hardware tools: {e}")
+            self._record_degradation("Could not initialize hardware tools", e)
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary."""
@@ -485,8 +495,12 @@ class UnifiedHardwareOptimizer:
         
         # Add optimization recommendations
         summary['recommendations'] = self.get_optimization_recommendations()
-        
+
         return summary
+
+    def get_degradation_notices(self) -> List[str]:
+        """Return collected degradation notices."""
+        return list(self.degradation_notices)
     
     @contextmanager
     def gpu_context(self):
@@ -500,7 +514,7 @@ class UnifiedHardwareOptimizer:
                 else:
                     yield
             except Exception as e:
-                tprint_warning(f"GPU context failed: {e}")
+                self._record_degradation("GPU context failed", e)
                 yield
         else:
             yield
@@ -517,7 +531,7 @@ class UnifiedHardwareOptimizer:
                 else:
                     yield
             except Exception as e:
-                tprint_warning(f"Memory context failed: {e}")
+                self._record_degradation("Memory context failed", e)
                 yield
         else:
             yield

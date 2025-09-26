@@ -160,12 +160,13 @@ class UnifiedHardwareManager:
         """Initialize unified hardware manager."""
         self.config = config or HardwareAccelerationConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize hardware components
         self.gpu_manager = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
         self.xla_compiler = None
+        self.degradation_notices: List[str] = []
         
         # Performance tracking
         self.performance_metrics = {
@@ -202,8 +203,16 @@ class UnifiedHardwareManager:
             self.logger.info("✅ Unified hardware acceleration components initialized")
             
         except Exception as e:
-            self.logger.error(f"❌ Unified hardware acceleration initialization failed: {e}")
-            raise
+            self._record_degradation("Unified hardware acceleration initialization failed", e)
+
+    def _record_degradation(self, message: str, exc: Optional[Exception] = None) -> None:
+        notice = message if exc is None else f"{message}: {exc}"
+        self.degradation_notices.append(notice)
+        tprint_warning(f"⚠️ {notice}")
+        if exc is not None:
+            self.logger.warning(message, exc_info=exc)
+        else:
+            self.logger.warning(message)
     
     def _setup_gpu_acceleration(self):
         """Setup GPU acceleration."""
@@ -228,10 +237,10 @@ class UnifiedHardwareManager:
                 self.logger.info("✅ CuPy acceleration enabled")
                 
             else:
-                self.logger.warning("⚠️ GPU acceleration not available")
-                
+                self._record_degradation("GPU acceleration not available")
+
         except Exception as e:
-            self.logger.error(f"❌ GPU acceleration setup failed: {e}")
+            self._record_degradation("GPU acceleration setup failed", e)
     
     def _setup_xla_compilation(self):
         """Setup XLA compilation for optimized execution."""
@@ -250,10 +259,10 @@ class UnifiedHardwareManager:
                 self.logger.info("✅ XLA compilation enabled")
                 
             else:
-                self.logger.warning("⚠️ XLA compilation not available (JAX not installed)")
-                
+                self._record_degradation("XLA compilation not available (JAX not installed)")
+
         except Exception as e:
-            self.logger.error(f"❌ XLA compilation setup failed: {e}")
+            self._record_degradation("XLA compilation setup failed", e)
     
     def _setup_memory_optimization(self):
         """Setup memory optimization."""
@@ -273,7 +282,7 @@ class UnifiedHardwareManager:
             self.logger.info("✅ Memory optimization enabled")
             
         except Exception as e:
-            self.logger.error(f"❌ Memory optimization setup failed: {e}")
+            self._record_degradation("Memory optimization setup failed", e)
     
     def _setup_m1_optimization(self):
         """Setup M1-specific optimizations."""
@@ -294,10 +303,10 @@ class UnifiedHardwareManager:
                 self.logger.info("✅ M1 optimization enabled")
                 
             else:
-                self.logger.warning("⚠️ M1 optimization not available")
-                
+                self._record_degradation("M1 optimization not available")
+
         except Exception as e:
-            self.logger.error(f"❌ M1 optimization setup failed: {e}")
+            self._record_degradation("M1 optimization setup failed", e)
     
     def optimize_for_workload(self, workload_type: str, data: Any, **kwargs) -> Any:
         """Optimize hardware for specific workload type."""
@@ -314,7 +323,7 @@ class UnifiedHardwareManager:
                 return self._optimize_general(data, **kwargs)
                 
         except Exception as e:
-            self.logger.error(f"❌ Workload optimization failed: {e}")
+            self._record_degradation("Workload optimization failed", e)
             return data
     
     def _optimize_for_nas(self, data: Any, **kwargs) -> Any:
@@ -333,7 +342,7 @@ class UnifiedHardwareManager:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ NAS optimization failed: {e}")
+            self._record_degradation("NAS optimization failed", e)
             return data
     
     def _optimize_for_tas(self, data: Any, **kwargs) -> Any:
@@ -355,7 +364,7 @@ class UnifiedHardwareManager:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ TAS optimization failed: {e}")
+            self._record_degradation("TAS optimization failed", e)
             return data
     
     def _optimize_for_ml_training(self, data: Any, **kwargs) -> Any:
@@ -374,7 +383,7 @@ class UnifiedHardwareManager:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ ML training optimization failed: {e}")
+            self._record_degradation("ML training optimization failed", e)
             return data
     
     def _optimize_for_backtesting(self, data: Any, **kwargs) -> Any:
@@ -390,7 +399,7 @@ class UnifiedHardwareManager:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ Backtesting optimization failed: {e}")
+            self._record_degradation("Backtesting optimization failed", e)
             return data
     
     def _optimize_general(self, data: Any, **kwargs) -> Any:
@@ -406,7 +415,7 @@ class UnifiedHardwareManager:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ General optimization failed: {e}")
+            self._record_degradation("General optimization failed", e)
             return data
     
     def _apply_nas_parallelization(self, data: Any) -> Any:
@@ -509,6 +518,10 @@ class UnifiedHardwareManager:
             'optimization_level': self.config.optimization_level,
             'workload_type': self.config.workload_type
         }
+
+    def get_degradation_notices(self) -> List[str]:
+        """Return collected degradation notices."""
+        return list(self.degradation_notices)
 
 
 # Factory functions

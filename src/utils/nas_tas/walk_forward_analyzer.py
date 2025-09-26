@@ -28,6 +28,30 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class WalkForwardAnalyzerError(RuntimeError):
+    """Base exception for walk-forward analyzer failures."""
+
+
+class RegimeDetectionError(WalkForwardAnalyzerError):
+    """Raised when regime detection fails for a fold."""
+
+
+class ModelSelectionError(WalkForwardAnalyzerError):
+    """Raised when no suitable model can be selected for a regime."""
+
+
+class ModelRetrainingError(WalkForwardAnalyzerError):
+    """Raised when model retraining fails."""
+
+
+class ModelValidationError(WalkForwardAnalyzerError):
+    """Raised when model validation fails."""
+
+
+class PerformanceComputationError(WalkForwardAnalyzerError):
+    """Raised when fold performance metrics cannot be computed."""
+
+
 class WalkForwardMode(Enum):
     """Walk-forward analysis modes."""
     FIXED_WINDOW = "fixed_window"      # Fixed training window
@@ -605,12 +629,21 @@ class WalkForwardAnalyzer:
                 
                 self.logger.info(f"   ✅ Fold {fold['fold_id']} completed - Performance: {performance_metrics.get('f1_score', 0):.3f}")
                 
+            except WalkForwardAnalyzerError as err:
+                self.logger.error(f"   ❌ Fold {fold['fold_id']} failed: {err}")
+                fold_results.append({
+                    'fold_id': fold['fold_id'],
+                    'success': False,
+                    'error': str(err),
+                    'error_type': err.__class__.__name__,
+                })
             except Exception as e:
                 self.logger.error(f"   ❌ Fold {fold['fold_id']} failed: {e}")
                 fold_results.append({
                     'fold_id': fold['fold_id'],
                     'success': False,
-                    'error': str(e)
+                    'error': str(e),
+                    'error_type': e.__class__.__name__,
                 })
         
         return fold_results
@@ -618,49 +651,57 @@ class WalkForwardAnalyzer:
     def _detect_regime_for_data(self, data: pd.DataFrame) -> int:
         """Detect regime for given data."""
         try:
+            if 'close' not in data.columns or len(data) <= 1:
+                raise RegimeDetectionError(
+                    "Input data must contain a 'close' column with at least two observations"
+                )
+
             # Simple regime detection based on volatility
-            if 'close' in data.columns and len(data) > 1:
-                prices = data['close'].values
-                returns = np.diff(prices) / prices[:-1]
-                volatility = np.std(returns)
-                
-                if volatility < 0.01:
-                    return 0  # Low volatility regime
-                elif volatility < 0.03:
-                    return 1  # Medium volatility regime
-                else:
-                    return 2  # High volatility regime
-            else:
-                return 0  # Default regime
-                
-        except Exception as e:
+            prices = data['close'].values
+            returns = np.diff(prices) / prices[:-1]
+            volatility = np.std(returns)
+
+            if volatility < 0.01:
+                return 0  # Low volatility regime
+            if volatility < 0.03:
+                return 1  # Medium volatility regime
+            return 2  # High volatility regime
+
+        except RegimeDetectionError:
+            raise
+        except Exception as e:  # pragma: no cover - defensive logging path
             self.logger.warning(f"Regime detection failed: {e}")
-            return 0
+            raise RegimeDetectionError(str(e)) from e
     
     def _select_model_for_regime(self, regime_id: int) -> Optional[Dict[str, Any]]:
         """Select model for regime."""
         try:
             if regime_id not in self.available_models:
-                return None
-            
+                raise ModelSelectionError(f"No model available for regime {regime_id}")
+
             regime_models = self.available_models[regime_id]
-            
+
+            if not regime_models:
+                raise ModelSelectionError(f"No candidate models registered for regime {regime_id}")
+
             # Select best performing model
             best_model_type = max(
                 regime_models.keys(),
                 key=lambda x: regime_models[x]['performance'].get('f1_score', 0.0)
             )
-            
+
             return {
                 'model': regime_models[best_model_type]['model'],
                 'model_type': best_model_type,
                 'regime_id': regime_id,
                 'performance': regime_models[best_model_type]['performance']
             }
-            
-        except Exception as e:
+
+        except ModelSelectionError:
+            raise
+        except Exception as e:  # pragma: no cover - defensive path
             self.logger.warning(f"Model selection failed: {e}")
-            return None
+            raise ModelSelectionError(str(e)) from e
     
     def _retrain_model(self, 
                       selected_model: Dict[str, Any],
@@ -670,10 +711,10 @@ class WalkForwardAnalyzer:
         try:
             if not self.config.enable_model_retraining:
                 return selected_model
-            
+
             # Simple retraining (in practice, this would be more sophisticated)
             model = selected_model['model']
-            
+
             # Check if model supports incremental learning
             if hasattr(model, 'partial_fit'):
                 # Incremental learning
@@ -685,12 +726,12 @@ class WalkForwardAnalyzer:
                 X = training_data.drop(columns=[target_variable]).values
                 y = training_data[target_variable].values
                 model.fit(X, y)
-            
+
             return selected_model
-            
+
         except Exception as e:
             self.logger.warning(f"Model retraining failed: {e}")
-            return selected_model
+            raise ModelRetrainingError(str(e)) from e
     
     def _validate_model(self, 
                        selected_model: Dict[str, Any],
@@ -699,17 +740,17 @@ class WalkForwardAnalyzer:
         """Validate model on validation data."""
         try:
             model = selected_model['model']
-            
+
             # Prepare validation data
             X_val = validation_data.drop(columns=[target_variable]).values
             y_val = validation_data[target_variable].values
-            
+
             # Make predictions
-            if hasattr(model, 'predict'):
-                predictions = model.predict(X_val)
-            else:
-                return {'success': False, 'error': 'Model does not support prediction'}
-            
+            if not hasattr(model, 'predict'):
+                raise ModelValidationError('Model does not support prediction')
+
+            predictions = model.predict(X_val)
+
             # Calculate confidence if available
             confidence = None
             if hasattr(model, 'predict_proba'):
@@ -720,7 +761,7 @@ class WalkForwardAnalyzer:
                     tprint_warning(f"⚠️ Failed to calculate model confidence: {e}")
                     tprint_debug("Using default confidence value of 0.5")
                     confidence = 0.5
-            
+
             return {
                 'success': True,
                 'predictions': predictions,
@@ -728,10 +769,12 @@ class WalkForwardAnalyzer:
                 'model_type': selected_model['model_type'],
                 'regime_id': selected_model['regime_id']
             }
-            
+
+        except ModelValidationError:
+            raise
         except Exception as e:
             self.logger.warning(f"Model validation failed: {e}")
-            return {'success': False, 'error': str(e)}
+            raise ModelValidationError(str(e)) from e
     
     def _calculate_fold_performance(self, 
                                    validation_result: Dict[str, Any],
@@ -740,36 +783,41 @@ class WalkForwardAnalyzer:
         """Calculate performance metrics for a fold."""
         try:
             if not validation_result['success']:
-                return self._get_default_metrics()
-            
+                raise PerformanceComputationError(validation_result.get('error', 'Validation unsuccessful'))
+
             predictions = validation_result['predictions']
             y_true = validation_data[target_variable].values
-            
+
+            if len(predictions) != len(y_true):
+                raise PerformanceComputationError('Predictions and targets have mismatched lengths')
+
             # Calculate basic metrics
-            accuracy = np.mean(predictions == y_true) if len(predictions) == len(y_true) else 0.0
-            
+            accuracy = float(np.mean(predictions == y_true))
+
             # Calculate precision, recall, F1
             from sklearn.metrics import precision_score, recall_score, f1_score
-            precision = precision_score(y_true, predictions, average='weighted', zero_division=0)
-            recall = recall_score(y_true, predictions, average='weighted', zero_division=0)
-            f1 = f1_score(y_true, predictions, average='weighted', zero_division=0)
-            
+            precision = float(precision_score(y_true, predictions, average='weighted', zero_division=0))
+            recall = float(recall_score(y_true, predictions, average='weighted', zero_division=0))
+            f1 = float(f1_score(y_true, predictions, average='weighted', zero_division=0))
+
             # Calculate Sharpe ratio (simplified)
             returns = np.diff(validation_data[target_variable].values) / validation_data[target_variable].values[:-1]
-            sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
-            
+            sharpe_ratio = float(np.mean(returns) / np.std(returns)) if np.std(returns) > 0 else 0.0
+
             return {
                 'accuracy': accuracy,
                 'precision': precision,
                 'recall': recall,
                 'f1_score': f1,
                 'sharpe_ratio': sharpe_ratio,
-                'confidence': validation_result.get('confidence', 0.5)
+                'confidence': float(validation_result.get('confidence', 0.5)),
             }
-            
+
+        except PerformanceComputationError:
+            raise
         except Exception as e:
             self.logger.warning(f"Performance calculation failed: {e}")
-            return self._get_default_metrics()
+            raise PerformanceComputationError(str(e)) from e
     
     def _get_default_metrics(self) -> Dict[str, float]:
         """Get default metrics when calculation fails."""

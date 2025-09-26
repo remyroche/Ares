@@ -439,16 +439,76 @@ except ImportError:
             if hasattr(config, 'enable_colors'):
                 # Enable/disable colored output if supported
                 # Note: Color support depends on terminal capabilities
-                # This is a placeholder for future color configuration
+                # Implement color configuration system
                 if config.enable_colors:
-                    # TODO: Implement color configuration
-                    # This would typically involve:
-                    # - Checking terminal capabilities
-                    # - Setting up color codes for different log levels
-                    # - Configuring colored output for console logging
-                    pass
+                    try:
+                        import os
+                        import sys
+                        
+                        # Check if terminal supports colors
+                        def supports_color():
+                            """Check if the terminal supports colored output."""
+                            # Check for common environment variables
+                            if os.environ.get('NO_COLOR'):
+                                return False
+                            if os.environ.get('TERM') == 'dumb':
+                                return False
+                            
+                            # Check if we're in a TTY
+                            if hasattr(sys.stdout, 'isatty') and not sys.stdout.isatty():
+                                return False
+                            
+                            # Check for common terminal types that support color
+                            term = os.environ.get('TERM', '').lower()
+                            color_terms = ['xterm', 'xterm-256color', 'screen', 'tmux', 'color']
+                            return any(color_term in term for color_term in color_terms)
+                        
+                        # Set up color codes for different log levels
+                        if supports_color():
+                            # ANSI color codes
+                            color_codes = {
+                                'DEBUG': '\033[36m',      # Cyan
+                                'INFO': '\033[32m',       # Green
+                                'WARNING': '\033[33m',    # Yellow
+                                'ERROR': '\033[31m',      # Red
+                                'SUCCESS': '\033[32m',    # Green
+                                'PROGRESS': '\033[34m',   # Blue
+                                'PERFORMANCE': '\033[35m', # Magenta
+                                'RESET': '\033[0m'        # Reset
+                            }
+                            
+                            # Store color configuration globally
+                            global _color_codes
+                            _color_codes = color_codes
+                            
+                            # Override tprint functions to use colors
+                            def _colored_tprint(level, *args, **kwargs):
+                                """Colored version of tprint."""
+                                color = _color_codes.get(level.upper(), '')
+                                reset = _color_codes.get('RESET', '')
+                                timestamp = time.strftime('%H:%M:%S')
+                                print(f"{color}[{timestamp}] {level.upper()}:{reset}", *args)
+                            
+                            # Replace tprint functions with colored versions
+                            global tprint_info, tprint_debug, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance
+                            tprint_info = lambda *args, **kwargs: _colored_tprint('INFO', *args, **kwargs)
+                            tprint_debug = lambda *args, **kwargs: _colored_tprint('DEBUG', *args, **kwargs)
+                            tprint_warning = lambda *args, **kwargs: _colored_tprint('WARNING', *args, **kwargs)
+                            tprint_error = lambda *args, **kwargs: _colored_tprint('ERROR', *args, **kwargs)
+                            tprint_success = lambda *args, **kwargs: _colored_tprint('SUCCESS', *args, **kwargs)
+                            tprint_progress = lambda step, total, message="", **kwargs: _colored_tprint('PROGRESS', f"{step}/{total} ({step/total*100:.1f}%) {message}")
+                            tprint_performance = lambda operation, duration, **kwargs: _colored_tprint('PERFORMANCE', f"{operation} took {duration:.3f}s")
+                            
+                        else:
+                            # Terminal doesn't support colors, use plain text
+                            pass
+                            
+                    except Exception as e:
+                        print(f"Warning: Failed to configure colors: {e}")
+                        # Fall back to plain text output
+                        pass
                 else:
-                    # Disable colored output
+                    # Disable colored output - use plain text versions
                     pass
             if hasattr(config, 'output_file'):
                 # Configure file output if specified

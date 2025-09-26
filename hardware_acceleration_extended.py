@@ -50,9 +50,8 @@ def _grid_search_optimization(self, X: np.ndarray, y: np.ndarray,
     _safe_print("🔍 Performing Grid Search optimization...")
     
     try:
-        # Create base estimator (placeholder - would be actual model)
-        from sklearn.ensemble import RandomForestClassifier
-        base_estimator = RandomForestClassifier(random_state=42)
+        # Create base estimator with intelligent model selection
+        base_estimator = self._select_optimal_estimator(X, y)
         
         # Setup GridSearchCV with M1 optimization
         grid_search = GridSearchCV(
@@ -89,8 +88,7 @@ def _random_search_optimization(self, X: np.ndarray, y: np.ndarray,
     _safe_print(f"🎲 Performing Random Search optimization ({n_trials} trials)...")
     
     try:
-        from sklearn.ensemble import RandomForestClassifier
-        base_estimator = RandomForestClassifier(random_state=42)
+        base_estimator = self._select_optimal_estimator(X, y)
         
         # Setup RandomizedSearchCV
         random_search = RandomizedSearchCV(
@@ -147,11 +145,10 @@ def _bayesian_optimization(self, X: np.ndarray, y: np.ndarray,
                     else:
                         params[param_name] = trial.suggest_float(param_name, param_values[0], param_values[1])
             
-            # Create and train model
-            from sklearn.ensemble import RandomForestClassifier
+            # Create and train model with intelligent selection
             from sklearn.model_selection import cross_val_score
             
-            model = RandomForestClassifier(**params, random_state=42)
+            model = self._select_optimal_estimator(X, y, **params)
             
             # Cross-validation
             cv_scores = cross_val_score(model, X, y, cv=5, scoring='accuracy')
@@ -197,10 +194,8 @@ def cross_validate(self, X: np.ndarray, y: np.ndarray,
     
     try:
         from sklearn.model_selection import cross_validate
-        from sklearn.ensemble import RandomForestClassifier
-        
-        # Create model
-        model = RandomForestClassifier(random_state=42)
+        # Create model with intelligent selection
+        model = self._select_optimal_estimator(X, y)
         
         # Perform cross-validation
         cv_results = cross_validate(
@@ -256,7 +251,7 @@ def lookahead_validation(self, X: np.ndarray, y: np.ndarray,
         # Create time series split
         tscv = TimeSeriesSplit(n_splits=5)
         
-        model = RandomForestClassifier(random_state=42)
+        model = self._select_optimal_estimator(X, y)
         scores = []
         
         for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
@@ -373,6 +368,135 @@ def demo_optimized_trainer():
         _safe_print(f"❌ Demo failed: {e}")
         import traceback
         traceback.print_exc()
+
+def _select_optimal_estimator(self, X: np.ndarray, y: np.ndarray, **kwargs) -> Any:
+    """
+    Intelligently select the optimal estimator based on data characteristics.
+    
+    Args:
+        X: Features
+        y: Target variable
+        **kwargs: Additional parameters for the estimator
+        
+    Returns:
+        Optimal estimator instance
+    """
+    try:
+        import numpy as np
+        from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier
+        from sklearn.linear_model import LogisticRegression, RidgeClassifier
+        from sklearn.svm import SVC
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.naive_bayes import GaussianNB
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.model_selection import cross_val_score
+        from sklearn.preprocessing import StandardScaler
+        
+        # Analyze data characteristics
+        n_samples, n_features = X.shape
+        n_classes = len(np.unique(y))
+        
+        # Determine if data is sparse
+        is_sparse = np.count_nonzero(X == 0) / X.size > 0.5
+        
+        # Determine if data is high-dimensional
+        is_high_dimensional = n_features > n_samples * 0.1
+        
+        # Determine if data is imbalanced
+        class_counts = np.bincount(y)
+        is_imbalanced = np.std(class_counts) / np.mean(class_counts) > 0.5
+        
+        # Determine if data is linearly separable (rough estimate)
+        is_linear = n_features < 10 and n_samples < 1000
+        
+        _safe_print(f"📊 Data characteristics: {n_samples} samples, {n_features} features, {n_classes} classes")
+        _safe_print(f"📊 Sparse: {is_sparse}, High-dim: {is_high_dimensional}, Imbalanced: {is_imbalanced}, Linear: {is_linear}")
+        
+        # Candidate estimators with their characteristics
+        candidates = []
+        
+        # Linear models for simple, linear data
+        if is_linear and not is_high_dimensional:
+            candidates.append(('LogisticRegression', LogisticRegression(random_state=42, **kwargs)))
+            candidates.append(('RidgeClassifier', RidgeClassifier(random_state=42, **kwargs)))
+        
+        # Tree-based models for non-linear data
+        if not is_linear or is_high_dimensional:
+            candidates.append(('RandomForest', RandomForestClassifier(random_state=42, **kwargs)))
+            candidates.append(('ExtraTrees', ExtraTreesClassifier(random_state=42, **kwargs)))
+            candidates.append(('GradientBoosting', GradientBoostingClassifier(random_state=42, **kwargs)))
+            candidates.append(('DecisionTree', DecisionTreeClassifier(random_state=42, **kwargs)))
+        
+        # SVM for medium-sized datasets
+        if not is_high_dimensional and n_samples < 10000:
+            candidates.append(('SVC', SVC(random_state=42, **kwargs)))
+        
+        # KNN for small datasets
+        if n_samples < 5000:
+            candidates.append(('KNeighbors', KNeighborsClassifier(**kwargs)))
+        
+        # Naive Bayes for text-like data
+        if is_sparse or is_high_dimensional:
+            candidates.append(('GaussianNB', GaussianNB(**kwargs)))
+        
+        # If no candidates, use RandomForest as default
+        if not candidates:
+            _safe_print("⚠️ No specific candidates found, using RandomForest as default")
+            return RandomForestClassifier(random_state=42, **kwargs)
+        
+        # Quick evaluation of candidates
+        _safe_print(f"🔍 Evaluating {len(candidates)} candidate estimators...")
+        
+        best_score = -np.inf
+        best_estimator = None
+        best_name = ""
+        
+        # Use a subset of data for quick evaluation if dataset is large
+        eval_size = min(1000, n_samples)
+        if n_samples > eval_size:
+            indices = np.random.choice(n_samples, eval_size, replace=False)
+            X_eval, y_eval = X[indices], y[indices]
+        else:
+            X_eval, y_eval = X, y
+        
+        # Standardize features for linear models
+        scaler = StandardScaler()
+        X_eval_scaled = scaler.fit_transform(X_eval)
+        
+        for name, estimator in candidates:
+            try:
+                # Use scaled data for linear models
+                if name in ['LogisticRegression', 'RidgeClassifier', 'SVC']:
+                    X_use = X_eval_scaled
+                else:
+                    X_use = X_eval
+                
+                # Quick cross-validation
+                scores = cross_val_score(estimator, X_use, y_eval, cv=3, scoring='accuracy', n_jobs=1)
+                mean_score = scores.mean()
+                
+                _safe_print(f"  {name}: {mean_score:.4f}")
+                
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_estimator = estimator
+                    best_name = name
+                    
+            except Exception as e:
+                _safe_print(f"  {name}: Failed ({e})")
+                continue
+        
+        if best_estimator is None:
+            _safe_print("⚠️ All candidates failed, using RandomForest as fallback")
+            return RandomForestClassifier(random_state=42, **kwargs)
+        
+        _safe_print(f"✅ Selected {best_name} with score {best_score:.4f}")
+        return best_estimator
+        
+    except Exception as e:
+        _safe_print(f"⚠️ Model selection failed: {e}, using RandomForest as fallback")
+        from sklearn.ensemble import RandomForestClassifier
+        return RandomForestClassifier(random_state=42, **kwargs)
 
 if __name__ == "__main__":
     demo_optimized_trainer()

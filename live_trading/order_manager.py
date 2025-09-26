@@ -14,6 +14,7 @@ import logging
 
 from .config import OrderType, OrderSide, TradingConfig
 from src.interfaces.base_interfaces import TradeDecision
+from src.utils.tprint import tprint
 
 
 class OrderStatus(Enum):
@@ -107,7 +108,7 @@ class OrderManager:
             try:
                 await self._monitoring_task
             except asyncio.CancelledError:
-                pass
+                tprint("Order monitoring task cancelled during stop", level="info")
         
         # Cancel all active orders if in live trading mode
         if self.config.mode.value != "paper":

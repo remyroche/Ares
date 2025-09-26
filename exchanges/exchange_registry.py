@@ -52,7 +52,8 @@ class ExchangeRegistry:
             try:
                 await self._health_check_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Health monitoring task cancelled during shutdown")
+                # Task was cancelled as expected during shutdown
         
         # Close all exchange connections
         await self.close_all()

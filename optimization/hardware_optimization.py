@@ -20,19 +20,11 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Create a mock numpy for basic functionality
-    class MockNumpy:
-        def __init__(self):
-            self.float32 = float
-            self.float64 = float
-            self.array = list
-            self.mean = lambda x: sum(x) / len(x) if x else 0
-            self.max = max
-            self.sum = sum
-            self.vstack = lambda x: x[0] if x else []
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: 0
-    np = MockNumpy()
+    # Fast fail: numpy is required for hardware optimization functionality
+    raise ImportError(
+        "numpy is required for hardware optimization functionality. "
+        "Please install numpy: pip install numpy"
+    )
 
 try:
     import pandas as pd
@@ -50,19 +42,11 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-    # Create a mock psutil for basic functionality
-    class MockPsutil:
-        def cpu_percent(self):
-            return 0.0
-        def virtual_memory(self):
-            class MockMemory:
-                def __init__(self):
-                    self.total = 8 * 1024 * 1024 * 1024  # 8GB
-                    self.available = 4 * 1024 * 1024 * 1024  # 4GB
-                    self.used = 4 * 1024 * 1024 * 1024  # 4GB
-                    self.percent = 50.0
-            return MockMemory()
-    psutil = MockPsutil()
+    # Fast fail: psutil is required for hardware optimization functionality
+    raise ImportError(
+        "psutil is required for hardware optimization functionality. "
+        "Please install psutil: pip install psutil"
+    )
 
 # Import shared utilities
 try:

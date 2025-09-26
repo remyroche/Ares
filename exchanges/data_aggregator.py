@@ -91,7 +91,8 @@ class DataAggregator:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Cache cleanup task cancelled during shutdown")
+                # Task was cancelled as expected during shutdown
         
         # Clear all cached data
         self.data_cache.clear()

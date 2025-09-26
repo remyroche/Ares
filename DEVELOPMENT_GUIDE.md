@@ -64,3 +64,7 @@ src/
 - Comprehensive logging
 - Type hints throughout
 - Unit test coverage > 80%
+
+### Agent Development Rules
+1. **Never use mock data/implementation** - Always implement real functionality instead of mock implementations
+2. **Never use pass where we should raise an error or print a warning** - Replace silent `pass` statements with proper error handling or warnings

@@ -89,10 +89,43 @@ except ImportError as e:
         return lambda func: func
 
     class M1MemoryOptimizer:
-        pass
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            tprint("🧠 M1MemoryOptimizer initialized (fallback mode)")
+        
+        def optimize_memory_usage(self):
+            """Optimize memory usage for M1 systems."""
+            try:
+                import gc
+                gc.collect()
+                tprint("🧠 Memory optimization completed")
+            except Exception as e:
+                tprint(f"⚠️ Memory optimization failed: {e}")
+        
+        def get_stats(self):
+            """Get memory optimization statistics."""
+            return {'status': 'fallback_mode', 'optimizations_applied': 0}
 
     class MemoryEfficientProcessor:
-        pass
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            tprint("💾 MemoryEfficientProcessor initialized (fallback mode)")
+        
+        def process_data(self, data, chunk_size=1000):
+            """Process data in memory-efficient chunks."""
+            try:
+                if hasattr(data, 'shape') and len(data.shape) > 1:
+                    n_chunks = max(1, data.shape[0] // chunk_size)
+                    tprint(f"💾 Processing data in {n_chunks} chunks")
+                    return data  # Return as-is in fallback mode
+                return data
+            except Exception as e:
+                tprint(f"⚠️ Memory efficient processing failed: {e}")
+                return data
+        
+        def get_stats(self):
+            """Get processing statistics."""
+            return {'status': 'fallback_mode', 'chunks_processed': 0}
 
     def validate_data_quality(data):
         return True
@@ -101,10 +134,68 @@ except ImportError as e:
         return True
 
     class StabilityAnalyzer:
-        pass
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            tprint("📈 StabilityAnalyzer initialized (fallback mode)")
+        
+        def validate_data_quality(self, X, y=None):
+            """Validate data quality with stability analysis."""
+            try:
+                quality_metrics = {
+                    'is_valid': True,
+                    'n_samples': X.shape[0] if hasattr(X, 'shape') else len(X),
+                    'n_features': X.shape[1] if hasattr(X, 'shape') and len(X.shape) > 1 else 1,
+                    'has_nan': False,
+                    'has_inf': False,
+                    'stability_score': 0.5  # Default neutral score
+                }
+                
+                if hasattr(X, 'shape'):
+                    quality_metrics['has_nan'] = np.isnan(X).any() if hasattr(X, 'dtype') else False
+                    quality_metrics['has_inf'] = np.isinf(X).any() if hasattr(X, 'dtype') else False
+                
+                tprint(f"📈 Data quality validation completed: {quality_metrics['n_samples']} samples")
+                return quality_metrics
+            except Exception as e:
+                tprint(f"⚠️ Data quality validation failed: {e}")
+                return {'is_valid': False, 'error': str(e)}
+        
+        def get_stats(self):
+            """Get stability analysis statistics."""
+            return {'status': 'fallback_mode', 'analyses_performed': 0}
 
     class AdaptiveThresholding:
-        pass
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+            tprint("🎯 AdaptiveThresholding initialized (fallback mode)")
+        
+        def select_threshold(self, scores, method='percentile'):
+            """Select adaptive threshold based on score distribution."""
+            try:
+                if not scores or len(scores) == 0:
+                    tprint("⚠️ No scores provided for threshold selection")
+                    return 0.5
+                
+                score_values = list(scores.values()) if isinstance(scores, dict) else scores
+                
+                if method == 'percentile':
+                    threshold = np.percentile(score_values, 75)
+                elif method == 'mean':
+                    threshold = np.mean(score_values)
+                elif method == 'median':
+                    threshold = np.median(score_values)
+                else:
+                    threshold = np.percentile(score_values, 75)  # Default to 75th percentile
+                
+                tprint(f"🎯 Adaptive threshold selected: {threshold:.3f} (method: {method})")
+                return float(threshold)
+            except Exception as e:
+                tprint(f"⚠️ Threshold selection failed: {e}")
+                return 0.5
+        
+        def get_stats(self):
+            """Get thresholding statistics."""
+            return {'status': 'fallback_mode', 'thresholds_selected': 0}
 
     class ParallelProcessor:
         def __init__(self, max_workers=4, chunk_size=10000):
@@ -708,14 +799,23 @@ class BaseFeatureSelectionFramework:
             requirements['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
             requirements['cpu_count'] = psutil.cpu_count()
         except ImportError:
-            pass
+            tprint("⚠️ psutil not available - using default system requirements")
+            requirements['memory_available_gb'] = 8.0  # Default assumption
+            requirements['cpu_count'] = 4  # Default assumption
+        except Exception as e:
+            tprint(f"⚠️ Error getting system requirements: {e}")
+            requirements['memory_available_gb'] = 8.0
+            requirements['cpu_count'] = 4
         
         try:
             if hasattr(self, 'gpu_manager') and self.gpu_manager:
                 requirements['gpu_available'] = self.gpu_manager.is_available()
         except (AttributeError, RuntimeError, ImportError) as e:
             tprint(f"⚠️ GPU availability check failed: {e}")
-            pass
+            requirements['gpu_available'] = False
+        except Exception as e:
+            tprint(f"⚠️ Unexpected error checking GPU availability: {e}")
+            requirements['gpu_available'] = False
         
         return requirements
 

@@ -114,7 +114,7 @@ def get_module_from_file_path(file_path: str) -> Optional[str]:
             return '.'.join(module_parts)
     except (ValueError, IndexError, AttributeError) as e:
         tprint_warning(f"Error extracting module from file path {file_path}: {e}")
-        pass
+        return None
     return None
 
 
@@ -347,7 +347,7 @@ class FileUtils:
                 return '.'.join(module_parts)
         except (ValueError, IndexError, AttributeError) as e:
             tprint_warning(f"Error extracting module from file path {file_path}: {e}")
-            pass
+            return None
         return None
     
     @staticmethod

@@ -103,7 +103,8 @@ class PerformanceMonitor:
         try:
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
-        except Exception:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+            tprint(f"⚠️ Memory usage check failed: {e}")
             return 0.0
 
     def get_system_stats(self) -> Dict[str, Any]:

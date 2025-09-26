@@ -544,8 +544,9 @@ class ModelTrainingSubPipeline:
                     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
                     fh.setFormatter(formatter)
                     self.logger.addHandler(fh)
-        except Exception:
-            # Fail silently; logging misconfig should not break pipeline
+        except (OSError, PermissionError, FileNotFoundError) as e:
+            # Log configuration errors but don't break pipeline
+            tprint_warning(f"⚠️ Logging configuration failed: {e}")
             pass
 
     def _make_cv(self, cfg: CVConfig) -> Optional[Any]:

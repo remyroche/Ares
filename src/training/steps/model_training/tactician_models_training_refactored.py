@@ -2786,8 +2786,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         """Destructor to ensure cleanup on object deletion."""
         try:
             self.cleanup_resources()
-        except Exception:
-            # Silently handle cleanup errors in destructor
+        except Exception as e:
+            # Log cleanup errors in destructor but don't raise to avoid issues during garbage collection
+            tprint_error(f"❌ Resource cleanup failed in destructor: {e}")
             pass
     
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:

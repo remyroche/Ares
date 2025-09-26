@@ -491,7 +491,8 @@ class MRMRSelector:
                     try:
                         mi = mutual_info_regression(X[:, feature_idx].reshape(-1, 1), X[:, selected_idx])[0]
                         redundancies.append(mi)
-                    except Exception:
+                    except (ValueError, IndexError, ImportError) as e:
+                        tprint(f"⚠️ Mutual information calculation failed for feature {feature_idx}: {e}")
                         redundancies.append(0.0)
                 else:
                     redundancies.append(0.0)

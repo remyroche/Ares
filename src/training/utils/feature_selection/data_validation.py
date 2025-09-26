@@ -527,7 +527,8 @@ class DataValidator:
                             if abs(skewness) > 3:  # Highly skewed
                                 feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
                                 issues.append(f"Feature {feature_name} is highly skewed (skewness: {skewness:.3f})")
-                    except Exception:
+                    except (ValueError, ZeroDivisionError, OverflowError) as e:
+                        tprint(f"⚠️ Skewness calculation failed for feature {i}: {e}")
                         continue
 
             # Check for extreme kurtosis
@@ -543,7 +544,8 @@ class DataValidator:
                             if abs(kurtosis) > 5:  # Extreme kurtosis
                                 feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
                                 issues.append(f"Feature {feature_name} has extreme kurtosis (kurtosis: {kurtosis:.3f})")
-                    except Exception:
+                    except (ValueError, ZeroDivisionError, OverflowError) as e:
+                        tprint(f"⚠️ Kurtosis calculation failed for feature {i}: {e}")
                         continue
 
             # Check for features with too many zero values
@@ -556,7 +558,8 @@ class DataValidator:
                         if zero_ratio > 0.8:  # More than 80% zeros
                             feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
                             issues.append(f"Feature {feature_name} has too many zero values ({zero_count}/{len(feature_data)} = {zero_ratio:.1%})")
-                    except Exception:
+                    except (ValueError, ZeroDivisionError, OverflowError) as e:
+                        tprint(f"⚠️ Zero value ratio calculation failed for feature {i}: {e}")
                         continue
 
             _LOGGER.debug(f"📊 Found {len(issues)} data distribution issues")
@@ -586,7 +589,8 @@ class DataValidator:
                             
                             if outlier_ratio > 0.1:  # More than 10% outliers
                                 outlier_features.append(i)
-                    except Exception:
+                    except (ValueError, ZeroDivisionError, OverflowError) as e:
+                        tprint(f"⚠️ Outlier detection failed for feature {i}: {e}")
                         continue
             
             _LOGGER.debug(f"📊 Found {len(outlier_features)} features with excessive outliers")

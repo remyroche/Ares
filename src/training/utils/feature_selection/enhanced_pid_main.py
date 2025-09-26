@@ -19,6 +19,14 @@ from scipy import stats
 from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.metrics import mutual_info_score
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_warning, tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_warning(msg): print(f"WARNING: {msg}")
+    def tprint_error(msg): print(f"ERROR: {msg}")
+
 # Import our enhanced PID components with fallback
 try:
     from .enhanced_partial_information_decomposition import (
@@ -93,7 +101,8 @@ except ImportError as e:
                 probs = counts / len(data_discrete)
                 entropy = -np.sum(probs * np.log2(probs + 1e-10))
                 return entropy
-            except Exception:
+            except (ValueError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"⚠️ Entropy calculation failed: {e}")
                 return 0.0
     
     class MutualInformationCalculator:
@@ -112,7 +121,8 @@ except ImportError as e:
                 # Fallback to correlation-based approximation
                 correlation = np.corrcoef(x, y)[0, 1]
                 return -0.5 * np.log(1 - correlation**2 + 1e-10)
-            except Exception:
+            except (ValueError, np.linalg.LinAlgError, OverflowError) as e:
+                tprint_warning(f"⚠️ Mutual information calculation failed: {e}")
                 return 0.0
     
     class PIDCalculator:

@@ -1406,7 +1406,8 @@ class TacticianLookbackOptimizer:
                             # Weighted average correlation
                             weighted_corr = sum(valid_corrs)
                             correlations.append(weighted_corr)
-                    except Exception:
+                    except (ValueError, TypeError, np.linalg.LinAlgError) as e:
+                        tprint_warning(f"⚠️ Signal quality correlation calculation failed: {e}")
                         continue
             
             if correlations:
@@ -1451,7 +1452,8 @@ class TacticianLookbackOptimizer:
                         corr = safe_correlation(features[column], analyst_signal_series)
                         if validate_finite(corr):
                             alignment_scores.append(abs(corr))
-                    except Exception:
+                    except (ValueError, TypeError, np.linalg.LinAlgError) as e:
+                        tprint_warning(f"⚠️ Analyst alignment correlation failed for {column}: {e}")
                         continue
             
             # Check alignment with Analyst model outputs
@@ -1465,7 +1467,8 @@ class TacticianLookbackOptimizer:
                                 corr = safe_correlation(features[column], output_series)
                                 if validate_finite(corr):
                                     alignment_scores.append(abs(corr))
-                            except Exception:
+                            except (ValueError, TypeError, np.linalg.LinAlgError) as e:
+                                tprint_warning(f"⚠️ Analyst output alignment correlation failed for {column}: {e}")
                                 continue
             
             if alignment_scores:

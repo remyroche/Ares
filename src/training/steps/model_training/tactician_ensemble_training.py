@@ -809,7 +809,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 # Try to convert to datetime for validation
                 try:
                     pd.to_datetime(timestamps)
-                except Exception:
+                except (ValueError, TypeError, pd.errors.ParserError) as e:
+                    tprint_error(f"❌ Timestamp validation failed: {e}")
                     validation_errors.append("timestamps must be convertible to datetime")
 
         if validation_errors:
@@ -1214,7 +1215,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                                 self.logger.info(f"✅ Generated OOF predictions for base tactician model: {base_name}")
                         except Exception as te:
                             self.logger.warning(f"⚠️ Failed OOF for base tactician {base_name}: {te}")
-            except Exception:
+                            tprint_error(f"❌ OOF prediction failed for base tactician {base_name}: {te}")
+            except Exception as e:
+                tprint_error(f"❌ Critical error in base tactician OOF generation: {e}")
                 pass
 
             # Generate OOF predictions for analyst ensembles to prevent data leakage
@@ -1464,7 +1467,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         pred_tail = model.predict(X[tr_end:])
                         pred_tail_arr = _np.asarray(pred_tail).reshape(-1, 1)
                         oof[tr_end:, 0] = pred_tail_arr[:, 0]
-                    except Exception:
+                    except (ValueError, IndexError, AttributeError) as e:
+                        tprint_warning(f"⚠️ Holdout prediction failed for {model_name}: {e}")
                         pass
                 return oof
 
@@ -1477,7 +1481,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 oof = _np.zeros((n, 1), dtype=float)
                 oof[tr_end:, 0] = pred_tail_arr[:, 0]
                 return oof
-            except Exception:
+            except (ValueError, IndexError, AttributeError) as e:
+                tprint_error(f"❌ Full fallback OOF prediction failed for {model_name}: {e}")
                 return None
 
         except Exception as e:
@@ -1999,17 +2004,19 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         """Destructor to ensure cleanup on object deletion."""
         try:
             self.cleanup_resources()
-        except Exception as e:
-            # Log cleanup errors but don't raise in destructor to avoid issues during garbage collection
-            try:
-                if hasattr(self, 'logger') and self.logger:
-                    self.logger.error(f"❌ Cleanup error in destructor: {e}")
-                else:
-                    # Fallback logging if logger is not available
-                    print(f"❌ Cleanup error in TacticianEnsembleTrainingStep destructor: {e}")
-            except Exception:
-                # Last resort - avoid any exceptions in destructor
-                pass
+            except Exception as e:
+                # Log cleanup errors but don't raise in destructor to avoid issues during garbage collection
+                try:
+                    if hasattr(self, 'logger') and self.logger:
+                        self.logger.error(f"❌ Cleanup error in destructor: {e}")
+                    else:
+                        # Fallback logging if logger is not available
+                        print(f"❌ Cleanup error in TacticianEnsembleTrainingStep destructor: {e}")
+                    tprint_error(f"❌ Resource cleanup failed in destructor: {e}")
+                except Exception as cleanup_error:
+                    # Last resort - avoid any exceptions in destructor
+                    tprint_error(f"❌ Critical error in destructor cleanup logging: {cleanup_error}")
+                    pass
     
     def _log_comprehensive_summary(self, report: Dict[str, Any]) -> None:
         """Log comprehensive training summary with enhanced tprint integration."""

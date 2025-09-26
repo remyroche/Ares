@@ -464,7 +464,8 @@ class TradingOrchestrator:
                     try:
                         await handler(signal)
                     except Exception as e:
-                        self.logger.error(f"Error in signal handler: {e}")
+                        self.logger.error(f"Error in signal handler {handler.__name__}: {e}")
+                        # Continue processing other handlers even if one fails
 
             except Exception as e:
                 self.logger.error(f"Error in internal signal handler: {e}")

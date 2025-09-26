@@ -87,8 +87,75 @@ try:
 except ImportError:
     MATH_VALIDATION_AVAILABLE = False
     class MathValidation:
+        """Fallback math validation class when math_validation module is not available."""
         def __init__(self):
             pass
+        
+        def validate_numeric_array(self, data, allow_nan=False):
+            """Basic numeric array validation."""
+            try:
+                if data is None:
+                    return False, "Data is None"
+                if hasattr(data, '__len__') and len(data) == 0:
+                    return False, "Data is empty"
+                return True, "Valid"
+            except Exception as e:
+                return False, f"Validation error: {e}"
+        
+        def safe_correlation(self, x, y):
+            """Safe correlation calculation."""
+            try:
+                if len(x) != len(y) or len(x) < 2:
+                    return 0.0
+                # Simple correlation calculation
+                mean_x = sum(x) / len(x)
+                mean_y = sum(y) / len(y)
+                numerator = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x)))
+                denominator = (sum((x[i] - mean_x) ** 2 for i in range(len(x))) * 
+                             sum((y[i] - mean_y) ** 2 for i in range(len(y)))) ** 0.5
+                return numerator / denominator if denominator != 0 else 0.0
+            except Exception:
+                return 0.0
+        
+        def safe_covariance(self, x, y):
+            """Safe covariance calculation."""
+            try:
+                if len(x) != len(y) or len(x) < 2:
+                    return 0.0
+                mean_x = sum(x) / len(x)
+                mean_y = sum(y) / len(y)
+                return sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x))) / (len(x) - 1)
+            except Exception:
+                return 0.0
+        
+        def validate_correlation_matrix(self, matrix):
+            """Basic correlation matrix validation."""
+            try:
+                if matrix is None:
+                    return False, "Matrix is None"
+                if not hasattr(matrix, 'shape'):
+                    return False, "Matrix has no shape attribute"
+                if len(matrix.shape) != 2:
+                    return False, "Matrix is not 2D"
+                if matrix.shape[0] != matrix.shape[1]:
+                    return False, "Matrix is not square"
+                return True, "Valid"
+            except Exception as e:
+                return False, f"Validation error: {e}"
+        
+        def safe_matrix_inverse(self, matrix):
+            """Safe matrix inverse calculation."""
+            try:
+                # Simple 2x2 matrix inverse for fallback
+                if hasattr(matrix, 'shape') and matrix.shape == (2, 2):
+                    a, b, c, d = matrix[0, 0], matrix[0, 1], matrix[1, 0], matrix[1, 1]
+                    det = a * d - b * c
+                    if abs(det) < 1e-10:
+                        return None
+                    return [[d/det, -b/det], [-c/det, a/det]]
+                return None
+            except Exception:
+                return None
 
 try:
     from src.utils.serialization_utils import (

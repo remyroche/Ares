@@ -84,8 +84,9 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
 
             # Ensure we have appropriate model types for state recognition
             if not hasattr(config, 'model_types') or len(config.model_types) == 0:
-                # Will be finalized after HPO initialization
-                pass
+                # Initialize with default model types optimized for HMM state recognition
+                config.model_types = ['xgboost', 'rf', 'elastinet']
+                log_info(f"📊 Initialized default model types for HMM state recognition: {config.model_types}")
 
         super().__init__(config)
         self.logger = system_logger.getChild('StreamlinedHMMTrainingStep')

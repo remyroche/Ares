@@ -11,6 +11,14 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Union
 import logging
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_warning, tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_warning(msg): print(f"WARNING: {msg}")
+    def tprint_error(msg): print(f"ERROR: {msg}")
+
 # Import advanced matrix operations
 try:
     from src.utils.matrix_operations import (
@@ -641,5 +649,6 @@ class FeatureCalculatorRegistry:
                 return calculator(data)
             else:
                 return calculator(data, period)
-        except Exception:
+        except (ValueError, TypeError, AttributeError, IndexError) as e:
+            tprint_warning(f"⚠️ Feature calculation failed for {feature_name}: {e}")
             return None

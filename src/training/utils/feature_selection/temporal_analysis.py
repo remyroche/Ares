@@ -518,6 +518,7 @@ class TemporalAnalyzer:
                             'final_importance': importances[-1],
                             'decay_ratio': 1.0
                         }
+                        tprint(f"⚠️ Temporal decay calculation failed for feature {feature}: {e}")
             
             return temporal_decay
             

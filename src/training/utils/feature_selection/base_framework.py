@@ -713,7 +713,8 @@ class BaseFeatureSelectionFramework:
         try:
             if hasattr(self, 'gpu_manager') and self.gpu_manager:
                 requirements['gpu_available'] = self.gpu_manager.is_available()
-        except Exception:
+        except (AttributeError, RuntimeError, ImportError) as e:
+            tprint(f"⚠️ GPU availability check failed: {e}")
             pass
         
         return requirements

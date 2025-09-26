@@ -14,6 +14,14 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 from datetime import datetime
+
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_warning, tprint_error
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint_warning(msg): print(f"WARNING: {msg}")
+    def tprint_error(msg): print(f"ERROR: {msg}")
 # Optional imports
 try:
     import pandas as pd
@@ -693,7 +701,8 @@ class StandardizedParquetHandler:
                         'start': timestamps.min().isoformat(),
                         'end': timestamps.max().isoformat()
                     }
-                except Exception:
+                except (ValueError, TypeError, KeyError, pd.errors.ParserError) as e:
+                    tprint_warning(f"⚠️ Failed to extract timestamp metadata: {e}")
                     pass
             
             import json

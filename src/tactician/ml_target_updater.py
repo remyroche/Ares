@@ -371,8 +371,45 @@ class MLTargetUpdater:
             pd.DataFrame: Market data or None if failed
         """
         try:
-            # In a real implementation, this would fetch from exchange
-            # For now, return a placeholder
+            # Fetch real market data from exchange
+            if self.exchange_client and hasattr(self.exchange_client, 'get_klines'):
+                # Use exchange client to get recent klines/candles
+                klines = await self.exchange_client.get_klines(
+                    symbol=symbol,
+                    interval='1m',  # 1-minute intervals
+                    limit=100  # Get last 100 candles
+                )
+                
+                if klines and len(klines) > 0:
+                    # Convert exchange data to DataFrame
+                    df_data = []
+                    for kline in klines:
+                        df_data.append({
+                            "timestamp": pd.to_datetime(kline[0], unit='ms'),
+                            "open": float(kline[1]),
+                            "high": float(kline[2]),
+                            "low": float(kline[3]),
+                            "close": float(kline[4]),
+                            "volume": float(kline[5])
+                        })
+                    
+                    return pd.DataFrame(df_data)
+            
+            # Fallback: try alternative exchange client methods
+            if self.exchange_client and hasattr(self.exchange_client, 'get_ticker'):
+                ticker = await self.exchange_client.get_ticker(symbol)
+                if ticker:
+                    return pd.DataFrame({
+                        "timestamp": [datetime.now()],
+                        "open": [float(ticker.get('open', 100.0))],
+                        "high": [float(ticker.get('high', 101.0))],
+                        "low": [float(ticker.get('low', 99.0))],
+                        "close": [float(ticker.get('last', 100.5))],
+                        "volume": [float(ticker.get('volume', 1000))],
+                    })
+            
+            # Final fallback: return placeholder with warning
+            self.logger.warning(f"Using placeholder data for {symbol} - exchange client not available")
             return pd.DataFrame({
                 "timestamp": [datetime.now()],
                 "open": [100.0],

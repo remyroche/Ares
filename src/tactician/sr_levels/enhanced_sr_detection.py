@@ -1043,6 +1043,87 @@ class EnhancedSRDetector:
         except Exception as e:
             self.logger.warning(f'Volume persistence calculation failed: {e}')
             return 0.0
+    
+    def _calculate_volume_at_level(self, level: SRLevel, data: pd.DataFrame) -> float:
+        """
+        Calculate the actual volume at the specific price level.
+        
+        This method analyzes the volume data around the level price to determine
+        how much trading activity occurred at or near this level.
+        
+        Args:
+            level: The S/R level to analyze
+            data: Market data with OHLCV information
+            
+        Returns:
+            float: Volume at level (normalized value between 0 and 1)
+        """
+        try:
+            if 'volume' not in data.columns:
+                # If no volume data available, use volume confirmation score as fallback
+                return getattr(level, 'volume_confirmation_score', 0.0)
+            
+            level_price = level.price
+            tolerance = 0.001  # 0.1% price tolerance for level matching
+            
+            # Find candles that touched or were near the level
+            price_tolerance = level_price * tolerance
+            
+            # Check for candles where the level was within the high-low range
+            level_touches = (
+                (data['low'] <= level_price + price_tolerance) & 
+                (data['high'] >= level_price - price_tolerance)
+            )
+            
+            if not level_touches.any():
+                # If no direct touches, look for nearby volume
+                nearby_candles = (
+                    (data['low'] <= level_price + price_tolerance * 2) & 
+                    (data['high'] >= level_price - price_tolerance * 2)
+                )
+                if nearby_candles.any():
+                    # Use nearby volume but with reduced weight
+                    nearby_volume = data.loc[nearby_candles, 'volume'].sum()
+                    avg_volume = data['volume'].mean()
+                    return min(nearby_volume / (avg_volume * 10), 1.0) if avg_volume > 0 else 0.0
+                else:
+                    return 0.0
+            
+            # Calculate volume at level
+            level_volume = data.loc[level_touches, 'volume'].sum()
+            
+            # Calculate average volume for normalization
+            avg_volume = data['volume'].mean()
+            if avg_volume == 0:
+                return 0.0
+            
+            # Normalize volume at level
+            volume_ratio = level_volume / avg_volume
+            
+            # Apply additional factors for more accurate volume assessment
+            touch_count = level_touches.sum()
+            if touch_count > 0:
+                # More touches at the level indicate higher volume significance
+                touch_factor = min(touch_count / 10, 1.0)  # Normalize touch count
+                volume_ratio *= (1.0 + touch_factor * 0.5)  # Boost for multiple touches
+            
+            # Consider the recency of volume at level
+            if level_touches.any():
+                last_touch_idx = level_touches.idxmax()
+                current_idx = data.index[-1]
+                if hasattr(current_idx, 'to_pydatetime'):
+                    # Calculate time since last touch
+                    time_diff = (current_idx - last_touch_idx).total_seconds() / 3600  # hours
+                    recency_factor = max(0.1, 1.0 - (time_diff / 24))  # Decay over 24 hours
+                    volume_ratio *= recency_factor
+            
+            # Ensure result is between 0 and 1
+            return min(max(volume_ratio, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f'Volume at level calculation failed: {e}')
+            # Fallback to volume confirmation score
+            return getattr(level, 'volume_confirmation_score', 0.0)
 
     def _enhance_levels_with_ml_features(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
         """Enhance levels with ML-optimized features."""
@@ -1092,8 +1173,8 @@ class EnhancedSRDetector:
                 # Multi-timeframe support
                 level.multi_tf_support = self._calculate_multi_tf_support(level, data)
                 
-                # Volume at level (placeholder - would need volume data)
-                level.volume_at_level = level.volume_confirmation_score
+                # Calculate actual volume at level
+                level.volume_at_level = self._calculate_volume_at_level(level, data)
                 
                 # Enhanced persistence scoring
                 level.persistence_score = self._calculate_enhanced_persistence_score(level, data, atr)

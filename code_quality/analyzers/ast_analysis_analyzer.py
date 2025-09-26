@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 from typing import Dict, List, Any, Optional
 import numpy as np
@@ -211,56 +211,92 @@ class ASTAnalysisAnalyzer:
             issues = []
             
             # Analyze for completion issues and undefined names
+            names: List[Any] = []
             try:
                 # Get all names in the file
                 names = script.get_names()
-                
-                for name in names:
-                    # Check if the name is defined
-                    if name.type == 'name' and not name.is_definition():
-                        # Try to get completions for this name
+            except Exception as name_error:
+                tprint_error(f"Jedi failed to enumerate names for {file_path}: {name_error}")
+                issues.append({
+                    "line": 0,
+                    "column": 0,
+                    "message": f"Jedi name analysis failed: {name_error}",
+                    "severity": "warning",
+                    "category": "analysis_failure",
+                    "code": "jedi_analysis_failure",
+                })
+                names = []
+
+            for name in names:
+                # Check if the name is defined
+                if name.type == 'name' and not name.is_definition():
+                    try:
                         completions = script.complete(name.line, name.column)
-                        if not completions:
-                            issues.append({
-                                "line": name.line,
-                                "column": name.column,
-                                "message": f"Undefined name '{name.name}'",
-                                "severity": "warning",
-                                "category": "undefined_name",
-                                "code": "undefined_name"
-                            })
-            except Exception:
-                pass  # Jedi analysis might fail for some files
-            
-            # Analyze for import issues
-            try:
-                imports = [name for name in script.get_names() if name.type == 'import']
-                for imp in imports:
-                    # Check if the import can be resolved
-                    completions = script.complete(imp.line, imp.column)
+                    except Exception as completion_error:
+                        tprint_error(
+                            f"Jedi completion lookup failed in {file_path} at line {name.line}: {completion_error}"
+                        )
+                        issues.append({
+                            "line": name.line,
+                            "column": name.column,
+                            "message": f"Jedi completion failed: {completion_error}",
+                            "severity": "warning",
+                            "category": "analysis_failure",
+                            "code": "jedi_completion_failure",
+                        })
+                        continue
+
                     if not completions:
                         issues.append({
-                            "line": imp.line,
-                            "column": imp.column,
-                            "message": f"Import cannot be resolved: {imp.name}",
+                            "line": name.line,
+                            "column": name.column,
+                            "message": f"Undefined name '{name.name}'",
                             "severity": "warning",
-                            "category": "import_issue",
-                            "code": "unresolved_import"
+                            "category": "undefined_name",
+                            "code": "undefined_name"
                         })
-            except Exception:
-                pass
+            
+            # Analyze for import issues
+            imports = [name for name in names if getattr(name, "type", None) == 'import']
+
+            for imp in imports:
+                try:
+                    completions = script.complete(imp.line, imp.column)
+                except Exception as import_completion_error:
+                    tprint_warning(
+                        f"Import resolution raised for {imp.name} in {file_path}: {import_completion_error}"
+                    )
+                    issues.append({
+                        "line": imp.line,
+                        "column": imp.column,
+                        "message": f"Import resolution failed: {import_completion_error}",
+                        "severity": "warning",
+                        "category": "analysis_failure",
+                        "code": "jedi_import_failure",
+                    })
+                    continue
+
+                if not completions:
+                    issues.append({
+                        "line": imp.line,
+                        "column": imp.column,
+                        "message": f"Import cannot be resolved: {imp.name}",
+                        "severity": "warning",
+                        "category": "import_issue",
+                        "code": "unresolved_import"
+                    })
             
             return {
                 "status": "success",
                 "issues": issues,
                 "jedi_info": {
-                    "total_names": len(script.get_names()),
-                    "imports": len([n for n in script.get_names() if n.type == 'import']),
-                    "functions": len([n for n in script.get_names() if n.type == 'function']),
-                    "classes": len([n for n in script.get_names() if n.type == 'class'])
+                    "total_names": len(names),
+                    "imports": len(imports),
+                    "functions": len([n for n in names if getattr(n, "type", None) == 'function']),
+                    "classes": len([n for n in names if getattr(n, "type", None) == 'class'])
                 }
             }
-            
+
         except Exception as e:
             return {"status": "error", "error": str(e)}
 

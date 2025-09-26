@@ -23,6 +23,8 @@ from typing import Any
 import yaml
 import os
 
+from src.utils.tprint import tprint_error, tprint_warning
+
 
 @dataclass
 class ConfigurationIssue:
@@ -272,9 +274,10 @@ class ConfigurationAnalyzer:
                                 self._check_sensitive_value(
                                     file_path, node.lineno, key, str(value),
                                 )
-                            except:
-                                # Complex expressions
-                                pass
+                            except Exception as literal_error:
+                                tprint_warning(
+                                    f"Skipping non-literal config assignment for {key} in {file_path}: {literal_error}"
+                                )
 
             self.config_files[str(file_path)] = config
 
@@ -289,6 +292,13 @@ class ConfigurationAnalyzer:
                 str(file_path), e.lineno or 0, "syntax_error", "high",
                 f"Python syntax error: {str(e)}",
                 "Fix Python syntax errors",
+            )
+        except Exception as parse_error:
+            tprint_error(f"Failed to analyze Python config {file_path}: {parse_error}")
+            self._add_issue(
+                str(file_path), 0, "analysis_error", "high",
+                f"Unable to analyze configuration file: {parse_error}",
+                "Resolve the error and rerun the analyzer",
             )
 
     def _check_config_content(self, file_path: Path, config: dict[str, Any],
@@ -374,8 +384,10 @@ class ConfigurationAnalyzer:
                             if var_name:
                                 self.env_vars_used.add(var_name)
 
-            except:
-                pass
+            except Exception as env_error:
+                tprint_warning(
+                    f"Failed to inspect environment usage in {file_path}: {env_error}"
+                )
 
     def _analyze_config_usage(self) -> None:
         """Analyze configuration key usage in code."""
@@ -399,8 +411,8 @@ class ConfigurationAnalyzer:
                     if key in content:
                         self.config_keys_used.add(key)
 
-            except:
-                pass
+            except (OSError, IOError, PermissionError) as read_error:
+                tprint_warning(f"Unable to read {file_path} while mapping config usage: {read_error}")
 
     def _check_configuration_issues(self) -> None:
         """Check for various configuration issues."""

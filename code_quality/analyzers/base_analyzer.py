@@ -9,9 +9,11 @@ ensuring consistent interface and common functionality.
 import ast
 import re
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from src.utils.tprint import tprint_error, tprint_warning
 
 
 class BaseAnalyzer(ABC):
@@ -30,7 +32,13 @@ class BaseAnalyzer(ABC):
     @abstractmethod
     def analyze_directory(self, directory_path: str) -> Dict[str, Any]:
         """Analyze a directory and return results."""
-        pass
+        message = (
+            f"{self.__class__.__name__} does not implement 'analyze_directory'. "
+            "All analyzers must provide a concrete implementation so audits "
+            "can fail fast instead of silently skipping work."
+        )
+        tprint_error(message)
+        raise NotImplementedError(message)
     
     def _find_python_files(self, directory_path: str) -> List[Path]:
         """Find all Python files in the directory, excluding problematic ones."""
@@ -54,9 +62,15 @@ class BaseAnalyzer(ABC):
             try:
                 with open(file_path, 'r', encoding='latin-1') as f:
                     return f.read()
-            except Exception:
+            except Exception as latin_error:
+                tprint_error(
+                    f"Failed to read {file_path} with latin-1 encoding: {latin_error}"
+                )
+                self.stats["files_failed"] += 1
                 return None
-        except Exception:
+        except Exception as utf_error:
+            tprint_error(f"Failed to read {file_path}: {utf_error}")
+            self.stats["files_failed"] += 1
             return None
     
     def _parse_ast_safely(self, content: str, file_path: Path) -> Optional[ast.AST]:
@@ -66,7 +80,8 @@ class BaseAnalyzer(ABC):
         except SyntaxError:
             self.stats["files_failed"] += 1
             return None
-        except Exception:
+        except Exception as parse_error:
+            tprint_error(f"Failed to parse AST for {file_path}: {parse_error}")
             self.stats["files_failed"] += 1
             return None
     
@@ -94,6 +109,8 @@ class BaseAnalyzer(ABC):
                 if module_parts[-1].endswith('.py'):
                     module_parts[-1] = module_parts[-1][:-3]
                 return '.'.join(module_parts)
-        except Exception:
-            pass
+        except Exception as path_error:
+            tprint_warning(
+                f"Could not derive module name from {file_path}: {path_error}"
+            )
         return None

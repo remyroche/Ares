@@ -339,19 +339,18 @@ class ErrorReporter:
 
     def _calculate_error_density(self, file_path: str, error_count: int, target_path: str | Path | None = None) -> float:
         """Calculate error density (errors per line of code)."""
-        try:
-            if target_path:
-                full_path = Path(target_path) / file_path
-            else:
-                full_path = Path(file_path)
+        full_path = Path(target_path) / file_path if target_path else Path(file_path)
 
+        try:
             if full_path.exists() and full_path.is_file():
                 with open(full_path, encoding="utf-8") as f:
                     line_count = len(f.readlines())
                     return error_count / line_count if line_count > 0 else 0.0
         except (OSError, IOError, PermissionError) as e:
-            tprint_error(f"Failed to read file {full_path} for error density calculation: {e}")
-            pass
+            tprint_error(
+                f"Failed to read file {full_path} for error density calculation: {e}"
+            )
+            return 0.0
 
         return 0.0
 

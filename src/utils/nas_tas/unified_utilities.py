@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 import time
-import warnings
 import json
 import pickle
 from pathlib import Path
@@ -58,7 +57,6 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
-warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
 

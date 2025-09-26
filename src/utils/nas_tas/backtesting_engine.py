@@ -14,8 +14,6 @@ from datetime import datetime, timedelta
 from enum import Enum
 import json
 from pathlib import Path
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import TAS components
 from src.utils.nas_tas.unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig

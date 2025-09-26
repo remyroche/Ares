@@ -19,8 +19,6 @@ import logging
 import time
 import unittest
 from datetime import datetime, timedelta
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (

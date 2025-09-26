@@ -14,526 +14,85 @@ Enhanced Features:
 - Comprehensive ML utilities integration (CV, HPO, lookahead, etc.)
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
-from datetime import datetime
-from pathlib import Path
+from __future__ import annotations
+
 import json
+import logging
+import os
+import sys
 import time
 import traceback
-
-# Required psutil import - fail fast if not available for production use
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    psutil = None
 from contextlib import contextmanager
-import sys
-import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Required numpy import - fail fast if not available
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
-
-# Required pandas import - fail fast if not available
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
-
-# Core imports
+from .analyst_pipeline import load_dependency_bundle
+from .import_helpers import ensure_dependencies
+from .memory_utils import memory_guard
 from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
 
-# Dependency validation functions
-def validate_critical_dependencies():
-    """Validate that all critical dependencies are available. Fast fail if not."""
-    missing_deps = []
-    
-    if not NUMPY_AVAILABLE:
-        missing_deps.append("numpy")
-    
-    if not PANDAS_AVAILABLE:
-        missing_deps.append("pandas")
-    
-    if not PSUTIL_AVAILABLE:
-        missing_deps.append("psutil")
-    
-    if missing_deps:
-        error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}. " \
-                   f"Install with: pip install {' '.join(missing_deps)}"
-        raise ImportError(error_msg)
+_DEPENDENCIES = load_dependency_bundle(globals())
 
-def validate_runtime_dependencies():
-    """Validate dependencies at runtime before executing operations."""
-    if np is None:
-        raise RuntimeError("NumPy is required for array operations. Install with: pip install numpy")
-    
-    if pd is None:
-        raise RuntimeError("Pandas is required for data operations. Install with: pip install pandas")
-    
-    if psutil is None:
-        raise RuntimeError("psutil is required for system monitoring. Install with: pip install psutil")
+np = _DEPENDENCIES.numpy
+pd = _DEPENDENCIES.pandas
+psutil = _DEPENDENCIES.psutil
 
-# Enhanced tprint logging
-from src.utils.tprint import (
-    tprint, tprint_info, tprint_warning, tprint_error, tprint_success, 
-    tprint_debug, tprint_progress, tprint_performance, tprint_structured,
-    tprint_timer, tprint_logged, LogLevel
+NUMPY_AVAILABLE = _DEPENDENCIES.required.get("numpy", False)
+PANDAS_AVAILABLE = _DEPENDENCIES.required.get("pandas", False)
+PSUTIL_AVAILABLE = _DEPENDENCIES.required.get("psutil", False)
+
+COMMON_UTILITIES_AVAILABLE = _DEPENDENCIES.availability.get("common_utilities", True)
+MATH_VALIDATION_AVAILABLE = _DEPENDENCIES.availability.get("math_validation", True)
+SERIALIZATION_UTILITIES_AVAILABLE = _DEPENDENCIES.availability.get("serialization_utilities", True)
+HARDWARE_UTILITIES_AVAILABLE = _DEPENDENCIES.availability.get("hardware_utilities", True)
+ML_UTILITIES_AVAILABLE = _DEPENDENCIES.availability.get("ml_utilities", True)
+ENHANCED_HPO_AVAILABLE = _DEPENDENCIES.availability.get("enhanced_hpo", False)
+ENHANCED_TRAINING_AVAILABLE = (
+    _DEPENDENCIES.availability.get("enhanced_training", False)
+    and _DEPENDENCIES.availability.get("training_integration", False)
 )
+ERROR_MONITORING_AVAILABLE = _DEPENDENCIES.availability.get("error_monitoring", False)
 
-# Common utilities integration with safe imports
-try:
-    from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        integrate_with_m1_optimizers, cleanup_m1_optimizers,
-        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
-        validate_finite, validate_positive, validate_range,
-        safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
-        ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
-        create_empty_dataframe, validate_dataframe, validate_dataframe_columns,
-        safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
-        safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
-        validate_timestamp_column, safe_timestamp_conversion,
-        optimize_dataframe_dtypes, calculate_data_quality_metrics,
-        get_dataframe_info, create_data_quality_report,
-        safe_rolling, safe_groupby_operation, safe_apply_function,
-        safe_filter_dataframe, create_summary_statistics,
-        safe_to_parquet, safe_read_parquet, list_parquet_files,
-        safe_copy, validate_dataframe_schema, validate_file_size,
-        guard_dataframe_nulls, secure_file_path, with_tracing_span,
-        sanitize_string, memory_checkpoint, gpu_context, optimize_memory,
-        get_memory_usage, validate_file_path, get_file_size, check_disk_space,
-        timed_operation, format_bytes, chunked_iterable, parallel_map,
-        validate_correlation_matrix, safe_matrix_inverse, math_safe,
-        MathValidationError
-    )
-    COMMON_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Common utilities not available: {e}")
-    COMMON_UTILITIES_AVAILABLE = False
-    # Define fallback functions
-    def safe_divide(a, b, default=0.0):
-        """Safe division that handles division by zero.
 
-        Args:
-            a: Numerator
-            b: Denominator
-            default: Default value to return if division by zero
+def validate_critical_dependencies() -> None:
+    """Fast-fail if a required dependency is missing."""
 
-        Returns:
-            Division result or default value
-        """
-        return a / b if b != 0 else default
+    _DEPENDENCIES.ensure_critical()
 
-    def safe_mean(arr):
-        """Calculate mean safely with empty array handling.
 
-        Args:
-            arr: Array to calculate mean for
+def validate_runtime_dependencies() -> None:
+    """Validate dependencies immediately before executing runtime operations."""
 
-        Returns:
-            Mean value or 0.0 for empty arrays
-        """
-        return np.mean(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
-
-    def safe_std(arr):
-        """Calculate standard deviation safely with empty array handling.
-
-        Args:
-            arr: Array to calculate standard deviation for
-
-        Returns:
-            Standard deviation or 0.0 for empty arrays
-        """
-        return np.std(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
-    def validate_finite(value, name="value"):
-        """Validate that a value is finite.
-
-        Args:
-            value: Value to validate
-            name: Name of the value for error messages
-
-        Returns:
-            The validated value
-
-        Raises:
-            ValueError: If value is not finite
-        """
-        if not np.isfinite(value):
-            raise ValueError(f"{name} must be finite, got {value}")
-        return value
-
-    def validate_positive(value, name="value"):
-        """Validate that a value is positive.
-
-        Args:
-            value: Value to validate
-            name: Name of the value for error messages
-
-        Returns:
-            The validated value
-
-        Raises:
-            ValueError: If value is not positive
-        """
-        if value <= 0:
-            raise ValueError(f"{name} must be positive, got {value}")
-        return value
-
-    def ensure_directory(path):
-        """Ensure a directory exists, creating it if necessary.
-
-        Args:
-            path: Directory path to create
-        """
-        return True
-    def safe_json_dump(data, filepath, **kwargs):
-        """Safely dump data to JSON file.
-
-        Args:
-            data: Data to serialize
-            filepath: File path to save to
-            **kwargs: Additional arguments for json.dump
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with open(filepath, 'w') as f:
-                json.dump(data, f, **kwargs)
-            return True
-        except Exception:
-            return False
-    def safe_json_load(filepath, default=None):
-        """Safely load data from JSON file.
-
-        Args:
-            filepath: File path to load from
-            default: Default value to return on error
-
-        Returns:
-            Loaded data or default value
-        """
-        try:
-            with open(filepath, 'r') as f:
-                return json.load(f)
-        except Exception:
-            return default
-    def sanitize_string(s, max_length=255):
-        """Sanitize string by truncating and stripping whitespace.
-
-        Args:
-            s: String to sanitize
-            max_length: Maximum length to truncate to
-
-        Returns:
-            Sanitized string
-        """
-        if not isinstance(s, str):
-            s = str(s)
-        return s[:max_length].strip()
-    def get_memory_usage():
-        """Get current memory usage of the process.
-
-        Returns:
-            Memory usage in bytes, or 0 if unable to determine
-        """
-        try:
-            return psutil.Process().memory_info().rss
-        except Exception:
-            return 0
-    def check_disk_space(path, required_gb=1.0):
-        """Check if sufficient disk space is available.
-
-        Args:
-            path: Path to check disk space for
-            required_gb: Required space in GB
-
-        Returns:
-            True if sufficient space available, False otherwise
-        """
-        try:
-            import shutil
-            stat = shutil.disk_usage(path)
-            free_gb = stat.free / (1024 ** 3)
-            return {'sufficient': free_gb >= required_gb, 'free_gb': free_gb}
-        except Exception:
-            return {'sufficient': False, 'free_gb': 0}
-
-# Math validation utilities with safe imports
-try:
-    from src.utils.math_validation import (
-        safe_divide as math_safe_divide, safe_log as math_safe_log,
-        safe_sqrt as math_safe_sqrt, safe_power as math_safe_power,
-        validate_finite as math_validate_finite, validate_positive as math_validate_positive,
-        validate_range as math_validate_range, safe_kelly_calculation as math_safe_kelly,
-        safe_weighted_average as math_safe_weighted_avg,
-        safe_percentage_change as math_safe_pct_change,
-        safe_correlation,
-        safe_covariance,
-        safe_mean as math_safe_mean,
-        safe_std as math_safe_std,
-        safe_percentile,
-        validate_correlation_matrix as math_validate_corr,
-        safe_matrix_inverse as math_safe_matrix_inv, math_safe as math_safe_func,
-        MathValidation, MathValidationError as MathValidationError
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Math validation utilities not available: {e}")
-    MATH_VALIDATION_AVAILABLE = False
-    # Define fallback functions
-    def math_validate_finite(value, name="value"):
-        if not np.isfinite(value):
-            raise ValueError(f"{name} must be finite, got {value}")
-        return value
-    def math_validate_positive(value, name="value"):
-        if value <= 0:
-            raise ValueError(f"{name} must be positive, got {value}")
-        return value
-    def math_safe_mean(arr):
-        return np.mean(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
-    def math_safe_std(arr):
-        return np.std(arr) if hasattr(arr, '__len__') and len(arr) > 0 else 0.0
-    class MathValidation:
-        def __init__(self):
-            pass
-        def validate_finite(self, value, name="value"):
-            return math_validate_finite(value, name)
-        def validate_positive(self, value, name="value"):
-            return math_validate_positive(value, name)
-    class MathValidationError(Exception):
-        pass
-
-# Serialization utilities with safe imports
-try:
-    from src.utils.serialization_utils import (
-        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
-    )
-    SERIALIZATION_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Serialization utilities not available: {e}")
-    SERIALIZATION_UTILITIES_AVAILABLE = False
-    # Define fallback classes
-    class JSONSerializer:
-        @staticmethod
-        def save(data, filepath):
-            try:
-                with open(filepath, 'w') as f:
-                    json.dump(data, f, indent=2, default=str)
-                return True
-            except Exception:
-                return False
-        @staticmethod
-        def load(filepath):
-            try:
-                with open(filepath, 'r') as f:
-                    return json.load(f)
-            except Exception:
-                return None
-    class PickleSerializer:
-        @staticmethod
-        def save(data, filepath):
-            try:
-                import pickle
-                with open(filepath, 'wb') as f:
-                    pickle.dump(data, f)
-                return True
-            except Exception:
-                return False
-        @staticmethod
-        def load(filepath):
-            try:
-                with open(filepath, 'rb') as f:
-                    return pickle.load(f)
-            except Exception:
-                return None
-    class ParquetSerializer:
-        @staticmethod
-        def save(data, filepath):
-            try:
-                if hasattr(data, 'to_parquet'):
-                    data.to_parquet(filepath)
-                    return True
-                return False
-            except Exception:
-                return False
-        @staticmethod
-        def load(filepath):
-            try:
-                return pd.read_parquet(filepath)
-            except Exception:
-                return None
-    class UniversalSerializer:
-        def __init__(self):
-            self.serializers = {
-                'json': JSONSerializer,
-                'pickle': PickleSerializer,
-                'parquet': ParquetSerializer
-            }
-        def save(self, data, filepath, format='auto'):
-            if format == 'auto':
-                if filepath.endswith('.json'):
-                    format = 'json'
-                elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
-                    format = 'pickle'
-                elif filepath.endswith('.parquet'):
-                    format = 'parquet'
-                else:
-                    format = 'pickle'
-            serializer = self.serializers.get(format)
-            if serializer:
-                return serializer.save(data, filepath)
-            return False
-        def load(self, filepath):
-            if filepath.endswith('.json'):
-                return JSONSerializer.load(filepath)
-            elif filepath.endswith('.pkl') or filepath.endswith('.pickle'):
-                return PickleSerializer.load(filepath)
-            elif filepath.endswith('.parquet'):
-                return ParquetSerializer.load(filepath)
-            else:
-                return PickleSerializer.load(filepath)
-
-# Hardware optimization utilities with safe imports
-try:
-    from src.utils.hardware.m1_gpu_utils import (
-        get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
-        optimize_dataframe_for_m1, create_m1_optimized_array,
-        m1_backtesting_simulate, m1_monte_carlo_simulate
-    )
-    HARDWARE_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Hardware utilities not available: {e}")
-    HARDWARE_UTILITIES_AVAILABLE = False
-    # Define fallback functions
-    def is_m1_available():
-        return False
-    def is_mps_available():
-        return False
-    def get_gpu_manager():
-        return None
-    def optimize_dataframe_for_m1(df):
-        return df
-    def create_m1_optimized_array(data, dtype=None):
-        return np.array(data, dtype=dtype)
-    def m1_backtesting_simulate(*args, **kwargs):
-        return {'error': 'M1 utilities not available'}
-    def m1_monte_carlo_simulate(*args, **kwargs):
-        return {'error': 'M1 utilities not available'}
-
-# ML common utilities with safe imports
-try:
-    from src.utils.ml_common.validation.validation_utils import (
-        validate_input_data, validate_model_config, validate_training_data
-    )
-    from src.utils.ml_common.optimization.hpo_utils import (
-        optimize_hyperparameters, create_search_space, validate_hpo_config
-    )
-    from src.utils.ml_common.evaluation.evaluation_utils import (
-        calculate_metrics, evaluate_model_performance, create_evaluation_report
-    )
-    from src.utils.ml_common.monitoring.enhanced_error_detector import (
-        EnhancedErrorDetector
+    ensure_dependencies(
+        {
+            "numpy": np is not None,
+            "pandas": pd is not None,
+            "psutil": psutil is not None,
+        },
+        error_message="Runtime dependencies missing",
     )
 
-    # Enhanced HPO integration
-    from src.training.steps.model_training.enhanced_regime_aware_hpo import (
-        enhance_existing_hpo_pipeline, EnhancedCVStrategies, RegimeType, RegimeCharacteristics
-    )
 
-    # Enhanced regime-aware HPO system
-    ENHANCED_HPO_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Enhanced HPO utilities not available: {e}")
-    ENHANCED_HPO_AVAILABLE = False
-    EnhancedErrorDetector = None
-    # Fallback functions
-    def enhance_existing_hpo_pipeline(*args, **kwargs):
-        return None
-    def EnhancedCVStrategies(*args, **kwargs):
-        return None
-    def RegimeType(*args, **kwargs):
-        return None
-    def RegimeCharacteristics(*args, **kwargs):
-        return None
+# Backwards-compatible aliases for math utilities that are widely referenced.
+math_safe_divide = safe_divide
+math_safe_log = safe_log
+math_safe_sqrt = safe_sqrt
+math_safe_power = safe_power
+math_validate_finite = validate_finite
+math_validate_positive = validate_positive
+math_validate_range = validate_range
+math_safe_kelly = safe_kelly_calculation
+math_safe_weighted_avg = safe_weighted_average
+math_safe_pct_change = safe_percentage_change
+math_safe_mean = safe_mean
+math_safe_std = safe_std
+math_validate_corr = validate_correlation_matrix
+math_safe_matrix_inv = safe_matrix_inverse
+math_safe_func = math_safe
 
-    from src.utils.ml_common.reporting.enhanced_reporting_system import (
-        ReportGenerator, ReportManager, create_training_report
-    )
-    ML_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: ML utilities not available: {e}")
-    ML_UTILITIES_AVAILABLE = False
-
-# Enhanced training utilities integration
-try:
-    from src.utils.ml_common.training.enhanced_training_utils import (
-        EnhancedTrainingUtils,
-        EarlyStoppingConfig,
-        PurgedCVConfig,
-        OverfittingMonitorConfig,
-        RegularizationConfig
-    )
-    from src.utils.ml_common.training.training_integration import (
-        TrainingStepEnhancer,
-        TrainingIntegrationConfig
-    )
-    ENHANCED_TRAINING_AVAILABLE = True
-    tprint_success("✅ Enhanced training utilities loaded")
-except ImportError as e:
-    ENHANCED_TRAINING_AVAILABLE = False
-    tprint_warning(f"⚠️ Enhanced training utilities not available: {e}")
-    EnhancedTrainingUtils = None
-    TrainingStepEnhancer = None
-    EarlyStoppingConfig = None
-    PurgedCVConfig = None
-    OverfittingMonitorConfig = None
-    RegularizationConfig = None
-    TrainingIntegrationConfig = None
-    # Define fallback functions
-    def validate_input_data(*args, **kwargs):
-        return {'valid': True}
-    def validate_model_config(*args, **kwargs):
-        return {'valid': True}
-    def validate_training_data(*args, **kwargs):
-        return {'valid': True}
-    def optimize_hyperparameters(*args, **kwargs):
-        return {'error': 'ML utilities not available'}
-    def create_search_space(*args, **kwargs):
-        return {}
-    def validate_hpo_config(*args, **kwargs):
-        return {'valid': True}
-    def calculate_metrics(*args, **kwargs):
-        return {}
-    def evaluate_model_performance(*args, **kwargs):
-        return {'error': 'ML utilities not available'}
-    def create_evaluation_report(*args, **kwargs):
-        return {'error': 'ML utilities not available'}
-    class ErrorDetector:
-        def analyze_error(self, *args, **kwargs):
-            return {'error': 'ML utilities not available'}
-    class ErrorHandler:
-        pass
-    class ErrorReporter:
-        def report_critical_error(self, *args, **kwargs):
-            pass
-    class ReportGenerator:
-        pass
-    class ReportManager:
-        pass
-    def create_training_report(*args, **kwargs):
-        return {'error': 'ML utilities not available'}
 
 logger = system_logger.getChild('AnalystModelsTrainingEnhanced')
 
@@ -742,12 +301,20 @@ class EnhancedErrorHandler:
         self.error_count = 0
         
         # Initialize ML common error detector
-        try:
-            self.ml_error_detector = ErrorDetector()
-            self.ml_error_handler = ErrorHandler()
-            self.ml_error_reporter = ErrorReporter()
-        except Exception as e:
-            tprint_warning(f"⚠️ Could not initialize ML error detection: {e}")
+        if ERROR_MONITORING_AVAILABLE:
+            try:
+                self.ml_error_detector = ErrorDetector()
+                self.ml_error_handler = ErrorHandler()
+                self.ml_error_reporter = ErrorReporter()
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not initialize ML error detection: {e}")
+                self.ml_error_detector = None
+                self.ml_error_handler = None
+                self.ml_error_reporter = None
+        else:
+            tprint_warning(
+                "⚠️ Enhanced error monitoring utilities are unavailable; proceeding with basic error handling"
+            )
             self.ml_error_detector = None
             self.ml_error_handler = None
             self.ml_error_reporter = None
@@ -1841,73 +1408,76 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             # Train models for each regime with enhanced utilities
             for regime in unique_regimes:
-                regime_mask = regime_labels == regime
-                X_regime = X[regime_mask]
-                y_regime = y[regime_mask]
-                timestamps_regime = timestamps[regime_mask] if timestamps is not None else None
-                
-                tprint_info(f"🎯 Training models for regime {regime} ({len(X_regime)} samples)")
-                
-                # Train each model type for this regime
-                regime_models = {}
-                for model_type in self.config.model_types:
-                    try:
-                        # Create model instance with enhanced HPO (fast fail enabled)
-                        if ENHANCED_HPO_AVAILABLE and hasattr(self, 'enhanced_hpo'):
-                            # Use enhanced HPO system - will fail fast if issues occur
-                            try:
+                with memory_guard(f"analyst_regime_training_{regime}", logger=self.logger):
+                    regime_mask = regime_labels == regime
+                    X_regime = X[regime_mask]
+                    y_regime = y[regime_mask]
+                    timestamps_regime = timestamps[regime_mask] if timestamps is not None else None
+
+                    tprint_info(f"🎯 Training models for regime {regime} ({len(X_regime)} samples)")
+
+                    # Train each model type for this regime
+                    regime_models = {}
+                    for model_type in self.config.model_types:
+                        try:
+                            # Create model instance with enhanced HPO (fast fail enabled)
+                            if ENHANCED_HPO_AVAILABLE and hasattr(self, 'enhanced_hpo'):
+                                # Use enhanced HPO system - will fail fast if issues occur
+                                try:
+                                    model = self.training_enhancer.create_model(
+                                        model_type=model_type,
+                                        model_name=f"analyst_{model_type}_regime_{regime}",
+                                        model_params={},
+                                        enable_enhanced_hpo=True,
+                                        regime_labels=regime_labels,
+                                        X_regime=X_regime,
+                                        y_regime=y_regime
+                                    )
+                                    tprint_success(f"✅ Enhanced HPO successfully applied for {model_type} in regime {regime}")
+                                except RuntimeError as e:
+                                    tprint_error(f"❌ Enhanced HPO failed for {model_type} in regime {regime}: {e}")
+                                    tprint_info("🔄 Falling back to standard model creation (fast fail disabled for this instance)")
+                                    # Fallback only for this specific case - create standard model
+                                    model = self.training_enhancer.create_model(
+                                        model_type=model_type,
+                                        model_name=f"analyst_{model_type}_regime_{regime}_fallback",
+                                        model_params={}
+                                    )
+                            else:
+                                # Standard model creation
                                 model = self.training_enhancer.create_model(
                                     model_type=model_type,
                                     model_name=f"analyst_{model_type}_regime_{regime}",
-                                    model_params={},
-                                    enable_enhanced_hpo=True,
-                                    regime_labels=regime_labels,
-                                    X_regime=X_regime,
-                                    y_regime=y_regime
-                                )
-                                tprint_success(f"✅ Enhanced HPO successfully applied for {model_type} in regime {regime}")
-                            except RuntimeError as e:
-                                tprint_error(f"❌ Enhanced HPO failed for {model_type} in regime {regime}: {e}")
-                                tprint_info("🔄 Falling back to standard model creation (fast fail disabled for this instance)")
-                                # Fallback only for this specific case - create standard model
-                                model = self.training_enhancer.create_model(
-                                    model_type=model_type,
-                                    model_name=f"analyst_{model_type}_regime_{regime}_fallback",
                                     model_params={}
                                 )
-                        else:
-                            # Standard model creation
-                            model = self.training_enhancer.create_model(
-                                model_type=model_type,
-                                model_name=f"analyst_{model_type}_regime_{regime}",
-                                model_params={}
+
+                            # Apply enhanced regularization
+                            model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
+                                model, model_type
                             )
 
-                        # Apply enhanced regularization
-                        model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
-                            model, model_type
-                        )
+                            # Train with enhanced cross-validation, early stopping and overfitting monitoring
+                            trained_model, metadata = self.training_enhancer.enhance_training_step(
+                                X_regime, y_regime, model, timestamps_regime,
+                                f"analyst_{model_type}_regime_{regime}", regime_labels
+                            )
 
-                        # Train with enhanced cross-validation, early stopping and overfitting monitoring
-                        trained_model, metadata = self.training_enhancer.enhance_training_step(
-                            X_regime, y_regime, model, timestamps_regime,
-                            f"analyst_{model_type}_regime_{regime}", regime_labels
-                        )
-                        
-                        regime_models[model_type] = {
-                            'model': trained_model,
-                            'metadata': metadata
-                        }
-                        
-                        # Check for overfitting warnings
-                        if metadata.get('overfitting_detected', False):
-                            results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
-                        
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
-                        continue
-                
-                results['models'][regime] = regime_models
+                            regime_models[model_type] = {
+                                'model': trained_model,
+                                'metadata': metadata
+                            }
+
+                            # Check for overfitting warnings
+                            if metadata.get('overfitting_detected', False):
+                                results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
+
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
+                            continue
+
+                    results['models'][regime] = regime_models
+
+                    del regime_mask, X_regime, y_regime, timestamps_regime, regime_models
             
             # Calculate ensemble diversity if multiple models
             if len(self.config.model_types) > 1:

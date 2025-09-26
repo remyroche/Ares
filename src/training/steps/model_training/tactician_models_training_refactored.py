@@ -15,14 +15,26 @@ ENHANCED FEATURES:
 - Extensive logging with tprint at every step
 """
 
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 import time
 import traceback
 from dataclasses import dataclass
 from enum import Enum
+
+from .import_helpers import ensure_dependencies, import_module_safely
+from .memory_utils import memory_guard
+
+np = import_module_safely("numpy", required=True, package_hint="pip install numpy")
+NUMPY_AVAILABLE = np is not None
+
+pd = import_module_safely("pandas", required=True, package_hint="pip install pandas")
+PANDAS_AVAILABLE = pd is not None
+
+ensure_dependencies(
+    {"numpy": NUMPY_AVAILABLE, "pandas": PANDAS_AVAILABLE},
+    error_message="Critical dependencies missing for tactician training",
+)
 
 
 # Enhanced imports with comprehensive error handling
@@ -1961,73 +1973,110 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             # Train models for each regime with enhanced utilities and confidence weighting
             for regime in unique_regimes:
-                regime_mask = regime_labels_filtered == regime
-                X_regime = X_filtered[regime_mask]
-                y_regime = y_filtered[regime_mask]
-                timestamps_regime = timestamps_filtered[regime_mask] if timestamps_filtered is not None else None
+                with memory_guard(f"tactician_regime_training_{regime}", logger=self.logger):
+                    regime_mask = regime_labels_filtered == regime
+                    X_regime = X_filtered[regime_mask]
+                    y_regime = y_filtered[regime_mask]
+                    timestamps_regime = (
+                        timestamps_filtered[regime_mask] if timestamps_filtered is not None else None
+                    )
 
-                # Get confidence scores for this regime if available
-                confidence_regime = None
-                if confidence_scores_filtered is not None and regime_mask.sum() > 0:
-                    regime_confidence_mask = regime_mask[directional_mask] if analyst_signals is not None else regime_mask
-                    confidence_regime = confidence_scores_filtered[regime_confidence_mask] if confidence_scores_filtered is not None else None
-
-                self.logger.info(f"🎯 Training tactician models for regime {regime} ({len(X_regime)} samples)")
-                if confidence_regime is not None:
-                    self.logger.info(f"📊 Using confidence scores for sample weighting (mean: {np.mean(confidence_regime):.3f}, std: {np.std(confidence_regime):.3f})")
-
-                # Train each model type for this regime
-                regime_models = {}
-                for model_type in self.config.model_types:
-                    try:
-                        # Create model instance
-                        model = self._create_model_instance(model_type)
-                        
-                        # Special handling for Random Survival Forest
-                        if model_type == "RandomSurvivalForest":
-                            model = self._create_random_survival_forest_model()
-
-                        # Apply enhanced regularization
-                        model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
-                            model, model_type
+                    # Get confidence scores for this regime if available
+                    confidence_regime = None
+                    regime_confidence_mask = None
+                    if confidence_scores_filtered is not None and regime_mask.sum() > 0:
+                        regime_confidence_mask = (
+                            regime_mask[directional_mask] if analyst_signals is not None else regime_mask
+                        )
+                        confidence_regime = (
+                            confidence_scores_filtered[regime_confidence_mask]
+                            if confidence_scores_filtered is not None
+                            else None
                         )
 
-                        # Special handling for Random Survival Forest
-                        if model_type == "RandomSurvivalForest":
-                            # Random Survival Forest has its own training method with HPO
-                            trained_model = model.fit(
-                                X_regime, y_regime, 
-                                feature_names=feature_names,
-                                analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
-                                hmm_regime_probs=hmm_regime_probs[regime_mask] if hmm_regime_probs is not None else None,
-                                enable_hpo=True,
-                                hpo_trials=self.config.hpo_n_trials,
-                                cv_folds=5,
-                                enable_entry_timing_optimization=True,
-                                entry_timing_trials=50
+                    self.logger.info(
+                        f"🎯 Training tactician models for regime {regime} ({len(X_regime)} samples)"
+                    )
+                    if confidence_regime is not None:
+                        self.logger.info(
+                            "📊 Using confidence scores for sample weighting (mean: %.3f, std: %.3f)",
+                            float(np.mean(confidence_regime)),
+                            float(np.std(confidence_regime)),
+                        )
+
+                    # Train each model type for this regime
+                    regime_models = {}
+                    for model_type in self.config.model_types:
+                        try:
+                            # Create model instance
+                            model = self._create_model_instance(model_type)
+
+                            # Special handling for Random Survival Forest
+                            if model_type == "RandomSurvivalForest":
+                                model = self._create_random_survival_forest_model()
+
+                            # Apply enhanced regularization
+                            model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
+                                model, model_type
                             )
-                            metadata = {'model_type': 'RandomSurvivalForest', 'training_completed': True}
-                        else:
-                            # Train with early stopping, overfitting monitoring, and confidence weighting
-                            trained_model, metadata = self.training_enhancer.enhance_training_step(
-                                X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
-                                sample_weights=confidence_regime
-                            )
-                        
-                        regime_models[model_type] = {
-                            'model': trained_model,
-                            'metadata': metadata
-                        }
-                        
-                        # Check for overfitting warnings
-                        if metadata.get('overfitting_detected', False):
-                            results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
-                        
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
-                        continue
-                
-                results['models'][regime] = regime_models
+
+                            # Special handling for Random Survival Forest
+                            if model_type == "RandomSurvivalForest":
+                                # Random Survival Forest has its own training method with HPO
+                                trained_model = model.fit(
+                                    X_regime,
+                                    y_regime,
+                                    feature_names=feature_names,
+                                    analyst_signals=analyst_signals[regime_mask]
+                                    if analyst_signals is not None
+                                    else None,
+                                    hmm_regime_probs=hmm_regime_probs[regime_mask]
+                                    if hmm_regime_probs is not None
+                                    else None,
+                                    enable_hpo=True,
+                                    hpo_trials=self.config.hpo_n_trials,
+                                    cv_folds=5,
+                                    enable_entry_timing_optimization=True,
+                                    entry_timing_trials=50,
+                                )
+                                metadata = {'model_type': 'RandomSurvivalForest', 'training_completed': True}
+                            else:
+                                # Train with early stopping, overfitting monitoring, and confidence weighting
+                                trained_model, metadata = self.training_enhancer.enhance_training_step(
+                                    X_regime,
+                                    y_regime,
+                                    model,
+                                    timestamps_regime,
+                                    f"tactician_{model_type}_regime_{regime}",
+                                    sample_weights=confidence_regime,
+                                )
+
+                            regime_models[model_type] = {
+                                'model': trained_model,
+                                'metadata': metadata,
+                            }
+
+                            # Check for overfitting warnings
+                            if metadata.get('overfitting_detected', False):
+                                results['overfitting_warnings'].append(
+                                    f"Overfitting detected in {model_type} for regime {regime}"
+                                )
+
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
+                            continue
+
+                    results['models'][regime] = regime_models
+
+                    del (
+                        regime_mask,
+                        X_regime,
+                        y_regime,
+                        timestamps_regime,
+                        regime_models,
+                        confidence_regime,
+                        regime_confidence_mask,
+                    )
             
             # Calculate ensemble diversity if multiple models
             if len(self.config.model_types) > 1:

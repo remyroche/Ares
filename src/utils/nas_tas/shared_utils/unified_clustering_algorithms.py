@@ -18,7 +18,6 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-import warnings
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
@@ -82,7 +81,6 @@ except ImportError:
     def parallel_map_m1(func, items, max_workers=None): return [func(item) for item in items]
     def create_m1_optimized_thread_pool(max_workers=None): return None
 
-warnings.filterwarnings('ignore')
 
 # Initialize math validation
 math_validator = MathValidation()

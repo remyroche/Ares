@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import existing regime detection components
 try:

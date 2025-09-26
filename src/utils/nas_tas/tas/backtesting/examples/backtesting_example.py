@@ -14,8 +14,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import TAS backtesting components
 from ..backtesting_engine import BacktestingEngine, BacktestingConfig, BacktestingResult

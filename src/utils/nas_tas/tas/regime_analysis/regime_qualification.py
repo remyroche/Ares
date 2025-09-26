@@ -14,8 +14,41 @@ from datetime import datetime, timedelta
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from scipy import stats
 from scipy.stats import kstest, jarque_bera
-import warnings
-warnings.filterwarnings('ignore')
+
+from ..._validation import (
+    ConfigValidationError,
+    ValidationIssue,
+    build_report,
+    ensure_min_less_than_max,
+    ensure_positive,
+    ensure_probability,
+)
+
+EPSILON = 1e-12
+
+
+def _safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
+    """Safely divide two numbers, returning ``default`` when the denominator is 0."""
+    if abs(denominator) <= EPSILON:
+        return default
+    return numerator / denominator
+
+
+def _compute_returns(close_prices: np.ndarray) -> np.ndarray:
+    """Compute percentage returns while guarding against zero prices."""
+    if len(close_prices) < 2:
+        return np.array([], dtype=float)
+
+    previous_prices = close_prices[:-1]
+    price_changes = np.diff(close_prices)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        returns = np.divide(
+            price_changes,
+            previous_prices,
+            out=np.zeros_like(previous_prices, dtype=float),
+            where=np.abs(previous_prices) > EPSILON,
+        )
+    return returns
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
@@ -58,6 +91,55 @@ class RegimeQualificationConfig:
     min_price_movement: float = 0.02
     min_volume_ratio: float = 0.8
     min_liquidity_score: float = 0.5
+
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate configuration values to avoid runtime division errors."""
+
+        issues: List[ValidationIssue] = []
+
+        def capture(field: str, func) -> None:
+            try:
+                func()
+            except ConfigValidationError as exc:  # pragma: no cover - defensive aggregation
+                issues.append(ValidationIssue(field=field, message=str(exc)))
+
+        capture("min_regime_duration", lambda: ensure_positive("min_regime_duration", self.min_regime_duration))
+        capture("min_volatility", lambda: ensure_positive("min_volatility", self.min_volatility))
+        capture("max_volatility", lambda: ensure_positive("max_volatility", self.max_volatility))
+        capture(
+            "volatility_range",
+            lambda: ensure_min_less_than_max("min_volatility", self.min_volatility, "max_volatility", self.max_volatility),
+        )
+        capture("min_trend_strength", lambda: ensure_positive("min_trend_strength", self.min_trend_strength))
+        capture("min_price_movement", lambda: ensure_positive("min_price_movement", self.min_price_movement))
+        capture("min_volume_ratio", lambda: ensure_probability("min_volume_ratio", self.min_volume_ratio))
+        capture("min_liquidity_score", lambda: ensure_probability("min_liquidity_score", self.min_liquidity_score))
+
+        for threshold_name in (
+            "min_economic_significance",
+            "stability_threshold",
+            "persistence_threshold",
+            "transition_probability_threshold",
+            "significance_level",
+            "max_drawdown_threshold",
+            "min_win_rate",
+        ):
+            capture(
+                threshold_name,
+                lambda name=threshold_name: ensure_probability(name, getattr(self, name)),
+            )
+
+        capture("min_sharpe_ratio", lambda: ensure_positive("min_sharpe_ratio", self.min_sharpe_ratio))
+        capture("min_profit_factor", lambda: ensure_positive("min_profit_factor", self.min_profit_factor))
+
+        if issues:
+            build_report(*issues)
+            raise ConfigValidationError(
+                "RegimeQualificationConfig validation failed; review logged issues."
+            )
 
 
 class RegimeQualifier:
@@ -233,7 +315,7 @@ class RegimeQualifier:
         min_duration = self.config.min_regime_duration
         
         passed = duration >= min_duration
-        score = min(duration / min_duration, 1.0)
+        score = min(_safe_divide(duration, min_duration), 1.0)
         
         return {
             'passed': passed,
@@ -272,7 +354,7 @@ class RegimeQualifier:
         min_trend = self.config.min_trend_strength
         
         passed = trend >= min_trend
-        score = min(trend / min_trend, 1.0)
+        score = min(_safe_divide(trend, min_trend), 1.0)
         
         return {
             'passed': passed,
@@ -310,8 +392,8 @@ class RegimeQualifier:
                  liquidity_significant and market_impact_significant)
         
         # Calculate comprehensive score
-        base_score = (min(price_movement / min_price_movement, 1.0) + 
-                     min(volume_ratio / min_volume_ratio, 1.0)) / 2.0
+        base_score = (min(_safe_divide(price_movement, min_price_movement), 1.0) + 
+                     min(_safe_divide(volume_ratio, min_volume_ratio), 1.0)) / 2.0
         
         economic_score = (base_score + 
                         economic_tests.get('liquidity_score', 0) + 
@@ -430,7 +512,7 @@ class RegimeQualifier:
             return 0.8  # Very strong trend (might be too extreme)
         else:
             # Good trend strength
-            return min(trend / min_trend, 1.0)
+            return min(_safe_divide(trend, min_trend), 1.0)
     
     def _test_volume_significance(self, regime_data: pd.DataFrame) -> float:
         """Test volume significance of the regime."""
@@ -470,7 +552,7 @@ class RegimeQualifier:
         elif price_range_pct > max_range:
             return 0.7  # Very high price action (might be too volatile)
         else:
-            return min(price_range_pct / min_range, 1.0)
+            return min(_safe_divide(price_range_pct, min_range), 1.0)
     
     def _test_normality(self, regime_data: pd.DataFrame) -> Dict[str, Any]:
         """Test normality of regime returns."""
@@ -478,7 +560,7 @@ class RegimeQualifier:
             return {'passed': True, 'score': 1.0, 'test_name': 'normality'}
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) < 3:
             return {'passed': True, 'score': 1.0, 'test_name': 'normality'}
@@ -654,7 +736,7 @@ class RegimeQualifier:
             return {'passed': True, 'score': 1.0, 'test_name': 'autocorrelation'}
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) < 5:
             return {'passed': True, 'score': 1.0, 'test_name': 'autocorrelation'}
@@ -689,7 +771,7 @@ class RegimeQualifier:
             return {'passed': True, 'score': 1.0, 'test_name': 'trading'}
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) == 0:
             return {'passed': True, 'score': 1.0, 'test_name': 'trading'}
@@ -712,7 +794,8 @@ class RegimeQualifier:
         # Profit factor (simplified)
         positive_returns = returns[returns > 0]
         negative_returns = returns[returns < 0]
-        profit_factor = (np.sum(positive_returns) / abs(np.sum(negative_returns))) if len(negative_returns) > 0 else float('inf')
+        profit_denominator = abs(np.sum(negative_returns))
+        profit_factor = _safe_divide(np.sum(positive_returns), profit_denominator, default=float('inf'))
         
         # Test criteria
         sharpe_passed = sharpe_ratio >= self.config.min_sharpe_ratio
@@ -729,10 +812,17 @@ class RegimeQualifier:
                  volatility_passed and liquidity_passed and trend_passed)
         
         # Calculate comprehensive score
-        base_score = (min(sharpe_ratio / self.config.min_sharpe_ratio, 1.0) +
-                     (1.0 - abs(max_drawdown) / self.config.max_drawdown_threshold) +
-                     min(win_rate / self.config.min_win_rate, 1.0) +
-                     min(profit_factor / self.config.min_profit_factor, 1.0)) / 4.0
+        sharpe_component = min(_safe_divide(sharpe_ratio, self.config.min_sharpe_ratio), 1.0)
+        drawdown_component = max(0.0, 1.0 - _safe_divide(abs(max_drawdown), self.config.max_drawdown_threshold))
+        winrate_component = min(_safe_divide(win_rate, self.config.min_win_rate), 1.0)
+        profit_component = min(_safe_divide(profit_factor, self.config.min_profit_factor, default=float('inf')), 1.0)
+
+        base_score = (
+            sharpe_component +
+            drawdown_component +
+            winrate_component +
+            profit_component
+        ) / 4.0
         
         trading_score = (base_score + 
                         trading_tests.get('volatility_viability', 0) +
@@ -827,7 +917,7 @@ class RegimeQualifier:
             return 0.6  # Very strong trend (might be too extreme)
         else:
             # Good trend for trading
-            return min(trend / min_trend, 1.0)
+            return min(_safe_divide(trend, min_trend), 1.0)
     
     def _test_risk_return_viability(self, returns: np.ndarray) -> float:
         """Test risk-return viability."""
@@ -879,7 +969,7 @@ class RegimeQualifier:
             return 0.5
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) == 0:
             return 0.5
@@ -916,9 +1006,17 @@ class RegimeQualifier:
                  persistence_stable and consistency_stable)
         
         # Calculate comprehensive stability score
-        base_score = (1.0 - abs(volatility - 0.1) / 0.3 if volatility <= 0.3 else 0.0 +
-                     1.0 - abs(trend) / 0.5 if abs(trend) <= 0.5 else 0.0 +
-                     min(duration / self.config.min_regime_duration, 1.0)) / 3.0
+        volatility_term = 0.0
+        if volatility <= 0.3:
+            volatility_term = max(0.0, 1.0 - _safe_divide(abs(volatility - 0.1), 0.3))
+
+        trend_term = 0.0
+        if abs(trend) <= 0.5:
+            trend_term = max(0.0, 1.0 - _safe_divide(abs(trend), 0.5))
+
+        duration_term = min(_safe_divide(duration, self.config.min_regime_duration), 1.0)
+
+        base_score = (volatility_term + trend_term + duration_term) / 3.0
         
         stability_score = (base_score + 
                          stability_tests.get('persistence_score', 0) +
@@ -968,7 +1066,7 @@ class RegimeQualifier:
         min_duration = self.config.min_regime_duration
         
         # Persistence based on duration
-        duration_persistence = min(duration / min_duration, 1.0)
+        duration_persistence = min(_safe_divide(duration, min_duration), 1.0)
         
         # Persistence based on regime characteristics consistency
         if 'close' in regime_data.columns:
@@ -978,7 +1076,8 @@ class RegimeQualifier:
             window = min(20, len(close_prices) // 3)
             if window > 1:
                 rolling_vol = pd.Series(close_prices).rolling(window).std()
-                vol_consistency = 1.0 - (rolling_vol.std() / rolling_vol.mean()) if rolling_vol.mean() > 0 else 0
+                mean_vol = rolling_vol.mean()
+                vol_consistency = max(0.0, 1.0 - _safe_divide(rolling_vol.std(), mean_vol)) if mean_vol > 0 else 0
             else:
                 vol_consistency = 0.5
             
@@ -995,7 +1094,7 @@ class RegimeQualifier:
             return 0.5
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) < 2:
             return 0.5
@@ -1045,7 +1144,7 @@ class RegimeQualifier:
         if len(close_prices) > 10:
             try:
                 # Calculate autocorrelation
-                returns = np.diff(close_prices) / close_prices[:-1]
+                returns = _compute_returns(close_prices)
                 autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
                 autocorr = 0 if np.isnan(autocorr) else autocorr
                 
@@ -1066,7 +1165,7 @@ class RegimeQualifier:
             return 0.5
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) < 2:
             return 0.5
@@ -1256,7 +1355,7 @@ class RegimeQualifier:
             return 0.5
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) < 2:
             return 0.5
@@ -1327,7 +1426,7 @@ class RegimeQualifier:
             return 0.5
         
         close_prices = regime_data['close'].values
-        returns = np.diff(close_prices) / close_prices[:-1]
+        returns = _compute_returns(close_prices)
         
         if len(returns) == 0:
             return 0.5

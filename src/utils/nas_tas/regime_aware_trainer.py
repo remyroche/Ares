@@ -35,8 +35,6 @@ except ImportError:  # pragma: no cover - optional dependency
     cb = None  # type: ignore[assignment]
     CATBOOST_AVAILABLE = False
 from enum import Enum
-import warnings
-warnings.filterwarnings('ignore')
 
 from src.utils.nas_tas.shared_logging import (
     TPRINT_AVAILABLE,

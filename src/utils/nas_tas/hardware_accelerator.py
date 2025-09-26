@@ -20,8 +20,6 @@ import time
 import os
 import psutil
 from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (

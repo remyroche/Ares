@@ -13,9 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-import warnings
 import json
-warnings.filterwarnings('ignore')
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (

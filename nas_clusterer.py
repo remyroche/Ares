@@ -1214,9 +1214,29 @@ class NASClusterer:
     def __del__(self):
         """Destructor to ensure cleanup."""
         try:
-            self.cleanup()
+            # Only attempt cleanup if the object was properly initialized
+            if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
+                try:
+                    if hasattr(self.memory_optimizer, 'stop_monitoring'):
+                        self.memory_optimizer.stop_monitoring()
+                except Exception as e:
+                    tprint(f"Error stopping memory monitoring: {e}", level="warning")
+            
+            # Cleanup M1 optimizers if available
+            if hasattr(self, 'gpu_manager') and self.gpu_manager:
+                try:
+                    if M1_GPU_AVAILABLE:
+                        cleanup_m1_optimizers()
+                except Exception as e:
+                    tprint(f"Error cleaning up M1 optimizers: {e}", level="warning")
+            
+            # Call the main cleanup method if it exists
+            if hasattr(self, 'cleanup'):
+                self.cleanup()
+                
         except (AttributeError, TypeError) as e:
-            tprint(f"Error in cleanup: {e}", level="error")
+            # Silently ignore cleanup errors in destructor to avoid issues during shutdown
+            pass
 
 
 # Convenience functions

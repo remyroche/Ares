@@ -102,9 +102,14 @@ class RiskManager:
         if self._monitoring_task:
             self._monitoring_task.cancel()
             try:
-                await self._monitoring_task
+                # Wait for the task to complete cancellation with timeout
+                await asyncio.wait_for(self._monitoring_task, timeout=5.0)
             except asyncio.CancelledError:
-                pass
+                self.logger.info("Risk monitoring task cancelled successfully")
+            except asyncio.TimeoutError:
+                self.logger.warning("Risk monitoring task cancellation timed out")
+            except Exception as e:
+                self.logger.error(f"Error during risk monitoring task cancellation: {e}")
         
         self.logger.info("Risk manager stopped")
     

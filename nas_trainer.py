@@ -205,18 +205,51 @@ except ImportError as e:
             return {'mean_score': 0.0, 'std_score': 0.0, 'scores': []}
     
     def _infer_task_type(y) -> str:
+        """Infer task type (classification vs regression) from target data."""
         try:
+            # Convert to numpy array for analysis
+            if hasattr(y, "values"):
+                y_array = y.values
+            elif hasattr(y, "to_numpy"):
+                y_array = y.to_numpy()
+            else:
+                y_array = np.array(y)
+            
+            # Check for pandas-specific types
             if hasattr(y, "dtype"):
                 import pandas as pd
-
                 if pd.api.types.is_float_dtype(y.dtype) and len(pd.unique(y)) > 10:
                     return "regression"
-            unique_values = np.unique(y)
-            if len(unique_values) > 20 and np.issubdtype(unique_values.dtype, np.floating):
+                elif pd.api.types.is_categorical_dtype(y.dtype) or pd.api.types.is_object_dtype(y.dtype):
+                    return "classification"
+            
+            # Analyze unique values
+            unique_values = np.unique(y_array)
+            n_unique = len(unique_values)
+            
+            # If very few unique values, likely classification
+            if n_unique <= 10:
+                return "classification"
+            
+            # If many unique values and numeric, likely regression
+            if n_unique > 20 and np.issubdtype(unique_values.dtype, np.floating):
                 return "regression"
+            
+            # Check if values are integers (could be either)
+            if np.issubdtype(unique_values.dtype, np.integer):
+                # If integers are consecutive and few, likely classification
+                if n_unique <= 10 and np.all(np.diff(unique_values) == 1):
+                    return "classification"
+                else:
+                    return "regression"
+            
+            # Default to classification for safety
+            return "classification"
+            
         except (TypeError, AttributeError, ValueError) as e:
             tprint(f"Error determining task type: {e}", level="error")
-        return "classification"
+            # Default to classification for safety
+            return "classification"
 
     def create_model(model_type='random_forest', *, task_type: Optional[str] = None, **params):
         fallback_task = task_type or params.get('task_type', 'classification')
@@ -1193,31 +1226,61 @@ class NASTrainer:
             return model
 
         except ImportError:
-            pass
+            tprint_warning("TensorFlow/Keras not available, falling back to sklearn")
 
         # Final fallback to sklearn MLPClassifier
-        from sklearn.neural_network import MLPClassifier
+        try:
+            from sklearn.neural_network import MLPClassifier
 
-        hidden_layer_sizes = tuple(
-            spec.units or input_shape for spec in layer_specs[:-1]
-        )
-        activation = layer_specs[0].activation or 'relu'
-        learning_rate_init = architecture.get('learning_rate', 0.001)
-        batch_size = architecture.get('batch_size', 32)
+            hidden_layer_sizes = tuple(
+                spec.units or input_shape for spec in layer_specs[:-1]
+            )
+            activation = layer_specs[0].activation or 'relu'
+            learning_rate_init = architecture.get('learning_rate', 0.001)
+            batch_size = architecture.get('batch_size', 32)
 
-        model = MLPClassifier(
-            hidden_layer_sizes=hidden_layer_sizes,
-            activation=activation,
-            learning_rate_init=learning_rate_init,
-            batch_size=batch_size,
-            max_iter=self.config.max_epochs,
-            early_stopping=True,
-            validation_fraction=0.1,
-            n_iter_no_change=self.config.early_stopping_patience,
-            random_state=42
-        )
+            model = MLPClassifier(
+                hidden_layer_sizes=hidden_layer_sizes,
+                activation=activation,
+                learning_rate_init=learning_rate_init,
+                batch_size=batch_size,
+                max_iter=self.config.max_epochs,
+                early_stopping=True,
+                validation_fraction=0.1,
+                n_iter_no_change=self.config.early_stopping_patience,
+                random_state=42
+            )
 
-        return model
+            tprint_info(f"Created sklearn MLPClassifier fallback with {hidden_layer_sizes} hidden layers")
+            return model
+            
+        except ImportError:
+            tprint_error("sklearn not available, using basic RandomForest fallback")
+            
+        # Ultimate fallback - basic RandomForest
+        try:
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            
+            task_type = architecture.get('task_type', 'classification')
+            if task_type == 'regression':
+                model = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+            else:
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+            
+            tprint_warning(f"Using RandomForest fallback for {task_type}")
+            return model
+            
+        except ImportError:
+            tprint_error("No ML libraries available, returning None")
+            return None
     
     def train_architecture(self, architecture: Dict[str, Any], 
                           data_splits: Dict[str, Any]) -> Dict[str, Any]:

@@ -21,7 +21,7 @@ from src.training.steps.market_analysis.tas_regime.regime_analysis.regime_qualif
 from src.training.steps.market_analysis.tas_regime.trading.trading_engine import TradingEngine, TradingConfig, TradingResult
 
 # Import enhanced utility tools
-from src.utils.common_operations import (
+from src.utils.nas_tas.shared_utils.common_operations_bridge import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
     calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
     safe_apply_function, create_summary_statistics, safe_drop_columns,
@@ -35,7 +35,7 @@ from src.utils.common_operations import (
     check_disk_space, CommonUtilities
 )
 
-from src.utils.math_validation import (
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
     safe_weighted_average, safe_percentage_change, safe_correlation,

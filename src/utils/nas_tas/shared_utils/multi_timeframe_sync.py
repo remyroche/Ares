@@ -16,7 +16,7 @@ from enum import Enum
 
 # Import existing utilities
 try:
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
     )
     HARDWARE_UTILS_AVAILABLE = True

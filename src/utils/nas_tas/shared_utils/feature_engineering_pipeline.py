@@ -32,7 +32,7 @@ except ImportError:
 
 # Import existing utilities
 try:
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
     )
     HARDWARE_UTILS_AVAILABLE = True
@@ -50,14 +50,13 @@ try:
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
 
-try:
-    from src.utils.ml_common import (
-        FeatureSelector, FeatureSelectionConfig,
-        UnifiedCrossValidator, perform_cross_validation
-    )
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    FeatureSelectionConfig,
+    FeatureSelector,
+    UnifiedCrossValidator,
+    perform_cross_validation,
+)
 
 logger = logging.getLogger(__name__)
 

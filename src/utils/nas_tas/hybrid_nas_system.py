@@ -432,8 +432,8 @@ class HybridNASSystem:
         """Analyze data characteristics to guide routing decisions with comprehensive analysis."""
         try:
             # Import utilities for advanced analysis
-            from src.utils.math_validation import safe_mean, safe_std, safe_correlation, validate_numeric_array
-            from src.utils.common_operations import safe_divide, safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_correlation, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_divide, safe_weighted_average
             from src.utils.nas_tas.bayesian_tpe_optimizer import BayesianTPEOptimizer
             
             # Validate inputs
@@ -540,7 +540,7 @@ class HybridNASSystem:
     def _calculate_advanced_tabular_ratio(self, X: np.ndarray) -> Dict[str, Any]:
         """Calculate advanced tabular ratio analysis."""
         try:
-            from src.utils.math_validation import safe_correlation, safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_correlation, safe_mean, safe_std
             
             n_features = X.shape[1]
             position = np.arange(len(X))
@@ -590,7 +590,7 @@ class HybridNASSystem:
     def _calculate_advanced_sequential_ratio(self, X: np.ndarray) -> Dict[str, Any]:
         """Calculate advanced sequential ratio analysis."""
         try:
-            from src.utils.math_validation import safe_correlation, safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_correlation, safe_mean, safe_std
             
             n_features = X.shape[1]
             sequential_features = 0
@@ -630,7 +630,7 @@ class HybridNASSystem:
     def _calculate_advanced_complexity_ratio(self, X: np.ndarray) -> Dict[str, Any]:
         """Calculate advanced complexity ratio analysis."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
             
             n_features = X.shape[1]
             complexities = []
@@ -684,7 +684,7 @@ class HybridNASSystem:
     def _calculate_advanced_sparsity(self, X: np.ndarray) -> Dict[str, Any]:
         """Calculate advanced sparsity analysis."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             
             # Basic sparsity
             zero_count = np.sum(X == 0)
@@ -724,7 +724,7 @@ class HybridNASSystem:
     def _calculate_feature_analysis(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Calculate feature analysis including importance and variance."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_correlation, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_correlation, validate_numeric_array
             
             n_features = X.shape[1]
             
@@ -774,7 +774,7 @@ class HybridNASSystem:
     def _calculate_distribution_analysis(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Calculate data distribution characteristics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             from scipy import stats
             
             # Calculate distribution characteristics for features
@@ -824,7 +824,7 @@ class HybridNASSystem:
     def _calculate_correlation_analysis(self, X: np.ndarray) -> Dict[str, Any]:
         """Calculate correlation structure analysis."""
         try:
-            from src.utils.math_validation import safe_correlation
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_correlation
             
             n_features = X.shape[1]
             correlation_matrix = np.zeros((n_features, n_features))
@@ -863,7 +863,7 @@ class HybridNASSystem:
     def _calculate_data_quality_metrics(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Calculate data quality metrics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             
             # Calculate missing values
             missing_values = np.isnan(X).sum()
@@ -909,7 +909,7 @@ class HybridNASSystem:
         """Calculate regime characteristics if applicable."""
         try:
             from sklearn.cluster import KMeans
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             
             # Simple regime detection using clustering
             n_regimes = min(5, X.shape[0] // 10)  # Adaptive number of regimes
@@ -946,7 +946,7 @@ class HybridNASSystem:
     def _calculate_optimization_complexity(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Calculate optimization complexity metrics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
             
             n_samples, n_features = X.shape
             
@@ -977,7 +977,7 @@ class HybridNASSystem:
     def _detect_sequential_patterns(self, X: np.ndarray) -> Dict[str, Any]:
         """Detect sequential patterns in the data."""
         try:
-            from src.utils.math_validation import safe_correlation
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_correlation
             
             n_features = X.shape[1]
             patterns = {
@@ -1259,8 +1259,8 @@ class HybridNASSystem:
     def _get_selected_features(self, tree_architecture: TreeArchitectureCandidate) -> List[int]:
         """Extract selected features from tree architecture with intelligent feature selection."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
-            from src.utils.common_operations import safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_divide
             
             # Initialize feature selection
             selected_features = []
@@ -1399,8 +1399,8 @@ class HybridNASSystem:
                                      X_val: np.ndarray, y_val: np.ndarray) -> Dict[str, float]:
         """Evaluate hybrid architecture performance with comprehensive evaluation."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
             from sklearn.model_selection import cross_val_score
             import time
@@ -1555,7 +1555,7 @@ class HybridNASSystem:
                                  X_train, y_train, X_val, y_val) -> Dict[str, float]:
         """Calculate hybrid-specific metrics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
             
             # Calculate synergy metrics
             synergy_accuracy = (tree_performance.get('accuracy', 0.0) + neural_performance.get('accuracy', 0.0)) / 2.0

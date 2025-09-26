@@ -52,7 +52,7 @@ from src.utils.nas_tas.advanced_validation import (
 )
 
 # Import learning curve analysis
-from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import (
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
     EnhancedLearningCurveAnalyzer,
     LearningCurveAnalysisResult
 )

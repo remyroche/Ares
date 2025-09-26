@@ -63,18 +63,17 @@ except ImportError:
     REGIME_DETECTION_AVAILABLE = False
 
 # Import ML common utilities
-try:
-    from src.utils.ml_common.validation import get_validation_framework
-    from src.utils.ml_common.optimization.grid_utils import build_coarse_grid_from_search_space
-    # Import Bayesian TPE optimizer
-    from src.utils.nas_tas.bayesian_tpe_optimizer import (
-        BayesianTPEOptimizer,
-        BayesianTPEConfig,
-        optimize_with_bayesian_tpe
-    )
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    build_coarse_grid_from_search_space,
+    get_validation_framework,
+)
+# Import Bayesian TPE optimizer
+from src.utils.nas_tas.bayesian_tpe_optimizer import (
+    BayesianTPEConfig,
+    BayesianTPEOptimizer,
+    optimize_with_bayesian_tpe,
+)
 
 logger = logging.getLogger(__name__)
 

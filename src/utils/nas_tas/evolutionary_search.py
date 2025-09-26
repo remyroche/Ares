@@ -24,7 +24,7 @@ from pathlib import Path
 
 # Import utility modules
 try:
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
         calculate_data_quality_metrics, safe_merge_dataframes, create_summary_statistics,
         safe_drop_columns, safe_rename_columns, validate_timestamp_column,
@@ -53,7 +53,7 @@ except ImportError:
         return contextmanager(lambda: (yield))
 
 try:
-    from src.utils.math_validation import (
+    from src.utils.nas_tas.shared_utils.math_validation_bridge import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
         validate_positive, validate_range, safe_correlation, safe_covariance,
         safe_mean, safe_std, safe_percentile, MathValidation
@@ -92,7 +92,7 @@ except ImportError:
 
 # Import ML common utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    from src.utils.nas_tas.shared_utils.ml_common_bridge import (
         BayesianTPEOptimizer, BayesianTPEConfig, optimize_with_bayesian_tpe
     )
 except ImportError:

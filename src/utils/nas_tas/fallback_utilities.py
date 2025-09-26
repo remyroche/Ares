@@ -14,7 +14,7 @@ Key Features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Set
 import logging
 import time
 from dataclasses import dataclass, field
@@ -47,88 +47,392 @@ class FallbackMathUtils:
     def __init__(self, config: Optional[FallbackConfig] = None):
         self.config = config or FallbackConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self._logged_events: Set[str] = set()
+
+    def _log_fallback_event(self, key: str, message: str):
+        """Log fallback events once to avoid noisy output."""
+        if not self.config.enable_logging or key in self._logged_events:
+            return
+
+        log_method = self.logger.warning if self.config.enable_warnings else self.logger.info
+        log_method(message)
+        self._logged_events.add(key)
     
     def safe_divide(self, numerator: float, denominator: float, default: float = 0.0) -> float:
         """Safe division with fallback."""
         try:
             if denominator == 0 or not np.isfinite(denominator):
+                self._log_fallback_event(
+                    "safe_divide_non_finite_denominator",
+                    "Division encountered a non-finite denominator; returning default value.",
+                )
                 return default
             result = numerator / denominator
-            return result if np.isfinite(result) else default
-        except Exception:
+            if not np.isfinite(result):
+                self._log_fallback_event(
+                    "safe_divide_non_finite_result",
+                    "Division result was non-finite; returning default value.",
+                )
+                return default
+            return result
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_divide_exception",
+                f"Division failed with error '{exc}'; returning default value.",
+            )
             return default
     
     def safe_log(self, value: float, default: float = 0.0) -> float:
         """Safe logarithm with fallback."""
         try:
             if value <= 0 or not np.isfinite(value):
+                self._log_fallback_event(
+                    "safe_log_invalid_input",
+                    "Logarithm received non-positive or non-finite input; returning default value.",
+                )
                 return default
             result = np.log(value)
-            return result if np.isfinite(result) else default
-        except Exception:
+            if not np.isfinite(result):
+                self._log_fallback_event(
+                    "safe_log_non_finite_result",
+                    "Logarithm result was non-finite; returning default value.",
+                )
+                return default
+            return result
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_log_exception",
+                f"Logarithm failed with error '{exc}'; returning default value.",
+            )
             return default
-    
+
     def safe_sqrt(self, value: float, default: float = 0.0) -> float:
         """Safe square root with fallback."""
         try:
             if value < 0 or not np.isfinite(value):
+                self._log_fallback_event(
+                    "safe_sqrt_invalid_input",
+                    "Square root received negative or non-finite input; returning default value.",
+                )
                 return default
             result = np.sqrt(value)
-            return result if np.isfinite(result) else default
-        except Exception:
+            if not np.isfinite(result):
+                self._log_fallback_event(
+                    "safe_sqrt_non_finite_result",
+                    "Square root result was non-finite; returning default value.",
+                )
+                return default
+            return result
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_sqrt_exception",
+                f"Square root failed with error '{exc}'; returning default value.",
+            )
             return default
     
     def safe_mean(self, values: Union[List[float], np.ndarray], default: float = 0.0) -> float:
         """Safe mean calculation with fallback."""
         try:
             if len(values) == 0:
+                self._log_fallback_event(
+                    "safe_mean_empty",
+                    "Mean calculation received empty values; returning default value.",
+                )
                 return default
             values = np.array(values)
             values = values[np.isfinite(values)]
             if len(values) == 0:
+                self._log_fallback_event(
+                    "safe_mean_non_finite",
+                    "Mean calculation had no finite values; returning default value.",
+                )
                 return default
             return float(np.mean(values))
-        except Exception:
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_mean_exception",
+                f"Mean calculation failed with error '{exc}'; returning default value.",
+            )
             return default
-    
+
     def safe_std(self, values: Union[List[float], np.ndarray], default: float = 0.0) -> float:
         """Safe standard deviation calculation with fallback."""
         try:
             if len(values) == 0:
+                self._log_fallback_event(
+                    "safe_std_empty",
+                    "Standard deviation received empty values; returning default value.",
+                )
                 return default
             values = np.array(values)
             values = values[np.isfinite(values)]
             if len(values) <= 1:
+                self._log_fallback_event(
+                    "safe_std_insufficient",
+                    "Standard deviation requires more than one finite value; returning default value.",
+                )
                 return default
             return float(np.std(values))
-        except Exception:
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_std_exception",
+                f"Standard deviation failed with error '{exc}'; returning default value.",
+            )
             return default
     
     def safe_correlation(self, x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float:
         """Safe correlation calculation with fallback."""
         try:
             if len(x) != len(y) or len(x) <= 1:
+                self._log_fallback_event(
+                    "safe_correlation_length_mismatch",
+                    "Correlation inputs had mismatched lengths or insufficient samples; returning default value.",
+                )
                 return default
             x, y = np.array(x), np.array(y)
             x, y = x[np.isfinite(x) & np.isfinite(y)], y[np.isfinite(x) & np.isfinite(y)]
             if len(x) <= 1:
+                self._log_fallback_event(
+                    "safe_correlation_non_finite",
+                    "Correlation inputs had insufficient finite samples; returning default value.",
+                )
                 return default
             corr = np.corrcoef(x, y)[0, 1]
-            return corr if np.isfinite(corr) else default
-        except Exception:
+            if not np.isfinite(corr):
+                self._log_fallback_event(
+                    "safe_correlation_non_finite_result",
+                    "Correlation result was non-finite; returning default value.",
+                )
+                return default
+            return corr
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_correlation_exception",
+                f"Correlation calculation failed with error '{exc}'; returning default value.",
+            )
             return default
-    
+
+    def safe_covariance(self, x: Union[List[float], np.ndarray], y: Union[List[float], np.ndarray], default: float = 0.0) -> float:
+        """Safe covariance calculation with fallback."""
+        try:
+            x_arr = np.asarray(x)
+            y_arr = np.asarray(y)
+            if x_arr.size == 0 or y_arr.size == 0:
+                self._log_fallback_event(
+                    "safe_covariance_empty",
+                    "Covariance calculation received empty values; returning default value.",
+                )
+                return default
+            mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+            if mask.sum() <= 1:
+                self._log_fallback_event(
+                    "safe_covariance_insufficient",
+                    "Covariance calculation requires at least two finite samples; returning default value.",
+                )
+                return default
+            return float(np.cov(x_arr[mask], y_arr[mask], ddof=1)[0, 1])
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_covariance_exception",
+                f"Covariance calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
     def safe_percentile(self, values: Union[List[float], np.ndarray], percentile: float, default: float = 0.0) -> float:
         """Safe percentile calculation with fallback."""
         try:
             if len(values) == 0:
+                self._log_fallback_event(
+                    "safe_percentile_empty",
+                    "Percentile calculation received empty values; returning default value.",
+                )
                 return default
             values = np.array(values)
             values = values[np.isfinite(values)]
             if len(values) == 0:
+                self._log_fallback_event(
+                    "safe_percentile_non_finite",
+                    "Percentile calculation had no finite values; returning default value.",
+                )
                 return default
             return float(np.percentile(values, percentile))
-        except Exception:
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_percentile_exception",
+                f"Percentile calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
+    def safe_weighted_average(
+        self,
+        values: Union[List[float], np.ndarray],
+        weights: Optional[Union[List[float], np.ndarray]] = None,
+        default: float = 0.0,
+    ) -> float:
+        """Safe weighted average with fallback behaviour."""
+        try:
+            values_arr = np.asarray(values, dtype=float)
+            if values_arr.size == 0:
+                self._log_fallback_event(
+                    "safe_weighted_average_empty",
+                    "Weighted average received empty values; returning default value.",
+                )
+                return default
+
+            if weights is None:
+                mask = np.isfinite(values_arr)
+                if not np.any(mask):
+                    self._log_fallback_event(
+                        "safe_weighted_average_non_finite",
+                        "Weighted average received no finite values; returning default value.",
+                    )
+                    return default
+                return float(np.mean(values_arr[mask]))
+
+            weights_arr = np.asarray(weights, dtype=float)
+            if weights_arr.size != values_arr.size:
+                self._log_fallback_event(
+                    "safe_weighted_average_mismatch",
+                    "Weighted average received mismatched value/weight lengths; returning default value.",
+                )
+                return default
+            mask = np.isfinite(values_arr) & np.isfinite(weights_arr)
+            if not np.any(mask):
+                self._log_fallback_event(
+                    "safe_weighted_average_non_finite_weighted",
+                    "Weighted average received no finite weighted samples; returning default value.",
+                )
+                return default
+            weights_sum = np.sum(weights_arr[mask])
+            if weights_sum == 0:
+                self._log_fallback_event(
+                    "safe_weighted_average_zero_weights",
+                    "Weighted average weights sum to zero; returning default value.",
+                )
+                return default
+            return float(np.average(values_arr[mask], weights=weights_arr[mask]))
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_weighted_average_exception",
+                f"Weighted average calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
+    def safe_power(self, value: float, exponent: float, default: float = 0.0) -> float:
+        """Safe power operation with fallback."""
+        try:
+            if not np.isfinite(value) or not np.isfinite(exponent):
+                self._log_fallback_event(
+                    "safe_power_non_finite",
+                    "Power received non-finite value or exponent; returning default value.",
+                )
+                return default
+            result = float(np.power(value, exponent))
+            if not np.isfinite(result):
+                self._log_fallback_event(
+                    "safe_power_result_non_finite",
+                    "Power result was non-finite; returning default value.",
+                )
+                return default
+            return result
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_power_exception",
+                f"Power calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
+    def safe_percentage_change(self, current: float, previous: float, default: float = 0.0) -> float:
+        """Safe percentage change calculation with fallback."""
+        try:
+            if not np.isfinite(current) or not np.isfinite(previous):
+                self._log_fallback_event(
+                    "safe_percentage_change_non_finite",
+                    "Percentage change received non-finite values; returning default value.",
+                )
+                return default
+            if previous == 0:
+                self._log_fallback_event(
+                    "safe_percentage_change_divide_by_zero",
+                    "Percentage change encountered zero previous value; returning default value.",
+                )
+                return default
+            result = (current - previous) / abs(previous)
+            if not np.isfinite(result):
+                self._log_fallback_event(
+                    "safe_percentage_change_non_finite_result",
+                    "Percentage change result was non-finite; returning default value.",
+                )
+                return default
+            return float(result)
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_percentage_change_exception",
+                f"Percentage change calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
+    def safe_kelly_calculation(self, win_probability: float, win_loss_ratio: float, default: float = 0.0) -> float:
+        """Safe Kelly criterion calculation with fallback."""
+        try:
+            if not all(np.isfinite(v) for v in (win_probability, win_loss_ratio)):
+                self._log_fallback_event(
+                    "safe_kelly_non_finite",
+                    "Kelly calculation received non-finite inputs; returning default value.",
+                )
+                return default
+            if not 0 <= win_probability <= 1:
+                self._log_fallback_event(
+                    "safe_kelly_probability_range",
+                    "Kelly calculation received probability outside [0, 1]; returning default value.",
+                )
+                return default
+            denominator = win_loss_ratio
+            if denominator == 0:
+                self._log_fallback_event(
+                    "safe_kelly_zero_denominator",
+                    "Kelly calculation encountered zero win/loss ratio; returning default value.",
+                )
+                return default
+            edge = win_probability * (win_loss_ratio + 1) - 1
+            fraction = edge / denominator
+            if not np.isfinite(fraction):
+                self._log_fallback_event(
+                    "safe_kelly_non_finite_result",
+                    "Kelly calculation result was non-finite; returning default value.",
+                )
+                return default
+            return max(default, float(fraction))
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_kelly_exception",
+                f"Kelly calculation failed with error '{exc}'; returning default value.",
+            )
+            return default
+
+    def safe_matrix_inverse(self, matrix: Union[List[List[float]], np.ndarray], default: Optional[np.ndarray] = None):
+        """Safe matrix inverse with fallback."""
+        try:
+            matrix_arr = np.asarray(matrix, dtype=float)
+            if matrix_arr.ndim != 2 or matrix_arr.shape[0] != matrix_arr.shape[1]:
+                self._log_fallback_event(
+                    "safe_matrix_inverse_shape",
+                    "Matrix inverse received a non-square matrix; returning default value.",
+                )
+                return default
+            result = np.linalg.inv(matrix_arr)
+            if not np.all(np.isfinite(result)):
+                self._log_fallback_event(
+                    "safe_matrix_inverse_non_finite",
+                    "Matrix inverse produced non-finite values; returning default value.",
+                )
+                return default
+            return result
+        except Exception as exc:
+            self._log_fallback_event(
+                "safe_matrix_inverse_exception",
+                f"Matrix inversion failed with error '{exc}'; returning default value.",
+            )
             return default
 
 
@@ -140,6 +444,15 @@ class FallbackHardwareUtils:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.memory_usage = 0.0
         self.gpu_available = False
+        self._logged_events: Set[str] = set()
+
+    def _log_fallback_event(self, key: str, message: str):
+        if not self.config.enable_logging or key in self._logged_events:
+            return
+
+        log_method = self.logger.warning if self.config.enable_warnings else self.logger.info
+        log_method(message)
+        self._logged_events.add(key)
     
     def get_memory_usage(self) -> Dict[str, float]:
         """Get memory usage information."""
@@ -152,7 +465,11 @@ class FallbackHardwareUtils:
                 'used_memory': memory.used,
                 'memory_percent': memory.percent
             }
-        except Exception:
+        except Exception as exc:
+            self._log_fallback_event(
+                "hardware_memory_usage_fallback",
+                f"psutil unavailable or failed with '{exc}'; using fallback memory metrics.",
+            )
             return {
                 'total_memory': 8.0 * 1024**3,  # 8GB fallback
                 'available_memory': 4.0 * 1024**3,  # 4GB fallback
@@ -173,7 +490,11 @@ class FallbackHardwareUtils:
                     if data[col].dtype == 'float64':
                         data[col] = data[col].astype('float32')
             return data
-        except Exception:
+        except Exception as exc:
+            self._log_fallback_event(
+                "hardware_optimize_memory_exception",
+                f"Memory optimization failed with '{exc}'; returning original data.",
+            )
             return data
     
     def memory_checkpoint(self, name: str = "fallback"):
@@ -198,14 +519,18 @@ class FallbackHardwareUtils:
         
         @contextmanager
         def gpu_context_manager():
-            if self.config.enable_logging:
-                self.logger.debug(f"GPU context {name}: GPU not available, using CPU")
+            start_time = time.time()
+            self._log_fallback_event(
+                "hardware_gpu_context_fallback",
+                "GPU context executed with fallback implementation (no GPU acceleration).",
+            )
             try:
                 yield
             finally:
+                duration = time.time() - start_time
                 if self.config.enable_logging:
-                    self.logger.debug(f"GPU context {name} completed")
-        
+                    self.logger.debug(f"GPU context {name}: duration {duration:.2f}s (fallback)")
+
         return gpu_context_manager()
 
 

@@ -955,8 +955,8 @@ class UnsupervisedTreeNAS:
     def _determine_regime_type(self, regime_samples: np.ndarray, feature_names: List[str]) -> str:
         """Determine the type of regime based on comprehensive sample characteristics."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, validate_finite
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, validate_finite
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             # Initialize regime characteristics
             regime_characteristics = {
@@ -1122,8 +1122,8 @@ class UnsupervisedTreeNAS:
     def _calculate_transition_probabilities(self, labels: np.ndarray, regime_id: int) -> Tuple[float, List[int]]:
         """Calculate comprehensive transition probabilities from a regime."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             regime_positions = np.where(labels == regime_id)[0]
             if len(regime_positions) == 0:
@@ -1267,8 +1267,8 @@ class UnsupervisedTreeNAS:
                                           feature_names: List[str]) -> Dict[str, float]:
         """Calculate comprehensive feature importance for a specific regime."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_correlation
-            from src.utils.common_operations import safe_weighted_average
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_correlation
+            from src.utils.nas_tas.shared_utils.common_operations_bridge import safe_weighted_average
             
             if len(regime_samples) == 0:
                 return {name: 0.0 for name in feature_names}

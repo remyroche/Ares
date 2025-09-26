@@ -26,38 +26,116 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
+from src.utils.nas_tas.shared_utils.dependency_management import dependency_manager
+
+
+def _lazy_dependency(name: str, package: Optional[str] = None, install_hint: Optional[str] = None):
+    """Helper returning (module, available_flag)."""
+    module = dependency_manager.import_optional(name, package=package, install_hint=install_hint)
+    return module, module is not None
+
+
+def _apply_clvsa_parameters_to_target(target: Any, parameters: Dict[str, Any], logger: logging.Logger, context: str) -> None:
+    """Best-effort application of CLVSA parameters to a target object."""
+    if not parameters:
+        logger.debug("No CLVSA parameters provided for %s", context)
+        return
+
+    for key, value in parameters.items():
+        applied = False
+        setter_name = f"set_{key}"
+        candidate = getattr(target, setter_name, None)
+        attribute = getattr(target, key, None)
+
+        if isinstance(value, dict):
+            if callable(candidate):
+                candidate(**value)
+                applied = True
+            elif callable(attribute):
+                attribute(**value)
+                applied = True
+
+        if not applied and callable(candidate):
+            candidate(value)
+            applied = True
+
+        if not applied and attribute is not None and not callable(attribute):
+            try:
+                setattr(target, key, value)
+                applied = True
+            except Exception:  # noqa: BLE001 - falling through to warning
+                applied = False
+
+        if not applied and callable(attribute):
+            try:
+                if isinstance(value, dict):
+                    attribute(**value)
+                else:
+                    attribute(value)
+                applied = True
+            except TypeError:
+                applied = False
+
+        if applied:
+            logger.debug("Applied CLVSA parameter '%s' in %s", key, context)
+        else:
+            logger.warning(
+                "Unable to apply CLVSA parameter '%s' in %s; target lacks a compatible attribute or setter.",
+                key,
+                context,
+            )
+
+
 # Hardware optimization imports
-try:
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    from torch.utils.data import DataLoader
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+torch, TORCH_AVAILABLE = _lazy_dependency("torch", install_hint="pip install torch --extra-index-url https://download.pytorch.org/whl/cu118")
+if TORCH_AVAILABLE:
+    nn = torch.nn
+    optim = torch.optim
+    DataLoader = torch.utils.data.DataLoader
+else:
+    nn = None
+    optim = None
+    DataLoader = None
 
-try:
-    import jax
-    import jax.numpy as jnp
-    from jax import jit, vmap, pmap
-    JAX_AVAILABLE = True
-except ImportError:
-    JAX_AVAILABLE = False
+jax, JAX_AVAILABLE = _lazy_dependency("jax", install_hint="pip install jax jaxlib")
+if JAX_AVAILABLE:
+    jnp = jax.numpy
+    jit = jax.jit
+    vmap = jax.vmap
+    pmap = jax.pmap
+else:
+    jnp = None
+    jit = None
+    vmap = None
+    pmap = None
 
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
+cp, CUPY_AVAILABLE = _lazy_dependency("cupy", install_hint="pip install cupy-cuda11x")
 
 # Import existing utilities
-try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, is_m1_available
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    M1_UTILS_AVAILABLE = True
-except ImportError:
-    M1_UTILS_AVAILABLE = False
+m1_gpu_utils, M1_UTILS_AVAILABLE = _lazy_dependency("src.utils.hardware.m1_gpu_utils")
+if M1_UTILS_AVAILABLE:
+    get_m1_gpu_manager = m1_gpu_utils.get_m1_gpu_manager
+    is_m1_available = m1_gpu_utils.is_m1_available
+else:
+    def get_m1_gpu_manager(*args, **kwargs):
+        raise RuntimeError("M1 GPU utilities are unavailable; ensure optional hardware extras are installed.")
+
+    def is_m1_available() -> bool:
+        return False
+
+m1_memory_utils, _ = _lazy_dependency("src.utils.hardware.m1_memory_optimizer")
+if m1_memory_utils:
+    get_m1_memory_optimizer = m1_memory_utils.get_m1_memory_optimizer
+else:
+    def get_m1_memory_optimizer(*args, **kwargs):
+        raise RuntimeError("M1 memory optimizer utilities are unavailable; ensure optional hardware extras are installed.")
+
+m1_cpu_utils, _ = _lazy_dependency("src.utils.hardware.m1_cpu_optimizer")
+if m1_cpu_utils:
+    get_m1_cpu_optimizer = m1_cpu_utils.get_m1_cpu_optimizer
+else:
+    def get_m1_cpu_optimizer(*args, **kwargs):
+        raise RuntimeError("M1 CPU optimizer utilities are unavailable; ensure optional hardware extras are installed.")
 
 logger = logging.getLogger(__name__)
 
@@ -473,7 +551,12 @@ class TreeHardwareAccelerator:
         if 'cvlsa_parameters' in clvsa_config:
             # Apply CLVSA parameters
             tprint_debug("Applying CLVSA parameters to tree model")
-            # TODO: Implement CLVSA parameter application
+            _apply_clvsa_parameters_to_target(
+                tree_model,
+                clvsa_config['cvlsa_parameters'],
+                self.logger,
+                context=f"TreeHardwareAccelerator({getattr(tree_model, 'name', 'anonymous')})",
+            )
         return tree_model
     
     def _apply_memory_pooling(self, tree_model: Any) -> Any:
@@ -549,8 +632,13 @@ class CLVSAHardwareOptimizer:
         if 'cvlsa_parameters' in config:
             # Apply CLVSA parameters
             tprint_debug("Applying CLVSA parameters to model")
-            # TODO: Implement CLVSA parameter application
-        
+            _apply_clvsa_parameters_to_target(
+                model,
+                config['cvlsa_parameters'],
+                self.logger,
+                context=f"CLVSAHardwareOptimizer({getattr(model, 'name', 'anonymous')})",
+            )
+
         return model
     
     def _apply_hardware_optimizations(self, model: Any) -> Any:
@@ -586,3 +674,4 @@ if __name__ == "__main__":
     # Example usage
     print("Tree Hardware Accelerator created successfully!")
     print(f"Performance summary: {accelerator.get_performance_summary()}")
+

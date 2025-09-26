@@ -41,7 +41,7 @@ from math import isfinite
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - type checking helper only
-    from src.utils.common_operations import (
+    from src.utils.nas_tas.shared_utils.common_operations_bridge import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
     )
 else:
@@ -53,7 +53,7 @@ else:
 def _load_m1_gpu_manager():
     global get_m1_gpu_manager
     if get_m1_gpu_manager is None:  # pragma: no branch - lazy load
-        from src.utils.common_operations import get_m1_gpu_manager as _impl
+        from src.utils.nas_tas.shared_utils.common_operations_bridge import get_m1_gpu_manager as _impl
 
         get_m1_gpu_manager = _impl
     return get_m1_gpu_manager  # type: ignore[return-value]
@@ -62,7 +62,7 @@ def _load_m1_gpu_manager():
 def _load_m1_memory_optimizer():
     global get_m1_memory_optimizer
     if get_m1_memory_optimizer is None:  # pragma: no branch - lazy load
-        from src.utils.common_operations import get_m1_memory_optimizer as _impl
+        from src.utils.nas_tas.shared_utils.common_operations_bridge import get_m1_memory_optimizer as _impl
 
         get_m1_memory_optimizer = _impl
     return get_m1_memory_optimizer  # type: ignore[return-value]
@@ -71,7 +71,7 @@ def _load_m1_memory_optimizer():
 def _load_m1_cpu_optimizer():
     global get_m1_cpu_optimizer
     if get_m1_cpu_optimizer is None:  # pragma: no branch - lazy load
-        from src.utils.common_operations import get_m1_cpu_optimizer as _impl
+        from src.utils.nas_tas.shared_utils.common_operations_bridge import get_m1_cpu_optimizer as _impl
 
         get_m1_cpu_optimizer = _impl
     return get_m1_cpu_optimizer  # type: ignore[return-value]
@@ -107,7 +107,7 @@ def _bayesian_available() -> bool:
     deps = _get_bayesian_dependencies()
     return bool(deps.get('optimizer_cls'))
 
-from src.utils.math_validation import (
+from src.utils.nas_tas.shared_utils.math_validation_bridge import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
     safe_weighted_average, safe_percentage_change, safe_correlation,
@@ -147,8 +147,22 @@ from .shared_utils.hardware_costs import (
 )
 from .shared_utils.overfitting_tests import hansen_spa_test
 
-warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
+
+
+def _warning_to_log(message, category, filename, lineno, file=None, line=None):
+    """Redirect warnings to the module logger instead of silencing them."""
+    logger.warning(
+        "%s:%s: %s: %s",
+        Path(filename).name,
+        lineno,
+        category.__name__,
+        message,
+    )
+
+
+warnings.showwarning = _warning_to_log
+warnings.filterwarnings("default")
 
 
 class ArchitectureType(Enum):

@@ -249,7 +249,7 @@ class RegimeDetector:
     def _search_optimal_model(self, X: np.ndarray, regime_id: int) -> Dict[str, Any]:
         """Search for optimal model for a specific regime with comprehensive search."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, validate_numeric_array
             from sklearn.model_selection import cross_val_score, train_test_split
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             import time
@@ -405,7 +405,7 @@ class RegimeDetector:
     def _evaluate_model(self, model, X: np.ndarray, regime_id: int) -> float:
         """Evaluate model performance with comprehensive evaluation."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide, validate_numeric_array
             from sklearn.model_selection import cross_val_score
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             from sklearn.cluster import KMeans
@@ -960,7 +960,7 @@ class AdaptiveRegimeNAS:
     def _evaluate_trading_model(self, model, X: np.ndarray, regime_id: int) -> float:
         """Evaluate trading model performance with comprehensive evaluation."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide, validate_numeric_array
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide, validate_numeric_array
             from sklearn.model_selection import cross_val_score
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             from sklearn.cluster import KMeans
@@ -1122,7 +1122,7 @@ class AdaptiveRegimeNAS:
     def _calculate_trading_metrics(self, model, X: np.ndarray, predictions: np.ndarray, regime_id: int) -> Dict[str, float]:
         """Calculate trading-specific metrics for model evaluation."""
         try:
-            from src.utils.math_validation import safe_mean, safe_std, safe_divide
+            from src.utils.nas_tas.shared_utils.math_validation_bridge import safe_mean, safe_std, safe_divide
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
             # Initialize trading metrics

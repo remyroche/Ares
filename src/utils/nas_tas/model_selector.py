@@ -31,11 +31,10 @@ except ImportError:
     REGIME_DETECTION_AVAILABLE = False
 
 # Import ML common utilities
-try:
-    from src.utils.ml_common.validation import get_validation_framework
-    ML_COMMON_AVAILABLE = True
-except ImportError:
-    ML_COMMON_AVAILABLE = False
+from src.utils.nas_tas.shared_utils.ml_common_bridge import (
+    ML_COMMON_AVAILABLE,
+    get_validation_framework,
+)
 
 logger = logging.getLogger(__name__)
 

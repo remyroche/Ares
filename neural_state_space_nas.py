@@ -441,24 +441,111 @@ except ImportError:
                 # Note: Color support depends on terminal capabilities
                 # This is a placeholder for future color configuration
                 if config.enable_colors:
-                    # TODO: Implement color configuration
-                    # This would typically involve:
-                    # - Checking terminal capabilities
-                    # - Setting up color codes for different log levels
-                    # - Configuring colored output for console logging
-                    try:
-                        # Attempt to enable colored output
-                        # This is a placeholder implementation
-                        tprint("Color configuration not yet implemented", level="info")
-                    except Exception as e:
-                        tprint(f"Failed to configure colors: {e}", level="warning")
+                    # Implement color configuration
+                    # Check terminal capabilities and set up color codes
+                    import os
+                    import sys
+                    
+                    # Check if we're in a terminal that supports colors
+                    if hasattr(sys.stdout, 'isatty') and sys.stdout.isatty():
+                        # Check for color support environment variables
+                        term = os.environ.get('TERM', '')
+                        colorterm = os.environ.get('COLORTERM', '')
+                        
+                        # Enable colors if terminal supports it
+                        if (term in ['xterm', 'xterm-256color', 'screen', 'tmux'] or 
+                            'color' in colorterm.lower() or 
+                            os.environ.get('FORCE_COLOR', '')):
+                            
+                            # Define color codes for different log levels
+                            class Colors:
+                                RESET = '\033[0m'
+                                BOLD = '\033[1m'
+                                DIM = '\033[2m'
+                                
+                                # Log level colors
+                                DEBUG = '\033[36m'      # Cyan
+                                INFO = '\033[34m'       # Blue
+                                WARNING = '\033[33m'   # Yellow
+                                ERROR = '\033[31m'     # Red
+                                SUCCESS = '\033[32m'   # Green
+                                PROGRESS = '\033[35m'  # Magenta
+                                PERFORMANCE = '\033[93m'  # Bright Yellow
+                                
+                                # Structured output colors
+                                KEY = '\033[94m'       # Light Blue
+                                VALUE = '\033[92m'     # Light Green
+                                TIMESTAMP = '\033[90m' # Gray
+                            
+                            # Store colors in global scope for tprint functions
+                            globals()['_colors'] = Colors
+                            globals()['_color_enabled'] = True
+                            
+                            # Override tprint functions to use colors
+                            def _colored_tprint(*args, level="info", **kwargs):
+                                color = getattr(Colors, level.upper(), Colors.INFO)
+                                timestamp = time.strftime('%H:%M:%S')
+                                colored_timestamp = f"{Colors.TIMESTAMP}[{timestamp}]{Colors.RESET}"
+                                colored_level = f"{color}{level.upper()}:{Colors.RESET}"
+                                print(colored_timestamp, colored_level, *args)
+                            
+                            def _colored_tprint_info(*args, **kwargs):
+                                _colored_tprint(*args, level="info", **kwargs)
+                            
+                            def _colored_tprint_debug(*args, **kwargs):
+                                _colored_tprint(*args, level="debug", **kwargs)
+                            
+                            def _colored_tprint_warning(*args, **kwargs):
+                                _colored_tprint(*args, level="warning", **kwargs)
+                            
+                            def _colored_tprint_error(*args, **kwargs):
+                                _colored_tprint(*args, level="error", **kwargs)
+                            
+                            def _colored_tprint_success(*args, **kwargs):
+                                _colored_tprint(*args, level="success", **kwargs)
+                            
+                            def _colored_tprint_progress(step, total, message="", **kwargs):
+                                percentage = (step / total) * 100 if total > 0 else 0
+                                color = Colors.PROGRESS
+                                timestamp = time.strftime('%H:%M:%S')
+                                colored_timestamp = f"{Colors.TIMESTAMP}[{timestamp}]{Colors.RESET}"
+                                colored_progress = f"{color}PROGRESS:{Colors.RESET}"
+                                print(f"{colored_timestamp} {colored_progress} {step}/{total} ({percentage:.1f}%) {message}")
+                            
+                            def _colored_tprint_performance(operation, duration, **kwargs):
+                                color = Colors.PERFORMANCE
+                                timestamp = time.strftime('%H:%M:%S')
+                                colored_timestamp = f"{Colors.TIMESTAMP}[{timestamp}]{Colors.RESET}"
+                                colored_perf = f"{color}PERFORMANCE:{Colors.RESET}"
+                                print(f"{colored_timestamp} {colored_perf} {operation} took {duration:.3f}s")
+                            
+                            def _colored_tprint_structured(data, level=None, **kwargs):
+                                color = Colors.KEY
+                                timestamp = time.strftime('%H:%M:%S')
+                                colored_timestamp = f"{Colors.TIMESTAMP}[{timestamp}]{Colors.RESET}"
+                                colored_struct = f"{color}STRUCTURED:{Colors.RESET}"
+                                print(f"{colored_timestamp} {colored_struct}", data)
+                            
+                            # Replace global tprint functions with colored versions
+                            globals()['tprint'] = _colored_tprint
+                            globals()['tprint_info'] = _colored_tprint_info
+                            globals()['tprint_debug'] = _colored_tprint_debug
+                            globals()['tprint_warning'] = _colored_tprint_warning
+                            globals()['tprint_error'] = _colored_tprint_error
+                            globals()['tprint_success'] = _colored_tprint_success
+                            globals()['tprint_progress'] = _colored_tprint_progress
+                            globals()['tprint_performance'] = _colored_tprint_performance
+                            globals()['tprint_structured'] = _colored_tprint_structured
+                            
+                        else:
+                            # Terminal doesn't support colors, use plain text
+                            globals()['_color_enabled'] = False
+                    else:
+                        # Not a terminal, disable colors
+                        globals()['_color_enabled'] = False
                 else:
-                    # Disable colored output
-                    try:
-                        # Disable colored output
-                        tprint("Colored output disabled", level="info")
-                    except Exception as e:
-                        tprint(f"Failed to disable colors: {e}", level="warning")
+                    # Colors explicitly disabled
+                    globals()['_color_enabled'] = False
             if hasattr(config, 'output_file'):
                 # Configure file output if specified
                 try:

@@ -584,7 +584,9 @@ class TestCommonOperations(unittest.TestCase):
     # MLflow Operations Tests
     @patch("mlflow.active_run")
     @patch("mlflow.log_metric")
-    def test_mlflow_operations(self, mock_log_metric, mock_active_run):
+    @patch("mlflow.log_params")
+    @patch("mlflow.log_artifact")
+    def test_mlflow_operations(self, mock_log_artifact, mock_log_params, mock_log_metric, mock_active_run):
         """Test MLflow integration helpers."""
         # Test safe_log_metric
         mock_active_run.return_value = MagicMock()

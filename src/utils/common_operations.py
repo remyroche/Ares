@@ -282,29 +282,38 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
         ]
     )
 
-def safe_log_metric(name: str, value: float) -> None:
-    """Safely log metric."""
+def safe_log_metric(name: str, value: float, step: int = None) -> None:
+    """Safely log metric to MLflow."""
     try:
+        import mlflow
+        if mlflow.active_run() is not None:
+            mlflow.log_metric(name, value, step)
         logger.info(f"📊 Metric {name}: {value}")
-    except (AttributeError, TypeError, ValueError) as e:
+    except (ImportError, AttributeError, TypeError, ValueError) as e:
         from src.utils.tprint import tprint_warning
         tprint_warning(f"Failed to log metric {name}: {e}")
 
 def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters."""
+    """Safely log parameters to MLflow."""
     try:
+        import mlflow
+        if mlflow.active_run() is not None:
+            mlflow.log_params(params)
         logger.info(f"⚙️ Parameters: {params}")
-    except (AttributeError, TypeError, ValueError) as e:
+    except (ImportError, AttributeError, TypeError, ValueError) as e:
         from src.utils.tprint import tprint_warning
         tprint_warning(f"Failed to log parameters: {e}")
 
-def safe_log_artifact(name: str, path: str) -> None:
-    """Safely log artifact."""
+def safe_log_artifact(file_path: Union[str, Path]) -> None:
+    """Safely log artifact to MLflow."""
     try:
-        logger.info(f"📁 Artifact {name} saved to {path}")
-    except (AttributeError, TypeError, ValueError) as e:
+        import mlflow
+        if mlflow.active_run() is not None:
+            mlflow.log_artifact(str(file_path))
+        logger.info(f"📁 Artifact logged: {file_path}")
+    except (ImportError, AttributeError, TypeError, ValueError) as e:
         from src.utils.tprint import tprint_warning
-        tprint_warning(f"Failed to log artifact {name}: {e}")
+        tprint_warning(f"Failed to log artifact {file_path}: {e}")
 
 # =============================================================================
 # DATETIME UTILITIES

@@ -16,7 +16,7 @@ import time
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import HMMTrainingConfig
 from src.utils.ml_common.training.base_training_step import BaseTrainingStep
-from ..logging_standards import (
+from src.training.logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )

@@ -13,7 +13,7 @@ from enum import Enum
 import logging
 
 from .config import OrderType, OrderSide, TradingConfig
-from ..src.interfaces.base_interfaces import TradeDecision
+from src.interfaces.base_interfaces import TradeDecision
 
 
 class OrderStatus(Enum):

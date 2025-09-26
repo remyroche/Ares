@@ -13,7 +13,7 @@ from .config import TradingConfig, TradingMode
 from .order_manager import OrderManager, Order
 from .data_streamer import DataStreamer, StreamData
 from .risk_manager import RiskManager
-from ..src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult, MarketData
+from src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult, MarketData
 
 
 class TradingEngine:

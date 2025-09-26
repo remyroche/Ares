@@ -1152,7 +1152,7 @@ class TradingReceiver:
         for exchange_name, exchange_config in exchanges_config.items():
             try:
                 # Create exchange instance using factory
-                from ..exchange.factory import ExchangeFactory
+                from exchange.factory import ExchangeFactory
                 exchange = ExchangeFactory.get_exchange(exchange_name)
 
                 # Initialize exchange with configuration

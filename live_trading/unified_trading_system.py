@@ -14,9 +14,9 @@ import logging
 
 from .config import TradingConfig, TradingMode
 from .trading_orchestrator import TradingOrchestrator, TradingSignal
-from ..exchanges import TradingReceiver
-from ..exchange.factory import ExchangeFactory
-from ..src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult
+from exchanges import TradingReceiver
+from exchange.factory import ExchangeFactory
+from src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult
 
 
 @dataclass

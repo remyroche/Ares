@@ -686,8 +686,16 @@ class EconomicValidator:
             
             return basic_metrics
             
+        except (ValueError, TypeError) as e:
+            tprint_error(f"⚠️ Comprehensive trading metrics calculation failed due to data type/compatibility issue: {e}")
+            tprint_error(f"y_true shape: {y_true.shape if hasattr(y_true, 'shape') else 'N/A'}, y_pred shape: {y_pred.shape if hasattr(y_pred, 'shape') else 'N/A'}")
+            return {}
+        except (MemoryError, OSError) as e:
+            tprint_error(f"⚠️ Comprehensive trading metrics calculation failed due to system resource issue: {e}")
+            return {}
         except Exception as e:
-            tprint_warning(f"⚠️ Comprehensive trading metrics calculation failed: {e}")
+            tprint_error(f"⚠️ Comprehensive trading metrics calculation failed with unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
             return {}
     
     def _calculate_economic_indicator_correlation(self,
@@ -705,8 +713,14 @@ class EconomicValidator:
             
             return correlations
             
+        except (ValueError, TypeError) as e:
+            tprint_error(f"⚠️ Economic indicator correlation calculation failed due to data type issue: {e}")
+            tprint_error(f"market_data shape: {market_data.shape if hasattr(market_data, 'shape') else 'N/A'}")
+        except (MemoryError, OSError) as e:
+            tprint_error(f"⚠️ Economic indicator correlation calculation failed due to system resource issue: {e}")
         except Exception as e:
-            tprint_warning(f"⚠️ Economic indicator correlation calculation failed: {e}")
+            tprint_error(f"⚠️ Economic indicator correlation calculation failed with unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
             return {}
     
     def _analyze_regime_specific_performance(self,

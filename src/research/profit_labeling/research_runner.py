@@ -28,6 +28,7 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from src.utils.logger import get_logger
+from src.utils.tprint import tprint
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
     MultiHorizonConfig
@@ -215,7 +216,9 @@ class ResearchRunner:
             return self.research_results
             
         except Exception as e:
-            self.logger.error(f'❌ Research failed: {e}')
+            error_msg = f'Research execution failed: {e}'
+            self.logger.error(f'❌ {error_msg}')
+            tprint(f"❌ {error_msg}")
             raise
     
     def _validate_input_data(self, market_data: pd.DataFrame):
@@ -574,7 +577,9 @@ class ResearchRunner:
                     visualization_paths['integrated_dashboard'] = Path(dashboard_path)
                     
             except Exception as e:
-                self.logger.warning(f'Failed to create integrated dashboard: {e}')
+                error_msg = f'Failed to create integrated dashboard: {e}'
+                self.logger.warning(f'⚠️ {error_msg}')
+                tprint(f"⚠️ {error_msg}")
         
         return visualization_paths
     

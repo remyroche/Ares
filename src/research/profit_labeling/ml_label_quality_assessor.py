@@ -25,6 +25,7 @@ import warnings
 from datetime import datetime
 
 # ML imports
+from src.utils.tprint import tprint
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
@@ -662,7 +663,9 @@ class MLLabelQualityAssessor:
                     if not np.isnan(correlation):
                         robustness_scores.append(abs(correlation))
                         
-            except Exception:
+            except Exception as e:
+                error_msg = f'Error calculating robustness score with noise level {noise_level}: {e}'
+                tprint(f"⚠️ {error_msg}")
                 continue
         
         return np.mean(robustness_scores) if robustness_scores else 0.5
@@ -740,7 +743,9 @@ class MLLabelQualityAssessor:
             
             return (lower_ci, upper_ci)
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating bootstrap confidence intervals: {e}'
+            tprint(f"⚠️ {error_msg}")
             return None
     
     def _extract_market_condition_features(self, market_conditions: pd.DataFrame) -> np.ndarray:

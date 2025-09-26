@@ -33,6 +33,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import warnings
 
+from src.utils.tprint import tprint
+
 # Optimization imports
 from scipy.optimize import minimize, differential_evolution
 from sklearn.model_selection import ParameterGrid, TimeSeriesSplit
@@ -771,7 +773,9 @@ class BonusPenaltyOptimizer:
                 'stability': self._calculate_stability_score(labeled_data)
             }
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating comprehensive scores for bonus/penalty optimization: {e}'
+            tprint(f"⚠️ {error_msg}")
             return {
                 'predictive_power': 0.0,
                 'hit_rate_balance': 0.0,

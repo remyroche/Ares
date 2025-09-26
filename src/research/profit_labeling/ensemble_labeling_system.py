@@ -28,6 +28,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ML imports for ensemble methods
+from src.utils.tprint import tprint
 from sklearn.ensemble import VotingRegressor, BaggingRegressor
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.tree import DecisionTreeRegressor
@@ -878,7 +879,9 @@ class EnsembleCombiner:
             
             return max(0.0, min(1.0, diversity_score))
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating ensemble diversity: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _calculate_ensemble_performance(self, ensemble_labels: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, float]:

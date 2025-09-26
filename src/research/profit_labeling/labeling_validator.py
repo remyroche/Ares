@@ -27,6 +27,7 @@ from sklearn.model_selection import TimeSeriesSplit
 import warnings
 
 from src.utils.logger import get_logger
+from src.utils.tprint import tprint
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
     MultiHorizonConfig
@@ -468,7 +469,9 @@ class LabelingValidator:
             
             return max(0.0, min(1.0, consistency))
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating consistency score: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _bootstrap_consistency_score(self,
@@ -493,7 +496,9 @@ class LabelingValidator:
                 float(np.percentile(bootstrap_scores, 97.5))
             )
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating bootstrap consistency score: {e}'
+            tprint(f"⚠️ {error_msg}")
             return None
     
     def _calculate_predictive_validity_score(self,
@@ -519,7 +524,9 @@ class LabelingValidator:
             auc_proxy = 0.5 + abs(correlation) / 2
             return max(0.0, min(1.0, auc_proxy))
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating predictive validity score: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.5  # Random baseline
     
     def _cross_validate_predictive_validity(self,
@@ -551,7 +558,9 @@ class LabelingValidator:
             
             return cv_scores
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error in cross-validation of predictive validity: {e}'
+            tprint(f"⚠️ {error_msg}")
             return []
     
     def _detect_temporal_bias(self, labeled_data: pd.DataFrame) -> float:
@@ -580,7 +589,9 @@ class LabelingValidator:
             
             return np.mean(bias_scores) if bias_scores else 0.0
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error detecting temporal bias: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _detect_distribution_bias(self, labeled_data: pd.DataFrame) -> float:
@@ -601,7 +612,9 @@ class LabelingValidator:
             
             return np.mean(bias_scores) if bias_scores else 0.0
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error detecting distribution bias: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _bootstrap_confidence_interval(self,
@@ -628,7 +641,9 @@ class LabelingValidator:
             
             return (float(lower), float(upper))
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating bootstrap confidence interval: {e}'
+            tprint(f"⚠️ {error_msg}")
             return None
     
     # Recommendation generators

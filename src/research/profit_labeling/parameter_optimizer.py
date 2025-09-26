@@ -28,6 +28,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 import warnings
 
+from src.utils.tprint import tprint
+
 from src.utils.logger import get_logger
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
@@ -736,7 +738,9 @@ class ParameterOptimizer:
             else:
                 return self._calculate_predictive_power_score(labeled_data, market_data)
                 
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating objective score: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _calculate_predictive_power_score(self,
@@ -865,7 +869,9 @@ class ParameterOptimizer:
                 'economic_value': self._calculate_economic_value_score(labeled_data, val_data)
             }
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating comprehensive scores: {e}'
+            tprint(f"⚠️ {error_msg}")
             return {
                 'predictive_power': 0.0,
                 'stability': 0.0,

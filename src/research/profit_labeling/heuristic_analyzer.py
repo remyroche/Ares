@@ -26,6 +26,7 @@ from datetime import datetime
 import warnings
 
 from src.utils.logger import get_logger
+from src.utils.tprint import tprint
 from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
     MultiHorizonConfig
@@ -377,7 +378,9 @@ class HeuristicAnalyzer:
                     return abs(correlation) if not np.isnan(correlation) else 0.0
             
             return 0.0
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating predictive power: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _calculate_label_stability(self, values: pd.Series) -> float:
@@ -392,7 +395,9 @@ class HeuristicAnalyzer:
             stability = 1.0 - (rolling_std.mean() / values.std()) if values.std() > 0 else 0.0
             
             return max(0.0, min(1.0, stability))
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating label stability: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.0
     
     def _calculate_composite_coherence(self, 
@@ -429,7 +434,9 @@ class HeuristicAnalyzer:
             
             return np.mean(correlations) if correlations else 0.5
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating composite coherence: {e}'
+            tprint(f"⚠️ {error_msg}")
             return 0.5
     
     def _bootstrap_confidence_interval(self, 
@@ -458,7 +465,9 @@ class HeuristicAnalyzer:
             
             return (float(lower), float(upper))
             
-        except Exception:
+        except Exception as e:
+            error_msg = f'Error calculating bootstrap confidence interval: {e}'
+            tprint(f"⚠️ {error_msg}")
             return None
     
     def _generate_target_recommendations(self, 

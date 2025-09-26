@@ -82,20 +82,107 @@ class BaseArchitectureEncoder:
         self.is_initialized = False
 
     def encode(self, architecture: Any) -> EncodingResult:
-        """Encode an architecture."""
-        raise NotImplementedError("Subclasses must implement encode")
+        """Encode an architecture with basic fallback implementation."""
+        import time
+        start_time = time.time()
+        
+        # Basic encoding - convert architecture to simple dictionary representation
+        try:
+            if hasattr(architecture, '__dict__'):
+                encoding = architecture.__dict__.copy()
+            else:
+                encoding = str(architecture)
+            
+            encoding_time = time.time() - start_time
+            
+            return EncodingResult(
+                encoding=encoding,
+                encoding_type=EncodingType.STRING,
+                format=EncodingFormat.DICT,
+                metadata={'fallback_encoding': True, 'architecture_type': type(architecture).__name__},
+                encoding_time=encoding_time,
+                compression_ratio=1.0
+            )
+        except Exception as e:
+            self.logger.error(f"Basic encoding failed: {e}")
+            return EncodingResult(
+                encoding=str(architecture),
+                encoding_type=EncodingType.STRING,
+                format=EncodingFormat.STRING,
+                metadata={'fallback_encoding': True, 'error': str(e)},
+                encoding_time=time.time() - start_time,
+                compression_ratio=1.0
+            )
 
     def decode(self, encoding: Any, encoding_type: EncodingType) -> DecodingResult:
-        """Decode an architecture."""
-        raise NotImplementedError("Subclasses must implement decode")
+        """Decode an architecture with basic fallback implementation."""
+        import time
+        start_time = time.time()
+        
+        try:
+            # Basic decoding - return the encoding as-is for simple cases
+            if isinstance(encoding, dict) and 'fallback_encoding' in encoding:
+                # This is a fallback encoding, return a simple object
+                class SimpleArchitecture:
+                    def __init__(self, data):
+                        for key, value in data.items():
+                            if key != 'fallback_encoding':
+                                setattr(self, key, value)
+                
+                architecture = SimpleArchitecture(encoding)
+            else:
+                # For other cases, return the encoding itself
+                architecture = encoding
+            
+            decoding_time = time.time() - start_time
+            
+            return DecodingResult(
+                architecture=architecture,
+                decoding_time=decoding_time,
+                confidence=0.5,  # Lower confidence for fallback
+                metadata={'fallback_decoding': True, 'encoding_type': encoding_type.value}
+            )
+        except Exception as e:
+            self.logger.error(f"Basic decoding failed: {e}")
+            return DecodingResult(
+                architecture=encoding,
+                decoding_time=time.time() - start_time,
+                confidence=0.1,  # Very low confidence
+                metadata={'fallback_decoding': True, 'error': str(e)}
+            )
 
     def get_encoding_size(self, architecture: Any) -> int:
-        """Get the size of the encoded representation."""
-        raise NotImplementedError("Subclasses must implement get_encoding_size")
+        """Get the size of the encoded representation with basic fallback implementation."""
+        try:
+            # Basic size estimation
+            if hasattr(architecture, '__dict__'):
+                # Estimate size based on number of attributes
+                return len(architecture.__dict__) * 10  # Rough estimate
+            else:
+                # For other objects, estimate based on string representation
+                return len(str(architecture))
+        except Exception as e:
+            self.logger.error(f"Basic encoding size calculation failed: {e}")
+            return 100  # Default fallback size
 
     def validate_encoding(self, encoding: Any, encoding_type: EncodingType) -> bool:
-        """Validate an encoding."""
-        raise NotImplementedError("Subclasses must implement validate_encoding")
+        """Validate an encoding with basic fallback implementation."""
+        try:
+            # Basic validation based on encoding type
+            if encoding_type == EncodingType.STRING:
+                return isinstance(encoding, str) and len(encoding) > 0
+            elif encoding_type == EncodingType.DICT:
+                return isinstance(encoding, dict) and len(encoding) > 0
+            elif encoding_type == EncodingType.VECTOR:
+                return hasattr(encoding, '__len__') and len(encoding) > 0
+            elif encoding_type == EncodingType.MATRIX:
+                return hasattr(encoding, 'shape') and len(encoding.shape) >= 2
+            else:
+                # For other types, basic non-null check
+                return encoding is not None
+        except Exception as e:
+            self.logger.error(f"Basic encoding validation failed: {e}")
+            return False
 
 
 class NeuralArchitectureEncoder(BaseArchitectureEncoder):
@@ -797,8 +884,8 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
             
             # Reshape encoding to match expected structure
             if len(encoding.shape) == 1:
-                # Flattened encoding - reshape based on max_nodes
-                node_size = self.max_nodes
+                # Flattened encoding - reshape based on max_trees
+                node_size = self.max_trees
                 if len(encoding) % node_size == 0:
                     encoding = encoding.reshape(-1, node_size)
                 else:

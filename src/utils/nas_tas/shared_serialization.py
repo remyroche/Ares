@@ -69,11 +69,40 @@ except Exception:  # pragma: no cover - executed only when dependency missing
 
         @staticmethod
         def save(data: Any, filepath: str | Path) -> bool:
-            raise NotImplementedError("Parquet support requires serialization_utils")
+            try:
+                import pandas as pd
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+                
+                # Convert data to DataFrame if it's not already
+                if isinstance(data, pd.DataFrame):
+                    df = data
+                elif isinstance(data, dict):
+                    df = pd.DataFrame(data)
+                elif isinstance(data, list):
+                    df = pd.DataFrame(data)
+                else:
+                    # For other data types, try to convert to dict first
+                    if hasattr(data, '__dict__'):
+                        df = pd.DataFrame([data.__dict__])
+                    else:
+                        df = pd.DataFrame([{'data': str(data)}])
+                
+                # Save as parquet
+                df.to_parquet(filepath, engine='pyarrow')
+                return True
+            except Exception as e:
+                print(f"Parquet save failed: {e}")
+                return False
 
         @staticmethod
         def load(filepath: str | Path) -> Any:
-            raise NotImplementedError("Parquet support requires serialization_utils")
+            try:
+                import pandas as pd
+                return pd.read_parquet(filepath)
+            except Exception as e:
+                print(f"Parquet load failed: {e}")
+                return None
 
     class UniversalSerializer:  # pragma: no cover - placeholder
         """Placeholder universal serializer used for graceful degradation."""
@@ -82,13 +111,49 @@ except Exception:  # pragma: no cover - executed only when dependency missing
         def save(data: Any, filepath: str | Path, format_hint: str | None = None) -> bool:
             if format_hint == "json":
                 return JSONSerializer.save(data, filepath)
-            if format_hint == "pickle":
+            elif format_hint == "pickle":
                 return PickleSerializer.save(data, filepath)
-            raise NotImplementedError("Universal serialization requires serialization_utils")
+            elif format_hint == "parquet":
+                return ParquetSerializer.save(data, filepath)
+            else:
+                # Auto-detect format based on file extension
+                filepath_str = str(filepath)
+                if filepath_str.endswith('.json'):
+                    return JSONSerializer.save(data, filepath)
+                elif filepath_str.endswith('.pkl') or filepath_str.endswith('.pickle'):
+                    return PickleSerializer.save(data, filepath)
+                elif filepath_str.endswith('.parquet'):
+                    return ParquetSerializer.save(data, filepath)
+                else:
+                    # Default to JSON for unknown extensions
+                    return JSONSerializer.save(data, filepath)
 
         @staticmethod
         def load(filepath: str | Path) -> Any:
-            raise NotImplementedError("Universal serialization requires serialization_utils")
+            filepath_str = str(filepath)
+            
+            # Try to load based on file extension
+            if filepath_str.endswith('.json'):
+                return JSONSerializer.load(filepath)
+            elif filepath_str.endswith('.pkl') or filepath_str.endswith('.pickle'):
+                return PickleSerializer.load(filepath)
+            elif filepath_str.endswith('.parquet'):
+                return ParquetSerializer.load(filepath)
+            else:
+                # Try different formats in order of preference
+                result = JSONSerializer.load(filepath)
+                if result is not None:
+                    return result
+                
+                result = PickleSerializer.load(filepath)
+                if result is not None:
+                    return result
+                
+                result = ParquetSerializer.load(filepath)
+                if result is not None:
+                    return result
+                
+                return None
 
 def estimate_pickle_size(data: Any) -> int:
     """Estimate the size of an object when serialised with pickle."""

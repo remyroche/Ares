@@ -614,19 +614,54 @@ class UnifiedUtilities:
     
     def _estimate_cache_entry_size(self, value: Any) -> int:
         """Estimate the memory footprint of a cache entry."""
-        if isinstance(value, pd.DataFrame):
-            return int(value.memory_usage(deep=True).sum())
-        if isinstance(value, np.ndarray):
-            return int(value.nbytes)
-        if hasattr(value, "nbytes"):
-            try:
-                return int(value.nbytes)  # type: ignore[attr-defined]
-            except Exception:  # pragma: no cover - defensive
-                pass
         try:
-            return sys.getsizeof(value)
-        except Exception:  # pragma: no cover - fallback when getsizeof fails
-            return 0
+            # Handle pandas DataFrames
+            if isinstance(value, pd.DataFrame):
+                return int(value.memory_usage(deep=True).sum())
+            
+            # Handle numpy arrays
+            if isinstance(value, np.ndarray):
+                return int(value.nbytes)
+            
+            # Handle objects with nbytes attribute (like other array types)
+            if hasattr(value, "nbytes"):
+                try:
+                    return int(value.nbytes)  # type: ignore[attr-defined]
+                except (TypeError, ValueError, AttributeError):  # pragma: no cover - defensive
+                    pass
+            
+            # Handle dictionaries and lists (recursive estimation)
+            if isinstance(value, dict):
+                total_size = sys.getsizeof(value)
+                for k, v in value.items():
+                    total_size += sys.getsizeof(k) + self._estimate_cache_entry_size(v)
+                return total_size
+            
+            if isinstance(value, (list, tuple)):
+                total_size = sys.getsizeof(value)
+                for item in value:
+                    total_size += self._estimate_cache_entry_size(item)
+                return total_size
+            
+            # Handle model objects (common in ML contexts)
+            if hasattr(value, '__dict__'):
+                total_size = sys.getsizeof(value)
+                for attr_name, attr_value in value.__dict__.items():
+                    total_size += sys.getsizeof(attr_name) + self._estimate_cache_entry_size(attr_value)
+                return total_size
+            
+            # Default case - use sys.getsizeof
+            try:
+                return sys.getsizeof(value)
+            except (TypeError, ValueError):  # pragma: no cover - fallback when getsizeof fails
+                # For objects that don't support getsizeof, estimate based on string representation
+                try:
+                    return len(str(value).encode('utf-8'))
+                except (UnicodeEncodeError, AttributeError):
+                    return 1024  # Default estimate for unknown objects
+                    
+        except Exception:  # pragma: no cover - ultimate fallback
+            return 1024  # Conservative default estimate
 
     def _memory_pressure_exceeded(self) -> bool:
         """Determine if system memory usage warrants cache eviction."""

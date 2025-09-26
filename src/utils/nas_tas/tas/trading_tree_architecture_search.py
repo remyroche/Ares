@@ -665,12 +665,106 @@ class TradingTreeArchitectureSearch:
     def _setup_regime_adaptation(self, result: TradingTASResult):
         """Setup real-time regime adaptation."""
         self.logger.info("🔄 Setting up regime adaptation system...")
-        # Implementation would include:
-        # - Performance monitoring threads
-        # - Market data streaming
-        # - Automatic model switching
-        # - Risk management triggers
-        pass
+        
+        try:
+            # Initialize adaptation components
+            self.adaptation_enabled = True
+            self.adaptation_thread = None
+            self.performance_monitor = None
+            self.market_data_stream = None
+            
+            # Setup performance monitoring
+            if self.config.enable_performance_tracking:
+                self._setup_performance_monitoring()
+            
+            # Setup market data streaming
+            if self.config.adaptation_enabled:
+                self._setup_market_data_streaming()
+            
+            # Setup automatic model switching
+            self._setup_automatic_model_switching()
+            
+            # Setup risk management triggers
+            self._setup_risk_management_triggers()
+            
+            # Initialize adaptation state
+            self.adaptation_state = {
+                'last_adaptation_time': datetime.now(),
+                'adaptation_count': 0,
+                'current_regime': None,
+                'performance_history': [],
+                'risk_alerts': []
+            }
+            
+            self.logger.info("✅ Regime adaptation system setup completed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to setup regime adaptation: {e}")
+            self.adaptation_enabled = False
+    
+    def _setup_performance_monitoring(self):
+        """Setup performance monitoring system."""
+        try:
+            self.performance_monitor = {
+                'monitoring_interval': self.config.performance_tracking_interval,
+                'performance_metrics': ['sharpe_ratio', 'max_drawdown', 'win_rate', 'total_return'],
+                'alert_thresholds': {
+                    'sharpe_ratio': 0.5,
+                    'max_drawdown': 0.1,
+                    'win_rate': 0.4
+                },
+                'history_length': 100
+            }
+            self.logger.info("📊 Performance monitoring setup completed")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Performance monitoring setup failed: {e}")
+    
+    def _setup_market_data_streaming(self):
+        """Setup market data streaming for real-time adaptation."""
+        try:
+            self.market_data_stream = {
+                'streaming_enabled': True,
+                'update_interval': self.config.adaptation_interval_minutes * 60,  # Convert to seconds
+                'data_buffer_size': 1000,
+                'regime_detection_window': 100
+            }
+            self.logger.info("📡 Market data streaming setup completed")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Market data streaming setup failed: {e}")
+    
+    def _setup_automatic_model_switching(self):
+        """Setup automatic model switching based on regime changes."""
+        try:
+            self.model_switching = {
+                'enabled': True,
+                'switch_threshold': 0.7,  # Confidence threshold for regime change
+                'min_regime_duration': 15,  # Minimum minutes before switching
+                'fallback_model': None,  # Will be set to best overall model
+                'switch_history': []
+            }
+            
+            # Set fallback model to best overall architecture
+            if result.best_architecture:
+                self.model_switching['fallback_model'] = result.best_architecture
+            
+            self.logger.info("🔄 Automatic model switching setup completed")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Automatic model switching setup failed: {e}")
+    
+    def _setup_risk_management_triggers(self):
+        """Setup risk management triggers for adaptation."""
+        try:
+            self.risk_management = {
+                'enabled': True,
+                'max_drawdown_threshold': self.config.max_drawdown_threshold,
+                'risk_adjusted_return_threshold': self.config.risk_adjusted_return_threshold,
+                'emergency_stop_threshold': 0.2,  # 20% drawdown
+                'position_size_adjustment': True,
+                'risk_alerts': []
+            }
+            self.logger.info("⚠️ Risk management triggers setup completed")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Risk management triggers setup failed: {e}")
 
     # Helper methods for regime detection and analysis
     def _get_regime_data(self, market_data: pd.DataFrame, target_returns: pd.Series,

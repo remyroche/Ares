@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from .core.interfaces import (
     BasePipelineStep, IDataStep, StepResult, StepStatus, StepConfig
 )
+from ..modular_components import ExchangeDataSourceFactory
 import pandas as pd
 import logging
 import numpy as np
 import typing
+from typing import Optional, Dict, Any
 
 @dataclass
 class DataQualityMetrics:
@@ -196,7 +198,43 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 
         except ImportError:
             self.logger.error("asyncpg not available for PostgreSQL connection")
-            raise NotImplementedError("PostgreSQL support requires asyncpg package")
+            # Fallback to synchronous psycopg2 if available
+            try:
+                import psycopg2
+                import psycopg2.extras
+                
+                # Parse connection string for psycopg2
+                conn_params = self._parse_postgresql_connection_string(connection_string)
+                
+                # Build parameterized query
+                if start_date and end_date:
+                    query = "SELECT * FROM market_data WHERE symbol = %s AND timestamp BETWEEN %s AND %s ORDER BY timestamp"
+                    params = [symbol, start_date, end_date]
+                else:
+                    query = "SELECT * FROM market_data WHERE symbol = %s ORDER BY timestamp"
+                    params = [symbol]
+                
+                # Connect and fetch data synchronously
+                with psycopg2.connect(**conn_params) as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                        cursor.execute(query, params)
+                        rows = cursor.fetchall()
+                        
+                        if not rows:
+                            self.logger.warning(f"No data found for symbol {symbol}")
+                            return pd.DataFrame()
+                        
+                        # Convert to DataFrame
+                        data = pd.DataFrame([dict(row) for row in rows])
+                        data['timestamp'] = pd.to_datetime(data['timestamp'])
+                        data = data.set_index('timestamp')
+                        
+                        self.logger.info(f"Loaded {len(data)} rows from PostgreSQL (sync) for {symbol}")
+                        return data
+                        
+            except ImportError:
+                self.logger.error("Neither asyncpg nor psycopg2 available for PostgreSQL connection")
+                raise NotImplementedError("PostgreSQL support requires asyncpg or psycopg2 package")
 
     async def _load_from_mysql(self, connection_string: str, **kwargs) -> pd.DataFrame:
         """Load data from MySQL database."""
@@ -239,7 +277,43 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 
         except ImportError:
             self.logger.error("aiomysql not available for MySQL connection")
-            raise NotImplementedError("MySQL support requires aiomysql package")
+            # Fallback to synchronous PyMySQL if available
+            try:
+                import pymysql
+                import pymysql.cursors
+                
+                # Parse connection string for PyMySQL
+                conn_params = self._parse_mysql_connection_string(connection_string)
+                
+                # Build parameterized query
+                if start_date and end_date:
+                    query = "SELECT * FROM market_data WHERE symbol = %s AND timestamp BETWEEN %s AND %s ORDER BY timestamp"
+                    params = [symbol, start_date, end_date]
+                else:
+                    query = "SELECT * FROM market_data WHERE symbol = %s ORDER BY timestamp"
+                    params = [symbol]
+                
+                # Connect and fetch data synchronously
+                with pymysql.connect(**conn_params) as conn:
+                    with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                        cursor.execute(query, params)
+                        rows = cursor.fetchall()
+                        
+                        if not rows:
+                            self.logger.warning(f"No data found for symbol {symbol}")
+                            return pd.DataFrame()
+                        
+                        # Convert to DataFrame
+                        data = pd.DataFrame(rows)
+                        data['timestamp'] = pd.to_datetime(data['timestamp'])
+                        data = data.set_index('timestamp')
+                        
+                        self.logger.info(f"Loaded {len(data)} rows from MySQL (sync) for {symbol}")
+                        return data
+                        
+            except ImportError:
+                self.logger.error("Neither aiomysql nor pymysql available for MySQL connection")
+                raise NotImplementedError("MySQL support requires aiomysql or pymysql package")
 
     async def _load_from_sqlite(self, connection_string: str, **kwargs) -> pd.DataFrame:
         """Load data from SQLite database."""
@@ -282,7 +356,42 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 
         except ImportError:
             self.logger.error("aiosqlite not available for SQLite connection")
-            raise NotImplementedError("SQLite support requires aiosqlite package")
+            # Fallback to synchronous sqlite3 if available
+            try:
+                import sqlite3
+                
+                # Extract database path from connection string
+                db_path = connection_string.replace('sqlite:///', '')
+                
+                # Build parameterized query
+                if start_date and end_date:
+                    query = "SELECT * FROM market_data WHERE symbol = ? AND timestamp BETWEEN ? AND ? ORDER BY timestamp"
+                    params = [symbol, start_date, end_date]
+                else:
+                    query = "SELECT * FROM market_data WHERE symbol = ? ORDER BY timestamp"
+                    params = [symbol]
+                
+                # Connect and fetch data synchronously
+                with sqlite3.connect(db_path) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.execute(query, params)
+                    rows = cursor.fetchall()
+                    
+                    if not rows:
+                        self.logger.warning(f"No data found for symbol {symbol}")
+                        return pd.DataFrame()
+                    
+                    # Convert to DataFrame
+                    data = pd.DataFrame([dict(row) for row in rows])
+                    data['timestamp'] = pd.to_datetime(data['timestamp'])
+                    data = data.set_index('timestamp')
+                    
+                    self.logger.info(f"Loaded {len(data)} rows from SQLite (sync) for {symbol}")
+                    return data
+                    
+            except ImportError:
+                self.logger.error("Neither aiosqlite nor sqlite3 available for SQLite connection")
+                raise NotImplementedError("SQLite support requires aiosqlite or sqlite3 package")
 
     async def _load_from_mongodb(self, connection_string: str, **kwargs) -> pd.DataFrame:
         """Load data from MongoDB database."""
@@ -328,7 +437,77 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
             
         except ImportError:
             self.logger.error("motor not available for MongoDB connection")
-            raise NotImplementedError("MongoDB support requires motor package")
+            # Fallback to synchronous pymongo if available
+            try:
+                import pymongo
+                from pymongo import MongoClient
+                
+                # Parse connection string and collection
+                collection_name = kwargs.get('collection', 'market_data')
+                symbol = kwargs.get('symbol', 'BTCUSDT')
+                start_date = kwargs.get('start_date')
+                end_date = kwargs.get('end_date')
+                
+                # Connect to MongoDB
+                client = MongoClient(connection_string)
+                db = client.get_default_database()
+                collection = db[collection_name]
+                
+                # Build query
+                query = {'symbol': symbol}
+                if start_date and end_date:
+                    query['timestamp'] = {'$gte': start_date, '$lte': end_date}
+                
+                # Fetch data
+                cursor = collection.find(query).sort('timestamp', 1)
+                rows = list(cursor)
+                
+                if not rows:
+                    self.logger.warning(f"No data found for symbol {symbol}")
+                    return pd.DataFrame()
+                
+                # Convert to DataFrame
+                data = pd.DataFrame(rows)
+                data['timestamp'] = pd.to_datetime(data['timestamp'])
+                data = data.set_index('timestamp')
+                
+                # Remove MongoDB _id field if present
+                if '_id' in data.columns:
+                    data = data.drop('_id', axis=1)
+                
+                self.logger.info(f"Loaded {len(data)} rows from MongoDB (sync) for {symbol}")
+                return data
+                
+            except ImportError:
+                self.logger.error("Neither motor nor pymongo available for MongoDB connection")
+                raise NotImplementedError("MongoDB support requires motor or pymongo package")
+
+    def _parse_postgresql_connection_string(self, connection_string: str) -> Dict[str, Any]:
+        """Parse PostgreSQL connection string for psycopg2."""
+        from urllib.parse import urlparse
+        
+        parsed = urlparse(connection_string)
+        return {
+            'host': parsed.hostname or 'localhost',
+            'port': parsed.port or 5432,
+            'database': parsed.path.lstrip('/') if parsed.path else 'postgres',
+            'user': parsed.username or 'postgres',
+            'password': parsed.password or ''
+        }
+
+    def _parse_mysql_connection_string(self, connection_string: str) -> Dict[str, Any]:
+        """Parse MySQL connection string for PyMySQL."""
+        from urllib.parse import urlparse
+        
+        parsed = urlparse(connection_string)
+        return {
+            'host': parsed.hostname or 'localhost',
+            'port': parsed.port or 3306,
+            'database': parsed.path.lstrip('/') if parsed.path else 'mysql',
+            'user': parsed.username or 'root',
+            'password': parsed.password or '',
+            'charset': 'utf8mb4'
+        }
 
     async def validate_data(self, data: pd.DataFrame) -> bool:
         """Validate loaded data meets requirements."""

@@ -10,8 +10,26 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from importlib import import_module
 import logging
 import time
+
+_LEGACY_NAS_NSGA: Optional[type] = None
+
+
+def _resolve_legacy_nsga() -> type:
+    """Resolve the legacy NSGA-II optimizer, failing fast when unavailable."""
+    global _LEGACY_NAS_NSGA
+    if _LEGACY_NAS_NSGA is not None:
+        return _LEGACY_NAS_NSGA
+
+    module = import_module('src.training.steps.market_analysis.nas_regime.core.nas_search')
+    legacy_cls = getattr(module, 'NSGAIIOptimizer', None)
+    if legacy_cls is None:
+        raise ImportError("NSGAIIOptimizer not found in legacy NAS module")
+
+    _LEGACY_NAS_NSGA = legacy_cls
+    return _LEGACY_NAS_NSGA
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
@@ -32,6 +50,11 @@ class ObjectiveType(Enum):
     MEMORY_USAGE = "memory_usage"
     SPEED = "speed"
     ROBUSTNESS = "robustness"
+    SHARPE_RATIO = "sharpe_ratio"
+    DOWNSIDE_DEVIATION = "downside_deviation"
+    EXECUTION_LATENCY = "execution_latency"
+    TAIL_LATENCY = "tail_latency"
+    COLD_START_LATENCY = "cold_start_latency"
 
 class OptimizationAlgorithm(Enum):
     """Available optimization algorithms."""
@@ -49,11 +72,12 @@ class UnifiedMultiObjectiveConfig:
     # Core optimization parameters
     algorithm: OptimizationAlgorithm = OptimizationAlgorithm.NSGA2
     objectives: List[ObjectiveType] = field(default_factory=lambda: [
-        ObjectiveType.ACCURACY,
-        ObjectiveType.EFFICIENCY,
-        ObjectiveType.PROFITABILITY
+        ObjectiveType.SHARPE_RATIO,
+        ObjectiveType.DOWNSIDE_DEVIATION,
+        ObjectiveType.EXECUTION_LATENCY,
     ])
     objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
+    objective_directions: List[str] = field(default_factory=lambda: ['maximize', 'minimize', 'minimize'])
     
     # Optimization parameters
     max_iterations: int = 100
@@ -71,6 +95,16 @@ class UnifiedMultiObjectiveConfig:
     enable_logging: bool = True
     log_level: str = 'INFO'
     save_intermediate_results: bool = True
+
+    def __post_init__(self) -> None:
+        if len(self.objective_weights) != len(self.objectives):
+            raise ValueError("Objective weights must match number of objectives")
+        if len(self.objective_directions) != len(self.objectives):
+            self.objective_directions = ['maximize'] * len(self.objectives)
+        allowed = {'maximize', 'minimize'}
+        for direction in self.objective_directions:
+            if direction not in allowed:
+                raise ValueError("Objective directions must be 'maximize' or 'minimize'")
 
 @dataclass
 class ParetoSolution:
@@ -116,7 +150,7 @@ class UnifiedMultiObjectiveOptimizer:
         """Initialize unified multi-objective optimizer."""
         self.config = config or UnifiedMultiObjectiveConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Performance monitoring
         self.optimization_history = []
         self.performance_metrics = {}
@@ -192,12 +226,19 @@ class UnifiedMultiObjectiveOptimizer:
                 success=False,
                 error_message=str(e)
             )
-    
+
     def _validate_objectives(self, objective_functions: Dict[ObjectiveType, Callable]):
         """Validate objective functions."""
         for obj in self.config.objectives:
             if obj not in objective_functions:
                 raise ValueError(f"Objective function for {obj.value} not provided")
+
+    def _objective_direction(self, obj_type: ObjectiveType) -> str:
+        try:
+            idx = self.config.objectives.index(obj_type)
+        except ValueError:
+            return 'maximize'
+        return self.config.objective_directions[idx]
     
     def _validate_parameter_bounds(self, parameter_bounds: Dict[str, Tuple[float, float]]):
         """Validate parameter bounds."""
@@ -530,62 +571,91 @@ class UnifiedMultiObjectiveOptimizer:
             val1 = sol1.objectives.get(obj_type, 0.0)
             val2 = sol2.objectives.get(obj_type, 0.0)
             
-            if val1 < val2:  # Assuming minimization
-                return False
-            elif val1 > val2:
-                at_least_one_better = True
+            direction = self._objective_direction(obj_type)
+            if direction == 'maximize':
+                if val1 < val2:
+                    return False
+                elif val1 > val2:
+                    at_least_one_better = True
+            else:  # minimize
+                if val1 > val2:
+                    return False
+                elif val1 < val2:
+                    at_least_one_better = True
         
         return at_least_one_better
     
     def _environmental_selection(self, fronts: List[List[ParetoSolution]]) -> List[ParetoSolution]:
         """Select next generation using environmental selection."""
-        new_population = []
-        
-        # Add solutions from fronts until population is full
-        for front in fronts:
-            if len(new_population) + len(front) <= self.config.population_size:
-                # Add entire front
-                new_population.extend(front)
-            else:
-                # Add remaining solutions from front
-                remaining_slots = self.config.population_size - len(new_population)
-                new_population.extend(front[:remaining_slots])
-                break
-        
-        return new_population
+        flattened_population: List[ParetoSolution] = [sol for front in fronts for sol in front]
+
+        if not flattened_population:
+            return []
+
+        legacy_cls = _resolve_legacy_nsga()
+        legacy_optimizer = legacy_cls(
+            objectives=[obj.value for obj in self.config.objectives],
+            population_size=self.config.population_size,
+        )
+
+        class _Wrapper:
+            def __init__(self, solution: ParetoSolution, score: float):
+                self.solution = solution
+                self.fitness_score = score
+
+        wrapped_population = [
+            _Wrapper(solution=sol, score=self._weighted_score(sol))
+            for sol in flattened_population
+        ]
+        selected_wrapped = legacy_optimizer.optimize(wrapped_population)
+        selected_solutions = [wrapper.solution for wrapper in selected_wrapped if hasattr(wrapper, "solution")]
+        if not selected_solutions:
+            raise RuntimeError("Legacy NSGA-II selection returned no candidates")
+        return selected_solutions[: self.config.population_size]
     
     def _get_best_scores(self, population: List[ParetoSolution]) -> Dict[ObjectiveType, float]:
         """Get best scores across all objectives."""
         best_scores = {}
-        
+
         for obj_type in self.config.objectives:
-            best_score = float('-inf')
+            direction = self._objective_direction(obj_type)
+            best_score = float('-inf') if direction == 'maximize' else float('inf')
             for sol in population:
                 score = sol.objectives.get(obj_type, 0.0)
-                if score > best_score:
-                    best_score = score
+                if direction == 'maximize':
+                    if score > best_score:
+                        best_score = score
+                else:
+                    if score < best_score:
+                        best_score = score
             best_scores[obj_type] = best_score
-        
+
         return best_scores
-    
+
+    def _weighted_score(self, sol: ParetoSolution) -> float:
+        """Calculate weighted score respecting objective directions."""
+        weighted_score = 0.0
+        for weight, obj_type in zip(self.config.objective_weights, self.config.objectives):
+            score = sol.objectives.get(obj_type, 0.0)
+            if self._objective_direction(obj_type) == 'minimize':
+                score = -score
+            weighted_score += weight * score
+        return weighted_score
+
     def _find_best_weighted_solution(self, population: List[ParetoSolution]) -> ParetoSolution:
         """Find best solution using weighted sum."""
         best_solution = None
         best_weighted_score = float('-inf')
-        
+
         for sol in population:
-            weighted_score = 0.0
-            for i, obj_type in enumerate(self.config.objectives):
-                weight = self.config.objective_weights[i]
-                score = sol.objectives.get(obj_type, 0.0)
-                weighted_score += weight * score
-            
+            weighted_score = self._weighted_score(sol)
+
             if weighted_score > best_weighted_score:
                 best_weighted_score = weighted_score
                 best_solution = sol
-        
+
         return best_solution or ParetoSolution({}, {})
-    
+
     def _calculate_hypervolume(self, pareto_frontier: List[ParetoSolution]) -> float:
         """Calculate hypervolume of Pareto frontier."""
         if len(pareto_frontier) < 2:

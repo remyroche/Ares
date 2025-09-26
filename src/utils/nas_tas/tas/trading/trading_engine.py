@@ -8,7 +8,7 @@ for regime-aware trading execution.
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -19,6 +19,15 @@ from .signal_generator import TradingSignalGenerator, SignalConfig
 from .position_manager import PositionManager, PositionConfig
 from .risk_manager import RiskManager, RiskConfig
 from .performance_monitor import TradingPerformanceMonitor, PerformanceConfig
+from ..policy import (
+    HierarchicalPolicyConfig,
+    HierarchicalPolicyGraph,
+)
+from ..execution import (
+    AdaptiveExecutionConfig,
+    AdaptiveExecutionLayer,
+    ExecutionObservation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +93,10 @@ class TradingConfig:
     ensemble_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
     enable_dynamic_sizing: bool = True
     volatility_lookback: int = 20
+    enable_hierarchical_policy: bool = True
+    hierarchical_policy_config: HierarchicalPolicyConfig = field(default_factory=HierarchicalPolicyConfig)
+    enable_adaptive_execution: bool = True
+    adaptive_execution_config: AdaptiveExecutionConfig = field(default_factory=AdaptiveExecutionConfig)
 
 
 @dataclass
@@ -141,7 +154,17 @@ class TradingEngine:
         self.position_manager = PositionManager(PositionConfig())
         self.risk_manager = RiskManager(RiskConfig())
         self.performance_monitor = TradingPerformanceMonitor(PerformanceConfig())
-        
+        self.policy_graph = (
+            HierarchicalPolicyGraph(config.hierarchical_policy_config)
+            if config.enable_hierarchical_policy
+            else None
+        )
+        self.execution_layer = (
+            AdaptiveExecutionLayer(config.adaptive_execution_config)
+            if config.enable_adaptive_execution
+            else None
+        )
+
         # Trading state
         self.current_capital = config.initial_capital
         self.positions = {}
@@ -196,7 +219,21 @@ class TradingEngine:
             # Get current price if not provided
             if price is None:
                 price = self._get_current_price(symbol)
-            
+
+            strategy_decision = None
+            execution_directive = None
+            execution_schedule = None
+            microstructure_snapshot = None
+            if self.policy_graph or self.execution_layer:
+                (
+                    strategy_decision,
+                    execution_directive,
+                    execution_schedule,
+                    microstructure_snapshot,
+                ) = self._evaluate_policy(symbol, side, quantity, price, regime_info or {})
+                if execution_directive and execution_directive.urgency < 0.5:
+                    order_type = OrderType.LIMIT
+
             # Calculate commission and slippage
             commission = quantity * price * self.config.commission_rate
             slippage = quantity * price * self.config.slippage_rate
@@ -235,6 +272,21 @@ class TradingEngine:
             self.positions[symbol] = new_position
             
             # Create trade result
+            metadata: Dict[str, Any] = {'config': self.config.__dict__}
+            if strategy_decision:
+                metadata['strategy_decision'] = asdict(strategy_decision)
+            if execution_directive:
+                metadata['execution_directive'] = asdict(execution_directive)
+            if execution_schedule:
+                slice_quantities = [float(s / max(execution_price, 1e-8)) for s in execution_schedule.slices]
+                metadata['execution_schedule'] = {
+                    'slice_quantities': slice_quantities,
+                    'expected_shortfall': execution_schedule.expected_shortfall,
+                    'venue_weights': execution_schedule.venue_weights,
+                }
+            if microstructure_snapshot:
+                metadata['microstructure_snapshot'] = asdict(microstructure_snapshot)
+
             trade_result = TradingResult(
                 trade_id=f"trade_{len(self.trades) + 1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 timestamp=datetime.now(),
@@ -253,9 +305,15 @@ class TradingEngine:
                 regime_confidence=regime_info.get('confidence') if regime_info else None,
                 regime_architecture=regime_info.get('architecture') if regime_info else None,
                 risk_metrics=self._calculate_risk_metrics(),
-                metadata={'config': self.config.__dict__}
+                metadata=metadata,
             )
-            
+
+            paper_price = (regime_info or {}).get('paper_price', price)
+            side_sign = 1 if side == OrderSide.BUY else -1
+            implementation_shortfall = (execution_price - paper_price) * quantity * side_sign
+            trade_result.metadata['paper_price'] = paper_price
+            trade_result.metadata['implementation_shortfall'] = implementation_shortfall
+
             # Store trade
             self.trades.append(trade_result)
             
@@ -273,14 +331,66 @@ class TradingEngine:
             
             self.logger.info(f"✅ Trade executed: {side.value} {quantity} {symbol} @ ${execution_price:.4f}")
             self.logger.info(f"💰 PnL: ${pnl:.2f}, Capital: ${self.current_capital:,.2f}")
-            
+
             return trade_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trade execution failed: {e}")
             self.logger.warning("⚠️ Trade execution failed - transaction was not completed")
             raise
-    
+
+    def _evaluate_policy(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        price: float,
+        regime_info: Dict[str, Any],
+    ) -> Tuple[Optional[Any], Optional[Any], Optional[Any], Optional[ExecutionObservation]]:
+        if self.policy_graph is None and self.execution_layer is None:
+            return None, None, None, None
+
+        info = regime_info or {}
+        strategy_decision = None
+        if self.policy_graph is not None:
+            strategy_decision = self.policy_graph.plan_strategy(info)
+
+        observation = self._build_execution_observation(symbol, info)
+        execution_directive = None
+        if self.policy_graph is not None and strategy_decision is not None:
+            execution_directive = self.policy_graph.plan_execution(strategy_decision, asdict(observation))
+
+        execution_schedule = None
+        if self.execution_layer is not None:
+            notional = abs(quantity * price)
+            urgency = execution_directive.urgency if execution_directive else 0.5
+            venues = execution_directive.venue_preferences if execution_directive else None
+            execution_schedule = self.execution_layer.generate_schedule(
+                notional=notional,
+                observation=observation,
+                directive_urgency=urgency,
+                venue_preferences=venues,
+            )
+
+        return strategy_decision, execution_directive, execution_schedule, observation
+
+    def _build_execution_observation(
+        self, symbol: str, regime_info: Dict[str, Any]
+    ) -> ExecutionObservation:
+        spread = float(regime_info.get('spread', 0.01))
+        queue_position = float(regime_info.get('queue_position', 0.5))
+        volume_imbalance = float(regime_info.get('volume_imbalance', 0.0))
+        volatility = float(regime_info.get('intraday_volatility', 0.02))
+        venue_quality_raw = regime_info.get('venue_quality', {})
+        venue_quality = venue_quality_raw if isinstance(venue_quality_raw, dict) else {}
+        return ExecutionObservation(
+            spread=spread,
+            queue_position=queue_position,
+            volume_imbalance=volume_imbalance,
+            volatility=volatility,
+            venue_quality=venue_quality,
+        )
+
     def generate_trading_signals(self,
                                market_data: pd.DataFrame,
                                regime_info: Optional[Dict[str, Any]] = None,

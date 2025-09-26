@@ -15,6 +15,24 @@ from textwrap import dedent
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+POETRY_COMMAND: str | None = None
+
+
+def _poetry_command_available(command: str) -> bool:
+    """Return True if ``command`` can successfully invoke Poetry."""
+
+    try:
+        subprocess.run(
+            f"{command} --version",
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        return False
+
+    return True
 
 
 def run_command(command: str, description: str) -> bool:
@@ -57,8 +75,17 @@ def check_python_version() -> bool:
 def ensure_poetry_installed() -> bool:
     """Install Poetry if necessary and verify it works."""
 
+    global POETRY_COMMAND
+
+    python_module_cmd = "python3 -m poetry"
+    if _poetry_command_available(python_module_cmd):
+        POETRY_COMMAND = python_module_cmd
+        print("✅ Poetry is available via 'python3 -m poetry'")
+        return True
+
     poetry_executable = shutil.which("poetry")
-    if poetry_executable:
+    if poetry_executable and _poetry_command_available("poetry"):
+        POETRY_COMMAND = "poetry"
         print(f"✅ Found Poetry at {poetry_executable}")
         return True
 
@@ -69,22 +96,19 @@ def ensure_poetry_installed() -> bool:
     ):
         return False
 
-    if shutil.which("poetry"):
-        print("✅ Poetry installed successfully")
+    if _poetry_command_available(python_module_cmd):
+        POETRY_COMMAND = python_module_cmd
+        print("✅ Poetry installed successfully via 'python3 -m poetry'")
         return True
 
-    print("ℹ️ Falling back to running Poetry via 'python3 -m poetry'")
-    try:
-        subprocess.run(
-            "python3 -m poetry --version",
-            shell=True,
-            check=True,
-            capture_output=True,
-        )
+    poetry_executable = shutil.which("poetry")
+    if poetry_executable and _poetry_command_available("poetry"):
+        POETRY_COMMAND = "poetry"
+        print(f"✅ Poetry installed successfully at {poetry_executable}")
         return True
-    except subprocess.CalledProcessError:
-        print("❌ Failed to verify Poetry installation")
-        return False
+
+    print("❌ Failed to verify Poetry installation")
+    return False
 
 
 def install_dependencies_with_poetry() -> bool:
@@ -95,10 +119,11 @@ def install_dependencies_with_poetry() -> bool:
         print("❌ poetry.lock is missing; cannot perform a reproducible install")
         return False
 
+    if POETRY_COMMAND is None:
+        raise RuntimeError("Poetry must be installed before installing dependencies")
+
     description = "Installing dependencies from poetry.lock"
-    command = (
-        f"cd {PROJECT_ROOT} && python3 -m poetry install --no-root --sync"
-    )
+    command = f"cd {PROJECT_ROOT} && {POETRY_COMMAND} install --no-root --sync"
     return run_command(command, description)
 
 
@@ -132,8 +157,11 @@ def test_core_imports() -> bool:
         """
     ).strip().replace("\n", "\\n").replace('"', '\\"')
 
+    if POETRY_COMMAND is None:
+        raise RuntimeError("Poetry must be installed before verifying imports")
+
     command = (
-        f"cd {PROJECT_ROOT} && python3 -m poetry run python -c \"{test_script}\""
+        f"cd {PROJECT_ROOT} && {POETRY_COMMAND} run python -c \"{test_script}\""
     )
     return run_command(command, "Verifying core imports via Poetry")
 

@@ -544,9 +544,57 @@ class ResearchRunner:
         """Create visualizations for comparative analysis."""
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # This would create comparison charts between different configurations
-        # For now, return empty dict as placeholder
-        return {}
+        visualization_paths = {}
+        
+        try:
+            # Create comparative analysis visualizations
+            visualizer = LabelingVisualizer(self.config.visualization_config)
+            
+            # 1. Configuration Performance Comparison
+            if len(comparative_results) > 1:
+                comparison_path = visualizer.create_configuration_comparison_chart(
+                    comparative_results, output_dir / "configuration_comparison.png"
+                )
+                if comparison_path:
+                    visualization_paths['configuration_comparison'] = comparison_path
+            
+            # 2. Heuristic Analysis Comparison
+            heuristic_comparison_path = visualizer.create_heuristic_comparison_chart(
+                comparative_results, output_dir / "heuristic_comparison.png"
+            )
+            if heuristic_comparison_path:
+                visualization_paths['heuristic_comparison'] = heuristic_comparison_path
+            
+            # 3. Validation Results Comparison
+            validation_comparison_path = visualizer.create_validation_comparison_chart(
+                comparative_results, output_dir / "validation_comparison.png"
+            )
+            if validation_comparison_path:
+                visualization_paths['validation_comparison'] = validation_comparison_path
+            
+            # 4. Performance Metrics Summary
+            summary_path = visualizer.create_performance_summary_chart(
+                comparative_results, output_dir / "performance_summary.png"
+            )
+            if summary_path:
+                visualization_paths['performance_summary'] = summary_path
+            
+            # 5. Interactive Dashboard (if available)
+            if self.config.generate_visualizations and hasattr(visualizer, 'create_comparative_dashboard'):
+                dashboard_path = visualizer.create_comparative_dashboard(
+                    comparative_results, output_dir / "comparative_dashboard.html"
+                )
+                if dashboard_path:
+                    visualization_paths['comparative_dashboard'] = dashboard_path
+            
+            self.logger.info(f'📊 Created {len(visualization_paths)} comparative visualizations')
+            
+        except Exception as e:
+            error_msg = f'Failed to create comparative visualizations: {e}'
+            self.logger.warning(f'⚠️ {error_msg}')
+            tprint(f"⚠️ {error_msg}")
+        
+        return visualization_paths
     
     def _create_integrated_visualizations(self,
                                         pipeline_results: Dict[str, ResearchResults],

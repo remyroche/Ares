@@ -74,7 +74,96 @@ class BaseExchangeDataSource(IExchangeDataSource):
 
     def _standardize_ohlcv_data(self, raw_data: Any) -> pd.DataFrame:
         """Standardize OHLCV data format across exchanges."""
-        raise NotImplementedError('Subclasses must implement data standardization')
+        try:
+            # Convert raw data to DataFrame if it's not already
+            if isinstance(raw_data, pd.DataFrame):
+                df = raw_data.copy()
+            elif isinstance(raw_data, list):
+                df = pd.DataFrame(raw_data)
+            elif isinstance(raw_data, dict):
+                df = pd.DataFrame([raw_data])
+            else:
+                raise ValueError(f"Unsupported raw_data type: {type(raw_data)}")
+            
+            # Standardize column names (case-insensitive mapping)
+            column_mapping = {}
+            for col in df.columns:
+                col_lower = col.lower()
+                if 'timestamp' in col_lower or 'time' in col_lower:
+                    column_mapping[col] = 'timestamp'
+                elif 'open' in col_lower:
+                    column_mapping[col] = 'open'
+                elif 'high' in col_lower:
+                    column_mapping[col] = 'high'
+                elif 'low' in col_lower:
+                    column_mapping[col] = 'low'
+                elif 'close' in col_lower:
+                    column_mapping[col] = 'close'
+                elif 'volume' in col_lower:
+                    column_mapping[col] = 'volume'
+                elif 'symbol' in col_lower:
+                    column_mapping[col] = 'symbol'
+                elif 'interval' in col_lower or 'timeframe' in col_lower:
+                    column_mapping[col] = 'interval'
+            
+            # Apply column mapping
+            df = df.rename(columns=column_mapping)
+            
+            # Ensure required columns exist
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                raise ValueError(f"Missing required columns after standardization: {missing_columns}")
+            
+            # Convert timestamp to datetime if it's not already
+            if 'timestamp' in df.columns:
+                if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.set_index('timestamp')
+            
+            # Ensure numeric columns are properly typed
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Validate OHLC relationships
+            if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                # Check that high >= max(open, close) and low <= min(open, close)
+                invalid_high = df['high'] < df[['open', 'close']].max(axis=1)
+                invalid_low = df['low'] > df[['open', 'close']].min(axis=1)
+                
+                if invalid_high.any():
+                    self.logger.warning(f"Found {invalid_high.sum()} rows with invalid high prices")
+                    # Fix invalid high prices
+                    df.loc[invalid_high, 'high'] = df.loc[invalid_high, ['open', 'close']].max(axis=1)
+                
+                if invalid_low.any():
+                    self.logger.warning(f"Found {invalid_low.sum()} rows with invalid low prices")
+                    # Fix invalid low prices
+                    df.loc[invalid_low, 'low'] = df.loc[invalid_low, ['open', 'close']].min(axis=1)
+            
+            # Remove any rows with NaN values in critical columns
+            initial_rows = len(df)
+            df = df.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
+            if len(df) < initial_rows:
+                self.logger.warning(f"Removed {initial_rows - len(df)} rows with NaN values")
+            
+            # Sort by timestamp
+            df = df.sort_index()
+            
+            # Add metadata
+            df.attrs['exchange'] = self.exchange_name
+            df.attrs['standardized'] = True
+            df.attrs['standardization_time'] = pd.Timestamp.now()
+            
+            self.logger.info(f"Standardized {len(df)} rows of OHLCV data for {self.exchange_name}")
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"Error standardizing OHLCV data: {e}")
+            raise
 
 class ExchangeDataSource(BaseExchangeDataSource):
     """Generic exchange data source with configurable parameters."""

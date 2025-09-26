@@ -718,17 +718,121 @@ class BaseEnsemble:
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
         """
-        Abstract method to train base models for the ensemble.
-        Must be implemented by child classes.
+        Train base models for the ensemble with comprehensive model selection.
         
         Args:
             aligned_data: DataFrame with aligned features
             y_encoded: Encoded target labels
-            
-        Raises:
-            NotImplementedError: This is an abstract method
         """
-        raise NotImplementedError(f'{self.__class__.__name__} must implement _train_base_models method')
+        try:
+            self.logger.info(f"Training base models for {self.ensemble_name}...")
+            
+            # Prepare features and labels
+            X = aligned_data.drop('target', axis=1) if 'target' in aligned_data.columns else aligned_data
+            y = y_encoded
+            
+            # Ensure we have valid data
+            if X.empty or len(y) == 0:
+                self.logger.warning("No valid data for base model training")
+                return
+            
+            # Define base models to train
+            base_models = self._get_base_model_configs()
+            
+            # Train each base model
+            for model_name, model_config in base_models.items():
+                try:
+                    self.logger.info(f"Training base model: {model_name}")
+                    
+                    # Create and train the model
+                    model = self._create_and_train_model(model_name, model_config, X, y)
+                    
+                    if model is not None:
+                        self.models[model_name] = model
+                        self.logger.info(f"Successfully trained {model_name}")
+                    else:
+                        self.logger.warning(f"Failed to train {model_name}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error training {model_name}: {e}")
+                    continue
+            
+            self.logger.info(f"Completed base model training. Trained {len(self.models)} models.")
+            
+        except Exception as e:
+            self.logger.error(f"Error in base model training: {e}")
+            raise
+
+    def _get_base_model_configs(self) -> Dict[str, Dict[str, Any]]:
+        """Get configuration for base models to train."""
+        return {
+            'lightgbm_1': {
+                'type': 'lightgbm',
+                'params': {
+                    'n_estimators': 100,
+                    'learning_rate': 0.1,
+                    'num_leaves': 31,
+                    'random_state': 42,
+                    'verbosity': -1
+                }
+            },
+            'lightgbm_2': {
+                'type': 'lightgbm',
+                'params': {
+                    'n_estimators': 200,
+                    'learning_rate': 0.05,
+                    'num_leaves': 63,
+                    'random_state': 42,
+                    'verbosity': -1
+                }
+            },
+            'random_forest': {
+                'type': 'random_forest',
+                'params': {
+                    'n_estimators': 100,
+                    'max_depth': 10,
+                    'random_state': 42,
+                    'n_jobs': -1
+                }
+            },
+            'xgboost': {
+                'type': 'xgboost',
+                'params': {
+                    'n_estimators': 100,
+                    'learning_rate': 0.1,
+                    'max_depth': 6,
+                    'random_state': 42,
+                    'verbosity': 0
+                }
+            }
+        }
+
+    def _create_and_train_model(self, model_name: str, model_config: Dict[str, Any], X: pd.DataFrame, y: np.ndarray) -> Any:
+        """Create and train a specific model."""
+        try:
+            model_type = model_config['type']
+            params = model_config['params']
+            
+            if model_type == 'lightgbm':
+                import lightgbm as lgb
+                model = lgb.LGBMClassifier(**params)
+            elif model_type == 'random_forest':
+                from sklearn.ensemble import RandomForestClassifier
+                model = RandomForestClassifier(**params)
+            elif model_type == 'xgboost':
+                import xgboost as xgb
+                model = xgb.XGBClassifier(**params)
+            else:
+                self.logger.warning(f"Unknown model type: {model_type}")
+                return None
+            
+            # Train the model
+            model.fit(X, y)
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Error creating/training {model_name}: {e}")
+            return None
 
     @handles_errors(default_return={'support': [], 'resistance': []}, context='pivot levels extraction')
     def _extract_pivot_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
@@ -916,8 +1020,7 @@ class BaseEnsemble:
     @handles_errors
     def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
         """
-        Abstract method to extract meta-features for the ensemble.
-        Must be implemented by child classes based on their specific needs.
+        Extract meta-features for the ensemble from base model predictions and statistical features.
         
         Args:
             df: Input DataFrame with features
@@ -926,11 +1029,201 @@ class BaseEnsemble:
             
         Returns:
             DataFrame or dict of meta-features
-            
-        Raises:
-            NotImplementedError: This is an abstract method
         """
-        raise NotImplementedError(f'{self.__class__.__name__} must implement _get_meta_features method')
+        try:
+            self.logger.info(f"Extracting meta-features for {self.ensemble_name}...")
+            
+            if df.empty:
+                self.logger.warning("Empty DataFrame provided for meta-feature extraction")
+                return pd.DataFrame()
+            
+            # Initialize meta-features DataFrame
+            meta_features = pd.DataFrame(index=df.index)
+            
+            # Extract base model predictions if models are trained
+            if self.models and not is_live:
+                meta_features = self._extract_base_model_predictions(df, meta_features)
+            
+            # Extract statistical meta-features
+            meta_features = self._extract_statistical_meta_features(df, meta_features)
+            
+            # Extract technical indicator meta-features
+            meta_features = self._extract_technical_meta_features(df, meta_features)
+            
+            # Extract regime-based meta-features
+            meta_features = self._extract_regime_meta_features(df, meta_features)
+            
+            # Extract volatility meta-features
+            meta_features = self._extract_volatility_meta_features(df, meta_features)
+            
+            # Extract volume meta-features
+            meta_features = self._extract_volume_meta_features(df, meta_features)
+            
+            # Clean up any infinite or NaN values
+            meta_features = meta_features.replace([np.inf, -np.inf], np.nan)
+            meta_features = meta_features.fillna(0)
+            
+            self.logger.info(f"Extracted {len(meta_features.columns)} meta-features for {len(meta_features)} samples")
+            return meta_features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting meta-features: {e}")
+            return pd.DataFrame()
+
+    def _extract_base_model_predictions(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract predictions from base models as meta-features."""
+        try:
+            for model_name, model in self.models.items():
+                if model is not None:
+                    try:
+                        # Get predictions and probabilities
+                        predictions = model.predict(df)
+                        if hasattr(model, 'predict_proba'):
+                            probabilities = model.predict_proba(df)
+                            # Add probability features
+                            for i in range(probabilities.shape[1]):
+                                meta_features[f'{model_name}_prob_class_{i}'] = probabilities[:, i]
+                        else:
+                            meta_features[f'{model_name}_prediction'] = predictions
+                        
+                        # Add prediction confidence (max probability)
+                        if hasattr(model, 'predict_proba'):
+                            meta_features[f'{model_name}_confidence'] = np.max(probabilities, axis=1)
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Error getting predictions from {model_name}: {e}")
+                        continue
+        except Exception as e:
+            self.logger.warning(f"Error extracting base model predictions: {e}")
+        
+        return meta_features
+
+    def _extract_statistical_meta_features(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract statistical meta-features."""
+        try:
+            # Price-based statistics
+            if 'close' in df.columns:
+                close_prices = df['close']
+                
+                # Rolling statistics
+                for window in [5, 10, 20, 50]:
+                    meta_features[f'close_mean_{window}'] = close_prices.rolling(window).mean()
+                    meta_features[f'close_std_{window}'] = close_prices.rolling(window).std()
+                    meta_features[f'close_skew_{window}'] = close_prices.rolling(window).skew()
+                    meta_features[f'close_kurt_{window}'] = close_prices.rolling(window).kurt()
+                
+                # Price position within recent range
+                for window in [20, 50]:
+                    rolling_min = close_prices.rolling(window).min()
+                    rolling_max = close_prices.rolling(window).max()
+                    meta_features[f'price_position_{window}'] = (close_prices - rolling_min) / (rolling_max - rolling_min + 1e-8)
+                
+                # Returns and volatility
+                returns = close_prices.pct_change()
+                meta_features['returns_mean_20'] = returns.rolling(20).mean()
+                meta_features['returns_std_20'] = returns.rolling(20).std()
+                meta_features['returns_skew_20'] = returns.rolling(20).skew()
+                
+        except Exception as e:
+            self.logger.warning(f"Error extracting statistical meta-features: {e}")
+        
+        return meta_features
+
+    def _extract_technical_meta_features(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract technical indicator meta-features."""
+        try:
+            # RSI-based features
+            if 'RSI_14' in df.columns:
+                rsi = df['RSI_14']
+                meta_features['rsi_overbought'] = (rsi > 70).astype(int)
+                meta_features['rsi_oversold'] = (rsi < 30).astype(int)
+                meta_features['rsi_neutral'] = ((rsi >= 30) & (rsi <= 70)).astype(int)
+            
+            # MACD-based features
+            if 'MACD_12_26_9' in df.columns and 'MACDs_12_26_9' in df.columns:
+                macd = df['MACD_12_26_9']
+                macd_signal = df['MACDs_12_26_9']
+                meta_features['macd_bullish'] = (macd > macd_signal).astype(int)
+                meta_features['macd_bearish'] = (macd < macd_signal).astype(int)
+            
+            # Bollinger Bands features
+            if all(col in df.columns for col in ['BBU_20_2.0', 'BBM_20_2.0', 'BBL_20_2.0']):
+                bb_upper = df['BBU_20_2.0']
+                bb_middle = df['BBM_20_2.0']
+                bb_lower = df['BBL_20_2.0']
+                close = df.get('close', bb_middle)
+                
+                meta_features['bb_position'] = (close - bb_lower) / (bb_upper - bb_lower + 1e-8)
+                meta_features['bb_squeeze'] = ((bb_upper - bb_lower) / bb_middle).rolling(20).mean()
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting technical meta-features: {e}")
+        
+        return meta_features
+
+    def _extract_regime_meta_features(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract regime-based meta-features."""
+        try:
+            # Volatility regime features
+            if 'Volatility_Regime_Numeric' in df.columns:
+                vol_regime = df['Volatility_Regime_Numeric']
+                meta_features['vol_regime_high'] = (vol_regime > 2).astype(int)
+                meta_features['vol_regime_low'] = (vol_regime < 1).astype(int)
+                meta_features['vol_regime_medium'] = ((vol_regime >= 1) & (vol_regime <= 2)).astype(int)
+            
+            # Market regime transitions
+            if 'Volatility_Regime_Numeric' in df.columns:
+                vol_regime = df['Volatility_Regime_Numeric']
+                meta_features['regime_change'] = (vol_regime.diff() != 0).astype(int)
+                meta_features['regime_stability'] = (vol_regime.diff() == 0).rolling(10).sum()
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting regime meta-features: {e}")
+        
+        return meta_features
+
+    def _extract_volatility_meta_features(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract volatility-based meta-features."""
+        try:
+            # Realized volatility features
+            if 'realized_volatility' in df.columns:
+                rv = df['realized_volatility']
+                meta_features['rv_percentile_20'] = rv.rolling(20).rank(pct=True)
+                meta_features['rv_zscore_20'] = (rv - rv.rolling(20).mean()) / (rv.rolling(20).std() + 1e-8)
+            
+            # Parkinson volatility features
+            if 'parkinson_volatility' in df.columns:
+                pv = df['parkinson_volatility']
+                meta_features['pv_percentile_20'] = pv.rolling(20).rank(pct=True)
+                meta_features['pv_zscore_20'] = (pv - pv.rolling(20).mean()) / (pv.rolling(20).std() + 1e-8)
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting volatility meta-features: {e}")
+        
+        return meta_features
+
+    def _extract_volume_meta_features(self, df: pd.DataFrame, meta_features: pd.DataFrame) -> pd.DataFrame:
+        """Extract volume-based meta-features."""
+        try:
+            # Volume features
+            if 'volume' in df.columns:
+                volume = df['volume']
+                meta_features['volume_percentile_20'] = volume.rolling(20).rank(pct=True)
+                meta_features['volume_zscore_20'] = (volume - volume.rolling(20).mean()) / (volume.rolling(20).std() + 1e-8)
+                meta_features['volume_spike'] = (volume > volume.rolling(20).mean() * 2).astype(int)
+            
+            # Volume-price relationship
+            if 'volume' in df.columns and 'close' in df.columns:
+                volume = df['volume']
+                close = df['close']
+                price_change = close.pct_change()
+                volume_change = volume.pct_change()
+                meta_features['volume_price_correlation_20'] = price_change.rolling(20).corr(volume_change)
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting volume meta-features: {e}")
+        
+        return meta_features
 
     @handles_errors(default_return = None, context='feature normalization')
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:

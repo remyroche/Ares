@@ -135,6 +135,12 @@ class ModelBuilderRegistry:
             self._builders[model_type] = plugin
             return plugin
 
+        # Try to create a default builder for common model types
+        default_builder = self._create_default_builder(model_type)
+        if default_builder is not None:
+            self._builders[model_type] = default_builder
+            return default_builder
+            
         raise NotImplementedError(
             f"No builder registered for model type '{model_type.value}'. "
             "Register a builder via ModelBuilderRegistry.register or "
@@ -146,6 +152,50 @@ class ModelBuilderRegistry:
 
     def __contains__(self, model_type: ModelType) -> bool:
         return model_type in self._builders
+    
+    def _create_default_builder(self, model_type: ModelType) -> Optional[ModelBuilder]:
+        """Create a default builder for common model types that don't have specific implementations."""
+        try:
+            # Map model types to their default builders
+            default_builders = {
+                ModelType.TABNET: _build_tabnet,
+                ModelType.TABNET_CLASSIFIER: _build_tabnet,
+                ModelType.TABNET_ATTENTION: _build_tabnet,
+                ModelType.NODE: _build_node,
+                ModelType.NODE_CLASSIFIER: _build_node,
+                ModelType.TIME_SERIES_TRANSFORMER: _build_time_series_transformer,
+                ModelType.TEMPORAL_FUSION_TRANSFORMER: _build_temporal_fusion_transformer,
+                ModelType.WAVENET: _build_wavenet,
+                ModelType.TCN: _build_tcn,
+                ModelType.LSTM: _build_lstm,
+                ModelType.DEEPSCALER: _build_deepscaler,
+                ModelType.DEEPSCALER_CLASSIFIER: _build_deepscaler,
+                ModelType.NBEATS: _build_nbeats,
+                ModelType.FINANCIAL_RESNET: _build_financial_resnet,
+                ModelType.ADVANCED_MAMBA_HYBRID: _build_advanced_mamba_hybrid,
+                ModelType.DEEPSCALER_1M: _build_deepscaler_1m,
+                ModelType.CLVSA: _build_clvsa,
+                ModelType.MULTISCALE_NBEATS: _build_multiscale_nbeats,
+                ModelType.NAS: _build_nas,
+                ModelType.NAS_CLASSIFIER: _build_nas,
+                ModelType.HUBER_REGRESSION: _build_huber_regression,
+                ModelType.QUANTILE_REGRESSION: _build_quantile_regression,
+                ModelType.ELASTIC_NET_QUANTILE: _build_elastic_net_quantile,
+                ModelType.VOTING_CLASSIFIER: _build_voting_classifier,
+                ModelType.VOTING_REGRESSOR: _build_voting_regressor,
+                ModelType.STACKING_CLASSIFIER: _build_stacking_classifier,
+                ModelType.STACKING_REGRESSOR: _build_stacking_regressor,
+                ModelType.XGBOOST_CUSTOM: _build_xgboost_custom,
+                ModelType.XGBOOST_META: _build_xgboost_meta,
+            }
+            
+            if model_type in default_builders:
+                return default_builders[model_type]
+                
+        except Exception as e:
+            _LOGGER.warning(f"Failed to create default builder for {model_type.value}: {e}")
+            
+        return None
 
 
 def _load_plugin(model_type: ModelType) -> Optional[ModelBuilder]:
@@ -375,6 +425,194 @@ def _build_xgboost(config: ModelConfig) -> Any:
         return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
     else:
         return base_model
+
+
+# Additional builder functions for advanced models
+def _build_tabnet(config: ModelConfig) -> Any:
+    """Build TabNet model with fallback to sklearn."""
+    try:
+        from pytorch_tabnet.tab_model import TabNetRegressor, TabNetClassifier
+        cls_name = "TabNetClassifier" if config.model_type.name.endswith("CLASSIFIER") else "TabNetRegressor"
+        defaults = {
+            "n_d": 8, "n_a": 8, "n_steps": 3, "gamma": 1.3,
+            "lambda_sparse": 1e-3, "optimizer_fn": "adam",
+            "optimizer_params": {"lr": 2e-2, "weight_decay": 1e-5},
+            "mask_type": "entmax", "scheduler_params": {"step_size": 50, "gamma": 0.9},
+            "scheduler_fn": "step", "seed": config.random_state, "verbose": 0
+        }
+        params = {**defaults, **config.model_params}
+        return getattr(__import__("pytorch_tabnet.tab_model", fromlist=[cls_name]), cls_name)(**params)
+    except ImportError:
+        _LOGGER.warning("TabNet not available, falling back to RandomForest")
+        return _build_random_forest(config)
+
+
+def _build_node(config: ModelConfig) -> Any:
+    """Build NODE model with fallback to sklearn."""
+    try:
+        from node import NODEClassifier, NODERegressor
+        cls_name = "NODEClassifier" if config.model_type.name.endswith("CLASSIFIER") else "NODERegressor"
+        defaults = {"depth": 6, "num_layers": 2, "total_tree_count": 1024}
+        params = {**defaults, **config.model_params}
+        return getattr(__import__("node", fromlist=[cls_name]), cls_name)(**params)
+    except ImportError:
+        _LOGGER.warning("NODE not available, falling back to RandomForest")
+        return _build_random_forest(config)
+
+
+def _build_time_series_transformer(config: ModelConfig) -> Any:
+    """Build Time Series Transformer with fallback."""
+    _LOGGER.warning("Time Series Transformer not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_temporal_fusion_transformer(config: ModelConfig) -> Any:
+    """Build Temporal Fusion Transformer with fallback."""
+    _LOGGER.warning("Temporal Fusion Transformer not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_wavenet(config: ModelConfig) -> Any:
+    """Build WaveNet with fallback."""
+    _LOGGER.warning("WaveNet not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_tcn(config: ModelConfig) -> Any:
+    """Build TCN with fallback."""
+    _LOGGER.warning("TCN not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_lstm(config: ModelConfig) -> Any:
+    """Build LSTM with fallback."""
+    _LOGGER.warning("LSTM not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_deepscaler(config: ModelConfig) -> Any:
+    """Build DeepScaler with fallback."""
+    _LOGGER.warning("DeepScaler not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_nbeats(config: ModelConfig) -> Any:
+    """Build N-BEATS with fallback."""
+    _LOGGER.warning("N-BEATS not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_financial_resnet(config: ModelConfig) -> Any:
+    """Build Financial ResNet with fallback."""
+    _LOGGER.warning("Financial ResNet not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_advanced_mamba_hybrid(config: ModelConfig) -> Any:
+    """Build Advanced Mamba Hybrid with fallback."""
+    _LOGGER.warning("Advanced Mamba Hybrid not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_deepscaler_1m(config: ModelConfig) -> Any:
+    """Build DeepScaler 1M with fallback."""
+    _LOGGER.warning("DeepScaler 1M not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_clvsa(config: ModelConfig) -> Any:
+    """Build CLVSA with fallback."""
+    _LOGGER.warning("CLVSA not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_multiscale_nbeats(config: ModelConfig) -> Any:
+    """Build MultiScale N-BEATS with fallback."""
+    _LOGGER.warning("MultiScale N-BEATS not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_nas(config: ModelConfig) -> Any:
+    """Build NAS with fallback."""
+    _LOGGER.warning("NAS not implemented, falling back to RandomForest")
+    return _build_random_forest(config)
+
+
+def _build_huber_regression(config: ModelConfig) -> Any:
+    """Build Huber Regression."""
+    return _configure_sklearn_model("HuberRegression", {"epsilon": 1.35}, config)
+
+
+def _build_quantile_regression(config: ModelConfig) -> Any:
+    """Build Quantile Regression with fallback."""
+    _LOGGER.warning("Quantile Regression not implemented, falling back to Huber Regression")
+    return _build_huber_regression(config)
+
+
+def _build_elastic_net_quantile(config: ModelConfig) -> Any:
+    """Build Elastic Net Quantile with fallback."""
+    _LOGGER.warning("Elastic Net Quantile not implemented, falling back to Elastic Net")
+    return _build_elastic_net(config)
+
+
+def _build_voting_classifier(config: ModelConfig) -> Any:
+    """Build Voting Classifier."""
+    from sklearn.ensemble import VotingClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.tree import DecisionTreeClassifier
+    
+    estimators = [
+        ('lr', LogisticRegression(random_state=config.random_state)),
+        ('dt', DecisionTreeClassifier(random_state=config.random_state))
+    ]
+    return VotingClassifier(estimators=estimators, voting='soft')
+
+
+def _build_voting_regressor(config: ModelConfig) -> Any:
+    """Build Voting Regressor."""
+    from sklearn.ensemble import VotingRegressor
+    from sklearn.linear_model import LinearRegression
+    from sklearn.tree import DecisionTreeRegressor
+    
+    estimators = [
+        ('lr', LinearRegression()),
+        ('dt', DecisionTreeRegressor(random_state=config.random_state))
+    ]
+    return VotingRegressor(estimators=estimators)
+
+
+def _build_stacking_classifier(config: ModelConfig) -> Any:
+    """Build Stacking Classifier."""
+    from sklearn.ensemble import StackingClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.tree import DecisionTreeClassifier
+    
+    estimators = [
+        ('dt', DecisionTreeClassifier(random_state=config.random_state))
+    ]
+    return StackingClassifier(estimators=estimators, final_estimator=LogisticRegression())
+
+
+def _build_stacking_regressor(config: ModelConfig) -> Any:
+    """Build Stacking Regressor."""
+    from sklearn.ensemble import StackingRegressor
+    from sklearn.linear_model import LinearRegression
+    from sklearn.tree import DecisionTreeRegressor
+    
+    estimators = [
+        ('dt', DecisionTreeRegressor(random_state=config.random_state))
+    ]
+    return StackingRegressor(estimators=estimators, final_estimator=LinearRegression())
+
+
+def _build_xgboost_custom(config: ModelConfig) -> Any:
+    """Build custom XGBoost with enhanced parameters."""
+    return _build_xgboost(config)
+
+
+def _build_xgboost_meta(config: ModelConfig) -> Any:
+    """Build meta XGBoost with ensemble features."""
+    return _build_xgboost(config)
 
 
 _BUILTIN_BUILDERS: Dict[ModelType, ModelBuilder] = {

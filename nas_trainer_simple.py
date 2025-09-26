@@ -1020,11 +1020,33 @@ class NASTrainer:
             except Exception as e:
                 tprint_warning(f"Training simulation interrupted: {e}")
             
-            # Generate mock results with validation
+            # Generate realistic mock results with validation
             try:
-                train_accuracy = random.uniform(0.6, 0.95)
-                val_accuracy = train_accuracy - random.uniform(0.0, 0.1)
-                epochs_trained = random.randint(1, max(1, self.config.max_epochs))
+                # Generate realistic training metrics based on architecture complexity
+                n_layers = len(architecture.get('layers', []))
+                total_neurons = sum(layer.get('neurons', 32) for layer in architecture.get('layers', []))
+                learning_rate = architecture.get('learning_rate', 0.001)
+                
+                # Base performance depends on architecture complexity
+                complexity_factor = min(1.0, (n_layers * total_neurons) / 10000)
+                base_accuracy = 0.5 + (complexity_factor * 0.4)  # 0.5 to 0.9 range
+                
+                # Add some randomness but keep it realistic
+                train_accuracy = base_accuracy + random.uniform(-0.1, 0.1)
+                train_accuracy = max(0.3, min(0.98, train_accuracy))  # Clamp to realistic range
+                
+                # Validation accuracy is typically slightly lower than training
+                overfitting_factor = random.uniform(0.02, 0.15)
+                val_accuracy = train_accuracy - overfitting_factor
+                val_accuracy = max(0.2, val_accuracy)  # Ensure minimum performance
+                
+                # Epochs trained depends on early stopping and max epochs
+                max_epochs = self.config.max_epochs
+                early_stop_prob = random.uniform(0.3, 0.8)  # 30-80% chance of early stopping
+                if random.random() < early_stop_prob:
+                    epochs_trained = random.randint(1, max(1, int(max_epochs * 0.7)))
+                else:
+                    epochs_trained = random.randint(int(max_epochs * 0.8), max_epochs)
                 
                 # Validate results
                 if train_accuracy < 0 or train_accuracy > 1:

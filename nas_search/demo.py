@@ -23,9 +23,71 @@ from evolutionary_search import (
 
 def create_sample_data(n_samples=1000, n_features=20):
     """Create sample data for demonstration."""
-    # Mock data generation (in real usage, you'd use actual data)
-    X = [[random.random() for _ in range(n_features)] for _ in range(n_samples)]
-    y = [random.randint(0, 1) for _ in range(n_samples)]
+    # Generate realistic mock data with proper statistical properties
+    print(f"📊 Generating {n_samples} samples with {n_features} features...")
+    
+    # Set random seed for reproducibility
+    random.seed(42)
+    
+    # Generate features with realistic distributions
+    X = []
+    for i in range(n_samples):
+        sample = []
+        for j in range(n_features):
+            # Mix of different distributions for more realistic data
+            if j % 4 == 0:
+                # Normal distribution
+                sample.append(random.gauss(0, 1))
+            elif j % 4 == 1:
+                # Uniform distribution
+                sample.append(random.uniform(-2, 2))
+            elif j % 4 == 2:
+                # Exponential distribution
+                sample.append(random.expovariate(1.0))
+            else:
+                # Beta distribution (approximation)
+                x = random.gammavariate(2, 1.0)
+                y = random.gammavariate(2, 1.0)
+                sample.append(x / (x + y) * 4 - 2)  # Scale to [-2, 2]
+        X.append(sample)
+    
+    # Generate target variable with some correlation to features
+    y = []
+    for i, sample in enumerate(X):
+        # Create target based on weighted combination of features
+        target_score = 0
+        for j, feature in enumerate(sample):
+            weight = 1.0 / (j + 1)  # Decreasing weights
+            target_score += weight * feature
+        
+        # Add some noise
+        noise = random.gauss(0, 0.5)
+        target_score += noise
+        
+        # Convert to binary classification
+        y.append(1 if target_score > 0 else 0)
+    
+    # Ensure balanced classes
+    class_counts = [y.count(0), y.count(1)]
+    if abs(class_counts[0] - class_counts[1]) > n_samples * 0.1:  # If imbalance > 10%
+        print(f"⚠️  Class imbalance detected: {class_counts[0]} vs {class_counts[1]}")
+        # Adjust threshold to balance classes
+        sorted_indices = sorted(range(len(y)), key=lambda i: sum(X[i]))
+        target_balance = n_samples // 2
+        for i in range(n_samples):
+            y[i] = 1 if i >= target_balance else 0
+    
+    print(f"✅ Generated data with class distribution: {[y.count(0), y.count(1)]}")
+    
+    # Add some missing values for realism (5% of data)
+    missing_count = int(n_samples * n_features * 0.05)
+    for _ in range(missing_count):
+        row_idx = random.randint(0, n_samples - 1)
+        col_idx = random.randint(0, n_features - 1)
+        X[row_idx][col_idx] = None
+    
+    print(f"📊 Added {missing_count} missing values for realism")
+    
     return X, y
 
 def demonstrate_basic_usage():

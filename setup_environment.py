@@ -1,155 +1,168 @@
 #!/usr/bin/env python3
-"""
-Environment Setup Script for TAS
+"""Environment setup script that bootstraps Poetry and installs dependencies.
 
-This script sets up the development environment and installs dependencies.
+This script relies on the ``poetry.lock`` file for dependency resolution so that
+local environments match the versions tracked in version control.
 """
 
+from __future__ import annotations
+
+import shutil
 import subprocess
 import sys
-import os
 from pathlib import Path
+from textwrap import dedent
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
 
 def run_command(command: str, description: str) -> bool:
-    """Run a command and return success status."""
+    """Run ``command`` in the shell, printing a friendly status message."""
+
     print(f"🔄 {description}...")
     try:
-        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout.strip():
+            print(result.stdout.strip())
         print(f"✅ {description} completed successfully")
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {description} failed: {e}")
-        print(f"Error output: {e.stderr}")
+    except subprocess.CalledProcessError as exc:  # pragma: no cover - CLI helper
+        print(f"❌ {description} failed: {exc}")
+        if exc.stdout:
+            print(exc.stdout)
+        if exc.stderr:
+            print(exc.stderr)
         return False
 
-def check_python_version():
-    """Check if Python version is compatible."""
+
+def check_python_version() -> bool:
+    """Ensure the interpreter satisfies the minimum Poetry requirement (3.8+)."""
+
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 8):
         print("❌ Python 3.8+ is required")
         return False
+
     print(f"✅ Python {version.major}.{version.minor}.{version.micro} is compatible")
     return True
 
-def install_system_dependencies():
-    """Install system-level dependencies."""
-    commands = [
-        ("apt update", "Updating package list"),
-        ("apt install -y python3-venv python3-dev build-essential", "Installing system dependencies"),
-    ]
-    
-    for command, description in commands:
-        if not run_command(command, description):
-            return False
-    return True
 
-def create_virtual_environment():
-    """Create a virtual environment."""
-    venv_path = Path("/workspace/venv")
-    if venv_path.exists():
-        print("✅ Virtual environment already exists")
+def ensure_poetry_installed() -> bool:
+    """Install Poetry if necessary and verify it works."""
+
+    poetry_executable = shutil.which("poetry")
+    if poetry_executable:
+        print(f"✅ Found Poetry at {poetry_executable}")
         return True
-    
-    return run_command("python3 -m venv /workspace/venv", "Creating virtual environment")
 
-def install_python_dependencies():
-    """Install Python dependencies."""
-    venv_pip = "/workspace/venv/bin/pip"
-    
-    # Upgrade pip first
-    if not run_command(f"{venv_pip} install --upgrade pip", "Upgrading pip"):
+    print("ℹ️ Poetry was not detected on PATH; attempting installation via pip...")
+    if not run_command(
+        "python3 -m pip install --user --upgrade poetry",
+        "Installing Poetry",
+    ):
         return False
-    
-    # Install core dependencies
-    core_deps = [
-        "numpy>=1.21.0",
-        "pandas>=1.3.0", 
-        "scikit-learn>=1.0.0",
-        "scipy>=1.9.0"
-    ]
-    
-    for dep in core_deps:
-        if not run_command(f"{venv_pip} install {dep}", f"Installing {dep}"):
-            return False
-    
-    # Install ML dependencies
-    ml_deps = [
-        "xgboost>=1.5.0",
-        "lightgbm>=3.2.0",
-        "hmmlearn>=0.2.7",
-        "optuna>=2.10.0",
-        "joblib>=1.1.0"
-    ]
-    
-    for dep in ml_deps:
-        if not run_command(f"{venv_pip} install {dep}", f"Installing {dep}"):
-            return False
-    
-    return True
 
-def test_imports():
-    """Test that core imports work."""
-    venv_python = "/workspace/venv/bin/python"
-    
-    test_script = """
-import sys
-sys.path.append('/workspace')
+    if shutil.which("poetry"):
+        print("✅ Poetry installed successfully")
+        return True
 
-try:
-    import numpy as np
-    print("✅ NumPy imported successfully")
-except ImportError as e:
-    print(f"❌ NumPy import failed: {e}")
-    sys.exit(1)
+    print("ℹ️ Falling back to running Poetry via 'python3 -m poetry'")
+    try:
+        subprocess.run(
+            "python3 -m poetry --version",
+            shell=True,
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        print("❌ Failed to verify Poetry installation")
+        return False
 
-try:
-    import pandas as pd
-    print("✅ Pandas imported successfully")
-except ImportError as e:
-    print(f"❌ Pandas import failed: {e}")
-    sys.exit(1)
 
-try:
-    import sklearn
-    print("✅ Scikit-learn imported successfully")
-except ImportError as e:
-    print(f"❌ Scikit-learn import failed: {e}")
-    sys.exit(1)
+def install_dependencies_with_poetry() -> bool:
+    """Use Poetry to create a virtual environment from ``poetry.lock``."""
 
-print("✅ All core dependencies imported successfully")
-"""
-    
-    return run_command(f"{venv_python} -c '{test_script}'", "Testing core imports")
+    lock_file = PROJECT_ROOT / "poetry.lock"
+    if not lock_file.exists():
+        print("❌ poetry.lock is missing; cannot perform a reproducible install")
+        return False
 
-def main():
-    """Main setup function."""
-    print("🚀 Setting up TAS development environment...")
-    
-    # Check Python version
+    description = "Installing dependencies from poetry.lock"
+    command = (
+        f"cd {PROJECT_ROOT} && python3 -m poetry install --no-root --sync"
+    )
+    return run_command(command, description)
+
+
+def test_core_imports() -> bool:
+    """Validate that critical dependencies import correctly through Poetry."""
+
+    test_script = dedent(
+        """
+        from importlib import import_module
+
+        modules = [
+            ("numpy", "NumPy"),
+            ("pandas", "Pandas"),
+            ("sklearn", "Scikit-learn"),
+        ]
+
+        failures = []
+        for module_name, label in modules:
+            try:
+                import_module(module_name)
+                print(f"✅ {label} imported successfully")
+            except ImportError as exc:
+                failures.append(f"❌ {label} import failed: {exc}")
+
+        if failures:
+            for failure in failures:
+                print(failure)
+            raise SystemExit(1)
+
+        print("✅ All core dependencies imported successfully")
+        """
+    ).strip().replace("\n", "\\n").replace('"', '\\"')
+
+    command = (
+        f"cd {PROJECT_ROOT} && python3 -m poetry run python -c \"{test_script}\""
+    )
+    return run_command(command, "Verifying core imports via Poetry")
+
+
+def main() -> None:
+    """Entry point for environment setup."""
+
+    print("🚀 Setting up the TAS development environment using Poetry...")
+
     if not check_python_version():
         sys.exit(1)
-    
-    # Install system dependencies
-    if not install_system_dependencies():
-        print("⚠️  System dependency installation failed, continuing...")
-    
-    # Create virtual environment
-    if not create_virtual_environment():
+
+    if not ensure_poetry_installed():
         sys.exit(1)
-    
-    # Install Python dependencies
-    if not install_python_dependencies():
+
+    if not install_dependencies_with_poetry():
         sys.exit(1)
-    
-    # Test imports
-    if not test_imports():
+
+    if not test_core_imports():
         sys.exit(1)
-    
+
     print("\n🎉 Environment setup completed successfully!")
-    print("\nTo activate the virtual environment, run:")
-    print("source /workspace/venv/bin/activate")
-    print("\nTo test the TAS system, run:")
-    print("/workspace/venv/bin/python -c \"import sys; sys.path.append('/workspace'); import src.analyst.analyst; print('TAS imports working!')\"")
+    print("\nNext steps:")
+    print("  • Run 'poetry shell' to enter the virtual environment")
+    print(
+        "  • Or prefix commands with 'poetry run', e.g.\n"
+        "    poetry run python path/to/script.py"
+    )
+
 
 if __name__ == "__main__":
     main()

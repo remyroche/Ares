@@ -41,7 +41,24 @@ except ImportError:
 # Import feature generators with proper fallback handling
 class _MissingGeneratorError(Exception):
     """Raised when a required generator is not available."""
-    pass
+    
+    def __init__(self, generator_name: str, reason: str = "Generator not available"):
+        """Initialize the missing generator error."""
+        self.generator_name = generator_name
+        self.reason = reason
+        super().__init__(f"Required generator '{generator_name}' is not available: {reason}")
+    
+    def __str__(self):
+        """Return string representation of the error."""
+        return f"MissingGeneratorError: {self.generator_name} - {self.reason}"
+    
+    def get_generator_name(self) -> str:
+        """Get the name of the missing generator."""
+        return self.generator_name
+    
+    def get_reason(self) -> str:
+        """Get the reason why the generator is missing."""
+        return self.reason
 
 # Import feature generators - fail early if critical components are missing
 try:

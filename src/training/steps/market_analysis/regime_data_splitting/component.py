@@ -1471,6 +1471,14 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         try:
             if hasattr(self, 'hardware_manager'):
                 self.hardware_manager.cleanup()
-        except Exception:
-            # Ignore errors during cleanup to avoid issues during interpreter shutdown
-            pass
+        except Exception as e:
+            # Log the error but don't raise it during cleanup to avoid issues during interpreter shutdown
+            logger = logging.getLogger(self.__class__.__name__)
+            logger.warning(f"Error during hardware manager cleanup: {e}")
+            # Attempt basic cleanup
+            try:
+                import gc
+                gc.collect()
+                logger.info("Basic cleanup completed")
+            except Exception as cleanup_error:
+                logger.warning(f"Basic cleanup also failed: {cleanup_error}")

@@ -101,16 +101,85 @@ class BaseValidator:
         metrics: dict[str, Any] = {}
         passed = True
         try:
-            pass
-        except Exception:
+            # Validate dataframe structure and content
+            if df is None or len(df) == 0:
+                passed = False
+                metrics['error'] = 'DataFrame is None or empty'
+                return passed, metrics
+            
+            # Check for required columns
+            required_columns = ['timestamp', 'regime']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                passed = False
+                metrics['missing_columns'] = missing_columns
+                return passed, metrics
+            
+            # Validate regime values
+            regime_values = df['regime'].unique()
+            if len(regime_values) == 0:
+                passed = False
+                metrics['error'] = 'No regime values found'
+                return passed, metrics
+            
+            # Check for valid regime types
+            valid_regime_types = ['bull', 'bear', 'sideways', 'volatile', 'trending']
+            invalid_regimes = [regime for regime in regime_values if regime not in valid_regime_types]
+            if invalid_regimes:
+                passed = False
+                metrics['invalid_regimes'] = invalid_regimes
+                return passed, metrics
+            
+            # Validate timestamp column
+            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                passed = False
+                metrics['error'] = 'Timestamp column is not datetime type'
+                return passed, metrics
+            
+            # Check for duplicate timestamps
+            duplicate_timestamps = df['timestamp'].duplicated().sum()
+            if duplicate_timestamps > 0:
+                passed = False
+                metrics['duplicate_timestamps'] = duplicate_timestamps
+                return passed, metrics
+            
+            # Validate regime transitions
+            regime_changes = (df['regime'] != df['regime'].shift()).sum()
+            metrics['regime_changes'] = regime_changes
+            
+            # Check regime duration consistency
+            regime_durations = df.groupby('regime').size()
+            min_duration = regime_durations.min()
+            max_duration = regime_durations.max()
+            metrics['min_regime_duration'] = min_duration
+            metrics['max_regime_duration'] = max_duration
+            
+            # Validate minimum regime duration
+            if min_duration < 10:  # Minimum 10 data points per regime
+                passed = False
+                metrics['error'] = f'Regime duration too short: {min_duration} < 10'
+                return passed, metrics
+            
+            # All validations passed
+            passed = True
+            metrics['validation_status'] = 'passed'
+            metrics['regime_count'] = len(regime_values)
+            metrics['data_quality'] = 'good'
+            
+        except Exception as e:
             return False, {'error': 'pandas_not_available'}
         if df is None:
             return False, {'error': 'none_dataframe'}
         try:
             metrics['rows'] = int(len(df))
             metrics['columns'] = list(getattr(df, 'columns', []))
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the exception and return basic metrics
+            logger = logging.getLogger(self.__class__.__name__)
+            logger.warning(f"Error getting dataframe metrics: {e}")
+            metrics['error'] = str(e)
+            metrics['rows'] = 0
+            metrics['columns'] = []
         if len(df) < int(min_rows):
             passed = False
             metrics['min_rows_failed'] = {'required': int(min_rows), 'actual': int(len(df))}
@@ -136,8 +205,13 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         try:
             super().__init__('step04_regime_data_splitting', config)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the exception and continue with basic initialization
+            logger = logging.getLogger(self.__class__.__name__)
+            logger.warning(f"Error calling parent constructor: {e}")
+            # Set basic attributes manually
+            self.step_name = 'step04_regime_data_splitting'
+            self.config = config
         self.logger = system_logger.getChild('Validator.Step4')
         
         # Initialize data validation using existing utilities

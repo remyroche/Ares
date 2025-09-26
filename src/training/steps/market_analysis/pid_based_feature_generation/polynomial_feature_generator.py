@@ -128,10 +128,64 @@ except ImportError:
     ERROR_HANDLING_AVAILABLE = False
     # Create minimal fallback
     class ErrorHandler:
-        def __init__(self, *args, **kwargs): pass
-        def handle_data_validation_error(self, e, **kwargs): logging.error(f"Data validation error: {e}")
-        def handle_computation_error(self, e, **kwargs): logging.error(f"Computation error: {e}")
-        def get_error_summary(self): return {'total_errors': 0}
+        """Fallback error handler for polynomial feature generation."""
+        
+        def __init__(self, *args, **kwargs):
+            """Initialize the fallback error handler."""
+            self.logger = logging.getLogger(self.__class__.__name__)
+            self.error_count = 0
+            self.error_history = []
+        
+        def handle_data_validation_error(self, e, **kwargs):
+            """Handle data validation errors."""
+            self.logger.error(f"Data validation error: {e}")
+            self.error_count += 1
+            self.error_history.append({
+                'type': 'data_validation',
+                'error': str(e),
+                'timestamp': time.time(),
+                'kwargs': kwargs
+            })
+            return {'error_handled': True, 'error_type': 'data_validation'}
+        
+        def handle_computation_error(self, e, **kwargs):
+            """Handle computation errors."""
+            self.logger.error(f"Computation error: {e}")
+            self.error_count += 1
+            self.error_history.append({
+                'type': 'computation',
+                'error': str(e),
+                'timestamp': time.time(),
+                'kwargs': kwargs
+            })
+            return {'error_handled': True, 'error_type': 'computation'}
+        
+        def handle_feature_generation_error(self, e, **kwargs):
+            """Handle feature generation errors."""
+            self.logger.error(f"Feature generation error: {e}")
+            self.error_count += 1
+            self.error_history.append({
+                'type': 'feature_generation',
+                'error': str(e),
+                'timestamp': time.time(),
+                'kwargs': kwargs
+            })
+            return {'error_handled': True, 'error_type': 'feature_generation'}
+        
+        def get_error_summary(self):
+            """Get error summary."""
+            return {
+                'total_errors': self.error_count,
+                'error_types': list(set([e['type'] for e in self.error_history])),
+                'recent_errors': self.error_history[-5:] if self.error_history else [],
+                'handler_type': 'fallback'
+            }
+        
+        def clear_errors(self):
+            """Clear error history."""
+            self.error_count = 0
+            self.error_history = []
+            self.logger.info("Error history cleared")
 
 
 class PolynomialType(Enum):
@@ -773,7 +827,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"sqrt_{feature_name}"
                 except Exception as e:
                     tprint_warning(f"Failed to create square root feature: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.warning(f"Square root feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.CUBIC_ROOT:
                 try:
@@ -784,7 +842,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"cbrt_{feature_name}"
                 except Exception as e:
                     tprint_warning(f"Failed to create cubic root feature: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.warning(f"Cubic root feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.LOGARITHMIC:
                 try:
@@ -795,7 +857,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"log_{feature_name}"
                 except Exception as e:
                     tprint_warning(f"Failed to create logarithmic feature: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.warning(f"Logarithmic feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.EXPONENTIAL:
                 try:
@@ -807,7 +873,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"exp_{feature_name}"
                 except Exception as e:
                     tprint_warning(f"Failed to create exponential feature: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.warning(f"Exponential feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.RECIPROCAL:
                 try:
@@ -818,7 +888,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"recip_{feature_name}"
                 except Exception as e:
                     tprint_warning(f"Failed to create reciprocal feature: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.warning(f"Reciprocal feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.CROSS_PRODUCT:
                 try:
@@ -829,7 +903,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"{feature_name}_cross_self"
                 except Exception as e:
                     tprint_debug(f"🔍 Failed to create self cross product for {feature_name}: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.debug(f"Self cross product creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             elif polynomial_type == PolynomialType.INTERACTION:
                 try:
@@ -840,7 +918,11 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
                         return feature, f"{feature_name}_interaction"
                 except Exception as e:
                     tprint_debug(f"🔍 Failed to create interaction for {feature_name}: {e}")
-                    pass
+                    # Log the error and continue with the next feature
+                    logger = logging.getLogger(self.__class__.__name__)
+                    logger.debug(f"Interaction feature creation failed for {feature_name}: {e}")
+                    # Return None to indicate failure
+                    return None, None
                 
             return None, ""
             

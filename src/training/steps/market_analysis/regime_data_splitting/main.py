@@ -1227,29 +1227,73 @@ class RegimeDataSplittingStep:
                 safe_float_func = self.utils.get_function('common_operations', 'safe_float')
                 if safe_float_func is None:
                     raise AttributeError("safe_float not available from utils")
-            except (AttributeError, KeyError):
-                pass
+            except (AttributeError, KeyError) as e:
+                # Log the error and continue with fallback
+                logger = logging.getLogger(self.__class__.__name__)
+                logger.warning(f"safe_float not available from utils: {e}")
+                # Use fallback implementation
+                def safe_float_fallback(value, default=0.0):
+                    try:
+                        return float(value)
+                    except (ValueError, TypeError):
+                        return default
+                safe_float_func = safe_float_fallback
 
             try:
                 safe_int_func = self.utils.get_function('common_operations', 'safe_int')
                 if safe_int_func is None:
                     raise AttributeError("safe_int not available from utils")
-            except (AttributeError, KeyError):
-                pass
+            except (AttributeError, KeyError) as e:
+                # Log the error and continue with fallback
+                logger = logging.getLogger(self.__class__.__name__)
+                logger.warning(f"safe_int not available from utils: {e}")
+                # Use fallback implementation
+                def safe_int_fallback(value, default=0):
+                    try:
+                        return int(value)
+                    except (ValueError, TypeError):
+                        return default
+                safe_int_func = safe_int_fallback
 
             try:
                 validate_positive_func = self.utils.get_function('math_validation', 'validate_positive')
                 if validate_positive_func is None:
                     raise AttributeError("validate_positive not available from utils")
-            except (AttributeError, KeyError):
-                pass
+            except (AttributeError, KeyError) as e:
+                # Log the error and continue with fallback
+                logger = logging.getLogger(self.__class__.__name__)
+                logger.warning(f"validate_positive not available from utils: {e}")
+                # Use fallback implementation
+                def validate_positive_fallback(value, name="value"):
+                    try:
+                        val = float(value)
+                        if val <= 0:
+                            raise ValueError(f"{name} must be positive, got {val}")
+                        return val
+                    except (ValueError, TypeError) as ve:
+                        raise ValueError(f"Invalid {name}: {ve}")
+                validate_positive_func = validate_positive_fallback
 
             try:
                 validate_range_func = self.utils.get_function('math_validation', 'validate_range')
                 if validate_range_func is None:
                     raise AttributeError("validate_range not available from utils")
-            except (AttributeError, KeyError):
-                pass
+            except (AttributeError, KeyError) as e:
+                # Log the error and continue with fallback
+                logger = logging.getLogger(self.__class__.__name__)
+                logger.warning(f"validate_range not available from utils: {e}")
+                # Use fallback implementation
+                def validate_range_fallback(value, min_val=None, max_val=None, name="value"):
+                    try:
+                        val = float(value)
+                        if min_val is not None and val < min_val:
+                            raise ValueError(f"{name} must be >= {min_val}, got {val}")
+                        if max_val is not None and val > max_val:
+                            raise ValueError(f"{name} must be <= {max_val}, got {val}")
+                        return val
+                    except (ValueError, TypeError) as ve:
+                        raise ValueError(f"Invalid {name}: {ve}")
+                validate_range_func = validate_range_fallback
 
             # Use optimized data loading with async processing and memory management
             regime_data = await self._load_regime_data_optimized(symbol, exchange, timeframe, data_dir)
@@ -1843,8 +1887,11 @@ class RegimeDataSplittingStep:
                 min_retention = float(self.config.get('regime_merge_min_retention', 0.8))
                 if retention_ratio < min_retention:
                     self.logger.warning(f'⚠️ Low retention after regime merge: {retention_ratio:.3f} (< {min_retention:.2f}). Check timestamp alignment and data coverage.')
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the error but continue with the process
+                logger = logging.getLogger(self.__class__.__name__)
+                logger.warning(f"Error checking retention ratio: {e}")
+                # Continue without the retention check
             self.logger.info(f'✅ Loaded {len(unified_df)} data points with regime information')
             return unified_df
         except Exception as e:

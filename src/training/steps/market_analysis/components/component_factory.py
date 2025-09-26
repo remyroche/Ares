@@ -1056,8 +1056,8 @@ class SimpleRegimeMetaModelTrainer:
                 'source_key': matched_key,
                 'available': bool(model_entry),
                 'trained': isinstance(model_entry, dict) and bool(model_entry.get('model')),
-                'performance': model_entry.get('performance', {}) if isinstance(model_entry, dict) else {},
-                'metadata': model_entry.get('metadata', {}) if isinstance(model_entry, dict) else {}
+                'performance': model_entry.get('performance', {}),
+                'metadata': model_entry.get('metadata', {})
             }
 
         return formatted

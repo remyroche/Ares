@@ -446,10 +446,19 @@ except ImportError:
                     # - Checking terminal capabilities
                     # - Setting up color codes for different log levels
                     # - Configuring colored output for console logging
-                    pass
+                    try:
+                        # Attempt to enable colored output
+                        # This is a placeholder implementation
+                        tprint("Color configuration not yet implemented", level="info")
+                    except Exception as e:
+                        tprint(f"Failed to configure colors: {e}", level="warning")
                 else:
                     # Disable colored output
-                    pass
+                    try:
+                        # Disable colored output
+                        tprint("Colored output disabled", level="info")
+                    except Exception as e:
+                        tprint(f"Failed to disable colors: {e}", level="warning")
             if hasattr(config, 'output_file'):
                 # Configure file output if specified
                 try:

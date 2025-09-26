@@ -1236,7 +1236,11 @@ class NASClusterer:
                 
         except (AttributeError, TypeError) as e:
             # Silently ignore cleanup errors in destructor to avoid issues during shutdown
-            pass
+            try:
+                tprint(f"Cleanup error in destructor (ignored): {e}", level="debug")
+            except Exception:
+                # If tprint itself fails, silently ignore to avoid recursion
+                pass
 
 
 # Convenience functions

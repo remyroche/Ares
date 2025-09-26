@@ -271,7 +271,9 @@ class EnhancedPriceActionAnalyzer:
             economic_significance=economic_significance,
             cluster_specific_influence=cluster_influences,
             predictive_horizon=1,  # Default horizon
-            confidence_interval=(0.0, 0.0),  # TODO: Implement bootstrap CI
+            confidence_interval=self._calculate_bootstrap_confidence_interval(
+                features_aligned, pattern_aligned, labels_aligned, influence_strength
+            ),
             metadata={
                 'pattern_occurrence_rate': float(pattern_aligned.mean()),
                 'n_samples': min_len,
@@ -476,6 +478,87 @@ class EnhancedPriceActionAnalyzer:
         except Exception as e:
             self.logger.warning(f"Influence strength calculation failed: {e}")
             return 0.0
+    
+    def _calculate_bootstrap_confidence_interval(self,
+                                               features: pd.DataFrame,
+                                               pattern_series: pd.Series,
+                                               labels: np.ndarray,
+                                               point_estimate: float,
+                                               n_bootstrap: int = 1000,
+                                               confidence_level: float = 0.95) -> Tuple[float, float]:
+        """
+        Calculate bootstrap confidence interval for influence strength.
+        
+        Args:
+            features: Feature matrix
+            pattern_series: Price pattern series
+            labels: Cluster labels
+            point_estimate: Point estimate of influence strength
+            n_bootstrap: Number of bootstrap samples
+            confidence_level: Confidence level (e.g., 0.95 for 95% CI)
+            
+        Returns:
+            Tuple of (lower_bound, upper_bound) confidence interval
+        """
+        try:
+            if len(features) < 10:  # Need minimum samples for bootstrap
+                self.logger.warning("Insufficient samples for bootstrap confidence interval")
+                return (0.0, 0.0)
+            
+            # Bootstrap samples
+            bootstrap_estimates = []
+            n_samples = len(features)
+            
+            for i in range(n_bootstrap):
+                try:
+                    # Resample with replacement
+                    bootstrap_indices = np.random.choice(
+                        n_samples, 
+                        size=n_samples, 
+                        replace=True
+                    )
+                    
+                    # Create bootstrap sample
+                    bootstrap_features = features.iloc[bootstrap_indices].reset_index(drop=True)
+                    bootstrap_pattern = pattern_series.iloc[bootstrap_indices].reset_index(drop=True)
+                    bootstrap_labels = labels[bootstrap_indices]
+                    
+                    # Calculate influence strength for bootstrap sample
+                    bootstrap_influence = self._calculate_influence_strength(
+                        bootstrap_features, bootstrap_pattern, bootstrap_labels
+                    )
+                    
+                    bootstrap_estimates.append(bootstrap_influence)
+                    
+                except Exception as e:
+                    self.logger.debug(f"Bootstrap iteration {i} failed: {e}")
+                    continue
+            
+            if not bootstrap_estimates:
+                self.logger.warning("All bootstrap iterations failed")
+                return (0.0, 0.0)
+            
+            # Calculate confidence interval
+            bootstrap_estimates = np.array(bootstrap_estimates)
+            alpha = 1 - confidence_level
+            lower_percentile = (alpha / 2) * 100
+            upper_percentile = (1 - alpha / 2) * 100
+            
+            lower_bound = np.percentile(bootstrap_estimates, lower_percentile)
+            upper_bound = np.percentile(bootstrap_estimates, upper_percentile)
+            
+            # Additional validation: check if point estimate is within CI
+            if point_estimate < lower_bound or point_estimate > upper_bound:
+                self.logger.warning(f"Point estimate {point_estimate:.3f} outside bootstrap CI [{lower_bound:.3f}, {upper_bound:.3f}]")
+            
+            self.logger.debug(f"Bootstrap CI ({confidence_level*100:.0f}%): [{lower_bound:.3f}, {upper_bound:.3f}], "
+                            f"point estimate: {point_estimate:.3f}, n_bootstrap: {len(bootstrap_estimates)}")
+            
+            return (float(lower_bound), float(upper_bound))
+            
+        except Exception as e:
+            self.logger.error(f"Bootstrap confidence interval calculation failed: {e}")
+            return (0.0, 0.0)
     
     def _calculate_statistical_significance(self,
                                           features: pd.DataFrame,

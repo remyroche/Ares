@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass
+from datetime import datetime
 import logging
 
 from ..logger import system_logger
@@ -1137,12 +1138,61 @@ class BacktestingEnhancedClustering:
         try:
             self.logger.debug(f"Validating cluster quality for {len(cluster)} levels at center {cluster_center:.2f}")
             
-            # This would backtest the cluster center as a new level
-            # For now, return average quality of cluster members
-            # TODO: Implement actual cluster center backtesting
+            # Create a synthetic SR level for the cluster center
+            cluster_center_level = SRLevel(
+                price=cluster_center,
+                level_type="support",  # Default to support, could be determined by context
+                strength=len(cluster),  # Strength based on number of levels in cluster
+                touches=len(cluster),   # Number of touches equals cluster size
+                first_touch=None,      # Will be determined during backtesting
+                last_touch=None,       # Will be determined during backtesting
+                quality_score=0.0,     # Will be calculated by backtesting
+                metadata={
+                    "cluster_size": len(cluster),
+                    "cluster_members": cluster,
+                    "is_cluster_center": True,
+                    "created_at": datetime.now().isoformat()
+                }
+            )
             
-            # Placeholder implementation - return average quality
-            cluster_quality = 0.7  # Placeholder
+            # Backtest the cluster center level
+            backtest_result = self.backtesting_engine.backtest_sr_level(
+                level=cluster_center_level,
+                data=data
+            )
+            
+            # Extract quality score from backtest result
+            cluster_quality = backtest_result.quality_score
+            
+            # Additional validation: compare with individual cluster members
+            if cluster:
+                # Get quality scores of individual cluster members
+                member_qualities = []
+                for level_idx in cluster:
+                    if level_idx < len(self.levels):
+                        level = self.levels[level_idx]
+                        member_quality = level.get('backtest_quality', 0.5)
+                        member_qualities.append(member_quality)
+                
+                if member_qualities:
+                    avg_member_quality = np.mean(member_qualities)
+                    min_member_quality = np.min(member_qualities)
+                    max_member_quality = np.max(member_qualities)
+                    
+                    # Cluster center should be at least as good as the average member
+                    # and ideally better than the worst member
+                    quality_penalty = 0.0
+                    if cluster_quality < avg_member_quality:
+                        quality_penalty = (avg_member_quality - cluster_quality) * 0.5
+                    
+                    # Apply penalty if cluster center is significantly worse than members
+                    cluster_quality = max(0.0, cluster_quality - quality_penalty)
+                    
+                    self.logger.debug(f"Cluster member qualities - avg: {avg_member_quality:.3f}, "
+                                    f"min: {min_member_quality:.3f}, max: {max_member_quality:.3f}")
+            
+            # Ensure quality is within valid range
+            cluster_quality = max(0.0, min(1.0, cluster_quality))
             
             self.logger.debug(f"Cluster quality validation result: {cluster_quality:.3f}")
             return cluster_quality

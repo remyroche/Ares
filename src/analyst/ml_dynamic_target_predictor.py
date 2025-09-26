@@ -9,9 +9,11 @@ import pandas as pd
 
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
+from ..utils.common_ml.backtesting.model_saver import ModelSaver, SaveFormat
 import logging
 import numpy as np
 import time
+import os
 
 class MLDynamicTargetPredictor:
     """
@@ -37,6 +39,8 @@ class MLDynamicTargetPredictor:
         # State
         self.is_initialized = False
         self.model = None
+        self.model_metadata = None
+        self.model_saver = ModelSaver()
 
     @handles_errors(fallback=False)
     async def initialize(self) -> bool:
@@ -51,9 +55,9 @@ class MLDynamicTargetPredictor:
 
             # Load model if path provided
             if self.model_path:
-                # TODO: Load actual ML model
-                self.logger.info(f"Model path configured: {self.model_path}")
-                # For now, use a simple placeholder
+                await self._load_model()
+            else:
+                self.logger.warning("No model path configured, using placeholder model")
                 self.model = {"type": "placeholder", "confidence": 0.7}
 
             self.is_initialized = True
@@ -62,6 +66,71 @@ class MLDynamicTargetPredictor:
 
         except Exception as e:
             self.logger.exception(f"❌ ML Dynamic Target Predictor initialization failed: {e}")
+            return False
+    
+    async def _load_model(self) -> bool:
+        """
+        Load ML model from the configured path.
+        
+        Returns:
+            bool: True if model loaded successfully
+        """
+        try:
+            if not os.path.exists(self.model_path):
+                self.logger.error(f"Model file not found: {self.model_path}")
+                return False
+            
+            self.logger.info(f"Loading ML model from: {self.model_path}")
+            
+            # Determine model format from file extension
+            file_extension = os.path.splitext(self.model_path)[1].lower()
+            
+            if file_extension in ['.pkl', '.pickle']:
+                save_format = SaveFormat.PICKLE
+            elif file_extension in ['.joblib']:
+                save_format = SaveFormat.JOBLIB
+            elif file_extension in ['.json']:
+                save_format = SaveFormat.JSON
+            elif file_extension in ['.onnx']:
+                save_format = SaveFormat.ONNX
+            else:
+                # Try to auto-detect format
+                save_format = SaveFormat.PICKLE
+                self.logger.warning(f"Unknown file extension {file_extension}, defaulting to pickle format")
+            
+            # Load model using model saver
+            self.model, self.model_metadata = await self.model_saver.load_model(
+                model_path=self.model_path,
+                metadata_path=self.model_path.replace(file_extension, '_metadata.json')
+            )
+            
+            if self.model is None:
+                self.logger.error("Failed to load model - model is None")
+                return False
+            
+            # Validate model
+            if hasattr(self.model, 'predict'):
+                self.logger.info("✅ Loaded model with predict method")
+            elif hasattr(self.model, 'forward'):
+                self.logger.info("✅ Loaded PyTorch model with forward method")
+            elif callable(self.model):
+                self.logger.info("✅ Loaded callable model")
+            else:
+                self.logger.warning("⚠️ Loaded model may not be compatible - no predict/forward method found")
+            
+            # Log model metadata
+            if self.model_metadata:
+                self.logger.info(f"Model metadata: {self.model_metadata.model_type}, "
+                               f"version: {self.model_metadata.version}, "
+                               f"size: {self.model_metadata.model_size_mb:.2f}MB")
+            
+            self.logger.info("✅ ML model loaded successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load ML model: {e}")
+            # Fallback to placeholder model
+            self.model = {"type": "placeholder", "confidence": 0.7, "error": str(e)}
             return False
 
     @handles_errors(fallback=None)

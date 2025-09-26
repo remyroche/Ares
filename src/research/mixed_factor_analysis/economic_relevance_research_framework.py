@@ -138,7 +138,10 @@ class BaseResearchMethodology(ABC):
                                  dimension_name: str,
                                  pattern_type: PriceMovementPattern) -> EconomicRelevanceResult:
         """Analyze economic relevance of a dimension for a specific price pattern."""
-        pass
+        raise NotImplementedError(
+            f"Subclasses must implement analyze_economic_relevance method. "
+            f"Current class: {self.__class__.__name__}"
+        )
     
     def _calculate_returns_and_patterns(self, market_data: pd.DataFrame) -> Dict[str, pd.Series]:
         """Calculate various return series and price patterns."""
@@ -939,10 +942,12 @@ class PatternPredictionResearchMethodology(BaseResearchMethodology):
                         period_accuracies.append(accuracy)
                     except ValueError as e:
                         tprint_warning(f"Robustness test failed due to invalid data: {e}")
-                        pass
+                        # Continue with next iteration, don't add to period_accuracies
+                        continue
                     except Exception as e:
                         tprint_warning(f"Robustness test failed with unexpected error: {e}")
-                        pass
+                        # Continue with next iteration, don't add to period_accuracies
+                        continue
             
             if period_accuracies:
                 robustness_results['out_of_sample_stability'] = float(1.0 - np.std(period_accuracies))

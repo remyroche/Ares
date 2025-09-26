@@ -46,7 +46,7 @@ feature_selection:
       enable_precision_filtering: true
       priority_categories: ["statistical", "momentum", "volatility"]
 
-    NBEATS:
+    MultiScaleNBEATS:
       target_features: 70
       min_features: 50
       max_features: 80

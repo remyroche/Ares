@@ -9,7 +9,7 @@ and fallback analysis.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -83,12 +83,14 @@ class NASSignalEnhancer(BaseSignalEnhancer):
         self.nas_engine = None
         self.nas_models = {}
         self.nas_architectures = {}
-    
+        self.max_model_contributions = int(self.config.get('max_model_contributions', 3))
+
     async def _load_enhancement_models(self, models: Optional[Dict[str, Any]] = None) -> bool:
         """Load NAS enhancement models."""
         try:
             if models:
                 self.nas_models = models
+                self.max_model_contributions = int(self.config.get('max_model_contributions', 3))
                 self.logger.info(f"✅ Loaded {len(models)} NAS models")
                 return True
             
@@ -133,15 +135,34 @@ class NASSignalEnhancer(BaseSignalEnhancer):
             # Use NAS model for this regime if available
             if regime_id in self.nas_models:
                 nas_model = self.nas_models[regime_id]
-                
-                # Generate NAS prediction
+
+                candidate_predictions = self._collect_candidate_predictions(
+                    nas_model,
+                    feature_vector.reshape(1, -1)
+                )
+
                 nas_result = self.nas_engine.detect_regimes(
                     feature_vector.reshape(1, -1),
                     optimize_architecture=False,
                     enable_meta_learning=False
-                )
-                
-                if nas_result.success:
+                ) if self.nas_engine else None
+
+                if candidate_predictions:
+                    confidences = [pred['confidence'] for pred in candidate_predictions if pred.get('confidence') is not None]
+                    combined_confidence = float(np.clip(np.mean(confidences), 0.0, 1.0)) if confidences else 0.5
+
+                    return {
+                        'nas_prediction': {
+                            'model_contributions': candidate_predictions,
+                            'aggregate_prediction': self._aggregate_candidate_predictions(candidate_predictions)
+                        },
+                        'confidence': combined_confidence,
+                        'architecture': getattr(nas_result, 'best_architecture', {}),
+                        'regime_id': regime_id,
+                        'contribution': 'trading_signals'
+                    }
+
+                if nas_result and nas_result.success:
                     return {
                         'nas_prediction': nas_result.best_prediction,
                         'confidence': nas_result.best_score,
@@ -149,12 +170,114 @@ class NASSignalEnhancer(BaseSignalEnhancer):
                         'regime_id': regime_id,
                         'contribution': 'trading_signals'
                     }
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ NAS prediction failed: {e}")
             return None
+
+    def _collect_candidate_predictions(self, model_container: Any, feature_vector: np.ndarray) -> List[Dict[str, Any]]:
+        """Collect predictions from the top NAS models for stacked blending."""
+        predictions: List[Dict[str, Any]] = []
+
+        for model_name, candidate in self._resolve_model_candidates(model_container):
+            if len(predictions) >= self.max_model_contributions:
+                break
+
+            try:
+                prediction = self._invoke_candidate_model(model_name, candidate, feature_vector)
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.debug(f"⚠️ NAS candidate {model_name} failed: {exc}")
+                continue
+
+            if prediction:
+                predictions.append(prediction)
+
+        return predictions
+
+    def _resolve_model_candidates(self, model_container: Any) -> List[Tuple[str, Any]]:
+        """Resolve candidate NAS models from stored containers."""
+        candidates: List[Tuple[str, Any]] = []
+
+        if isinstance(model_container, dict):
+            for key in ("model_candidates", "models", "top_models", "ensemble"):
+                value = model_container.get(key)
+                candidates.extend(self._normalize_candidate_collection(value))
+
+            if "model" in model_container:
+                candidates.append((model_container.get("name", "primary"), model_container["model"]))
+        elif isinstance(model_container, (list, tuple)):
+            for idx, candidate in enumerate(model_container):
+                candidates.append((getattr(candidate, "name", f"model_{idx}"), candidate))
+        else:
+            if hasattr(model_container, "top_models"):
+                candidates.extend(self._normalize_candidate_collection(getattr(model_container, "top_models")))
+
+            candidates.append((getattr(model_container, "name", "primary"), model_container))
+
+        # Ensure deterministic order
+        return candidates[: self.max_model_contributions]
+
+    def _normalize_candidate_collection(self, value: Any) -> List[Tuple[str, Any]]:
+        """Normalize candidate containers to (name, model) tuples."""
+        if not value:
+            return []
+
+        if isinstance(value, dict):
+            return [(str(name), model) for name, model in value.items()]
+
+        if isinstance(value, (list, tuple)):
+            return [(getattr(model, "name", f"model_{idx}"), model) for idx, model in enumerate(value)]
+
+        return [(getattr(value, "name", "candidate"), value)]
+
+    def _invoke_candidate_model(self, model_name: str, model: Any, feature_vector: np.ndarray) -> Optional[Dict[str, Any]]:
+        """Execute a candidate NAS model and standardize its output."""
+        prediction_output: Any = None
+        confidence: Optional[float] = None
+
+        if isinstance(model, dict):
+            prediction_output = model.get("prediction") or model.get("output")
+            confidence = model.get("confidence") or model.get("score")
+        else:
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(feature_vector)
+                prediction_output = proba.tolist() if hasattr(proba, "tolist") else proba
+                try:
+                    confidence = float(np.max(proba))
+                except Exception:  # pragma: no cover - safe guard
+                    confidence = None
+            elif hasattr(model, "predict"):
+                pred = model.predict(feature_vector)
+                prediction_output = pred.tolist() if hasattr(pred, "tolist") else pred
+                if isinstance(pred, np.ndarray):
+                    confidence = float(np.clip(np.mean(np.abs(pred)), 0.0, 1.0))
+            elif callable(model):
+                pred = model(feature_vector)
+                prediction_output = pred.tolist() if hasattr(pred, "tolist") else pred
+
+        if confidence is None:
+            confidence = 0.5
+
+        return {
+            'model_name': model_name,
+            'prediction': prediction_output,
+            'confidence': float(confidence)
+        }
+
+    def _aggregate_candidate_predictions(self, predictions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate candidate predictions into a compact summary."""
+        if not predictions:
+            return {}
+
+        confidences = [pred.get('confidence', 0.0) for pred in predictions]
+        aggregate_confidence = float(np.clip(np.mean(confidences), 0.0, 1.0)) if confidences else 0.0
+
+        return {
+            'aggregate_confidence': aggregate_confidence,
+            'model_names': [pred.get('model_name') for pred in predictions]
+        }
 
 class AnalystSignalGenerator:
     """

@@ -11,57 +11,42 @@ tactician_config:
 
   # Model configuration - Updated for 5m precision entry timing
   base_models:
-    xgboost:
-      model_type: "XGBRegressor"
+    tas:
+      model_type: "TASEngine"
       params:
-        n_estimators: 2000
-        learning_rate: 0.05
-        max_depth: 6
-        subsample: 0.8
-        colsample_bytree: 0.8
+        timeframe: "5m"
+        search_strategy: "hybrid"
+        enable_tree_ensemble: true
+        enable_boosted_trees: true
+        enable_random_forest: true
+        max_model_contributions: 3
+        population_size: 24
+        generations: 32
+
+    nas_5m:
+      model_type: "NASRegressor"
+      params:
+        timeframe: "5m"
+        population_size: 18
+        generations: 24
+        max_layers: 4
+        max_units: 96
+        include_deepscaler: true
+        meta_learner: "advanced_mamba_hybrid"
+        regularization_strength: 0.015
+        enable_dropout: true
+        dropout: 0.15
+
+    random_survival_forest:
+      model_type: "RandomSurvivalForest"
+      params:
+        n_estimators: 400
+        max_depth: 12
+        min_samples_split: 5
+        min_samples_leaf: 3
+        max_features: "sqrt"
         random_state: 42
         n_jobs: -1
-
-    lightgbm:
-      model_type: "LGBMRegressor"
-      params:
-        n_estimators: 2000
-        learning_rate: 0.05
-        max_depth: -1
-        num_leaves: 63
-        random_state: 42
-        verbosity: -1
-
-    deepscaler_1m:
-      model_type: "DeepScaler1m"
-      params:
-        n_layers: 6
-        n_units: 128
-        dropout: 0.1
-        l2_regularization: 0.005
-        activation: "relu"
-        learning_rate: 0.0005
-        batch_size: 64
-        epochs: 200
-        early_stopping_patience: 30
-        precision_focused: true
-        micro_timing_aware: true
-
-    financial_resnet:
-      model_type: "FinancialResNet"
-      params:
-        blocks: [32, 64, 128]
-        temporal_conv_layers: 3
-        attention_heads: 4
-        dropout: 0.15
-        regime_aware: true
-        input_features: 100
-        output_classes: 20
-        batch_size: 128
-        epochs: 150
-        learning_rate: 0.001
-        early_stopping_patience: 25
-        l2_regularization: 0.01
   
   # Meta model configuration - AdvancedMambaHybrid for 1m precision timing
   meta_models:
@@ -152,10 +137,11 @@ tactician_config:
   
   # Stacking configuration
   stacking:
-    method: "blending"
+    method: "stacking"
     enable_meta_learning: true
     meta_learning_rate: 0.005
     meta_learning_iterations: 2000
+    notes: "AdvancedMambaHybrid ingests NAS/TAS base outputs without manual weighting"
   
   # Multi-output specific settings
   multi_output:

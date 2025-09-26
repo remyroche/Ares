@@ -822,9 +822,16 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 enable_temporal_splits=True,
                 enable_regularization=True,
                 enable_overfitting_monitoring=True,
-                model_type='auto'
+                model_type='auto',
+                enable_model_calibration=self.config.enable_model_calibration,
+                calibration_method=self.config.calibration_method,
+                calibration_cv=self.config.calibration_cv,
+                calibration_min_samples=self.config.calibration_min_samples,
+                calibration_validation_split=self.config.calibration_validation_split,
+                calibration_enforce_probabilistic=self.config.calibration_enforce_probabilistic,
+                calibration_skip_without_proba=self.config.calibration_skip_without_proba,
             )
-            
+
             # Initialize training enhancer
             self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
             
@@ -1403,6 +1410,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'regime_analysis': {},
                 'enhanced_training_metadata': {},
                 'overfitting_warnings': [],
+                'calibration_warnings': [],
                 'ensemble_diversity': None
             }
             
@@ -1462,6 +1470,22 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 f"analyst_{model_type}_regime_{regime}", regime_labels
                             )
 
+                            calibration_report = metadata.get('calibration', {}) if isinstance(metadata, dict) else {}
+                            metadata['is_calibrated'] = bool(
+                                getattr(trained_model, '_is_calibrated', False)
+                                or calibration_report.get('calibrated', False)
+                            )
+                            if metadata['is_calibrated']:
+                                tprint_success(f"✅ Calibration confirmed for {model_type} in regime {regime}")
+                            else:
+                                reason = calibration_report.get('reason', 'unknown')
+                                tprint_warning(
+                                    f"⚠️ Calibration unavailable for {model_type} in regime {regime} ({reason})"
+                                )
+                                results['calibration_warnings'].append(
+                                    f"Calibration unavailable for {model_type} in regime {regime}: {reason}"
+                                )
+
                             regime_models[model_type] = {
                                 'model': trained_model,
                                 'metadata': metadata
@@ -1504,7 +1528,9 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'early_stopping_enabled': True,
                 'enhanced_regularization_enabled': True,
                 'temporal_validation_enabled': timestamps is not None,
-                'total_warnings': len(results['overfitting_warnings'])
+                'calibration_enabled': self.training_enhancer is not None,
+                'calibration_warnings': len(results['calibration_warnings']),
+                'total_warnings': len(results['overfitting_warnings']) + len(results['calibration_warnings'])
             }
             
             tprint_success("✅ Enhanced training completed successfully")

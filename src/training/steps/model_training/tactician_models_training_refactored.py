@@ -326,9 +326,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 enable_regularization=True,
                 enable_overfitting_monitoring=True,
                 enable_walk_forward=True,  # Enable for Tactician
-                model_type='auto'
+                model_type='auto',
+                enable_model_calibration=self.config.enable_model_calibration,
+                calibration_method=self.config.calibration_method,
+                calibration_cv=self.config.calibration_cv,
+                calibration_min_samples=self.config.calibration_min_samples,
+                calibration_validation_split=self.config.calibration_validation_split,
+                calibration_enforce_probabilistic=self.config.calibration_enforce_probabilistic,
+                calibration_skip_without_proba=self.config.calibration_skip_without_proba,
             )
-            
+
             # Initialize training enhancer
             self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
             
@@ -1967,6 +1974,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'regime_analysis': {},
                 'enhanced_training_metadata': {},
                 'overfitting_warnings': [],
+                'calibration_warnings': [],
                 'ensemble_diversity': None,
                 'walk_forward_validation': None
             }
@@ -2051,6 +2059,54 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                     sample_weights=confidence_regime,
                                 )
 
+                            if metadata is None:
+                                metadata = {}
+
+                            calibration_manager = getattr(self.training_enhancer, 'calibration_manager', None)
+                            calibration_report: Dict[str, Any] = metadata.get('calibration', {}) if isinstance(metadata, dict) else {}
+                            if (
+                                calibration_manager
+                                and not calibration_report
+                                and self.enhanced_training_config is not None
+                            ):
+                                try:
+                                    split_point = int(len(X_regime) * (1 - self.enhanced_training_config.calibration_validation_split))
+                                    split_point = max(1, min(split_point, len(X_regime)))
+                                    if len(X_regime) - split_point >= self.enhanced_training_config.calibration_min_samples:
+                                        cal_X = X_regime[split_point:]
+                                        cal_y = y_regime[split_point:]
+                                        calibrated_model, calibration_report = calibration_manager.calibrate_model(
+                                            trained_model,
+                                            cal_X,
+                                            cal_y,
+                                        )
+                                        trained_model = calibrated_model
+                                        metadata['calibration'] = calibration_report
+                                except Exception as calibration_error:
+                                    self.logger.warning(
+                                        "⚠️ Failed to calibrate %s for regime %s: %s",
+                                        model_type,
+                                        regime,
+                                        calibration_error,
+                                    )
+
+                            metadata['is_calibrated'] = bool(
+                                getattr(trained_model, '_is_calibrated', False)
+                                or calibration_report.get('calibrated', False)
+                            )
+                            if metadata['is_calibrated']:
+                                tprint_success(
+                                    f"✅ Calibration confirmed for {model_type} in regime {regime}"
+                                )
+                            else:
+                                reason = calibration_report.get('reason', 'unknown') if calibration_report else 'unknown'
+                                tprint_warning(
+                                    f"⚠️ Calibration unavailable for {model_type} in regime {regime} ({reason})"
+                                )
+                                results['calibration_warnings'].append(
+                                    f"Calibration unavailable for {model_type} in regime {regime}: {reason}"
+                                )
+
                             regime_models[model_type] = {
                                 'model': trained_model,
                                 'metadata': metadata,
@@ -2123,7 +2179,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'temporal_validation_enabled': timestamps is not None,
                 'green_light_filtering_enabled': analyst_signals is not None,
                 'walk_forward_validation_enabled': True,
-                'total_warnings': len(results['overfitting_warnings'])
+                'calibration_enabled': self.training_enhancer is not None,
+                'calibration_warnings': len(results['calibration_warnings']),
+                'total_warnings': len(results['overfitting_warnings']) + len(results['calibration_warnings'])
             }
             
             self.logger.info("✅ Enhanced tactician training completed successfully")

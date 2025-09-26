@@ -24,6 +24,11 @@ from datetime import datetime
 from src.training.steps.model_training.tactician_nas_integration import (
     TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
 )
+from src.utils.nas_tas.common_constants import (
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 # Import existing validation
 from src.utils.ml_common.validation.overfitting_detection import UniversalOverfittingDetector
@@ -259,9 +264,9 @@ class TacticianNASPipelineIntegration:
         nas_config = TacticianNASConfig(
             n_trials=self.config.nas_trials,
             timeout_seconds=self.config.nas_timeout,
-            max_layers=6,  # Shallow for 1m timeframe
-            max_units=256,  # Moderate complexity
-            min_units=32,  # Minimum for learning
+            max_layers=RECOMMENDED_MAX_LAYERS,  # Data-aware depth limit
+            max_units=RECOMMENDED_MAX_UNITS,  # Data-aware width limit
+            min_units=RECOMMENDED_MIN_UNITS,  # Minimum for learning
             objectives=['accuracy', 'efficiency', 'robustness'],
             objective_weights=[0.5, 0.3, 0.2],  # Balance for 1m timeframe
             enable_regime_awareness=True,

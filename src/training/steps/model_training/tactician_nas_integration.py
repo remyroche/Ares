@@ -24,6 +24,11 @@ from datetime import datetime
 from src.utils.nas_tas.nas.neural_architecture_search import (
     search_neural_architecture, ArchitectureConfig, ArchitectureCandidate
 )
+from src.utils.nas_tas.common_constants import (
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 # Import existing validation
 from src.utils.ml_common.validation.overfitting_detection import UniversalOverfittingDetector
@@ -48,9 +53,9 @@ class TacticianNASConfig:
     early_stopping_patience: int = 10
     
     # Architecture constraints for 1m timeframe
-    max_layers: int = 6  # Shallow networks for speed
-    max_units: int = 256  # Moderate complexity
-    min_units: int = 32   # Minimum for meaningful learning
+    max_layers: int = RECOMMENDED_MAX_LAYERS  # Data-aware depth limit
+    max_units: int = RECOMMENDED_MAX_UNITS    # Data-aware width limit
+    min_units: int = RECOMMENDED_MIN_UNITS   # Minimum for meaningful learning
     
     # Multi-objective optimization
     objectives: List[str] = None

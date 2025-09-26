@@ -21,6 +21,14 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
+from .common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +80,12 @@ class ConstraintValidationResult:
 class ArchitectureConstraints:
     """Comprehensive constraints for neural and tree architectures."""
     # Basic architectural constraints
-    max_layers: int = 20
-    min_layers: int = 2
-    max_hidden_size: int = 2048
-    min_hidden_size: int = 8
-    max_parameters: int = 10000000  # 10M parameters
-    min_parameters: int = 100
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_hidden_size: int = RECOMMENDED_MAX_UNITS
+    min_hidden_size: int = RECOMMENDED_MIN_UNITS
+    max_parameters: int = DATA_AWARE_PARAMETER_CAPACITY
+    min_parameters: int = RECOMMENDED_MIN_UNITS * ESTIMATED_INPUT_FEATURES
 
     # Connection constraints
     max_connections_per_layer: int = 5

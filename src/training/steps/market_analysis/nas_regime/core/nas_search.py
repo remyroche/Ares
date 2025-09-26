@@ -12,6 +12,14 @@ import logging
 import random
 from dataclasses import dataclass
 from collections import defaultdict
+
+from src.utils.nas_tas.common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_HIDDEN_SIZE_OPTIONS,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MIN_LAYERS,
+)
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
 logger = logging.getLogger(__name__)
@@ -115,36 +123,49 @@ class EssentialNASClusterer:
         """Initialize random population of architectures."""
         try:
             self.population = []
-            
+
             for i in range(self.population_size):
                 architecture = self._create_random_architecture()
                 self.population.append(architecture)
-            
+
             self.logger.info(f"✅ Initialized population of {len(self.population)} architectures")
-            
+
         except Exception as e:
             self.logger.warning(f"Population initialization failed: {e}")
-    
+
+    def _estimate_parameter_count(self, layers: List[Dict[str, Any]]) -> int:
+        """Estimate the parameter count for a sequence of layers."""
+        parameter_count = 0
+        previous_units = ESTIMATED_INPUT_FEATURES
+
+        for layer in layers:
+            units = int(layer.get('hidden_size', previous_units))
+            units = max(units, 1)
+            parameter_count += previous_units * units
+            previous_units = units
+
+        return parameter_count
+
     def _create_random_architecture(self) -> Architecture:
         """Create a random neural architecture."""
         try:
-            # Random number of layers (2-8)
-            n_layers = random.randint(2, 8)
+            # Random number of layers within constrained search space
+            n_layers = random.randint(RECOMMENDED_MIN_LAYERS, RECOMMENDED_MAX_LAYERS)
             layers = []
-            
+
             for i in range(n_layers):
                 layer = {
                     'type': random.choice(['linear', 'conv1d', 'lstm', 'attention']),
-                    'hidden_size': random.choice([32, 64, 128, 256]),
+                    'hidden_size': random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS),
                     'activation': random.choice(['relu', 'tanh', 'gelu', 'swish']),
                     'dropout': random.uniform(0.0, 0.5),
                     'layer_id': i
                 }
                 layers.append(layer)
-            
+
             # Calculate parameter count (simplified)
-            parameters_count = sum(layer['hidden_size'] * 100 for layer in layers)
-            
+            parameters_count = self._estimate_parameter_count(layers)
+
             # Initialize with random scores
             architecture = Architecture(
                 layers=layers,
@@ -169,10 +190,10 @@ class EssentialNASClusterer:
             {'type': 'linear', 'hidden_size': 64, 'activation': 'relu', 'dropout': 0.1, 'layer_id': 0},
             {'type': 'linear', 'hidden_size': 32, 'activation': 'relu', 'dropout': 0.1, 'layer_id': 1}
         ]
-        
+
         return Architecture(
             layers=layers,
-            parameters_count=64 * 100 + 32 * 100,
+            parameters_count=self._estimate_parameter_count(layers),
             fitness_score=0.0,
             complexity_score=0.0,
             efficiency_score=0.0,
@@ -259,10 +280,13 @@ class EssentialNASClusterer:
     def _evaluate_complexity(self, architecture: Architecture) -> float:
         """Evaluate architecture complexity."""
         try:
-            # Complexity based on layers and parameters
-            layer_complexity = len(architecture.layers) / 10.0
-            parameter_complexity = min(architecture.parameters_count / 50000, 1.0)
-            
+            # Complexity based on layers and parameters scaled to data volume
+            layer_complexity = len(architecture.layers) / max(float(RECOMMENDED_MAX_LAYERS), 1.0)
+            layer_complexity = max(0.0, min(1.0, layer_complexity))
+
+            parameter_capacity = max(DATA_AWARE_PARAMETER_CAPACITY, 1)
+            parameter_complexity = min(architecture.parameters_count / parameter_capacity, 1.0)
+
             complexity = (layer_complexity + parameter_complexity) / 2.0
             complexity = max(0.0, min(1.0, complexity))
             
@@ -408,7 +432,7 @@ class EssentialNASClusterer:
             # Create child architectures
             child1 = Architecture(
                 layers=layers1,
-                parameters_count=sum(layer['hidden_size'] * 100 for layer in layers1),
+                parameters_count=self._estimate_parameter_count(layers1),
                 fitness_score=0.0,
                 complexity_score=0.0,
                 efficiency_score=0.0,
@@ -416,10 +440,10 @@ class EssentialNASClusterer:
                 economic_significance=0.0,
                 trading_viability=0.0
             )
-            
+
             child2 = Architecture(
                 layers=layers2,
-                parameters_count=sum(layer['hidden_size'] * 100 for layer in layers2),
+                parameters_count=self._estimate_parameter_count(layers2),
                 fitness_score=0.0,
                 complexity_score=0.0,
                 efficiency_score=0.0,
@@ -441,32 +465,35 @@ class EssentialNASClusterer:
             
             # Random mutation operations
             if random.random() < 0.3:  # 30% chance to add layer
-                if len(mutated_layers) < 10:
+                if len(mutated_layers) < RECOMMENDED_MAX_LAYERS:
                     new_layer = {
                         'type': random.choice(['linear', 'conv1d', 'lstm']),
-                        'hidden_size': random.choice([32, 64, 128]),
+                        'hidden_size': random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS),
                         'activation': random.choice(['relu', 'tanh', 'gelu']),
                         'dropout': random.uniform(0.0, 0.5),
                         'layer_id': len(mutated_layers)
                     }
                     mutated_layers.append(new_layer)
-            
+
             if random.random() < 0.2:  # 20% chance to remove layer
-                if len(mutated_layers) > 2:
+                if len(mutated_layers) > RECOMMENDED_MIN_LAYERS:
                     mutated_layers.pop(random.randint(0, len(mutated_layers) - 1))
-            
+
             if random.random() < 0.4:  # 40% chance to modify layer
                 if mutated_layers:
                     layer_idx = random.randint(0, len(mutated_layers) - 1)
                     layer = mutated_layers[layer_idx]
-                    layer['hidden_size'] = random.choice([32, 64, 128, 256])
+                    layer['hidden_size'] = random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS)
                     layer['activation'] = random.choice(['relu', 'tanh', 'gelu', 'swish'])
                     layer['dropout'] = random.uniform(0.0, 0.5)
+
+            for idx, layer in enumerate(mutated_layers):
+                layer['layer_id'] = idx
             
             # Create mutated architecture
             mutated_arch = Architecture(
                 layers=mutated_layers,
-                parameters_count=sum(layer['hidden_size'] * 100 for layer in mutated_layers),
+                parameters_count=self._estimate_parameter_count(mutated_layers),
                 fitness_score=0.0,
                 complexity_score=0.0,
                 efficiency_score=0.0,

@@ -21,6 +21,15 @@ from ..search_space import (
     create_default_nas_search_space,
     create_tree_search_space as create_canonical_tree_search_space,
 )
+from ..common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_HIDDEN_SIZE_OPTIONS,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,12 +132,12 @@ class TreeSpecification:
 @dataclass
 class ArchitectureConstraints:
     """Constraints for valid architectures."""
-    max_layers: int = 20
-    min_layers: int = 2
-    max_hidden_size: int = 2048
-    min_hidden_size: int = 8
-    max_parameters: int = 10000000  # 10M parameters
-    min_parameters: int = 100
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_hidden_size: int = RECOMMENDED_MAX_UNITS
+    min_hidden_size: int = RECOMMENDED_MIN_UNITS
+    max_parameters: int = DATA_AWARE_PARAMETER_CAPACITY
+    min_parameters: int = RECOMMENDED_MIN_UNITS * ESTIMATED_INPUT_FEATURES
     allowed_layer_types: List[LayerType] = field(default_factory=list)
     allowed_activations: List[ActivationFunction] = field(default_factory=list)
     max_dropout_rate: float = 0.8
@@ -159,12 +168,16 @@ class NeuralArchitecture:
         """Calculate architecture complexity score."""
         complexity = 0.0
 
-        # Layer count complexity
-        complexity += len(self.layers) * 0.1
+        # Layer count complexity scaled to data-aware maximum
+        layer_budget = max(float(RECOMMENDED_MAX_LAYERS), 1.0)
+        layer_complexity = len(self.layers) / layer_budget
+        complexity += min(max(layer_complexity, 0.0), 1.0)
 
-        # Parameter count complexity
+        # Parameter count complexity normalized to the data-aware capacity
         total_params = sum(layer.hidden_size * layer.hidden_size for layer in self.layers)
-        complexity += min(total_params / 1000000, 1.0)  # Normalize to max 1.0
+        param_budget = max(float(DATA_AWARE_PARAMETER_CAPACITY), 1.0)
+        parameter_complexity = min(total_params / param_budget, 1.0)
+        complexity += max(parameter_complexity, 0.0)
 
         # Connection complexity
         complexity += len(self.connections) * 0.05
@@ -235,7 +248,7 @@ class NeuralSearchSpace:
         """Define layer specifications and their parameter ranges."""
         return {
             LayerType.LINEAR.value: {
-                'hidden_size': {'type': 'discrete', 'choices': [16, 32, 64, 128, 256, 512, 1024]},
+                'hidden_size': {'type': 'discrete', 'choices': list(RECOMMENDED_HIDDEN_SIZE_OPTIONS)},
                 'activation': {'type': 'discrete', 'choices': [act.value for act in ActivationFunction]},
                 'dropout_rate': {'type': 'continuous', 'min': 0.0, 'max': 0.5},
                 'use_bias': {'type': 'discrete', 'choices': [True, False]},
@@ -243,7 +256,7 @@ class NeuralSearchSpace:
                 'layer_norm': {'type': 'discrete', 'choices': [True, False]}
             },
             LayerType.CONV1D.value: {
-                'hidden_size': {'type': 'discrete', 'choices': [32, 64, 128, 256]},
+                'hidden_size': {'type': 'discrete', 'choices': list(RECOMMENDED_HIDDEN_SIZE_OPTIONS)},
                 'kernel_size': {'type': 'discrete', 'choices': [3, 5, 7, 9]},
                 'stride': {'type': 'discrete', 'choices': [1, 2]},
                 'padding': {'type': 'discrete', 'choices': ['valid', 'same', 'causal']},
@@ -252,20 +265,20 @@ class NeuralSearchSpace:
                 'use_bias': {'type': 'discrete', 'choices': [True, False]}
             },
             LayerType.LSTM.value: {
-                'hidden_size': {'type': 'discrete', 'choices': [32, 64, 128, 256]},
+                'hidden_size': {'type': 'discrete', 'choices': list(RECOMMENDED_HIDDEN_SIZE_OPTIONS)},
                 'dropout_rate': {'type': 'continuous', 'min': 0.0, 'max': 0.3},
                 'recurrent_dropout': {'type': 'continuous', 'min': 0.0, 'max': 0.3},
                 'return_sequences': {'type': 'discrete', 'choices': [True, False]},
                 'go_backwards': {'type': 'discrete', 'choices': [True, False]}
             },
             LayerType.ATTENTION.value: {
-                'hidden_size': {'type': 'discrete', 'choices': [64, 128, 256]},
+                'hidden_size': {'type': 'discrete', 'choices': list(RECOMMENDED_HIDDEN_SIZE_OPTIONS)},
                 'num_heads': {'type': 'discrete', 'choices': [4, 8, 16]},
                 'dropout_rate': {'type': 'continuous', 'min': 0.0, 'max': 0.2},
                 'use_mask': {'type': 'discrete', 'choices': [True, False]}
             },
             LayerType.RESIDUAL_BLOCK.value: {
-                'hidden_size': {'type': 'discrete', 'choices': [64, 128, 256, 512]},
+                'hidden_size': {'type': 'discrete', 'choices': list(RECOMMENDED_HIDDEN_SIZE_OPTIONS)},
                 'num_layers': {'type': 'discrete', 'choices': [2, 3, 4]},
                 'dropout_rate': {'type': 'continuous', 'min': 0.0, 'max': 0.2}
             },

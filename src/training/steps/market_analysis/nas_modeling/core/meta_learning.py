@@ -14,6 +14,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from src.utils.nas_tas.common_constants import (
+    DATA_AWARE_PARAMETER_CAPACITY,
+    ESTIMATED_INPUT_FEATURES,
+    RECOMMENDED_HIDDEN_SIZE_OPTIONS,
+    RECOMMENDED_MAX_LAYERS,
+    RECOMMENDED_MAX_UNITS,
+    RECOMMENDED_MIN_LAYERS,
+    RECOMMENDED_MIN_UNITS,
+)
+
 # Import project utilities
 try:
     from src.utils.common_operations import (
@@ -45,10 +55,10 @@ class MetaNASConfig:
     """Configuration for MetaNAS optimization."""
     
     # Architecture search parameters
-    min_layers: int = 2
-    max_layers: int = 8
-    min_units: int = 32
-    max_units: int = 512
+    min_layers: int = RECOMMENDED_MIN_LAYERS
+    max_layers: int = RECOMMENDED_MAX_LAYERS
+    min_units: int = RECOMMENDED_MIN_UNITS
+    max_units: int = RECOMMENDED_MAX_UNITS
     activation_functions: List[str] = field(default_factory=lambda: ['relu', 'tanh', 'swish', 'gelu'])
     dropout_rates: List[float] = field(default_factory=lambda: [0.0, 0.1, 0.2, 0.3, 0.5])
     
@@ -165,9 +175,9 @@ class MetaNAS_Optimizer:
             Path(self.config.report_directory).mkdir(parents=True, exist_ok=True)
         
         tprint_success("MetaNAS_Optimizer initialized successfully")
-    
-    def optimize_architecture(self, X_train, y_train, X_val=None, y_val=None, 
-                           regime_labels=None, model_name="MetaNAS_Model", 
+
+    def optimize_architecture(self, X_train, y_train, X_val=None, y_val=None,
+                           regime_labels=None, model_name="MetaNAS_Model",
                            use_meta_learning=True):
         """Optimize neural architecture using meta-learning."""
         start_time = time.time()
@@ -193,7 +203,21 @@ class MetaNAS_Optimizer:
         except Exception as e:
             tprint_error(f"MetaNAS optimization failed: {e}")
             raise
-    
+
+    def _estimate_parameter_count(self, layers: List[Dict[str, Any]]) -> int:
+        """Estimate parameter count for a stacked set of dense layers."""
+
+        previous_units = ESTIMATED_INPUT_FEATURES
+        parameter_count = 0
+
+        for layer in layers:
+            units = int(layer.get('units', previous_units))
+            units = max(self.config.min_units, min(units, self.config.max_units))
+            parameter_count += previous_units * units
+            previous_units = units
+
+        return parameter_count
+
     def _run_optimization(self, X_train, y_train, X_val, y_val, regime_labels, use_meta_learning):
         """Run the actual optimization process."""
         # Simulate optimization process
@@ -233,16 +257,34 @@ class MetaNAS_Optimizer:
         """Search for optimal architectures."""
         tprint_info("Searching for optimal architectures...")
         
-        # Mock architecture generation
         import random
+
+        n_layers = random.randint(self.config.min_layers, self.config.max_layers)
+        layers: List[Dict[str, Any]] = []
+
+        for layer_idx in range(n_layers):
+            units = random.choice(RECOMMENDED_HIDDEN_SIZE_OPTIONS)
+            units = max(self.config.min_units, min(units, self.config.max_units))
+            layers.append({
+                'type': 'dense',
+                'units': units,
+                'activation': random.choice(self.config.activation_functions),
+                'dropout': random.choice(self.config.dropout_rates)
+            })
+
+        total_params = self._estimate_parameter_count(layers)
+        estimated_flops = int(total_params * 2)  # Rough linear proxy for compute cost
+        if total_params > DATA_AWARE_PARAMETER_CAPACITY:
+            logging.debug(
+                "MetaNAS sampled architecture above parameter budget (%s > %s)",
+                total_params,
+                DATA_AWARE_PARAMETER_CAPACITY,
+            )
+
         architecture = {
-            'layers': [
-                {'type': 'dense', 'units': 64, 'activation': 'relu', 'dropout': 0.2},
-                {'type': 'dense', 'units': 32, 'activation': 'relu', 'dropout': 0.1},
-                {'type': 'dense', 'units': 16, 'activation': 'relu', 'dropout': 0.0}
-            ],
-            'total_params': random.randint(1000, 10000),
-            'estimated_flops': random.randint(5000, 50000),
+            'layers': layers,
+            'total_params': total_params,
+            'estimated_flops': estimated_flops,
             'search_method': 'meta_learning' if use_meta_learning else 'standard'
         }
         
@@ -282,7 +324,12 @@ class MetaNAS_Optimizer:
         if metrics['accuracy'] < 0.8:
             recommendations.append("Consider increasing model complexity for better accuracy")
         if metrics['efficiency_score'] < 0.7:
-            recommendations.append("Optimize model efficiency by reducing parameters")
+            if architecture.get('total_params', 0) > DATA_AWARE_PARAMETER_CAPACITY:
+                recommendations.append(
+                    "Reduce parameters to stay within the data-aware capacity budget"
+                )
+            else:
+                recommendations.append("Optimize model efficiency by reducing parameters")
         if metrics['robustness_score'] < 0.6:
             recommendations.append("Improve model robustness with regularization")
         

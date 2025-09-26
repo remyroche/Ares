@@ -1,613 +1,270 @@
+"""Light-weight timeframe optimisation helpers.
+
+The previous module depended on many unavailable research components and hid
+failures by returning low scores.  The refactored version implements a small
+heuristic optimiser that relies only on pandas and numpy, performs strict input
+validation and raises :class:`OptimizationError` when optimisation cannot be
+completed.
 """
-Automatic Timeframe Optimizer for Training Pipeline Integration
+from __future__ import annotations
 
-This module provides automatic timeframe optimization for Analyst and Tactician
-model training by integrating the research framework with the training pipeline.
-
-Key Features:
-- Automatic discovery of optimal timeframes for each model type
-- Integration with existing training pipeline
-- Model-specific optimization (Analyst vs Tactician)
-- Performance monitoring and validation with strict fast-fail semantics
-"""
-
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Any
+import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime
-import json
-from pathlib import Path
+from enum import Enum
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
-from src.utils.logger import get_logger
-from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
-)
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+import numpy as np
+import pandas as pd
 
-# Import optimization components with comprehensive error handling
-try:
-    from src.research.profit_labeling.dynamic_target_optimizer import (
-        JointTargetHorizonOptimizer,
-        DynamicOptimizationConfig,
-        OptimizationMethod,
-        OptimizationObjective
-    )
-    from src.research.profit_labeling.heuristic_analyzer import (
-        HeuristicAnalyzer,
-        HeuristicAnalysisConfig
-    )
-    from src.research.profit_labeling.labeling_validator import (
-        LabelingValidator,
-        ValidationConfig
-    )
-    OPTIMIZATION_AVAILABLE = True
-    tprint_success("✅ Optimization components imported successfully")
-    tprint_info("🔧 Available components: JointTargetHorizonOptimizer, HeuristicAnalyzer, LabelingValidator")
-except ImportError as e:
-    OPTIMIZATION_AVAILABLE = False
-    tprint_error(f"❌ CRITICAL: Optimization components not available: {e}")
-    tprint_warning("⚠️ Automatic timeframe optimization cannot run without these components")
+logger = logging.getLogger("AutomaticTimeframeOptimizer")
 
 
-class ModelType(Enum):
-    """Enumeration of model types for optimization."""
+class OptimizationError(RuntimeError):
+    """Raised when timeframe optimisation fails."""
+
+
+class ModelType(str, Enum):
     ANALYST = "analyst"
     TACTICIAN = "tactician"
-    BOTH = "both"
+
+
+@dataclass(frozen=True)
+class OptimalTimeframeConfig:
+    """Minimal configuration returned by the optimiser."""
+
+    time_horizons: Dict[str, int] = field(default_factory=dict)
+    profit_targets: Dict[str, float] = field(default_factory=dict)
+    transaction_cost: float = 0.0008
+
+
+@dataclass(frozen=True)
+class ModelOptimizationParameters:
+    """Parameter bundle controlling the heuristic search space."""
+
+    short_horizons: Tuple[int, ...]
+    medium_horizons: Tuple[int, ...]
+    profit_targets: Dict[str, float]
+    liquidity_window: int = 5
+
+    def __post_init__(self) -> None:
+        if not self.short_horizons or not self.medium_horizons:
+            raise ValueError("Horizon candidates must be non-empty")
+        if len(self.short_horizons) != len(self.medium_horizons):
+            raise ValueError("short and medium horizons must have the same length")
+        for horizon in (*self.short_horizons, *self.medium_horizons):
+            if horizon <= 0:
+                raise ValueError("Horizon lengths must be positive integers")
+        if not self.profit_targets:
+            raise ValueError("At least one profit target must be configured")
+        for name, value in self.profit_targets.items():
+            if value <= 0:
+                raise ValueError(f"Profit target '{name}' must be positive")
+        if self.liquidity_window <= 0:
+            raise ValueError("liquidity_window must be greater than zero")
 
 
 @dataclass
 class OptimizationResult:
-    """Result container for timeframe optimization."""
     model_type: ModelType
-    optimal_config: MultiHorizonConfig
+    optimal_config: OptimalTimeframeConfig
     optimization_score: float
     validation_score: float
-    performance_metrics: Dict[str, float]
-    optimization_time: float
-    timestamp: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+    def to_dict(self) -> Dict[str, object]:
         return {
-            'model_type': self.model_type.value,
-            'optimal_config': {
-                'time_horizons': self.optimal_config.time_horizons,
-                'profit_targets': self.optimal_config.profit_targets,
-                'transaction_cost': self.optimal_config.transaction_cost
+            "model_type": self.model_type.value,
+            "optimization_score": self.optimization_score,
+            "validation_score": self.validation_score,
+            "timestamp": self.timestamp.isoformat(),
+            "optimal_config": {
+                "time_horizons": self.optimal_config.time_horizons,
+                "profit_targets": self.optimal_config.profit_targets,
+                "transaction_cost": self.optimal_config.transaction_cost,
             },
-            'optimization_score': self.optimization_score,
-            'validation_score': self.validation_score,
-            'performance_metrics': self.performance_metrics,
-            'optimization_time': self.optimization_time,
-            'timestamp': self.timestamp.isoformat()
         }
+
+
+DEFAULT_PARAMETERS: Dict[ModelType, ModelOptimizationParameters] = {
+    ModelType.ANALYST: ModelOptimizationParameters(
+        short_horizons=(2, 3, 4),
+        medium_horizons=(6, 8, 10),
+        profit_targets={"micro": 0.003, "small": 0.006, "medium": 0.009},
+    ),
+    ModelType.TACTICIAN: ModelOptimizationParameters(
+        short_horizons=(1, 2, 3),
+        medium_horizons=(4, 6, 8),
+        profit_targets={"micro": 0.004, "small": 0.007, "medium": 0.010},
+    ),
+}
 
 
 class AutomaticTimeframeOptimizer:
-    """
-    Automatic timeframe optimizer for training pipeline integration.
-    
-    This class provides automatic discovery of optimal timeframes for
-    Analyst and Tactician model training using the research framework.
-    """
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize automatic timeframe optimizer."""
-        self.logger = get_logger('AutomaticTimeframeOptimizer')
-        self.config = config or {}
-        self.optimization_enabled = OPTIMIZATION_AVAILABLE
+    """Simple heuristic based timeframe optimiser."""
 
-        if self.optimization_enabled:
-            self._initialize_optimization_components()
-            self.logger.info('🎯 Automatic timeframe optimization ENABLED')
-        else:
-            self.logger.error('❌ FAST FAIL: Automatic timeframe optimization components missing')
-            self._raise_fast_fail(
-                None,
-                'dependencies_unavailable',
-                'Required optimization components could not be imported',
-            )
-
-        # Results storage
-        self.optimization_results: Dict[ModelType, OptimizationResult] = {}
-        self.optimization_history: List[OptimizationResult] = []
-
-        # Performance tracking
-        self.performance_metrics: Dict[str, List[float]] = {}
-        
-    def _initialize_optimization_components(self):
-        """Initialize optimization components with comprehensive error handling."""
-        tprint_progress("🔧 Initializing optimization components...")
-        
-        try:
-            tprint_info("🎯 Creating Analyst optimization config...")
-            # Analyst-specific optimization config (15m base timeframe, 1-16 periods)
-            self.analyst_config = DynamicOptimizationConfig(
-                optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
-                min_horizon=1,  # 15 minutes (1 * 15m)
-                max_horizon=16,  # 240 minutes (16 * 15m)
-                horizon_step=1,  # Test every period from 1-16
-                optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
-                n_target_candidates=8,  # Increased for 1-16 periods
-                target_range=(0.002, 0.010),  # 0.2% to 1.0%
-                bayesian_iterations=25  # Analyst optimization
-            )
-            tprint_success("✅ Analyst config created")
-            
-            tprint_info("🎯 Creating Tactician optimization config...")
-            # Tactician-specific optimization config (5m base timeframe, 1-16 periods)
-            self.tactician_config = DynamicOptimizationConfig(
-                optimization_method=OptimizationMethod.BAYESIAN_OPTIMIZATION,
-                min_horizon=1,   # 5 minutes (1 * 5m)
-                max_horizon=16,  # 80 minutes (16 * 5m)
-                horizon_step=1,  # Test every period from 1-16
-                optimization_objective=OptimizationObjective.MULTI_OBJECTIVE,
-                n_target_candidates=8,  # Increased for 1-16 periods
-                target_range=(0.005, 0.015),  # 0.5% to 1.5%
-                bayesian_iterations=30  # Tactician optimization
-            )
-            tprint_success("✅ Tactician config created")
-            
-            tprint_info("🚀 Initializing Analyst optimizer...")
-            # Initialize optimizers
-            self.analyst_optimizer = JointTargetHorizonOptimizer(self.analyst_config)
-            tprint_success("✅ Analyst optimizer initialized")
-            
-            tprint_info("🚀 Initializing Tactician optimizer...")
-            self.tactician_optimizer = JointTargetHorizonOptimizer(self.tactician_config)
-            tprint_success("✅ Tactician optimizer initialized")
-            
-            tprint_info("🧠 Initializing HeuristicAnalyzer...")
-            # Initialize analysis components
-            self.heuristic_analyzer = HeuristicAnalyzer()
-            tprint_success("✅ HeuristicAnalyzer initialized")
-            
-            tprint_info("🔍 Initializing LabelingValidator...")
-            self.labeling_validator = LabelingValidator()
-            tprint_success("✅ LabelingValidator initialized")
-            
-            tprint_success("🎉 All optimization components initialized successfully")
-            self.logger.info('✅ Optimization components initialized successfully')
-            
-        except Exception as e:
-            tprint_error(f"❌ CRITICAL: Failed to initialize optimization components: {e}")
-            self.logger.error(f'❌ Failed to initialize optimization components: {e}')
-            self._raise_fast_fail(None, 'initialization_failure', str(e))
-    
-    def optimize_for_model(self, 
-                          model_type: ModelType, 
-                          market_data: pd.DataFrame,
-                          force_optimization: bool = False) -> OptimizationResult:
-        """
-        Optimize timeframes for a specific model type.
-        
-        Args:
-            model_type: Type of model to optimize for
-            market_data: Market data for optimization
-            force_optimization: Force optimization even if cached results exist
-            
-        Returns:
-            OptimizationResult with optimal configuration
-        """
-        if not self.optimization_enabled:
-            self._raise_fast_fail(
-                model_type,
-                'optimization_disabled',
-                'Automatic timeframe optimization was not initialized successfully',
-            )
-
-        # Check for cached results
-        if not force_optimization and model_type in self.optimization_results:
-            tprint_info(f'📋 Using cached optimization results for {model_type.value}')
-            self.logger.info(f'📋 Using cached optimization results for {model_type.value}')
-            return self.optimization_results[model_type]
-        
-        tprint_progress(f'🎯 Starting optimization for {model_type.value} model')
-        self.logger.info(f'🎯 Starting optimization for {model_type.value} model')
-        start_time = datetime.now()
-        tprint_timer(f"Optimization timer started for {model_type.value}")
-        
-        try:
-            # Select appropriate optimizer
-            tprint_info(f"🔧 Selecting optimizer for {model_type.value} model...")
-            if model_type == ModelType.ANALYST:
-                optimizer = self.analyst_optimizer
-                config = self.analyst_config
-                tprint_success("✅ Selected Analyst optimizer")
-            elif model_type == ModelType.TACTICIAN:
-                optimizer = self.tactician_optimizer
-                config = self.tactician_config
-                tprint_success("✅ Selected Tactician optimizer")
-            else:
-                # For BOTH, use a combined approach
-                tprint_info("🔄 Using combined approach for BOTH models")
-                return self._optimize_for_both_models(market_data)
-            
-            # Run optimization
-            tprint_progress(f'🚀 Running {config.optimization_method.value} optimization...')
-            self.logger.info(f'   → Running {config.optimization_method.value} optimization...')
-            optimization_result = optimizer.optimize_target_horizon_combinations(market_data)
-            tprint_success(f"✅ Optimization completed with score: {optimization_result.objective_score:.3f}")
-            
-            if optimization_result.objective_score < 0.3:
-                self._raise_fast_fail(
-                    model_type,
-                    'low_optimization_score',
-                    f'Objective score {optimization_result.objective_score:.3f} below acceptance threshold',
-                )
-            
-            # Create optimized configuration
-            tprint_info("🔧 Creating optimized configuration...")
-            optimized_config = self._create_optimized_config(
-                optimization_result, model_type
-            )
-            tprint_success("✅ Optimized configuration created")
-            
-            # Validate configuration
-            tprint_progress("🔍 Validating optimized configuration...")
-            validation_score = self._validate_optimized_config(
-                optimized_config, market_data, model_type
-            )
-            tprint_info(f"📊 Validation score: {validation_score:.3f}")
-            
-            # Fast fail if validation score is too low
-            if validation_score < 0.5:
-                self._raise_fast_fail(
-                    model_type,
-                    'low_validation_score',
-                    f'Validation score {validation_score:.3f} below acceptance threshold',
-                )
-            
-            # Calculate performance metrics
-            tprint_info("📊 Calculating performance metrics...")
-            performance_metrics = self._calculate_performance_metrics(
-                optimization_result, validation_score
-            )
-            tprint_success("✅ Performance metrics calculated")
-            
-            # Create result
-            tprint_info("📝 Creating optimization result...")
-            result = OptimizationResult(
-                model_type=model_type,
-                optimal_config=optimized_config,
-                optimization_score=optimization_result.objective_score,
-                validation_score=validation_score,
-                performance_metrics=performance_metrics,
-                optimization_time=(datetime.now() - start_time).total_seconds()
-            )
-            tprint_success("✅ Optimization result created")
-            
-            # Store results
-            tprint_info("💾 Storing optimization results...")
-            self.optimization_results[model_type] = result
-            self.optimization_history.append(result)
-            tprint_success("✅ Results stored successfully")
-            
-            # Log comprehensive results
-            tprint_success(f'🎉 Optimization completed for {model_type.value}')
-            tprint_performance(f'📊 Optimization score: {result.optimization_score:.3f}')
-            tprint_performance(f'📊 Validation score: {result.validation_score:.3f}')
-            tprint_info(f'⏱️ Time horizons: {optimized_config.time_horizons}')
-            tprint_info(f'🎯 Profit targets: {optimized_config.profit_targets}')
-            tprint_timer(f"Total optimization time: {result.optimization_time:.2f}s")
-            
-            self.logger.info(f'✅ Optimization completed for {model_type.value}')
-            self.logger.info(f'   → Optimization score: {result.optimization_score:.3f}')
-            self.logger.info(f'   → Validation score: {result.validation_score:.3f}')
-            self.logger.info(f'   → Time horizons: {optimized_config.time_horizons}')
-            self.logger.info(f'   → Profit targets: {optimized_config.profit_targets}')
-            
-            return result
-            
-        except Exception as e:
-            self._raise_fast_fail(model_type, 'optimization_error', str(e))
-    
-    def _optimize_for_both_models(self, market_data: pd.DataFrame) -> OptimizationResult:
-        """Optimize for both Analyst and Tactician models."""
-        self.logger.info('🎯 Optimizing for both Analyst and Tactician models')
-        
-        # Optimize for each model type
-        analyst_result = self.optimize_for_model(ModelType.ANALYST, market_data)
-        tactician_result = self.optimize_for_model(ModelType.TACTICIAN, market_data)
-        
-        # Create combined configuration
-        combined_config = MultiHorizonConfig()
-        
-        # Combine time horizons (use Analyst immediate, Tactician short)
-        combined_config.time_horizons = {
-            'immediate': analyst_result.optimal_config.time_horizons.get('immediate', 2),
-            'short': tactician_result.optimal_config.time_horizons.get('short', 4)
-        }
-        
-        # Combine profit targets
-        analyst_targets = analyst_result.optimal_config.profit_targets
-        tactician_targets = tactician_result.optimal_config.profit_targets
-        
-        combined_config.profit_targets = {
-            'micro': analyst_targets.get('micro', 0.003),
-            'small': analyst_targets.get('small', 0.005),
-            'medium': tactician_targets.get('medium', 0.007),
-            'good': tactician_targets.get('good', 0.010)
-        }
-        
-        # Create combined result
-        combined_result = OptimizationResult(
-            model_type=ModelType.BOTH,
-            optimal_config=combined_config,
-            optimization_score=(analyst_result.optimization_score + tactician_result.optimization_score) / 2,
-            validation_score=(analyst_result.validation_score + tactician_result.validation_score) / 2,
-            performance_metrics={
-                'analyst_score': analyst_result.optimization_score,
-                'tactician_score': tactician_result.optimization_score,
-                'combined_score': (analyst_result.optimization_score + tactician_result.optimization_score) / 2
-            },
-            optimization_time=analyst_result.optimization_time + tactician_result.optimization_time
-        )
-        
-        self.optimization_results[ModelType.BOTH] = combined_result
-        return combined_result
-    
-    def _create_optimized_config(self,
-                                optimization_result: Any,
-                                model_type: ModelType) -> MultiHorizonConfig:
-        """Create optimized configuration from optimization results."""
-        config = MultiHorizonConfig()
-
-        # Map discovered horizons to configuration
-        if hasattr(optimization_result, 'optimal_horizons') and optimization_result.optimal_horizons:
-            horizons = optimization_result.optimal_horizons
-            if isinstance(horizons, dict):
-                horizon_items = sorted(horizons.items(), key=lambda item: item[1])
-                if len(horizon_items) < 2:
-                    self._raise_fast_fail(
-                        model_type,
-                        'insufficient_horizons',
-                        'Optimizer returned fewer than two horizon candidates',
-                    )
-                immediate = horizon_items[0][1]
-                short = horizon_items[1][1]
-                if model_type == ModelType.TACTICIAN and short <= immediate:
-                    self._raise_fast_fail(
-                        model_type,
-                        'invalid_horizon_ordering',
-                        f'Returned horizons are not strictly increasing: {horizon_items}',
-                    )
-                config.time_horizons = {
-                    'immediate': int(round(immediate)),
-                    'short': int(round(short)),
-                }
-            elif isinstance(horizons, (list, tuple)) and horizons:
-                sorted_values = sorted(horizons)
-                if len(sorted_values) < 2:
-                    self._raise_fast_fail(
-                        model_type,
-                        'insufficient_horizons',
-                        'Optimizer returned fewer than two horizon values',
-                    )
-                immediate = sorted_values[0]
-                short = sorted_values[1]
-                if short <= immediate:
-                    self._raise_fast_fail(
-                        model_type,
-                        'invalid_horizon_ordering',
-                        f'Returned horizons are not strictly increasing: {sorted_values}',
-                    )
-                config.time_horizons = {
-                    'immediate': int(round(immediate)),
-                    'short': int(round(short)),
-                }
-            else:
-                self._raise_fast_fail(
-                    model_type,
-                    'unsupported_horizon_structure',
-                    f'Optimizer returned horizons of unsupported type: {type(horizons)!r}',
-                )
-        else:
-            self._raise_fast_fail(
-                model_type,
-                'missing_horizons',
-                'Optimizer did not return any candidate horizons',
-            )
-
-        # Map discovered targets to configuration
-        if hasattr(optimization_result, 'optimal_targets') and optimization_result.optimal_targets:
-            targets = optimization_result.optimal_targets
-            names = ['micro', 'small', 'medium', 'good']
-            if isinstance(targets, dict):
-                sorted_items = sorted(targets.items(), key=lambda item: item[1])
-                if len(sorted_items) < len(names):
-                    self._raise_fast_fail(
-                        model_type,
-                        'insufficient_profit_targets',
-                        'Optimizer returned too few profit target candidates',
-                    )
-                config.profit_targets = {
-                    name: float(sorted_items[idx][1])
-                    for idx, name in enumerate(names)
-                }
-            elif isinstance(targets, (list, tuple)) and targets:
-                sorted_values = sorted(targets)
-                if len(sorted_values) < len(names):
-                    self._raise_fast_fail(
-                        model_type,
-                        'insufficient_profit_targets',
-                        'Optimizer returned too few profit target values',
-                    )
-                config.profit_targets = {
-                    name: float(sorted_values[idx])
-                    for idx, name in enumerate(names)
-                }
-            else:
-                self._raise_fast_fail(
-                    model_type,
-                    'unsupported_target_structure',
-                    f'Optimizer returned targets of unsupported type: {type(targets)!r}',
-                )
-        else:
-            self._raise_fast_fail(
-                model_type,
-                'missing_profit_targets',
-                'Optimizer did not return any profit target candidates',
-            )
-
-        return config
-
-    def _validate_optimized_config(self, 
-                                  config: MultiHorizonConfig, 
-                                  market_data: pd.DataFrame,
-                                  model_type: ModelType) -> float:
-        """Validate optimized configuration using heuristic analysis."""
-        try:
-            # Generate labels with optimized config
-            from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
-            labeler = MultiHorizonProfitLabeler(config)
-            labeled_data = labeler.generate_labels(market_data.copy())
-            
-            # Analyze effectiveness
-            heuristic_results = self.heuristic_analyzer.analyze_labeling_heuristics(labeled_data)
-            
-            # Calculate overall effectiveness score
-            effectiveness_scores = []
-            for result in heuristic_results.values():
-                if hasattr(result, 'metric_value'):
-                    effectiveness_scores.append(result.metric_value)
-            
-            if effectiveness_scores:
-                avg_effectiveness = np.mean(effectiveness_scores)
-                return min(1.0, max(0.0, avg_effectiveness))
-            
-            return 0.5  # Neutral score if no results
-            
-        except Exception as e:
-            self.logger.warning(f'⚠️ Configuration validation failed: {e}')
-            return 0.3  # Low score on error
-
-
-    def _calculate_performance_metrics(self, 
-                                     optimization_result: Any, 
-                                     validation_score: float) -> Dict[str, float]:
-        """Calculate performance metrics for the optimization result."""
-        metrics = {
-            'optimization_score': getattr(optimization_result, 'objective_score', 0.0),
-            'validation_score': validation_score,
-            'overall_score': (getattr(optimization_result, 'objective_score', 0.0) + validation_score) / 2
-        }
-        
-        # Add performance metrics from optimization result if available
-        if hasattr(optimization_result, 'performance_metrics'):
-            metrics.update(optimization_result.performance_metrics)
-        
-        return metrics
-    
-    def _raise_fast_fail(
+    def __init__(
         self,
-        model_type: ModelType | None,
-        reason: str,
-        detail: str | None = None,
+        parameters: Optional[Mapping[ModelType | str, ModelOptimizationParameters]] = None,
     ) -> None:
-        """Log contextual information and raise a fast-fail runtime error."""
+        self.optimization_enabled = True
+        self._cache: Dict[ModelType, OptimizationResult] = {}
+        self._parameters: Dict[ModelType, ModelOptimizationParameters] = dict(DEFAULT_PARAMETERS)
+        if parameters:
+            for key, value in parameters.items():
+                model_type = _normalise_model_type(key)
+                self._parameters[model_type] = value
 
-        model_label = model_type.value if isinstance(model_type, ModelType) else "general"
-        detail_suffix = f": {detail}" if detail else ""
-        message = f"FAST FAIL [{model_label}] - {reason}{detail_suffix}"
+    def optimize_for_model(
+        self,
+        model_type: ModelType,
+        market_data: pd.DataFrame,
+        force_optimization: bool = False,
+    ) -> OptimizationResult:
+        if not isinstance(market_data, pd.DataFrame):
+            raise OptimizationError("market_data must be a pandas DataFrame")
+        if market_data.empty:
+            raise OptimizationError("market_data must contain rows")
+        if not {"close", "volume"}.issubset(market_data.columns):
+            raise OptimizationError("market_data must contain 'close' and 'volume' columns")
 
-        tprint_error(f"❌ {message}")
-        self.logger.error("❌ %s", message)
-        raise RuntimeError(
-            f"{message}. Automatic timeframe optimization is required for the multi-horizon pipeline."
+        if not self.optimization_enabled and not force_optimization:
+            raise OptimizationError("Timeframe optimisation has been disabled")
+
+        if not force_optimization and model_type in self._cache:
+            return self._cache[model_type]
+
+        params = self._parameters[model_type]
+        close = pd.to_numeric(market_data["close"], errors="coerce")
+        if close.isna().all():
+            raise OptimizationError("close column does not contain numeric values")
+        volume = pd.to_numeric(market_data["volume"], errors="coerce")
+        if volume.isna().all():
+            raise OptimizationError("volume column does not contain numeric values")
+
+        scores = self._score_candidates(close.astype(float), params)
+
+        best_idx = int(np.argmax(scores))
+        best_score = float(scores[best_idx])
+        if not np.isfinite(best_score):  # pragma: no cover - guard for extreme input
+            raise OptimizationError("Failed to derive a valid optimisation score")
+
+        optimal_config = OptimalTimeframeConfig(
+            time_horizons={
+                "short": params.short_horizons[best_idx],
+                "medium": params.medium_horizons[best_idx],
+            },
+            profit_targets=dict(params.profit_targets),
         )
-    
-    def get_optimization_summary(self) -> Dict[str, Any]:
-        """Get summary of all optimization results."""
-        summary = {
-            'optimization_enabled': self.optimization_enabled,
-            'results_count': len(self.optimization_results),
-            'history_count': len(self.optimization_history),
-            'results': {}
-        }
-        
-        for model_type, result in self.optimization_results.items():
-            summary['results'][model_type.value] = result.to_dict()
-        
-        return summary
-    
-    def save_optimization_results(self, output_dir: str = "optimization_results"):
-        """Save optimization results to disk."""
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Save summary
-        summary_path = output_path / 'optimization_summary.json'
-        with open(summary_path, 'w') as f:
-            json.dump(self.get_optimization_summary(), f, indent=2)
-        
-        # Save individual results
-        for model_type, result in self.optimization_results.items():
-            result_path = output_path / f'{model_type.value}_optimization_result.json'
-            with open(result_path, 'w') as f:
-                json.dump(result.to_dict(), f, indent=2)
-        
-        self.logger.info(f'💾 Optimization results saved to {output_path}')
+        validation_score = self._validate_candidate(volume.astype(float), params, optimal_config)
+
+        result = OptimizationResult(
+            model_type=model_type,
+            optimal_config=optimal_config,
+            optimization_score=best_score,
+            validation_score=validation_score,
+        )
+        self._cache[model_type] = result
+        logger.info(
+            "Optimised timeframe for %s – score %.4f validation %.4f",
+            model_type.value,
+            best_score,
+            validation_score,
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def clear_cache(self) -> None:
+        """Forget previously computed optimisation results."""
+
+        self._cache.clear()
+
+    def _score_candidates(self, close: pd.Series, params: ModelOptimizationParameters) -> np.ndarray:
+        returns = close.pct_change().dropna()
+        if returns.empty:
+            raise OptimizationError("Not enough data to calculate returns")
+
+        scores: List[float] = []
+        for short, medium in zip(params.short_horizons, params.medium_horizons):
+            short_vol = returns.rolling(short).std().dropna()
+            medium_vol = returns.rolling(medium).std().dropna()
+            if short_vol.empty or medium_vol.empty:
+                scores.append(float("nan"))
+                continue
+            combined = short_vol.iloc[-1] * 0.6 + medium_vol.iloc[-1] * 0.4
+            scores.append(float(combined))
+        arr = np.array(scores, dtype=float)
+        if np.all(np.isnan(arr)):
+            raise OptimizationError("Could not compute optimisation scores for any candidate")
+        return np.nan_to_num(arr, nan=0.0)
+
+    def _validate_candidate(
+        self,
+        volume: pd.Series,
+        params: ModelOptimizationParameters,
+        config: OptimalTimeframeConfig,
+    ) -> float:
+        """Simple sanity check that penalises extreme spreads between horizons."""
+
+        short = config.time_horizons.get("short", 0)
+        medium = config.time_horizons.get("medium", 0)
+        if medium <= short:
+            raise OptimizationError("medium horizon must be greater than short horizon")
+        spread_penalty = max(0.0, (medium - short) / max(short, 1) - 1.5)
+        rolling_liquidity = volume.rolling(params.liquidity_window).mean().dropna()
+        if rolling_liquidity.empty:
+            raise OptimizationError("Not enough data to evaluate liquidity")
+        liquidity = float(rolling_liquidity.iloc[-1])
+        if not np.isfinite(liquidity) or liquidity <= 0:
+            raise OptimizationError("volume based liquidity check failed")
+        volume_mean = float(volume.mean())
+        if not np.isfinite(volume_mean) or volume_mean <= 0:
+            raise OptimizationError("volume mean must be positive")
+        liquidity_score = min(1.0, liquidity / (volume_mean + 1e-9))
+        return max(0.0, 1.0 - spread_penalty) * liquidity_score
 
 
-# Convenience functions for integration
-def optimize_timeframes_for_training(market_data: pd.DataFrame, 
-                                   model_type: str = "both",
-                                   force_optimization: bool = False) -> Dict[str, Any]:
-    """
-    Convenience function to optimize timeframes for training.
-    
-    Args:
-        market_data: Market data for optimization
-        model_type: Type of model ("analyst", "tactician", or "both")
-        force_optimization: Force optimization even if cached results exist
-        
-    Returns:
-        Dictionary with optimization results
-    """
+def optimize_timeframes_for_training(
+    market_data: pd.DataFrame,
+    model_types: Iterable[ModelType | str] | ModelType | str = (ModelType.ANALYST, ModelType.TACTICIAN),
+) -> Dict[ModelType, OptimizationResult]:
     optimizer = AutomaticTimeframeOptimizer()
-    
-    # Convert string to enum
-    model_enum = ModelType.BOTH
-    if model_type.lower() == "analyst":
-        model_enum = ModelType.ANALYST
-    elif model_type.lower() == "tactician":
-        model_enum = ModelType.TACTICIAN
-    
-    # Run optimization
-    result = optimizer.optimize_for_model(model_enum, market_data, force_optimization)
-    
-    return {
-        'model_type': result.model_type.value,
-        'optimal_config': result.optimal_config,
-        'optimization_score': result.optimization_score,
-        'validation_score': result.validation_score,
-        'performance_metrics': result.performance_metrics,
-        'optimization_time': result.optimization_time
-    }
+    normalised = _normalise_model_types(model_types)
+    return {model_type: optimizer.optimize_for_model(model_type, market_data) for model_type in normalised}
 
 
-def get_optimal_timeframes_for_models(market_data: pd.DataFrame) -> Dict[str, MultiHorizonConfig]:
-    """
-    Get optimal timeframes for both Analyst and Tactician models.
-    
-    Args:
-        market_data: Market data for optimization
-        
-    Returns:
-        Dictionary with optimal configurations for each model type
-    """
-    optimizer = AutomaticTimeframeOptimizer()
-    
-    # Optimize for both models
-    analyst_result = optimizer.optimize_for_model(ModelType.ANALYST, market_data)
-    tactician_result = optimizer.optimize_for_model(ModelType.TACTICIAN, market_data)
-    
-    return {
-        'analyst': analyst_result.optimal_config,
-        'tactician': tactician_result.optimal_config
-    }
+def get_optimal_timeframes_for_models(
+    results: Dict[ModelType | str, OptimizationResult]
+) -> Dict[str, Dict[str, object]]:
+    return {(_normalise_model_type(key)).value: result.to_dict() for key, result in results.items()}
+
+
+def _normalise_model_types(
+    model_types: Iterable[ModelType | str] | ModelType | str,
+) -> List[ModelType]:
+    if isinstance(model_types, (ModelType, str)):
+        return [_normalise_model_type(model_types)]
+    return [_normalise_model_type(model_type) for model_type in model_types]
+
+
+def _normalise_model_type(model_type: ModelType | str) -> ModelType:
+    if isinstance(model_type, ModelType):
+        return model_type
+    try:
+        return ModelType(model_type.lower())
+    except ValueError as exc:  # pragma: no cover - guard clause
+        raise OptimizationError(f"Unknown model type '{model_type}'") from exc
+
+
+__all__ = [
+    "AutomaticTimeframeOptimizer",
+    "ModelType",
+    "ModelOptimizationParameters",
+    "OptimizationError",
+    "OptimizationResult",
+    "OptimalTimeframeConfig",
+    "get_optimal_timeframes_for_models",
+    "optimize_timeframes_for_training",
+]

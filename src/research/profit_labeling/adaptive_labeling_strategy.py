@@ -462,15 +462,389 @@ class MarketRegimeDetector:
     
     def _detect_regime_gaussian_mixture(self, features: Dict[str, float], market_data: pd.DataFrame) -> RegimeDetectionResult:
         """Detect regime using Gaussian Mixture Models."""
-        # This is a placeholder for more advanced regime detection
-        # Would require historical feature data to train GMM
-        return self._detect_regime_statistical(features, market_data)
+        try:
+            # Need sufficient historical data for GMM training
+            if len(market_data) < 200:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Extract historical features for training
+            historical_features = self._extract_historical_features(market_data, window=100)
+            
+            if len(historical_features) < 50:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Train GMM if not already trained or if data has changed significantly
+            if not hasattr(self, '_gmm_model') or not hasattr(self, '_gmm_regime_mapping'):
+                self._train_gmm_model(historical_features)
+            
+            # Prepare current features for prediction
+            current_feature_vector = self._prepare_feature_vector(features)
+            
+            if current_feature_vector is None:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Predict regime using trained GMM
+            regime_probs = self._predict_regime_with_gmm(current_feature_vector)
+            
+            # Find best regime
+            best_regime = max(regime_probs.keys(), key=lambda k: regime_probs[k])
+            best_confidence = regime_probs[best_regime]
+            
+            return RegimeDetectionResult(
+                current_regime=best_regime,
+                regime_confidence=best_confidence,
+                regime_probabilities=regime_probs,
+                regime_features=features,
+                detection_method=RegimeDetectionMethod.GAUSSIAN_MIXTURE
+            )
+            
+        except Exception as e:
+            self.logger.warning(f'GMM regime detection failed: {e}')
+            return self._detect_regime_statistical(features, market_data)
+    
+    def _extract_historical_features(self, market_data: pd.DataFrame, window: int = 100) -> List[Dict[str, float]]:
+        """Extract historical features for GMM training."""
+        historical_features = []
+        
+        for i in range(window, len(market_data)):
+            # Get window of data
+            window_data = market_data.iloc[i-window:i]
+            
+            # Extract features for this window
+            features = self._extract_regime_features(window_data)
+            
+            # Add regime label based on simple heuristics
+            regime_label = self._label_historical_regime(window_data)
+            features['regime_label'] = regime_label
+            
+            historical_features.append(features)
+        
+        return historical_features
+    
+    def _label_historical_regime(self, window_data: pd.DataFrame) -> int:
+        """Label historical regime using simple heuristics."""
+        if len(window_data) < 20:
+            return 0  # Unknown
+        
+        prices = window_data['close'].values
+        returns = np.diff(prices) / prices[:-1]
+        
+        # Calculate regime indicators
+        volatility = np.std(returns)
+        trend_slope, _, r_value, _, _ = stats.linregress(range(len(prices)), prices)
+        trend_strength = abs(r_value)
+        
+        # Simple regime classification
+        if volatility > 0.02:  # High volatility
+            return 0  # High volatility regime
+        elif trend_strength > 0.7:
+            return 1 if trend_slope > 0 else 2  # Trending up/down
+        elif volatility < 0.005:  # Low volatility
+            return 3  # Low volatility regime
+        else:
+            return 4  # Consolidation
+    
+    def _train_gmm_model(self, historical_features: List[Dict[str, float]]):
+        """Train GMM model on historical features."""
+        try:
+            # Prepare feature matrix
+            feature_names = ['volatility', 'trend_slope', 'trend_strength', 'mean_reversion_z', 
+                           'price_position', 'momentum_5', 'momentum_20']
+            
+            feature_matrix = []
+            regime_labels = []
+            
+            for features in historical_features:
+                feature_vector = []
+                for name in feature_names:
+                    feature_vector.append(features.get(name, 0.0))
+                
+                # Only include if we have enough non-zero features
+                if sum(abs(f) for f in feature_vector) > 0.001:
+                    feature_matrix.append(feature_vector)
+                    regime_labels.append(features.get('regime_label', 0))
+            
+            if len(feature_matrix) < 20:
+                self.logger.warning('Insufficient data for GMM training')
+                return
+            
+            feature_matrix = np.array(feature_matrix)
+            
+            # Standardize features
+            if 'volatility' not in self.feature_scalers:
+                self.feature_scalers['volatility'] = StandardScaler()
+            
+            feature_matrix_scaled = self.feature_scalers['volatility'].fit_transform(feature_matrix)
+            
+            # Train GMM with optimal number of components
+            n_components = min(5, len(set(regime_labels)))  # Max 5 regimes
+            self._gmm_model = GaussianMixture(n_components=n_components, random_state=42)
+            self._gmm_model.fit(feature_matrix_scaled)
+            
+            # Create regime mapping based on cluster centers
+            cluster_centers = self._gmm_model.means_
+            regime_mapping = {}
+            
+            for i, center in enumerate(cluster_centers):
+                # Map cluster to regime based on center characteristics
+                if center[0] > 0.5:  # High volatility
+                    regime_mapping[i] = MarketRegime.HIGH_VOLATILITY
+                elif center[1] > 0.5:  # Strong upward trend
+                    regime_mapping[i] = MarketRegime.TRENDING_UP
+                elif center[1] < -0.5:  # Strong downward trend
+                    regime_mapping[i] = MarketRegime.TRENDING_DOWN
+                elif center[0] < -0.5:  # Low volatility
+                    regime_mapping[i] = MarketRegime.LOW_VOLATILITY
+                else:
+                    regime_mapping[i] = MarketRegime.CONSOLIDATION
+            
+            self._gmm_regime_mapping = regime_mapping
+            
+            self.logger.info(f'GMM model trained with {n_components} components')
+            
+        except Exception as e:
+            self.logger.warning(f'GMM training failed: {e}')
+    
+    def _prepare_feature_vector(self, features: Dict[str, float]) -> Optional[np.ndarray]:
+        """Prepare current features for GMM prediction."""
+        try:
+            feature_names = ['volatility', 'trend_slope', 'trend_strength', 'mean_reversion_z', 
+                           'price_position', 'momentum_5', 'momentum_20']
+            
+            feature_vector = []
+            for name in feature_names:
+                feature_vector.append(features.get(name, 0.0))
+            
+            feature_vector = np.array(feature_vector).reshape(1, -1)
+            
+            # Standardize using trained scaler
+            if 'volatility' in self.feature_scalers:
+                feature_vector_scaled = self.feature_scalers['volatility'].transform(feature_vector)
+                return feature_vector_scaled
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f'Feature vector preparation failed: {e}')
+            return None
+    
+    def _predict_regime_with_gmm(self, feature_vector: np.ndarray) -> Dict[MarketRegime, float]:
+        """Predict regime probabilities using trained GMM."""
+        try:
+            # Get component probabilities
+            component_probs = self._gmm_model.predict_proba(feature_vector)[0]
+            
+            # Map to regime probabilities
+            regime_probs = {}
+            for i, prob in enumerate(component_probs):
+                if i in self._gmm_regime_mapping:
+                    regime = self._gmm_regime_mapping[i]
+                    regime_probs[regime] = prob
+                else:
+                    regime_probs[MarketRegime.UNKNOWN] = prob
+            
+            # Normalize probabilities
+            total_prob = sum(regime_probs.values())
+            if total_prob > 0:
+                for regime in regime_probs:
+                    regime_probs[regime] /= total_prob
+            
+            return regime_probs
+            
+        except Exception as e:
+            self.logger.warning(f'GMM prediction failed: {e}')
+            return {MarketRegime.UNKNOWN: 1.0}
     
     def _detect_regime_kmeans(self, features: Dict[str, float], market_data: pd.DataFrame) -> RegimeDetectionResult:
         """Detect regime using K-means clustering."""
-        # This is a placeholder for clustering-based regime detection
-        # Would require historical feature data to train clustering model
-        return self._detect_regime_statistical(features, market_data)
+        try:
+            # Need sufficient historical data for K-means training
+            if len(market_data) < 150:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Extract historical features for training
+            historical_features = self._extract_historical_features(market_data, window=80)
+            
+            if len(historical_features) < 30:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Train K-means if not already trained
+            if not hasattr(self, '_kmeans_model') or not hasattr(self, '_kmeans_regime_mapping'):
+                self._train_kmeans_model(historical_features)
+            
+            # Prepare current features for prediction
+            current_feature_vector = self._prepare_feature_vector(features)
+            
+            if current_feature_vector is None:
+                return self._detect_regime_statistical(features, market_data)
+            
+            # Predict regime using trained K-means
+            regime_probs = self._predict_regime_with_kmeans(current_feature_vector)
+            
+            # Find best regime
+            best_regime = max(regime_probs.keys(), key=lambda k: regime_probs[k])
+            best_confidence = regime_probs[best_regime]
+            
+            return RegimeDetectionResult(
+                current_regime=best_regime,
+                regime_confidence=best_confidence,
+                regime_probabilities=regime_probs,
+                regime_features=features,
+                detection_method=RegimeDetectionMethod.KMEANS_CLUSTERING
+            )
+            
+        except Exception as e:
+            self.logger.warning(f'K-means regime detection failed: {e}')
+            return self._detect_regime_statistical(features, market_data)
+    
+    def _train_kmeans_model(self, historical_features: List[Dict[str, float]]):
+        """Train K-means model on historical features."""
+        try:
+            # Prepare feature matrix
+            feature_names = ['volatility', 'trend_slope', 'trend_strength', 'mean_reversion_z', 
+                           'price_position', 'momentum_5', 'momentum_20']
+            
+            feature_matrix = []
+            regime_labels = []
+            
+            for features in historical_features:
+                feature_vector = []
+                for name in feature_names:
+                    feature_vector.append(features.get(name, 0.0))
+                
+                # Only include if we have enough non-zero features
+                if sum(abs(f) for f in feature_vector) > 0.001:
+                    feature_matrix.append(feature_vector)
+                    regime_labels.append(features.get('regime_label', 0))
+            
+            if len(feature_matrix) < 20:
+                self.logger.warning('Insufficient data for K-means training')
+                return
+            
+            feature_matrix = np.array(feature_matrix)
+            
+            # Standardize features
+            if 'kmeans' not in self.feature_scalers:
+                self.feature_scalers['kmeans'] = StandardScaler()
+            
+            feature_matrix_scaled = self.feature_scalers['kmeans'].fit_transform(feature_matrix)
+            
+            # Determine optimal number of clusters using silhouette analysis
+            best_n_clusters = self._find_optimal_clusters(feature_matrix_scaled, max_clusters=5)
+            
+            # Train K-means
+            self._kmeans_model = KMeans(n_clusters=best_n_clusters, random_state=42, n_init=10)
+            self._kmeans_model.fit(feature_matrix_scaled)
+            
+            # Create regime mapping based on cluster centers and labels
+            cluster_centers = self._kmeans_model.cluster_centers_
+            regime_mapping = {}
+            
+            # Map clusters to regimes based on center characteristics and historical labels
+            for i, center in enumerate(cluster_centers):
+                # Get historical labels for this cluster
+                cluster_labels = [regime_labels[j] for j in range(len(regime_labels)) 
+                                if self._kmeans_model.labels_[j] == i]
+                
+                if cluster_labels:
+                    # Use most common historical label
+                    most_common_label = max(set(cluster_labels), key=cluster_labels.count)
+                    regime_mapping[i] = self._map_label_to_regime(most_common_label)
+                else:
+                    # Fallback to center-based mapping
+                    regime_mapping[i] = self._map_center_to_regime(center)
+            
+            self._kmeans_regime_mapping = regime_mapping
+            
+            self.logger.info(f'K-means model trained with {best_n_clusters} clusters')
+            
+        except Exception as e:
+            self.logger.warning(f'K-means training failed: {e}')
+    
+    def _find_optimal_clusters(self, feature_matrix: np.ndarray, max_clusters: int = 5) -> int:
+        """Find optimal number of clusters using silhouette analysis."""
+        try:
+            if len(feature_matrix) < 10:
+                return 2
+            
+            best_score = -1
+            best_n_clusters = 2
+            
+            for n_clusters in range(2, min(max_clusters + 1, len(feature_matrix) // 5)):
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=5)
+                cluster_labels = kmeans.fit_predict(feature_matrix)
+                
+                if len(set(cluster_labels)) > 1:  # Ensure we have multiple clusters
+                    score = silhouette_score(feature_matrix, cluster_labels)
+                    if score > best_score:
+                        best_score = score
+                        best_n_clusters = n_clusters
+            
+            return best_n_clusters
+            
+        except Exception as e:
+            self.logger.warning(f'Cluster optimization failed: {e}')
+            return 3  # Default to 3 clusters
+    
+    def _map_label_to_regime(self, label: int) -> MarketRegime:
+        """Map historical label to market regime."""
+        label_to_regime = {
+            0: MarketRegime.HIGH_VOLATILITY,
+            1: MarketRegime.TRENDING_UP,
+            2: MarketRegime.TRENDING_DOWN,
+            3: MarketRegime.LOW_VOLATILITY,
+            4: MarketRegime.CONSOLIDATION
+        }
+        return label_to_regime.get(label, MarketRegime.UNKNOWN)
+    
+    def _map_center_to_regime(self, center: np.ndarray) -> MarketRegime:
+        """Map cluster center to market regime based on characteristics."""
+        volatility_score = center[0]  # First feature is volatility
+        trend_score = center[1]  # Second feature is trend slope
+        
+        if volatility_score > 0.5:
+            return MarketRegime.HIGH_VOLATILITY
+        elif trend_score > 0.5:
+            return MarketRegime.TRENDING_UP
+        elif trend_score < -0.5:
+            return MarketRegime.TRENDING_DOWN
+        elif volatility_score < -0.5:
+            return MarketRegime.LOW_VOLATILITY
+        else:
+            return MarketRegime.CONSOLIDATION
+    
+    def _predict_regime_with_kmeans(self, feature_vector: np.ndarray) -> Dict[MarketRegime, float]:
+        """Predict regime using trained K-means model."""
+        try:
+            # Get cluster assignment
+            cluster_id = self._kmeans_model.predict(feature_vector)[0]
+            
+            # Get distance to all cluster centers
+            distances = self._kmeans_model.transform(feature_vector)[0]
+            
+            # Convert distances to probabilities (inverse distance weighting)
+            max_distance = np.max(distances)
+            if max_distance > 0:
+                # Use softmax-like conversion
+                exp_distances = np.exp(-distances / (max_distance * 0.5))
+                probabilities = exp_distances / np.sum(exp_distances)
+            else:
+                probabilities = np.ones(len(distances)) / len(distances)
+            
+            # Map to regime probabilities
+            regime_probs = {}
+            for i, prob in enumerate(probabilities):
+                if i in self._kmeans_regime_mapping:
+                    regime = self._kmeans_regime_mapping[i]
+                    regime_probs[regime] = prob
+                else:
+                    regime_probs[MarketRegime.UNKNOWN] = prob
+            
+            return regime_probs
+            
+        except Exception as e:
+            self.logger.warning(f'K-means prediction failed: {e}')
+            return {MarketRegime.UNKNOWN: 1.0}
 
 
 class ContextualParameterOptimizer:

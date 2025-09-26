@@ -304,12 +304,130 @@ class BacktestingEnhancedClustering:
     def _validate_cluster_quality(self, cluster: List[int], cluster_center: float, data: pd.DataFrame) -> float:
         """Validate the quality of a cluster using backtesting."""
         try:
-            # This would backtest the cluster center as a new level
-            # For now, return average quality of cluster members
-            return 0.7  # Placeholder
+            if not cluster or len(cluster) == 0:
+                return 0.0
+            
+            # Create a synthetic SR level at the cluster center
+            synthetic_level = {
+                'price': cluster_center,
+                'strength': self._calculate_cluster_strength(cluster),
+                'type': 'support' if cluster_center < data['close'].iloc[-1] else 'resistance',
+                'touches': self._calculate_cluster_touches(cluster),
+                'volume': self._calculate_cluster_volume(cluster, data)
+            }
+            
+            # Convert to SRLevel object
+            sr_level = create_sr_level_from_dict(synthetic_level)
+            
+            # Backtest the synthetic level
+            backtest_result = self.backtesting_engine.backtest_single_level(sr_level, data)
+            
+            if backtest_result:
+                # Calculate composite quality score
+                quality_score = self._calculate_composite_quality_score(backtest_result, cluster)
+                return quality_score
+            else:
+                # Fallback to average quality of cluster members
+                return self._calculate_average_member_quality(cluster)
             
         except Exception as e:
             self.logger.warning(f"Cluster quality validation failed: {e}")
+            return 0.5
+    
+    def _calculate_cluster_strength(self, cluster: List[int]) -> float:
+        """Calculate the strength of a cluster based on its members."""
+        try:
+            if not cluster:
+                return 0.0
+            
+            # Simple strength calculation - could be enhanced with more sophisticated logic
+            base_strength = len(cluster) * 0.1  # Each member adds 0.1 strength
+            
+            # Cap at reasonable maximum
+            return min(base_strength, 1.0)
+            
+        except Exception as e:
+            self.logger.warning(f"Cluster strength calculation failed: {e}")
+            return 0.5
+    
+    def _calculate_cluster_touches(self, cluster: List[int]) -> int:
+        """Calculate total touches for the cluster."""
+        try:
+            # For now, return the number of cluster members as a proxy for touches
+            # In a more sophisticated implementation, this would count actual touches
+            return len(cluster)
+            
+        except Exception as e:
+            self.logger.warning(f"Cluster touches calculation failed: {e}")
+            return 1
+    
+    def _calculate_cluster_volume(self, cluster: List[int], data: pd.DataFrame) -> float:
+        """Calculate volume associated with the cluster."""
+        try:
+            if 'volume' not in data.columns:
+                return 0.0
+            
+            # Calculate average volume around cluster center
+            # This is a simplified approach - could be enhanced with actual volume analysis
+            recent_volume = data['volume'].tail(20).mean()
+            return recent_volume * len(cluster) * 0.1  # Scale by cluster size
+            
+        except Exception as e:
+            self.logger.warning(f"Cluster volume calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_composite_quality_score(self, backtest_result: Any, cluster: List[int]) -> float:
+        """Calculate composite quality score from backtest result and cluster characteristics."""
+        try:
+            # Base quality from backtesting
+            base_quality = backtest_result.quality_score
+            
+            # Cluster size factor (more members = higher confidence)
+            cluster_size_factor = min(1.0, len(cluster) / 5.0)  # Normalize to max 5 members
+            
+            # Consistency factor (how similar are cluster members)
+            consistency_factor = self._calculate_cluster_consistency(cluster)
+            
+            # Composite score with weights
+            composite_score = (
+                0.6 * base_quality +           # 60% from backtesting
+                0.2 * cluster_size_factor +   # 20% from cluster size
+                0.2 * consistency_factor      # 20% from consistency
+            )
+            
+            return min(1.0, max(0.0, composite_score))
+            
+        except Exception as e:
+            self.logger.warning(f"Composite quality calculation failed: {e}")
+            return backtest_result.quality_score if backtest_result else 0.5
+    
+    def _calculate_cluster_consistency(self, cluster: List[int]) -> float:
+        """Calculate how consistent the cluster members are."""
+        try:
+            if len(cluster) <= 1:
+                return 1.0  # Single member is perfectly consistent
+            
+            # This is a placeholder for consistency calculation
+            # In a real implementation, this would analyze the similarity of cluster members
+            # For now, return a reasonable default
+            return 0.8
+            
+        except Exception as e:
+            self.logger.warning(f"Cluster consistency calculation failed: {e}")
+            return 0.5
+    
+    def _calculate_average_member_quality(self, cluster: List[int]) -> float:
+        """Calculate average quality of cluster members as fallback."""
+        try:
+            if not cluster:
+                return 0.0
+            
+            # This would need access to the original level data
+            # For now, return a reasonable default based on cluster size
+            return min(0.8, 0.3 + (len(cluster) * 0.1))
+            
+        except Exception as e:
+            self.logger.warning(f"Average member quality calculation failed: {e}")
             return 0.5
     
     def _calculate_cluster_quality_metrics(self, result: ClusteringResult, levels: List[Dict]) -> Dict[str, Any]:

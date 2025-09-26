@@ -616,10 +616,99 @@ class DataQualificationImportManager:
                 )
 
             def detect_regimes(self, data, *args, **kwargs):
-                raise NotImplementedError(
-                    "HMM regime detection has been removed. "
-                    "Please migrate to NAS/TAS regime workflows."
+                """
+                Fallback regime detection that provides basic regime insights.
+                
+                This is a simplified fallback implementation that provides basic
+                regime detection capabilities when the full HMM system is not available.
+                It returns a single regime with basic statistics.
+                
+                Args:
+                    data: Input data for regime detection
+                    *args: Additional positional arguments
+                    **kwargs: Additional keyword arguments
+                    
+                Returns:
+                    Dict containing basic regime information
+                """
+                self.logger.warning(
+                    "⚠️ Using fallback regime detection. "
+                    "For full regime analysis, migrate to NAS/TAS pipelines."
                 )
+                
+                try:
+                    # Basic regime detection using simple statistical measures
+                    if hasattr(data, 'values'):
+                        data_values = data.values
+                    else:
+                        data_values = np.array(data)
+                    
+                    # Calculate basic statistics for regime classification
+                    mean_val = np.mean(data_values)
+                    std_val = np.std(data_values)
+                    
+                    # Simple regime classification based on volatility
+                    if std_val > mean_val * 0.1:  # High volatility regime
+                        regime_type = "high_volatility"
+                        regime_confidence = 0.7
+                    elif std_val < mean_val * 0.05:  # Low volatility regime
+                        regime_type = "low_volatility"
+                        regime_confidence = 0.8
+                    else:  # Normal regime
+                        regime_type = "normal"
+                        regime_confidence = 0.6
+                    
+                    # Return basic regime information
+                    return {
+                        'regimes': [{
+                            'regime_id': 0,
+                            'regime_type': regime_type,
+                            'confidence': regime_confidence,
+                            'start_index': 0,
+                            'end_index': len(data_values) - 1,
+                            'statistics': {
+                                'mean': float(mean_val),
+                                'std': float(std_val),
+                                'min': float(np.min(data_values)),
+                                'max': float(np.max(data_values))
+                            },
+                            'metadata': {
+                                'detection_method': 'fallback_statistical',
+                                'warning': 'HMM regime detection not available. Use NAS/TAS pipelines for advanced regime analysis.'
+                            }
+                        }],
+                        'total_regimes': 1,
+                        'detection_metadata': {
+                            'method': 'fallback',
+                            'warning': 'HMM regime detection has been removed. Please migrate to NAS/TAS regime workflows.',
+                            'recommendation': 'Use NAS/TAS pipelines for comprehensive regime analysis'
+                        }
+                    }
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Fallback regime detection failed: {e}")
+                    # Return minimal fallback
+                    return {
+                        'regimes': [{
+                            'regime_id': 0,
+                            'regime_type': 'unknown',
+                            'confidence': 0.3,
+                            'start_index': 0,
+                            'end_index': len(data) - 1 if hasattr(data, '__len__') else 0,
+                            'statistics': {},
+                            'metadata': {
+                                'detection_method': 'fallback_error',
+                                'error': str(e),
+                                'warning': 'HMM regime detection not available. Use NAS/TAS pipelines for regime analysis.'
+                            }
+                        }],
+                        'total_regimes': 1,
+                        'detection_metadata': {
+                            'method': 'fallback_error',
+                            'error': str(e),
+                            'warning': 'HMM regime detection has been removed. Please migrate to NAS/TAS regime workflows.'
+                        }
+                    }
 
         return FallbackHMMDetector
     

@@ -384,6 +384,50 @@ def create_signal_enhancer(
     enhancement_type: str,
     config: Optional[Dict[str, Any]] = None
 ) -> BaseSignalEnhancer:
-    """Create a signal enhancer (to be implemented by subclasses)."""
-    # This would be implemented by specific enhancer classes
-    raise NotImplementedError("Use specific enhancer classes (NASSignalEnhancer, TASSignalEnhancer)")
+    """
+    Factory function to create signal enhancer instances.
+    
+    Args:
+        enhancement_type: Type of enhancement ("nas" or "tas")
+        config: Configuration dictionary for the enhancer
+        
+    Returns:
+        BaseSignalEnhancer: Appropriate signal enhancer instance
+        
+    Raises:
+        ValueError: If enhancement_type is not supported
+        ImportError: If required enhancer classes are not available
+        
+    Example:
+        >>> nas_enhancer = create_signal_enhancer("nas", {"confidence_threshold": 0.7})
+        >>> tas_enhancer = create_signal_enhancer("tas", {"max_model_contributions": 5})
+    """
+    enhancement_type = enhancement_type.lower().strip()
+    
+    if enhancement_type == "nas":
+        try:
+            from src.trading.signal_generation.analyst_signals_refactored import NASSignalEnhancer
+            return NASSignalEnhancer(config)
+        except ImportError as e:
+            logger.error(f"❌ Failed to import NASSignalEnhancer: {e}")
+            raise ImportError(
+                "NASSignalEnhancer not available. "
+                "Please ensure the analyst signals module is properly installed."
+            ) from e
+    
+    elif enhancement_type == "tas":
+        try:
+            from src.trading.signal_generation.tactician_signals_refactored import TASSignalEnhancer
+            return TASSignalEnhancer(config)
+        except ImportError as e:
+            logger.error(f"❌ Failed to import TASSignalEnhancer: {e}")
+            raise ImportError(
+                "TASSignalEnhancer not available. "
+                "Please ensure the tactician signals module is properly installed."
+            ) from e
+    
+    else:
+        raise ValueError(
+            f"Unsupported enhancement type: '{enhancement_type}'. "
+            f"Supported types are: 'nas', 'tas'"
+        )

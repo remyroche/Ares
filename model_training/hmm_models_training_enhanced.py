@@ -55,6 +55,17 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         Args:
             config: HMM training configuration (will be updated to use 15m timeframe)
         """
+        # Define the canonical base-model configuration for regime training
+        # The keys represent the identifiers used throughout the pipeline,
+        # while ``canonical`` maps to the underlying implementation used by
+        # the model factory.  These values are reused when formatting the
+        # final artifacts as well as when retrieving search spaces.
+        self.base_model_config: Dict[str, Dict[str, str]] = {
+            "xgboost": {"display_name": "XGBoost", "canonical": "xgboost"},
+            "rf": {"display_name": "Random_Forest", "canonical": "random_forest"},
+            "elastinet": {"display_name": "ElasticNet", "canonical": "elasticnet"},
+        }
+
         # Ensure we have a config with 15m timeframe for HMM state recognition
         if config is None:
             # Do not reference self.* here; instance is not fully initialized yet
@@ -87,6 +98,13 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
                 self.config.model_types = self.hmm_hpo.get_hmm_model_types()
         except Exception as e:
             log_warning(f"Failed to get HMM model types from HPO: {e}. Using defaults provided by HMMTrainingConfig.")
+
+        # Override the model list so the regime trainer only works with the
+        # calibrated XGBoost, Random Forest, and ElasticNet configurations.
+        # Using the pipeline level aliases keeps subsequent reporting tidy
+        # while the model factory resolves the canonical implementation via
+        # the alias mapping defined in ``training_utils``.
+        self.config.model_types = list(self.base_model_config.keys())
 
         # Normalize objective weights for clarity if provided
         try:
@@ -375,7 +393,8 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
         self.logger.info("🔄 Training HMM state recognition models")
 
         # Get search spaces using HMM HPO configuration from ml_commons
-        search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces()
+        search_spaces = self.hmm_hpo.get_hmm_state_recognition_search_spaces() if self.hmm_hpo else {}
+        search_spaces = self._filter_search_spaces(search_spaces)
 
         # Feature engineering utilities
         try:
@@ -462,6 +481,31 @@ class StreamlinedHMMTrainingStep(BaseTrainingStep):
             'training_time': total_training_time,
             'regime_count': len(regime_data)
         }
+
+    def _filter_search_spaces(self, search_spaces: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+        """Restrict the search spaces to the configured base models.
+
+        The upstream HPO utility can return a wide selection of model spaces.
+        For the streamlined regime workflow we explicitly limit it to the
+        calibrated trio defined in ``self.base_model_config``.  If a particular
+        alias does not have a bespoke search space we gracefully fall back to
+        the canonical entry when available.
+        """
+
+        if not search_spaces:
+            return {}
+
+        filtered: Dict[str, Dict[str, Any]] = {}
+
+        for alias, info in self.base_model_config.items():
+            canonical = info['canonical']
+            candidate_keys = [alias, canonical, canonical.replace('_', '')]
+            for candidate in candidate_keys:
+                if candidate in search_spaces:
+                    filtered[alias] = search_spaces[candidate]
+                    break
+
+        return filtered
 
 
     def _handle_training_error(self, error: Exception, context: str = "") -> Dict[str, Any]:

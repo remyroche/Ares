@@ -632,6 +632,8 @@ class MarketAnalysisSubPipeline:
             meta_training_data = regime_meta_training_result.artifacts.get('regime_metamodel_training_result', {})
             results['regime_meta_models'] = meta_training_data.get('models', {})
             results['regime_meta_metrics'] = meta_training_data.get('ensemble_metrics', {})
+            if 'regime_models_definition' in meta_training_data:
+                results['regime_models'] = meta_training_data['regime_models_definition']
 
             self._current_pipeline_state.update({
                 'hmm_ensemble': results['regime_meta_models'],

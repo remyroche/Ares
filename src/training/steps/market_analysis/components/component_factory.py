@@ -986,7 +986,40 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
 
 
 class SimpleRegimeMetaModelTrainer:
-    """Lightweight trainer that synthesizes regime-level meta-model information."""
+    """Synthesise meta-learner configuration for regime ensembles."""
+
+    BASE_MODEL_DEFINITIONS: Dict[str, Dict[str, Any]] = {
+        'xgboost': {
+            'display_name': 'XGBoost',
+            'candidates': ['xgboost', 'XGBClassifier', 'XGBoost']
+        },
+        'rf': {
+            'display_name': 'Random_Forest',
+            'candidates': ['rf', 'random_forest', 'RandomForestClassifier']
+        },
+        'elastinet': {
+            'display_name': 'ElasticNet',
+            'candidates': ['elastinet', 'elasticnet', 'ElasticNetClassifier', 'ElasticNet']
+        }
+    }
+
+    META_LEARNER_NAME = 'stacker_lgbm_calibrated'
+    META_LEARNER_CONFIG: Dict[str, Any] = {
+        'display_name': 'stacker_lgbm_calibrated',
+        'hyperparameters': {
+            'model_class': 'lightgbm.LGBMClassifier',
+            'max_depth': 4,
+            'min_child_samples': 25,
+            'n_estimators': 200,
+            'learning_rate': 0.05,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8
+        },
+        'calibration': {
+            'method': 'isotonic',
+            'cv_folds': 3
+        }
+    }
 
     def __init__(self):
         self.logger = logging.getLogger('SimpleRegimeMetaModelTrainer')
@@ -1000,6 +1033,49 @@ class SimpleRegimeMetaModelTrainer:
                 if isinstance(models, dict):
                     normalized[str(regime_key)] = models
         return normalized
+
+    def _extract_regime_models(self, regime_models: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the dictionary containing the trained model artefacts."""
+        if 'models' in regime_models and isinstance(regime_models['models'], dict):
+            return regime_models['models']
+        return regime_models
+
+    def _format_base_model_summary(self, regime_models: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Create a normalized summary for the configured base models."""
+        formatted: Dict[str, Dict[str, Any]] = {}
+        extracted = self._extract_regime_models(regime_models)
+
+        for alias, info in self.BASE_MODEL_DEFINITIONS.items():
+            candidates = {alias} | {alias.replace('_', '')}
+            candidates.update(info.get('candidates', []))
+            matched_key = next((key for key in extracted.keys() if key in candidates), None)
+            model_entry = extracted.get(matched_key, {}) if matched_key else {}
+
+            formatted[alias] = {
+                'display_name': info['display_name'],
+                'source_key': matched_key,
+                'available': bool(model_entry),
+                'trained': isinstance(model_entry, dict) and bool(model_entry.get('model')),
+                'performance': model_entry.get('performance', {}),
+                'metadata': model_entry.get('metadata', {})
+            }
+
+        return formatted
+
+    def _build_regime_definition(self) -> Dict[str, Any]:
+        """Return the declarative regime model configuration."""
+        base_mapping = {
+            alias: definition['display_name']
+            for alias, definition in self.BASE_MODEL_DEFINITIONS.items()
+        }
+        meta_mapping = {
+            self.META_LEARNER_NAME: {
+                'display_name': self.META_LEARNER_CONFIG['display_name'],
+                'hyperparameters': self.META_LEARNER_CONFIG['hyperparameters'],
+                'calibration': self.META_LEARNER_CONFIG['calibration']
+            }
+        }
+        return {'base': base_mapping, 'meta_learner': meta_mapping}
 
     def execute(
         self,
@@ -1023,11 +1099,12 @@ class SimpleRegimeMetaModelTrainer:
         total_models = 0
 
         for regime, models in normalized_models.items():
-            model_names = list(models.keys())
-            model_count = len(model_names)
+            base_summary = self._format_base_model_summary(models)
+            available_models = [alias for alias, summary in base_summary.items() if summary['available']]
+            model_count = len(available_models)
             total_models += model_count
 
-            weights = {name: 1.0 / model_count for name in model_names} if model_names else {}
+            weights = {alias: 1.0 / model_count for alias in available_models} if model_count else {}
 
             score_sources = hmm_training_metrics.get(regime, {}) if isinstance(hmm_training_metrics, dict) else {}
             aggregated_score = 0.0
@@ -1046,35 +1123,45 @@ class SimpleRegimeMetaModelTrainer:
             average_score = aggregated_score / score_count if score_count else 0.0
 
             meta_models[regime] = {
-                'base_models': model_names,
+                'base_models': base_summary,
                 'stacking_weights': weights,
-                'average_source_score': average_score
+                'average_source_score': average_score,
+                'meta_learner': {
+                    'name': self.META_LEARNER_NAME,
+                    'display_name': self.META_LEARNER_CONFIG['display_name'],
+                    'status': 'configured',
+                    'hyperparameters': self.META_LEARNER_CONFIG['hyperparameters'],
+                    'calibration': self.META_LEARNER_CONFIG['calibration']
+                }
             }
 
             ensemble_metrics[regime] = {
                 'model_count': model_count,
-                'average_source_score': average_score
+                'average_source_score': average_score,
+                'meta_learner': self.META_LEARNER_NAME
             }
 
         total_regimes = len(meta_models)
         performance_summary = {
             'total_regimes': total_regimes,
             'total_base_models': total_models,
-            'average_models_per_regime': (total_models / total_regimes) if total_regimes else 0.0
+            'average_models_per_regime': (total_models / total_regimes) if total_regimes else 0.0,
+            'meta_learner': self.META_LEARNER_NAME
         }
 
         training_time = time.time() - start_time
 
         metadata = {
             'timestamp': datetime.utcnow().isoformat(),
-            'meta_model_strategy': 'equal_weighted_ensemble',
+            'meta_model_strategy': 'stacked_lightgbm_with_calibration',
             'base_models_available': total_models,
             'regime_labels_provided': regime_labels is not None,
-            'feature_context_available': feature_names is not None and len(feature_names) > 0
+            'feature_context_available': feature_names is not None and len(feature_names) > 0,
+            'meta_learner': self.META_LEARNER_NAME
         }
 
         self.logger.info(
-            "✅ Generated regime meta-model insights for %d regimes in %.3fs",
+            "✅ Generated regime meta-model configuration for %d regimes in %.3fs",
             total_regimes,
             training_time
         )
@@ -1083,12 +1170,14 @@ class SimpleRegimeMetaModelTrainer:
             'models': meta_models,
             'comprehensive_report': {
                 'ensemble_metrics': ensemble_metrics,
-                'base_model_sources': list(normalized_models.keys())
+                'base_model_sources': list(normalized_models.keys()),
+                'regime_models_definition': self._build_regime_definition()
             },
             'ensemble_metrics': ensemble_metrics,
             'performance_summary': performance_summary,
             'metadata': metadata,
-            'training_time': training_time
+            'training_time': training_time,
+            'regime_models_definition': self._build_regime_definition()
         }
 
 

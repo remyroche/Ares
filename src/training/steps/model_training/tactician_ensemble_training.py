@@ -1054,7 +1054,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.info("🏭 Creating tactician models for 1m timeframe...")
             
             # Create base models for Tactician (1m timeframe)
-            # Note: Some models are placeholders until proper implementations are available
+            # All models are now properly implemented with comprehensive configurations
             models = {}
             
             try:
@@ -1068,20 +1068,90 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 raise RuntimeError(f"CatBoost is required for Tactician ensemble base models: {e}")
 
             models = {}
+            
+            # XGBoost model for regression
             models['xgboost_model'] = xgb.XGBRegressor(
                 n_estimators=300,
                 random_state=42,
                 max_depth=12,
                 n_jobs=-1,
-                objective='reg:squarederror'
+                objective='reg:squarederror',
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                reg_alpha=0.1,
+                reg_lambda=1.0
             )
+            
+            # CatBoost model for regression
             models['catboost_model'] = cb.CatBoostRegressor(
                 iterations=500,
                 random_seed=44,
                 depth=8,
                 verbose=False,
-                allow_writing_files=False
+                allow_writing_files=False,
+                learning_rate=0.1,
+                l2_leaf_reg=3.0,
+                bagging_temperature=1.0,
+                random_strength=1.0
             )
+            
+            # LightGBM model for regression
+            try:
+                import lightgbm as lgb
+                models['lightgbm_model'] = lgb.LGBMRegressor(
+                    n_estimators=300,
+                    random_state=42,
+                    max_depth=12,
+                    n_jobs=-1,
+                    objective='regression',
+                    learning_rate=0.1,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.1,
+                    reg_lambda=1.0,
+                    verbose=-1
+                )
+            except ImportError as e:
+                self.logger.warning(f"LightGBM not available: {e}")
+            
+            # RandomForest model for regression
+            try:
+                from sklearn.ensemble import RandomForestRegressor
+                models['randomforest_model'] = RandomForestRegressor(
+                    n_estimators=200,
+                    random_state=42,
+                    max_depth=15,
+                    n_jobs=-1,
+                    min_samples_split=5,
+                    min_samples_leaf=2,
+                    max_features='sqrt'
+                )
+            except ImportError as e:
+                self.logger.warning(f"RandomForest not available: {e}")
+            
+            # ElasticNet model for regression
+            try:
+                from sklearn.linear_model import ElasticNet
+                models['elasticnet_model'] = ElasticNet(
+                    alpha=0.1,
+                    l1_ratio=0.5,
+                    random_state=42,
+                    max_iter=2000
+                )
+            except ImportError as e:
+                self.logger.warning(f"ElasticNet not available: {e}")
+            
+            # Ridge regression model
+            try:
+                from sklearn.linear_model import Ridge
+                models['ridge_model'] = Ridge(
+                    alpha=1.0,
+                    random_state=42,
+                    max_iter=2000
+                )
+            except ImportError as e:
+                self.logger.warning(f"Ridge not available: {e}")
             
             # Validate models
             for model_name, model in models.items():
@@ -1108,15 +1178,35 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 module = type(model).__module__
                 
                 if 'xgboost' in model_name.lower():
-                    if 'xgboost' in module:
+                    if 'xgboost' in module or 'XGBRegressor' in model_type:
                         self.logger.info(f"  ✅ {model_name}: Actual XGBoost implementation ({model_type})")
                     else:
-                        self.logger.warning(f"  ⚠️ {model_name}: RandomForest placeholder for XGBoost ({model_type})")
+                        self.logger.warning(f"  ⚠️ {model_name}: Unexpected implementation for XGBoost ({model_type})")
                 elif 'catboost' in model_name.lower():
-                    if 'catboost' in module:
+                    if 'catboost' in module or 'CatBoostRegressor' in model_type:
                         self.logger.info(f"  ✅ {model_name}: Actual CatBoost implementation ({model_type})")
                     else:
                         self.logger.error(f"  ❌ {model_name}: Invalid CatBoost implementation context ({module})")
+                elif 'lightgbm' in model_name.lower():
+                    if 'lightgbm' in module or 'LGBMRegressor' in model_type:
+                        self.logger.info(f"  ✅ {model_name}: Actual LightGBM implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: Unexpected implementation for LightGBM ({model_type})")
+                elif 'randomforest' in model_name.lower():
+                    if 'sklearn' in module or 'RandomForestRegressor' in model_type:
+                        self.logger.info(f"  ✅ {model_name}: Actual RandomForest implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: Unexpected implementation for RandomForest ({model_type})")
+                elif 'elasticnet' in model_name.lower():
+                    if 'sklearn' in module or 'ElasticNet' in model_type:
+                        self.logger.info(f"  ✅ {model_name}: Actual ElasticNet implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: Unexpected implementation for ElasticNet ({model_type})")
+                elif 'ridge' in model_name.lower():
+                    if 'sklearn' in module or 'Ridge' in model_type:
+                        self.logger.info(f"  ✅ {model_name}: Actual Ridge implementation ({model_type})")
+                    else:
+                        self.logger.warning(f"  ⚠️ {model_name}: Unexpected implementation for Ridge ({model_type})")
                 else:
                     self.logger.info(f"  ✅ {model_name}: Actual implementation ({model_type})")
                     

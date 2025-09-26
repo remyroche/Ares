@@ -30,6 +30,7 @@ import pandas_ta as ta
 
 from src.utils.logger import system_logger
 from src.utils.data.feature_engineer import FeatureEngineer
+from src.utils.tprint import tprint_error, tprint_warning
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 
 # Import existing feature components
@@ -282,7 +283,11 @@ class ProductionLeakageSafeFeatures:
                 try:
                     rsi_values = ta.rsi(data['close'], length=horizon)
                     features[f'rsi{horizon_suffix}'] = rsi_values
-                except:
+                except (ValueError, AttributeError, KeyError) as e:
+                    tprint_warning(f"Failed to calculate RSI for horizon {horizon}: {e}")
+                    features[f'rsi{horizon_suffix}'] = 50.0
+                except Exception as e:
+                    tprint_error(f"Unexpected error calculating RSI for horizon {horizon}: {e}")
                     features[f'rsi{horizon_suffix}'] = 50.0
                 
                 # Bollinger Band position
@@ -566,7 +571,11 @@ class ProductionLeakageSafeFeatures:
                     stability = 1.0 - abs(corr1 - corr2)
                 else:
                     stability = 1.0
-            except:
+            except (ValueError, IndexError, AttributeError) as e:
+                tprint_warning(f"Failed to calculate correlation stability: {e}")
+                stability = 1.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in correlation stability calculation: {e}")
                 stability = 1.0
             
             result.append(stability)
@@ -640,7 +649,11 @@ class ProductionLeakageSafeFeatures:
                 try:
                     autocorr = data_window.autocorr(lag=lag)
                     result.append(autocorr if not np.isnan(autocorr) else 0.0)
-                except:
+                except (ValueError, AttributeError) as e:
+                    tprint_warning(f"Failed to calculate rolling autocorrelation: {e}")
+                    result.append(0.0)
+                except Exception as e:
+                    tprint_error(f"Unexpected error in rolling autocorrelation calculation: {e}")
                     result.append(0.0)
             else:
                 result.append(0.0)
@@ -832,7 +845,11 @@ class ProductionLeakageSafeFeatures:
             try:
                 corr = data1[common_idx].corr(data2[common_idx])
                 result.append(corr if not np.isnan(corr) else 0.0)
-            except:
+            except (ValueError, IndexError, AttributeError) as e:
+                tprint_warning(f"Failed to calculate rolling correlation: {e}")
+                result.append(0.0)
+            except Exception as e:
+                tprint_error(f"Unexpected error in rolling correlation calculation: {e}")
                 result.append(0.0)
         
         return pd.Series(result, index=series1.index)

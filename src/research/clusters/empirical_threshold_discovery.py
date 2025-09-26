@@ -29,6 +29,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 from .similarity_matrix_clustering import SimilarityMatrixClusterer, SimilarityClusteringConfig, SimilarityMethod
 
 
@@ -447,11 +448,24 @@ class EmpiricalThresholdDiscovery:
                                 random_state=42
                             )[0]
                             coupling_scores.append(mi_score)
-                        except:
+                        except (ValueError, AttributeError, IndexError) as e:
+                            tprint_warning(f"Failed to calculate mutual information for feature '{col}': {e}")
                             # Fallback to correlation
-                            corr = abs(np.corrcoef(features[col].fillna(0), returns.fillna(0))[0, 1])
-                            if not np.isnan(corr):
-                                coupling_scores.append(corr)
+                            try:
+                                corr = abs(np.corrcoef(features[col].fillna(0), returns.fillna(0))[0, 1])
+                                if not np.isnan(corr):
+                                    coupling_scores.append(corr)
+                            except (ValueError, IndexError) as e2:
+                                tprint_warning(f"Failed to calculate correlation fallback for feature '{col}': {e2}")
+                        except Exception as e:
+                            tprint_error(f"Unexpected error calculating coupling for feature '{col}': {e}")
+                            # Fallback to correlation
+                            try:
+                                corr = abs(np.corrcoef(features[col].fillna(0), returns.fillna(0))[0, 1])
+                                if not np.isnan(corr):
+                                    coupling_scores.append(corr)
+                            except Exception as e2:
+                                tprint_error(f"Unexpected error in correlation fallback for feature '{col}': {e2}")
                 
                 return np.mean(coupling_scores) if coupling_scores else 0.0
             

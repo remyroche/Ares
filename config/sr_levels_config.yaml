@@ -173,10 +173,12 @@ integrations:
 
 # Testing and validation
 testing:
-  # Test data
-  enable_mock_data: true
-  mock_data_points: 1000
-  mock_data_seed: 42
+  # Test data - Real data implementation
+  enable_test_data: true
+  test_data_source: "live"  # live, historical, simulation
+  test_data_validation: true
+  test_data_export_format: "json"  # json, csv, parquet
+  test_data_retention_days: 30
   
   # Validation
   enable_cross_validation: true

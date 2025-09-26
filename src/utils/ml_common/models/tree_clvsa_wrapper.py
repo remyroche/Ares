@@ -75,6 +75,7 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
         self.cvlsa_model: Optional[EnhancedCVLSATrainer] = None
         self.feature_scaler = StandardScaler()
         self.market_data_cache: Optional[pd.DataFrame] = None
+        self.feature_extractor = None
 
         # Training state
         self.is_fitted = False
@@ -207,61 +208,77 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
 
     def fit(self, X: np.ndarray, y: np.ndarray, market_data: Optional[pd.DataFrame] = None,
             regimes: Optional[np.ndarray] = None) -> 'TreeCLVSAWrapper':
-        """Fit the CLVSA-enhanced tree model."""
+        """Fit the CLVSA-enhanced tree model with automatic feature extraction."""
         logger.info(f"🚀 Training CLVSA-enhanced {type(self.base_model).__name__}...")
 
         start_time = time.time()
 
         try:
-            # Prepare market data for CVLSA
-            if market_data is None:
-                market_data = self._create_synthetic_market_data(X)
-
-            # Cache market data for reuse
-            self.market_data_cache = market_data
-
-            # Prepare CVLSA features
-            cvlsa_features, target = self._prepare_cvlsa_features(market_data)
-
-            # Train CVLSA model
+            # Initialize automatic feature extraction if enabled
             if self.config.enable_cvlsa_enhancement:
-                logger.info("🔧 Training CVLSA component...")
-                cvlsa_results = self.cvlsa_model.train(cvlsa_features, cvlsa_features, target)
+                logger.info("🔧 Initializing automatic CVLSA feature extraction...")
 
-                # Get CVLSA predictions for tree training
-                with torch.no_grad():
-                    cvlsa_predictions = self.cvlsa_model.predict(cvlsa_features)
-                    cvlsa_features_np = cvlsa_predictions.cpu().numpy()
+                # Import and create automatic feature pipeline
+                from src.utils.ml_common.cvlsa.cvlsa_integration import create_automatic_feature_pipeline, EnhancedCVLSAConfig
 
-                # Combine original features with CVLSA features
-                enhanced_features = np.hstack([X, cvlsa_features_np])
+                # Create CVLSA config from tree wrapper config
+                cvlsa_config = EnhancedCVLSAConfig(
+                    input_dim=X.shape[1] + 10,  # Allow for additional features
+                    output_dim=4,
+                    seq_length=len(X),
+                    cross_view_attention=True,
+                    use_multi_scale_attention=self.config.use_temporal_attention,
+                    memory_efficient=self.config.memory_efficient,
+                    use_m1_gpu=self.config.use_m1_gpu,
+                    memory_limit_gb=self.config.memory_limit_gb,
+                    view_embedding_dim=self.config.attention_dim
+                )
 
-                # Scale features
-                enhanced_features_scaled = self.feature_scaler.fit_transform(enhanced_features)
+                # Create automatic feature pipeline
+                self.feature_extractor = create_automatic_feature_pipeline(cvlsa_config)
+
+                # Apply automatic feature enhancement
+                logger.info("🔄 Applying automatic CVLSA feature enhancement...")
+                enhanced_features = self.feature_extractor.fit_transform(X, y, market_data)
 
                 # Store feature dimensions
                 self.feature_dimensions = {
                     'original': X.shape[1],
-                    'cvlsa_enhanced': cvlsa_features_np.shape[1],
+                    'cvlsa_enhanced': enhanced_features.shape[1] - X.shape[1],
                     'total_enhanced': enhanced_features.shape[1]
                 }
+
+                logger.info(f"📊 Feature enhancement: {X.shape[1]} → {enhanced_features.shape[1]} features")
+
+                # Use enhanced features for training
+                X_for_training = enhanced_features
             else:
-                enhanced_features_scaled = self.feature_scaler.fit_transform(X)
+                logger.info("⚠️ CVLSA enhancement disabled, using original features")
+                X_for_training = X
                 self.feature_dimensions = {
                     'original': X.shape[1],
                     'cvlsa_enhanced': 0,
                     'total_enhanced': X.shape[1]
                 }
 
-            # Train tree model with enhanced features
-            logger.info("🌳 Training tree component with CLVSA enhancements...")
+            # Scale features
+            X_scaled = self.feature_scaler.fit_transform(X_for_training)
+
+            # Train tree model with features
+            logger.info("🌳 Training tree component...")
 
             if regimes is not None:
-                # For regime-aware training, we could pass regimes as additional features
-                # For now, just fit with enhanced features
-                self.base_model.fit(enhanced_features_scaled, y)
+                # For regime-aware training, add regime information as features
+                if regimes.ndim == 1:
+                    regimes_reshaped = regimes.reshape(-1, 1)
+                else:
+                    regimes_reshaped = regimes
+
+                # Combine scaled features with regime information
+                X_with_regimes = np.hstack([X_scaled, regimes_reshaped])
+                self.base_model.fit(X_with_regimes, y)
             else:
-                self.base_model.fit(enhanced_features_scaled, y)
+                self.base_model.fit(X_scaled, y)
 
             # Store training metadata
             self.training_metadata = {
@@ -269,8 +286,15 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
                 'cvlsa_enabled': self.config.enable_cvlsa_enhancement,
                 'feature_dimensions': self.feature_dimensions,
                 'fusion_method': self.config.fusion_method,
-                'regime_aware': regimes is not None
+                'regime_aware': regimes is not None,
+                'regime_count': len(np.unique(regimes)) if regimes is not None else 0
             }
+
+            # Store cache statistics if available
+            if self.feature_extractor is not None:
+                cache_stats = self.feature_extractor.get_cache_stats()
+                if cache_stats:
+                    self.training_metadata['cache_stats'] = cache_stats
 
             self.is_fitted = True
             logger.info(f"✅ CLVSA-enhanced model training completed in {self.training_metadata['training_time']".2f"}s")
@@ -282,53 +306,31 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
             raise
 
     def predict(self, X: np.ndarray, market_data: Optional[pd.DataFrame] = None) -> np.ndarray:
-        """Make predictions using CLVSA-enhanced model."""
+        """Make predictions using CLVSA-enhanced model with automatic feature extraction."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
 
         try:
-            # Use cached market data or create new if not provided
-            if market_data is None and self.market_data_cache is not None:
-                market_data = self.market_data_cache
-            elif market_data is None:
-                market_data = self._create_synthetic_market_data(X)
+            # Use automatic feature extraction if enabled
+            if self.config.enable_cvlsa_enhancement and self.feature_extractor is not None:
+                logger.info("🔄 Applying CVLSA feature enhancement for prediction...")
 
-            # Get CVLSA predictions
-            cvlsa_features, _ = self._prepare_cvlsa_features(market_data)
+                # Apply the same feature enhancement used during training
+                enhanced_features = self.feature_extractor.transform(X, market_data)
 
-            if self.config.enable_cvlsa_enhancement:
-                with torch.no_grad():
-                    cvlsa_predictions = self.cvlsa_model.predict(cvlsa_features)
-                    cvlsa_features_np = cvlsa_predictions.cpu().numpy()
-
-                # Combine features
-                enhanced_features = np.hstack([X, cvlsa_features_np])
+                # Scale features using the same scaler as training
                 enhanced_features_scaled = self.feature_scaler.transform(enhanced_features)
 
-                # Get tree predictions
-                tree_predictions = self.base_model.predict(enhanced_features_scaled)
-
-                # Fuse predictions based on method
-                if self.config.fusion_method == 'weighted_average':
-                    predictions = (self.config.cvlsa_weight * cvlsa_predictions.cpu().numpy() +
-                                 self.config.tree_weight * tree_predictions)
-                elif self.config.fusion_method == 'attention':
-                    # Use CVLSA attention weights for fusion
-                    attention_weights = self.cvlsa_model.get_attention_weights()
-                    if 'cross_view' in attention_weights:
-                        # Weight by attention importance
-                        cvlsa_importance = np.mean(attention_weights['cross_view'])
-                        predictions = (cvlsa_importance * cvlsa_predictions.cpu().numpy() +
-                                     (1 - cvlsa_importance) * tree_predictions)
-                    else:
-                        predictions = (self.config.cvlsa_weight * cvlsa_predictions.cpu().numpy() +
-                                     self.config.tree_weight * tree_predictions)
-                else:
-                    predictions = tree_predictions
-            else:
-                # No CVLSA enhancement, just use tree model
-                enhanced_features_scaled = self.feature_scaler.transform(X)
+                # Get predictions from tree model
                 predictions = self.base_model.predict(enhanced_features_scaled)
+
+                logger.info(f"✅ CLVSA-enhanced prediction completed with {enhanced_features.shape[1]} features")
+
+            else:
+                # No CVLSA enhancement, use standard prediction
+                logger.info("⚠️ Using standard prediction without CVLSA enhancement")
+                X_scaled = self.feature_scaler.transform(X)
+                predictions = self.base_model.predict(X_scaled)
 
             return predictions
 
@@ -337,7 +339,7 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
             raise
 
     def predict_proba(self, X: np.ndarray, market_data: Optional[pd.DataFrame] = None) -> np.ndarray:
-        """Make probability predictions for classification models."""
+        """Make probability predictions for classification models using automatic feature extraction."""
         if not self.is_classifier:
             raise AttributeError("predict_proba is only available for classification models")
 
@@ -345,34 +347,39 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
             raise ValueError("Model must be fitted before making predictions")
 
         try:
-            # Use same logic as predict but for probabilities
-            if market_data is None and self.market_data_cache is not None:
-                market_data = self.market_data_cache
-            elif market_data is None:
-                market_data = self._create_synthetic_market_data(X)
+            # Use automatic feature extraction if enabled
+            if self.config.enable_cvlsa_enhancement and self.feature_extractor is not None:
+                logger.info("🔄 Applying CVLSA feature enhancement for probability prediction...")
 
-            cvlsa_features, _ = self._prepare_cvlsa_features(market_data)
+                # Apply the same feature enhancement used during training
+                enhanced_features = self.feature_extractor.transform(X, market_data)
 
-            if self.config.enable_cvlsa_enhancement:
-                with torch.no_grad():
-                    cvlsa_predictions = self.cvlsa_model.predict(cvlsa_features)
-                    cvlsa_features_np = cvlsa_predictions.cpu().numpy()
-
-                enhanced_features = np.hstack([X, cvlsa_features_np])
+                # Scale features using the same scaler as training
                 enhanced_features_scaled = self.feature_scaler.transform(enhanced_features)
 
-                tree_predictions = self.base_model.predict_proba(enhanced_features_scaled)
+                # Get probability predictions from tree model
+                tree_probabilities = self.base_model.predict_proba(enhanced_features_scaled)
 
-                # For classification, use CVLSA predictions as confidence weights
-                cvlsa_confidence = np.mean(np.abs(cvlsa_predictions.cpu().numpy()), axis=1, keepdims=True)
-                cvlsa_confidence = cvlsa_confidence / np.max(cvlsa_confidence)  # Normalize
+                # Get feature importance for confidence weighting
+                feature_importance = self.get_feature_importance()
 
-                # Weight predictions by CVLSA confidence
-                weighted_predictions = tree_predictions * cvlsa_confidence
-                return weighted_predictions / np.sum(weighted_predictions, axis=1, keepdims=True)
+                if 'cvlsa_attention' in feature_importance:
+                    # Use CVLSA attention weights as confidence measure
+                    attention_weights = feature_importance['cvlsa_attention']
+                    if attention_weights.size > 0:
+                        # Calculate confidence based on attention weights
+                        attention_confidence = np.mean(np.abs(attention_weights))
+                        # Weight predictions by CVLSA confidence
+                        weighted_probabilities = tree_probabilities * (0.5 + 0.5 * attention_confidence)
+                        return weighted_probabilities / np.sum(weighted_probabilities, axis=1, keepdims=True)
+
+                return tree_probabilities
+
             else:
-                enhanced_features_scaled = self.feature_scaler.transform(X)
-                return self.base_model.predict_proba(enhanced_features_scaled)
+                # No CVLSA enhancement, use standard prediction
+                logger.info("⚠️ Using standard probability prediction without CVLSA enhancement")
+                X_scaled = self.feature_scaler.transform(X)
+                return self.base_model.predict_proba(X_scaled)
 
         except Exception as e:
             logger.error(f"❌ CLVSA-enhanced probability prediction failed: {e}")
@@ -386,7 +393,13 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
         """Get feature importance from both CVLSA and tree components."""
         importance = {}
 
-        # CVLSA attention weights
+        # CVLSA feature extractor importance
+        if self.feature_extractor is not None:
+            extractor_importance = self.feature_extractor.get_feature_importance()
+            if extractor_importance:
+                importance.update(extractor_importance)
+
+        # Legacy CVLSA model attention weights (if available)
         if self.cvlsa_model is not None:
             attention_weights = self.cvlsa_model.get_attention_weights()
             if attention_weights:
@@ -400,7 +413,7 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get comprehensive model information."""
-        return {
+        info = {
             'model_type': f'CLVSA-{type(self.base_model).__name__}',
             'base_model': type(self.base_model).__name__,
             'is_classifier': self.is_classifier,
@@ -410,6 +423,73 @@ class TreeCLVSAWrapper(BaseEstimator, RegressorMixin, ClassifierMixin):
             'training_metadata': self.training_metadata,
             'feature_dimensions': self.feature_dimensions
         }
+
+        # Add feature extractor information
+        if self.feature_extractor is not None:
+            info['feature_extractor'] = {
+                'enabled': True,
+                'cache_stats': self.feature_extractor.get_cache_stats()
+            }
+
+        return info
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics from feature extractor."""
+        if self.feature_extractor is not None:
+            return self.feature_extractor.get_cache_stats()
+        return {}
+
+    def clear_cache(self):
+        """Clear the feature extraction cache."""
+        if self.feature_extractor is not None:
+            self.feature_extractor.clear_cache()
+            logger.info("🧹 CLVSA feature cache cleared")
+
+    def set_cache_config(self, max_cache_size: int = 50, memory_limit_mb: float = 200.0):
+        """Update cache configuration."""
+        if self.feature_extractor is not None:
+            self.feature_extractor.set_cache_config(max_cache_size, memory_limit_mb)
+            logger.info(f"🔄 Updated cache configuration: size={max_cache_size}, memory={memory_limit_mb}MB")
+
+    def enable_cvlsa_enhancement(self, enable: bool = True):
+        """Enable or disable CLVSA enhancement."""
+        self.config.enable_cvlsa_enhancement = enable
+        logger.info(f"🔄 CLVSA enhancement {'enabled' if enable else 'disabled'}")
+
+    def set_fusion_method(self, method: str = 'attention'):
+        """Set the fusion method for combining CVLSA and tree predictions."""
+        valid_methods = ['attention', 'weighted_average', 'stacking']
+        if method not in valid_methods:
+            raise ValueError(f"Fusion method must be one of: {valid_methods}")
+
+        self.config.fusion_method = method
+        logger.info(f"🔄 Fusion method set to: {method}")
+
+    def set_cvlsa_weight(self, weight: float = 0.6):
+        """Set the weight for CVLSA predictions in fusion."""
+        if not 0.0 <= weight <= 1.0:
+            raise ValueError("CVLSA weight must be between 0.0 and 1.0")
+
+        self.config.cvlsa_weight = weight
+        logger.info(f"🔄 CVLSA weight set to: {weight}")
+
+    def get_enhancement_summary(self) -> Dict[str, Any]:
+        """Get a summary of CLVSA enhancements applied."""
+        summary = {
+            'enhancement_enabled': self.config.enable_cvlsa_enhancement,
+            'feature_enhancement_active': self.feature_extractor is not None,
+            'total_training_time': self.training_metadata.get('training_time', 0),
+            'feature_expansion': self.feature_dimensions,
+            'fusion_method': self.config.fusion_method,
+            'cvlsa_weight': self.config.cvlsa_weight
+        }
+
+        if self.feature_extractor is not None:
+            cache_stats = self.get_cache_stats()
+            if cache_stats:
+                summary['cache_stats'] = cache_stats
+
+        return summary
 
 
 def create_tree_clvsa_config(**overrides: Any) -> TreeCLVSAConfig:

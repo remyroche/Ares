@@ -20,6 +20,14 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
     except (TypeError, ValueError, AttributeError) as e:
         from src.utils.tprint import tprint_warning
         tprint_warning(f"Failed to log dual confidence computation: {e}")
+        # Fallback logging - try to log with string formatting if dict logging fails
+        try:
+            if logger is not None:
+                logger.info(f"dual_confidence_compute: analyst={analyst_confidence}, tactician={tactician_confidence}, dual={dual}, normalized={normalized}")
+        except Exception as fallback_e:
+            # If even string logging fails, just use tprint
+            from src.utils.tprint import tprint_info
+            tprint_info(f"dual_confidence_compute: analyst={analyst_confidence}, tactician={tactician_confidence}, dual={dual}, normalized={normalized}")
     return (dual, normalized)
 
 

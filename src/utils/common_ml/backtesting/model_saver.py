@@ -529,6 +529,21 @@ class ModelSaver:
                 from src.utils.tprint import tprint_warning
                 tprint_warning(f"Could not extract model parameters for JSON save: {e}")
         
+        # Try to extract additional model attributes for JSON serialization
+        try:
+            # For sklearn models, try to extract common attributes
+            if hasattr(model, 'coef_'):
+                model_data['coefficients'] = model.coef_.tolist() if hasattr(model.coef_, 'tolist') else str(model.coef_)
+            if hasattr(model, 'intercept_'):
+                model_data['intercept'] = float(model.intercept_) if np.isscalar(model.intercept_) else str(model.intercept_)
+            if hasattr(model, 'feature_importances_'):
+                model_data['feature_importances'] = model.feature_importances_.tolist() if hasattr(model.feature_importances_, 'tolist') else str(model.feature_importances_)
+            if hasattr(model, 'classes_'):
+                model_data['classes'] = model.classes_.tolist() if hasattr(model.classes_, 'tolist') else str(model.classes_)
+        except (AttributeError, TypeError, ValueError) as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Could not extract additional model attributes for JSON save: {e}")
+        
         safe_json_dump(file_path, model_data)
     
     async def _save_yaml(self, model: Any, file_path: str) -> None:
@@ -547,6 +562,21 @@ class ModelSaver:
             except (AttributeError, TypeError, ValueError) as e:
                 from src.utils.tprint import tprint_warning
                 tprint_warning(f"Could not extract model parameters for YAML save: {e}")
+        
+        # Try to extract additional model attributes for YAML serialization
+        try:
+            # For sklearn models, try to extract common attributes
+            if hasattr(model, 'coef_'):
+                model_data['coefficients'] = model.coef_.tolist() if hasattr(model.coef_, 'tolist') else str(model.coef_)
+            if hasattr(model, 'intercept_'):
+                model_data['intercept'] = float(model.intercept_) if np.isscalar(model.intercept_) else str(model.intercept_)
+            if hasattr(model, 'feature_importances_'):
+                model_data['feature_importances'] = model.feature_importances_.tolist() if hasattr(model.feature_importances_, 'tolist') else str(model.feature_importances_)
+            if hasattr(model, 'classes_'):
+                model_data['classes'] = model.classes_.tolist() if hasattr(model.classes_, 'tolist') else str(model.classes_)
+        except (AttributeError, TypeError, ValueError) as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"Could not extract additional model attributes for YAML save: {e}")
         
         with open(file_path, 'w') as f:
             yaml.dump(model_data, f, default_flow_style=False)

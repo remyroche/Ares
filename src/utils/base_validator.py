@@ -32,7 +32,15 @@ class BaseValidator(ABC):
         Returns:
             Validation results
         """
-        pass
+        # Base implementation - should be overridden by subclasses
+        return {
+            'step_name': self.step_name,
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'validation_time': None,
+            'context': context or {}
+        }
 
     @abstractmethod
     def get_validation_summary(self) -> Dict[str, Any]:
@@ -42,4 +50,14 @@ class BaseValidator(ABC):
         Returns:
             Summary of validation results
         """
-        pass
+        # Base implementation - should be overridden by subclasses
+        return {
+            'step_name': self.step_name,
+            'total_validations': 0,
+            'successful_validations': 0,
+            'failed_validations': 0,
+            'total_errors': 0,
+            'total_warnings': 0,
+            'last_validation_time': None,
+            'config': self.config
+        }

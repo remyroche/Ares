@@ -184,8 +184,52 @@ class LabelBasedStrategy:
     def generate_signals(self, 
                         labels: pd.DataFrame, 
                         market_data: pd.DataFrame) -> pd.Series:
-        """Generate trading signals from labels."""
-        raise NotImplementedError("Subclasses must implement generate_signals")
+        """
+        Generate trading signals from labels.
+        
+        This is a base implementation that provides a default signal generation
+        mechanism. Subclasses should override this method with their specific
+        signal generation logic.
+        
+        Args:
+            labels: DataFrame containing profit labels and opportunity scores
+            market_data: OHLCV market data for context
+            
+        Returns:
+            pd.Series containing trading signals (0 = no signal, 1 = buy signal)
+        """
+        self.logger.info(f"Generating signals using base implementation for {self.strategy_type.value}")
+        
+        try:
+            # Default signal generation based on opportunity columns
+            opportunity_cols = [col for col in labels.columns if 'opportunity' in col.lower()]
+            
+            if not opportunity_cols:
+                self.logger.warning("No opportunity columns found in labels, returning zero signals")
+                return pd.Series(0.0, index=labels.index)
+            
+            # Use the first opportunity column as the main signal
+            main_signal = labels[opportunity_cols[0]].fillna(0)
+            
+            # Apply basic threshold-based signal generation
+            # Default threshold of 0.5 for binary signals
+            threshold = 0.5
+            signals = (main_signal > threshold).astype(float)
+            
+            # Log signal statistics
+            signal_count = signals.sum()
+            total_periods = len(signals)
+            signal_rate = signal_count / total_periods if total_periods > 0 else 0
+            
+            self.logger.info(f"Generated {signal_count} signals out of {total_periods} periods ({signal_rate:.2%} signal rate)")
+            self.logger.debug(f"Signal statistics: min={signals.min():.3f}, max={signals.max():.3f}, mean={signals.mean():.3f}")
+            
+            return signals
+            
+        except Exception as e:
+            self.logger.error(f"Signal generation failed: {e}")
+            # Return zero signals as fallback
+            return pd.Series(0.0, index=labels.index)
     
     def calculate_position_size(self, 
                               signal: float, 

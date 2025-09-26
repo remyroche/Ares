@@ -33,10 +33,136 @@ class BaseClusteringAlgorithm:
         self.logger.info(f"Initializing {name} clustering algorithm")
     
     def cluster(self, levels: List[Dict], price_range: Tuple[float, float], **kwargs) -> 'ClusteringResult':
-        """Cluster levels - to be implemented by subclasses."""
-        self.logger.info(f"Starting clustering with {len(levels)} levels, price range: {price_range}")
+        """
+        Cluster levels using the base clustering algorithm.
+        
+        This is a default implementation that provides basic clustering
+        functionality. Subclasses should override this method with their
+        specific clustering algorithms.
+        
+        Args:
+            levels: List of level dictionaries to cluster
+            price_range: Tuple of (min_price, max_price) for the clustering context
+            **kwargs: Additional clustering parameters
+            
+        Returns:
+            ClusteringResult containing the clustering results
+        """
+        self.logger.info(f"Starting base clustering with {len(levels)} levels, price range: {price_range}")
         self.logger.debug(f"Clustering parameters: {kwargs}")
-        raise NotImplementedError
+        
+        if not levels:
+            self.logger.warning("No levels provided for clustering")
+            return ClusteringResult(
+                clusters=[],
+                cluster_centers=[],
+                quality_score=0.0,
+                quality_enhanced=False,
+                quality_metrics={'total_levels': 0},
+                algorithm_used=self.name,
+                parameters=kwargs
+            )
+        
+        try:
+            # Default clustering implementation using simple proximity-based approach
+            proximity_threshold = kwargs.get('proximity_threshold', 0.01)  # 1% of price range
+            min_price, max_price = price_range
+            price_range_size = max_price - min_price
+            absolute_proximity_threshold = proximity_threshold * price_range_size
+            
+            self.logger.info(f"Using proximity threshold: {absolute_proximity_threshold:.2f} ({proximity_threshold:.1%} of price range)")
+            
+            # Sort levels by price
+            sorted_levels = sorted(enumerate(levels), key=lambda x: x[1].get('price', 0.0))
+            
+            clusters = []
+            cluster_centers = []
+            current_cluster = [sorted_levels[0][0]]  # Start with first level index
+            
+            for i in range(1, len(sorted_levels)):
+                level_idx, level = sorted_levels[i]
+                current_cluster_center = np.mean([levels[idx].get('price', 0.0) for idx in current_cluster])
+                
+                # Check proximity
+                price_diff = abs(level.get('price', 0.0) - current_cluster_center)
+                
+                # Add to cluster if within proximity threshold
+                if price_diff <= absolute_proximity_threshold:
+                    current_cluster.append(level_idx)
+                    self.logger.debug(f"Added level {level_idx} to current cluster (price_diff: {price_diff:.2f})")
+                else:
+                    # Finalize current cluster
+                    if current_cluster:
+                        clusters.append(current_cluster)
+                        cluster_centers.append(current_cluster_center)
+                        self.logger.debug(f"Finalized cluster with {len(current_cluster)} levels")
+                    current_cluster = [level_idx]
+            
+            # Add final cluster
+            if current_cluster:
+                clusters.append(current_cluster)
+                cluster_centers.append(np.mean([levels[idx].get('price', 0.0) for idx in current_cluster]))
+                self.logger.debug(f"Added final cluster with {len(current_cluster)} levels")
+            
+            # Calculate quality score
+            quality_score = self._calculate_base_quality_score(clusters, levels)
+            
+            self.logger.info(f"Base clustering completed: {len(clusters)} clusters, quality: {quality_score:.3f}")
+            
+            return ClusteringResult(
+                clusters=clusters,
+                cluster_centers=cluster_centers,
+                quality_score=quality_score,
+                quality_enhanced=False,
+                quality_metrics={
+                    'proximity_threshold': proximity_threshold,
+                    'absolute_proximity_threshold': absolute_proximity_threshold,
+                    'total_levels': len(levels),
+                    'avg_cluster_size': len(levels) / len(clusters) if clusters else 0
+                },
+                algorithm_used=self.name,
+                parameters=kwargs
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Base clustering failed: {e}")
+            # Return single-level clusters as fallback
+            return ClusteringResult(
+                clusters=[[i] for i in range(len(levels))],
+                cluster_centers=[level.get('price', 0.0) for level in levels],
+                quality_score=0.5,
+                quality_enhanced=False,
+                algorithm_used=f'{self.name}_fallback',
+                parameters=kwargs
+            )
+    
+    def _calculate_base_quality_score(self, clusters: List[List[int]], levels: List[Dict]) -> float:
+        """Calculate basic quality score for clustering result."""
+        try:
+            if not clusters:
+                return 0.0
+            
+            total_quality = 0.0
+            total_levels = 0
+            
+            for cluster in clusters:
+                if len(cluster) > 1:
+                    # Multi-level cluster quality based on price variance
+                    cluster_prices = [levels[idx].get('price', 0.0) for idx in cluster]
+                    price_variance = np.var(cluster_prices) if len(cluster_prices) > 1 else 0.0
+                    cluster_quality = 1.0 / (1.0 + price_variance)  # Lower variance = higher quality
+                else:
+                    # Single-level cluster
+                    cluster_quality = 0.8  # Good quality for individual levels
+                
+                total_quality += cluster_quality * len(cluster)
+                total_levels += len(cluster)
+            
+            return total_quality / total_levels if total_levels > 0 else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Quality score calculation failed: {e}")
+            return 0.5
 
 class StrengthProximityClustering(BaseClusteringAlgorithm):
     """Strength and proximity-based clustering for SR levels."""

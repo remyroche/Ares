@@ -20,8 +20,6 @@ import threading
 import queue
 from datetime import datetime, timedelta
 from collections import deque
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import existing utilities
 try:

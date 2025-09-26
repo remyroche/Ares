@@ -19,8 +19,6 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (

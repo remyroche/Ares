@@ -17,8 +17,6 @@ import pickle
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.model_selection import cross_val_score
 from enum import Enum
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import regime detection systems
 try:

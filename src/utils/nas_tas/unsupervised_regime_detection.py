@@ -23,7 +23,6 @@ from scipy.signal import find_peaks
 from scipy.stats import jarque_bera, kstest, anderson
 from statsmodels.tsa.stattools import adfuller, kpss
 from statsmodels.tsa.regime_switching import MarkovRegression
-import warnings
 import threading
 import queue
 from collections import deque
@@ -34,7 +33,6 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
-warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 

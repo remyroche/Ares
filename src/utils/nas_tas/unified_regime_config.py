@@ -12,6 +12,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
+from ._validation import (
+    ConfigValidationError,
+    ValidationIssue,
+    build_report,
+    ensure_between,
+    ensure_min_less_than_max,
+    ensure_non_empty_string,
+    ensure_positive,
+    ensure_probability,
+    normalize_weights,
+)
+
 logger = logging.getLogger(__name__)
 
 class RegimeDetectionMethod(Enum):
@@ -48,6 +60,21 @@ class EconomicEvaluationConfig:
     transaction_cost_bps: float = 5.0
     slippage_bps: float = 2.0
 
+    def validate(self) -> None:
+        """Validate economic evaluation parameters."""
+
+        ensure_probability("position_size_threshold", self.position_size_threshold)
+        ensure_probability("max_position_size", self.max_position_size)
+        ensure_min_less_than_max(
+            "position_size_threshold",
+            self.position_size_threshold,
+            "max_position_size",
+            self.max_position_size,
+        )
+        ensure_between("risk_free_rate", self.risk_free_rate, minimum=-1.0, maximum=1.0)
+        ensure_positive("transaction_cost_bps", self.transaction_cost_bps, allow_zero=True)
+        ensure_positive("slippage_bps", self.slippage_bps, allow_zero=True)
+
 @dataclass
 class TradingConfig:
     """Configuration for trading viability evaluation."""
@@ -61,6 +88,17 @@ class TradingConfig:
     max_drawdown_threshold: float = 0.1
     viability_threshold: float = 0.7
 
+    def validate(self) -> None:
+        """Validate trading configuration values."""
+
+        ensure_positive("min_hold_time", self.min_hold_time)
+        ensure_positive("max_hold_time", self.max_hold_time)
+        ensure_min_less_than_max("min_hold_time", self.min_hold_time, "max_hold_time", self.max_hold_time)
+        ensure_probability("stop_loss_threshold", self.stop_loss_threshold)
+        ensure_probability("take_profit_threshold", self.take_profit_threshold)
+        ensure_probability("max_drawdown_threshold", self.max_drawdown_threshold)
+        ensure_probability("viability_threshold", self.viability_threshold)
+
 @dataclass
 class MetaLearningConfig:
     """Configuration for meta-learning capabilities."""
@@ -71,6 +109,13 @@ class MetaLearningConfig:
     learning_rate_adaptation: bool = True
     architecture_mutation_rate: float = 0.1
     hyperparameter_mutation_rate: float = 0.05
+
+    def validate(self) -> None:
+        """Validate meta-learning configuration values."""
+
+        ensure_positive("adaptation_frequency", self.adaptation_frequency)
+        ensure_probability("architecture_mutation_rate", self.architecture_mutation_rate)
+        ensure_probability("hyperparameter_mutation_rate", self.hyperparameter_mutation_rate)
 
 @dataclass
 class UnifiedRegimeConfig:
@@ -150,31 +195,142 @@ class UnifiedRegimeConfig:
         """Initialize and validate configuration."""
         self.validate_config()
     
-    def validate_config(self):
+    def validate_config(self) -> None:
         """Validate configuration parameters."""
-        try:
-            # Validate regime count
-            if not (2 <= self.n_regimes <= 20):
-                raise ValueError(f"n_regimes must be between 2 and 20, got {self.n_regimes}")
-            
-            # Validate thresholds
-            if not (0.0 <= self.economic_significance_threshold <= 1.0):
-                raise ValueError(f"economic_significance_threshold must be between 0.0 and 1.0, got {self.economic_significance_threshold}")
-            
-            if not (0.0 <= self.trading_viability_threshold <= 1.0):
-                raise ValueError(f"trading_viability_threshold must be between 0.0 and 1.0, got {self.trading_viability_threshold}")
-            
-            # Validate execution time
-            if self.max_execution_time <= 0:
-                raise ValueError(f"max_execution_time must be positive, got {self.max_execution_time}")
-            
-            logger.info("✅ Unified regime configuration validation passed")
-            
-        except Exception as e:
-            logger.error(f"❌ Configuration validation failed: {e}")
-            raise ValueError(
-                f"Invalid configuration: {e}"
+
+        issues: List[ValidationIssue] = []
+
+        def capture(field: str, func) -> None:
+            try:
+                func()
+            except ConfigValidationError as exc:  # pragma: no cover - defensive aggregation
+                issues.append(ValidationIssue(field=field, message=str(exc)))
+
+        capture("n_regimes", lambda: ensure_between("n_regimes", self.n_regimes, minimum=2, maximum=20))
+        capture("min_regime_samples", lambda: ensure_positive("min_regime_samples", self.min_regime_samples))
+        capture("max_regime_samples", lambda: ensure_positive("max_regime_samples", self.max_regime_samples))
+        capture(
+            "sample_range",
+            lambda: ensure_min_less_than_max(
+                "min_regime_samples",
+                float(self.min_regime_samples),
+                "max_regime_samples",
+                float(self.max_regime_samples),
+            ),
+        )
+        capture("primary_timeframe", lambda: ensure_non_empty_string("primary_timeframe", self.primary_timeframe))
+        capture("micro_timeframe", lambda: ensure_non_empty_string("micro_timeframe", self.micro_timeframe))
+        capture("macro_timeframe", lambda: ensure_non_empty_string("macro_timeframe", self.macro_timeframe))
+
+        for threshold_name in (
+            "economic_significance_threshold",
+            "trading_viability_threshold",
+            "min_regime_stability",
+            "min_transition_confidence",
+            "target_accuracy",
+            "min_data_quality",
+            "data_quality_threshold",
+        ):
+            capture(
+                threshold_name,
+                lambda name=threshold_name: ensure_probability(name, getattr(self, name)),
             )
+
+        capture("max_missing_data_ratio", lambda: ensure_probability("max_missing_data_ratio", self.max_missing_data_ratio))
+        capture("max_execution_time", lambda: ensure_positive("max_execution_time", self.max_execution_time))
+
+        weight_map = {"tas_weight": self.tas_weight, "nas_weight": self.nas_weight}
+        capture("weight_normalization", lambda: normalize_weights(weight_map))
+        if "tas_weight" in weight_map:
+            self.tas_weight = weight_map["tas_weight"]
+            self.nas_weight = weight_map["nas_weight"]
+
+        required_params = {
+            "enable_position_aware_analysis",
+            "enable_risk_adjusted_metrics",
+            "enable_trading_cost_analysis",
+            "enable_liquidity_analysis",
+            "position_size_threshold",
+            "max_position_size",
+            "risk_free_rate",
+            "transaction_cost_bps",
+            "slippage_bps",
+        }
+        missing_params = required_params - set(self.economic_params)
+        if missing_params:
+            issues.append(
+                ValidationIssue(
+                    field="economic_params",
+                    message=f"Missing required keys: {sorted(missing_params)}",
+                )
+            )
+        else:
+            capture(
+                "economic_params.position_size_threshold",
+                lambda: ensure_probability(
+                    "economic_params.position_size_threshold",
+                    float(self.economic_params["position_size_threshold"]),
+                ),
+            )
+            capture(
+                "economic_params.max_position_size",
+                lambda: ensure_probability(
+                    "economic_params.max_position_size",
+                    float(self.economic_params["max_position_size"]),
+                ),
+            )
+            capture(
+                "economic_params.range",
+                lambda: ensure_min_less_than_max(
+                    "economic_params.position_size_threshold",
+                    float(self.economic_params["position_size_threshold"]),
+                    "economic_params.max_position_size",
+                    float(self.economic_params["max_position_size"]),
+                ),
+            )
+            capture(
+                "economic_params.risk_free_rate",
+                lambda: ensure_between(
+                    "economic_params.risk_free_rate",
+                    float(self.economic_params["risk_free_rate"]),
+                    minimum=-1.0,
+                    maximum=1.0,
+                ),
+            )
+            capture(
+                "economic_params.transaction_cost_bps",
+                lambda: ensure_positive(
+                    "economic_params.transaction_cost_bps",
+                    float(self.economic_params["transaction_cost_bps"]),
+                    allow_zero=True,
+                ),
+            )
+            capture(
+                "economic_params.slippage_bps",
+                lambda: ensure_positive(
+                    "economic_params.slippage_bps",
+                    float(self.economic_params["slippage_bps"]),
+                    allow_zero=True,
+                ),
+            )
+
+        for name, validator in (
+            ("economic_config", self.economic_config.validate),
+            ("trading_config", self.trading_config.validate),
+            ("meta_learning_config", self.meta_learning_config.validate),
+        ):
+            try:
+                validator()
+            except ConfigValidationError as exc:  # pragma: no cover - defensive aggregation
+                issues.append(ValidationIssue(field=name, message=str(exc)))
+
+        if issues:
+            build_report(*issues)
+            raise ConfigValidationError(
+                "UnifiedRegimeConfig validation failed; inspect log output for details."
+            )
+
+        logger.info("✅ Unified regime configuration validation passed")
     
     def get_tas_config(self) -> Dict[str, Any]:
         """Get TAS-specific configuration."""

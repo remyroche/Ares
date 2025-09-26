@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 import logging
 import time
 from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import optimization libraries
 try:

@@ -39,8 +39,6 @@ import logging
 import time
 from datetime import datetime
 from dataclasses import dataclass
-import warnings
-warnings.filterwarnings('ignore')
 
 # Import tprint for enhanced logging
 try:

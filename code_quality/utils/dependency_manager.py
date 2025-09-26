@@ -78,22 +78,22 @@ class DependencyManager:
             try:
                 import pylint
                 linters["pylint"] = pylint
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import pylint: {e}")
         
         if self.is_available("flake8"):
             try:
                 import flake8
                 linters["flake8"] = flake8
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import flake8: {e}")
         
         if self.is_available("mypy"):
             try:
                 import mypy
                 linters["mypy"] = mypy
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import mypy: {e}")
         
         return linters
     
@@ -105,22 +105,22 @@ class DependencyManager:
             try:
                 import black
                 formatters["black"] = black
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import black: {e}")
         
         if self.is_available("isort"):
             try:
                 import isort
                 formatters["isort"] = isort
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import isort: {e}")
         
         if self.is_available("autopep8"):
             try:
                 import autopep8
                 formatters["autopep8"] = autopep8
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import autopep8: {e}")
         
         return formatters
     
@@ -130,8 +130,8 @@ class DependencyManager:
             try:
                 import astroid
                 return astroid
-            except ImportError:
-                pass
+            except ImportError as e:
+                tprint(f"Warning: Failed to import astroid: {e}")
         
         # Fallback to standard ast
         import ast

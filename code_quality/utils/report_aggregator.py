@@ -319,8 +319,10 @@ class ReportAggregator:
                         if stripped and not stripped.startswith('#'):
                             code_lines += 1
                     return code_lines
-        except (OSError, IOError, PermissionError, UnicodeDecodeError):
-            pass
+        except (OSError, IOError, PermissionError, UnicodeDecodeError) as e:
+            # Log the error but continue processing other files
+            print(f"Warning: Could not count lines of code for {file_path}: {e}")
+            return 0
         return 0
 
     def generate_unified_report(self) -> dict[str, Any]:

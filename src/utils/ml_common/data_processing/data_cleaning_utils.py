@@ -5,10 +5,15 @@ This module provides utilities to clean and preprocess financial data
 for machine learning training, including handling of corrupted periods.
 """
 
-import pandas as pd
-import numpy as np
-from typing import List, Tuple, Optional
+import argparse
 import logging
+import os
+import sys
+from pathlib import Path
+from typing import List, Tuple, Optional
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 from src.utils.tprint import tprint
@@ -231,11 +236,59 @@ def create_clean_dataset_pipeline(input_file: str, output_file: str) -> dict:
 
 # Example usage
 if __name__ == "__main__":
-    # Example: Clean the consolidated ETHUSDT dataset
-    input_file = "/Users/remyroche/Documents/Ares/historical_data/features_binance_ETHUSDT_consolidated.parquet"
-    output_file = "/Users/remyroche/Documents/Ares/historical_data/features_binance_ETHUSDT_clean.parquet"
+    parser = argparse.ArgumentParser(
+        description="Clean a dataset using the ML common data cleaning pipeline.",
+    )
+    parser.add_argument(
+        "--input-file",
+        default=os.getenv("ARES_DATA_CLEAN_INPUT_FILE"),
+        help=(
+            "Path to the input dataset. Defaults to the ARES_DATA_CLEAN_INPUT_FILE environment variable "
+            "when not provided."
+        ),
+        dest="input_file",
+    )
+    parser.add_argument(
+        "--output-file",
+        default=os.getenv("ARES_DATA_CLEAN_OUTPUT_FILE"),
+        help=(
+            "Destination path for the cleaned dataset. Defaults to the "
+            "ARES_DATA_CLEAN_OUTPUT_FILE environment variable when not provided."
+        ),
+        dest="output_file",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow overwriting an existing output file.",
+    )
 
-    result = create_clean_dataset_pipeline(input_file, output_file)
+    args = parser.parse_args()
+
+    if not args.input_file or not args.output_file:
+        parser.print_help()
+        tprint(
+            "❌ Input and output file paths are required. Provide them via command-line arguments or "
+            "set the ARES_DATA_CLEAN_INPUT_FILE and ARES_DATA_CLEAN_OUTPUT_FILE environment variables."
+        )
+        sys.exit(1)
+
+    input_path = Path(args.input_file).expanduser()
+    output_path = Path(args.output_file).expanduser()
+
+    if not input_path.exists():
+        tprint(f"❌ Input file '{input_path}' does not exist.")
+        sys.exit(1)
+
+    if output_path.exists() and not args.overwrite:
+        tprint(
+            f"❌ Output file '{output_path}' already exists. Use --overwrite to replace it."
+        )
+        sys.exit(1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result = create_clean_dataset_pipeline(str(input_path), str(output_path))
 
     if result['success']:
         tprint("🎉 Clean dataset created successfully!")
@@ -243,3 +296,4 @@ if __name__ == "__main__":
         tprint(f"Quality: {result['quality_report']['assessment']}")
     else:
         tprint(f"❌ Failed to create clean dataset: {result['error']}")
+        sys.exit(1)

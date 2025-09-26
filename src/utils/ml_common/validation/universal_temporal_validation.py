@@ -552,7 +552,11 @@ class UniversalTemporalCrossValidator:
             try:
                 metrics['log_loss'] = log_loss(y_true, y_pred_proba)
                 metrics['auc'] = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='weighted')
-            except:
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.exception(
+                    "Failed to compute probability-based metrics during temporal validation fold: %s",
+                    exc,
+                )
                 metrics['log_loss'] = None
                 metrics['auc'] = None
         

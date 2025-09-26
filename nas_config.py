@@ -89,7 +89,10 @@ except ImportError:
     class MathValidation:
         """Fallback math validation class when math_validation module is not available."""
         def __init__(self):
-            pass
+            """Initialize the fallback math validation class."""
+            self.validation_enabled = True
+            self.strict_mode = False
+            self.allow_nan_default = False
         
         def validate_numeric_array(self, data, allow_nan=False):
             """Basic numeric array validation."""

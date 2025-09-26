@@ -42,7 +42,9 @@ except ImportError:
     # Create a mock pandas for basic functionality
     class MockPandas:
         def __init__(self):
-            pass
+            """Initialize the mock pandas class for fallback functionality."""
+            self._mock_data = {}
+            self._mock_index = 0
         def __getattr__(self, name):
             return lambda *args, **kwargs: None
     pd = MockPandas()

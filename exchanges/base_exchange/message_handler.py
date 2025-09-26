@@ -193,6 +193,18 @@ class ExchangeMessageHandler:
             except asyncio.CancelledError:
                 pass
 
+        # Clear all pending messages and handlers
+        self.pending_messages.clear()
+        self.response_handlers.clear()
+        self.message_handlers.clear()
+        
+        # Clear order ID mappings
+        self.order_id_mapping.clear()
+        self.exchange_order_mapping.clear()
+        
+        # Clear message queue
+        await self.clear_queue()
+
         self.logger.info("Exchange message handler stopped")
 
     def register_message_handler(

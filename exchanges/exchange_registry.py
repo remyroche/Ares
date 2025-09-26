@@ -57,6 +57,20 @@ class ExchangeRegistry:
         # Close all exchange connections
         await self.close_all()
         
+        # Clear all registry data
+        self.exchanges.clear()
+        self.exchange_configs.clear()
+        self.exchange_status.clear()
+        
+        # Reset statistics
+        self.registry_stats = {
+            "total_registered": 0,
+            "active_exchanges": 0,
+            "failed_exchanges": 0,
+            "health_checks": 0,
+            "health_check_failures": 0
+        }
+        
         self.logger.info("Exchange registry stopped")
     
     async def register_exchange(self, exchange_name: str, exchange_instance: Any) -> bool:

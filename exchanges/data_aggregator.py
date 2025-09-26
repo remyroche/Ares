@@ -93,6 +93,19 @@ class DataAggregator:
             except asyncio.CancelledError:
                 pass
         
+        # Clear all cached data
+        self.data_cache.clear()
+        
+        # Reset statistics
+        self.data_stats = {
+            "total_requests": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "by_type": {},
+            "by_exchange": {},
+            "errors": 0
+        }
+        
         self.logger.info("Data aggregator stopped")
     
     async def get_data(

@@ -127,7 +127,18 @@ class APIClient:
         if self.session:
             await self.session.close()
             self.session = None
-            self.logger.info(f"API client stopped for {self.exchange_name}")
+        
+        # Clear all tracking data
+        self.rate_limits.clear()
+        self.last_request_time.clear()
+        self.api_handlers.clear()
+        
+        # Reset statistics
+        self.request_count = 0
+        self.error_count = 0
+        self.total_request_time = 0.0
+        
+        self.logger.info(f"API client stopped for {self.exchange_name}")
     
     def register_handler(self, event_type: str, handler: Callable[[APIResponse], Awaitable[None]]) -> None:
         """Register API event handler"""

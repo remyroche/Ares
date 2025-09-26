@@ -217,6 +217,35 @@ class HardwareAccelerator:
         
         self.logger.info("✅ Hardware Accelerator initialized")
     
+    def cleanup(self) -> None:
+        """Cleanup hardware accelerator resources"""
+        try:
+            self.logger.info("🧹 Starting hardware accelerator cleanup...")
+            
+            # Stop monitoring if active
+            if self.monitor and hasattr(self.monitor, 'stop_monitoring'):
+                self.monitor.stop_monitoring()
+            
+            # Clear cache if available
+            if self.cache_manager and hasattr(self.cache_manager, 'clear_cache'):
+                self.cache_manager.clear_cache()
+            
+            # Reset performance history
+            self.reset_performance_history()
+            
+            # Clear hardware components
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.cache_manager = None
+            self.monitor = None
+            
+            self.logger.info("✅ Hardware accelerator cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Hardware accelerator cleanup failed: {e}")
+            raise
+    
     def _initialize_hardware_acceleration(self):
         """Initialize hardware acceleration components."""
         try:
@@ -838,6 +867,16 @@ class CacheManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Cache storage failed: {e}")
             return False
+    
+    def clear_cache(self) -> None:
+        """Clear all cached results."""
+        try:
+            self.cache.clear()
+            self.cache_hits = 0
+            self.cache_misses = 0
+            self.logger.info("✅ Cache cleared successfully")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cache clearing failed: {e}")
 
 
 class PerformanceMonitor:

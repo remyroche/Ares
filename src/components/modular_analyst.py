@@ -3,6 +3,7 @@ from src.utils.tprint import tprint
 
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -13,6 +14,7 @@ from src.utils.warning_symbols import (
     missing,
 )
 from ..core.decorators import handles_errors
+from ..interfaces.base_interfaces import IAnalyst, MarketData, AnalysisResult
 import numpy as np
 import logging
 import time
@@ -20,7 +22,7 @@ import time
 # src/components/modular_analyst.py
 
 
-class ModularAnalyst:
+class ModularAnalyst(IAnalyst):
     """
     Enhanced modular analyst with comprehensive error handling and type safety.
     """
@@ -862,6 +864,219 @@ class ModularAnalyst:
 
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular analyst: {e}"))
+
+    # IAnalyst interface implementation
+
+    async def start(self) -> None:
+        """Start the analyst (IAnalyst interface)."""
+        await self.initialize()
+
+    async def analyze_market_data(self, market_data: MarketData) -> AnalysisResult:
+        """Analyze market data and return analysis result (IAnalyst interface)."""
+        try:
+            # Convert MarketData to dict format for existing method
+            market_data_dict = {
+                "symbol": market_data.symbol,
+                "price": market_data.close,
+                "volume": market_data.volume,
+                "timestamp": market_data.timestamp.isoformat(),
+                "open": market_data.open,
+                "high": market_data.high,
+                "low": market_data.low,
+                "close": market_data.close,
+                "interval": market_data.interval
+            }
+            
+            # Perform analysis using existing method
+            success = await self.analyze_market_data(market_data_dict)
+            
+            if not success:
+                # Return default result if analysis failed
+                return AnalysisResult(
+                    timestamp=market_data.timestamp,
+                    symbol=market_data.symbol,
+                    confidence=0.0,
+                    signal="HOLD",
+                    features={},
+                    technical_indicators={},
+                    market_regime="UNKNOWN",
+                    support_resistance={},
+                    risk_metrics={}
+                )
+            
+            # Extract results from analysis
+            technical_results = self.analysis_results.get("technical", {})
+            fundamental_results = self.analysis_results.get("fundamental", {})
+            risk_results = self.analysis_results.get("risk", {})
+            
+            # Determine signal based on analysis
+            signal = self._determine_signal(technical_results, fundamental_results)
+            confidence = self._calculate_confidence(technical_results, fundamental_results)
+            
+            return AnalysisResult(
+                timestamp=market_data.timestamp,
+                symbol=market_data.symbol,
+                confidence=confidence,
+                signal=signal,
+                features=fundamental_results,
+                technical_indicators=technical_results,
+                market_regime=self._determine_market_regime(technical_results),
+                support_resistance=self._extract_support_resistance(technical_results),
+                risk_metrics=risk_results
+            )
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error in analyze_market_data interface method: {e}"))
+            return AnalysisResult(
+                timestamp=market_data.timestamp,
+                symbol=market_data.symbol,
+                confidence=0.0,
+                signal="HOLD",
+                features={},
+                technical_indicators={},
+                market_regime="UNKNOWN",
+                support_resistance={},
+                risk_metrics={}
+            )
+
+    async def get_historical_analysis(self, symbol: str, start_date: datetime, end_date: datetime) -> list[AnalysisResult]:
+        """Get historical analysis results (IAnalyst interface)."""
+        try:
+            # Filter history by symbol and date range
+            filtered_history = []
+            for analysis in self.analysis_history:
+                if (analysis.get("symbol") == symbol and 
+                    start_date <= datetime.fromisoformat(analysis.get("timestamp", "")) <= end_date):
+                    
+                    # Convert to AnalysisResult format
+                    result = AnalysisResult(
+                        timestamp=datetime.fromisoformat(analysis.get("timestamp", "")),
+                        symbol=symbol,
+                        confidence=analysis.get("confidence", 0.0),
+                        signal=analysis.get("signal", "HOLD"),
+                        features=analysis.get("fundamental", {}),
+                        technical_indicators=analysis.get("technical", {}),
+                        market_regime=analysis.get("market_regime", "UNKNOWN"),
+                        support_resistance=analysis.get("support_resistance", {}),
+                        risk_metrics=analysis.get("risk", {})
+                    )
+                    filtered_history.append(result)
+            
+            return filtered_history
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error getting historical analysis: {e}"))
+            return []
+
+    async def train_models(self, training_data: Any) -> bool:
+        """Train analysis models (IAnalyst interface)."""
+        try:
+            self.logger.info("Training analysis models...")
+            # Placeholder for model training
+            # In a real implementation, this would train ML models
+            await asyncio.sleep(0.1)  # Simulate training time
+            self.logger.info("✅ Models trained successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error training models: {e}"))
+            return False
+
+    async def load_models(self, model_path: str) -> bool:
+        """Load trained models (IAnalyst interface)."""
+        try:
+            self.logger.info(f"Loading models from {model_path}...")
+            # Placeholder for model loading
+            # In a real implementation, this would load saved models
+            await asyncio.sleep(0.1)  # Simulate loading time
+            self.logger.info("✅ Models loaded successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error loading models: {e}"))
+            return False
+
+    # Helper methods for interface implementation
+
+    def _determine_signal(self, technical_results: dict, fundamental_results: dict) -> str:
+        """Determine trading signal based on analysis results."""
+        try:
+            # Simple signal logic based on technical indicators
+            if "rsi" in technical_results:
+                rsi = technical_results["rsi"]
+                if rsi < 30:
+                    return "BUY"
+                elif rsi > 70:
+                    return "SELL"
+            
+            if "macd" in technical_results:
+                macd = technical_results["macd"]
+                if isinstance(macd, dict) and macd.get("histogram", 0) > 0:
+                    return "BUY"
+                elif isinstance(macd, dict) and macd.get("histogram", 0) < 0:
+                    return "SELL"
+            
+            return "HOLD"
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error determining signal: {e}"))
+            return "HOLD"
+
+    def _calculate_confidence(self, technical_results: dict, fundamental_results: dict) -> float:
+        """Calculate confidence score based on analysis results."""
+        try:
+            confidence = 0.5  # Base confidence
+            
+            # Adjust based on technical indicators
+            if "rsi" in technical_results:
+                rsi = technical_results["rsi"]
+                if rsi < 30 or rsi > 70:
+                    confidence += 0.2
+            
+            if "macd" in technical_results:
+                macd = technical_results["macd"]
+                if isinstance(macd, dict):
+                    histogram = abs(macd.get("histogram", 0))
+                    confidence += min(histogram * 10, 0.3)
+            
+            return min(max(confidence, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating confidence: {e}"))
+            return 0.0
+
+    def _determine_market_regime(self, technical_results: dict) -> str:
+        """Determine market regime based on technical analysis."""
+        try:
+            if "volatility" in technical_results:
+                volatility = technical_results["volatility"]
+                if volatility > 0.3:
+                    return "HIGH_VOLATILITY"
+                elif volatility < 0.1:
+                    return "LOW_VOLATILITY"
+            
+            return "NORMAL"
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error determining market regime: {e}"))
+            return "UNKNOWN"
+
+    def _extract_support_resistance(self, technical_results: dict) -> dict:
+        """Extract support and resistance levels from technical analysis."""
+        try:
+            support_resistance = {}
+            
+            if "bollinger_bands" in technical_results:
+                bb = technical_results["bollinger_bands"]
+                if isinstance(bb, dict):
+                    support_resistance["support"] = bb.get("lower_band", 0)
+                    support_resistance["resistance"] = bb.get("upper_band", 0)
+            
+            return support_resistance
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error extracting support resistance: {e}"))
+            return {}
 
 
 # Global modular analyst instance

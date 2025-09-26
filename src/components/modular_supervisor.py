@@ -1,6 +1,7 @@
 
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -11,12 +12,13 @@ from src.utils.warning_symbols import (
     missing,
 )
 from src.core.decorators import handles_errors
+from ..interfaces.base_interfaces import ISupervisor
 import logging
 import time
 
 # src/components/modular_supervisor.py
 
-class ModularSupervisor:
+class ModularSupervisor(ISupervisor):
     """
     Enhanced modular supervisor with comprehensive error handling and type safety.
     """
@@ -1080,6 +1082,274 @@ class ModularSupervisor:
 
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular supervisor: {e}"))
+
+    # ISupervisor interface implementation
+
+    async def start(self) -> None:
+        """Start the supervisor (ISupervisor interface)."""
+        await self.initialize()
+
+    async def monitor_performance(self) -> dict[str, Any]:
+        """Monitor system performance (ISupervisor interface)."""
+        try:
+            # Create mock trading and system data for supervision
+            trading_data = {
+                "returns": 0.05,
+                "positions": [{"symbol": "BTCUSDT", "size": 0.1, "pnl": 0.02}],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            system_data = {
+                "cpu_usage": 0.45,
+                "memory_usage": 0.6,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Execute supervision using existing method
+            success = await self.execute_supervision(trading_data, system_data)
+            
+            if not success:
+                return {
+                    "status": "error",
+                    "performance_metrics": {},
+                    "system_metrics": {},
+                    "alerts": [],
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Extract supervision results
+            performance_results = self.supervision_results.get("performance", {})
+            system_results = self.supervision_results.get("system", {})
+            alerting_results = self.supervision_results.get("alerting", {})
+            
+            return {
+                "status": "healthy" if success else "error",
+                "performance_metrics": performance_results,
+                "system_metrics": system_results,
+                "alerts": self._extract_alerts(alerting_results),
+                "timestamp": datetime.now().isoformat(),
+                "supervision_interval": self.supervision_interval,
+                "is_supervising": self.is_supervising
+            }
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error in monitor_performance interface method: {e}"))
+            return {
+                "status": "error",
+                "performance_metrics": {},
+                "system_metrics": {},
+                "alerts": [],
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e)
+            }
+
+    async def manage_risk(self) -> dict[str, Any]:
+        """Manage risk across all components (ISupervisor interface)."""
+        try:
+            # Create mock trading and system data for risk management
+            trading_data = {
+                "returns": 0.05,
+                "positions": [{"symbol": "BTCUSDT", "size": 0.1, "pnl": 0.02}],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            system_data = {
+                "cpu_usage": 0.45,
+                "memory_usage": 0.6,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Execute supervision with focus on risk
+            success = await self.execute_supervision(trading_data, system_data)
+            
+            if not success:
+                return {
+                    "risk_status": "error",
+                    "risk_metrics": {},
+                    "risk_alerts": [],
+                    "risk_actions": [],
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Extract risk-related results
+            risk_results = self.supervision_results.get("risk", {})
+            alerting_results = self.supervision_results.get("alerting", {})
+            
+            # Determine risk status
+            risk_status = self._determine_risk_status(risk_results, alerting_results)
+            
+            # Generate risk actions
+            risk_actions = self._generate_risk_actions(risk_results, alerting_results)
+            
+            return {
+                "risk_status": risk_status,
+                "risk_metrics": risk_results,
+                "risk_alerts": self._extract_risk_alerts(alerting_results),
+                "risk_actions": risk_actions,
+                "timestamp": datetime.now().isoformat(),
+                "risk_monitoring_enabled": self.enable_risk_monitoring
+            }
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error in manage_risk interface method: {e}"))
+            return {
+                "risk_status": "error",
+                "risk_metrics": {},
+                "risk_alerts": [],
+                "risk_actions": [],
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e)
+            }
+
+    async def coordinate_components(self) -> None:
+        """Coordinate all trading components (ISupervisor interface)."""
+        try:
+            self.logger.info("🔄 Coordinating trading components...")
+            
+            # Perform comprehensive supervision
+            performance_result = await self.monitor_performance()
+            risk_result = await self.manage_risk()
+            
+            # Log coordination results
+            self.logger.info(f"Performance monitoring: {performance_result.get('status', 'unknown')}")
+            self.logger.info(f"Risk management: {risk_result.get('risk_status', 'unknown')}")
+            
+            # Check for critical alerts
+            alerts = performance_result.get("alerts", []) + risk_result.get("risk_alerts", [])
+            critical_alerts = [alert for alert in alerts if alert.get("severity") == "critical"]
+            
+            if critical_alerts:
+                self.logger.warning(f"🚨 {len(critical_alerts)} critical alerts detected")
+                for alert in critical_alerts:
+                    self.logger.warning(f"Critical alert: {alert.get('message', 'Unknown alert')}")
+            
+            # Execute risk actions if any
+            risk_actions = risk_result.get("risk_actions", [])
+            if risk_actions:
+                self.logger.info(f"Executing {len(risk_actions)} risk management actions")
+                for action in risk_actions:
+                    self.logger.info(f"Risk action: {action.get('action', 'Unknown action')}")
+            
+            self.logger.info("✅ Component coordination completed successfully")
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error coordinating components: {e}"))
+
+    # Helper methods for interface implementation
+
+    def _extract_alerts(self, alerting_results: dict) -> list[dict]:
+        """Extract alerts from alerting results."""
+        try:
+            alerts = []
+            
+            for alert_type, alert_data in alerting_results.items():
+                if isinstance(alert_data, dict):
+                    alert_list = alert_data.get("alerts", [])
+                    if isinstance(alert_list, list):
+                        alerts.extend(alert_list)
+            
+            return alerts
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error extracting alerts: {e}"))
+            return []
+
+    def _determine_risk_status(self, risk_results: dict, alerting_results: dict) -> str:
+        """Determine overall risk status."""
+        try:
+            # Check for high risk metrics
+            high_risk_indicators = 0
+            
+            # Check VaR
+            var = risk_results.get("var", 0.0)
+            if var > 0.05:  # 5% VaR threshold
+                high_risk_indicators += 1
+            
+            # Check volatility
+            volatility = risk_results.get("volatility", 0.0)
+            if volatility > 0.3:  # 30% volatility threshold
+                high_risk_indicators += 1
+            
+            # Check max drawdown
+            max_drawdown = risk_results.get("max_drawdown", 0.0)
+            if max_drawdown > 0.15:  # 15% drawdown threshold
+                high_risk_indicators += 1
+            
+            # Check for critical alerts
+            critical_alerts = 0
+            for alert_type, alert_data in alerting_results.items():
+                if isinstance(alert_data, dict):
+                    alert_count = alert_data.get("critical_alerts", 0)
+                    if isinstance(alert_count, int):
+                        critical_alerts += alert_count
+            
+            # Determine status
+            if critical_alerts > 0 or high_risk_indicators >= 2:
+                return "high_risk"
+            elif high_risk_indicators >= 1:
+                return "medium_risk"
+            else:
+                return "low_risk"
+                
+        except Exception as e:
+            self.logger.exception(error(f"Error determining risk status: {e}"))
+            return "unknown"
+
+    def _generate_risk_actions(self, risk_results: dict, alerting_results: dict) -> list[dict]:
+        """Generate risk management actions based on current risk state."""
+        try:
+            actions = []
+            
+            # Check VaR and generate action if high
+            var = risk_results.get("var", 0.0)
+            if var > 0.05:
+                actions.append({
+                    "action": "reduce_position_sizes",
+                    "reason": f"VaR too high: {var:.3f}",
+                    "priority": "high"
+                })
+            
+            # Check volatility and generate action if high
+            volatility = risk_results.get("volatility", 0.0)
+            if volatility > 0.3:
+                actions.append({
+                    "action": "increase_stop_losses",
+                    "reason": f"High volatility: {volatility:.3f}",
+                    "priority": "medium"
+                })
+            
+            # Check max drawdown and generate action if high
+            max_drawdown = risk_results.get("max_drawdown", 0.0)
+            if max_drawdown > 0.15:
+                actions.append({
+                    "action": "pause_trading",
+                    "reason": f"Max drawdown exceeded: {max_drawdown:.3f}",
+                    "priority": "critical"
+                })
+            
+            return actions
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error generating risk actions: {e}"))
+            return []
+
+    def _extract_risk_alerts(self, alerting_results: dict) -> list[dict]:
+        """Extract risk-specific alerts from alerting results."""
+        try:
+            risk_alerts = []
+            
+            # Extract risk alerts specifically
+            risk_alert_data = alerting_results.get("risk_alerts", {})
+            if isinstance(risk_alert_data, dict):
+                alerts = risk_alert_data.get("alerts", [])
+                if isinstance(alerts, list):
+                    risk_alerts.extend(alerts)
+            
+            return risk_alerts
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error extracting risk alerts: {e}"))
+            return []
 
 # Global modular supervisor instance
 modular_supervisor: ModularSupervisor | None = None

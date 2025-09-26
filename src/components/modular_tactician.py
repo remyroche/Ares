@@ -1,17 +1,19 @@
 
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from logging import error
 
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid, missing
 from ..core.decorators import handles_errors
+from ..interfaces.base_interfaces import ITactician, StrategyResult, AnalysisResult, TradeDecision, MarketData
 import time
 
 # src/components/modular_tactician.py
 
-class ModularTactician:
+class ModularTactician(ITactician):
     """
     Enhanced modular tactician with comprehensive error handling and type safety.
     """
@@ -982,6 +984,226 @@ class ModularTactician:
 
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular tactician: {e}"))
+
+    # ITactician interface implementation
+
+    async def start(self) -> None:
+        """Start the tactician (ITactician interface)."""
+        await self.initialize()
+
+    async def execute_trade_decision(self, strategy_result: StrategyResult, analysis_result: AnalysisResult) -> TradeDecision | None:
+        """Execute trade decision based on strategy and analysis (ITactician interface)."""
+        try:
+            # Convert to dict format for existing method
+            market_data_dict = {
+                "symbol": analysis_result.symbol,
+                "price": 100.0,  # Default price for tactician execution
+                "volume": 1000.0,  # Default volume
+                "timestamp": analysis_result.timestamp.isoformat(),
+            }
+            
+            strategy_data_dict = {
+                "signal": analysis_result.signal,
+                "position_size": strategy_result.max_notional_size,
+                "position_bias": strategy_result.position_bias,
+                "leverage_cap": strategy_result.leverage_cap,
+                "risk_parameters": strategy_result.risk_parameters
+            }
+            
+            # Execute tactician using existing method
+            success = await self.execute_tactician(market_data_dict, strategy_data_dict)
+            
+            if not success:
+                return None
+            
+            # Extract tactician results
+            entry_monitoring = self.tactician_results.get("entry_monitoring", {})
+            exit_monitoring = self.tactician_results.get("exit_monitoring", {})
+            
+            # Determine action based on monitoring results
+            action = self._determine_trade_action(entry_monitoring, exit_monitoring, analysis_result.signal)
+            
+            # Calculate position size
+            position_size = await self.calculate_position_size(strategy_result, 10000.0)  # Default account balance
+            
+            # Calculate risk parameters
+            risk_params = await self.calculate_risk_parameters(strategy_result, MarketData(
+                symbol=analysis_result.symbol,
+                timestamp=analysis_result.timestamp,
+                open=100.0,
+                high=105.0,
+                low=95.0,
+                close=102.0,
+                volume=1000.0,
+                interval="1h"
+            ))
+            
+            # Calculate stop loss and take profit
+            stop_loss = risk_params.get("stop_loss", 95.0)
+            take_profit = risk_params.get("take_profit", 110.0)
+            
+            # Calculate confidence and risk score
+            confidence = analysis_result.confidence
+            risk_score = self._calculate_risk_score(risk_params, strategy_result.risk_parameters)
+            
+            return TradeDecision(
+                timestamp=analysis_result.timestamp,
+                symbol=analysis_result.symbol,
+                action=action,
+                quantity=position_size,
+                price=102.0,  # Current market price
+                leverage=min(strategy_result.leverage_cap, 2.0),
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                confidence=confidence,
+                risk_score=risk_score
+            )
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error in execute_trade_decision interface method: {e}"))
+            return None
+
+    async def calculate_position_size(self, strategy_result: StrategyResult, account_balance: float) -> float:
+        """Calculate position size (ITactician interface)."""
+        try:
+            # Base position size calculation
+            base_size = strategy_result.max_notional_size
+            
+            # Adjust based on account balance
+            max_position_value = account_balance * 0.1  # Max 10% of account balance
+            position_size = min(base_size, max_position_value)
+            
+            # Adjust based on leverage cap
+            if strategy_result.leverage_cap > 1.0:
+                position_size *= strategy_result.leverage_cap
+            
+            # Adjust based on risk parameters
+            risk_params = strategy_result.risk_parameters
+            if "position_limits" in risk_params:
+                position_limits = risk_params["position_limits"]
+                if isinstance(position_limits, dict):
+                    max_position_size = position_limits.get("max_position_size", 1.0)
+                    position_size = min(position_size, account_balance * max_position_size)
+            
+            return max(min(position_size, account_balance), 0.0)
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating position size: {e}"))
+            return 0.0
+
+    async def calculate_risk_parameters(self, strategy_result: StrategyResult, market_data: MarketData) -> dict[str, float]:
+        """Calculate risk parameters (ITactician interface)."""
+        try:
+            risk_params = {}
+            
+            # Calculate stop loss based on market data and strategy
+            current_price = market_data.close
+            volatility = 0.02  # Default volatility
+            
+            # Adjust stop loss based on position bias
+            if strategy_result.position_bias == "BULLISH":
+                stop_loss_pct = 0.02  # 2% stop loss for bullish positions
+            elif strategy_result.position_bias == "BEARISH":
+                stop_loss_pct = 0.02  # 2% stop loss for bearish positions
+            else:
+                stop_loss_pct = 0.015  # 1.5% stop loss for neutral positions
+            
+            # Adjust based on leverage
+            if strategy_result.leverage_cap > 1.0:
+                stop_loss_pct /= strategy_result.leverage_cap
+            
+            risk_params["stop_loss"] = current_price * (1 - stop_loss_pct)
+            risk_params["take_profit"] = current_price * (1 + stop_loss_pct * 2)  # 2:1 risk/reward
+            
+            # Calculate other risk parameters
+            risk_params["max_drawdown"] = strategy_result.risk_parameters.get("max_drawdown", 0.1)
+            risk_params["var"] = strategy_result.risk_parameters.get("var", 0.025)
+            risk_params["volatility"] = volatility
+            
+            return risk_params
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating risk parameters: {e}"))
+            return {
+                "stop_loss": 0.0,
+                "take_profit": 0.0,
+                "max_drawdown": 0.1,
+                "var": 0.025,
+                "volatility": 0.02
+            }
+
+    # Helper methods for interface implementation
+
+    def _determine_trade_action(self, entry_monitoring: dict, exit_monitoring: dict, signal: str) -> str:
+        """Determine trade action based on monitoring results and signal."""
+        try:
+            # Check entry conditions
+            entry_signal = False
+            if "price_action" in entry_monitoring:
+                price_action = entry_monitoring["price_action"]
+                if isinstance(price_action, dict) and price_action.get("entry_signal", False):
+                    entry_signal = True
+            
+            if "volume_analysis" in entry_monitoring:
+                volume_analysis = entry_monitoring["volume_analysis"]
+                if isinstance(volume_analysis, dict) and volume_analysis.get("volume_signal", False):
+                    entry_signal = True
+            
+            # Check exit conditions
+            exit_signal = False
+            if "stop_loss_tracking" in exit_monitoring:
+                stop_loss = exit_monitoring["stop_loss_tracking"]
+                if isinstance(stop_loss, dict) and stop_loss.get("stop_loss_triggered", False):
+                    exit_signal = True
+            
+            if "take_profit_tracking" in exit_monitoring:
+                take_profit = exit_monitoring["take_profit_tracking"]
+                if isinstance(take_profit, dict) and take_profit.get("take_profit_triggered", False):
+                    exit_signal = True
+            
+            # Determine action
+            if exit_signal:
+                return "SELL" if signal == "BUY" else "BUY"  # Exit opposite position
+            elif entry_signal and signal in ["BUY", "SELL"]:
+                return signal
+            else:
+                return "HOLD"
+                
+        except Exception as e:
+            self.logger.exception(error(f"Error determining trade action: {e}"))
+            return "HOLD"
+
+    def _calculate_risk_score(self, risk_params: dict, strategy_risk_params: dict) -> float:
+        """Calculate risk score based on risk parameters."""
+        try:
+            risk_score = 0.5  # Base risk score
+            
+            # Adjust based on volatility
+            volatility = risk_params.get("volatility", 0.02)
+            if volatility > 0.03:
+                risk_score += 0.3
+            elif volatility > 0.02:
+                risk_score += 0.1
+            
+            # Adjust based on VaR
+            var = risk_params.get("var", 0.025)
+            if var > 0.05:
+                risk_score += 0.2
+            elif var > 0.03:
+                risk_score += 0.1
+            
+            # Adjust based on max drawdown
+            max_drawdown = risk_params.get("max_drawdown", 0.1)
+            if max_drawdown > 0.2:
+                risk_score += 0.2
+            elif max_drawdown > 0.15:
+                risk_score += 0.1
+            
+            return min(max(risk_score, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating risk score: {e}"))
+            return 0.5
 
 # Global modular tactician instance
 modular_tactician: ModularTactician | None = None

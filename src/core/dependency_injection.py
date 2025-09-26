@@ -256,40 +256,60 @@ class ComponentFactory:
         try:
             from src.components.modular_analyst import ModularAnalyst
             config = config or {}
-            return ModularAnalyst(config)
-        except ImportError:
-            self.logger.error("Failed to import ModularAnalyst")
+            analyst = ModularAnalyst(config)
+            self.logger.info("✅ ModularAnalyst created successfully")
+            return analyst
+        except ImportError as e:
+            self.logger.error(f"Failed to import ModularAnalyst: {e}")
             raise NotImplementedError("Analyst creation not implemented - ModularAnalyst not available")
+        except Exception as e:
+            self.logger.error(f"Failed to create ModularAnalyst: {e}")
+            raise
 
     def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
         """Create a strategist component."""
         try:
             from src.components.modular_strategist import ModularStrategist
             config = config or {}
-            return ModularStrategist(config)
-        except ImportError:
-            self.logger.error("Failed to import ModularStrategist")
+            strategist = ModularStrategist(config)
+            self.logger.info("✅ ModularStrategist created successfully")
+            return strategist
+        except ImportError as e:
+            self.logger.error(f"Failed to import ModularStrategist: {e}")
             raise NotImplementedError("Strategist creation not implemented - ModularStrategist not available")
+        except Exception as e:
+            self.logger.error(f"Failed to create ModularStrategist: {e}")
+            raise
 
     def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""
         try:
             from src.components.modular_tactician import ModularTactician
             config = config or {}
-            return ModularTactician(config)
-        except ImportError:
-            self.logger.error("Failed to import ModularTactician")
+            tactician = ModularTactician(config)
+            self.logger.info("✅ ModularTactician created successfully")
+            return tactician
+        except ImportError as e:
+            self.logger.error(f"Failed to import ModularTactician: {e}")
             raise NotImplementedError("Tactician creation not implemented - ModularTactician not available")
+        except Exception as e:
+            self.logger.error(f"Failed to create ModularTactician: {e}")
+            raise
 
     def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
         """Create a supervisor component."""
         try:
             from src.components.modular_supervisor import ModularSupervisor
             config = config or {}
-            return ModularSupervisor(config)
-        except ImportError:
-            self.logger.error("Failed to import ModularSupervisor")
+            supervisor = ModularSupervisor(config)
+            self.logger.info("✅ ModularSupervisor created successfully")
+            return supervisor
+        except ImportError as e:
+            self.logger.error(f"Failed to import ModularSupervisor: {e}")
             raise NotImplementedError("Supervisor creation not implemented - ModularSupervisor not available")
+        except Exception as e:
+            self.logger.error(f"Failed to create ModularSupervisor: {e}")
+            raise
 
 class ModularTradingSystem:
     """Modular trading system using dependency injection."""

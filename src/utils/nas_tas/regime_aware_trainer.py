@@ -50,6 +50,18 @@ from src.utils.nas_tas.shared_logging import (
 )
 from src.utils.nas_tas.shared_serialization import PickleSerializer
 
+try:
+    from src.utils.ml_common.training.training_integration import (
+        TrainingIntegrationConfig,
+        TrainingStepEnhancer,
+    )
+    TRAINING_ENHANCER_AVAILABLE = True
+except ImportError as exc:  # pragma: no cover - optional dependency path
+    tprint_warning(f"Training enhancer unavailable: {exc}")
+    TrainingIntegrationConfig = None  # type: ignore[assignment]
+    TrainingStepEnhancer = None  # type: ignore[assignment]
+    TRAINING_ENHANCER_AVAILABLE = False
+
 # Import regime detection systems
 try:
     from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector, TASRegimeConfig
@@ -150,6 +162,13 @@ class RegimeAwareTrainingConfig:
     enable_meta_features: bool = True
     enable_regime_transition_modeling: bool = True
 
+    # Calibration settings (applied through ML common training enhancer when available)
+    enable_model_calibration: bool = True
+    calibration_method: str = "isotonic"
+    calibration_cv: int = 3
+    calibration_min_samples: int = 200
+    calibration_validation_split: float = 0.2
+
 
 @dataclass
 class RegimeTrainingResult:
@@ -207,6 +226,10 @@ class RegimeAwareTrainer:
         # Initialize ML common utilities
         tprint("🤖 Initializing ML common utilities", color="yellow")
         self._initialize_ml_common()
+
+        # Initialize enhanced training utilities when available
+        tprint("🧪 Initializing training enhancer", color="yellow")
+        self._initialize_training_enhancer()
         
         # Initialize model factories
         tprint("🏭 Initializing model factories", color="yellow")
@@ -218,7 +241,7 @@ class RegimeAwareTrainer:
         self.regime_models = {}
         self.ensemble_models = {}
         self.performance_history = []
-        
+
         self.logger.info("✅ Regime-Aware Trainer initialized")
         self.logger.info(f"   Training strategy: {config.training_strategy.value}")
         self.logger.info(f"   Model types: {[mt.value for mt in config.model_types]}")
@@ -310,6 +333,44 @@ class RegimeAwareTrainer:
             self.logger.warning(f"ML common initialization failed: {e}")
             self.validation_framework = None
             self.bayesian_tpe_optimizer = None
+
+    def _initialize_training_enhancer(self):
+        """Initialize the shared training enhancer for consistent calibration."""
+        self.training_enhancer: Optional[TrainingStepEnhancer]
+        self.training_integration_config: Optional[TrainingIntegrationConfig]
+
+        self.training_enhancer = None
+        self.training_integration_config = None
+
+        if not TRAINING_ENHANCER_AVAILABLE:
+            tprint_warning("⚠️ Training enhancer not available - calibration will be skipped", color="red")
+            self.logger.warning("Training enhancer not available - skipping automatic calibration")
+            return
+
+        try:
+            self.training_integration_config = TrainingIntegrationConfig(
+                enable_early_stopping=False,
+                enable_purged_cv=False,
+                enable_lookahead_detection=False,
+                enable_temporal_splits=False,
+                enable_regularization=True,
+                enable_overfitting_monitoring=False,
+                model_type="auto",
+                enable_model_calibration=self.config.enable_model_calibration,
+                calibration_method=self.config.calibration_method,
+                calibration_cv=self.config.calibration_cv,
+                calibration_min_samples=self.config.calibration_min_samples,
+                calibration_validation_split=self.config.calibration_validation_split,
+            )
+
+            self.training_enhancer = TrainingStepEnhancer(self.training_integration_config)
+            tprint_success("✅ Training enhancer initialized - calibrated outputs will be produced", color="green")
+            self.logger.info("✅ Training enhancer initialized with calibration support")
+        except Exception as exc:  # pragma: no cover - runtime safeguard
+            tprint_warning(f"⚠️ Failed to initialize training enhancer: {exc}", color="red")
+            self.logger.warning(f"Training enhancer initialization failed: {exc}")
+            self.training_enhancer = None
+            self.training_integration_config = None
     
     def _initialize_model_factories(self):
         """Initialize model factories for different model types."""
@@ -754,42 +815,81 @@ class RegimeAwareTrainer:
         
         for regime_id, dataset in regime_datasets.items():
             self.logger.info(f"🤖 Training models for regime {regime_id}...")
-            
+
             regime_models[regime_id] = {}
-            
+
             for model_type in self.config.model_types:
                 try:
                     self.logger.info(f"   Training {model_type.value} for regime {regime_id}...")
-                    
+
                     # Create model
                     model = self.model_factories[model_type]()
-                    
-                    # Train model
+
+                    training_metadata: Optional[Dict[str, Any]] = None
+
+                    # Train model with shared enhancer when available
                     if hasattr(model, 'fit'):
-                        # Sklearn-style model
-                        model.fit(dataset['X_train'], dataset['y_train'])
-                        
+                        if self.training_enhancer:
+                            try:
+                                X_enhance = np.concatenate(
+                                    (dataset['X_train'], dataset['X_val']),
+                                    axis=0,
+                                )
+                                y_enhance = np.concatenate(
+                                    (dataset['y_train'], dataset['y_val']),
+                                    axis=0,
+                                )
+                                regime_labels = np.full(len(y_enhance), regime_id)
+
+                                enhanced_model, metadata = self.training_enhancer.enhance_training_step(
+                                    X_enhance,
+                                    y_enhance,
+                                    model,
+                                    timestamps=None,
+                                    model_name=f"{model_type.value}_regime_{regime_id}",
+                                    regime_labels=regime_labels,
+                                )
+                                model = enhanced_model
+                                training_metadata = metadata
+                            except Exception as exc:  # pragma: no cover - runtime safeguard
+                                tprint_warning(
+                                    f"⚠️ Training enhancer failed for {model_type.value} (regime {regime_id}): {exc}",
+                                    color="red",
+                                )
+                                self.logger.warning(
+                                    f"Training enhancer failed for {model_type.value} in regime {regime_id}: {exc}"
+                                )
+                                model.fit(dataset['X_train'], dataset['y_train'])
+                        else:
+                            model.fit(dataset['X_train'], dataset['y_train'])
+
                         # Make predictions
                         train_pred = model.predict(dataset['X_train'])
                         val_pred = model.predict(dataset['X_val'])
                         test_pred = model.predict(dataset['X_test'])
-                        
+
                         # Calculate metrics
                         train_metrics = self._calculate_metrics(dataset['y_train'], train_pred)
                         val_metrics = self._calculate_metrics(dataset['y_val'], val_pred)
                         test_metrics = self._calculate_metrics(dataset['y_test'], test_pred)
-                        
+
                         regime_models[regime_id][model_type.value] = {
                             'model': model,
                             'train_metrics': train_metrics,
                             'val_metrics': val_metrics,
                             'test_metrics': test_metrics,
                             'feature_importance': self._get_feature_importance(model, dataset['feature_names']),
-                            'hyperparameters': self._get_model_hyperparameters(model)
+                            'hyperparameters': self._get_model_hyperparameters(model),
+                            'training_metadata': training_metadata,
                         }
-                        
+
                         self.logger.info(f"   ✅ {model_type.value} trained - Val F1: {val_metrics['f1_score']:.3f}")
-                    
+
+                        if training_metadata and training_metadata.get('calibration', {}).get('calibrated'):
+                            self.logger.info(
+                                "   🔄 Probability calibration applied via training enhancer"
+                            )
+
                 except (ValueError, TypeError, RuntimeError) as e:
                     self.logger.warning(f"   ⚠️ Failed to train {model_type.value} for regime {regime_id}: {e}")
                     self.logger.info(f"   Continuing with other models for regime {regime_id}")

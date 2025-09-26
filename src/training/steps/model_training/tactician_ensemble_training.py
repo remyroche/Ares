@@ -339,7 +339,14 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 enable_regularization=True,
                 enable_overfitting_monitoring=True,
                 enable_ensemble_diversity=True,  # Enable for ensemble
-                model_type='auto'
+                model_type='auto',
+                enable_model_calibration=self.config.enable_model_calibration,
+                calibration_method=self.config.calibration_method,
+                calibration_cv=self.config.calibration_cv,
+                calibration_min_samples=self.config.calibration_min_samples,
+                calibration_validation_split=self.config.calibration_validation_split,
+                calibration_enforce_probabilistic=self.config.calibration_enforce_probabilistic,
+                calibration_skip_without_proba=self.config.calibration_skip_without_proba,
             )
             
             # Initialize training enhancer

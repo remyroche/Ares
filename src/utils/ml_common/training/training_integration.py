@@ -23,12 +23,17 @@ from dataclasses import dataclass
 
 # Import enhanced training utilities
 from .enhanced_training_utils import (
-    EnhancedTrainingUtils, 
-    EarlyStoppingConfig, 
-    PurgedCVConfig, 
-    OverfittingMonitorConfig, 
+    EnhancedTrainingUtils,
+    EarlyStoppingConfig,
+    PurgedCVConfig,
+    OverfittingMonitorConfig,
     RegularizationConfig,
     create_enhanced_training_utils
+)
+
+from src.utils.ml_common.calibration import (
+    ModelCalibrationConfig,
+    ModelCalibrationManager,
 )
 
 # Import existing utilities
@@ -55,10 +60,19 @@ class TrainingIntegrationConfig:
     enable_validation_curves: bool = False
     enable_walk_forward: bool = False
     enable_ensemble_diversity: bool = False
-    
+
     # Model-specific settings
     model_type: str = 'auto'  # 'auto', 'xgboost', 'lightgbm', 'catboost', 'randomforest', 'elasticnet'
-    
+
+    # Calibration settings
+    enable_model_calibration: bool = True
+    calibration_method: str = 'isotonic'
+    calibration_cv: int = 3
+    calibration_min_samples: int = 100
+    calibration_validation_split: float = 0.2
+    calibration_enforce_probabilistic: bool = True
+    calibration_skip_without_proba: bool = True
+
     # Early stopping settings
     early_stopping_patience: int = 10
     early_stopping_min_delta: float = 0.001
@@ -309,8 +323,20 @@ class TrainingStepEnhancer:
                 l2_alpha=self.config.l2_alpha
             )
         )
-        
+
         tprint_success("✅ Training Step Enhancer initialized")
+
+        self.calibration_manager: Optional[ModelCalibrationManager] = None
+        if self.config.enable_model_calibration:
+            calibration_config = ModelCalibrationConfig(
+                method=self.config.calibration_method,
+                cv=self.config.calibration_cv,
+                min_samples=self.config.calibration_min_samples,
+                validation_split=self.config.calibration_validation_split,
+                enforce_probabilistic=self.config.calibration_enforce_probabilistic,
+                skip_models_without_proba=self.config.calibration_skip_without_proba,
+            )
+            self.calibration_manager = ModelCalibrationManager(calibration_config)
     
     def enhance_training_step(self,
                             X: np.ndarray,
@@ -339,8 +365,16 @@ class TrainingStepEnhancer:
             'warnings': [],
             'overfitting_detected': False
         }
-        
+
         start_time = time.time()
+        calibration_data: Optional[Tuple[np.ndarray, np.ndarray]] = None
+
+        def _tail_slice(data: Any, start_idx: int):
+            if data is None:
+                return data
+            if hasattr(data, 'iloc'):
+                return data.iloc[start_idx:]
+            return data[start_idx:]
         
         try:
             # Step 1: Validate temporal data
@@ -384,11 +418,13 @@ class TrainingStepEnhancer:
                             y_train, y_val = y[train_idx], y[val_idx]
                             training_metadata['enhancements_applied'].append('regime_aware_cv')
                             tprint_info(f"✅ Using regime-aware cross-validation for {model_name}")
+                            calibration_data = (X_val, y_val)
                         else:
                             # Fallback to standard split
                             split_point = int(len(X) * 0.8)
                             X_train, X_val = X[:split_point], X[split_point:]
                             y_train, y_val = y[:split_point], y[split_point:]
+                            calibration_data = (X_val, y_val)
                     except Exception as e:
                         tprint_error(f"❌ Regime-aware CV failed: {e}")
                         raise RuntimeError(f"❌ Enhanced training requires regime-aware CV to succeed. Fix the error: {e}") from e
@@ -397,6 +433,7 @@ class TrainingStepEnhancer:
                     split_point = int(len(X) * 0.8)
                     X_train, X_val = X[:split_point], X[split_point:]
                     y_train, y_val = y[:split_point], y[split_point:]
+                    calibration_data = (X_val, y_val)
 
                 model, early_stopping_info = self.enhanced_utils.apply_early_stopping(
                     model, X_train, y_train, X_val, y_val, self.config.model_type
@@ -408,7 +445,12 @@ class TrainingStepEnhancer:
                 # Standard training
                 tprint_info(f"🚀 Training {model_name}...")
                 model.fit(X, y)
-            
+                if self.calibration_manager:
+                    split_point = int(len(X) * (1 - self.config.calibration_validation_split))
+                    split_point = max(1, min(split_point, len(X)))
+                    if len(X) - split_point >= self.config.calibration_min_samples:
+                        calibration_data = (_tail_slice(X, split_point), _tail_slice(y, split_point))
+
             # Step 4: Monitor for overfitting with enhanced CV
             if self.config.enable_overfitting_monitoring and len(X) > 200:
                 tprint_info(f"📊 Monitoring {model_name} for overfitting with enhanced CV...")
@@ -455,10 +497,37 @@ class TrainingStepEnhancer:
                     tprint_warning(f"⚠️ Overfitting detected in {model_name}")
                 else:
                     tprint_success(f"✅ No overfitting detected in {model_name}")
-            
+
+            if self.calibration_manager:
+                if calibration_data is None and len(X) >= self.config.calibration_min_samples:
+                    # Fallback: use the most recent window of data for calibration
+                    fallback_start = max(0, len(X) - self.config.calibration_min_samples)
+                    calibration_data = (
+                        _tail_slice(X, fallback_start),
+                        _tail_slice(y, fallback_start),
+                    )
+
+                if calibration_data is not None:
+                    cal_X, cal_y = calibration_data
+                    calibrated_model, calibration_report = self.calibration_manager.calibrate_model(
+                        model, cal_X, cal_y
+                    )
+                    model = calibrated_model
+                    training_metadata['calibration'] = calibration_report
+                    if calibration_report.get('calibrated'):
+                        training_metadata['enhancements_applied'].append('model_calibration')
+                else:
+                    training_metadata['calibration'] = {
+                        'calibrated': False,
+                        'reason': 'calibration_data_missing',
+                        'method': self.config.calibration_method,
+                        'cv': self.config.calibration_cv,
+                        'samples_used': 0,
+                    }
+
             training_time = time.time() - start_time
             training_metadata['training_time'] = training_time
-            
+
             tprint_success(f"✅ {model_name} training completed in {training_time:.2f}s")
             return model, training_metadata
             

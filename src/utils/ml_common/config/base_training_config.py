@@ -73,7 +73,16 @@ class BaseTrainingConfig:
     # Ensemble diversity monitoring
     enable_ensemble_diversity: bool = False
     diversity_threshold: float = 0.1
-    
+
+    # Probability calibration
+    enable_model_calibration: bool = True
+    calibration_method: str = "isotonic"
+    calibration_cv: int = 3
+    calibration_min_samples: int = 150
+    calibration_validation_split: float = 0.2
+    calibration_enforce_probabilistic: bool = True
+    calibration_skip_without_proba: bool = True
+
     # Universal validation settings (from main branch)
     enable_validation: bool = True
     enable_overfitting_detection: bool = True

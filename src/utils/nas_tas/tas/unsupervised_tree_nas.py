@@ -1116,7 +1116,11 @@ class UnsupervisedTreeNAS:
             skewness = np.mean(((data - mean_val) / std_val) ** 3)
             return float(skewness)
             
-        except Exception:
+        except (ValueError, ZeroDivisionError, OverflowError) as e:
+            tprint_warning(f"⚠️ [UNSUPERVISED_TREE_NAS] Skewness calculation failed: {type(e).__name__}: {e}")
+            return 0.0
+        except Exception as e:
+            tprint_error(f"❌ [UNSUPERVISED_TREE_NAS] Unexpected error in skewness calculation: {type(e).__name__}: {e}")
             return 0.0
     
     def _calculate_transition_probabilities(self, labels: np.ndarray, regime_id: int) -> Tuple[float, List[int]]:
@@ -1223,7 +1227,11 @@ class UnsupervisedTreeNAS:
             
             return end_pos - start_pos + 1
             
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint_warning(f"⚠️ [UNSUPERVISED_TREE_NAS] Segment length calculation failed: {type(e).__name__}: {e}")
+            return 1
+        except Exception as e:
+            tprint_error(f"❌ [UNSUPERVISED_TREE_NAS] Unexpected error in segment length calculation: {type(e).__name__}: {e}")
             return 1
     
     def _calculate_regime_stability(self, labels: np.ndarray, regime_id: int) -> float:
@@ -1260,7 +1268,11 @@ class UnsupervisedTreeNAS:
             
             return float(stability)
             
-        except Exception:
+        except (ValueError, ZeroDivisionError, IndexError) as e:
+            tprint_warning(f"⚠️ [UNSUPERVISED_TREE_NAS] Regime stability calculation failed: {type(e).__name__}: {e}")
+            return 0.0
+        except Exception as e:
+            tprint_error(f"❌ [UNSUPERVISED_TREE_NAS] Unexpected error in regime stability calculation: {type(e).__name__}: {e}")
             return 0.0
     
     def _calculate_regime_feature_importance(self, regime_samples: np.ndarray, 

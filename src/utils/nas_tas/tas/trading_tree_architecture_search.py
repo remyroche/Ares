@@ -431,7 +431,11 @@ class TradingTreeArchitectureSearch:
                                 'characteristics': self._extract_regime_characteristics(cluster_data),
                                 'transition_probability': 1.0 / n_regimes
                             }
-                except:
+                except (ValueError, RuntimeError, AttributeError) as e:
+                    tprint_warning(f"⚠️ [TRADING_TREE_TAS] Regime clustering failed for n_regimes={n_regimes}: {type(e).__name__}: {e}")
+                    continue
+                except Exception as e:
+                    tprint_error(f"❌ [TRADING_TREE_TAS] Unexpected error in regime clustering for n_regimes={n_regimes}: {type(e).__name__}: {e}")
                     continue
 
             return regimes

@@ -577,8 +577,16 @@ class UnifiedEvaluator:
                 try:
                     train_probabilities = model.predict_proba(X_train)
                     val_probabilities = model.predict_proba(X_val)
-                except:
-                    pass
+                except (AttributeError, ValueError, RuntimeError) as e:
+                    if TPRINT_AVAILABLE:
+                        tprint_warning(f"⚠️ Model predict_proba failed: {type(e).__name__}: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ Model predict_proba failed: {type(e).__name__}: {e}")
+                except Exception as e:
+                    if TPRINT_AVAILABLE:
+                        tprint_error(f"❌ Unexpected error in predict_proba: {type(e).__name__}: {e}")
+                    else:
+                        self.logger.error(f"❌ Unexpected error in predict_proba: {type(e).__name__}: {e}")
             
             # Get feature importance if available
             feature_importance = None
@@ -975,7 +983,17 @@ class UnifiedEvaluator:
             
             try:
                 auc_roc = roc_auc_score(y_test, y_pred_proba)
-            except:
+            except (ValueError, TypeError) as e:
+                if TPRINT_AVAILABLE:
+                    tprint_warning(f"⚠️ ROC AUC calculation failed: {type(e).__name__}: {e}")
+                else:
+                    self.logger.warning(f"⚠️ ROC AUC calculation failed: {type(e).__name__}: {e}")
+                auc_roc = 0.5  # Default for binary classification
+            except Exception as e:
+                if TPRINT_AVAILABLE:
+                    tprint_error(f"❌ Unexpected error in ROC AUC calculation: {type(e).__name__}: {e}")
+                else:
+                    self.logger.error(f"❌ Unexpected error in ROC AUC calculation: {type(e).__name__}: {e}")
                 auc_roc = 0.5  # Default for binary classification
             
             return {
@@ -1305,8 +1323,16 @@ class UnifiedEvaluator:
         """Destructor."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during destruction
+        except (AttributeError, RuntimeError) as e:
+            if TPRINT_AVAILABLE:
+                tprint_warning(f"⚠️ Cleanup failed during destruction: {type(e).__name__}: {e}")
+            else:
+                self.logger.warning(f"⚠️ Cleanup failed during destruction: {type(e).__name__}: {e}")
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint_error(f"❌ Unexpected error during destruction: {type(e).__name__}: {e}")
+            else:
+                self.logger.error(f"❌ Unexpected error during destruction: {type(e).__name__}: {e}")
     
     def evaluate_with_enhanced_utilities(self, 
                                        architecture: Dict[str, Any], 

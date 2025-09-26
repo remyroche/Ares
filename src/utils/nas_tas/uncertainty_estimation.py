@@ -94,7 +94,11 @@ except ImportError as e:
     def safe_covariance(x, y, default=0.0):
         try:
             return np.cov(x, y)[0, 1] if len(x) == len(y) and len(x) > 1 else default
-        except Exception:
+        except (ValueError, TypeError, np.linalg.LinAlgError) as e:
+            tprint_warning(f"⚠️ Safe covariance calculation failed: {type(e).__name__}: {e}")
+            return default
+        except Exception as e:
+            tprint_error(f"❌ Unexpected error in safe covariance: {type(e).__name__}: {e}")
             return default
     
     def safe_percentile(values, percentile, default=0.0):
@@ -151,13 +155,21 @@ except ImportError as e:
             if matrix.shape[0] != matrix.shape[1]:
                 raise ValueError(f"{name} must be square")
             return matrix
-        except Exception:
-            raise ValueError(f"Invalid {name}")
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint_error(f"❌ Matrix validation failed for {name}: {type(e).__name__}: {e}")
+            raise ValueError(f"Invalid {name}: {e}")
+        except Exception as e:
+            tprint_error(f"❌ Unexpected error in matrix validation for {name}: {type(e).__name__}: {e}")
+            raise ValueError(f"Invalid {name}: {e}")
     
     def math_safe(func, *args, default=0.0, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception:
+        except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+            tprint_warning(f"⚠️ Math operation failed: {type(e).__name__}: {e}")
+            return default
+        except Exception as e:
+            tprint_error(f"❌ Unexpected error in math operation: {type(e).__name__}: {e}")
             return default
     
     # Bayesian TPE fallback
@@ -505,8 +517,11 @@ class TreeUncertaintyEstimator:
             
             return predictions
             
+        except (ValueError, AttributeError, RuntimeError) as e:
+            tprint_error(f"❌ Single model prediction failed due to {type(e).__name__}: {e}")
+            return None
         except Exception as e:
-            tprint_warning(f"⚠️ Single model prediction failed: {e}")
+            tprint_error(f"❌ Unexpected error in single model prediction: {type(e).__name__}: {e}")
             return None
     
     def _calculate_uncertainty_metrics(self, all_predictions: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
@@ -927,8 +942,11 @@ class TreeUncertaintyEstimator:
             else:
                 tprint_warning("⚠️ Serializer not available for saving")
                 return False
+        except (IOError, OSError, PermissionError) as e:
+            tprint_error(f"❌ Failed to save uncertainty estimator due to file system error: {type(e).__name__}: {e}")
+            return False
         except Exception as e:
-            tprint_error(f"❌ Failed to save uncertainty estimator: {e}")
+            tprint_error(f"❌ Unexpected error saving uncertainty estimator: {type(e).__name__}: {e}")
             return False
     
     def load_uncertainty_estimator(self, filepath: str) -> bool:
@@ -944,8 +962,11 @@ class TreeUncertaintyEstimator:
             else:
                 tprint_warning("⚠️ Serializer not available for loading")
                 return False
+        except (IOError, OSError, PermissionError, FileNotFoundError) as e:
+            tprint_error(f"❌ Failed to load uncertainty estimator due to file system error: {type(e).__name__}: {e}")
+            return False
         except Exception as e:
-            tprint_error(f"❌ Failed to load uncertainty estimator: {e}")
+            tprint_error(f"❌ Unexpected error loading uncertainty estimator: {type(e).__name__}: {e}")
             return False
     
     def calculate_prediction_entropy(self, X: np.ndarray) -> np.ndarray:

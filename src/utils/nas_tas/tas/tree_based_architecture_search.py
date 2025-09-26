@@ -674,7 +674,11 @@ class TreeBasedArchitectureSearch:
                 return len(model.estimators_) * 100  # Rough estimate
             else:
                 return 1000  # Default estimate
-        except:
+        except (AttributeError, TypeError, ValueError) as e:
+            tprint_warning(f"⚠️ [TREE_BASED_ARCH] Model size estimation failed: {type(e).__name__}: {e}")
+            return 1000
+        except Exception as e:
+            tprint_error(f"❌ [TREE_BASED_ARCH] Unexpected error in model size estimation: {type(e).__name__}: {e}")
             return 1000
     
     def get_search_summary(self) -> Dict[str, Any]:

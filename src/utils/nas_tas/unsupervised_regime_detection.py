@@ -1017,18 +1017,71 @@ class UnsupervisedRegimeDetector:
     
     def _calculate_transition_probability(self, transition: Dict[str, Any]) -> float:
         """Calculate probability of regime transition."""
-        # Simplified transition probability calculation
-        # In production, this would use more sophisticated methods
-        
         from_regime = transition.get('from_regime')
         to_regime = transition.get('to_regime')
+        duration = transition.get('duration', 0)
         
         if not from_regime or not to_regime:
             return 0.0
         
-        # Calculate based on regime characteristics
-        # This is a simplified implementation
-        return 0.5  # Placeholder
+        # Get regime characteristics from current regimes
+        if not self.current_regimes:
+            return 0.0
+        
+        from_regime_info = None
+        to_regime_info = None
+        
+        # Find regime information
+        for regime_name, regime_info in self.current_regimes.items():
+            if regime_name == from_regime:
+                from_regime_info = regime_info
+            elif regime_name == to_regime:
+                to_regime_info = regime_info
+        
+        if not from_regime_info or not to_regime_info:
+            return 0.0
+        
+        # Calculate transition probability based on regime characteristics
+        # 1. Volatility-based transition probability
+        from_vol = from_regime_info.get('price_volatility', 0.1)
+        to_vol = to_regime_info.get('price_volatility', 0.1)
+        vol_ratio = abs(from_vol - to_vol) / max(from_vol, to_vol, 0.01)
+        vol_transition_prob = min(vol_ratio * 2, 1.0)
+        
+        # 2. Trend-based transition probability
+        from_trend = from_regime_info.get('price_trend', 0.0)
+        to_trend = to_regime_info.get('price_trend', 0.0)
+        trend_change = abs(from_trend - to_trend)
+        trend_transition_prob = min(trend_change * 5, 1.0)
+        
+        # 3. Duration-based transition probability
+        min_duration = self.config.min_regime_duration
+        duration_factor = min(duration / min_duration, 2.0)
+        duration_transition_prob = min(duration_factor * 0.3, 1.0)
+        
+        # 4. Historical transition frequency
+        historical_prob = 0.0
+        if self.regime_transitions:
+            # Count similar transitions in history
+            similar_transitions = 0
+            for hist_transition in self.regime_transitions:
+                if (hist_transition.get('from_regime') == from_regime and 
+                    hist_transition.get('to_regime') == to_regime):
+                    similar_transitions += 1
+            
+            historical_prob = min(similar_transitions / len(self.regime_transitions), 1.0)
+        
+        # Combine probabilities with weights
+        weights = [0.3, 0.3, 0.2, 0.2]  # vol, trend, duration, historical
+        probabilities = [vol_transition_prob, trend_transition_prob, duration_transition_prob, historical_prob]
+        
+        combined_prob = sum(w * p for w, p in zip(weights, probabilities))
+        
+        # Apply confidence threshold
+        if combined_prob < self.config.transition_threshold:
+            return 0.0
+        
+        return min(combined_prob, 1.0)
     
     def _calculate_regime_stability(self, transition: Dict[str, Any]) -> float:
         """Calculate regime stability."""

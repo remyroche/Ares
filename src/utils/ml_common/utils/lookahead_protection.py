@@ -52,17 +52,60 @@ logger = logging.getLogger(__name__)
 
 # Define fallback classes to prevent NameError - available globally
 class LookaheadBiasDetector:
+    """Fail-safe fallback detector that refuses to produce silent false negatives."""
+
+    IS_FALLBACK = True
+
     def __init__(self, *args, **kwargs):
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__).getChild("FallbackLookaheadBiasDetector")
+        self.strict_mode = kwargs.get('strict_mode', True)
+        self._current_timestamp: Optional[datetime] = None
 
-    def detect_bias(self, data, target=None):
-        """Fallback detection method - always returns no bias"""
-        self.logger.info("Using fallback lookahead bias detector")
-        return {'bias_detected': False, 'bias_score': 0.0, 'details': 'Fallback detector'}
+    def detect_bias(self, data: Any, target: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Fallback detection method that fails fast when the primary dependency is missing."""
+        message = (
+            "Lookahead bias detector dependency is unavailable; unable to verify bias risk. "
+            "Failing fast to prevent silent false negatives."
+        )
+        self.logger.error(message)
+        raise LookaheadBiasError(
+            message,
+            bias_score=None,
+            context={
+                'status': 'fallback_detector_unavailable',
+                'strict_mode': self.strict_mode,
+                'timestamp': self._current_timestamp.isoformat() if self._current_timestamp else None,
+            }
+        )
 
-    def validate_temporal_order(self, timestamps):
-        """Fallback temporal validation"""
-        return True
+    def validate_temporal_order(self, timestamps: Union[pd.Series, List[datetime]]) -> bool:
+        """Fallback temporal validation with monotonicity checks."""
+        try:
+            if isinstance(timestamps, pd.Series):
+                series = pd.to_datetime(timestamps, errors='coerce')
+            else:
+                series = pd.to_datetime(pd.Series(list(timestamps)), errors='coerce')
+
+            if series.isna().any():
+                self.logger.error("Fallback temporal validation received invalid timestamps")
+                return False
+
+            is_monotonic = bool(series.is_monotonic_increasing)
+            if not is_monotonic:
+                self.logger.error("Fallback temporal validation detected non-monotonic timestamps")
+            return is_monotonic
+        except Exception as exc:
+            self.logger.error("Fallback temporal validation failed: %s", exc)
+            return False
+
+    def set_current_timestamp(self, timestamp: datetime) -> None:
+        """Record the active timestamp to maintain interface compatibility."""
+        self._current_timestamp = timestamp
+        try:
+            timestamp_repr = timestamp.isoformat()
+        except AttributeError:
+            timestamp_repr = str(timestamp)
+        self.logger.debug("Fallback detector timestamp updated", extra={'timestamp': timestamp_repr})
 
 class LookaheadBiasError(Exception):
     """Exception raised when lookahead bias is detected in ML training."""
@@ -145,12 +188,13 @@ class LookaheadProtection:
 
         # Initialize existing detector if available
         self.logger.debug("🔧 Initializing base detector...")
-        if EXISTING_DETECTOR_AVAILABLE:
-            self.base_detector = LookaheadBiasDetector(strict_mode=self.strict_mode)
+        self.base_detector = LookaheadBiasDetector(strict_mode=self.strict_mode)
+        if EXISTING_DETECTOR_AVAILABLE and not getattr(self.base_detector, 'IS_FALLBACK', False):
             self.logger.debug("✅ Base detector initialized")
         else:
-            self.base_detector = None
-            self.logger.warning("⚠️ Base detector not available")
+            self.logger.warning(
+                "⚠️ Base lookahead detector dependency unavailable - using fallback implementation"
+            )
         
         init_time = time.time() - start_time
         self.logger.info(f"✅ LookaheadProtection initialized in {init_time:.3f}s")
@@ -759,8 +803,12 @@ class LookaheadProtection:
                                     leakage['issues'].append(
                                         f"Potential target leakage: feature '{col}' has {corr:.3f} correlation with target"
                                     )
-                        except:
-                            pass  # Skip correlation check if it fails
+                        except Exception as exc:
+                            warning_message = (
+                                f"Failed to compute correlation between feature '{col}' and target: {exc}"
+                            )
+                            self.logger.warning(warning_message)
+                            leakage['issues'].append(warning_message)
 
             return leakage
 
@@ -805,7 +853,8 @@ class LookaheadProtection:
             earliest_end = min(range1[1], range2[1])
             overlap = max(0, (earliest_end - latest_start).total_seconds())
             return overlap
-        except:
+        except Exception as exc:
+            self.logger.error(f"Failed to calculate overlap duration: {exc}")
             return 0.0
 
     def _generate_leakage_recommendations(self, issues: List[str]) -> List[str]:

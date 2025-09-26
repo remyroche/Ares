@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
+from src.utils.tprint import tprint_error, tprint_warning
 
 from ..core.feature_generator import (
     FeatureGenerator, 
@@ -99,7 +100,11 @@ class PriceEntropyGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         price_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -147,7 +152,11 @@ class VolumeEntropyGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         volume_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -195,7 +204,11 @@ class ReturnEntropyGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -244,7 +257,11 @@ class PriceEntropyMAGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         price_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -294,7 +311,11 @@ class VolumeEntropyMAGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         volume_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -344,7 +365,11 @@ class ReturnEntropyMAGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return_entropy = base_values.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -393,7 +418,11 @@ class HighLowEntropyGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         hl_entropy = hl_range.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -443,7 +472,11 @@ class VolatilityEntropyGenerator(FeatureGenerator):
                 # Calculate entropy
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         volatility_entropy = volatility.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -481,7 +514,11 @@ class MomentumEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return momentum.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -521,7 +558,11 @@ class RSIEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return rsi.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -560,7 +601,11 @@ class MACDEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return macd.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -601,7 +646,11 @@ class BollingerBandsEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return bb_position.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -639,7 +688,11 @@ class CrossAssetEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return correlation.rolling(window=self.window).apply(calculate_entropy, raw=False)
@@ -678,7 +731,11 @@ class RegimeEntropyGenerator(FeatureGenerator):
                 probs = probs[probs > 0]
                 entropy = -np.sum(probs * np.log2(probs))
                 return entropy
-            except:
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                tprint_warning(f"Entropy calculation failed: {type(e).__name__}: {e}")
+                return 0.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in entropy calculation: {type(e).__name__}: {e}")
                 return 0.0
         
         return regime.rolling(window=self.window).apply(calculate_entropy, raw=False)

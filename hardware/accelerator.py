@@ -40,13 +40,11 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    # Create a mock pandas for basic functionality
-    class MockPandas:
-        def __init__(self):
-            pass
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-    pd = MockPandas()
+    # Fast fail: pandas is required for DataFrame operations
+    raise ImportError(
+        "pandas is required for accelerator DataFrame operations. "
+        "Please install pandas: pip install pandas"
+    )
 
 try:
     import psutil

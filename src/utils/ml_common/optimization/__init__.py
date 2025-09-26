@@ -8,7 +8,14 @@ This module contains all optimization-related functionality including:
 - Multi-objective optimization
 """
 
-from .hpo_utils import HyperparameterOptimization
+from .hpo_utils import (
+    HyperparameterOptimization,
+    bayesian_optimization,
+    grid_search,
+    optimize_hyperparameters,
+    random_search,
+    staged_hpo,
+)
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 from src.utils.nas_tas.hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
@@ -24,6 +31,11 @@ from .bayesian_tpe_optimizer import (
 __all__ = [
     # Hyperparameter Optimization
     'HyperparameterOptimization',
+    'optimize_hyperparameters',
+    'bayesian_optimization',
+    'grid_search',
+    'random_search',
+    'staged_hpo',
 
     # Pareto Optimization
     'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',

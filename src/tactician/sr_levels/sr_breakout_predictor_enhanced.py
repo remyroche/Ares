@@ -4,6 +4,7 @@ from datetime import datetime
 import numpy as np
 from ...utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.tprint import tprint
 'Enhanced S/R Breakout Predictor.\n\nThis module provides advanced breakout prediction capabilities with ML integration,\nreal-time monitoring, and comprehensive validation.\n'
 from dataclasses import dataclass
 from enum import Enum
@@ -571,7 +572,8 @@ class EnhancedSRBreakoutPredictor:
             current_volume = market_data['volume'].iloc[-1]
             avg_volume = market_data['volume'].rolling(window = 20).mean().iloc[-1]
             return current_volume / avg_volume if avg_volume > 0 else 1.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating volume spike: {e}")
             return 1.0
 
     def _calculate_momentum(self, market_data: pd.DataFrame) -> float:
@@ -582,7 +584,8 @@ class EnhancedSRBreakoutPredictor:
             current_price = market_data['close'].iloc[-1]
             past_price = market_data['close'].iloc[-10]
             return (current_price - past_price) / past_price
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating momentum: {e}")
             return 0.0
 
     def _calculate_volatility(self, market_data: pd.DataFrame) -> float:
@@ -592,7 +595,8 @@ class EnhancedSRBreakoutPredictor:
                 return 0.01
             returns = market_data['close'].pct_change().dropna()
             return returns.std() if len(returns) > 0 else 0.01
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating volatility: {e}")
             return 0.01
 
     def _calculate_time_at_level(self, market_data: pd.DataFrame, level_price: float) -> int:
@@ -608,7 +612,8 @@ class EnhancedSRBreakoutPredictor:
                 else:
                     break
             return time_at_level
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError) as e:
+            tprint(f"Error calculating time at level: {e}")
             return 0
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
@@ -622,7 +627,8 @@ class EnhancedSRBreakoutPredictor:
             rs = gain / loss
             rsi = 100 - 100 / (1 + rs)
             return rsi.iloc[-1] if not rsi.empty else 50.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating RSI: {e}")
             return 50.0
 
     def _calculate_macd_signal(self, prices: pd.Series) -> float:
@@ -635,7 +641,8 @@ class EnhancedSRBreakoutPredictor:
             macd = ema_12 - ema_26
             signal = macd.ewm(span = 9).mean()
             return macd.iloc[-1] - signal.iloc[-1] if not macd.empty else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating MACD signal: {e}")
             return 0.0
 
     def _calculate_bollinger_position(self, market_data: pd.DataFrame) -> float:
@@ -651,7 +658,8 @@ class EnhancedSRBreakoutPredictor:
             current_price = prices.iloc[-1]
             position = (current_price - lower.iloc[-1]) / (upper.iloc[-1] - lower.iloc[-1])
             return position if not np.isnan(position) else 0.5
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating Bollinger position: {e}")
             return 0.5
 
     def _calculate_order_flow_imbalance(self, market_data: pd.DataFrame) -> float:
@@ -666,7 +674,8 @@ class EnhancedSRBreakoutPredictor:
             if total_volume == 0:
                 return 0.0
             return (volume_up - volume_down) / total_volume
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating order flow imbalance: {e}")
             return 0.0
 
     def _calculate_market_sentiment(self, market_data: pd.DataFrame) -> float:
@@ -677,14 +686,16 @@ class EnhancedSRBreakoutPredictor:
             recent_returns = market_data['close'].pct_change().tail(10)
             positive_returns = (recent_returns > 0).sum()
             return positive_returns / len(recent_returns)
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating market sentiment: {e}")
             return 0.5
 
     def _get_previous_breakout_history(self, level: Dict[str, Any]) -> float:
         """Get previous breakout history for level."""
         try:
             return 0.5
-        except Exception:
+        except (KeyError, TypeError, AttributeError) as e:
+            tprint(f"Error getting previous breakout history: {e}")
             return 0.5
 
     def _calculate_stochastic_k(self, market_data: pd.DataFrame, period: int = 14) -> float:
@@ -696,7 +707,8 @@ class EnhancedSRBreakoutPredictor:
             high_max = market_data['high'].rolling(window = period).max()
             k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
             return k_percent.iloc[-1] if not k_percent.empty else 50.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating Stochastic K: {e}")
             return 50.0
 
     def _calculate_williams_r(self, market_data: pd.DataFrame, period: int = 14) -> float:
@@ -708,7 +720,8 @@ class EnhancedSRBreakoutPredictor:
             low_min = market_data['low'].rolling(window = period).min()
             williams_r = -100 * ((high_max - market_data['close']) / (high_max - low_min))
             return williams_r.iloc[-1] if not williams_r.empty else -50.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating Williams R: {e}")
             return -50.0
 
     def _calculate_cci(self, market_data: pd.DataFrame, period: int = 20) -> float:
@@ -721,7 +734,8 @@ class EnhancedSRBreakoutPredictor:
             mad = typical_price.rolling(window = period).apply(lambda x: np.mean(np.abs(x - x.mean())))
             cci = (typical_price - sma_tp) / (0.015 * mad)
             return cci.iloc[-1] if not cci.empty else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating CCI: {e}")
             return 0.0
 
     def _calculate_adx(self, market_data: pd.DataFrame, period: int = 14) -> float:
@@ -741,7 +755,8 @@ class EnhancedSRBreakoutPredictor:
             dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
             adx = dx.rolling(window = period).mean()
             return adx.iloc[-1] if not adx.empty else 25.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating ADX: {e}")
             return 25.0
 
     def _calculate_atr(self, market_data: pd.DataFrame, period: int = 14) -> float:
@@ -755,7 +770,8 @@ class EnhancedSRBreakoutPredictor:
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
             atr = true_range.rolling(window = period).mean()
             return atr.iloc[-1] if not atr.empty else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating ATR: {e}")
             return 0.0
 
     def _calculate_volume_profile(self, market_data: pd.DataFrame, current_price: float) -> float:
@@ -768,7 +784,8 @@ class EnhancedSRBreakoutPredictor:
             volume_at_level = market_data['volume'].mean() * (1 + price_level * 0.2)
             avg_volume = market_data['volume'].mean()
             return volume_at_level / avg_volume if avg_volume > 0 else 1.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating volume profile: {e}")
             return 1.0
 
     def _detect_price_action_pattern(self, market_data: pd.DataFrame) -> float:
@@ -786,14 +803,16 @@ class EnhancedSRBreakoutPredictor:
             if lower_shadow > 2 * body_size and upper_shadow < body_size:
                 return 0.8
             return 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error detecting price action pattern: {e}")
             return 0.0
 
     def _calculate_sr_density(self, level_price: float, level: Dict[str, Any]) -> float:
         """Calculate S/R level density around current level."""
         try:
             return 1.0
-        except Exception:
+        except (KeyError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating SR density: {e}")
             return 1.0
 
     def _calculate_trend_strength(self, market_data: pd.DataFrame) -> float:
@@ -807,7 +826,8 @@ class EnhancedSRBreakoutPredictor:
                 return 0.5
             trend_ratio = abs(sma_20.iloc[-1] - sma_50.iloc[-1]) / sma_50.iloc[-1]
             return min(trend_ratio * 10, 1.0)
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating trend strength: {e}")
             return 0.5
 
     def _determine_market_regime(self, market_data: pd.DataFrame) -> float:
@@ -828,7 +848,8 @@ class EnhancedSRBreakoutPredictor:
                 return 0.5
             else:
                 return 1.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error determining market regime: {e}")
             return 0.5
 
     def _determine_volatility_regime(self, market_data: pd.DataFrame) -> float:
@@ -844,7 +865,8 @@ class EnhancedSRBreakoutPredictor:
                 return 1.0
             else:
                 return 0.5
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error determining volatility regime: {e}")
             return 0.5
 
     def _calculate_time_of_day_factor(self, market_data: pd.DataFrame) -> float:
@@ -860,7 +882,8 @@ class EnhancedSRBreakoutPredictor:
                 return 0.7
             else:
                 return 0.3
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating time of day factor: {e}")
             return 0.5
 
     def _get_previous_breakout_rate(self, level: Dict[str, Any]) -> float:
@@ -872,7 +895,8 @@ class EnhancedSRBreakoutPredictor:
                 return 0.5
             breakout_rate = failure_count / touch_count
             return min(breakout_rate, 1.0)
-        except Exception:
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+            tprint(f"Error getting previous breakout rate: {e}")
             return 0.5
 
     def _calculate_macd_line(self, prices: pd.Series) -> float:
@@ -884,7 +908,8 @@ class EnhancedSRBreakoutPredictor:
             ema_26 = prices.ewm(span = 26).mean()
             macd_line = ema_12 - ema_26
             return macd_line.iloc[-1] if not macd_line.empty else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating MACD line: {e}")
             return 0.0
 
     def _calculate_stochastic_d(self, market_data: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> float:
@@ -897,7 +922,8 @@ class EnhancedSRBreakoutPredictor:
             k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
             d_percent = k_percent.rolling(window = d_period).mean()
             return d_percent.iloc[-1] if not d_percent.empty else 50.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error calculating Stochastic D: {e}")
             return 50.0
 
     def _calculate_obv(self, market_data: pd.DataFrame) -> float:
@@ -909,7 +935,8 @@ class EnhancedSRBreakoutPredictor:
             obv = np.where(price_change > 0, market_data['volume'], np.where(price_change < 0, -market_data['volume'], 0))
             obv = pd.Series(obv, index = market_data.index).cumsum()
             return obv.iloc[-1] if not obv.empty else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating OBV: {e}")
             return 0.0
 
     def _detect_doji_pattern(self, market_data: pd.DataFrame) -> float:
@@ -921,7 +948,8 @@ class EnhancedSRBreakoutPredictor:
             body_size = abs(current['close'] - current['open'])
             total_range = current['high'] - current['low']
             return 1.0 if body_size / total_range < 0.1 else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error detecting Doji pattern: {e}")
             return 0.0
 
     def _detect_hammer_pattern(self, market_data: pd.DataFrame) -> float:
@@ -936,7 +964,8 @@ class EnhancedSRBreakoutPredictor:
             total_range = current['high'] - current['low']
             is_hammer = lower_shadow > 2 * body_size and upper_shadow < body_size and (body_size / total_range < 0.3)
             return 1.0 if is_hammer else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, ZeroDivisionError, AttributeError) as e:
+            tprint(f"Error detecting Hammer pattern: {e}")
             return 0.0
 
     def _calculate_volatility_proxy(self, market_data: pd.DataFrame, period: int = 20) -> float:
@@ -947,7 +976,8 @@ class EnhancedSRBreakoutPredictor:
             returns = market_data['close'].pct_change().dropna()
             volatility = returns.rolling(window = period).std().iloc[-1]
             return float(volatility * 100) if not np.isnan(volatility) else 0.0
-        except Exception:
+        except (IndexError, KeyError, ValueError, AttributeError) as e:
+            tprint(f"Error calculating volatility proxy: {e}")
             return 0.0
 
     async def _get_ml_prediction(self, features: Dict[str, float]) -> float:

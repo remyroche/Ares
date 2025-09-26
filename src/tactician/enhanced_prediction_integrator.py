@@ -7,6 +7,7 @@ Provides helpers to map scenario analyses into price target hit probabilities.
 
 from typing import Any, Dict
 import numpy as np
+from src.utils.tprint import tprint
 
 def map_scenario_to_target_probabilities(scenario_analysis: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -29,5 +30,6 @@ def map_scenario_to_target_probabilities(scenario_analysis: Dict[str, Any]) -> D
         }
         total = sum(weights.values()) or 1.0
         return {k: min(1.0, max(0.0, profit_p * (w / total))) for k, w in weights.items()}
-    except Exception:
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+        tprint(f"Error mapping scenario to target probabilities: {e}")
         return {'0.25%': 0.30, '0.5%': 0.22, '0.75%': 0.15, '1.0%': 0.10}

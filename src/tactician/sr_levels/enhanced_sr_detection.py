@@ -2083,7 +2083,8 @@ class EnhancedSRDetector:
                         values.append(data[i])
 
             return indices, values
-        except Exception:
+        except (IndexError, ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error in fractal detection: {e}")
             return [], []
 
     def _generate_trend_lines(self, indices: List[int], values: List[float], line_type: str) -> List[SRLevel]:
@@ -2156,7 +2157,8 @@ class EnhancedSRDetector:
             from scipy import stats
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
             return slope, intercept, r_value, p_value, std_err
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error in linear regression: {e}")
             return 0, 0, 0, 1, 1
 
     def _detect_channel_levels(self, data: pd.DataFrame) -> List[SRLevel]:
@@ -2766,7 +2768,8 @@ class EnhancedSRDetector:
 
             slope, intercept, r_value, p_value, std_err = self._linear_regression(x, y)
             return slope, intercept, r_value
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error in trend calculation: {e}")
             return 0, 0, 0
 
     def _deduplicate_levels(self, levels: List[SRLevel], tolerance: float = 0.001) -> List[SRLevel]:
@@ -3036,7 +3039,8 @@ class EnhancedSRDetector:
                 groups.append(current_group)
 
             return groups
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error in clustering: {e}")
             return []
 
     def _detect_market_structure_levels(self, data: pd.DataFrame) -> List[SRLevel]:
@@ -3343,7 +3347,8 @@ class EnhancedSRDetector:
         try:
             peaks, _ = find_peaks(high, distance = period)
             return [high[i] for i in peaks]
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error finding peaks: {e}")
             return []
 
     def _find_swing_highs(self, high: np.ndarray, period: int) -> List[float]:
@@ -3354,7 +3359,8 @@ class EnhancedSRDetector:
                 if high[i] == np.max(high[i-period:i+period+1]):
                     swing_highs.append(high[i])
             return swing_highs
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint(f"Error finding swing highs: {e}")
             return []
 
     def _find_swing_lows(self, low: np.ndarray, period: int) -> List[float]:
@@ -3365,7 +3371,8 @@ class EnhancedSRDetector:
                 if low[i] == np.min(low[i-period:i+period+1]):
                     swing_lows.append(low[i])
             return swing_lows
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint(f"Error finding swing lows: {e}")
             return []
 
     def _find_fractal_lows(self, low: np.ndarray, period: int) -> List[float]:
@@ -3373,7 +3380,8 @@ class EnhancedSRDetector:
         try:
             peaks, _ = find_peaks(-low, distance = period)
             return [low[i] for i in peaks]
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error finding low peaks: {e}")
             return []
 
     def _is_pivot_high(self, high: np.ndarray, index: int, period: int) -> bool:
@@ -3385,7 +3393,8 @@ class EnhancedSRDetector:
             left_values = high[index - period:index]
             right_values = high[index + 1:index + period + 1]
             return center_value > np.max(left_values) and center_value > np.max(right_values)
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint(f"Error checking fractal high: {e}")
             return False
 
     def _is_pivot_low(self, low: np.ndarray, index: int, period: int) -> bool:
@@ -3397,7 +3406,8 @@ class EnhancedSRDetector:
             left_values = low[index - period:index]
             right_values = low[index + 1:index + period + 1]
             return center_value < np.min(left_values) and center_value < np.min(right_values)
-        except Exception:
+        except (IndexError, ValueError, TypeError) as e:
+            tprint(f"Error checking fractal low: {e}")
             return False
 
     def _should_merge_levels(self, level1: SRLevel, level2: SRLevel, data: pd.DataFrame) -> bool:
@@ -4800,7 +4810,8 @@ class EnhancedSRDetector:
                     
                     return -score  # Minimize negative score
                     
-                except Exception:
+                except (ValueError, TypeError, AttributeError) as e:
+                    tprint(f"Error in optimization objective: {e}")
                     return -1.0
             
             result = gp_minimize(objective, space, n_calls=50, random_state=42)
@@ -4821,7 +4832,8 @@ class EnhancedSRDetector:
             if len(set(labels)) > 1 and -1 not in labels:
                 return silhouette_score(data, labels)
             return 0.0
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint(f"Error calculating silhouette score: {e}")
             return 0.0
 
     def _calculate_cluster_balance(self, labels: np.ndarray) -> float:
@@ -4837,7 +4849,8 @@ class EnhancedSRDetector:
             
             # Balance score: 1.0 for perfectly balanced, 0.0 for highly imbalanced
             return min_size / max_size if max_size > 0 else 0.0
-        except Exception:
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            tprint(f"Error calculating balance score: {e}")
             return 0.0
 
     def _get_enhanced_heuristic_dbscan_params(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:

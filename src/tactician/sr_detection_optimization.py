@@ -515,7 +515,8 @@ class SRDetectionOptimizer:
         try:
             data_hash = hash(data.tobytes()) if hasattr(data, 'tobytes') else hash(str(data.shape) + str(data.index[0]) + str(data.index[-1]))
             return f'{data_hash}_{timeframe}'
-        except Exception:
+        except (AttributeError, TypeError, IndexError) as e:
+            tprint(f"Error generating data cache key: {e}")
             return f'{id(data)}_{timeframe}'
 
     def _precompute_technical_indicators(self, data: pd.DataFrame) -> Dict[str, pd.Series]:

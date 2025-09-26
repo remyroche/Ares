@@ -270,8 +270,16 @@ class TradingEngine:
             
             return trade_result
             
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"❌ Trade execution failed due to data type/compatibility issue: {e}")
+            self.logger.error(f"Order details - symbol: {symbol}, side: {side}, quantity: {quantity}, price: {price}")
+            raise
+        except (ConnectionError, TimeoutError) as e:
+            self.logger.error(f"❌ Trade execution failed due to network/connection issue: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"❌ Trade execution failed: {e}")
+            self.logger.error(f"❌ Trade execution failed with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
             raise
     
     def generate_trading_signals(self,
@@ -312,8 +320,16 @@ class TradingEngine:
             self.logger.info(f"📊 Generated {len(signals)} signals, {len(filtered_signals)} approved")
             return filtered_signals
             
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"❌ Signal generation failed due to data type issue: {e}")
+            self.logger.error(f"Market data shape: {market_data.shape if hasattr(market_data, 'shape') else 'N/A'}")
+            return []
+        except (MemoryError, OSError) as e:
+            self.logger.error(f"❌ Signal generation failed due to system resource issue: {e}")
+            return []
         except Exception as e:
-            self.logger.error(f"❌ Signal generation failed: {e}")
+            self.logger.error(f"❌ Signal generation failed with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
             return []
     
     def execute_signals(self, signals: List[Dict[str, Any]]) -> List[TradingResult]:
@@ -353,8 +369,16 @@ class TradingEngine:
                 if result:
                     results.append(result)
                 
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"❌ Signal execution failed due to data type issue: {e}")
+                self.logger.error(f"Signal details: {signal}")
+                continue
+            except (ConnectionError, TimeoutError) as e:
+                self.logger.error(f"❌ Signal execution failed due to network/connection issue: {e}")
+                continue
             except Exception as e:
-                self.logger.error(f"❌ Signal execution failed: {e}")
+                self.logger.error(f"❌ Signal execution failed with unexpected error: {e}")
+                self.logger.error(f"Error type: {type(e).__name__}")
                 continue
         
         self.logger.info(f"✅ Executed {len(results)} trades successfully")
@@ -488,8 +512,14 @@ class TradingEngine:
             with open(log_file, 'a') as f:
                 f.write(json.dumps(trade_dict) + '\n')
                 
+        except (IOError, OSError) as e:
+            self.logger.warning(f"⚠️ Failed to log trade due to file system issue: {e}")
+            self.logger.warning(f"Log file: {log_file}")
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"⚠️ Failed to log trade due to data serialization issue: {e}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to log trade: {e}")
+            self.logger.warning(f"⚠️ Failed to log trade with unexpected error: {e}")
+            self.logger.warning(f"Error type: {type(e).__name__}")
     
     def reset_trading_state(self):
         """Reset trading state (for backtesting)."""
@@ -529,5 +559,11 @@ class TradingEngine:
             
             self.logger.info(f"📁 Trading log exported to {filepath}")
             
+        except (IOError, OSError) as e:
+            self.logger.error(f"❌ Failed to export trading log due to file system issue: {e}")
+            self.logger.error(f"Export filepath: {filepath}")
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"❌ Failed to export trading log due to data serialization issue: {e}")
         except Exception as e:
-            self.logger.error(f"❌ Failed to export trading log: {e}")
+            self.logger.error(f"❌ Failed to export trading log with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")

@@ -443,8 +443,16 @@ class TreeHardwareOptimizer:
                     'optimization_applied': True
                 }
                 
+        except (AttributeError, TypeError) as e:
+            self.logger.error(f"❌ Optimized TAS processing failed due to model/data compatibility issue: {e}")
+            self.logger.error(f"TAS model type: {type(tas_model)}, operation_type: {operation_type}")
+            raise
+        except (MemoryError, OSError) as e:
+            self.logger.error(f"❌ Optimized TAS processing failed due to system resource issue: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"❌ Optimized TAS processing failed: {e}")
+            self.logger.error(f"❌ Optimized TAS processing failed with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
             raise
     
     def _apply_memory_optimization(self, data: Union[Any, list]) -> Union[Any, list]:
@@ -453,8 +461,16 @@ class TreeHardwareOptimizer:
             if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_memory'):
                 return self.memory_optimizer.optimize_memory(data)
             return data
+        except (AttributeError, TypeError) as e:
+            self.logger.warning(f"⚠️ TAS memory optimization failed due to optimizer compatibility issue: {e}")
+            self.logger.warning(f"Memory optimizer type: {type(self.memory_optimizer) if self.memory_optimizer else 'None'}")
+            return data
+        except (MemoryError, OSError) as e:
+            self.logger.warning(f"⚠️ TAS memory optimization failed due to system resource issue: {e}")
+            return data
         except Exception as e:
-            self.logger.warning(f"⚠️ TAS memory optimization failed: {e}")
+            self.logger.warning(f"⚠️ TAS memory optimization failed with unexpected error: {e}")
+            self.logger.warning(f"Error type: {type(e).__name__}")
             return data
     
     def _apply_chunking(self, data: Union[Any, list]) -> Union[Any, list]:
@@ -508,8 +524,16 @@ class TreeHardwareOptimizer:
             
             return metrics
             
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            self.logger.error(f"❌ TAS performance metrics calculation failed due to system access issue: {e}")
+            return TASPerformanceMetrics(0, 0, None, 0, 0, "unknown", "unknown", 0.0)
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"❌ TAS performance metrics calculation failed due to data type issue: {e}")
+            self.logger.error(f"processing_time: {processing_time}, data_size: {len(X) if hasattr(X, '__len__') else 'N/A'}")
+            return TASPerformanceMetrics(0, 0, None, 0, 0, "unknown", "unknown", 0.0)
         except Exception as e:
-            self.logger.error(f"❌ TAS performance metrics calculation failed: {e}")
+            self.logger.error(f"❌ TAS performance metrics calculation failed with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
             return TASPerformanceMetrics(0, 0, None, 0, 0, "unknown", "unknown", 0.0)
     
     def _get_gpu_usage(self) -> Optional[float]:

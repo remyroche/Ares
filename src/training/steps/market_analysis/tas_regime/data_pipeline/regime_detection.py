@@ -547,8 +547,16 @@ class RegimeDetector:
             
             return regime_features
             
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f"⚠️ Regime feature generation failed due to data type issue: {e}")
+            self.logger.warning(f"Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}, regime_labels shape: {regime_labels.shape if hasattr(regime_labels, 'shape') else 'N/A'}")
+            return pd.DataFrame(index=data.index)
+        except (MemoryError, OSError) as e:
+            self.logger.warning(f"⚠️ Regime feature generation failed due to system resource issue: {e}")
+            return pd.DataFrame(index=data.index)
         except Exception as e:
-            self.logger.warning(f"⚠️ Regime feature generation failed: {e}")
+            self.logger.warning(f"⚠️ Regime feature generation failed with unexpected error: {e}")
+            self.logger.warning(f"Error type: {type(e).__name__}")
             return pd.DataFrame(index=data.index)
     
     def _calculate_regime_quality_scores(self, regime_labels: np.ndarray, regime_centers: Dict[int, np.ndarray], 
@@ -570,8 +578,14 @@ class RegimeDetector:
             
             return quality_scores
             
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f"⚠️ Regime quality score calculation failed due to data type issue: {e}")
+            self.logger.warning(f"Regime labels shape: {regime_labels.shape if hasattr(regime_labels, 'shape') else 'N/A'}")
+        except (MemoryError, OSError) as e:
+            self.logger.warning(f"⚠️ Regime quality score calculation failed due to system resource issue: {e}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Regime quality score calculation failed: {e}")
+            self.logger.warning(f"⚠️ Regime quality score calculation failed with unexpected error: {e}")
+            self.logger.warning(f"Error type: {type(e).__name__}")
             return {}
     
     def _calculate_performance_metrics(self, regime_data: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, float]:

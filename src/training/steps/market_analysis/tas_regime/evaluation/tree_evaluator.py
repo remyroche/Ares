@@ -952,8 +952,14 @@ class AdvancedTreeEvaluator:
             # In a real implementation, you might use SHAP, LIME, or other methods
             tprint_info("Model interpretation completed")
         
+        except (ValueError, TypeError, AttributeError) as e:
+            tprint_error(f"Model interpretation failed due to data/model compatibility issue: {e}")
+            tprint_error(f"Model type: {type(model)}, X_test shape: {X_test.shape if hasattr(X_test, 'shape') else 'N/A'}")
+        except (MemoryError, OSError) as e:
+            tprint_error(f"Model interpretation failed due to system resource issue: {e}")
         except Exception as e:
-            tprint_error(f"Model interpretation failed: {e}")
+            tprint_error(f"Model interpretation failed with unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
         
         return results
     

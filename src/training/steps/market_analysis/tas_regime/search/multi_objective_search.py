@@ -218,8 +218,15 @@ class MultiObjectiveTreeSearch:
             
             tprint_success("✅ Unified components initialized successfully")
             
+        except (ImportError, ModuleNotFoundError) as e:
+            tprint_error(f"❌ Failed to initialize unified components due to missing dependencies: {e}")
+            self.logger.warning(f"Some unified components may not be available: {e}")
+        except (ValueError, TypeError) as e:
+            tprint_error(f"❌ Failed to initialize unified components due to configuration issue: {e}")
+            self.logger.warning(f"Configuration error: {e}")
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize unified components: {e}")
+            tprint_error(f"❌ Failed to initialize unified components with unexpected error: {e}")
+            tprint_error(f"Error type: {type(e).__name__}")
             self.logger.warning(f"Some unified components may not be available: {e}")
     
     def search(self, 
@@ -336,8 +343,16 @@ class MultiObjectiveTreeSearch:
                             )
                             significance = economic_result.get('significance_score', 0.5)
                             objectives.append(1.0 - significance)  # Convert to minimization
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f"Economic evaluation failed due to data type issue: {e}")
+                            self.logger.warning(f"Individual parameters: {individual.parameters}")
+                            objectives.append(0.5)
+                        except (MemoryError, OSError) as e:
+                            self.logger.warning(f"Economic evaluation failed due to system resource issue: {e}")
+                            objectives.append(0.5)
                         except Exception as e:
-                            self.logger.warning(f"Economic evaluation failed: {e}")
+                            self.logger.warning(f"Economic evaluation failed with unexpected error: {e}")
+                            self.logger.warning(f"Error type: {type(e).__name__}")
                             objectives.append(0.5)
                     else:
                         significance = np.random.random() * 0.6 + 0.4
@@ -353,8 +368,16 @@ class MultiObjectiveTreeSearch:
                             )
                             viability = trading_result.get('viability_score', 0.5)
                             objectives.append(1.0 - viability)  # Convert to minimization
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f"Trading viability evaluation failed due to data type issue: {e}")
+                            self.logger.warning(f"Individual parameters: {individual.parameters}")
+                            objectives.append(0.5)
+                        except (MemoryError, OSError) as e:
+                            self.logger.warning(f"Trading viability evaluation failed due to system resource issue: {e}")
+                            objectives.append(0.5)
                         except Exception as e:
-                            self.logger.warning(f"Trading viability evaluation failed: {e}")
+                            self.logger.warning(f"Trading viability evaluation failed with unexpected error: {e}")
+                            self.logger.warning(f"Error type: {type(e).__name__}")
                             objectives.append(0.5)
                     else:
                         viability = np.random.random() * 0.6 + 0.4
@@ -374,8 +397,16 @@ class MultiObjectiveTreeSearch:
                     # Default objective
                     objectives.append(np.random.random())
             
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"Error evaluating individual due to data type issue: {e}")
+            self.logger.error(f"Individual: {individual}, objectives: {self.config.objectives}")
+            objectives = [np.random.random() for _ in self.config.objectives]
+        except (MemoryError, OSError) as e:
+            self.logger.error(f"Error evaluating individual due to system resource issue: {e}")
+            objectives = [np.random.random() for _ in self.config.objectives]
         except Exception as e:
-            self.logger.error(f"Error evaluating individual: {e}")
+            self.logger.error(f"Error evaluating individual with unexpected error: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
             objectives = [np.random.random() for _ in self.config.objectives]
         
         return objectives
@@ -638,8 +669,14 @@ class MultiObjectiveTreeSearch:
             checkpoint_path = f"multi_objective_checkpoint_generation_{generation}.json"
             JSONSerializer.save(checkpoint_data, checkpoint_path)
             
+        except (IOError, OSError) as e:
+            self.logger.warning(f"Failed to save checkpoint due to file system issue: {e}")
+            self.logger.warning(f"Checkpoint path: {checkpoint_path}")
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"Failed to save checkpoint due to data serialization issue: {e}")
         except Exception as e:
-            self.logger.warning(f"Failed to save checkpoint: {e}")
+            self.logger.warning(f"Failed to save checkpoint with unexpected error: {e}")
+            self.logger.warning(f"Error type: {type(e).__name__}")
 
 
 class TreeMultiObjectiveOptimizer:

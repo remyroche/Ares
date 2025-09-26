@@ -19,6 +19,7 @@ from enum import Enum
 import logging
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 
 
 class DimensionalityMethod(Enum):
@@ -369,7 +370,11 @@ class StatisticalDimensionAnalyzer:
                     count += 1
             
             return float(mi_sum / count) if count > 0 else 0.0
-        except:
+        except (ValueError, ImportError, AttributeError) as e:
+            tprint_warning(f"Failed to calculate mutual information: {e}")
+            return 0.0
+        except Exception as e:
+            tprint_error(f"Unexpected error in mutual information calculation: {e}")
             return 0.0
     
     def _interpret_loadings(self, loadings: np.ndarray, feature_names: pd.Index, n_components: int) -> Dict[str, List[Tuple[str, float]]]:

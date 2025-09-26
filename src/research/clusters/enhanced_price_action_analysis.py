@@ -27,6 +27,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import mutual_info_regression
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 
 
 class PriceActionPattern(Enum):
@@ -340,7 +341,11 @@ class EnhancedPriceActionAnalyzer:
                 try:
                     corr = abs(np.corrcoef(features[col].fillna(0), pattern_series)[0, 1])
                     feature_contributions[col] = corr if not np.isnan(corr) else 0.0
-                except:
+                except (ValueError, np.linalg.LinAlgError, IndexError) as e:
+                    tprint_warning(f"Failed to calculate correlation for feature '{col}': {e}")
+                    feature_contributions[col] = 0.0
+                except Exception as e:
+                    tprint_error(f"Unexpected error calculating correlation for feature '{col}': {e}")
                     feature_contributions[col] = 0.0
         
         return feature_contributions
@@ -379,7 +384,11 @@ class EnhancedPriceActionAnalyzer:
                 corr = abs(np.corrcoef(feature_mean, lagged_pattern)[0, 1])
                 if not np.isnan(corr):
                     lagged_influence_scores.append(corr)
-            except:
+            except (ValueError, np.linalg.LinAlgError, IndexError) as e:
+                tprint_warning(f"Failed to calculate lagged influence correlation: {e}")
+                continue
+            except Exception as e:
+                tprint_error(f"Unexpected error in lagged influence calculation: {e}")
                 continue
         
         mechanisms_scores[InfluenceMechanism.LAGGED_INFLUENCE] = np.mean(lagged_influence_scores) if lagged_influence_scores else 0.0
@@ -395,7 +404,11 @@ class EnhancedPriceActionAnalyzer:
             
             threshold_effect = abs(high_feature_pattern_rate - low_feature_pattern_rate)
             mechanisms_scores[InfluenceMechanism.THRESHOLD_EFFECT] = threshold_effect
-        except:
+        except (ValueError, ZeroDivisionError, IndexError) as e:
+            tprint_warning(f"Failed to calculate threshold effect: {e}")
+            mechanisms_scores[InfluenceMechanism.THRESHOLD_EFFECT] = 0.0
+        except Exception as e:
+            tprint_error(f"Unexpected error in threshold effect calculation: {e}")
             mechanisms_scores[InfluenceMechanism.THRESHOLD_EFFECT] = 0.0
         
         # Test interaction effects (simplified)
@@ -413,7 +426,11 @@ class EnhancedPriceActionAnalyzer:
                 mechanisms_scores[InfluenceMechanism.INTERACTION_EFFECT] = np.mean(interaction_scores) if interaction_scores else 0.0
             else:
                 mechanisms_scores[InfluenceMechanism.INTERACTION_EFFECT] = 0.0
-        except:
+        except (ValueError, np.linalg.LinAlgError, IndexError) as e:
+            tprint_warning(f"Failed to calculate interaction effects: {e}")
+            mechanisms_scores[InfluenceMechanism.INTERACTION_EFFECT] = 0.0
+        except Exception as e:
+            tprint_error(f"Unexpected error in interaction effects calculation: {e}")
             mechanisms_scores[InfluenceMechanism.INTERACTION_EFFECT] = 0.0
         
         # Return mechanism with highest score

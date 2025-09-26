@@ -39,6 +39,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score, calinski_harabasz_score
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 
 
 class CoreDiscoveryMethod(Enum):
@@ -333,7 +334,11 @@ class CoreRegimeDiscovery:
                 if silhouette > best_silhouette:
                     best_silhouette = silhouette
                     best_k = k
-            except:
+            except (ValueError, AttributeError, IndexError) as e:
+                tprint_warning(f"Failed to evaluate clustering with {k} clusters: {e}")
+                continue
+            except Exception as e:
+                tprint_error(f"Unexpected error in clustering evaluation with {k} clusters: {e}")
                 continue
         
         quality_metrics['best_silhouette_score'] = best_silhouette

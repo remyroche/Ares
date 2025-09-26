@@ -30,6 +30,7 @@ from scipy.signal import find_peaks
 import talib
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 
 try:
     import ruptures as rpt
@@ -286,7 +287,11 @@ class AdvancedMarkovFeatureEngine:
                 try:
                     adx = talib.ADX(data['high'].values, data['low'].values, data['close'].values, timeperiod=horizon)
                     features[f'adx_{horizon}'] = pd.Series(adx, index=data.index)
-                except:
+                except (ValueError, AttributeError, IndexError) as e:
+                    tprint_warning(f"Failed to calculate ADX for horizon {horizon}: {e}")
+                    features[f'adx_{horizon}'] = pd.Series(0.0, index=data.index)
+                except Exception as e:
+                    tprint_error(f"Unexpected error calculating ADX for horizon {horizon}: {e}")
                     features[f'adx_{horizon}'] = pd.Series(0.0, index=data.index)
             
             # Hurst exponent (simplified)
@@ -315,7 +320,11 @@ class AdvancedMarkovFeatureEngine:
             try:
                 rsi = talib.RSI(data['close'].values, timeperiod=horizon)
                 features[f'rsi_{horizon}'] = pd.Series(rsi, index=data.index)
-            except:
+            except (ValueError, AttributeError, IndexError) as e:
+                tprint_warning(f"Failed to calculate RSI for horizon {horizon}: {e}")
+                features[f'rsi_{horizon}'] = pd.Series(50.0, index=data.index)
+            except Exception as e:
+                tprint_error(f"Unexpected error calculating RSI for horizon {horizon}: {e}")
                 features[f'rsi_{horizon}'] = pd.Series(50.0, index=data.index)
             
             # MACD-like momentum
@@ -550,7 +559,11 @@ class AdvancedMarkovFeatureEngine:
                 # Simplified Hurst calculation using R/S statistic
                 hurst = self._rs_hurst(data_window)
                 hurst_values.append(hurst)
-            except:
+            except (ValueError, AttributeError, IndexError, ZeroDivisionError) as e:
+                tprint_warning(f"Failed to calculate Hurst exponent: {e}")
+                hurst_values.append(0.5)
+            except Exception as e:
+                tprint_error(f"Unexpected error in Hurst exponent calculation: {e}")
                 hurst_values.append(0.5)
         
         return pd.Series(hurst_values, index=series.index[:len(hurst_values)])
@@ -602,7 +615,11 @@ class AdvancedMarkovFeatureEngine:
                 try:
                     autocorr = data_window.autocorr(lag=lag)
                     autocorrs.append(autocorr if not np.isnan(autocorr) else 0.0)
-                except:
+                except (ValueError, AttributeError) as e:
+                    tprint_warning(f"Failed to calculate rolling autocorrelation: {e}")
+                    autocorrs.append(0.0)
+                except Exception as e:
+                    tprint_error(f"Unexpected error in rolling autocorrelation calculation: {e}")
                     autocorrs.append(0.0)
             else:
                 autocorrs.append(0.0)
@@ -691,7 +708,11 @@ class AdvancedMarkovFeatureEngine:
                     stability = 1.0 - abs(corr1 - corr2)
                 else:
                     stability = 1.0
-            except:
+            except (ValueError, IndexError, AttributeError) as e:
+                tprint_warning(f"Failed to calculate correlation stability: {e}")
+                stability = 1.0
+            except Exception as e:
+                tprint_error(f"Unexpected error in correlation stability calculation: {e}")
                 stability = 1.0
             
             stabilities.append(stability)

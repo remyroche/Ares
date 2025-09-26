@@ -29,6 +29,7 @@ from pathlib import Path
 import json
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_error, tprint_warning
 
 # Import feature engineering components
 try:
@@ -1072,7 +1073,11 @@ class MarketDimensionAnalyzer:
             
             stability = (corr_means + corr_stds) / 2
             return float(np.nan_to_num(stability, 0.5))
-        except:
+        except (ValueError, np.linalg.LinAlgError, IndexError) as e:
+            tprint_warning(f"Failed to calculate dimension stability: {e}")
+            return 0.5
+        except Exception as e:
+            tprint_error(f"Unexpected error in dimension stability calculation: {e}")
             return 0.5
     
     def _calculate_predictive_power(self, 

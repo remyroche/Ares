@@ -22,6 +22,7 @@ import logging
 from scipy import stats
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_warning
 
 
 class EconomicMetric(Enum):
@@ -1800,7 +1801,8 @@ class EconomicValidator:
         try:
             tail_autocorr = extreme_returns.autocorr(1)
             return float(tail_autocorr) if not np.isnan(tail_autocorr) else 0.0
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to calculate tail autocorrelation: {e}")
             return 0.0
     
     def generate_economic_report(self, 

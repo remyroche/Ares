@@ -761,7 +761,8 @@ class LegacyNASEvaluator:
             
             try:
                 auc_roc = roc_auc_score(y_test, y_pred_proba)
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate ROC AUC: {e}")
                 auc_roc = 0.5  # Default for binary classification
             
             return {
@@ -1091,8 +1092,8 @@ class LegacyNASEvaluator:
         """Destructor."""
         try:
             self.cleanup()
-        except:
-            pass  # Ignore errors during destruction
+        except Exception as e:
+            tprint_warning(f"⚠️ Error during cleanup in destructor: {e}")
     
     def evaluate_with_enhanced_utilities(self, 
                                        architecture: Dict[str, Any], 

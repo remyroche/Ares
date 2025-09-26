@@ -39,6 +39,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_warning
 
 
 class RegimeDiscoveryMethod(Enum):
@@ -612,7 +613,8 @@ class RefinedMLDiscovery:
                     labels = kmeans.fit_predict(regime_features)
                     score = silhouette_score(regime_features, labels)
                     clustering_scores[n_clusters] = float(score)
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to evaluate clustering with {n_clusters} clusters: {e}")
                     continue
             
             if clustering_scores:

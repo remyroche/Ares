@@ -29,6 +29,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_warning
 from .similarity_matrix_clustering import SimilarityMatrixClusterer, SimilarityClusteringConfig, SimilarityMethod
 
 
@@ -447,7 +448,8 @@ class EmpiricalThresholdDiscovery:
                                 random_state=42
                             )[0]
                             coupling_scores.append(mi_score)
-                        except:
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Failed to calculate mutual information for feature {col}: {e}")
                             # Fallback to correlation
                             corr = abs(np.corrcoef(features[col].fillna(0), returns.fillna(0))[0, 1])
                             if not np.isnan(corr):

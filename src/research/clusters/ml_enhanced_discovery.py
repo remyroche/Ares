@@ -53,6 +53,7 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_warning
 
 # Import existing framework components
 from .dimension_analyzer import MarketDimensionAnalyzer, MarketDimension
@@ -682,7 +683,8 @@ class MLEnhancedDiscovery:
                 try:
                     hull = ConvexHull(embedded)
                     analysis['manifold_properties']['convex_hull_area'] = float(hull.volume)
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate convex hull area: {e}")
                     analysis['manifold_properties']['convex_hull_area'] = 0.0
         
         # Cluster structure analysis
@@ -801,7 +803,8 @@ class MLEnhancedDiscovery:
                     score = 0.7 * score + 0.3 * ari
                 
                 return score
-            except:
+            except Exception as e:
+                tprint_warning(f"⚠️ Clustering evaluation failed: {e}")
                 return -1.0  # Bad score for failed clustering
         
         # Run optimization

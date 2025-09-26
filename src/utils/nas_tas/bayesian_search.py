@@ -143,7 +143,8 @@ class BayesianTreeSearch:
             self.gpu_manager = get_m1_gpu_manager()
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize M1 hardware optimizers: {e}")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
@@ -196,8 +197,8 @@ class BayesianTreeSearch:
             if iteration % 10 == 0:
                 try:
                     optimize_memory()
-                except:
-                    pass
+                except Exception as e:
+                    tprint_warning(f"⚠️ Memory optimization failed: {e}")
         
         tprint_success(f"✅ Bayesian search completed - Best score: {self.best_score:.4f}")
         return self.best_params
@@ -325,7 +326,8 @@ class TreeBayesianOptimizer:
                 max_workers=self.config.max_workers
             )
             self.tpe_optimizer = BayesianTPEOptimizer(tpe_config)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize TPE optimizer: {e}")
             self.tpe_optimizer = None
         
         tprint_info("🎯 TreeBayesianOptimizer initialized")

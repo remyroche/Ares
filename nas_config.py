@@ -88,47 +88,162 @@ except ImportError:
     MATH_VALIDATION_AVAILABLE = False
     class MathValidation:
         """Fallback math validation class when math_validation module is not available."""
-        def __init__(self):
-            """Initialize the fallback math validation class."""
+        def __init__(self, strict_mode=False, allow_nan=False):
+            """Initialize the fallback math validation class with fast fail validation."""
             self.validation_enabled = True
-            self.strict_mode = False
-            self.allow_nan_default = False
-        
-        def validate_numeric_array(self, data, allow_nan=False):
-            """Basic numeric array validation."""
+            self.strict_mode = strict_mode
+            self.allow_nan_default = allow_nan
+            
+            # Fast fail: Check for required dependencies
             try:
-                if data is None:
-                    return False, "Data is None"
-                if hasattr(data, '__len__') and len(data) == 0:
-                    return False, "Data is empty"
-                return True, "Valid"
+                import numpy as np
+                self._np = np
+            except ImportError:
+                raise ImportError(
+                    "numpy is required for math validation. "
+                    "Please install numpy: pip install numpy"
+                )
+        
+        def validate_numeric_array(self, data, allow_nan=None):
+            """Enhanced numeric array validation with fast fail."""
+            if allow_nan is None:
+                allow_nan = self.allow_nan_default
+                
+            # Fast fail: Check for None data
+            if data is None:
+                if self.strict_mode:
+                    raise ValueError("Data cannot be None")
+                return False, "Data is None"
+            
+            # Fast fail: Check for empty data
+            if hasattr(data, '__len__') and len(data) == 0:
+                if self.strict_mode:
+                    raise ValueError("Data cannot be empty")
+                return False, "Data is empty"
+            
+            try:
+                # Convert to numpy array for proper validation
+                arr = self._np.asarray(data)
+                
+                # Check for NaN values
+                if not allow_nan and self._np.any(self._np.isnan(arr)):
+                    if self.strict_mode:
+                        raise ValueError("Data contains NaN values but allow_nan=False")
+                    return False, "Data contains NaN values"
+                
+                # Check for infinite values
+                if self._np.any(self._np.isinf(arr)):
+                    if self.strict_mode:
+                        raise ValueError("Data contains infinite values")
+                    return False, "Data contains infinite values"
+                
+                # Check for numeric types
+                if not self._np.issubdtype(arr.dtype, self._np.number):
+                    if self.strict_mode:
+                        raise ValueError("Data must be numeric")
+                    return False, "Data must be numeric"
+                
+                return True, "Valid numeric array"
+                
             except Exception as e:
+                if self.strict_mode:
+                    raise
                 return False, f"Validation error: {e}"
         
         def safe_correlation(self, x, y):
-            """Safe correlation calculation."""
+            """Enhanced correlation calculation with fast fail validation."""
+            # Fast fail: Validate inputs
+            if x is None or y is None:
+                if self.strict_mode:
+                    raise ValueError("Input arrays cannot be None")
+                return 0.0
+            
+            # Convert to numpy arrays for better performance
             try:
-                if len(x) != len(y) or len(x) < 2:
-                    return 0.0
-                # Simple correlation calculation
-                mean_x = sum(x) / len(x)
-                mean_y = sum(y) / len(y)
-                numerator = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x)))
-                denominator = (sum((x[i] - mean_x) ** 2 for i in range(len(x))) * 
-                             sum((y[i] - mean_y) ** 2 for i in range(len(y)))) ** 0.5
-                return numerator / denominator if denominator != 0 else 0.0
-            except Exception:
+                x_arr = self._np.asarray(x, dtype=float)
+                y_arr = self._np.asarray(y, dtype=float)
+            except (ValueError, TypeError) as e:
+                if self.strict_mode:
+                    raise ValueError(f"Invalid input data: {e}")
+                return 0.0
+            
+            # Fast fail: Check array lengths
+            if len(x_arr) != len(y_arr):
+                if self.strict_mode:
+                    raise ValueError("Input arrays must have the same length")
+                return 0.0
+            
+            if len(x_arr) < 2:
+                if self.strict_mode:
+                    raise ValueError("At least 2 data points required for correlation")
+                return 0.0
+            
+            # Fast fail: Check for NaN or infinite values
+            if self._np.any(self._np.isnan(x_arr)) or self._np.any(self._np.isnan(y_arr)):
+                if self.strict_mode:
+                    raise ValueError("Input arrays contain NaN values")
+                return 0.0
+            
+            if self._np.any(self._np.isinf(x_arr)) or self._np.any(self._np.isinf(y_arr)):
+                if self.strict_mode:
+                    raise ValueError("Input arrays contain infinite values")
+                return 0.0
+            
+            try:
+                # Use numpy for efficient correlation calculation
+                correlation = self._np.corrcoef(x_arr, y_arr)[0, 1]
+                return float(correlation) if not self._np.isnan(correlation) else 0.0
+            except Exception as e:
+                if self.strict_mode:
+                    raise RuntimeError(f"Correlation calculation failed: {e}")
                 return 0.0
         
         def safe_covariance(self, x, y):
-            """Safe covariance calculation."""
+            """Enhanced covariance calculation with fast fail validation."""
+            # Fast fail: Validate inputs
+            if x is None or y is None:
+                if self.strict_mode:
+                    raise ValueError("Input arrays cannot be None")
+                return 0.0
+            
+            # Convert to numpy arrays for better performance
             try:
-                if len(x) != len(y) or len(x) < 2:
-                    return 0.0
-                mean_x = sum(x) / len(x)
-                mean_y = sum(y) / len(y)
-                return sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(len(x))) / (len(x) - 1)
-            except Exception:
+                x_arr = self._np.asarray(x, dtype=float)
+                y_arr = self._np.asarray(y, dtype=float)
+            except (ValueError, TypeError) as e:
+                if self.strict_mode:
+                    raise ValueError(f"Invalid input data: {e}")
+                return 0.0
+            
+            # Fast fail: Check array lengths
+            if len(x_arr) != len(y_arr):
+                if self.strict_mode:
+                    raise ValueError("Input arrays must have the same length")
+                return 0.0
+            
+            if len(x_arr) < 2:
+                if self.strict_mode:
+                    raise ValueError("At least 2 data points required for covariance")
+                return 0.0
+            
+            # Fast fail: Check for NaN or infinite values
+            if self._np.any(self._np.isnan(x_arr)) or self._np.any(self._np.isnan(y_arr)):
+                if self.strict_mode:
+                    raise ValueError("Input arrays contain NaN values")
+                return 0.0
+            
+            if self._np.any(self._np.isinf(x_arr)) or self._np.any(self._np.isinf(y_arr)):
+                if self.strict_mode:
+                    raise ValueError("Input arrays contain infinite values")
+                return 0.0
+            
+            try:
+                # Use numpy for efficient covariance calculation
+                covariance = self._np.cov(x_arr, y_arr)[0, 1]
+                return float(covariance) if not self._np.isnan(covariance) else 0.0
+            except Exception as e:
+                if self.strict_mode:
+                    raise RuntimeError(f"Covariance calculation failed: {e}")
                 return 0.0
         
         def validate_correlation_matrix(self, matrix):

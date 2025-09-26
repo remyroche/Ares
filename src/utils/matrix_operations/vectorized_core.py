@@ -423,15 +423,23 @@ class VectorizedProcessingCore:
                                 # Try to convert to float32 if values are within range
                                 if df[col].max() < 3.4e38 and df[col].min() > -3.4e38:
                                     df[col] = df[col].astype('float32')
-                            except (ValueError, OverflowError):
-                                pass
+                            except (ValueError, OverflowError) as conversion_error:
+                                self.logger.debug(
+                                    "Float downcast failed for column %s: %s",
+                                    col,
+                                    conversion_error,
+                                )
                         elif 'int64' in str(df[col].dtype):
                             try:
                                 # Try to convert to int32 if values are within range
                                 if df[col].max() < 2147483647 and df[col].min() > -2147483648:
                                     df[col] = df[col].astype('int32')
-                            except (ValueError, OverflowError):
-                                pass
+                            except (ValueError, OverflowError) as conversion_error:
+                                self.logger.debug(
+                                    "Integer downcast failed for column %s: %s",
+                                    col,
+                                    conversion_error,
+                                )
 
             return df
 

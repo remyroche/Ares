@@ -52,9 +52,70 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        close_prices = data['close'].values
-        sr = np.zeros_like(close_prices)
-        return pd.Series(sr, index=data.index, name='sr_placeholder')
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='support_resistance_signal')
+
+        close = data['close'].astype(float)
+        high = data['high'].astype(float) if 'high' in data.columns else close
+        low = data['low'].astype(float) if 'low' in data.columns else close
+        volume = data['volume'].astype(float) if 'volume' in data.columns else None
+
+        params = self.config.parameters or {}
+        pivot_windows = [window for window in params.get('pivot_windows', [self.config.default_lookback]) if window and window > 1]
+        fibonacci_levels = params.get('fibonacci_levels', [0.382, 0.5, 0.618])
+        volume_windows = [window for window in params.get('volume_profile_windows', []) if window and window > 1]
+
+        aggregated = pd.Series(0.0, index=data.index, dtype=float)
+        contributions = 0
+
+        for window in pivot_windows:
+            rolling_high = high.rolling(window=window, min_periods=window)
+            rolling_low = low.rolling(window=window, min_periods=window)
+            highest = rolling_high.max()
+            lowest = rolling_low.min()
+            price_range = (highest - lowest).replace(0.0, np.nan)
+
+            pivot = (highest + lowest + close.rolling(window=window, min_periods=window).mean()) / 3.0
+            pivot_score = ((close - pivot) / price_range).clip(-1.0, 1.0)
+            aggregated = aggregated.add(pivot_score.fillna(0.0), fill_value=0.0)
+            contributions += 1
+
+            if fibonacci_levels:
+                fib_offsets = []
+                for level in fibonacci_levels:
+                    fib_level = lowest + level * price_range
+                    fib_offsets.append(((close - fib_level) / price_range).to_frame(name=str(level)))
+                fib_df = pd.concat(fib_offsets, axis=1)
+
+                def _nearest_offset(row: pd.Series) -> float:
+                    if row.isna().all():
+                        return 0.0
+                    idx = row.abs().idxmin()
+                    return float(row[idx]) if idx is not None else 0.0
+
+                fib_score = fib_df.apply(_nearest_offset, axis=1).clip(-1.0, 1.0)
+                aggregated = aggregated.add(fib_score.fillna(0.0), fill_value=0.0)
+                contributions += 1
+
+        if volume is not None and volume_windows:
+            price_direction = np.sign(close.diff().fillna(0.0))
+            up_volume = volume.where(price_direction >= 0, 0.0)
+            down_volume = volume.where(price_direction < 0, 0.0)
+
+            for window in volume_windows:
+                up_sum = up_volume.rolling(window=window, min_periods=window).sum()
+                down_sum = down_volume.rolling(window=window, min_periods=window).sum()
+                total = (up_sum + down_sum).replace(0.0, np.nan)
+                imbalance = ((up_sum - down_sum) / total).clip(-1.0, 1.0)
+                aggregated = aggregated.add(imbalance.fillna(0.0), fill_value=0.0)
+                contributions += 1
+
+        if not contributions:
+            return pd.Series(0.0, index=data.index, name='support_resistance_signal')
+
+        signal = aggregated / float(contributions)
+        signal = signal.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return signal.clip(-1.0, 1.0).rename('support_resistance_signal')
 
 # Support Level Generator
 class SupportLevelGenerator(FeatureGenerator):
@@ -250,8 +311,10 @@ class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
             try:
                 from ..core.price_level_bank import get_global_price_level_bank
                 self.price_level_bank = get_global_price_level_bank()
-            except ImportError:
-                pass
+            except ImportError as exc:
+                self.logger.info("Price level bank unavailable, using calculated levels: %s", exc)
+            except Exception as exc:
+                self.logger.warning("Failed to initialize price level bank fallback: %s", exc)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate historical price level crossing counts (backward looking)."""
@@ -283,7 +346,7 @@ class HistoricalPriceLevelCrossingGenerator(FeatureGenerator):
 
             except Exception as e:
                 # Fall back to calculation if bank query fails
-                pass
+                self.logger.warning("Price level bank query failed (%s); using calculated levels", e)
 
         # Fall back to original calculation method
         return self._generate_from_calculation(data)

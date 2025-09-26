@@ -147,27 +147,27 @@ class ExchangeInterface(ABC):
     @abstractmethod
     async def connect(self) -> bool:
         """Connect to exchange."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def is_connected(self) -> bool:
         """Check if connected to exchange."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_order_book(self, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_klines(
@@ -179,17 +179,17 @@ class ExchangeInterface(ABC):
         limit: int = 500
     ) -> List[KlineData]:
         """Get kline data for symbol."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
         """Get account balance."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def create_order(
@@ -202,22 +202,22 @@ class ExchangeInterface(ABC):
         **kwargs
     ) -> Dict[str, Any]:
         """Create order."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Get order status."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders."""
-        pass
+        raise NotImplementedError
 
     def _check_rate_limit(self, endpoint: str) -> bool:
         """Check if request is within rate limits."""

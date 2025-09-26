@@ -4,36 +4,161 @@ This module provides specialized error handling for S/R detection and optimizati
 """
 import logging
 import traceback
-from typing import Dict, Any, Optional, Callable, Tuple
+from typing import Dict, Any, Optional, Callable, Tuple, Iterable
 from functools import wraps
 import asyncio
 from datetime import datetime
 from src.utils.logger import system_logger
 import numpy as np
 
+LOG_LEVEL_BY_SEVERITY = {
+    'critical': logging.CRITICAL,
+    'error': logging.ERROR,
+    'warning': logging.WARNING,
+    'info': logging.INFO,
+    'debug': logging.DEBUG,
+}
+
+
 class SRError(Exception):
-    """Base exception for S/R related errors."""
-    pass
+    """Base exception for S/R related errors that preserves context details."""
+
+    severity: str = 'error'
+    retryable: bool = False
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.context = context
+        self.details = details or {}
+        self.timestamp = datetime.utcnow()
+
+    def __str__(self) -> str:
+        base_message = super().__str__()
+        if self.context:
+            return f"{base_message} [context={self.context}]"
+        return base_message
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'error_type': self.__class__.__name__,
+            'message': str(self),
+            'context': self.context,
+            'details': self.details,
+            'timestamp': self.timestamp.isoformat(),
+            'severity': self.severity,
+            'retryable': self.retryable,
+        }
+
+    @classmethod
+    def describe(cls) -> str:
+        return f"{cls.__name__} severity={cls.severity} retryable={cls.retryable}"
+
 
 class SRConfigurationError(SRError):
     """Configuration-related S/R errors."""
-    pass
+
+    severity = 'error'
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        invalid_parameters: Optional[Iterable[str]] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if invalid_parameters:
+            merged_details.setdefault('invalid_parameters', sorted(set(invalid_parameters)))
+        super().__init__(message, context=context, details=merged_details)
+
 
 class SRDataError(SRError):
     """Data-related S/R errors."""
-    pass
+
+    severity = 'warning'
+    retryable = True
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        failing_index: Optional[int] = None,
+        column: Optional[str] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if failing_index is not None:
+            merged_details.setdefault('failing_index', failing_index)
+        if column:
+            merged_details.setdefault('column', column)
+        super().__init__(message, context=context, details=merged_details)
+
 
 class SROptimizationError(SRError):
     """Optimization-related S/R errors."""
-    pass
+
+    severity = 'critical'
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        iteration: Optional[int] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if iteration is not None:
+            merged_details.setdefault('iteration', iteration)
+        super().__init__(message, context=context, details=merged_details)
+
 
 class SRValidationError(SRError):
     """Validation-related S/R errors."""
-    pass
+
+    severity = 'error'
+    retryable = False
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        failing_rule: Optional[str] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if failing_rule:
+            merged_details.setdefault('failing_rule', failing_rule)
+        super().__init__(message, context=context, details=merged_details)
+
 
 class SRCacheError(SRError):
     """Cache-related S/R errors."""
-    pass
+
+    severity = 'info'
+    retryable = True
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        cache_key: Optional[str] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if cache_key:
+            merged_details.setdefault('cache_key', cache_key)
+        super().__init__(message, context=context, details=merged_details)
 
 class SRErrorHandler:
     """Specialized error handler for S/R operations."""
@@ -79,15 +204,15 @@ class SRErrorHandler:
     def _log_error(self, error: Exception, context: str) -> None:
         """Log error with appropriate level and context."""
         error_type = type(error).__name__
-        if isinstance(error, (SRConfigurationError, SRDataError)):
-            log_level = logging.ERROR
-        elif isinstance(error, (SROptimizationError, SRValidationError)):
-            log_level = logging.WARNING
-        elif isinstance(error, SRCacheError):
-            log_level = logging.INFO
+        if isinstance(error, SRError):
+            log_level = LOG_LEVEL_BY_SEVERITY.get(error.severity, logging.ERROR)
+            detail_suffix = f" | details={error.details}" if error.details else ""
+            retry_suffix = " (retryable)" if error.retryable else ""
         else:
             log_level = logging.ERROR
-        error_msg = f'S/R Error in {context}: {error_type}: {str(error)}'
+            detail_suffix = ""
+            retry_suffix = ""
+        error_msg = f'S/R Error in {context}: {error_type}: {str(error)}{retry_suffix}{detail_suffix}'
         if hasattr(error, '__traceback__'):
             tb_lines = traceback.format_tb(error.__traceback__)
             if tb_lines:

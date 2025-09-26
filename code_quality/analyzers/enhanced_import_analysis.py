@@ -288,8 +288,8 @@ class EnhancedImportAnalyzer:
             lines = content.split('\n')
             if 0 <= line_number - 1 < len(lines):
                 return lines[line_number - 1].strip()
-        except:
-            pass
+        except Exception as exc:
+            self.logger.debug("Failed to extract context for line %s: %s", line_number, exc)
         return ""
     
     def _find_used_names(self, tree: ast.AST) -> Set[str]:
@@ -312,11 +312,11 @@ class EnhancedImportAnalyzer:
             
             def visit_Import(self, node: ast.Import) -> None:
                 # Skip import statements themselves
-                pass
-            
+                return None
+
             def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
                 # Skip import statements themselves
-                pass
+                return None
             
             def visit_Call(self, node: ast.Call) -> None:
                 # For function calls, check if the function name is imported
@@ -656,8 +656,8 @@ class EnhancedUndefinedAnalyzer:
             lines = content.split('\n')
             if 0 <= line_number - 1 < len(lines):
                 return lines[line_number - 1].strip()
-        except:
-            pass
+        except Exception as exc:
+            self.logger.debug("Failed to extract context for line %s: %s", line_number, exc)
         return ""
     
     def _is_exception_variable(self, node: ast.Name, tree: ast.AST) -> bool:

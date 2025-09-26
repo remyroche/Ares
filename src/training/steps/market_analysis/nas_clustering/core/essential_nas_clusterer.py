@@ -215,22 +215,22 @@ class ClusteringAlgorithm(ABC):
     @abstractmethod
     def fit(self, data: np.ndarray) -> 'ClusteringAlgorithm':
         """Fit the clustering algorithm to data."""
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     def predict(self, data: np.ndarray) -> np.ndarray:
         """Predict cluster labels for new data."""
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     def get_centers(self) -> np.ndarray:
         """Get cluster centers."""
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     def get_inertia(self) -> float:
         """Get clustering inertia (within-cluster sum of squares)."""
-        pass
+        raise NotImplementedError
 
 
 class NeuralArchitecture:
@@ -609,8 +609,12 @@ class EssentialNASClusterer:
                         min_log_level=getattr(LogLevel, self.config.log_level.upper(), LogLevel.INFO)
                     )
                     configure_tprint(config)
-                except Exception:
-                    pass  # Fallback to standard logging
+                except Exception as configure_error:
+                    self.logger.debug(
+                        "tprint configuration unavailable; continuing with standard logging: %s",
+                        configure_error,
+                        exc_info=True,
+                    )
             
             tprint_info(f"Enhanced logging configured for {self.config.name}")
             
@@ -1345,8 +1349,12 @@ class EssentialNASClusterer:
         """Destructor to ensure cleanup."""
         try:
             self.cleanup()
-        except Exception:
-            pass  # Ignore errors during cleanup
+        except Exception as cleanup_error:
+            self.logger.debug(
+                "Cleanup during destruction failed but was suppressed: %s",
+                cleanup_error,
+                exc_info=True,
+            )
     
     def __repr__(self) -> str:
         """String representation of the clusterer."""

@@ -260,8 +260,14 @@ class ResourceManager:
                 gpus = GPUtil.getGPUs()
                 if gpus:
                     self.resource_usage[ResourceType.GPU] = gpus[0].load * 100
-            except ImportError:
-                pass  # GPU monitoring not available
+                else:
+                    self.resource_usage[ResourceType.GPU] = None
+            except ImportError as import_error:
+                self.resource_usage[ResourceType.GPU] = None
+                self.logger.debug(
+                    "GPU monitoring unavailable (GPUtil import failed): %s",
+                    import_error,
+                )
             
         except Exception as e:
             self.logger.warning(f"⚠️ Could not update system resources: {e}")

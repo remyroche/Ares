@@ -52,10 +52,64 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
     def create_default(cls) -> 'MicrostructureFeatureGenerator':
         return cls()
     
+    @staticmethod
+    def _normalize_series(series: pd.Series, window: int) -> pd.Series:
+        rolling_std = series.rolling(window=max(window, 5), min_periods=1).std().replace(0.0, np.nan)
+        normalized = series / rolling_std
+        normalized = normalized.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return np.tanh(normalized.clip(-6.0, 6.0))
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        close_prices = data['close'].values
-        ms = np.zeros_like(close_prices)
-        return pd.Series(ms, index=data.index, name='ms_placeholder')
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='microstructure_signal')
+
+        close = data['close'].astype(float)
+        high = data['high'].astype(float) if 'high' in data.columns else close
+        low = data['low'].astype(float) if 'low' in data.columns else close
+        volume = data['volume'].astype(float) if 'volume' in data.columns else None
+        bid = data['bid'].astype(float) if 'bid' in data.columns else None
+        ask = data['ask'].astype(float) if 'ask' in data.columns else None
+
+        params = self.config.parameters or {}
+        spread_windows = [window for window in params.get('spread_windows', [self.config.default_lookback]) if window and window > 1]
+        order_flow_windows = [window for window in params.get('order_flow_windows', [self.config.default_lookback]) if window and window > 1]
+        intensity_windows = [window for window in params.get('trade_intensity_windows', [self.config.default_lookback]) if window and window > 1]
+
+        aggregated = pd.Series(0.0, index=data.index, dtype=float)
+        contributions = 0
+
+        for window in spread_windows:
+            if bid is not None and ask is not None:
+                raw_spread = (ask - bid).rolling(window=window, min_periods=window).mean()
+            else:
+                raw_spread = (high - low).rolling(window=window, min_periods=window).mean()
+            spread_signal = self._normalize_series(raw_spread.fillna(0.0), window)
+            aggregated = aggregated.add(spread_signal, fill_value=0.0)
+            contributions += 1
+
+        base_volume = volume if volume is not None else pd.Series(1.0, index=data.index)
+        signed_volume = base_volume * np.sign(close.diff().fillna(0.0))
+        for window in order_flow_windows:
+            flow_signal = signed_volume.rolling(window=window, min_periods=window).sum()
+            normalized_flow = self._normalize_series(flow_signal.fillna(0.0), window)
+            aggregated = aggregated.add(normalized_flow, fill_value=0.0)
+            contributions += 1
+
+        for window in intensity_windows:
+            if volume is not None:
+                intensity = volume.rolling(window=window, min_periods=window).mean()
+            else:
+                intensity = close.diff().abs().rolling(window=window, min_periods=window).mean()
+            normalized_intensity = self._normalize_series(intensity.fillna(0.0), window)
+            aggregated = aggregated.add(normalized_intensity, fill_value=0.0)
+            contributions += 1
+
+        if not contributions:
+            return pd.Series(0.0, index=data.index, name='microstructure_signal')
+
+        signal = aggregated / float(contributions)
+        signal = signal.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return signal.clip(-1.0, 1.0).rename('microstructure_signal')
 
 # Bid-Ask Spread Generator
 class BidAskSpreadGenerator(FeatureGenerator):

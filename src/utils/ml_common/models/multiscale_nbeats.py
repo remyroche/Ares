@@ -305,8 +305,14 @@ class SingleTimeframeNBEATS(nn.Module):
             for stack in self.stacks:
                 for block in stack:
                     if hasattr(block, 'backcast_output'):
-                        # Increase capacity for low-frequency data
-                        pass  # Keep default capacity
+                        # Increase capacity for low-frequency data by relaxing dropout
+                        for layer_collection in (block.backcast_layers, block.forecast_layers):
+                            for layer in layer_collection:
+                                if isinstance(layer, nn.Dropout):
+                                    layer.p = max(0.0, min(layer.p * 0.5, 0.1))
+                        if hasattr(block, 'forecast_output'):
+                            nn.init.kaiming_uniform_(block.forecast_output.weight, nonlinearity='relu')
+                        nn.init.kaiming_uniform_(block.backcast_output.weight, nonlinearity='relu')
 
     def forward(self, x: torch.Tensor, regime_id: Optional[int] = None) -> torch.Tensor:
         """Forward pass through single timeframe NBEATS.

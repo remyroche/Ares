@@ -174,9 +174,12 @@ class M1MemoryOptimizer:
                 import numpy as np
                 if hasattr(np, 'array'):
                     # Force cleanup of array caches
-                    pass
-            except ImportError:
-                pass
+                    finfo_cache = getattr(getattr(np, 'core', None), 'getlimits', None)
+                    if finfo_cache and hasattr(finfo_cache, '_finfo_cache'):
+                        getattr(finfo_cache, '_finfo_cache').clear()
+                        self.logger.debug("Cleared numpy finfo cache")
+            except ImportError as np_error:
+                self.logger.debug("NumPy not available for cache clearing: %s", np_error)
 
         except Exception as e:
             self.logger.debug(f"Cache clearing failed: {e}")
@@ -187,7 +190,15 @@ class M1MemoryOptimizer:
             # Clear pandas caches
             if PANDAS_AVAILABLE and hasattr(pd, 'core'):
                 # Clear common pandas caches
-                pass
+                cache_attrs = ['_cached_data', '_cache', '_default_index']
+                cleared = 0
+                for attr in cache_attrs:
+                    cached_obj = getattr(pd.core, attr, None)
+                    if isinstance(cached_obj, dict):
+                        cached_obj.clear()
+                        cleared += 1
+                if cleared:
+                    self.logger.debug("Cleared %d pandas core caches", cleared)
 
             # Force Python garbage collection
             gc.collect()
@@ -363,7 +374,8 @@ class M1MemoryOptimizer:
             # Clear unnecessary caches
             if hasattr(sys, 'intern'):
                 # Clear string interning cache if possible
-                pass
+                sys.intern("")
+                self.logger.debug("Triggered string interning refresh via sys.intern")
             
             # Optimize memory pressure monitoring
             if self.monitoring_active and aggressive:

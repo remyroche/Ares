@@ -68,11 +68,68 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
     def create_default(cls) -> 'AutoencoderFeatureGenerator':
         return cls()
     
+    def _prepare_feature_matrix(self, data: pd.DataFrame) -> pd.DataFrame:
+        feature_columns = [col for col in ["open", "high", "low", "close", "volume"] if col in data.columns]
+        matrix = data[feature_columns].astype(float).copy()
+        if matrix.empty:
+            return matrix
+
+        matrix = matrix.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+        col_means = matrix.mean()
+        col_stds = matrix.std().replace(0.0, 1.0)
+        return (matrix - col_means) / col_stds
+
+    def _rolling_reconstruction_error(self, features: pd.DataFrame, window: int, latent_dim: int) -> pd.Series:
+        errors = pd.Series(index=features.index, dtype=float)
+        if window <= 1 or features.empty:
+            return errors.fillna(0.0)
+
+        values = features.values
+        for idx in range(window - 1, len(features)):
+            window_slice = values[idx - window + 1: idx + 1]
+            if np.isnan(window_slice).any():
+                errors.iloc[idx] = np.nan
+                continue
+
+            centered = window_slice - window_slice.mean(axis=0, keepdims=True)
+            try:
+                u, s, vh = np.linalg.svd(centered, full_matrices=False)
+            except np.linalg.LinAlgError as exc:
+                self.logger.debug("SVD failed for window ending at position %s: %s", idx, exc)
+                errors.iloc[idx] = np.nan
+                continue
+
+            rank = max(1, min(latent_dim, len(s)))
+            reconstruction = (u[:, :rank] @ np.diag(s[:rank]) @ vh[:rank, :])
+            residual = centered - reconstruction
+            errors.iloc[idx] = float(np.sqrt((residual ** 2).mean()))
+
+        return errors
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Placeholder implementation
-        close_prices = data['close'].values
-        autoencoder = np.zeros_like(close_prices)
-        return pd.Series(autoencoder, index=data.index, name='autoencoder_placeholder')
+        feature_matrix = self._prepare_feature_matrix(data)
+        if feature_matrix.empty:
+            return pd.Series(dtype=float, index=data.index, name='autoencoder_reconstruction_score')
+
+        params = self.config.parameters or {}
+        windows = sorted({window for window in params.get('autoencoder_windows', [self.config.default_lookback]) if window and window > 1})
+        latent_dims = sorted({dim for dim in params.get('encoding_dimensions', [min(3, feature_matrix.shape[1])]) if dim > 0})
+
+        error_series: List[pd.Series] = []
+        for window in windows:
+            for latent_dim in latent_dims:
+                reconstruction_error = self._rolling_reconstruction_error(feature_matrix, window, latent_dim)
+                error_series.append(reconstruction_error.rename(f"reconstruction_error_{window}_{latent_dim}"))
+
+        if not error_series:
+            return pd.Series(0.0, index=data.index, name='autoencoder_reconstruction_score')
+
+        error_frame = pd.concat(error_series, axis=1)
+        mean_error = error_frame.mean(axis=1)
+        stability_window = max(windows)
+        scaling = mean_error.rolling(window=stability_window, min_periods=1).std().replace(0.0, np.nan)
+        normalized = (mean_error / scaling).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return np.tanh(normalized.clip(-6.0, 6.0)).rename('autoencoder_reconstruction_score')
 
 # Autoencoder Encoded Feature Generator
 class AutoencoderEncodedGenerator(FeatureGenerator):

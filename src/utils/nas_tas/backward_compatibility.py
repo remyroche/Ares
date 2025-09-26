@@ -366,61 +366,120 @@ class LegacyUtilitiesAdapter:
         return self.unified_utilities.optimize_data(data, arch_type_enum, data_type_enum)
 
 # Legacy class aliases for backward compatibility
+class _LegacyAdapterAlias:
+    """Mixin that provides logging and metadata for adapter aliases."""
+
+    alias_category: str = "legacy"
+    alias_target_name: Optional[str] = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        target = self.alias_target_name or self.__class__.__mro__[1].__name__
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "%s initialized via %s for %s compatibility",
+                self.__class__.__name__,
+                target,
+                self.alias_category,
+            )
+
+    @classmethod
+    def describe_alias(cls) -> str:
+        target = cls.alias_target_name or cls.__mro__[1].__name__
+        return f"{cls.__name__} delegates to {target} for {cls.alias_category} compatibility"
+
+
 if LEGACY_IMPORTS_AVAILABLE:
     # NAS legacy classes
-    class EnhancedNASEngine(LegacyNASEngineAdapter):
+    class EnhancedNASEngine(_LegacyAdapterAlias, LegacyNASEngineAdapter):
         """Legacy NAS engine using unified system."""
-        pass
-    
-    class NASSearch(LegacyNASEngineAdapter):
+
+        alias_category = "NAS engine"
+        alias_target_name = "LegacyNASEngineAdapter"
+
+
+    class NASSearch(_LegacyAdapterAlias, LegacyNASEngineAdapter):
         """Legacy NAS search using unified system."""
-        pass
-    
-    class TradingMultiObjectiveOptimizer(LegacyMultiObjectiveOptimizerAdapter):
+
+        alias_category = "NAS search"
+        alias_target_name = "LegacyNASEngineAdapter"
+
+
+    class TradingMultiObjectiveOptimizer(_LegacyAdapterAlias, LegacyMultiObjectiveOptimizerAdapter):
         """Legacy multi-objective optimizer using unified system."""
-        pass
-    
-    class EconomicEvaluator(LegacyEconomicEvaluatorAdapter):
+
+        alias_category = "multi-objective optimization"
+        alias_target_name = "LegacyMultiObjectiveOptimizerAdapter"
+
+
+    class EconomicEvaluator(_LegacyAdapterAlias, LegacyEconomicEvaluatorAdapter):
         """Legacy economic evaluator using unified system."""
-        pass
-    
-    class NASRegimeAnalyzer(LegacyRegimeDetectorAdapter):
+
+        alias_category = "economic evaluation"
+        alias_target_name = "LegacyEconomicEvaluatorAdapter"
+
+
+    class NASRegimeAnalyzer(_LegacyAdapterAlias, LegacyRegimeDetectorAdapter):
         """Legacy NAS regime analyzer using unified system."""
-        pass
-    
+
+        alias_category = "NAS regime analysis"
+        alias_target_name = "LegacyRegimeDetectorAdapter"
+
     # TAS legacy classes
-    class TASEngine(LegacyTASEngineAdapter):
+    class TASEngine(_LegacyAdapterAlias, LegacyTASEngineAdapter):
         """Legacy TAS engine using unified system."""
-        pass
-    
-    class AdvancedSearch(LegacyTASEngineAdapter):
+
+        alias_category = "TAS engine"
+        alias_target_name = "LegacyTASEngineAdapter"
+
+
+    class AdvancedSearch(_LegacyAdapterAlias, LegacyTASEngineAdapter):
         """Legacy TAS advanced search using unified system."""
-        pass
-    
-    class MultiObjectiveSearch(LegacyMultiObjectiveOptimizerAdapter):
+
+        alias_category = "TAS search"
+        alias_target_name = "LegacyTASEngineAdapter"
+
+
+    class MultiObjectiveSearch(_LegacyAdapterAlias, LegacyMultiObjectiveOptimizerAdapter):
         """Legacy TAS multi-objective search using unified system."""
-        pass
-    
-    class TreeEvaluator(LegacyEconomicEvaluatorAdapter):
+
+        alias_category = "TAS optimization"
+        alias_target_name = "LegacyMultiObjectiveOptimizerAdapter"
+
+
+    class TreeEvaluator(_LegacyAdapterAlias, LegacyEconomicEvaluatorAdapter):
         """Legacy tree evaluator using unified system."""
-        pass
-    
-    class TreeRegimeAnalyzer(LegacyRegimeDetectorAdapter):
+
+        alias_category = "TAS evaluation"
+        alias_target_name = "LegacyEconomicEvaluatorAdapter"
+
+
+    class TreeRegimeAnalyzer(_LegacyAdapterAlias, LegacyRegimeDetectorAdapter):
         """Legacy tree regime analyzer using unified system."""
-        pass
-    
+
+        alias_category = "TAS regime analysis"
+        alias_target_name = "LegacyRegimeDetectorAdapter"
+
     # Hybrid legacy classes
-    class HybridRegimeDetector(LegacyRegimeDetectorAdapter):
+    class HybridRegimeDetector(_LegacyAdapterAlias, LegacyRegimeDetectorAdapter):
         """Legacy hybrid regime detector using unified system."""
-        pass
-    
-    class HybridMultiObjectiveOptimizer(LegacyMultiObjectiveOptimizerAdapter):
+
+        alias_category = "hybrid regime analysis"
+        alias_target_name = "LegacyRegimeDetectorAdapter"
+
+
+    class HybridMultiObjectiveOptimizer(_LegacyAdapterAlias, LegacyMultiObjectiveOptimizerAdapter):
         """Legacy hybrid multi-objective optimizer using unified system."""
-        pass
-    
-    class HybridEconomicEvaluator(LegacyEconomicEvaluatorAdapter):
+
+        alias_category = "hybrid optimization"
+        alias_target_name = "LegacyMultiObjectiveOptimizerAdapter"
+
+
+    class HybridEconomicEvaluator(_LegacyAdapterAlias, LegacyEconomicEvaluatorAdapter):
         """Legacy hybrid economic evaluator using unified system."""
-        pass
+
+        alias_category = "hybrid evaluation"
+        alias_target_name = "LegacyEconomicEvaluatorAdapter"
 
 # Migration helper functions
 def migrate_config_to_unified(legacy_config: Dict[str, Any], 

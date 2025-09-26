@@ -182,8 +182,12 @@ class FunctionCallMonitor:
                 side_effects.append('Pipeline state modification')
             if 'log' in func.__name__.lower():
                 side_effects.append('Logging operation')
-        except Exception:
-            pass
+        except Exception as detection_error:
+            self.logger.debug(
+                "Side-effect detection failed for %s: %s",
+                func.__name__,
+                detection_error,
+            )
         return side_effects
 
     def _generate_recommendations(self, report: FunctionCallReport) -> List[str]:
@@ -202,8 +206,12 @@ class FunctionCallMonitor:
                 recommendations.append('High dependency count - consider refactoring')
             if len(report.side_effects) > 3:
                 recommendations.append('Multiple side effects detected - consider pure function design')
-        except Exception:
-            pass
+        except Exception as recommendation_error:
+            self.logger.debug(
+                "Failed to generate full recommendations for %s: %s",
+                report.function_name,
+                recommendation_error,
+            )
         return recommendations
 
     @contextmanager

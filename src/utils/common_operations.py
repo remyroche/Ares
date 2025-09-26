@@ -854,7 +854,8 @@ def math_safe(func: Callable, *args, default: Any = 0.0, **kwargs) -> Any:
 
 class MathValidationError(Exception):
     """Exception raised for math validation errors."""
-    pass
+
+    __slots__ = ()
 
 # =============================================================================
 # CONVENIENCE FUNCTIONS

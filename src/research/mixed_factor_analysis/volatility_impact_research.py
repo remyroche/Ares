@@ -727,10 +727,10 @@ class VolatilityImpactAnalyzer:
                 bootstrap_impacts.append(bootstrap_impact['impact_strength'])
             except ValueError as e:
                 tprint_warning(f"Bootstrap impact calculation failed due to invalid data: {e}")
-                pass
+                continue
             except Exception as e:
                 tprint_warning(f"Bootstrap impact calculation failed with unexpected error: {e}")
-                pass
+                continue
         
         # Statistical tests
         if bootstrap_impacts:
@@ -833,10 +833,10 @@ class VolatilityImpactAnalyzer:
                     subsample_impacts.append(subsample_impact['impact_strength'])
                 except ValueError as e:
                     tprint_warning(f"Subsample impact calculation failed due to invalid data: {e}")
-                    pass
+                    continue
                 except Exception as e:
                     tprint_warning(f"Subsample impact calculation failed with unexpected error: {e}")
-                    pass
+                    continue
             
             if subsample_impacts:
                 robustness_metrics['subsample_stability'] = float(1.0 - np.std(subsample_impacts))
@@ -861,10 +861,10 @@ class VolatilityImpactAnalyzer:
                     period_impacts.append(period_impact['impact_strength'])
                 except ValueError as e:
                     tprint_warning(f"Period impact calculation failed due to invalid data: {e}")
-                    pass
+                    continue
                 except Exception as e:
                     tprint_warning(f"Period impact calculation failed with unexpected error: {e}")
-                    pass
+                    continue
             
             if period_impacts:
                 robustness_metrics['time_stability'] = float(1.0 - np.std(period_impacts))

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
+from ...utils.common_operations import tprint
 # Optional imports
 try:
     import numpy as np
@@ -159,7 +160,13 @@ class EnhancedErrorHandler:
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
             function_parameters = dict(bound_args.arguments)
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            self.logger.debug(f"Could not bind function parameters: {e}")
+            tprint(f"⚠️ Could not bind function parameters: {e}")
+            function_parameters = {'args': str(args), 'kwargs': str(kwargs)}
+        except Exception as e:
+            self.logger.debug(f"Unexpected error binding function parameters: {e}")
+            tprint(f"⚠️ Unexpected error binding function parameters: {e}")
             function_parameters = {'args': str(args), 'kwargs': str(kwargs)}
         system_state = {'timestamp': datetime.now().isoformat(), 'python_version': sys.version, 'platform': sys.platform, 'memory_usage': self._get_memory_usage(), 'cpu_usage': self._get_cpu_usage()}
         return ErrorContext(error_id = error_id, timestamp = datetime.now(), function_name = func.__name__, module_name = func.__module__, error_type = type(error).__name__, error_message = str(error), error_category = category, severity = severity, stack_trace = traceback.format_exc(), function_parameters = function_parameters, local_variables = local_vars or {}, system_state = system_state, recovery_strategy = recovery_strategy)
@@ -170,7 +177,13 @@ class EnhancedErrorHandler:
             import psutil
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
-        except Exception:
+        except (ImportError, AttributeError, OSError) as e:
+            self.logger.debug(f"Could not get memory usage: {e}")
+            tprint(f"⚠️ Could not get memory usage: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.debug(f"Unexpected error getting memory usage: {e}")
+            tprint(f"⚠️ Unexpected error getting memory usage: {e}")
             return 0.0
 
     def _get_cpu_usage(self) -> float:
@@ -178,7 +191,13 @@ class EnhancedErrorHandler:
         try:
             process = psutil.Process()
             return process.cpu_percent()
-        except Exception:
+        except (ImportError, AttributeError, OSError) as e:
+            self.logger.debug(f"Could not get CPU usage: {e}")
+            tprint(f"⚠️ Could not get CPU usage: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.debug(f"Unexpected error getting CPU usage: {e}")
+            tprint(f"⚠️ Unexpected error getting CPU usage: {e}")
             return 0.0
 
     def _log_error_context(self, error_context: ErrorContext) -> None:
@@ -220,10 +239,18 @@ class EnhancedErrorHandler:
                     return asyncio.run(func(*args, **kwargs))
                 else:
                     return func(*args, **kwargs)
-            except Exception as retry_error:
+            except (ValueError, AttributeError, RuntimeError) as retry_error:
                 self.logger.warning(f'   ⚠️ Retry attempt {attempt + 1} failed: {retry_error}')
+                tprint(f'   ⚠️ Retry attempt {attempt + 1} failed: {retry_error}')
                 if attempt == self.max_recovery_attempts - 1:
                     self.logger.error(f'   ❌ All retry attempts failed for error {error_context.error_id}')
+                    tprint(f'   ❌ All retry attempts failed for error {error_context.error_id}')
+            except Exception as retry_error:
+                self.logger.warning(f'   ⚠️ Unexpected error in retry attempt {attempt + 1}: {retry_error}')
+                tprint(f'   ⚠️ Unexpected error in retry attempt {attempt + 1}: {retry_error}')
+                if attempt == self.max_recovery_attempts - 1:
+                    self.logger.error(f'   ❌ All retry attempts failed for error {error_context.error_id}')
+                    tprint(f'   ❌ All retry attempts failed for error {error_context.error_id}')
                     raise retry_error
         return None
 
@@ -276,7 +303,13 @@ class EnhancedErrorHandler:
                 return ()
             else:
                 return None
-        except Exception:
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.debug(f"Could not get fallback value: {e}")
+            tprint(f"⚠️ Could not get fallback value: {e}")
+            return None
+        except Exception as e:
+            self.logger.debug(f"Unexpected error getting fallback value: {e}")
+            tprint(f"⚠️ Unexpected error getting fallback value: {e}")
             return None
 
     def _detect_error_patterns(self) -> List[Dict[str, Any]]:
@@ -317,8 +350,12 @@ class EnhancedErrorHandler:
                 with open(report_file, 'w') as f:
                     json.dump(report_data, f, indent = 2, default = str)
                 self.logger.info(f'📊 Error report saved to: {report_file}')
-        except Exception as e:
+        except (OSError, IOError, PermissionError) as e:
             self.logger.error(f'Failed to generate error report: {e}')
+            tprint(f'❌ Failed to generate error report: {e}')
+        except Exception as e:
+            self.logger.error(f'Unexpected error generating error report: {e}')
+            tprint(f'❌ Unexpected error generating error report: {e}')
 
     def handle_errors(self, func: Callable[P, R]) -> Callable[P, R]:
         """Main decorator for enhanced error handling."""
@@ -339,6 +376,8 @@ class EnhancedErrorHandler:
         """Handle errors in synchronous functions."""
         try:
             return func(*args, **kwargs)
+        except (ValueError, AttributeError, RuntimeError) as e:
+            return self._process_error(e, func, args, kwargs)
         except Exception as e:
             return self._process_error(e, func, args, kwargs)
 
@@ -346,6 +385,8 @@ class EnhancedErrorHandler:
         """Handle errors in asynchronous functions."""
         try:
             return await func(*args, **kwargs)
+        except (ValueError, AttributeError, RuntimeError) as e:
+            return self._process_error(e, func, args, kwargs)
         except Exception as e:
             return self._process_error(e, func, args, kwargs)
 
@@ -361,9 +402,14 @@ class EnhancedErrorHandler:
                 error_context.recovery_successful = True
                 self.logger.info(f'✅ Recovery successful for error {error_context.error_id}')
                 return result
-            except Exception as recovery_error:
+            except (ValueError, AttributeError, RuntimeError) as recovery_error:
                 error_context.recovery_successful = False
                 self.logger.error(f'❌ Recovery failed for error {error_context.error_id}: {recovery_error}')
+                tprint(f'❌ Recovery failed for error {error_context.error_id}: {recovery_error}')
+            except Exception as recovery_error:
+                error_context.recovery_successful = False
+                self.logger.error(f'❌ Unexpected error in recovery for error {error_context.error_id}: {recovery_error}')
+                tprint(f'❌ Unexpected error in recovery for error {error_context.error_id}: {recovery_error}')
         raise error
 
 def handle_errors_enhanced(enable_automatic_recovery: bool = True, enable_error_pattern_detection: bool = True, enable_performance_impact_analysis: bool = True, max_recovery_attempts: int = 3, recovery_timeout_seconds: float = 30.0, log_level: str='INFO', generate_error_reports: bool = True, error_report_path: Optional[str]=None) -> Callable[[Callable[P, R]], Callable[P, R]]:

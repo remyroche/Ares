@@ -16,6 +16,7 @@ from ..core.domain import handle_data_processing_errors, handle_file_operations
 from ..utils.logger import system_logger
 from ..config_optuna import get_parameter_value
 from ..core.decorators import handles_errors
+from ..utils.common_operations import tprint
 
 class FeatureEngineeringOrchestrator:
     """
@@ -116,8 +117,13 @@ class FeatureEngineeringOrchestrator:
             self.logger.info(f'🎉 Feature generation orchestration completed! Final shape: {features_df.shape}')
             self.logger.info(f'📊 Total features generated: {len(features_df.columns)}')
             return features_df
-        except Exception:
-            self.logger.error('❌ Error in feature generation orchestration: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'❌ Error in feature generation orchestration: {e}')
+            tprint(f'❌ Error in feature generation orchestration: {e}')
+            return klines_df.copy()
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error in feature generation orchestration: {e}')
+            tprint(f'❌ Unexpected error in feature generation orchestration: {e}')
             return klines_df.copy()
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='microstructure feature generation')
@@ -151,8 +157,13 @@ class FeatureEngineeringOrchestrator:
             
             return microstructure_features_df
             
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"Error generating microstructure features: {e}")
+            tprint(f"❌ Error generating microstructure features: {e}")
+            return pd.DataFrame()
+        except Exception as e:
+            self.logger.error(f"Unexpected error generating microstructure features: {e}")
+            tprint(f"❌ Unexpected error generating microstructure features: {e}")
             return pd.DataFrame()
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='legacy feature generation')
@@ -166,8 +177,13 @@ class FeatureEngineeringOrchestrator:
             features_df = self._calculate_volatility_regime_indicators(features_df)
             features_df = self._calculate_volatility_targeting_features(features_df)
             return self._calculate_ml_enhanced_features(features_df)
-        except Exception:
-            self.logger.error('Error generating legacy features: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error generating legacy features: {e}')
+            tprint(f'❌ Error generating legacy features: {e}')
+            return features_df
+        except Exception as e:
+            self.logger.error(f'Unexpected error generating legacy features: {e}')
+            tprint(f'❌ Unexpected error generating legacy features: {e}')
             return features_df
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='multi-timeframe feature calculation')
@@ -191,8 +207,13 @@ class FeatureEngineeringOrchestrator:
                 self.logger.warning("No cross-timeframe features generated")
                 return pd.DataFrame()
                 
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"Error generating cross-timeframe features: {e}")
+            tprint(f"❌ Error generating cross-timeframe features: {e}")
+            return pd.DataFrame()
+        except Exception as e:
+            self.logger.error(f"Unexpected error generating cross-timeframe features: {e}")
+            tprint(f"❌ Unexpected error generating cross-timeframe features: {e}")
             return pd.DataFrame()
     
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -218,8 +239,13 @@ class FeatureEngineeringOrchestrator:
                 self.logger.warning(f"Unexpected multi_timeframe_features type: {type(multi_timeframe_features)}")
                 return pd.DataFrame()
 
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f'Error calculating multi-timeframe features: {e}')
+            tprint(f'❌ Error calculating multi-timeframe features: {e}')
+            return pd.DataFrame()
+        except Exception as e:
+            self.logger.error(f'Unexpected error calculating multi-timeframe features: {e}')
+            tprint(f'❌ Unexpected error calculating multi-timeframe features: {e}')
             return pd.DataFrame()
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='meta-labeling feature calculation')
@@ -234,8 +260,13 @@ class FeatureEngineeringOrchestrator:
             tactician_labels = await meta_labeling._generate_tactician_labels(price_data, volume_data, order_flow_data)
             all_labels = {**analyst_labels, **tactician_labels}
             return pd.DataFrame([all_labels])
-        except Exception:
-            self.logger.error('Error calculating meta-labeling features: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error calculating meta-labeling features: {e}')
+            tprint(f'❌ Error calculating meta-labeling features: {e}')
+            return pd.DataFrame()
+        except Exception as e:
+            self.logger.error(f'Unexpected error calculating meta-labeling features: {e}')
+            tprint(f'❌ Unexpected error calculating meta-labeling features: {e}')
             return pd.DataFrame()
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='standard indicators calculation')
@@ -271,8 +302,13 @@ class FeatureEngineeringOrchestrator:
             df['stoch_d'] = stoch['STOCHd_14_3_3']
             df['atr'] = ta.atr(temp_df['high'], temp_df['low'], temp_df['close'], length = 14)
             return df
-        except Exception:
-            self.logger.error('Error calculating standard indicators: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error calculating standard indicators: {e}')
+            tprint(f'❌ Error calculating standard indicators: {e}')
+            return df
+        except Exception as e:
+            self.logger.error(f'Unexpected error calculating standard indicators: {e}')
+            tprint(f'❌ Unexpected error calculating standard indicators: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='time features calculation')
@@ -294,8 +330,13 @@ class FeatureEngineeringOrchestrator:
             df['is_london_session'] = ((df['hour'] >= 8) & (df['hour'] < 16)).astype(int)
             df['is_ny_session'] = ((df['hour'] >= 13) & (df['hour'] < 21)).astype(int)
             return df
-        except Exception:
-            self.logger.error('Error calculating time features: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error calculating time features: {e}')
+            tprint(f'❌ Error calculating time features: {e}')
+            return df
+        except Exception as e:
+            self.logger.error(f'Unexpected error calculating time features: {e}')
+            tprint(f'❌ Unexpected error calculating time features: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='volatility regime indicators calculation')
@@ -321,8 +362,13 @@ class FeatureEngineeringOrchestrator:
             df['vol_ratio_5_20'] = df['volatility_5'] / df['volatility_20']
             df['vol_ratio_10_20'] = df['volatility_10'] / df['volatility_20']
             return df
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.exception(f'Error calculating volatility regime indicators: {e}')
+            tprint(f'❌ Error calculating volatility regime indicators: {e}')
+            return df
+        except Exception as e:
+            self.logger.exception(f'Unexpected error calculating volatility regime indicators: {e}')
+            tprint(f'❌ Unexpected error calculating volatility regime indicators: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='volatility targeting features calculation')
@@ -337,8 +383,13 @@ class FeatureEngineeringOrchestrator:
             df['vol_adjusted_position'] = df['vol_adjusted_position'].clip(0.1, 2.0)
             df['vol_regime'] = np.where(df['vol_target_ratio'] > 1.5, 'high_vol', np.where(df['vol_target_ratio'] < 0.5, 'low_vol', 'normal_vol'))
             return df
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.exception(f'Error calculating volatility targeting features: {e}')
+            tprint(f'❌ Error calculating volatility targeting features: {e}')
+            return df
+        except Exception as e:
+            self.logger.exception(f'Unexpected error calculating volatility targeting features: {e}')
+            tprint(f'❌ Unexpected error calculating volatility targeting features: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='ML enhanced features calculation')
@@ -357,8 +408,13 @@ class FeatureEngineeringOrchestrator:
             df['r1'] = 2 * df['pivot'] - df['low']
             df['s1'] = 2 * df['pivot'] - df['high']
             return df
-        except Exception:
-            self.logger.error('Error calculating ML enhanced features: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error calculating ML enhanced features: {e}')
+            tprint(f'❌ Error calculating ML enhanced features: {e}')
+            return df
+        except Exception as e:
+            self.logger.error(f'Unexpected error calculating ML enhanced features: {e}')
+            tprint(f'❌ Unexpected error calculating ML enhanced features: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='feature cleanup')
@@ -372,8 +428,13 @@ class FeatureEngineeringOrchestrator:
             df = df[numeric_cols]
             self.logger.info(f'Feature cleanup completed. Final shape: {df.shape}')
             return df
-        except Exception:
-            self.logger.error('Error in feature cleanup: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error in feature cleanup: {e}')
+            tprint(f'❌ Error in feature cleanup: {e}')
+            return df
+        except Exception as e:
+            self.logger.error(f'Unexpected error in feature cleanup: {e}')
+            tprint(f'❌ Unexpected error in feature cleanup: {e}')
             return df
 
     @handles_errors(exceptions=(Exception,), default_return={}, context='orchestrator info retrieval')
@@ -382,8 +443,13 @@ class FeatureEngineeringOrchestrator:
         """Get information about the orchestrator."""
         try:
             return {'orchestrator_type': 'FeatureEngineeringOrchestrator', 'enable_advanced_features': self.enable_advanced_features, 'enable_autoencoder_features': self.enable_autoencoder_features, 'enable_legacy_features': self.enable_legacy_features, 'enable_entropy_features': self.enable_entropy_features, 'advanced_feature_engineering_info': self.advanced_feature_generation.utils.get_feature_statistics(), 'autoencoder_generator_info': self.autoencoder_generator.get_generator_info(), 'config': self.orchestrator_config}
-        except Exception:
-            self.logger.error('Error getting orchestrator info: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error getting orchestrator info: {e}')
+            tprint(f'❌ Error getting orchestrator info: {e}')
+            return {}
+        except Exception as e:
+            self.logger.error(f'Unexpected error getting orchestrator info: {e}')
+            tprint(f'❌ Unexpected error getting orchestrator info: {e}')
             return {}
 
     @handles_errors(exceptions=(Exception,), default_return={}, context='feature summary retrieval')
@@ -391,8 +457,13 @@ class FeatureEngineeringOrchestrator:
         """Get a summary of all available features."""
         try:
             return {'feature_categories': ['standard_indicators', 'advanced_features', 'autoencoder_features', 'time_features', 'volatility_features', 'ml_enhanced_features', 'entropy_features'], 'total_feature_types': 7, 'orchestrator_config': self.orchestrator_config}
-        except Exception:
-            self.logger.error('Error getting feature summary: {e}')
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.error(f'Error getting feature summary: {e}')
+            tprint(f'❌ Error getting feature summary: {e}')
+            return {}
+        except Exception as e:
+            self.logger.error(f'Unexpected error getting feature summary: {e}')
+            tprint(f'❌ Unexpected error getting feature summary: {e}')
             return {}
 
 class FeatureEngineeringEngine:
@@ -424,8 +495,13 @@ class FeatureEngineeringEngine:
         """Apply wavelet transforms to data."""
         try:
             return pywt.wavedec(data, wavelet, level = level)
-        except Exception:
-            self.logger.error('Error applying wavelet transforms: {e}')
+        except (ValueError, AttributeError, ImportError) as e:
+            self.logger.error(f'Error applying wavelet transforms: {e}')
+            tprint(f'❌ Error applying wavelet transforms: {e}')
+            return None
+        except Exception as e:
+            self.logger.error(f'Unexpected error applying wavelet transforms: {e}')
+            tprint(f'❌ Unexpected error applying wavelet transforms: {e}')
             return None
 
     @handle_file_operations(default_return = False, context='train_autoencoder')
@@ -433,8 +509,13 @@ class FeatureEngineeringEngine:
         """Train autoencoder model."""
         try:
             return self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
-        except Exception:
-            self.logger.error('Error training autoencoder: {e}')
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.error(f'Error training autoencoder: {e}')
+            tprint(f'❌ Error training autoencoder: {e}')
+            return False
+        except Exception as e:
+            self.logger.error(f'Unexpected error training autoencoder: {e}')
+            tprint(f'❌ Unexpected error training autoencoder: {e}')
             return False
 
     @handle_data_processing_errors(default_return = pd.Series(), context='apply_autoencoders')
@@ -442,8 +523,13 @@ class FeatureEngineeringEngine:
         """Apply autoencoder features."""
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
-        except Exception:
-            self.logger.error('Error applying autoencoders: {e}')
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.error(f'Error applying autoencoders: {e}')
+            tprint(f'❌ Error applying autoencoders: {e}')
+            return data
+        except Exception as e:
+            self.logger.error(f'Unexpected error applying autoencoders: {e}')
+            tprint(f'❌ Unexpected error applying autoencoders: {e}')
             return data
 
     @handle_file_operations(default_return = False, context='load_autoencoder')
@@ -451,6 +537,11 @@ class FeatureEngineeringEngine:
         """Load autoencoder model."""
         try:
             return True
-        except Exception:
-            self.logger.error('Error loading autoencoder: {e}')
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.error(f'Error loading autoencoder: {e}')
+            tprint(f'❌ Error loading autoencoder: {e}')
+            return False
+        except Exception as e:
+            self.logger.error(f'Unexpected error loading autoencoder: {e}')
+            tprint(f'❌ Unexpected error loading autoencoder: {e}')
             return False

@@ -15,6 +15,8 @@ import asyncio
 from typing import Any, Dict, List, Optional, Callable, Union
 import sys
 import platform
+import subprocess
+from ..common_operations import tprint
 
 # Optional dependencies
 try:
@@ -50,8 +52,13 @@ class M1CPUOptimizer:
                 return 'Apple' in brand or 'M1' in brand or 'M2' in brand or 'M3' in brand
 
             return False
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, AttributeError) as e:
             self.logger.warning(f"Could not detect M1 hardware: {e}")
+            tprint(f"⚠️ Could not detect M1 hardware: {e}")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Unexpected error detecting M1 hardware: {e}")
+            tprint(f"⚠️ Unexpected error detecting M1 hardware: {e}")
             return False
 
     def _get_optimal_cpu_count(self) -> int:
@@ -59,7 +66,13 @@ class M1CPUOptimizer:
         try:
             # Use physical cores for M1 optimization
             return max(1, multiprocessing.cpu_count() // 2)  # Use half cores for efficiency
-        except Exception:
+        except (OSError, AttributeError) as e:
+            self.logger.warning(f"⚠️ Error getting optimal CPU count: {e}")
+            tprint(f"⚠️ Error getting optimal CPU count: {e}")
+            return max(1, multiprocessing.cpu_count() // 4)  # Conservative fallback
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error getting optimal CPU count: {e}")
+            tprint(f"❌ Unexpected error getting optimal CPU count: {e}")
             return max(1, multiprocessing.cpu_count() // 4)  # Conservative fallback
 
     def get_optimal_worker_count(self) -> int:
@@ -77,7 +90,13 @@ class M1CPUOptimizer:
         try:
             total_cores = multiprocessing.cpu_count()
             return max(0, total_cores - self.performance_cores)
-        except Exception:
+        except (OSError, AttributeError) as e:
+            self.logger.warning(f"⚠️ Error getting efficiency cores: {e}")
+            tprint(f"⚠️ Error getting efficiency cores: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error getting efficiency cores: {e}")
+            tprint(f"❌ Unexpected error getting efficiency cores: {e}")
             return 0
 
     def create_optimized_thread_pool(self, max_workers: Optional[int] = None) -> concurrent.futures.ThreadPoolExecutor:
@@ -112,8 +131,10 @@ class M1CPUOptimizer:
                 # thread affinity settings for Apple Silicon
                 original_affinity = os.sched_getaffinity(0)
                 # Keep function execution on current thread for simplicity
-            except Exception:
-                pass
+            except (OSError, AttributeError) as e:
+                self.logger.debug(f"Could not set thread affinity: {e}")
+            except Exception as e:
+                self.logger.debug(f"Unexpected error setting thread affinity: {e}")
 
             try:
                 result = func(*args, **kwargs)
@@ -123,8 +144,10 @@ class M1CPUOptimizer:
                 try:
                     if 'original_affinity' in locals():
                         os.sched_setaffinity(0, original_affinity)
-                except Exception:
-                    pass
+                except (OSError, AttributeError) as e:
+                    self.logger.debug(f"Could not restore thread affinity: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Unexpected error restoring thread affinity: {e}")
 
         return optimized_wrapper
 
@@ -176,8 +199,12 @@ class M1CPUOptimizer:
 
             self.logger.info(f"🧠 Numpy optimized for {self.performance_cores} performance cores")
 
-        except Exception as e:
+        except (ImportError, AttributeError, RuntimeError) as e:
             self.logger.warning(f"Numpy optimization failed: {e}")
+            tprint(f"⚠️ Numpy optimization failed: {e}")
+        except Exception as e:
+            self.logger.warning(f"Unexpected error in numpy optimization: {e}")
+            tprint(f"⚠️ Unexpected error in numpy optimization: {e}")
 
     def create_m1_optimized_context(self):
         """Create context manager for M1 optimizations."""
@@ -267,11 +294,20 @@ class M1CPUOptimizer:
             
             return result
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.warning(f"⚠️ CPU optimization failed: {e}")
+            tprint(f"⚠️ CPU optimization failed: {e}")
             return {
                 'success': False,
                 'error': str(e),
+                'optimization_time_s': time.time() - start_time
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in CPU optimization: {e}")
+            tprint(f"❌ Unexpected error in CPU optimization: {e}")
+            return {
+                'success': False,
+                'error': f"Unexpected error: {str(e)}",
                 'optimization_time_s': time.time() - start_time
             }
 
@@ -352,13 +388,31 @@ async def parallel_backtesting_worker(
             logger.info(f"✅ Worker {worker_id}: Completed backtesting chunk")
             return results
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         logger.error(f"❌ Worker {worker_id}: Failed with error: {e}")
+        tprint(f"❌ Worker {worker_id}: Failed with error: {e}")
 
         # Return error results
         return {
             'worker_id': worker_id,
             'error': str(e),
+            'success': False,
+            'm1_optimized': True,
+            'total_trades': 0,
+            'win_rate': 0.0,
+            'profit_factor': 1.0,
+            'max_drawdown': 0.0,
+            'sharpe_ratio': 0.0,
+            'total_return': 0.0
+        }
+    except Exception as e:
+        logger.error(f"❌ Worker {worker_id}: Unexpected error: {e}")
+        tprint(f"❌ Worker {worker_id}: Unexpected error: {e}")
+
+        # Return error results
+        return {
+            'worker_id': worker_id,
+            'error': f"Unexpected error: {str(e)}",
             'success': False,
             'm1_optimized': True,
             'total_trades': 0,
@@ -429,11 +483,25 @@ async def _execute_backtesting_chunk(
 
         return results
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         logger.error(f"Chunk execution failed: {e}")
+        tprint(f"❌ Chunk execution failed: {e}")
         return {
             'success': False,
             'error': str(e),
+            'total_trades': 0,
+            'win_rate': 0.0,
+            'profit_factor': 1.0,
+            'max_drawdown': 0.0,
+            'sharpe_ratio': 0.0,
+            'total_return': 0.0
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in chunk execution: {e}")
+        tprint(f"❌ Unexpected error in chunk execution: {e}")
+        return {
+            'success': False,
+            'error': f"Unexpected error: {str(e)}",
             'total_trades': 0,
             'win_rate': 0.0,
             'profit_factor': 1.0,
@@ -510,11 +578,20 @@ async def parallel_monte_carlo_simulation(
                     result = await coro
                     results.append(result)
                     logger.debug(f"✅ Completed simulation task {result.get('task_id', 'unknown')}")
-                except Exception as e:
+                except (ValueError, AttributeError, RuntimeError) as e:
                     logger.error(f"❌ Simulation task failed: {e}")
+                    tprint(f"❌ Simulation task failed: {e}")
                     results.append({
                         'task_id': 'unknown',
                         'error': str(e),
+                        'success': False
+                    })
+                except Exception as e:
+                    logger.error(f"❌ Unexpected error in simulation task: {e}")
+                    tprint(f"❌ Unexpected error in simulation task: {e}")
+                    results.append({
+                        'task_id': 'unknown',
+                        'error': f"Unexpected error: {str(e)}",
                         'success': False
                     })
 
@@ -541,10 +618,17 @@ async def _run_task_in_executor(executor: concurrent.futures.Executor, task: Dic
 
         return result
 
-    except Exception as e:
+    except (ValueError, AttributeError, RuntimeError) as e:
         return {
             'task_id': task['task_id'],
             'error': str(e),
+            'success': False,
+            'exception': type(e).__name__
+        }
+    except Exception as e:
+        return {
+            'task_id': task['task_id'],
+            'error': f"Unexpected error: {str(e)}",
             'success': False,
             'exception': type(e).__name__
         }
@@ -638,10 +722,16 @@ def run_monte_carlo_batch(
                         result['task_id'] = i + j
                         result['success'] = True
                         all_results.append(result)
-                    except Exception as e:
+                    except (ValueError, AttributeError, RuntimeError) as e:
                         all_results.append({
                             'task_id': i + j,
                             'error': str(e),
+                            'success': False
+                        })
+                    except Exception as e:
+                        all_results.append({
+                            'task_id': i + j,
+                            'error': f"Unexpected error: {str(e)}",
                             'success': False
                         })
 

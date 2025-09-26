@@ -176,8 +176,12 @@ class BacktestingSubPipeline:
                     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
                     fh.setFormatter(formatter)
                     self.logger.addHandler(fh)
-        except Exception:
-            pass
+        except (OSError, IOError, PermissionError) as e:
+            self.logger.warning(f"Failed to apply logging config: {e}")
+            tprint(f"⚠️ Failed to apply logging config: {e}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error applying logging config: {e}")
+            tprint(f"❌ Unexpected error applying logging config: {e}")
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Helper method to log sub-pipeline completion with emojis and artifact paths."""
         tprint("\n" + "="*80)
@@ -275,7 +279,7 @@ class BacktestingSubPipeline:
             
             self.logger.info(f"✅ Backtesting sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
             result.end_time = end_time
@@ -283,6 +287,16 @@ class BacktestingSubPipeline:
             result.error_message = str(e)
             
             self.logger.error(f"❌ Backtesting sub-pipeline {sub_pipeline_name} failed: {e}")
+            tprint(f"❌ Backtesting sub-pipeline {sub_pipeline_name} failed: {e}")
+        except Exception as e:
+            end_time = datetime.now()
+            result.status = SubPipelineStatus.FAILED
+            result.end_time = end_time
+            result.duration_seconds = (end_time - start_time).total_seconds()
+            result.error_message = f"Unexpected error: {str(e)}"
+            
+            self.logger.error(f"❌ Unexpected error in backtesting sub-pipeline {sub_pipeline_name}: {e}")
+            tprint(f"❌ Unexpected error in backtesting sub-pipeline {sub_pipeline_name}: {e}")
         
         self.results.append(result)
         return result
@@ -670,8 +684,9 @@ class BacktestingSubPipeline:
                 'comparison_notes': 'Basic backtesting results before parameter optimization (baseline)'
             }
             
-        except Exception as e:
+        except (ValueError, AttributeError, RuntimeError) as e:
             self.logger.error(f"❌ Basic backtesting pre-pipeline failed: {e}")
+            tprint(f"❌ Basic backtesting pre-pipeline failed: {e}")
             # Fallback to mock data if real implementation fails
             artifacts['basic_backtest_results'] = {
                 'total_trades': 50,
@@ -719,7 +734,13 @@ class BacktestingSubPipeline:
                     current_consecutive = 0
             
             return max_consecutive
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating max consecutive wins: {e}")
+            tprint(f"⚠️ Error calculating max consecutive wins: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating max consecutive wins: {e}")
+            tprint(f"❌ Unexpected error calculating max consecutive wins: {e}")
             return 0
     
     def _calculate_max_consecutive_losses(self, profits: List[float]) -> int:
@@ -739,7 +760,13 @@ class BacktestingSubPipeline:
                     current_consecutive = 0
             
             return max_consecutive
-        except Exception:
+        except (ValueError, AttributeError, RuntimeError) as e:
+            self.logger.warning(f"⚠️ Error calculating max consecutive losses: {e}")
+            tprint(f"⚠️ Error calculating max consecutive losses: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error calculating max consecutive losses: {e}")
+            tprint(f"❌ Unexpected error calculating max consecutive losses: {e}")
             return 0
         return artifacts
     
@@ -912,8 +939,13 @@ class BacktestingSubPipeline:
         except ImportError as e:
             self.logger.warning(f"⚠️ Reporting not available: {e}")
             artifacts['reports'] = ['summary_report.pdf']
-        except Exception as e:
+        except (OSError, IOError, PermissionError) as e:
             self.logger.error(f"❌ Reporting failed: {e}")
+            tprint(f"❌ Reporting failed: {e}")
+            artifacts['reports'] = ['summary_report.pdf']
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in reporting: {e}")
+            tprint(f"❌ Unexpected error in reporting: {e}")
             artifacts['reports'] = ['summary_report.pdf']
         
         # Log completion with emojis and artifact paths
@@ -1043,8 +1075,9 @@ class BacktestingSubPipeline:
                     self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
                     break
                     
-            except Exception as e:
+            except (ValueError, AttributeError, RuntimeError) as e:
                 self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
+                tprint(f"❌ Error executing {pipeline_name}: {e}")
                 # Create a failed result
                 failed_result = SubPipelineResult(
                     sub_pipeline_name=pipeline_name,
@@ -1053,6 +1086,20 @@ class BacktestingSubPipeline:
                     end_time=datetime.now(),
                     duration_seconds=0.0,
                     error_message=str(e)
+                )
+                results.append(failed_result)
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Unexpected error executing {pipeline_name}: {e}")
+                tprint(f"❌ Unexpected error executing {pipeline_name}: {e}")
+                # Create a failed result
+                failed_result = SubPipelineResult(
+                    sub_pipeline_name=pipeline_name,
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    duration_seconds=0.0,
+                    error_message=f"Unexpected error: {str(e)}"
                 )
                 results.append(failed_result)
                 break

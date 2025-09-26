@@ -160,10 +160,16 @@ class MetaLabelingSystem:
 
             return features
 
+        except (ValueError, AttributeError, KeyError) as e:
+            self.logger.exception(
+                f"Unexpected error in pattern feature calculation: {e}",
+            )
+            tprint(f"❌ Unexpected error in pattern feature calculation: {e}")
         except Exception as e:
             self.logger.exception(
                 f"Unexpected error in pattern feature calculation: {e}",
             )
+            tprint(f"❌ Unexpected error in pattern feature calculation: {e}")
             return {}
 
     def _calculate_technical_indicators(self, data: pd.DataFrame) -> dict[str, float]:
@@ -238,8 +244,13 @@ class MetaLabelingSystem:
 
             return features
 
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"Error calculating technical indicators: {e}")
+            tprint(f"❌ Error calculating technical indicators: {e}")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating technical indicators: {e}")
+            tprint(f"❌ Unexpected error calculating technical indicators: {e}")
             return {}
 
     def _calculate_volume_features(self, data: pd.DataFrame) -> dict[str, float]:
@@ -279,8 +290,13 @@ class MetaLabelingSystem:
 
             return features
 
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"Error calculating volume features: {e}")
+            tprint(f"❌ Error calculating volume features: {e}")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Unexpected error calculating volume features: {e}")
+            tprint(f"❌ Unexpected error calculating volume features: {e}")
             return {}
 
     def _calculate_price_action_patterns(self, data: pd.DataFrame) -> dict[str, float]:

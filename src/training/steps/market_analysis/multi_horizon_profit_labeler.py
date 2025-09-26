@@ -1522,157 +1522,250 @@ class MultiHorizonProfitLabeler:
         # Ensure result stays within reasonable bounds
         return max(0.15, min(1.0, adjusted_quality))
     
-    def _calculate_composite_scores(self, probability_scores: Dict[str, float], 
-                                  sample_labels: Dict[str, float]) -> Dict[str, float]:
+    def _calculate_composite_scores(
+        self,
+        probability_scores: Dict[str, float],
+        sample_labels: Dict[str, float],
+    ) -> Dict[str, float]:
         """Calculate bi-directional composite opportunity scores."""
-        composite_scores = {}
-        
-        # Separate long and short probability scores
-        long_scores = {k: v for k, v in probability_scores.items() if '_long' in k}
-        short_scores = {k: v for k, v in probability_scores.items() if '_short' in k}
-        
-        # DEBUG: Log what we found
-        if len(probability_scores) > 0:
-            sample_keys = list(probability_scores.keys())[:3]
-            self.logger.debug(f"🔍 Sample probability_scores keys: {sample_keys}")
-            self.logger.debug(f"🔍 Found {len(long_scores)} long scores, {len(short_scores)} short scores")
-        
-        # LONG opportunity scores
-        for horizon_name in self.config.time_horizons.keys():
-            long_horizon_probs = [prob for key, prob in long_scores.items() 
-                                if key.endswith(f'_{horizon_name}_long')]
-            if long_horizon_probs:
-                composite_scores[f'long_{horizon_name}_opportunity'] = np.mean(long_horizon_probs)
-        
-        if long_scores:
-            long_avg = np.mean(list(long_scores.values()))
-            composite_scores['long_overall_opportunity'] = long_avg
-            self.logger.info(f"✅ Created long_overall_opportunity: {long_avg:.4f}")
-        
-        # SHORT opportunity scores  
-        for horizon_name in self.config.time_horizons.keys():
-            short_horizon_probs = [prob for key, prob in short_scores.items() 
-                                 if key.endswith(f'_{horizon_name}_short')]
-            if short_horizon_probs:
-                composite_scores[f'short_{horizon_name}_opportunity'] = np.mean(short_horizon_probs)
-        
-        if short_scores:
-            short_avg = np.mean(list(short_scores.values()))
-            composite_scores['short_overall_opportunity'] = short_avg
-            self.logger.info(f"✅ Created short_overall_opportunity: {short_avg:.4f}")
-        
-        # BACKWARD COMPATIBILITY: Original scores (long-biased)
-        for horizon_name in self.config.time_horizons.keys():
-            composite_scores[f'{horizon_name}_opportunity'] = composite_scores.get(f'long_{horizon_name}_opportunity', 0.0)
-        composite_scores['overall_opportunity'] = composite_scores.get('long_overall_opportunity', 0.0)
-        
-        # High-leverage adjusted score (bi-directional)
-        if self.config.leverage_aware:
-            leverage_weights = {
-                'micro': 0.4, 'small': 0.3, 'medium': 0.2, 'good': 0.1
-            }
-            
-            # Calculate for both directions
-            for direction, dir_scores in [('long', long_scores), ('short', short_scores)]:
-                weighted_score = 0.0
-                total_weight = 0.0
-                
-                for target_name in self.config.profit_targets.keys():
-                    weight = leverage_weights.get(target_name, 0.1)
-                    target_probs = [prob for key, prob in dir_scores.items() 
-                                   if key.startswith(f'{target_name}_')]
-                    if target_probs:
-                        weighted_score += np.mean(target_probs) * weight
-                        total_weight += weight
-                
-                if total_weight > 0:
-                    if direction == 'long':
-                        composite_scores['leverage_adjusted_score'] = weighted_score / total_weight  # Backward compatibility
-                    composite_scores[f'{direction}_leverage_adjusted_score'] = weighted_score / total_weight
-        
-        # Best target identification
+
+        long_scores, short_scores = self._split_directional_probabilities(probability_scores)
+
+        composite_scores: Dict[str, float] = {}
+        composite_scores.update(
+            self._build_directional_opportunities(long_scores, short_scores)
+        )
+        composite_scores.update(
+            self._calculate_leverage_adjusted_scores(long_scores, short_scores)
+        )
+        composite_scores.update(
+            self._summarise_label_statistics(probability_scores, sample_labels)
+        )
+        composite_scores.update(
+            self._calculate_directional_metrics(composite_scores)
+        )
+
+        return self._normalize_composite_scores(composite_scores)
+
+    def _split_directional_probabilities(
+        self, probability_scores: Dict[str, float]
+    ) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """Split raw probability scores into long and short groupings."""
+
+        long_scores = {key: value for key, value in probability_scores.items() if "_long" in key}
+        short_scores = {key: value for key, value in probability_scores.items() if "_short" in key}
+
         if probability_scores:
-            best_key = max(probability_scores.keys(), key=lambda k: probability_scores[k])
-            composite_scores['best_target_prob'] = probability_scores[best_key]
-            composite_scores['best_target_name'] = hash(best_key) % 1000  # Simple encoding
-        
-        # Average metrics
-        time_values = [v for k, v in sample_labels.items() if k.endswith('_time_to_hit') and v >= 0]
-        adverse_values = [v for k, v in sample_labels.items() if k.endswith('_max_adverse')]
-        net_profit_values = [v for k, v in sample_labels.items() if k.endswith('_net_profit')]
-        
-        composite_scores['avg_time_to_target'] = np.mean(time_values) if time_values else -1
-        composite_scores['avg_max_adverse'] = np.mean(adverse_values) if adverse_values else 0
-        composite_scores['net_profitability_score'] = np.mean([1 if p > 0 else 0 for p in net_profit_values])
-        
-        # NEW: Reversal capture score (for capturing small reversals)
-        composite_scores['reversal_capture_score'] = self._calculate_reversal_capture_score(
-            probability_scores, sample_labels
+            sample_keys = list(probability_scores.keys())[:3]
+            self.logger.debug("🔍 Sample probability_scores keys: %s", sample_keys)
+            self.logger.debug(
+                "🔍 Found %s long scores, %s short scores",
+                len(long_scores),
+                len(short_scores),
+            )
+
+        return long_scores, short_scores
+
+    def _build_directional_opportunities(
+        self,
+        long_scores: Dict[str, float],
+        short_scores: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Aggregate per-horizon opportunity scores for long and short signals."""
+
+        composite_scores: Dict[str, float] = {}
+        horizon_names = list(self.config.time_horizons.keys())
+
+        for horizon_name in horizon_names:
+            long_horizon_probs = [
+                prob for key, prob in long_scores.items() if key.endswith(f"_{horizon_name}_long")
+            ]
+            if long_horizon_probs:
+                composite_scores[f"long_{horizon_name}_opportunity"] = float(np.mean(long_horizon_probs))
+
+            short_horizon_probs = [
+                prob for key, prob in short_scores.items() if key.endswith(f"_{horizon_name}_short")
+            ]
+            if short_horizon_probs:
+                composite_scores[f"short_{horizon_name}_opportunity"] = float(np.mean(short_horizon_probs))
+
+        if long_scores:
+            long_avg = float(np.mean(list(long_scores.values())))
+            composite_scores["long_overall_opportunity"] = long_avg
+            self.logger.info("✅ Created long_overall_opportunity: %.4f", long_avg)
+
+        if short_scores:
+            short_avg = float(np.mean(list(short_scores.values())))
+            composite_scores["short_overall_opportunity"] = short_avg
+            self.logger.info("✅ Created short_overall_opportunity: %.4f", short_avg)
+
+        for horizon_name in horizon_names:
+            composite_scores[f"{horizon_name}_opportunity"] = composite_scores.get(
+                f"long_{horizon_name}_opportunity",
+                0.0,
+            )
+        composite_scores["overall_opportunity"] = composite_scores.get(
+            "long_overall_opportunity",
+            0.0,
         )
-        
-        # NEW: Optimal reassessment frequency (in minutes)
-        composite_scores['reassessment_frequency'] = self._calculate_optimal_reassessment_frequency(
-            time_values, probability_scores
+
+        return composite_scores
+
+    def _calculate_leverage_adjusted_scores(
+        self,
+        long_scores: Dict[str, float],
+        short_scores: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Compute leverage-aware opportunity scores for both trade directions."""
+
+        if not self.config.leverage_aware:
+            return {}
+
+        leverage_weights = {
+            "micro": 0.4,
+            "small": 0.3,
+            "medium": 0.2,
+            "good": 0.1,
+        }
+
+        def _weighted_average(direction_scores: Dict[str, float]) -> Optional[float]:
+            weighted_score = 0.0
+            total_weight = 0.0
+            for target_name in self.config.profit_targets.keys():
+                weight = leverage_weights.get(target_name, 0.1)
+                target_probs = [
+                    prob
+                    for key, prob in direction_scores.items()
+                    if key.startswith(f"{target_name}_")
+                ]
+                if target_probs:
+                    weighted_score += float(np.mean(target_probs)) * weight
+                    total_weight += weight
+            if total_weight <= 0:
+                return None
+            return weighted_score / total_weight
+
+        composite_scores: Dict[str, float] = {}
+        for direction, scores in (("long", long_scores), ("short", short_scores)):
+            averaged = _weighted_average(scores)
+            if averaged is None:
+                continue
+            composite_scores[f"{direction}_leverage_adjusted_score"] = averaged
+            if direction == "long":
+                composite_scores["leverage_adjusted_score"] = averaged
+
+        return composite_scores
+
+    def _summarise_label_statistics(
+        self,
+        probability_scores: Dict[str, float],
+        sample_labels: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Derive summary statistics from probability and label dictionaries."""
+
+        composite_scores: Dict[str, float] = {}
+
+        if probability_scores:
+            best_key = max(probability_scores, key=probability_scores.__getitem__)
+            composite_scores["best_target_prob"] = probability_scores[best_key]
+            composite_scores["best_target_name"] = hash(best_key) % 1000
+
+        time_values = [
+            value
+            for key, value in sample_labels.items()
+            if key.endswith("_time_to_hit") and value >= 0
+        ]
+        adverse_values = [
+            value for key, value in sample_labels.items() if key.endswith("_max_adverse")
+        ]
+        net_profit_values = [
+            value for key, value in sample_labels.items() if key.endswith("_net_profit")
+        ]
+
+        composite_scores["avg_time_to_target"] = (
+            float(np.mean(time_values)) if time_values else -1
         )
-        
-        # ENHANCED: Directional analysis with improved logic
-        long_avg = composite_scores.get('long_overall_opportunity', 0.0)
-        short_avg = composite_scores.get('short_overall_opportunity', 0.0)
-        
-        # Calculate directional strength for each horizon
-        long_immediate = composite_scores.get('long_immediate_opportunity', 0.0)
-        long_short_term = composite_scores.get('long_short_opportunity', 0.0)
-        short_immediate = composite_scores.get('short_immediate_opportunity', 0.0)
-        short_short_term = composite_scores.get('short_short_opportunity', 0.0)
-        
-        # Weighted directional score (immediate gets higher weight for short-term trading)
+        composite_scores["avg_max_adverse"] = (
+            float(np.mean(adverse_values)) if adverse_values else 0
+        )
+        if net_profit_values:
+            profitability = np.mean([1 if profit > 0 else 0 for profit in net_profit_values])
+        else:
+            profitability = 0.0
+        composite_scores["net_profitability_score"] = float(profitability)
+
+        composite_scores["reversal_capture_score"] = self._calculate_reversal_capture_score(
+            probability_scores,
+            sample_labels,
+        )
+        composite_scores["reassessment_frequency"] = self._calculate_optimal_reassessment_frequency(
+            time_values,
+            probability_scores,
+        )
+
+        return composite_scores
+
+    def _calculate_directional_metrics(
+        self, composite_scores: Dict[str, float]
+    ) -> Dict[str, float]:
+        """Derive directionality statistics from composite opportunity scores."""
+
+        long_avg = composite_scores.get("long_overall_opportunity", 0.0)
+        short_avg = composite_scores.get("short_overall_opportunity", 0.0)
+
+        long_immediate = composite_scores.get("long_immediate_opportunity", 0.0)
+        long_short_term = composite_scores.get("long_short_opportunity", 0.0)
+        short_immediate = composite_scores.get("short_immediate_opportunity", 0.0)
+        short_short_term = composite_scores.get("short_short_opportunity", 0.0)
+
         long_weighted = (long_immediate * 0.7) + (long_short_term * 0.3)
         short_weighted = (short_immediate * 0.7) + (short_short_term * 0.3)
-        
-        # Determine directional bias with adaptive threshold
-        confidence_threshold = max(0.03, min(0.10, (long_avg + short_avg) * 0.1))  # Dynamic threshold
-        
+
+        confidence_threshold = max(0.03, min(0.10, (long_avg + short_avg) * 0.1))
+
         if long_weighted > short_weighted + confidence_threshold:
-            composite_scores['directional_bias'] = 1.0  # Long bias
-            composite_scores['best_direction'] = 1.0
+            directional_bias = 1.0
+            best_direction = 1.0
         elif short_weighted > long_weighted + confidence_threshold:
-            composite_scores['directional_bias'] = -1.0  # Short bias
-            composite_scores['best_direction'] = -1.0
+            directional_bias = -1.0
+            best_direction = -1.0
         else:
-            composite_scores['directional_bias'] = 0.0  # Neutral
-            composite_scores['best_direction'] = 0.0
-        
-        # Enhanced directional confidence and asymmetry
-        composite_scores['directional_confidence'] = abs(long_weighted - short_weighted)
-        composite_scores['opportunity_asymmetry'] = long_weighted - short_weighted  # Positive = long bias, Negative = short bias
-        
-        # NEW: Directional consistency score (how consistent the directional bias is across horizons)
-        long_consistency = 1.0 - abs(long_immediate - long_short_term) if (long_immediate + long_short_term) > 0 else 0.0
-        short_consistency = 1.0 - abs(short_immediate - short_short_term) if (short_immediate + short_short_term) > 0 else 0.0
-        composite_scores['long_directional_consistency'] = max(0.0, long_consistency)
-        composite_scores['short_directional_consistency'] = max(0.0, short_consistency)
-        
-        # NEW: Overall directional strength (combines opportunity with consistency)
-        composite_scores['long_directional_strength'] = long_weighted * composite_scores['long_directional_consistency']
-        composite_scores['short_directional_strength'] = short_weighted * composite_scores['short_directional_consistency']
-        
-        # FIXED: Directional momentum indicator with division by zero protection
-        composite_scores['long_momentum'] = safe_divide(
-            (long_immediate - long_short_term), 
-            long_short_term, 
-            0.0
+            directional_bias = 0.0
+            best_direction = 0.0
+
+        long_consistency = (
+            1.0 - abs(long_immediate - long_short_term)
+            if (long_immediate + long_short_term) > 0
+            else 0.0
         )
-        
-        composite_scores['short_momentum'] = safe_divide(
-            (short_immediate - short_short_term), 
-            short_short_term, 
-            0.0
+        short_consistency = (
+            1.0 - abs(short_immediate - short_short_term)
+            if (short_immediate + short_short_term) > 0
+            else 0.0
         )
-        
-        # CRITICAL FIX: Normalize composite scores to eliminate negative values
-        composite_scores = self._normalize_composite_scores(composite_scores)
-        
-        return composite_scores
+
+        metrics = {
+            "directional_bias": directional_bias,
+            "best_direction": best_direction,
+            "directional_confidence": abs(long_weighted - short_weighted),
+            "opportunity_asymmetry": long_weighted - short_weighted,
+            "long_directional_consistency": max(0.0, long_consistency),
+            "short_directional_consistency": max(0.0, short_consistency),
+            "long_directional_strength": long_weighted * max(0.0, long_consistency),
+            "short_directional_strength": short_weighted * max(0.0, short_consistency),
+            "long_momentum": safe_divide(
+                (long_immediate - long_short_term),
+                long_short_term,
+                0.0,
+            ),
+            "short_momentum": safe_divide(
+                (short_immediate - short_short_term),
+                short_short_term,
+                0.0,
+            ),
+        }
+
+        return metrics
     
     def _log_labeling_statistics(self, labeled_data: pd.DataFrame, valid_samples: int):
         """Log labeling statistics with enhanced directional analysis."""

@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 import functools
 import time
-from typing import Dict, List, Optional, Any, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Any, Tuple
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -41,6 +41,25 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 # Optimized imports using common utilities
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
+from .dependency_registry import get_optional_dependency, register_optional_dependency
+
+if TYPE_CHECKING:  # pragma: no cover - imported for type checkers only
+    from src.research.profit_labeling.dynamic_target_optimizer import (
+        JointTargetHorizonOptimizer,
+        DynamicOptimizationConfig,
+        OptimizationMethod,
+        OptimizationObjective,
+    )
+    from src.research.profit_labeling.heuristic_analyzer import (
+        HeuristicAnalyzer,
+        HeuristicAnalysisConfig,
+    )
+    from src.research.profit_labeling.labeling_validator import (
+        LabelingValidator,
+        ValidationConfig,
+    )
+
+MODULE_LOGGER = logging.getLogger(__name__)
 
 class ExecutionMode(Enum):
     """Enhanced execution modes with configurable parameters."""
@@ -62,6 +81,10 @@ class DataFilterConfig:
     outlier_threshold: float = 3.0  # Standard deviations
     preserve_recent_data: bool = True
     memory_efficient: bool = True
+
+class DataFilteringError(RuntimeError):
+    """Raised when enhanced filtering fails to produce a valid dataset."""
+
 
 class DataFilteringManager:
     """Enhanced data filtering manager with quality validation."""
@@ -127,9 +150,9 @@ class DataFilteringManager:
 
             return filtered_data
 
-        except Exception as e:
-            self.logger.error(f"❌ Error in data filtering: {e}")
-            return data  # Return original data on error
+        except Exception as exc:
+            self.logger.exception("❌ Error in data filtering")
+            raise DataFilteringError("Data filtering failed") from exc
 
     def _assess_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Assess data quality with comprehensive metrics."""
@@ -612,31 +635,52 @@ def safe_divide(numerator, denominator, default=0.0):
 
 # Import the multi-horizon labeler
 from .multi_horizon_profit_labeler import (
-    MultiHorizonProfitLabeler, 
+    MultiHorizonProfitLabeler,
     MultiHorizonConfig,
-    apply_multi_horizon_labeling
+    apply_multi_horizon_labeling,
 )
 
-# Import optimization components
-try:
+# Import optimization components lazily and register their availability for audit tracking
+try:  # pragma: no cover - exercised indirectly during runtime
     from src.research.profit_labeling.dynamic_target_optimizer import (
         JointTargetHorizonOptimizer,
         DynamicOptimizationConfig,
         OptimizationMethod,
-        OptimizationObjective
+        OptimizationObjective,
     )
     from src.research.profit_labeling.heuristic_analyzer import (
         HeuristicAnalyzer,
-        HeuristicAnalysisConfig
+        HeuristicAnalysisConfig,
     )
     from src.research.profit_labeling.labeling_validator import (
         LabelingValidator,
-        ValidationConfig
+        ValidationConfig,
     )
-    OPTIMIZATION_AVAILABLE = True
-except ImportError as e:
-    OPTIMIZATION_AVAILABLE = False
-    print(f"⚠️ Optimization components not available: {e}")
+except ImportError as exc:  # pragma: no cover - handled during runtime when extras missing
+    register_optional_dependency(
+        "profit_labeling_research_components",
+        False,
+        error=exc,
+        message="Install the research extras to enable automatic timeframe optimisation",
+    )
+    MODULE_LOGGER.warning(
+        "Optional profit labeling components are unavailable – automatic timeframe optimisation disabled: %s",
+        exc,
+    )
+    JointTargetHorizonOptimizer = DynamicOptimizationConfig = None  # type: ignore[assignment]
+    OptimizationMethod = OptimizationObjective = None  # type: ignore[assignment]
+    HeuristicAnalyzer = HeuristicAnalysisConfig = None  # type: ignore[assignment]
+    LabelingValidator = ValidationConfig = None  # type: ignore[assignment]
+else:
+    register_optional_dependency(
+        "profit_labeling_research_components",
+        True,
+        message="Profit labeling research toolkit available",
+    )
+
+OPTIMIZATION_AVAILABLE = get_optional_dependency(
+    "profit_labeling_research_components"
+).available
 
 class MultiHorizonSubPipelineAdapter:
     """
@@ -697,8 +741,8 @@ class MultiHorizonSubPipelineAdapter:
             
             self.logger.info('✅ Optimization components initialized successfully')
             
-        except Exception as e:
-            self.logger.error(f'❌ Failed to initialize optimization components: {e}')
+        except Exception:
+            self.logger.exception('❌ Failed to initialize optimization components')
             self.optimization_enabled = False
 
     def _optimize_timeframes_automatically(self, data: pd.DataFrame) -> MultiHorizonConfig:
@@ -937,8 +981,11 @@ class MultiHorizonSubPipelineAdapter:
                 else:
                     self.logger.info(f'📊 Data quality sufficient - using original data: {original_size:,} rows')
 
-            except Exception as e:
-                self.logger.warning(f'⚠️ Enhanced filtering failed, using original approach: {e}')
+            except DataFilteringError as exc:
+                self.logger.warning(
+                    '⚠️ Enhanced filtering failed, using original approach: %s',
+                    exc,
+                )
                 # Fallback to original filtering logic
             if mode and mode.lower() == 'light':
                 data = data.tail(14400).copy()

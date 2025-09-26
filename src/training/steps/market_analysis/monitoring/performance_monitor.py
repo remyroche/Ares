@@ -1,23 +1,22 @@
-from src.utils.tprint import tprint
+from collections import deque
+from copy import deepcopy
+from typing import Any, Callable, Deque, Dict, List, Optional
 
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-import numpy as np
+import asyncio
+import logging
+from datetime import datetime
+from functools import wraps
+
+from src.utils.comprehensive_function_logger import (
+    log_important_calls,
+    log_all_calls,
+)
+from src.utils.tprint import tprint
 
 """Performance Monitoring System.
 
 This module provides comprehensive performance monitoring for function calls.
 """
-import logging
-from datetime import datetime
-from functools import wraps
-from typing import Any, Callable, Dict, List
-
-from src.utils.comprehensive_function_logger import (
-    log_step_functions, log_important_calls, log_all_calls,
-    log_internal_call, log_step_progress, log_data_operation
-)
-
-import asyncio
 
 try:
     import psutil
@@ -25,27 +24,36 @@ try:
 except ImportError:
     psutil = None
 
+class PerformanceMonitorError(RuntimeError):
+    """Raised when the performance monitor fails to record metrics."""
+
+
 class PerformanceMonitor:
     """Comprehensive performance monitoring system for function calls."""
 
     @log_important_calls
-    def __init__(self, logger: Any = None):
+    def __init__(self, logger: Any = None, history_maxlen: int = 1000):
         # 🖨️ THOROUGH PRINTING: Performance Monitor Initialization
         tprint("🔧 INITIALIZING PERFORMANCE MONITOR")
         tprint(f"   📊 Logger provided: {logger is not None}")
-        
+
+        if history_maxlen <= 0:
+            raise ValueError("history_maxlen must be greater than zero")
+
         self.logger = logger or logging.getLogger(__name__)
-        self.performance_history: List[Dict[str, Any]] = []
+        self.history_maxlen = history_maxlen
+        self.performance_history: Deque[Dict[str, Any]] = deque(maxlen=history_maxlen)
         self.function_performance_stats: Dict[str, Dict[str, Any]] = {}
         self.performance_thresholds: Dict[str, float] = {}
-        self.memory_usage_history: List[Dict[str, Any]] = []
-        self.cpu_usage_history: List[Dict[str, Any]] = []
-        
+        self.memory_usage_history: Deque[Dict[str, Any]] = deque(maxlen=history_maxlen)
+        self.cpu_usage_history: Deque[Dict[str, Any]] = deque(maxlen=history_maxlen)
+
         tprint("   ✅ Performance history initialized")
         tprint("   ✅ Function performance stats initialized")
         tprint("   ✅ Performance thresholds initialized")
         tprint("   ✅ Memory usage history initialized")
         tprint("   ✅ CPU usage history initialized")
+        tprint(f"   📈 History max length set to {history_maxlen}")
         tprint("   🎉 Performance monitor initialization complete")
         
     def start_performance_monitoring(self, function_name: str, call_id: str) -> Dict[str, Any]:
@@ -78,14 +86,14 @@ class PerformanceMonitor:
             return performance_record
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to start performance monitoring: {e}")
-            return {}
+            self.logger.exception("❌ Failed to start performance monitoring: %s", e)
+            raise PerformanceMonitorError("Failed to start performance monitoring") from e
     
-    def end_performance_monitoring(self, performance_record: Dict[str, Any]) -> Dict[str, Any]:
+    def end_performance_monitoring(self, performance_record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """End performance monitoring and calculate metrics."""
         try:
             if not performance_record:
-                return {}
+                raise PerformanceMonitorError("Missing performance record")
             
             # Get final system metrics
             final_metrics = self._get_system_metrics()
@@ -130,14 +138,31 @@ class PerformanceMonitor:
             # Update function performance stats
             self._update_function_performance_stats(performance_record)
             
-            # Add to history
-            self.performance_history.append(performance_record)
-            
+            # Track historical resource usage snapshots
+            snapshot = deepcopy(performance_record)
+            self.performance_history.append(snapshot)
+
+            if final_metrics and 'memory_mb' in final_metrics:
+                self.memory_usage_history.append({
+                    'timestamp': performance_record['end_time'],
+                    'memory_mb': final_metrics['memory_mb'],
+                    'call_id': performance_record['call_id'],
+                    'function_name': performance_record['function_name'],
+                })
+
+            if final_metrics and 'cpu_percent' in final_metrics:
+                self.cpu_usage_history.append({
+                    'timestamp': performance_record['end_time'],
+                    'cpu_percent': final_metrics['cpu_percent'],
+                    'call_id': performance_record['call_id'],
+                    'function_name': performance_record['function_name'],
+                })
+
             return performance_record
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to end performance monitoring: {e}")
-            return performance_record
+            self.logger.exception("❌ Failed to end performance monitoring: %s", e)
+            raise PerformanceMonitorError("Failed to finalize performance monitoring") from e
 
     @log_all_calls
     def _get_system_metrics(self) -> Dict[str, Any]:
@@ -284,10 +309,10 @@ class PerformanceMonitor:
                     'total_execution_time': 0.0,
                     'total_memory_usage': 0.0,
                     'total_cpu_usage': 0.0,
-                    'execution_times': [],
-                    'memory_usages': [],
-                    'cpu_usages': [],
-                    'performance_scores': [],
+                    'execution_times': deque(maxlen=self.history_maxlen),
+                    'memory_usages': deque(maxlen=self.history_maxlen),
+                    'cpu_usages': deque(maxlen=self.history_maxlen),
+                    'performance_scores': deque(maxlen=self.history_maxlen),
                     'bottlenecks': {},
                     'optimization_suggestions': set()
                 }
@@ -312,7 +337,8 @@ class PerformanceMonitor:
                 stats['optimization_suggestions'].add(suggestion)
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to update function performance stats: {e}")
+            self.logger.exception("❌ Failed to update function performance stats: %s", e)
+            raise PerformanceMonitorError("Failed to update function performance stats") from e
     
     def generate_performance_report(self) -> Dict[str, Any]:
         """Generate comprehensive performance report."""
@@ -475,37 +501,47 @@ def performance_monitor(monitor: PerformanceMonitor):
         async def async_wrapper(*args, **kwargs):
             # Generate call ID
             call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            
+
             # Start performance monitoring
+            perf_record: Optional[Dict[str, Any]] = None
             perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            
+
             try:
                 result = await func(*args, **kwargs)
-                # End performance monitoring
+            except Exception:
+                try:
+                    monitor.end_performance_monitoring(perf_record)
+                except PerformanceMonitorError:
+                    monitor.logger.exception(
+                        "❌ Failed to finalize performance monitoring after exception for %s", call_id
+                    )
+                raise
+            else:
                 monitor.end_performance_monitoring(perf_record)
                 return result
-            except Exception as e:
-                # End performance monitoring even on error
-                monitor.end_performance_monitoring(perf_record)
-                raise
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             # Generate call ID
             call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            
+
             # Start performance monitoring
+            perf_record: Optional[Dict[str, Any]] = None
             perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            
+
             try:
                 result = func(*args, **kwargs)
-                # End performance monitoring
+            except Exception:
+                try:
+                    monitor.end_performance_monitoring(perf_record)
+                except PerformanceMonitorError:
+                    monitor.logger.exception(
+                        "❌ Failed to finalize performance monitoring after exception for %s", call_id
+                    )
+                raise
+            else:
                 monitor.end_performance_monitoring(perf_record)
                 return result
-            except Exception as e:
-                # End performance monitoring even on error
-                monitor.end_performance_monitoring(perf_record)
-                raise
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator

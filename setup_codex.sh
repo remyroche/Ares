@@ -6,10 +6,33 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REQ_FILE="${ROOT_DIR}/.codex-requirements.txt"
+VENV_PATH="${ROOT_DIR}/.venv"
+
+ensure_poetry() {
+    if command -v poetry >/dev/null 2>&1; then
+        return
+    fi
+
+    echo "📦 Poetry not found. Installing Poetry..."
+
+    # Prefer installing via pip because Codex environments already have Python available.
+    if python3 -m pip install --user --upgrade poetry >/dev/null 2>&1; then
+        export PATH="${HOME}/.local/bin:${PATH}"
+    else
+        echo "⚠️ pip installation failed. Using the official Poetry installer..."
+        curl -sSL https://install.python-poetry.org | python3 - --yes >/dev/null
+        export PATH="${HOME}/.local/bin:${PATH}"
+    fi
+
+    if ! command -v poetry >/dev/null 2>&1; then
+        echo "❌ Unable to install Poetry. Aborting." >&2
+        exit 1
+    fi
+}
 
 cleanup() {
-    rm -f "$REQ_FILE"
+    # Remove the temporary requirements file if it exists from older runs.
+    rm -f "${ROOT_DIR}/.codex-requirements.txt"
 }
 trap cleanup EXIT
 
@@ -18,58 +41,26 @@ echo "🚀 Setting up environment for ChatGPT Codex..."
 # Ensure we have an up-to-date pip that can handle modern wheels
 python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
 
-# If poetry is available, try exporting the main dependencies to a requirements file.
-if command -v poetry &> /dev/null; then
-    echo "📦 Exporting dependencies from poetry.lock via Poetry..."
-    if ! poetry export --without-hashes --format requirements.txt --output "$REQ_FILE"; then
-        echo "⚠️ Poetry export failed. Falling back to pyproject.toml parsing."
-    fi
+ensure_poetry
+
+# Ensure Poetry keeps the virtual environment inside the project for Codex
+export POETRY_VENV_IN_PROJECT="${POETRY_VENV_IN_PROJECT:-true}"
+export PYTHONPATH="${PYTHONPATH:-${ROOT_DIR}}"
+
+# Use the project's preferred Python if available
+if [[ -x "${VENV_PATH}/bin/python" ]]; then
+    echo "🔁 Re-using existing Poetry virtual environment..."
 else
-    echo "📦 Poetry not found. Generating requirements from pyproject.toml..."
+    echo "🛠️ Configuring Poetry environment..."
+    poetry env use "$(command -v python3)" >/dev/null 2>&1 || true
 fi
 
-if [[ ! -f "$REQ_FILE" || ! -s "$REQ_FILE" ]]; then
-    python3 - <<'PY'
-import sys
-from pathlib import Path
+# Install the dependencies specified in poetry.lock without development packages
+echo "📦 Installing project dependencies via Poetry..."
+poetry install --no-interaction --no-root --no-dev
 
-project_root = Path(__file__).resolve().parent
-pyproject_path = project_root / "pyproject.toml"
-
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:  # pragma: no cover - safety for 3.10 runners
-    import tomli as tomllib
-
-config = tomllib.loads(pyproject_path.read_text())
-deps = config.get("tool", {}).get("poetry", {}).get("dependencies", {})
-
-# Remove the python version specifier and keep the rest
-requirements = [
-    f"{name}{'' if name == 'python' else f'=={spec}' if spec.replace('.', '').isdigit() else f' {spec}'}"
-    for name, spec in deps.items()
-    if name.lower() != "python"
-]
-
-if not requirements:
-    sys.exit("No dependencies found in pyproject.toml")
-
-req_path = project_root / ".codex-requirements.txt"
-req_path.write_text("\n".join(requirements) + "\n")
-PY
-fi
-
-# Install the requirements captured above.
-if [[ -f "$REQ_FILE" ]]; then
-    echo "📦 Installing project dependencies..."
-    python3 -m pip install -r "$REQ_FILE"
-else
-    echo "❌ Failed to generate requirements file. Aborting." >&2
-    exit 1
-fi
-
-echo "🧪 Verifying key dependencies..."
-python3 - <<'PY'
+echo "🧪 Verifying key dependencies inside the Poetry environment..."
+poetry run python - <<'PY'
 import importlib
 
 deps = ["numpy", "pandas", "sklearn", "optuna", "xgboost", "lightgbm"]
@@ -91,3 +82,18 @@ print("🎉 Dependency verification completed")
 PY
 
 echo "✅ Codex environment setup completed successfully!"
+
+if [[ -f "${VENV_PATH}/bin/activate" ]]; then
+    cat <<'EOM'
+
+Next steps:
+  • Codex already uses this virtual environment for subsequent commands.
+  • If you open another shell locally, activate it with:
+      source .venv/bin/activate
+  • Or run project tools directly with:
+      poetry run python your_script.py
+  • Deactivate the manual shell session with:
+      deactivate
+
+EOM
+fi

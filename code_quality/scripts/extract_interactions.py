@@ -227,7 +227,7 @@ tprint()
 tprint("To create visual graphs:")
 tprint("1. Use matplotlib/seaborn for bar charts of function counts")
 tprint("2. Use networkx for dependency graphs")
-tprint("3. Use graphviz for call flow diagrams")
+tprint("3. Use networkx's layout algorithms for call flow diagrams")
 tprint()
 tprint("Example visualization code:")
 tprint("""

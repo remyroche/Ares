@@ -267,15 +267,14 @@ class DependencyGraphVisualizer(CodeVisualizer):
         
         fig, ax = plt.subplots(figsize=(16, 12))
         
-        # Try to create a hierarchical layout
-        try:
-            pos = nx.nx_agraph.graphviz_layout(self.graph, prog='dot')
-        except:
-            # Fallback to spring layout if graphviz not available
-            pos = nx.spring_layout(self.graph, k=3, iterations=50)
-        
-        # Calculate levels based on dependency depth
+        # Calculate levels based on dependency depth and build a hierarchical layout
         levels = self._calculate_dependency_levels()
+
+        if levels:
+            pos = self._build_hierarchical_layout(levels)
+        else:
+            pos = nx.spring_layout(self.graph, k=3, iterations=50)
+
         level_colors = self.create_color_map(list(range(max(levels.values()) + 1)) if levels else [0])
         
         node_colors = [level_colors[levels.get(node, 0)] for node in self.graph.nodes()]
@@ -353,8 +352,42 @@ class DependencyGraphVisualizer(CodeVisualizer):
         for node in self.graph.nodes():
             if node not in levels:
                 levels[node] = 0
-        
+
         return levels
+
+    def _build_hierarchical_layout(self, levels: Dict[str, int]) -> Dict[str, Tuple[float, float]]:
+        """Create deterministic hierarchical positions for each node."""
+        level_to_nodes: Dict[int, List[str]] = {}
+        for node, level in levels.items():
+            level_to_nodes.setdefault(level, []).append(node)
+
+        # Sort nodes inside each level for reproducibility
+        for nodes in level_to_nodes.values():
+            nodes.sort()
+
+        pos: Dict[str, Tuple[float, float]] = {}
+        max_level = max(level_to_nodes) if level_to_nodes else 0
+
+        for level in range(max_level + 1):
+            nodes = level_to_nodes.get(level, [])
+            if not nodes:
+                continue
+
+            # Spread nodes horizontally. Use numpy for consistent spacing.
+            if len(nodes) == 1:
+                x_positions = [0.0]
+            else:
+                x_positions = np.linspace(-1.0, 1.0, len(nodes))
+
+            y_position = -float(level)
+            for node, x in zip(nodes, x_positions):
+                pos[node] = (float(x), y_position)
+
+        # Ensure every node has a position (fallback to origin for isolated nodes)
+        for node in self.graph.nodes():
+            pos.setdefault(node, (0.0, 0.0))
+
+        return pos
     
     def _plot_dependency_stats(self, ax, in_degrees: Dict[str, int], 
                               out_degrees: Dict[str, int]):

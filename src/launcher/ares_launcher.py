@@ -5,11 +5,11 @@ Ares Launcher - Granular Sub-Pipeline Control
 
 This launcher provides granular control over training pipeline execution,
 allowing users to execute specific sub-pipelines at different stages with
-full, light, or blank execution modes.
+full, light, blank, or blank_mock execution modes.
 
 Key Features:
 - Granular sub-pipeline control
-- Multiple execution modes (full, light, blank)
+- Multiple execution modes (full, light, blank, blank_mock)
 - Stage-specific execution
 - Sub-pipeline-specific execution
 - Comprehensive monitoring and reporting
@@ -30,6 +30,10 @@ from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
+
+MOCK_MODE_ENV_VAR = "ARES_MOCK_DATA_MODE"
+MOCK_MODE_DIR_ENV_VAR = "ARES_MOCK_DATA_DIR"
+MOCK_DATA_DIRECTORY = "historical_data_mock"
 
 # Add the project root to the Python path BEFORE any imports
 project_root = Path(__file__).parent.parent.parent
@@ -76,6 +80,7 @@ class LauncherMode(Enum):
     FULL = "full"          # Complete pipeline execution
     LIGHT = "light"        # Lightweight execution
     BLANK = "blank"        # Minimal execution for testing
+    BLANK_MOCK = "blank_mock"  # Minimal execution using mock historical data
     STAGE = "stage"        # Execute specific stage
     SUB_PIPELINE = "sub_pipeline"  # Execute specific sub-pipeline
 
@@ -217,7 +222,7 @@ class AresLauncher:
         Execute the training pipeline with granular control and enhanced error handling.
         
         Args:
-            mode: Launcher execution mode (full, light, blank, stage, sub_pipeline)
+            mode: Launcher execution mode (full, light, blank, blank_mock, stage, sub_pipeline)
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Data timeframe
@@ -230,9 +235,26 @@ class AresLauncher:
         Returns:
             MainPipelineResult with execution details
         """
+        mock_mode_active = mode == LauncherMode.BLANK_MOCK
+        original_env: Dict[str, Optional[str]] = {}
+
+        if mock_mode_active:
+            original_env = {
+                MOCK_MODE_ENV_VAR: os.environ.get(MOCK_MODE_ENV_VAR),
+                MOCK_MODE_DIR_ENV_VAR: os.environ.get(MOCK_MODE_DIR_ENV_VAR)
+            }
+            os.environ[MOCK_MODE_ENV_VAR] = "1"
+            os.environ[MOCK_MODE_DIR_ENV_VAR] = MOCK_DATA_DIRECTORY
+            data_dir = MOCK_DATA_DIRECTORY
+
         try:
             tprint("🚀 [EXECUTE_PIPELINE] Starting pipeline execution...")
-            
+
+            if mock_mode_active:
+                tprint_info(
+                    "🧪 [EXECUTE_PIPELINE] Blank mock mode enabled - using historical_data_mock directory"
+                )
+
             # Validate inputs with math validation utilities
             if self.utils_available:
                 try:
@@ -298,7 +320,18 @@ class AresLauncher:
                 duration_seconds=0.0,
                 error_message=str(e)
             )
-    
+        finally:
+            if mock_mode_active:
+                if original_env.get(MOCK_MODE_ENV_VAR) is None:
+                    os.environ.pop(MOCK_MODE_ENV_VAR, None)
+                else:
+                    os.environ[MOCK_MODE_ENV_VAR] = original_env[MOCK_MODE_ENV_VAR]  # type: ignore[index]
+
+                if original_env.get(MOCK_MODE_DIR_ENV_VAR) is None:
+                    os.environ.pop(MOCK_MODE_DIR_ENV_VAR, None)
+                else:
+                    os.environ[MOCK_MODE_DIR_ENV_VAR] = original_env[MOCK_MODE_DIR_ENV_VAR]  # type: ignore[index]
+
     def _create_config(
         self,
         mode: LauncherMode,
@@ -347,6 +380,10 @@ class AresLauncher:
             config = get_light_pipeline_config(**filtered_config)
         elif mode == LauncherMode.BLANK:
             tprint("⚙️ [CREATE_CONFIG] Using BLANK pipeline configuration")
+            config = get_blank_pipeline_config(**filtered_config)
+        elif mode == LauncherMode.BLANK_MOCK:
+            tprint("⚙️ [CREATE_CONFIG] Using BLANK_MOCK pipeline configuration")
+            filtered_config['data_dir'] = MOCK_DATA_DIRECTORY
             config = get_blank_pipeline_config(**filtered_config)
         elif mode == LauncherMode.STAGE and stage:
             tprint(f"⚙️ [CREATE_CONFIG] Creating STAGE configuration for: {stage.value}")
@@ -1139,12 +1176,15 @@ Examples:
 
   # Blank mode for testing (180 days, 10% intensity)
   python ares_launcher.py --mode blank --symbol ETHUSDT
+
+  # Blank mock mode for testing with mock historical data
+  python ares_launcher.py --mode blank_mock --symbol ETHUSDT
         """
     )
     
     parser.add_argument(
         '--mode', 
-        choices=['full', 'light', 'blank', 'stage', 'sub_pipeline'],
+        choices=['full', 'light', 'blank', 'blank_mock', 'stage', 'sub_pipeline'],
         default='full',
         help='Launcher execution mode (default: full)'
     )
@@ -1266,6 +1306,7 @@ async def main():
         'full': LauncherMode.FULL,
         'light': LauncherMode.LIGHT,
         'blank': LauncherMode.BLANK,
+        'blank_mock': LauncherMode.BLANK_MOCK,
         'stage': LauncherMode.STAGE,
         'sub_pipeline': LauncherMode.SUB_PIPELINE
     }

@@ -25,13 +25,26 @@ class KlinesParquetManager:
         Args:
             data_dir: Base directory for data storage
         """
-        self.data_dir = Path(data_dir)
+        mock_mode_flag = os.getenv("ARES_MOCK_DATA_MODE", "0").lower()
+        mock_mode_active = mock_mode_flag in {"1", "true", "yes"}
+        mock_data_dir = os.getenv("ARES_MOCK_DATA_DIR", "historical_data_mock")
+
+        selected_data_dir = data_dir
+        if mock_mode_active and (data_dir is None or str(data_dir) == "historical_data"):
+            selected_data_dir = mock_data_dir
+
+        self.data_dir = Path(selected_data_dir)
+        self.logger = system_logger.getChild("KlinesParquetManager")
+        if mock_mode_active and selected_data_dir != data_dir:
+            self.logger.info(
+                f"🧪 Mock data mode active - using data directory: {self.data_dir}"
+            )
+
         self.raw_data_dir = self.data_dir / "binance"
         self.processed_data_dir = self.data_dir / "binance"
-        self.logger = system_logger.getChild("KlinesParquetManager")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
-        
+
         # Create directories
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)

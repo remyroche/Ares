@@ -8,7 +8,7 @@ for matrix operations with backwards compatibility.
 import logging
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Sequence
 from collections import deque
 from dataclasses import dataclass, field
 from functools import wraps
@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # Comprehensive Error Handling Framework
 class OptimizationError(Exception):
     """Base exception for optimization-related errors."""
+
+    severity: str = "error"
+    retryable: bool = False
+
     def __init__(self, message: str, operation: str = None, details: Dict[str, Any] = None):
         super().__init__(message)
         self.operation = operation
@@ -31,28 +35,124 @@ class OptimizationError(Exception):
             'operation': self.operation,
             'details': self.details,
             'timestamp': self.timestamp,
+            'severity': self.severity,
+            'retryable': self.retryable,
             'traceback': traceback.format_exc()
         }
 
+    def with_detail(self, key: str, value: Any) -> "OptimizationError":
+        """Attach additional detail metadata to the error."""
+        self.details[key] = value
+        return self
+
+
 class GPUError(OptimizationError):
     """GPU-related errors."""
-    pass
+
+    severity = "critical"
+    retryable = False
+
+    def __init__(
+        self,
+        message: str,
+        operation: str = None,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        device: Optional[str] = None,
+        driver_version: Optional[str] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if device:
+            merged_details.setdefault('device', device)
+        if driver_version:
+            merged_details.setdefault('driver_version', driver_version)
+        super().__init__(message, operation, merged_details)
+
 
 class MemoryError(OptimizationError):
     """Memory-related errors."""
-    pass
+
+    severity = "critical"
+    retryable = True
+
+    def __init__(
+        self,
+        message: str,
+        operation: str = None,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        available_memory: Optional[int] = None,
+        required_memory: Optional[int] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if available_memory is not None:
+            merged_details.setdefault('available_memory', available_memory)
+        if required_memory is not None:
+            merged_details.setdefault('required_memory', required_memory)
+        super().__init__(message, operation, merged_details)
+
 
 class MatrixOperationError(OptimizationError):
     """Matrix operation errors."""
-    pass
+
+    severity = "error"
+    retryable = False
+
+    def __init__(
+        self,
+        message: str,
+        operation: str = None,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        matrix_shape: Optional[Tuple[int, int]] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if matrix_shape:
+            merged_details.setdefault('matrix_shape', matrix_shape)
+        super().__init__(message, operation, merged_details)
+
 
 class DataProcessingError(OptimizationError):
     """Data processing errors."""
-    pass
+
+    severity = "warning"
+    retryable = True
+
+    def __init__(
+        self,
+        message: str,
+        operation: str = None,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        dataset_shape: Optional[Tuple[int, int]] = None,
+        failing_column: Optional[str] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if dataset_shape:
+            merged_details.setdefault('dataset_shape', dataset_shape)
+        if failing_column:
+            merged_details.setdefault('failing_column', failing_column)
+        super().__init__(message, operation, merged_details)
+
 
 class ConfigurationError(OptimizationError):
     """Configuration-related errors."""
-    pass
+
+    severity = "error"
+    retryable = False
+
+    def __init__(
+        self,
+        message: str,
+        operation: str = None,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        invalid_keys: Optional[Sequence[str]] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if invalid_keys:
+            merged_details.setdefault('invalid_keys', list(invalid_keys))
+        super().__init__(message, operation, merged_details)
 
 @dataclass
 class ErrorRecoveryResult:
@@ -185,8 +285,11 @@ class ErrorHandler:
                     torch.cuda.synchronize()
                 elif torch.backends.mps.is_available():
                     torch.mps.empty_cache()
-            except ImportError:
-                pass
+            except ImportError as torch_error:
+                self.logger.debug(
+                    "Torch not available for GPU memory recovery: %s",
+                    torch_error,
+                )
 
             # Try with smaller batch size if available
             if 'batch_size' in context:
@@ -429,8 +532,11 @@ def with_memory_optimization(operation_name: str = None, max_retries: int = 3):
                                 torch.cuda.empty_cache()
                             elif torch.backends.mps.is_available():
                                 torch.mps.empty_cache()
-                        except ImportError:
-                            pass
+                        except ImportError as torch_error:
+                            logger.debug(
+                                "Torch not available for retry cache cleanup: %s",
+                                torch_error,
+                            )
 
                         # Reduce batch size if specified
                         if 'batch_size' in kwargs:

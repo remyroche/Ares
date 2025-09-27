@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Callable
 import json
 
+
+LOGGER = logging.getLogger(__name__)
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -136,7 +139,7 @@ class SafeStreamHandler(logging.StreamHandler):
             # This prevents crashes during module initialization when stdout is broken
             if hasattr(e, 'errno') and e.errno == 32:  # Broken pipe
                 # Silently ignore broken pipe errors during logging
-                pass
+                LOGGER.debug("Suppressed broken pipe while emitting log record", exc_info=True)
             else:
                 # Re-raise other OSError exceptions
                 raise

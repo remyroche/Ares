@@ -24,7 +24,7 @@ class BaseCommandHandler(ABC):
     @abstractmethod
     def execute(self, **kwargs) -> bool:
         """Execute the command with the given parameters."""
-        pass
+        raise NotImplementedError
 
 class TrainingCommandHandler(BaseCommandHandler):
     """Handles training-related commands (light, blank, full)."""

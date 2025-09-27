@@ -204,12 +204,12 @@ class FallbackOptimizer:
     def __init__(self, *args, **kwargs):
         self._logger = logging.getLogger(__name__)
         self._logger.warning("Using fallback optimizer - performance may be reduced")
-    
+
     def step(self):
-        pass
-    
+        self._logger.debug("Fallback optimizer step invoked; no parameter updates were applied")
+
     def zero_grad(self):
-        pass
+        self._logger.debug("Fallback optimizer zero_grad invoked; gradients already treated as zero")
 
 
 class FallbackScheduler:
@@ -218,26 +218,48 @@ class FallbackScheduler:
     def __init__(self, *args, **kwargs):
         self._logger = logging.getLogger(__name__)
         self._logger.warning("Using fallback scheduler - learning rate scheduling disabled")
-    
+
     def step(self):
-        pass
+        self._logger.debug("Fallback scheduler step invoked; learning rate unchanged")
 
 
 class FallbackTensorBoard:
     """Fallback TensorBoard implementation."""
-    
+
     def __init__(self, *args, **kwargs):
         self._logger = logging.getLogger(__name__)
         self._logger.warning("Using fallback TensorBoard - logging disabled")
-    
+        self._scalars: Dict[str, List[Any]] = {}
+        self._histograms: Dict[str, List[Any]] = {}
+
     def add_scalar(self, *args, **kwargs):
-        pass
-    
+        if len(args) >= 2:
+            tag, value = args[:2]
+        else:
+            tag = kwargs.get("tag", "unknown_scalar")
+            value = kwargs.get("scalar_value")
+        self._scalars.setdefault(tag, []).append(value)
+        self._logger.debug(
+            "Recorded scalar metric '%s' with value %s using fallback logger",
+            tag,
+            value,
+        )
+
     def add_histogram(self, *args, **kwargs):
-        pass
-    
+        if len(args) >= 2:
+            tag, values = args[:2]
+        else:
+            tag = kwargs.get("tag", "unknown_histogram")
+            values = kwargs.get("values")
+        self._histograms.setdefault(tag, []).append(values)
+        self._logger.debug("Recorded histogram '%s' using fallback logger", tag)
+
     def close(self):
-        pass
+        self._logger.info(
+            "Fallback TensorBoard closed – stored %d scalar series and %d histogram series.",
+            len(self._scalars),
+            len(self._histograms),
+        )
 
 
 # Register common fallbacks

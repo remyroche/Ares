@@ -18,23 +18,23 @@ import warnings
 
 class ValidationError(Exception):
     """Exception raised for validation errors."""
-    pass
+    ...
 
 class DataQualityError(Exception):
     """Exception raised for data quality issues."""
-    pass
+    ...
 
 class ConfigurationError(Exception):
     """Exception raised for configuration errors."""
-    pass
+    ...
 
 class ProcessingError(Exception):
     """Exception raised for processing errors."""
-    pass
+    ...
 
 class MathValidationError(Exception):
     """Exception raised for math validation errors."""
-    pass
+    ...
 
 # =============================================================================
 # UNIFIED ERROR HANDLER

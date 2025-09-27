@@ -2819,8 +2819,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     del self.models
                 if hasattr(self, 'results') and self.results is not None:
                     del self.results
-            except Exception:
-                pass  # Ignore cleanup errors in destructor
+            except Exception as cleanup_error:
+                tprint_warning(
+                    f"⚠️ Resource cleanup had residual issues during destructor: {cleanup_error}"
+                )
     
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """

@@ -17,23 +17,28 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 
 class QualityCheckError(Exception):
     """Base exception for quality check errors."""
-    pass
+
+    __slots__ = ()
 
 class ValidationError(QualityCheckError):
     """Exception for validation errors."""
-    pass
+
+    __slots__ = ()
 
 class PreprocessingError(QualityCheckError):
     """Exception for preprocessing errors."""
-    pass
+
+    __slots__ = ()
 
 class DataDownloadError(QualityCheckError):
     """Exception for data download errors."""
-    pass
+
+    __slots__ = ()
 
 class ConfigurationError(QualityCheckError):
     """Exception for configuration errors."""
-    pass
+
+    __slots__ = ()
 
 class ErrorHandler:
     """Centralized error handling for data quality checks.

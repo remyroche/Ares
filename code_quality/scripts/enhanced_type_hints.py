@@ -240,7 +240,6 @@ class TypeHintEnhancer(ast.NodeTransformer):
                     except (SyntaxError, ValueError, AttributeError) as e:
                         # Handle invalid type hint syntax or parsing errors
                         tprint_error(f"Failed to add type hint '{type_hint}' for parameter '{arg.arg}': {e}")
-                        pass
 
         # Add return type hint
         if not has_return_type:
@@ -253,7 +252,6 @@ class TypeHintEnhancer(ast.NodeTransformer):
                 except (SyntaxError, ValueError, AttributeError) as e:
                     # Handle invalid return type syntax or parsing errors
                     tprint_error(f"Failed to add return type '{return_type}' for function '{node.name}': {e}")
-                    pass
 
         return node
 
@@ -433,8 +431,8 @@ class EnhancedTypeHintAdder:
                             functions_with_hints += 1
                         elif file_path not in files_needing_hints:
                             files_needing_hints.append(file_path)
-            except:
-                pass
+            except Exception as exc:
+                tprint_error(f"Failed to analyse {file_path} for type hint coverage: {exc}")
 
         current_coverage = functions_with_hints / total_functions if total_functions > 0 else 0
 

@@ -357,12 +357,15 @@ class UnifiedUtilities:
                 base_columns.extend(['open', 'high', 'low', 'volume'])
         elif architecture_type == ArchitectureType.TREE:
             # Trees are more robust to missing features
-            pass  # Use base columns only
+            self.logger.debug(
+                "Using base columns %s for tree-based architecture validation",
+                base_columns,
+            )
         elif architecture_type == ArchitectureType.HYBRID:
             # Hybrid approach needs comprehensive features
             if data_type == DataType.MARKET_DATA:
                 base_columns.extend(['open', 'high', 'low', 'volume'])
-        
+
         return base_columns
     
     def _validate_for_neural_architecture(self, data: pd.DataFrame, 

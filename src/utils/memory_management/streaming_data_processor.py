@@ -76,8 +76,11 @@ class StreamingDataProcessor:
         """Cleanup on destruction."""
         try:
             self.memory_optimizer.stop_monitoring()
-        except:
-            pass
+        except Exception as cleanup_error:
+            self.logger.debug(
+                "StreamingDataProcessor failed to stop monitoring during destruction: %s",
+                cleanup_error,
+            )
     
     def process_dataframe_in_chunks(self, 
                                    df: pd.DataFrame,

@@ -36,6 +36,10 @@ import numpy as np
 import logging
 import time
 
+# Module level logger for fallback/error reporting when instance loggers are
+# not yet available.
+MODULE_LOGGER = logging.getLogger(__name__)
+
 # --- Compatibility shim for NumPy RNG unpickling across versions ---
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
@@ -54,8 +58,14 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-    except Exception:
-        pass
+    except Exception as name_error:
+        MODULE_LOGGER.debug(
+            "Failed to normalize NumPy BitGenerator name %r: %s",
+            bit_generator_name,
+            name_error,
+            exc_info=name_error,
+        )
+        name_candidate = bit_generator_name
 
     effective_state = kwargs.get("state", state)
     try:
@@ -146,8 +156,13 @@ class ModelManager:
         # Base path used by training-style persistence APIs
         try:
             os.makedirs(self.models_dir, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as mkdir_error:
+            self.logger.error(
+                warn_symbol(
+                    f"Failed to create models directory '{self.models_dir}': {mkdir_error}",
+                )
+            )
+            raise
         self._save_base_path = self.models_dir
 
     @handles_errors(
@@ -462,7 +477,13 @@ class ModelManager:
                 if hasattr(model, "predict_proba"):
                     try:
                         proba = model.predict_proba(data)
-                    except Exception:
+                    except Exception as proba_error:
+                        self.logger.debug(
+                            "predict_proba failed for %s: %s",
+                            type(model).__name__,
+                            proba_error,
+                            exc_info=proba_error,
+                        )
                         proba = None
                 return {"predictions": y_pred, "probabilities": proba}
 
@@ -473,8 +494,13 @@ class ModelManager:
                     dmatrix = xgb.DMatrix(data)
                     y_pred = model.predict(dmatrix)
                     return {"predictions": y_pred}
-            except Exception:
-                pass
+            except Exception as xgb_error:
+                self.logger.debug(
+                    "XGBoost prediction fallback failed for %s: %s",
+                    type(model).__name__,
+                    xgb_error,
+                    exc_info=xgb_error,
+                )
 
             # LightGBM Booster
             try:
@@ -482,8 +508,13 @@ class ModelManager:
                 if isinstance(model, lgb.Booster):
                     y_pred = model.predict(data)
                     return {"predictions": y_pred}
-            except Exception:
-                pass
+            except Exception as lgb_error:
+                self.logger.debug(
+                    "LightGBM prediction fallback failed for %s: %s",
+                    type(model).__name__,
+                    lgb_error,
+                    exc_info=lgb_error,
+                )
 
             # PyTorch models require a wrapper; we cannot infer here
             self.logger.warning(warn_symbol("Model type not directly supported for prediction"))
@@ -718,18 +749,33 @@ class ModelManager:
         if hasattr(model, "get_params"):
             try:
                 metadata["model_params"] = model.get_params()
-            except Exception:
-                pass
+            except Exception as param_error:
+                self.logger.debug(
+                    "Failed to extract model parameters from %s: %s",
+                    type(model).__name__,
+                    param_error,
+                    exc_info=param_error,
+                )
         if hasattr(model, "feature_importances_"):
             try:
                 metadata["feature_importances"] = getattr(model, "feature_importances_").tolist()  # type: ignore[no-any-return]
-            except Exception:
-                pass
+            except Exception as importance_error:
+                self.logger.debug(
+                    "Failed to extract feature importances from %s: %s",
+                    type(model).__name__,
+                    importance_error,
+                    exc_info=importance_error,
+                )
         if hasattr(model, "n_features_in_"):
             try:
                 metadata["n_features_in"] = int(getattr(model, "n_features_in_"))
-            except Exception:
-                pass
+            except Exception as feature_error:
+                self.logger.debug(
+                    "Failed to determine n_features_in for %s: %s",
+                    type(model).__name__,
+                    feature_error,
+                    exc_info=feature_error,
+                )
         return metadata
 
     def cleanup_old_models(

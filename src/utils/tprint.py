@@ -376,17 +376,24 @@ class TPrintManager:
                 # Write uncolored message to file
                 self._file_handle.write(message + '\n')
                 self._file_handle.flush()
-            except Exception:
-                # Silently handle file write errors
-                pass
+            except Exception as file_error:
+                self.logger.error(
+                    "Failed to write log output to %s: %s",
+                    getattr(self._file_handle, "name", "<unknown>"),
+                    file_error,
+                    exc_info=file_error,
+                )
 
         if self.config.log_to_python_logger:
             try:
                 log_level = getattr(logging, level.value, logging.INFO)
                 self.logger.log(log_level, message)
-            except Exception:
-                # Silently handle logger errors
-                pass
+            except Exception as logger_error:
+                self.logger.error(
+                    "Failed to forward message to Python logger: %s",
+                    logger_error,
+                    exc_info=logger_error,
+                )
     
     def _log(self, level: LogLevel, *args, **kwargs):
         """Internal logging method."""
@@ -437,9 +444,12 @@ class TPrintManager:
             try:
                 log_level = getattr(logging, self.config.print_log_level.value, logging.INFO)
                 self.logger.log(log_level, f"[PRINT] {message}")
-            except Exception:
-                # Silently handle logger errors
-                pass
+            except Exception as logger_error:
+                self.logger.error(
+                    "Failed to forward captured print to Python logger: %s",
+                    logger_error,
+                    exc_info=logger_error,
+                )
     
     def close(self):
         """Close file handles and cleanup."""
@@ -679,7 +689,7 @@ def tprint_timer(operation: str, level: LogLevel = LogLevel.PERFORMANCE):
     Example:
         with tprint_timer("Data processing"):
             # ... do work ...
-            pass  # Will automatically log the duration
+            ...  # Will automatically log the duration
     """
     start_time = time.perf_counter()
     try:

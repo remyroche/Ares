@@ -189,28 +189,48 @@ class ValidationIntegrationConfig:
         try:
             if self.data_leakage_config is None and 'DataLeakageConfig' in globals() and DataLeakageConfig is not None:
                 self.data_leakage_config = DataLeakageConfig()
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - defensive default wiring
+            logger.warning(
+                "Failed to auto-configure DataLeakageConfig: %s",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
         try:
             if self.overfitting_monitoring_config is None and 'OverfittingMonitoringConfig' in globals() and OverfittingMonitoringConfig is not None:
                 self.overfitting_monitoring_config = OverfittingMonitoringConfig()
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - defensive default wiring
+            logger.warning(
+                "Failed to auto-configure OverfittingMonitoringConfig: %s",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
         try:
             if self.enhanced_validation_config is None and 'EnhancedValidationConfig' in globals() and EnhancedValidationConfig is not None:
                 self.enhanced_validation_config = EnhancedValidationConfig()
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - defensive default wiring
+            logger.warning(
+                "Failed to auto-configure EnhancedValidationConfig: %s",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
         try:
             if self.hpo_overfitting_prevention_config is None and 'HPOOverfittingPreventionConfig' in globals() and HPOOverfittingPreventionConfig is not None:
                 self.hpo_overfitting_prevention_config = HPOOverfittingPreventionConfig()
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - defensive default wiring
+            logger.warning(
+                "Failed to auto-configure HPOOverfittingPreventionConfig: %s",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
         try:
             if self.model_complexity_config is None and 'ModelComplexityConfig' in globals() and ModelComplexityConfig is not None:
                 self.model_complexity_config = ModelComplexityConfig()
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - defensive default wiring
+            logger.warning(
+                "Failed to auto-configure ModelComplexityConfig: %s",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
 
 class UniversalValidationIntegrator:
     """Integrates universal validation into ML training pipelines."""

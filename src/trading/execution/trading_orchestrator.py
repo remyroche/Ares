@@ -8,8 +8,9 @@ comprehensive trading operations.
 
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, Deque, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -144,6 +145,7 @@ class TradingOrchestrator:
             'max_drawdown': 0.0,
             'avg_session_duration': 0.0
         }
+        self._recent_data_points: Deque[Any] = deque(maxlen=250)
 
     async def initialize(self) -> bool:
         """
@@ -569,8 +571,12 @@ class TradingOrchestrator:
             if self.trade_gate is not None and trade_id:
                 try:
                     self.trade_gate.set_active_trade_id(trade_id)
-                except Exception:
-                    pass
+                except Exception as gate_error:
+                    self.logger.warning(
+                        "⚠️ Failed to propagate active trade %s to trade gate: %s",
+                        trade_id,
+                        gate_error,
+                    )
 
             # Trigger pre-execution callback
             await self._trigger_trade_callbacks(decision, event="pre_execute")
@@ -618,9 +624,13 @@ class TradingOrchestrator:
             if self.trade_gate is not None:
                 try:
                     await self.trade_gate.release(decision.metadata.get('trade_id'))
-                except Exception:
-                    pass
-    
+                except Exception as release_error:
+                    self.logger.warning(
+                        "⚠️ Failed to release trade gate for %s: %s",
+                        decision.metadata.get('trade_id'),
+                        release_error,
+                    )
+
     async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
         """Simulate order execution (replace with real execution in live trading)."""
         try:
@@ -638,8 +648,22 @@ class TradingOrchestrator:
     async def _on_new_data(self, data_point):
         """Handle new data point."""
         try:
-            # Process new data if needed
-            pass
+            if data_point is None:
+                self.logger.debug("Received empty data point; skipping update")
+                return
+
+            self._recent_data_points.append(data_point)
+            self.performance_metrics['last_data_event_at'] = datetime.utcnow().isoformat()
+
+            if hasattr(self.data_collector, 'handle_live_update') and self.data_collector:
+                try:
+                    self.data_collector.handle_live_update(data_point)
+                except Exception as collector_error:
+                    self.logger.debug(
+                        "Data collector could not process live update: %s",
+                        collector_error,
+                        exc_info=True,
+                    )
         except Exception as e:
             self.logger.error(f"❌ New data handler error: {e}")
 

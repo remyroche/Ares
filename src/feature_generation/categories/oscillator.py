@@ -52,20 +52,125 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Placeholder implementation
-        close_prices = data['close'].values
-        oscillator = np.zeros_like(close_prices)
-        return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='oscillator_composite_signal')
+
+        close = data['close'].astype(float)
+        high = data['high'].astype(float) if 'high' in data.columns else close
+        low = data['low'].astype(float) if 'low' in data.columns else close
+
+        params = self.config.parameters or {}
+        stochastic_periods = [period for period in params.get('stochastic_periods', [self.config.default_lookback]) if period and period > 1]
+        williams_periods = [period for period in params.get('williams_periods', [self.config.default_lookback]) if period and period > 1]
+        rsi_periods = [period for period in params.get('rsi_periods', [self.config.default_lookback]) if period and period > 1]
+
+        aggregated = pd.Series(0.0, index=data.index, dtype=float)
+        contributions = 0
+
+        for period in stochastic_periods:
+            highest = high.rolling(window=period, min_periods=period).max()
+            lowest = low.rolling(window=period, min_periods=period).min()
+            denominator = (highest - lowest).replace(0.0, np.nan)
+            stochastic_k = ((close - lowest) / denominator).clip(0.0, 1.0)
+            stochastic_signal = (stochastic_k * 2.0) - 1.0
+            aggregated = aggregated.add(stochastic_signal.fillna(0.0), fill_value=0.0)
+            contributions += 1
+
+        for period in williams_periods:
+            highest = high.rolling(window=period, min_periods=period).max()
+            lowest = low.rolling(window=period, min_periods=period).min()
+            denominator = (highest - lowest).replace(0.0, np.nan)
+            williams_r = -100.0 * ((highest - close) / denominator)
+            williams_signal = (williams_r / 50.0) + 1.0
+            aggregated = aggregated.add(williams_signal.replace([np.inf, -np.inf], np.nan).fillna(0.0), fill_value=0.0)
+            contributions += 1
+
+        for period in rsi_periods:
+            delta = close.diff()
+            gains = delta.clip(lower=0.0).rolling(window=period, min_periods=period).mean()
+            losses = (-delta.clip(upper=0.0)).rolling(window=period, min_periods=period).mean()
+            rs = gains / losses.replace(0.0, np.nan)
+            rsi = 100.0 - (100.0 / (1.0 + rs))
+            rsi_signal = ((rsi - 50.0) / 50.0).clip(-1.0, 1.0)
+            aggregated = aggregated.add(rsi_signal.fillna(0.0), fill_value=0.0)
+            contributions += 1
+
+        if not contributions:
+            return pd.Series(0.0, index=data.index, name='oscillator_composite_signal')
+
+        signal = aggregated / float(contributions)
+        signal = signal.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return np.tanh(signal).rename('oscillator_composite_signal')
+
+class StochasticOscillatorGenerator(FeatureGenerator):
+    """Generator for classic Stochastic %K oscillator."""
+
+    def __init__(self, period: int = 14):
+        config = FeatureConfig(
+            name=f"stochastic_{period}",
+            category=FeatureCategory.OSCILLATOR,
+            description=f"Stochastic %K oscillator over {period} periods",
+            required_columns=["high", "low", "close"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={'period': period},
+        )
+        super().__init__(config)
+        self.period = period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        high = data['high'].astype(float)
+        low = data['low'].astype(float)
+        close = data['close'].astype(float)
+        highest = high.rolling(window=self.period, min_periods=self.period).max()
+        lowest = low.rolling(window=self.period, min_periods=self.period).min()
+        denominator = (highest - lowest).replace(0.0, np.nan)
+        stochastic_k = 100.0 * ((close - lowest) / denominator)
+        return stochastic_k.rename(f"stochastic_{self.period}")
+
+
+class WilliamsPercentRGenerator(FeatureGenerator):
+    """Generator for Williams %R oscillator."""
+
+    def __init__(self, period: int = 14):
+        config = FeatureConfig(
+            name=f"williams_r_{period}",
+            category=FeatureCategory.OSCILLATOR,
+            description=f"Williams %R oscillator over {period} periods",
+            required_columns=["high", "low", "close"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={'period': period},
+        )
+        super().__init__(config)
+        self.period = period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        high = data['high'].astype(float)
+        low = data['low'].astype(float)
+        close = data['close'].astype(float)
+        highest = high.rolling(window=self.period, min_periods=self.period).max()
+        lowest = low.rolling(window=self.period, min_periods=self.period).min()
+        denominator = (highest - lowest).replace(0.0, np.nan)
+        williams_r = -100.0 * ((highest - close) / denominator)
+        return williams_r.rename(f"williams_r_{self.period}")
+
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of oscillator feature generators."""
     if periods is None:
         periods = {
             'stochastic': [14],
-            'williams': [14]
+            'williams': [14],
         }
-    
-    generators = []
+
+    generators: List[FeatureGenerator] = [OscillatorFeatureGenerator()]
+    for period in periods.get('stochastic', []):
+        generators.append(StochasticOscillatorGenerator(period))
+    for period in periods.get('williams', []):
+        generators.append(WilliamsPercentRGenerator(period))
     return generators
 
 def create_default_oscillator_generators() -> List[FeatureGenerator]:

@@ -81,11 +81,22 @@ class EnhancedScriptsValidator:
         except Exception as e:
             tprint_error(f"❌ [INIT] EnhancedScriptsValidator initialization failed: {e}")
             raise
-    
+
+    def _expect_failure(self, label: str, callable_obj) -> bool:
+        """Execute a callable that is expected to raise and report the outcome."""
+        try:
+            callable_obj()
+        except Exception as exc:  # pragma: no cover - diagnostic logging only
+            tprint_info(f"🛡️ [ERROR_HANDLING] {label} correctly raised {type(exc).__name__}: {exc}")
+            return True
+
+        tprint_warning(f"⚠️ [ERROR_HANDLING] {label} succeeded unexpectedly")
+        return False
+
     def run_comprehensive_validation(self) -> Dict[str, Any]:
         """
         Run comprehensive validation of all enhanced scripts.
-        
+
         Returns:
             Dictionary with validation results
         """
@@ -152,57 +163,53 @@ class EnhancedScriptsValidator:
                 if self.scripts_available:
                     launcher = AresLauncher()
                     # Test with invalid parameters
-                    try:
-                        asyncio.run(launcher.execute_pipeline(
-                            symbol="",  # Invalid empty symbol
-                            exchange="",  # Invalid empty exchange
-                            timeframe="",  # Invalid empty timeframe
-                            data_dir=""  # Invalid empty data_dir
-                        ))
-                    except Exception:
-                        pass  # Expected to fail
-                    test_results['ares_launcher_error_handling'] = True
+                    test_results['ares_launcher_error_handling'] = self._expect_failure(
+                        "AresLauncher validation",
+                        lambda: asyncio.run(launcher.execute_pipeline(
+                            symbol="",
+                            exchange="",
+                            timeframe="",
+                            data_dir=""
+                        )),
+                    )
             except Exception as e:
                 tprint_warning(f"⚠️ [ERROR_HANDLING] AresLauncher error handling test failed: {e}")
-            
+
             # Test MainTrainingPipeline error handling
             try:
                 if self.scripts_available:
                     pipeline = MainTrainingPipeline()
                     # Test with invalid configuration
-                    try:
-                        asyncio.run(pipeline.execute_pipeline())
-                    except Exception:
-                        pass  # Expected to fail
-                    test_results['main_pipeline_error_handling'] = True
+                    test_results['main_pipeline_error_handling'] = self._expect_failure(
+                        "MainTrainingPipeline validation",
+                        lambda: asyncio.run(pipeline.execute_pipeline()),
+                    )
             except Exception as e:
                 tprint_warning(f"⚠️ [ERROR_HANDLING] MainTrainingPipeline error handling test failed: {e}")
-            
+
             # Test MarketAnalysisSubPipeline error handling
             try:
                 if self.scripts_available:
                     sub_pipeline = MarketAnalysisSubPipeline()
                     # Test with invalid data
-                    try:
-                        sub_pipeline.execute_sub_pipeline("invalid_step", {})
-                    except Exception:
-                        pass  # Expected to fail
-                    test_results['market_analysis_error_handling'] = True
+                    test_results['market_analysis_error_handling'] = self._expect_failure(
+                        "MarketAnalysisSubPipeline validation",
+                        lambda: sub_pipeline.execute_sub_pipeline("invalid_step", {}),
+                    )
             except Exception as e:
                 tprint_warning(f"⚠️ [ERROR_HANDLING] MarketAnalysisSubPipeline error handling test failed: {e}")
-            
+
             # Test KlineParquetManager error handling
             try:
                 kline_manager = KlineParquetManager()
                 # Test with invalid file path
-                try:
-                    kline_manager.load_kline_data("nonexistent_file.parquet")
-                except Exception:
-                    pass  # Expected to fail
-                test_results['kline_parquet_error_handling'] = True
+                test_results['kline_parquet_error_handling'] = self._expect_failure(
+                    "KlineParquetManager validation",
+                    lambda: kline_manager.load_kline_data("nonexistent_file.parquet"),
+                )
             except Exception as e:
                 tprint_warning(f"⚠️ [ERROR_HANDLING] KlineParquetManager error handling test failed: {e}")
-            
+
             # Calculate score
             passed_tests = sum(1 for v in test_results.values() if v is True)
             total_tests = len([k for k in test_results.keys() if k.endswith('_error_handling')])

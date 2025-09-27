@@ -585,7 +585,10 @@ class AresLauncher:
                 for sub_result in stage_result:
                     if hasattr(sub_result, 'sub_pipeline_name'):
                         # Outcome file creation handled by MainTrainingPipeline
-                        pass
+                        self.logger.debug(
+                            "Outcome file persistence delegated to sub-pipeline '%s'",
+                            sub_result.sub_pipeline_name,
+                        )
                 # Check if stage failed
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
                 if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
@@ -646,7 +649,10 @@ class AresLauncher:
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name'):
                     # Outcome file creation handled by MainTrainingPipeline
-                    pass
+                    self.logger.debug(
+                        "Outcome file persistence delegated to sub-pipeline '%s'",
+                        sub_result.sub_pipeline_name,
+                    )
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)

@@ -8,10 +8,16 @@ if TYPE_CHECKING:
     from fastapi import Request
 try:
     from pythonjsonlogger import jsonlogger
-except Exception:
+except Exception as json_error:  # pragma: no cover - optional dependency
+    logging.getLogger(__name__).debug(
+        "python-json-logger unavailable; falling back to standard logging: %s",
+        json_error,
+    )
     jsonlogger = None
 correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('correlation_id', default='-')
 session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('session_id', default='-')
+
+LOGGER = logging.getLogger(__name__)
 
 def get_correlation_id() -> str:
     """Return current correlation ID or '-' if unset."""
@@ -51,8 +57,8 @@ class CorrelationIdFilter(logging.Filter):
         try:
             record.correlation_id = get_correlation_id()
             record.session_id = session_id_var.get()
-        except Exception:
-            pass
+        except Exception as filter_error:  # pragma: no cover - defensive guard
+            LOGGER.debug("Failed to enrich log record with correlation data: %s", filter_error)
         return True
 
 def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
@@ -84,5 +90,5 @@ try:
                 return response
             finally:
                 correlation_id_var.reset(token)
-except Exception:
-    pass
+except Exception as middleware_error:  # pragma: no cover - optional dependency
+    LOGGER.debug("Structured logging middleware not installed: %s", middleware_error)

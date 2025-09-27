@@ -60,35 +60,58 @@ except ImportError as e:
 
     # Define dummy classes if imports fail
     class SQLiteManager:
-        def __init__(self, db_path=""):
-            pass  # TODO: Add proper implementation
-        async def initialize(self):
-            pass
+        """Fallback in-memory implementation used when the real SQLiteManager is unavailable."""
 
-        async def get_collection(self, *args, **kwargs):
-            return []
+        def __init__(self, db_path: str = ""):
+            self._db_path = db_path
+            self._collections: dict[str, list[dict[str, str]]] = {}
 
-        async def set_document(self, *args, **kwargs):
-            pass
+        async def initialize(self) -> None:
+            """Initialize the in-memory store."""
+            self._collections.setdefault("default", [])
+
+        async def get_collection(self, name: str, *, create: bool = False):
+            """Return a mutable list representing a collection."""
+            if create and name not in self._collections:
+                self._collections[name] = []
+            return self._collections.get(name, [])
+
+        async def set_document(self, collection: str, document: dict[str, str]) -> None:
+            store = await self.get_collection(collection, create=True)
+            store.append(document)
 
     class StateManager:
-        def __init__(self):
-            pass  # TODO: Add proper implementation
-        def is_kill_switch_active(self):
-            return False
+        """Simplified in-memory kill-switch manager used for fallback scenarios."""
 
-        async def activate_kill_switch(self, reason):
-            pass
+        def __init__(self) -> None:
+            self._kill_switch_active = False
+            self._kill_switch_reason = "Kill switch not available"
 
-        async def deactivate_kill_switch(self):
-            pass
+        def is_kill_switch_active(self) -> bool:
+            return self._kill_switch_active
 
-        def get_kill_switch_reason(self):
-            return "Kill switch not available"
+        async def activate_kill_switch(self, reason: str) -> None:
+            self._kill_switch_active = True
+            self._kill_switch_reason = reason
+
+        async def deactivate_kill_switch(self) -> None:
+            self._kill_switch_active = False
+            self._kill_switch_reason = "Kill switch is inactive"
+
+        def get_kill_switch_reason(self) -> str:
+            return self._kill_switch_reason
 
     class PerformanceReporter:
-        def __init__(self):
-            pass  # TODO: Add proper implementation
+        """Fallback performance reporter that stores entries in memory."""
+
+        def __init__(self) -> None:
+            self._entries: list[dict[str, str]] = []
+
+        def record(self, entry: dict[str, str]) -> None:
+            self._entries.append(entry)
+
+        def latest(self) -> dict[str, str] | None:
+            return self._entries[-1] if self._entries else None
     ares_config = type("AresConfig", (), {"exchange_name": "BINANCE"})()
 
 # --- FastAPI App Initialization ---
@@ -124,7 +147,7 @@ db_manager = SQLiteManager()
 state_manager = StateManager()
 performance_reporter = PerformanceReporter()
 websocket_connections = []
-# Add performance monitor placeholder for proper initialization
+# Performance monitor is initialized asynchronously during startup if dependencies are available.
 performance_monitor = None
 
 # --- Monitoring/Reporting Instances ---
@@ -1609,8 +1632,10 @@ async def get_launcher_status():
                             })
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
-            except Exception:
-                pass
+            except Exception as process_error:
+                logging.getLogger(__name__).warning(
+                    "Launcher process inspection failed: %s", process_error
+                )
 
             return {
                 "launcher_active": len(running_processes) > 0,
@@ -1898,8 +1923,10 @@ async def get_training_status():
                             })
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
-            except Exception:
-                pass
+            except Exception as process_error:
+                logging.getLogger(__name__).warning(
+                    "Training process inspection failed: %s", process_error
+                )
             
             return {
                 "training_active": len(training_processes) > 0,

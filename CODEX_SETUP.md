@@ -26,9 +26,19 @@ This guide explains how to configure ChatGPT Codex to work with this Poetry-base
 1. In ChatGPT Codex, open **Project Settings → Setup**.
 2. Set the **Setup Script** to `./setup_codex.sh` so Codex runs the helper automatically.
 3. Set the **Working Directory** to `/workspace/Ares` so Codex executes the script from the project root.
-4. Choose **Python 3.11** as the runtime version.
-5. Save the configuration and start a new Codex session; the script will create `.venv` and install dependencies.
-6. Codex automatically reuses the project virtual environment for subsequent commands. If you later open a local shell, you can still activate it manually (`source .venv/bin/activate`) or run tools with `poetry run ...`.
+4. Choose **Python 3.11** (or any interpreter compatible with the project's `^3.11` constraint, such as Python 3.12) as the runtime version.
+5. In the **Environment Variables** section, add the following key/value pairs so every Codex-run command sees the installed packages:
+
+   | Key | Value |
+   | --- | ----- |
+   | `PYTHONPATH` | `/workspace` |
+   | `POETRY_VENV_IN_PROJECT` | `true` |
+
+6. (Optional but recommended) If Codex allows specifying a **command prefix**, set it to `poetry run` so all execution happens inside the Poetry-managed virtual environment. Otherwise, remember to prefix any manual command yourself (e.g., `poetry run python src/launcher/ares_launcher.py ...`).
+7. Save the configuration and start a new Codex session; the script will create `.venv` and install dependencies.
+8. Codex automatically reuses the project virtual environment for subsequent commands. If you later open a local shell, you can still activate it manually (`source .venv/bin/activate`) or run tools with `poetry run ...`.
+
+> **Quick reminder:** running the launcher with bare `python` (without the `poetry run` prefix or an activated `.venv`) will make the market-analysis modules appear missing because their dependencies are only installed inside the Poetry environment.
 
 ### Method 2: Using Requirements File
 

@@ -23,6 +23,7 @@ import concurrent.futures
 
 # Import core utilities
 from .core.common import create_fallback_logger, create_fallback_decorator
+from .tprint import tprint
 
 # Import math validation helpers when available
 try:

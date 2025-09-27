@@ -185,6 +185,7 @@ class MainPipelineConfig:
         ],
         PipelineStage.MARKET_ANALYSIS: [
             'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+            'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery',
             'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
             'regime_data_splitting', 'feature_lookback_optimization',
             'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
@@ -1138,6 +1139,7 @@ def get_full_pipeline_config(
             ],
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+                'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery',
                 'hmm_regime_discovery', 'hmm_clustering', 'regime_base_training', 'regime_metamodel_training',
                 'regime_data_splitting', 'feature_lookback_optimization',
                 'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
@@ -1195,6 +1197,7 @@ def get_light_pipeline_config(
             ],
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
+                'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery',
                 'hmm_regime_discovery', 'hmm_clustering', 'regime_base_training', 'regime_metamodel_training',
                 'regime_data_splitting', 'feature_lookback_optimization',
                 'pid_based_feature_generation', 'multi_horizon_profit_labeler'
@@ -1245,7 +1248,10 @@ def get_blank_pipeline_config(
         ],
         enabled_sub_pipelines={
             PipelineStage.DATA_COLLECTION: ['data_download', 'data_conversion'],
-            PipelineStage.MARKET_ANALYSIS: ['sr_parameter_optimization', 'sr_detection', 'hmm_regime_discovery', 'regime_base_training', 'regime_metamodel_training'],
+            PipelineStage.MARKET_ANALYSIS: [
+                'sr_parameter_optimization', 'sr_detection', 'hybrid_nas_tas_regime_discovery', 'nas_tas_regime_discovery',
+                'hmm_regime_discovery', 'regime_base_training', 'regime_metamodel_training'
+            ],
             PipelineStage.MODEL_TRAINING: ['analyst_model_training'],
             PipelineStage.BACKTESTING: ['walk_forward_validation']
         }

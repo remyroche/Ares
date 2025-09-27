@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
-from ...utils.common_operations import tprint
+from ...utils.tprint import tprint
 # Optional imports
 try:
     import numpy as np

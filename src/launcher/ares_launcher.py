@@ -524,6 +524,10 @@ class AresLauncher:
         target_stage = None
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+            if resolved_sub_pipeline not in available_sub_pipelines:
+                fallback_sub_pipelines = config.enabled_sub_pipelines.get(stage, [])
+                if fallback_sub_pipelines:
+                    available_sub_pipelines = fallback_sub_pipelines
             if resolved_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 tprint(f"🔧 [SUB_PIPELINE_CONFIG] Found sub-pipeline in stage: {stage.value}")
@@ -711,6 +715,10 @@ class AresLauncher:
         target_stage = None
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+            if resolved_sub_pipeline not in available_sub_pipelines:
+                fallback_sub_pipelines = config.enabled_sub_pipelines.get(stage, [])
+                if fallback_sub_pipelines:
+                    available_sub_pipelines = fallback_sub_pipelines
             if resolved_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 break
@@ -845,7 +853,12 @@ class AresLauncher:
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
-            if resolved_sub_pipeline in enabled_sub_pipelines:
+            available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+            if resolved_sub_pipeline not in available_sub_pipelines:
+                fallback_sub_pipelines = config.enabled_sub_pipelines.get(stage, [])
+                if fallback_sub_pipelines:
+                    available_sub_pipelines = fallback_sub_pipelines
+            if resolved_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 break
 

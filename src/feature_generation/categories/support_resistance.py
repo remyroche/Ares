@@ -1,4 +1,3 @@
-"""
 """Support and resistance feature generators."""
 
 from __future__ import annotations

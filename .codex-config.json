@@ -10,6 +10,6 @@
     "lock_file": "poetry.lock",
     "config_file": "pyproject.toml"
   },
-  "working_directory": "/workspace",
+  "working_directory": "/workspace/Ares",
   "description": "Ares trading and optimization platform with Poetry dependencies"
 }

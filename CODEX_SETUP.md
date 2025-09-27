@@ -25,7 +25,7 @@ This guide explains how to configure ChatGPT Codex to work with this Poetry-base
 
 1. In ChatGPT Codex, open **Project Settings → Setup**.
 2. Set the **Setup Script** to `./setup_codex.sh` so Codex runs the helper automatically.
-3. Set the **Working Directory** to `/workspace` to match the repository root.
+3. Set the **Working Directory** to `/workspace/Ares` so Codex executes the script from the project root.
 4. Choose **Python 3.11** as the runtime version.
 5. Save the configuration and start a new Codex session; the script will create `.venv` and install dependencies.
 6. Codex automatically reuses the project virtual environment for subsequent commands. If you later open a local shell, you can still activate it manually (`source .venv/bin/activate`) or run tools with `poetry run ...`.

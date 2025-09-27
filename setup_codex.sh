@@ -36,6 +36,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+cd "${ROOT_DIR}"
+
 echo "🚀 Setting up environment for ChatGPT Codex..."
 
 # Ensure we have an up-to-date pip that can handle modern wheels

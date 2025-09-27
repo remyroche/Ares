@@ -8,7 +8,7 @@ ensuring proper initialization, configuration, and lifecycle management of utili
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, TypeVar, Callable, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, TypeVar, Callable, Union
 from functools import wraps
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -295,28 +295,192 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
 
 # Define missing classes
 class DataFrameValidator:
-    """DataFrame validator."""
-    def __init__(self):
-        pass
-    
+    """DataFrame validator with structural and type checks."""
+
+    def __init__(
+        self,
+        required_columns: Optional[Iterable[str]] = None,
+        optional_columns: Optional[Iterable[str]] = None,
+        allow_empty: bool = False,
+        strict_types: bool = False,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        base_logger = logger
+        if base_logger is None:
+            if system_logger is not None:
+                base_logger = system_logger.getChild('DataFrameValidator')
+            else:
+                base_logger = logging.getLogger(__name__).getChild('DataFrameValidator')
+
+        self.logger = base_logger
+        self.required_columns = set(required_columns or [])
+        self.optional_columns = set(optional_columns or [])
+        self.allow_empty = allow_empty
+        self.strict_types = strict_types
+        self._last_issues: List[str] = []
+        self._last_summary: Dict[str, Any] = {}
+
+    @property
+    def last_issues(self) -> List[str]:
+        return list(self._last_issues)
+
+    @property
+    def last_summary(self) -> Dict[str, Any]:
+        return dict(self._last_summary)
+
     def validate(self, df: pd.DataFrame) -> bool:
-        return validate_dataframe(df)
+        self._last_issues.clear()
+        self._last_summary = {}
+
+        if not isinstance(df, pd.DataFrame):
+            issue = f"expected_dataframe_got_{type(df).__name__}"
+            self._last_issues.append(issue)
+            self.logger.error("Validation failed: %s", issue)
+            return False
+
+        base_valid = validate_dataframe(df)
+        if not base_valid:
+            self._last_issues.append('base_validation_failed')
+
+        if not self.allow_empty and df.empty:
+            self._last_issues.append('empty_dataframe')
+            self.logger.warning("Dataframe validation failed: dataframe is empty")
+
+        columns = set(df.columns)
+        missing = sorted(self.required_columns - columns)
+        if missing:
+            self._last_issues.append(f"missing_columns:{','.join(missing)}")
+            self.logger.error("Dataframe missing required columns: %s", missing)
+
+        duplicate_columns = df.columns[df.columns.duplicated()].tolist()
+        if duplicate_columns:
+            self._last_issues.append('duplicate_columns')
+            self.logger.error("Duplicate dataframe columns detected: %s", duplicate_columns)
+
+        if df.index.has_duplicates:
+            self._last_issues.append('duplicate_index')
+            self.logger.warning("Dataframe index contains duplicates")
+
+        if self.strict_types:
+            numeric_columns = df.select_dtypes(include=[np.number])
+            if not numeric_columns.empty:
+                invalid_mask = ~np.isfinite(numeric_columns.values)
+                if invalid_mask.any():
+                    self._last_issues.append('non_finite_numeric_values')
+                    self.logger.error("Non-finite numeric values detected in dataframe")
+
+        unexpected_columns = columns - self.required_columns - self.optional_columns
+        if self.strict_types and unexpected_columns:
+            self._last_issues.append('unexpected_columns')
+            self.logger.debug("Unexpected columns encountered: %s", sorted(unexpected_columns))
+
+        self._last_summary = {
+            'row_count': int(len(df)),
+            'column_count': int(len(df.columns)),
+            'missing_columns': missing,
+            'duplicate_columns': duplicate_columns,
+            'issues': list(self._last_issues),
+        }
+
+        if self._last_issues:
+            self.logger.debug("Dataframe validation summary: %s", self._last_summary)
+        else:
+            self.logger.debug("Dataframe validation passed with summary: %s", self._last_summary)
+
+        return not self._last_issues
 
 class DataFrameCleaner:
     """DataFrame cleaner."""
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-    
+
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.dropna()
 
+
 class DataFrameTransformer:
-    """DataFrame transformer."""
-    def __init__(self):
-        pass
-    
+    """Composable dataframe transformer pipeline."""
+
+    def __init__(
+        self,
+        transformations: Optional[Iterable[Callable[[pd.DataFrame], pd.DataFrame]]] = None,
+        *,
+        copy_input: bool = True,
+        fail_fast: bool = True,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        base_logger = logger
+        if base_logger is None:
+            if system_logger is not None:
+                base_logger = system_logger.getChild('DataFrameTransformer')
+            else:
+                base_logger = logging.getLogger(__name__).getChild('DataFrameTransformer')
+
+        self.logger = base_logger
+        self.copy_input = copy_input
+        self.fail_fast = fail_fast
+        self._pipeline: List[tuple[str, Callable[[pd.DataFrame], pd.DataFrame]]] = []
+        self._applied: List[str] = []
+
+        if transformations:
+            for transform in transformations:
+                self.add_transformation(transform)
+
+    @property
+    def applied_transformations(self) -> List[str]:
+        return list(self._applied)
+
+    def add_transformation(
+        self,
+        transformation: Callable[[pd.DataFrame], pd.DataFrame],
+        *,
+        name: Optional[str] = None,
+    ) -> None:
+        if not callable(transformation):
+            raise TypeError("Transformation must be callable")
+
+        transformation_name = name or getattr(transformation, "__name__", "anonymous_transformation")
+        self._pipeline.append((transformation_name, transformation))
+        self.logger.debug("Registered dataframe transformation: %s", transformation_name)
+
+    def clear(self) -> None:
+        self._pipeline.clear()
+        self._applied.clear()
+
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        return df
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("transform expects a pandas DataFrame")
+
+        self._applied = []
+        result = df.copy(deep=True) if self.copy_input else df
+
+        for name, transformation in self._pipeline:
+            try:
+                candidate = transformation(result)
+            except Exception as exc:
+                self.logger.error("Dataframe transformation '%s' failed: %s", name, exc, exc_info=True)
+                if self.fail_fast:
+                    raise
+                self.logger.info("Continuing pipeline after '%s' failure due to fail_fast=False", name)
+                continue
+
+            if candidate is None:
+                self.logger.warning("Transformation '%s' returned None; skipping update", name)
+                continue
+
+            if not isinstance(candidate, pd.DataFrame):
+                self.logger.warning(
+                    "Transformation '%s' returned non-dataframe result of type %s",
+                    name,
+                    type(candidate).__name__,
+                )
+                candidate = pd.DataFrame(candidate)
+
+            result = candidate
+            self._applied.append(name)
+            self.logger.debug("Applied dataframe transformation: %s", name)
+
+        return result
 
 def get_parquet_utils():
     """Get parquet utilities."""
@@ -400,7 +564,11 @@ class UniversalSerializer:
             return ParquetSerializer.load(filepath)
 
 class SerializationError(Exception):
-    pass
+    """Raised when serialization operations fail."""
+
+    def __init__(self, message: str, *, filepath: Optional[str] = None):
+        super().__init__(message)
+        self.filepath = filepath
 
 def save_json(data, filepath):
     JSONSerializer.save(data, filepath)
@@ -434,14 +602,34 @@ try:
 except ImportError:
     # Fallback if M1 optimizations not available
     class M1MemoryOptimizer:
-        def __init__(self, *args, **kwargs):
-            pass
-        def optimize_memory(self):
-            return {}
-    
+        def __init__(self, *args, memory_limit_gb: float | None = None, **kwargs):
+            self.memory_limit_gb = memory_limit_gb or 8.0
+            self.last_optimization: Dict[str, Any] = {}
+
+        def optimize_memory(self) -> Dict[str, Any]:
+            self.last_optimization = {
+                'enabled': False,
+                'limit_gb': self.memory_limit_gb,
+                'actions': [],
+            }
+            return self.last_optimization
+
+        def start_monitoring(self) -> bool:
+            return False
+
+        def stop_monitoring(self) -> bool:
+            return False
+
     class M1DataManager:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, optimizer: 'M1MemoryOptimizer', *args, **kwargs):
+            self.optimizer = optimizer
+            self.datasets: Dict[str, pd.DataFrame] = {}
+
+        def register_dataset(self, name: str, dataframe: pd.DataFrame) -> None:
+            self.datasets[name] = dataframe
+
+        def get_registered_datasets(self) -> Dict[str, pd.DataFrame]:
+            return dict(self.datasets)
 
 T = TypeVar('T')
 
@@ -486,17 +674,17 @@ class ServiceLifecycle(ABC):
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the service."""
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     async def cleanup(self) -> None:
         """Cleanup the service."""
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def is_healthy(self) -> bool:
         """Check if the service is healthy."""
-        pass
+        raise NotImplementedError
 
 class UtilityService(ServiceLifecycle):
     """Base class for utility services."""
@@ -537,12 +725,12 @@ class UtilityService(ServiceLifecycle):
     @abstractmethod
     async def _do_initialize(self) -> None:
         """Service-specific initialization."""
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     async def _do_cleanup(self) -> None:
         """Service-specific cleanup."""
-        pass
+        raise NotImplementedError
 
 class CommonOperationsService(UtilityService):
     """Service for common operations utilities."""
@@ -607,7 +795,7 @@ class CommonOperationsService(UtilityService):
     
     async def _do_cleanup(self) -> None:
         """Cleanup common operations service."""
-        pass
+        self.logger.info("🔻 Common operations utilities released")
     
     def get_operation(self, category: str, operation: str) -> Callable:
         """Get a specific operation."""
@@ -657,7 +845,7 @@ class MathValidationService(UtilityService):
     
     async def _do_cleanup(self) -> None:
         """Cleanup math validation service."""
-        pass
+        self.logger.info("🔻 Math validation utilities cleaned up")
 
 class ParquetService(UtilityService):
     """Service for parquet utilities."""

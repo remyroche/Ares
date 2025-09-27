@@ -1,45 +1,34 @@
-"""
-ML-Based Pattern Discovery
+"""Machine-learning driven price pattern discovery utilities.
 
-Advanced machine learning methods for discovering price patterns that may not be 
-captured by traditional mathematical definitions.
-
-Components:
-- LSTMPatternDiscovery: Neural pattern discovery using LSTM autoencoders
-- MatrixProfileDiscovery: Exact motif discovery using matrix profiles
-- ClusteringPatternDiscovery: Pattern discovery through price sequence clustering
-- AnomalyPatternDiscovery: Anomaly-based pattern identification
-
-Usage:
-    from src.research.cluster_analysis.price_patterns.ml_discovery import (
-        LSTMPatternDiscovery,
-        MatrixProfileDiscovery,
-        ClusteringPatternDiscovery,
-        AnomalyPatternDiscovery
-    )
+This package aggregates the richer pattern discovery implementations that live
+in the sibling modules and exposes concise, backwards compatible entry points.
+Historically this module shipped placeholder classes so the import paths would
+resolve during a staged migration.  The real implementations already exist in
+the specialised modules – this package now simply re-exports those concrete
+helpers so downstream code can rely on actual behaviour without changing
+imports.
 """
 
-# Placeholder classes - to be implemented during migration
-class LSTMPatternDiscovery:
-    """Neural pattern discovery using LSTM autoencoders."""
-    pass
+from .lstm_discovery import LSTMPricePatternDiscovery
+from .matrix_profile_discovery import MatrixProfilePriceDiscovery
+from .clustering_discovery import PriceSequenceClusteringDiscovery
+from .anomaly_discovery import AnomalyPatternDiscovery as _AnomalyPatternDiscovery
 
-class MatrixProfileDiscovery:
-    """Exact motif discovery using matrix profiles."""
-    pass
 
-class ClusteringPatternDiscovery:
-    """Pattern discovery through price sequence clustering."""
-    pass
+# Backwards compatible aliases -------------------------------------------------
 
-class AnomalyPatternDiscovery:
-    """Anomaly-based pattern identification."""
-    pass
+# The legacy code expects these class names.  Re-exporting the concrete
+# implementations keeps the public API intact while providing the fully fledged
+# behaviour from the dedicated modules.
+LSTMPatternDiscovery = LSTMPricePatternDiscovery
+MatrixProfileDiscovery = MatrixProfilePriceDiscovery
+ClusteringPatternDiscovery = PriceSequenceClusteringDiscovery
+AnomalyPatternDiscovery = _AnomalyPatternDiscovery
 
-# Main exports
+
 __all__ = [
     "LSTMPatternDiscovery",
-    "MatrixProfileDiscovery", 
+    "MatrixProfileDiscovery",
     "ClusteringPatternDiscovery",
-    "AnomalyPatternDiscovery"
+    "AnomalyPatternDiscovery",
 ]

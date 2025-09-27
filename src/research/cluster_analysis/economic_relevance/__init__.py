@@ -19,12 +19,22 @@ Usage:
     )
 """
 
+# NOTE: this module is executed under Python 3.10+, but we enable postponed evaluation
+# of annotations to keep compatibility with older tooling versions.
+from __future__ import annotations
+
 # Import actual implementations
-import pandas as pd
+import logging
+from typing import Dict, Iterable, Tuple
+
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
+
+
+logger = logging.getLogger(__name__)
 
 class EconomicRelevanceAnalyzer:
     """Main orchestrator for economic relevance analysis."""
@@ -104,7 +114,10 @@ class EconomicRelevanceAnalyzer:
             
             return relevance_score
             
-        except Exception as e:
+        except Exception as exc:  # pragma: no cover - defensive logging path
+            logger.exception(
+                "Failed to calculate ML relevance", exc_info=(type(exc), exc, exc.__traceback__)
+            )
             return 0.0
     
     def _analyze_market_state_effects(self, patterns, market_states):
@@ -233,45 +246,176 @@ class EconomicRelevanceAnalyzer:
         
         return recommendations
     
-    def test_causal_relationships(self, dimensions, patterns):
+    def test_causal_relationships(self, dimensions, patterns, max_lag: int = 3):
         """Test causal relationships between dimensions and patterns."""
-        # This would implement Granger causality testing
-        # For now, return placeholder structure
-        causal_results = {}
-        
-        for pattern_name in patterns.keys():
-            pattern_causality = {}
-            for dimension_name in dimensions.keys():
-                # Placeholder causal test result
-                pattern_causality[dimension_name] = {
-                    'granger_p_value': 0.5,  # Would be actual test result
-                    'causal_strength': 0.3,
-                    'is_causal': False
-                }
-            causal_results[pattern_name] = pattern_causality
-        
-        return causal_results
-    
+
+        causal_analyzer = CausalAnalyzer(max_lag=max_lag)
+        return causal_analyzer.evaluate(dimensions=dimensions, patterns=patterns)
+
     def measure_economic_significance(self, dimensions, patterns, market_states):
         """Measure economic significance for trading."""
         return self._measure_economic_significance(patterns, dimensions, market_states)
 
+    # Public wrappers for reuse across helper analyzers
+    def calculate_pattern_dimension_matrix(self, patterns, dimensions):
+        return self._calculate_pattern_dimension_matrix(patterns, dimensions)
+
+    def analyze_market_state_effects(self, patterns, market_states):
+        return self._analyze_market_state_effects(patterns, market_states)
+
+    def generate_trading_recommendations(self, relevance_matrix, state_effects, economic_significance):
+        return self._generate_trading_recommendations(relevance_matrix, state_effects, economic_significance)
+
 # Placeholder classes - to be implemented during migration
 class PatternDimensionAnalyzer:
     """Pattern-dimension relationship analysis."""
-    pass
+
+    def __init__(self, base_analyzer: EconomicRelevanceAnalyzer | None = None):
+        self._analyzer = base_analyzer or EconomicRelevanceAnalyzer()
+
+    def score(self, patterns: Dict[str, Dict], dimensions: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Return a DataFrame describing how well each dimension predicts a pattern."""
+
+        matrix = self._analyzer.calculate_pattern_dimension_matrix(patterns, dimensions)
+        return matrix.fillna(0.0)
+
+    def summarize(self, patterns: Dict[str, Dict], dimensions: Dict[str, pd.DataFrame], top_n: int = 3) -> Dict[str, Iterable[Tuple[str, float]]]:
+        """Return the top ``top_n`` dimensions per pattern."""
+
+        matrix = self.score(patterns, dimensions)
+        summary: Dict[str, Iterable[Tuple[str, float]]] = {}
+
+        for pattern in matrix.index:
+            ranked = matrix.loc[pattern].sort_values(ascending=False)
+            summary[pattern] = list(zip(ranked.index[:top_n], ranked.values[:top_n]))
+
+        return summary
+
 
 class MarketStateRelevanceAnalyzer:
     """Market state pattern analysis."""
-    pass
+
+    def __init__(self, base_analyzer: EconomicRelevanceAnalyzer | None = None):
+        self._analyzer = base_analyzer or EconomicRelevanceAnalyzer()
+
+    def analyze(self, patterns: Dict[str, Dict], market_states: Dict[str, pd.Series]) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Return market state impacts for each pattern."""
+
+        return self._analyzer.analyze_market_state_effects(patterns, market_states)
+
 
 class CausalAnalyzer:
     """Causal relationship identification."""
-    pass
+
+    def __init__(self, max_lag: int = 3, min_correlation: float = 0.2):
+        self.max_lag = max(1, max_lag)
+        self.min_correlation = max(0.0, min_correlation)
+
+    def evaluate(self, dimensions: Dict[str, pd.DataFrame | pd.Series], patterns: Dict[str, Dict]) -> Dict[str, Dict[str, Dict[str, float | bool | int]]]:
+        """Evaluate lagged correlations as a lightweight causal proxy."""
+
+        results: Dict[str, Dict[str, Dict[str, float | bool | int]]] = {}
+
+        for pattern_name, pattern_payload in patterns.items():
+            labels = pattern_payload.get("labels")
+            if labels is None or labels.empty:
+                continue
+
+            pattern_results: Dict[str, Dict[str, float | bool | int]] = {}
+
+            for dimension_name, feature_payload in dimensions.items():
+                feature_series = self._prepare_feature_series(feature_payload)
+                common_index = labels.index.intersection(feature_series.index)
+                if len(common_index) < 30:
+                    continue
+
+                aligned_labels = labels.loc[common_index].astype(float)
+                aligned_features = feature_series.loc[common_index]
+
+                best_lag, best_strength = self._find_best_leading_lag(aligned_features, aligned_labels)
+                pattern_results[dimension_name] = {
+                    "leading_lag": best_lag,
+                    "causal_strength": best_strength,
+                    "is_causal": best_strength >= self.min_correlation,
+                }
+
+            if pattern_results:
+                results[pattern_name] = pattern_results
+
+        return results
+
+    @staticmethod
+    def _prepare_feature_series(feature_payload: pd.DataFrame | pd.Series) -> pd.Series:
+        if isinstance(feature_payload, pd.DataFrame):
+            return feature_payload.mean(axis=1)
+
+        return feature_payload
+
+    def _find_best_leading_lag(self, feature_series: pd.Series, labels: pd.Series) -> Tuple[int, float]:
+        best_lag = 0
+        best_strength = 0.0
+
+        for lag in range(1, self.max_lag + 1):
+            shifted = feature_series.shift(lag).dropna()
+            aligned_index = shifted.index.intersection(labels.index)
+            if len(aligned_index) < 20:
+                continue
+
+            aligned_features = shifted.loc[aligned_index]
+            aligned_labels = labels.loc[aligned_index]
+
+            if aligned_features.std() == 0 or aligned_labels.std() == 0:
+                continue
+
+            correlation = float(np.corrcoef(aligned_features, aligned_labels)[0, 1])
+            strength = abs(correlation)
+
+            if strength > best_strength:
+                best_strength = strength
+                best_lag = lag
+
+        return best_lag, best_strength
+
 
 class TradingSignificanceAnalyzer:
     """Economic value measurement."""
-    pass
+
+    def __init__(self, base_analyzer: EconomicRelevanceAnalyzer | None = None):
+        self._analyzer = base_analyzer or EconomicRelevanceAnalyzer()
+
+    def evaluate(self, patterns: Dict[str, Dict], dimensions: Dict[str, pd.DataFrame], market_states: Dict[str, pd.Series]):
+        """Return economic metrics per pattern."""
+
+        return self._analyzer.measure_economic_significance(dimensions, patterns, market_states)
+
+    def opportunity_report(
+        self,
+        patterns: Dict[str, Dict],
+        dimensions: Dict[str, pd.DataFrame],
+        market_states: Dict[str, pd.Series],
+        min_score: float = 0.6,
+    ) -> Dict[str, Dict[str, float]]:
+        """Return high confidence trading opportunities."""
+
+        relevance_matrix = self._analyzer.calculate_pattern_dimension_matrix(patterns, dimensions)
+        state_effects = self._analyzer.analyze_market_state_effects(patterns, market_states)
+        economic_significance = self._analyzer.measure_economic_significance(dimensions, patterns, market_states)
+
+        recommendations = self._analyzer.generate_trading_recommendations(
+            relevance_matrix,
+            state_effects,
+            economic_significance,
+        )
+
+        return {
+            rec["pattern"]: {
+                "dimension": rec.get("dimension"),
+                "relevance_score": rec.get("relevance_score", 0.0),
+                "economic_score": rec.get("economic_score", 0.0),
+            }
+            for rec in recommendations
+            if rec.get("economic_score", 0.0) >= min_score
+        }
 
 # Main exports
 __all__ = [

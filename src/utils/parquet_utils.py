@@ -70,8 +70,12 @@ class ParquetUtils:
         finally:
             try:
                 del sample_df  # type: ignore[name-defined]
-            except Exception:
-                pass
+            except Exception as cleanup_error:
+                self.logger.debug(
+                    "Failed to release parquet sample frame: %s",
+                    cleanup_error,
+                    exc_info=True,
+                )
             gc.collect()
 
         return result

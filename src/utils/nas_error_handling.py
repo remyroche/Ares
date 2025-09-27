@@ -276,8 +276,33 @@ class ErrorHandler:
     
     def _check_circuit_breakers(self, error: NASBaseException):
         """Check if error should trigger circuit breakers."""
-        # Implementation for circuit breaker triggers
-        pass
+        if error.severity not in {ErrorSeverity.HIGH, ErrorSeverity.CRITICAL}:
+            return
+
+        breaker_name = f"{error.category.value}_breaker"
+        breaker = self.get_circuit_breaker(breaker_name)
+
+        with breaker._lock:
+            breaker.failure_count += 1
+            breaker.last_failure_time = time.time()
+
+            if breaker.failure_count >= breaker.config.failure_threshold:
+                if breaker.state != "OPEN":
+                    breaker.state = "OPEN"
+                    self.logger.error(
+                        "Circuit breaker %s opened after %d failures (latest: %s)",
+                        breaker_name,
+                        breaker.failure_count,
+                        error.message,
+                    )
+            elif breaker.state == "OPEN" and (
+                time.time() - breaker.last_failure_time
+            ) > breaker.config.recovery_timeout:
+                breaker.state = "HALF_OPEN"
+                self.logger.info(
+                    "Circuit breaker %s entering HALF_OPEN state after cooldown",
+                    breaker_name,
+                )
     
     def get_circuit_breaker(self, name: str, config: Optional[CircuitBreakerConfig] = None) -> CircuitBreaker:
         """Get or create a circuit breaker."""

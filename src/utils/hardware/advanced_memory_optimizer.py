@@ -500,6 +500,9 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
         self.memory_pools: Dict[MemoryPoolType, IntelligentMemoryPool] = {}
         self.predictive_manager = PredictiveMemoryManager()
         self.event_tracker = MemoryEventTracker()
+        self._allocation_metrics: defaultdict[MemoryPoolType, Dict[str, float]] = defaultdict(
+            lambda: {'events': 0, 'bytes': 0.0, 'last_timestamp': 0.0}
+        )
         
         # Initialize memory pools
         self._initialize_memory_pools()
@@ -612,8 +615,40 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
             
     def _handle_allocation_event(self, event: MemoryEvent):
         """Handle allocation events."""
-        # Update predictive models based on allocation patterns
-        pass
+        pool_key = event.pool_type or MemoryPoolType.SMALL_OBJECTS
+        stats = self._allocation_metrics[pool_key]
+        stats['events'] += 1
+        stats['bytes'] += event.size_bytes
+        stats['last_timestamp'] = event.timestamp
+
+        usage_after_mb = event.memory_usage_after / (1024 ** 2) if event.memory_usage_after else None
+        metadata = {'event': 'allocation', 'pool': pool_key.value}
+        if usage_after_mb is not None:
+            self.predictive_manager.record_memory_usage(usage_after_mb / 1024, metadata)
+
+        if pool_key in self.memory_pools:
+            pool = self.memory_pools[pool_key]
+            if pool.config.max_size_mb > 0:
+                utilization = (pool.allocated_mb / pool.config.max_size_mb) if pool.config.max_size_mb else 0
+                if utilization > 0.85:
+                    self.logger.warning(
+                        "⚠️ %s pool utilization at %.0f%% (event size %.2f MB)",
+                        pool_key.value,
+                        utilization * 100,
+                        event.size_bytes / (1024 ** 2),
+                    )
+                    if self.strategy != MemoryStrategy.AGGRESSIVE:
+                        self.strategy = MemoryStrategy.AGGRESSIVE
+                        self.logger.info("Switching to AGGRESSIVE strategy due to pool pressure")
+
+        if stats['events'] % 50 == 0:
+            average_size_mb = (stats['bytes'] / stats['events']) / (1024 ** 2)
+            self.logger.info(
+                "📈 Processed %d allocation events for %s (avg %.2f MB)",
+                int(stats['events']),
+                pool_key.value,
+                average_size_mb,
+            )
         
     def _proactive_memory_cleanup(self):
         """Perform proactive memory cleanup based on predictions."""

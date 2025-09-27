@@ -326,13 +326,13 @@ class BasePerformanceEstimator:
                     confidence = max(proba) if len(proba) > 1 else proba[0]
                 except Exception as e:
                     tprint_debug(f"🔍 Failed to calculate confidence using predict_proba: {e}")
-                    pass
+                    confidence = float(confidence)
             elif hasattr(self.model, 'score'):
                 try:
                     confidence = min(0.9, max(0.1, self.model.score(feature_array, [predicted_value])))
                 except Exception as e:
                     tprint_debug(f"🔍 Failed to calculate confidence using score method: {e}")
-                    pass
+                    confidence = float(confidence)
             
             return PerformancePrediction(
                 predicted_value=float(predicted_value),

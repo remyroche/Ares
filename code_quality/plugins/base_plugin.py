@@ -142,6 +142,7 @@ class BasePlugin(ABC):
     
     def __init__(self, configuration: Optional[Dict[str, Any]] = None):
         self.configuration = configuration or {}
+        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.metadata = self.get_metadata()
         self._validate_configuration()
     
@@ -149,11 +150,11 @@ class BasePlugin(ABC):
     def get_metadata(self) -> PluginMetadata:
         """
         Return plugin metadata.
-        
+
         Returns:
             PluginMetadata: Plugin metadata including name, version, etc.
         """
-        pass
+        raise NotImplementedError("Plugins must provide metadata describing their capabilities.")
     
     @abstractmethod
     def is_available(self) -> bool:
@@ -163,7 +164,7 @@ class BasePlugin(ABC):
         Returns:
             bool: True if plugin can be executed, False otherwise
         """
-        pass
+        raise NotImplementedError("Plugins must report their runtime availability status.")
     
     @abstractmethod
     def execute(self, context: PluginContext) -> PluginResult:
@@ -176,7 +177,7 @@ class BasePlugin(ABC):
         Returns:
             PluginResult: Result of plugin execution
         """
-        pass
+        raise NotImplementedError("Plugins must implement their core execution routine.")
     
     def validate_dependencies(self) -> List[str]:
         """
@@ -220,21 +221,46 @@ class BasePlugin(ABC):
     def pre_execute(self, context: PluginContext) -> None:
         """
         Called before plugin execution.
-        
+
         Args:
             context: Plugin execution context
         """
-        pass
-    
+        self.logger.info("Starting plugin %s", self.metadata.name)
+        context.metadata.setdefault('execution_start', datetime.utcnow().isoformat())
+        if context.cache_dir:
+            context.cache_dir.mkdir(parents=True, exist_ok=True)
+        if context.output_dir:
+            context.output_dir.mkdir(parents=True, exist_ok=True)
+        if context.verbose:
+            context.metadata['verbose_start'] = time.time()
+
     def post_execute(self, context: PluginContext, result: PluginResult) -> None:
         """
         Called after plugin execution.
-        
+
         Args:
             context: Plugin execution context
             result: Plugin execution result
         """
-        pass
+        self.logger.info(
+            "Completed plugin %s in %.2fs (success=%s)",
+            self.metadata.name,
+            result.execution_time,
+            result.success,
+        )
+        summary = {
+            'files_processed': result.files_processed,
+            'issues_found': result.issues_found,
+            'issues_fixed': result.issues_fixed,
+            'errors': len(result.errors),
+            'warnings': len(result.warnings),
+        }
+        context.metadata['last_result_summary'] = summary
+        if result.errors:
+            self.logger.warning("Plugin %s reported %d errors", self.metadata.name, len(result.errors))
+        if context.verbose and 'verbose_start' in context.metadata:
+            elapsed = time.time() - context.metadata.pop('verbose_start')
+            self.logger.debug("Verbose timing for %s: %.2fs", self.metadata.name, elapsed)
     
     def _validate_configuration(self) -> None:
         """Validate plugin configuration."""
@@ -330,7 +356,7 @@ class FileProcessorPlugin(BasePlugin):
         Returns:
             Dict[str, Any]: Result of processing the file
         """
-        pass
+        raise NotImplementedError("Plugins must implement process_file")
 
 
 class DirectoryProcessorPlugin(BasePlugin):
@@ -385,4 +411,4 @@ class DirectoryProcessorPlugin(BasePlugin):
         Returns:
             Dict[str, Any]: Result of processing the directory
         """
-        pass
+        raise NotImplementedError("Plugins must implement process_directory")

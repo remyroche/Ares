@@ -249,9 +249,13 @@ class PaperTradingIntegration:
                         cl.log_trade(
                             f"{side.upper()} {quantity} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}",
                         )
-                except Exception:
+                except Exception as trade_log_error:
                     # Trade logging should not affect execution
-                    pass
+                    self.logger.debug(
+                        "Unable to persist trade to comprehensive logger: %s",
+                        trade_log_error,
+                        exc_info=True,
+                    )
 
                 # Generate real-time report if enabled
                 if self.enable_real_time_reporting and self.reporter:

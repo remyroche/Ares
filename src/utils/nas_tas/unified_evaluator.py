@@ -1298,11 +1298,14 @@ class UnifiedEvaluator:
             # Cleanup hardware optimizations
             if COMMON_OPERATIONS_AVAILABLE:
                 cleanup_m1_optimizers()
-            
+
             # Close file handles
             if hasattr(self, 'results_dir'):
-                pass  # Results directory cleanup handled automatically
-            
+                results_dir = getattr(self, 'results_dir', None)
+                if isinstance(results_dir, Path) and results_dir.exists():
+                    self.logger.debug("Results directory retained at %s", results_dir)
+                self.results_dir = None
+
             if TPRINT_AVAILABLE:
                 tprint_info("🧹 NASEvaluator cleanup completed")
             else:

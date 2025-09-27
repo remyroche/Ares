@@ -290,25 +290,25 @@ class ILogger(ABC):
 
     @abstractmethod
     def info(self, message: str) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def error(self, message: str) -> None:
-        pass
+        raise NotImplementedError
 
 class IDataValidator(ABC):
     """Data validator interface."""
 
     @abstractmethod
     def validate(self, data: Any) -> bool:
-        pass
+        raise NotImplementedError
 
 class IFeatureEngine(ABC):
     """Feature engineering interface."""
 
     @abstractmethod
     def extract_features(self, data: Any) -> Any:
-        pass
+        raise NotImplementedError
 
 class ConsoleLogger(ILogger):
     """Simple console logger implementation."""

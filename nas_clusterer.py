@@ -1238,9 +1238,10 @@ class NASClusterer:
             # Silently ignore cleanup errors in destructor to avoid issues during shutdown
             try:
                 tprint(f"Cleanup error in destructor (ignored): {e}", level="debug")
-            except Exception:
-                # If tprint itself fails, silently ignore to avoid recursion
-                pass
+            except Exception as inner_exc:
+                logging.getLogger(__name__).debug(
+                    "Failed to emit destructor cleanup warning: %s", inner_exc
+                )
 
 
 # Convenience functions

@@ -479,8 +479,10 @@ async def get_launcher_status():
                             })
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
-            except Exception:
-                pass
+            except Exception as process_error:
+                logging.getLogger(__name__).warning(
+                    "Launcher process inspection failed: %s", process_error
+                )
 
             return {
                 "launcher_active": len(running_processes) > 0,
@@ -720,8 +722,10 @@ async def get_training_status():
                             })
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
-            except Exception:
-                pass
+            except Exception as process_error:
+                logging.getLogger(__name__).warning(
+                    "Training process inspection failed: %s", process_error
+                )
             
             return {
                 "training_active": len(training_processes) > 0,

@@ -479,8 +479,9 @@ class ParquetDatasetManager:
                         df.loc[:, 'timestamp'] = (ts_numeric // 10 ** 6).astype('int64')
                     else:
                         df.loc[:, 'timestamp'] = ts_numeric.astype('int64')
-            except Exception:
-                pass
+            except Exception as exc:
+                if self.logger:
+                    self.logger.exception('Failed to normalize timestamp column during schema enforcement', exc_info=exc)
         for col, dtype in conversions.items():
             if col in df.columns:
                 try:
@@ -515,8 +516,9 @@ class ParquetDatasetManager:
                 ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True, errors='coerce')
                 if self.logger:
                     self.logger.info(f'Timestamp coverage: {ts.min()} → {ts.max()} (UTC)')
-        except Exception:
-            pass
+        except Exception as exc:
+            if self.logger:
+                self.logger.debug('Failed to summarize written parquet files: %s', exc)
         if 'timestamp' in df.columns and auto_add_date_columns:
             ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True)
             if 'year' not in df.columns:
@@ -531,8 +533,9 @@ class ParquetDatasetManager:
                 meta = {str(k): str(v) if v is not None else '' for k, v in metadata.items()}
                 schema_with_meta = table.schema.with_metadata(meta)
                 table = table.cast(schema_with_meta)
-            except Exception:
-                pass
+            except Exception as exc:
+                if self.logger:
+                    self.logger.warning('Failed to apply metadata to parquet schema: %s', exc)
         partitioning = None
         try:
             if partition_cols:
@@ -581,8 +584,9 @@ class ParquetDatasetManager:
                             total_bytes += os.path.getsize(os.path.join(r, f))
             if self.logger:
                 self.logger.info(f'Partitioned write complete: files_before={before_count}, files_after={after_count}, size≈{total_bytes} bytes')
-        except Exception:
-            pass
+        except Exception as exc:
+            if self.logger:
+                self.logger.debug('Unable to summarize partitioned parquet output: %s', exc)
         if update_manifest:
             with contextlib.suppress(Exception):
                 self.update_manifest(base_dir)
@@ -1847,9 +1851,13 @@ if __name__ == '__main__':
     try:
         asyncio.run(_main())
     except KeyboardInterrupt:
-        pass
-    except Exception:
-        pass
+        tprint('⚠️ Step 1.5: Data Converter interrupted by user')
+        if system_logger:
+            system_logger.warning('Step 1.5 Data Converter interrupted by user input')
+    except Exception as exc:
+        tprint(f'❌ Step 1.5: Data Converter crashed: {exc}')
+        if system_logger:
+            system_logger.exception('Step 1.5 Data Converter failed', exc_info=exc)
     finally:
         gc.collect()
 from src.utils.enhanced_artifact_manager import get_artifact_manager

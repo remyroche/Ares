@@ -435,28 +435,70 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         # For non-DataFrame data, assume it's valid if not None
         self.logger.warning("Non-DataFrame data provided, validation limited")
         return True
-    
+
+    # ------------------------------------------------------------------
+    # Hardware capability helpers
+
+    def _detect_gpu_availability(self) -> bool:
+        """Check whether torch reports any usable GPU backend."""
+
+        try:
+            import torch  # type: ignore
+        except ImportError as exc:
+            self.logger.debug('PyTorch unavailable; GPU optimisation disabled: %s', exc)
+            return False
+
+        try:
+            cuda_available = bool(getattr(torch.cuda, 'is_available', lambda: False)())
+            mps_backend = getattr(torch.backends, 'mps', None)
+            mps_available = bool(mps_backend and getattr(mps_backend, 'is_available', lambda: False)())
+
+            if cuda_available or mps_available:
+                self.logger.debug(
+                    'GPU acceleration detected for SR optimisation (cuda=%s, mps=%s)',
+                    cuda_available,
+                    mps_available,
+                )
+            else:
+                self.logger.debug('PyTorch present but no GPU backend available for SR optimisation.')
+
+            return cuda_available or mps_available
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.warning('Torch GPU capability detection failed: %s', exc, exc_info=True)
+            return False
+
+    def _determine_memory_limit(self, default_gb: float = 4.0, max_gb: float = 8.0) -> float:
+        """Estimate a safe memory budget for optimisation workloads."""
+
+        try:
+            import psutil  # type: ignore
+        except ImportError as exc:
+            self.logger.debug('psutil unavailable; using default memory budget: %s', exc)
+            return default_gb
+
+        try:
+            available_memory_gb = psutil.virtual_memory().available / (1024 ** 3)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.warning('Unable to inspect system memory; using default budget: %s', exc, exc_info=True)
+            return default_gb
+
+        calculated_limit = available_memory_gb * 0.5
+        constrained_limit = max(default_gb, min(calculated_limit, max_gb))
+
+        if constrained_limit != default_gb:
+            self.logger.debug('Estimated memory budget for SR optimisation: %.2f GB', constrained_limit)
+        else:
+            self.logger.debug('Using default memory budget for SR optimisation: %.2f GB', constrained_limit)
+
+        return constrained_limit
+
     def _create_validated_param_config(self):
         """Create parameter optimization config with hardware capability validation."""
         if not SR_CLUSTERING_AVAILABLE or ParameterOptimizationConfig is None:
             raise RuntimeError("ParameterOptimizationConfig not available")
-            
-        # Check GPU availability
-        gpu_available = False
-        try:
-            import torch
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-        except ImportError:
-            pass
-            
-        # Determine optimal memory settings based on available memory
-        memory_limit_gb = 4.0  # Conservative default
-        try:
-            import psutil
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)  # Use max 50% of available memory
-        except ImportError:
-            pass
+
+        gpu_available = self._detect_gpu_availability()
+        memory_limit_gb = self._determine_memory_limit()
             
         return ParameterOptimizationConfig(
             optimization_method='adaptive_grid_search',
@@ -477,21 +519,9 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
         """Create backtesting config with hardware capability validation."""
         if not SR_CLUSTERING_AVAILABLE or BacktestConfig is None:
             raise RuntimeError("BacktestConfig not available")
-            
-        # Check GPU availability
-        gpu_available = False
-        try:
-            gpu_available = torch.cuda.is_available() or torch.backends.mps.is_available()
-        except ImportError:
-            pass
-            
-        # Determine optimal memory settings
-        memory_limit_gb = 4.0  # Conservative default
-        try:
-            available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            memory_limit_gb = min(available_memory_gb * 0.5, 8.0)
-        except ImportError:
-            pass
+
+        gpu_available = self._detect_gpu_availability()
+        memory_limit_gb = self._determine_memory_limit()
             
         return BacktestConfig(
             enable_parameter_optimization=True,

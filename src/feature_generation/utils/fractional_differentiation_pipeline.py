@@ -16,7 +16,7 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 
 from src.utils.tprint import tprint
@@ -78,29 +78,116 @@ except ImportError:
             self.issues = issues
 
     class EnhancedDataQualityValidator:
-        def __init__(self, *args, **kwargs):
-            pass
+        """Fallback validator that performs lightweight data checks."""
 
-        def validate(self, data):
-            return QualityResult(True, 1.0, [])
+        def __init__(self, *, min_rows: int = 1, require_numeric: bool = False):
+            self.min_rows = min_rows
+            self.require_numeric = require_numeric
+
+        def validate(self, data: pd.DataFrame) -> 'QualityResult':
+            issues: List[str] = []
+            if data is None or not isinstance(data, pd.DataFrame):
+                issues.append('not_a_dataframe')
+                return QualityResult(False, 0.0, issues)
+
+            if len(data) < self.min_rows:
+                issues.append('insufficient_rows')
+
+            if data.empty:
+                issues.append('dataframe_empty')
+
+            if self.require_numeric:
+                non_numeric = [col for col in data.columns if not pd.api.types.is_numeric_dtype(data[col])]
+                if non_numeric:
+                    issues.append(f'non_numeric_columns:{";".join(non_numeric)}')
+
+            score = 1.0 - (len(issues) * 0.2)
+            return QualityResult(len(issues) == 0, max(score, 0.0), issues)
 
 # Simple placeholder classes for missing functionality
 class DataQualityUtilities:
-    def __init__(self):
-        pass
+    """Utility helpers for common quality calculations."""
+
+    def __init__(self, dataframe: Optional[pd.DataFrame] = None):
+        self.dataframe = dataframe
+
+    def attach(self, dataframe: pd.DataFrame) -> None:
+        self.dataframe = dataframe
+
+    def missing_ratio(self) -> pd.Series:
+        if self.dataframe is None or self.dataframe.empty:
+            return pd.Series(dtype=float)
+        return self.dataframe.isna().mean().rename('missing_ratio')
+
+    def detect_outliers(self, z_threshold: float = 3.0) -> pd.DataFrame:
+        if self.dataframe is None or self.dataframe.empty:
+            return pd.DataFrame(columns=['column', 'position'])
+        numeric = self.dataframe.select_dtypes(include=[np.number])
+        if numeric.empty:
+            return pd.DataFrame(columns=['column', 'position'])
+        z_scores = (numeric - numeric.mean()) / numeric.std(ddof=0).replace(0.0, np.nan)
+        mask = z_scores.abs() > z_threshold
+        locations = mask.stack()
+        if locations.empty:
+            return pd.DataFrame(columns=['column', 'position'])
+        rows = [{'column': col, 'position': idx} for (idx, col), flagged in locations.items() if flagged]
+        return pd.DataFrame(rows)
+
 
 class CommonOperations:
-    def __init__(self):
-        pass
+    """Collection of reusable dataframe transformations."""
 
-# Simple placeholder classes for missing functionality
+    def ensure_sorted_index(self, df: pd.DataFrame) -> pd.DataFrame:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError('ensure_sorted_index expects a pandas DataFrame')
+        return df.sort_index()
+
+    def fill_missing(self, df: pd.DataFrame, method: str = 'ffill') -> pd.DataFrame:
+        if method not in {'ffill', 'bfill', 'median'}:
+            raise ValueError(f'Unsupported fill method: {method}')
+        if method == 'median':
+            return df.fillna(df.median(numeric_only=True))
+        return df.fillna(method=method)
+
+
 class DataFrameValidator:
-    def __init__(self):
-        pass
+    """Lightweight dataframe validator used when enhanced utilities are unavailable."""
+
+    def __init__(self, required_columns: Optional[Iterable[str]] = None, allow_empty: bool = False):
+        self.required_columns = set(required_columns or [])
+        self.allow_empty = allow_empty
+
+    def validate(self, df: pd.DataFrame) -> QualityResult:
+        issues: List[str] = []
+        if not isinstance(df, pd.DataFrame):
+            issues.append('not_a_dataframe')
+            return QualityResult(False, 0.0, issues)
+
+        if not self.allow_empty and df.empty:
+            issues.append('dataframe_empty')
+
+        missing = self.required_columns - set(df.columns)
+        if missing:
+            issues.append(f'missing_columns:{";".join(sorted(missing))}')
+
+        score = 1.0 - (0.3 * len(issues))
+        return QualityResult(len(issues) == 0, max(score, 0.0), issues)
+
 
 class DataQualityReport:
-    def __init__(self):
-        pass
+    """Generate a simple quality report summary."""
+
+    def __init__(self, dataframe: Optional[pd.DataFrame] = None):
+        self.utilities = DataQualityUtilities(dataframe)
+
+    def generate(self) -> Dict[str, Any]:
+        missing = self.utilities.missing_ratio()
+        outliers = self.utilities.detect_outliers()
+        return {
+            'missing_ratio': missing.to_dict(),
+            'outlier_count': int(len(outliers)),
+            'outlier_locations': outliers.to_dict(orient='records'),
+        }
 # Math validation functions available in data_qualification_imports
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 

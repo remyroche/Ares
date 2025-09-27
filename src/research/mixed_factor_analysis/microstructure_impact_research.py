@@ -854,11 +854,15 @@ class MicrostructureImpactAnalyzer:
                     )
                     subsample_impacts.append(subsample_impact['impact_strength'])
                 except ValueError as e:
-                    tprint_warning(f"Microstructure subsample impact calculation failed due to invalid data: {e}")
-                    pass
+                    tprint_warning(
+                        f"Microstructure subsample impact calculation failed due to invalid data: {e}"
+                    )
+                    continue
                 except Exception as e:
-                    tprint_warning(f"Microstructure subsample impact calculation failed with unexpected error: {e}")
-                    pass
+                    tprint_warning(
+                        f"Microstructure subsample impact calculation failed with unexpected error: {e}"
+                    )
+                    continue
             
             if subsample_impacts:
                 robustness_metrics['subsample_stability'] = float(1.0 - np.std(subsample_impacts))
@@ -887,11 +891,15 @@ class MicrostructureImpactAnalyzer:
                     )
                     regime_impacts.append(regime_impact['impact_strength'])
                 except ValueError as e:
-                    tprint_warning(f"Microstructure regime impact calculation failed due to invalid data: {e}")
-                    pass
+                    tprint_warning(
+                        f"Microstructure regime impact calculation failed due to invalid data: {e}"
+                    )
+                    continue
                 except Exception as e:
-                    tprint_warning(f"Microstructure regime impact calculation failed with unexpected error: {e}")
-                    pass
+                    tprint_warning(
+                        f"Microstructure regime impact calculation failed with unexpected error: {e}"
+                    )
+                    continue
         
         if len(regime_impacts) > 1:
             robustness_metrics['regime_stability'] = float(1.0 - abs(regime_impacts[0] - regime_impacts[1]))

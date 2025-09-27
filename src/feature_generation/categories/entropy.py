@@ -53,10 +53,69 @@ class EntropyFeatureGenerator(VectorizedFeatureGenerator):
     def create_default(cls) -> 'EntropyFeatureGenerator':
         return cls()
     
+    @staticmethod
+    def _compute_entropy(values: pd.Series) -> float:
+        cleaned = pd.Series(values).dropna().astype(float)
+        if cleaned.empty:
+            return 0.0
+
+        # Adaptive bin count with sensible bounds for small windows
+        unique_count = cleaned.nunique()
+        bin_count = int(max(2, min(10, unique_count)))
+        hist, _ = np.histogram(cleaned, bins=bin_count)
+        total = hist.sum()
+        if total == 0:
+            return 0.0
+
+        probs = hist / total
+        probs = probs[probs > 0]
+        if probs.size == 0:
+            return 0.0
+
+        entropy = float(-(probs * np.log2(probs)).sum())
+        normalizer = np.log2(bin_count)
+        return entropy / normalizer if normalizer > 0 else entropy
+
+    def _select_series(self, entropy_type: str, data: pd.DataFrame) -> Optional[pd.Series]:
+        if entropy_type == "price":
+            return data['close'].astype(float)
+        if entropy_type == "volume" and 'volume' in data.columns:
+            return data['volume'].astype(float)
+        if entropy_type == "return":
+            close = data['close'].astype(float)
+            return close.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        if entropy_type == "range" and {'high', 'low'} <= set(data.columns):
+            return (data['high'] - data['low']).astype(float)
+        return None
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        close_prices = data['close'].values
-        entropy = np.zeros_like(close_prices)
-        return pd.Series(entropy, index=data.index, name='entropy_placeholder')
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='entropy_signal')
+
+        params = self.config.parameters or {}
+        entropy_windows = [window for window in params.get('entropy_windows', [self.config.default_lookback]) if window and window > 1]
+        entropy_types = params.get('entropy_types', ["price", "return"])
+
+        contributions: List[pd.Series] = []
+        for entropy_type in entropy_types:
+            series = self._select_series(entropy_type, data)
+            if series is None:
+                self.logger.debug("Entropy type '%s' unavailable due to missing data", entropy_type)
+                continue
+
+            for window in entropy_windows:
+                entropy_series = series.rolling(window=window, min_periods=window).apply(
+                    self._compute_entropy,
+                    raw=False,
+                )
+                contributions.append(entropy_series.rename(f"entropy_{entropy_type}_{window}"))
+
+        if not contributions:
+            return pd.Series(0.0, index=data.index, name='entropy_signal')
+
+        aggregated = pd.concat(contributions, axis=1).mean(axis=1)
+        aggregated = aggregated.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return aggregated.clip(0.0, 1.0).rename('entropy_signal')
 
 # Price Entropy Generator
 class PriceEntropyGenerator(FeatureGenerator):

@@ -67,9 +67,13 @@ def instantiate_from_dict(target_cls: Type[T], data: Mapping[str, Any]) -> T:
             field_names = {f.name for f in fields(target_cls)}
             filtered = {k: v for k, v in data.items() if k in field_names}
             return target_cls(**filtered)  # type: ignore[misc]
-    except Exception:
-        # Fall through to generic construction
-        pass
+    except Exception as exc:
+        # Fall through to generic construction while preserving the root cause for debugging
+        logger.debug(
+            "Falling back to generic construction for %s due to error: %s",
+            target_cls.__name__,
+            exc,
+        )
 
     return target_cls(**dict(data))  # type: ignore[misc]
 

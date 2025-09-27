@@ -2023,9 +2023,8 @@ class CodeInteractionMapper:
                         dependency_map['class_usage'][class_name] = []
                     dependency_map['class_usage'][class_name].append((file_str, node.lineno))
                     
-        except Exception as e:
-            # Silently skip problematic nodes
-            pass
+        except Exception as exc:
+            self.logger.debug("Skipping AST node %s in %s due to error: %s", type(node).__name__, file_str, exc)
 
     def _analyze_string_patterns_safe(self, content, file_path, dependency_map):
         """Analyze string patterns for dynamic usage with error handling."""
@@ -2063,9 +2062,8 @@ class CodeInteractionMapper:
                         tprint_warning(f"Error processing regex match for dynamic import: {e}")
                         continue
                         
-        except Exception as e:
-            # Silently skip problematic string analysis
-            pass
+        except Exception as exc:
+            self.logger.debug("Failed to analyze string patterns in %s: %s", file_path, exc)
 
     def _analyze_ast_node(self, node, file_path, lines, dependency_map):
         """Analyze individual AST nodes for dependencies (legacy method)."""
@@ -2223,9 +2221,14 @@ class CodeInteractionMapper:
         # Check reflection usage
         for usage_type, usages in dependency_map['reflection_usage'].items():
             for file_path, line_num in usages:
-                # This would require analyzing the specific line for the name
-                # For now, return False to be conservative
-                pass
+                try:
+                    line = Path(file_path).read_text(encoding='utf-8').splitlines()[line_num - 1]
+                except Exception as exc:
+                    self.logger.debug("Unable to inspect reflection usage in %s:%s: %s", file_path, line_num, exc)
+                    continue
+                if name in line:
+                    self.logger.debug("Detected dynamic reference to %s via %s in %s:%s", name, usage_type, file_path, line_num)
+                    return True
         return False
 
     def _check_cross_file_usage(self, name, dependency_map, issue):
@@ -2276,9 +2279,9 @@ class CodeInteractionMapper:
                 if module_parts[-1].endswith('.py'):
                     module_parts[-1] = module_parts[-1][:-3]
                 return '.'.join(module_parts)
-        except (ValueError, IndexError, AttributeError) as e:
-            tprint_warning(f"Error extracting module from file path: {e}")
-            pass
+        except (ValueError, IndexError, AttributeError) as exc:
+            tprint_warning(f"Error extracting module from file path: {exc}")
+            self.logger.debug("Module extraction failure for %s: %s", file_path, exc)
         return None
 
     def _check_documentation_only_references(self, name, dependency_map):

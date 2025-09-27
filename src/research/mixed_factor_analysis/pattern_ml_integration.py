@@ -481,13 +481,10 @@ class PatternDimensionRelevanceAnalyzer:
             relevance_scores.append(np.mean(mi_scores))
         except ImportError as e:
             tprint_warning(f"Mutual information calculation failed due to import error: {e}")
-            pass
         except ValueError as e:
             tprint_warning(f"Mutual information calculation failed due to invalid data: {e}")
-            pass
         except Exception as e:
             tprint_warning(f"Mutual information calculation failed with unexpected error: {e}")
-            pass
         
         # 2. Correlation-based relevance
         feature_target_corrs = []
@@ -506,10 +503,8 @@ class PatternDimensionRelevanceAnalyzer:
             relevance_scores.append(np.mean(rf.feature_importances_))
         except ValueError as e:
             tprint_warning(f"Random Forest feature importance calculation failed due to invalid data: {e}")
-            pass
         except Exception as e:
             tprint_warning(f"Random Forest feature importance calculation failed with unexpected error: {e}")
-            pass
         
         return np.mean(relevance_scores) if relevance_scores else 0.0
     

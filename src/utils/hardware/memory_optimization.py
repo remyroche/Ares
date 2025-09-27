@@ -166,15 +166,23 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
             col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
             if col_min >= -3.4e38 and col_max <= 3.4e38:
                 optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='float')
-        except Exception:
-            pass
+        except Exception as conversion_error:
+            logging.debug(
+                "Failed to downcast float column %s: %s",
+                col,
+                conversion_error,
+            )
     
     # Optimize integer columns
     for col in optimized_df.select_dtypes(include=['int64']).columns:
         try:
             optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='integer')
-        except Exception:
-            pass
+        except Exception as conversion_error:
+            logging.debug(
+                "Failed to downcast integer column %s: %s",
+                col,
+                conversion_error,
+            )
     
     # Optimize object columns to categories
     for col in optimized_df.select_dtypes(include=['object']).columns:
@@ -182,16 +190,24 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
             unique_ratio = optimized_df[col].nunique() / len(optimized_df[col])
             if unique_ratio < 0.5:  # Less than 50% unique values
                 optimized_df[col] = optimized_df[col].astype('category')
-        except Exception:
-            pass
+        except Exception as conversion_error:
+            logging.debug(
+                "Failed to convert column %s to category: %s",
+                col,
+                conversion_error,
+            )
     
     # Optimize datetime columns
     for col in optimized_df.select_dtypes(include=['datetime64[ns]']).columns:
         try:
             # Convert to datetime64[s] if precision allows
             optimized_df[col] = optimized_df[col].astype('datetime64[s]')
-        except Exception:
-            pass
+        except Exception as conversion_error:
+            logging.debug(
+                "Failed to adjust datetime precision for column %s: %s",
+                col,
+                conversion_error,
+            )
     
     optimized_memory = optimized_df.memory_usage(deep=True).sum() / 1024 / 1024
     savings = original_memory - optimized_memory

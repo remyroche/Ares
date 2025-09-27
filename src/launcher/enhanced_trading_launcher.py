@@ -1,75 +1,75 @@
 #!/usr/bin/env python3
-import pandas as pd
-import pandas as pd
-import pandas as pd
-from src.core.error_classes import execution_error, initialization_error
-from ..utils.logger import system_logger
-from ..core.decorators import handles_errors
-import pandas as pd
+"""Enhanced Trading Launcher with graceful fallbacks for optional integrations."""
 
-"""
-Enhanced Trading Launcher
+from __future__ import annotations
 
-Provides a comprehensive launcher for paper trading, live trading, and
-backtesting with integrated detailed reporting capabilities.
-"""
-
-from src.core.domain import (
-    PerformanceLevel,
-    performance_monitor
-)
-
-from datetime import datetime
-from typing import Any, TYPE_CHECKING
 import json
+import logging
 import os
+import time
+from datetime import datetime
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, Callable
 
-try:
-    import pandas as pd
-except Exception:  # Fallback for environments without pandas
-    class _PD:
-        pass
-        DataFrame = Any  # type: ignore
-    pd = _PD()  # type: ignore
-
-from ..utils.logger import system_logger
+from src.core.domain import PerformanceLevel, performance_monitor
+from src.core.error_classes import execution_error, initialization_error
 from src.utils.warning_symbols import (
-       error,
-   execution_error,
-   failed,
-   initialization_error,
-   invalid,
-   warning,
+    error,
+    execution_error as execution_warning,
+    failed,
+    initialization_error as initialization_warning,
+    invalid,
+    warning,
 )
 
-import logging
-import time
-from typing import TYPE_CHECKING, Any
+from ..core.decorators import handles_errors
+from ..utils.logger import system_logger
 
-try:
+try:  # pragma: no cover - optional dependency
+    import pandas as pd
+except ImportError as exc:  # pragma: no cover - optional dependency
+    def _missing_pandas_attr(name: str) -> Callable[..., Any]:
+        def _raiser(*_args: Any, **_kwargs: Any) -> Any:
+            raise ImportError("pandas is required for enhanced trading launcher operations") from exc
+
+        return _raiser
+
+    pd = SimpleNamespace(DataFrame=Any)  # type: ignore[assignment]
+    pd.__getattr__ = _missing_pandas_attr  # type: ignore[attr-defined]
+
+
+try:  # pragma: no cover - optional dependency
     from src.integration.paper_trading_integration import (
         PaperTradingIntegration,
         setup_paper_trading_integration,
     )
-except ImportError:
-    # Fallback classes if module is not available
-    class PaperTradingIntegration:
-        pass
-    def setup_paper_trading_integration():
-        pass
+except ImportError as exc:  # pragma: no cover - optional dependency
+    class PaperTradingIntegration:  # type: ignore[no-redef]
+        """Fallback integration that raises when used."""
 
-try:
-    from live_trading.trading_orchestrator import TradingOrchestrator
-    from live_trading.config import TradingConfig
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            raise ImportError("Paper trading integration is not available") from exc
+
+    def setup_paper_trading_integration(*_args: Any, **_kwargs: Any) -> PaperTradingIntegration:  # type: ignore[misc]
+        raise ImportError("Paper trading integration setup is not available") from exc
+
+
+try:  # pragma: no cover - optional dependency
     from exchanges import TradingReceiver
+    from live_trading.config import TradingConfig
+    from live_trading.trading_orchestrator import TradingOrchestrator
+
     LIVE_TRADING_AVAILABLE = True
 except ImportError:
-    TradingOrchestrator = None
-    TradingConfig = None
-    TradingReceiver = None
+    TradingOrchestrator = None  # type: ignore[assignment]
+    TradingConfig = None  # type: ignore[assignment]
+    TradingReceiver = None  # type: ignore[assignment]
     LIVE_TRADING_AVAILABLE = False
-if TYPE_CHECKING:
-    pass
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    import pandas as pd  # type: ignore[no-redef]
+
 
 class EnhancedTradingLauncher:
     """

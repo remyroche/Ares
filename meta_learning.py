@@ -550,29 +550,30 @@ class MetaNAS_Optimizer:
         try:
             if TORCH_AVAILABLE:
                 import torch
+
                 # Test if PyTorch is working
                 torch.tensor([1.0])
                 available.append('pytorch')
-        except Exception:
-            pass
-        
+        except Exception as exc:  # pragma: no cover - environment dependent
+            tprint_warning(f"PyTorch availability check failed: {exc}")
+
         try:
             if TF_AVAILABLE:
                 import tensorflow as tf
                 # Test if TensorFlow is working
                 tf.constant([1.0])
                 available.append('tensorflow')
-        except Exception:
-            pass
-        
+        except Exception as exc:  # pragma: no cover - environment dependent
+            tprint_warning(f"TensorFlow availability check failed: {exc}")
+
         try:
             if SKLEARN_AVAILABLE:
                 from sklearn.neural_network import MLPClassifier
                 # Test if scikit-learn is working
                 MLPClassifier()
                 available.append('sklearn')
-        except Exception:
-            pass
+        except Exception as exc:  # pragma: no cover - environment dependent
+            tprint_warning(f"Scikit-learn availability check failed: {exc}")
         
         return available
     

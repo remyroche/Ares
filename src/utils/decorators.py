@@ -270,7 +270,7 @@ def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
         delay: Initial delay between retries in seconds (default: 1)
         backoff: Backoff multiplier for delay (default: 2)
         exceptions: Tuple of exceptions to catch and retry (default: (Exception,))
-            pass
+            Used to limit retries to anticipated error types.
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)

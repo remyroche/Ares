@@ -66,7 +66,6 @@ class RobustAsyncFixer:
             except (json.JSONDecodeError, KeyError, FileNotFoundError, PermissionError) as e:
                 # Handle JSON parsing errors, missing keys, or file access issues
                 tprint_error(f"Failed to load async issues from {issues_file}: {e}")
-                pass
 
         return async_funcs
 
@@ -134,9 +133,9 @@ class RobustAsyncFixer:
                         f.write("\n".join(lines))
                     self.fixed_files.append(file_path)
                     return True
-                except SyntaxError:
+                except SyntaxError as exc:
                     # Changes broke syntax, don't save
-                    pass
+                    tprint_error(f"Aborted async fix for {file_path} due to syntax error: {exc}")
 
             return False
 
@@ -199,7 +198,7 @@ class RobustAsyncFixer:
                 except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
                     # Handle file access or encoding issues
                     tprint_error(f"Failed to analyze file {file_path}: {e}")
-                    pass
+                    continue
 
             tprint(f"\nFound potential async/await issues in {issues_found} files")
             tprint("\nSample files:")

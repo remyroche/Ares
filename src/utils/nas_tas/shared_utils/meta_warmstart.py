@@ -1,7 +1,5 @@
 """Meta-feature driven warm-start utilities for NAS/TAS searches.
 
-"""Meta-feature driven warm-start utilities for NAS/TAS searches.
-
 This module provides a light-weight meta-learning helper that embeds market
 context descriptors (volatility, liquidity, macro regime, etc.) and retrieves
 historically successful architecture blueprints using a k-nearest neighbour
@@ -109,6 +107,8 @@ class MetaWarmStarter:
         similarities = self._cosine_similarity(descriptor_matrix, query_vector)
 
         ranked_indices = np.argsort(similarities)[::-1]
+        if self.config.k_neighbors > 0:
+            ranked_indices = ranked_indices[: self.config.k_neighbors]
         selected: List[Dict[str, Any]] = []
 
         for idx in ranked_indices:

@@ -63,8 +63,23 @@ After setup, Codex will automatically verify that key dependencies are importabl
 ### Poetry Not Found
 If Poetry is not installed, the setup script will automatically install it.
 
+### `poetry export` Command Missing
+Some Poetry distributions (notably Poetry 2.x shipped without optional plugins) do not include the
+`poetry export` subcommand by default. When that happens the setup script falls back to building
+`.codex-requirements.txt` directly from `pyproject.toml`, so the warning is safe to ignore. If you
+prefer the official export workflow you can add it manually with:
+
+```
+poetry self add poetry-plugin-export
+```
+
 ### Import Errors
 Check that the `PYTHONPATH` environment variable includes `/workspace`.
+
+### `Pip: command not found`
+The shell is case-sensitive, so `Pip` is treated as a different command than `pip`. Update any
+custom setup scripts to call `pip install …` (all lowercase) or `python3 -m pip …` to avoid this
+error.
 
 ### Version Conflicts
 The setup uses `poetry install --no-dev` to avoid development dependencies that might conflict.

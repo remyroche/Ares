@@ -18,6 +18,20 @@ echo "🚀 Setting up environment for ChatGPT Codex..."
 # Ensure we have an up-to-date pip that can handle modern wheels
 python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
 
+# Some Codex runners mistakenly invoke an uppercase `Pip` command.
+# Provide a tiny shim so that both `pip` and `Pip` work identically.
+if ! command -v Pip >/dev/null 2>&1; then
+    PIP_BIN="$(command -v pip3 || command -v pip || true)"
+    if [[ -n "$PIP_BIN" ]]; then
+        PIP_DIR="$(dirname "$PIP_BIN")"
+        cat <<'EOF' >"${PIP_DIR}/Pip"
+#!/bin/sh
+exec python3 -m pip "$@"
+EOF
+        chmod +x "${PIP_DIR}/Pip" || true
+    fi
+fi
+
 # If poetry is available, try exporting the main dependencies to a requirements file.
 if command -v poetry &> /dev/null; then
     echo "📦 Exporting dependencies from poetry.lock via Poetry..."

@@ -23,16 +23,18 @@ This guide explains how to configure ChatGPT Codex to work with this Poetry-base
 
 ### Method 1: Using Setup Script (Recommended)
 
-1. In ChatGPT Codex, go to your project settings
-2. Set the **Setup Script** to: `./setup_codex.sh`
-3. Set the **Working Directory** to: `/workspace`
-4. Set the **Python Version** to: `3.11`
+1. In ChatGPT Codex, open **Project Settings → Setup**.
+2. Set the **Setup Script** to `./setup_codex.sh` so Codex runs the helper automatically.
+3. Set the **Working Directory** to `/workspace` to match the repository root.
+4. Choose **Python 3.11** as the runtime version.
+5. Save the configuration and start a new Codex session; the script will create `.venv` and install dependencies.
+6. Codex automatically reuses the project virtual environment for subsequent commands. If you later open a local shell, you can still activate it manually (`source .venv/bin/activate`) or run tools with `poetry run ...`.
 
 ### Method 2: Using Requirements File
 
-1. Run the export script: `python3 export_requirements.py`
-2. In Codex, specify `requirements.txt` as your dependencies file
-3. Set the **Working Directory** to: `/workspace`
+1. Run the export script: `python3 export_requirements.py`.
+2. In Codex, specify `requirements.txt` as your dependencies file.
+3. Set the **Working Directory** to `/workspace`.
 
 ## Environment Variables
 

@@ -57,7 +57,18 @@ fi
 
 # Install the dependencies specified in poetry.lock without development packages
 echo "📦 Installing project dependencies via Poetry..."
-poetry install --no-interaction --no-root --no-dev
+
+# Poetry 1.7 deprecated --no-dev in favor of --without dev. Detect which flag
+# is supported so the script remains compatible with a wider range of Poetry
+# versions that may be preinstalled in the execution environment.
+INSTALL_ARGS=("--no-interaction" "--no-root")
+if poetry help install 2>/dev/null | grep -q "--without"; then
+    INSTALL_ARGS+=("--without" "dev")
+elif poetry help install 2>/dev/null | grep -q "--no-dev"; then
+    INSTALL_ARGS+=("--no-dev")
+fi
+
+poetry install "${INSTALL_ARGS[@]}"
 
 echo "🧪 Verifying key dependencies inside the Poetry environment..."
 poetry run python - <<'PY'

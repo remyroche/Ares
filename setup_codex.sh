@@ -64,10 +64,16 @@ echo "📦 Installing project dependencies via Poetry..."
 # is supported so the script remains compatible with a wider range of Poetry
 # versions that may be preinstalled in the execution environment.
 INSTALL_ARGS=("--no-interaction" "--no-root")
-if poetry help install 2>/dev/null | grep -q "--without"; then
-    INSTALL_ARGS+=("--without" "dev")
-elif poetry help install 2>/dev/null | grep -q "--no-dev"; then
-    INSTALL_ARGS+=("--no-dev")
+
+# Only attempt to exclude development dependencies if the project actually
+# defines any. Busybox grep treats patterns beginning with ``-`` as options, so
+# pass ``--`` to ensure they are interpreted literally.
+if grep -Eq '^\[tool\.poetry\.(dev-dependencies|group\.dev)]' "${ROOT_DIR}/pyproject.toml"; then
+    if poetry help install 2>/dev/null | grep -q -- "--without"; then
+        INSTALL_ARGS+=("--without" "dev")
+    elif poetry help install 2>/dev/null | grep -q -- "--no-dev"; then
+        INSTALL_ARGS+=("--no-dev")
+    fi
 fi
 
 poetry install "${INSTALL_ARGS[@]}"

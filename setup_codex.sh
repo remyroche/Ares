@@ -117,7 +117,6 @@ deps = [
     "seaborn",
     "networkx",
     "plotly",
-    "graphviz",
     "squarify",
     "rich",
     "ccxt",

@@ -78,11 +78,58 @@ fi
 
 poetry install "${INSTALL_ARGS[@]}"
 
+if [[ -f "${ROOT_DIR}/requirements.txt" ]]; then
+    echo "📚 Installing supplemental requirements from requirements.txt via pip..."
+    if ! poetry run python - <<'PY'
+import subprocess
+import sys
+from pathlib import Path
+
+req_path = Path("requirements.txt")
+if req_path.exists():
+    cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_path)]
+    print("   →", " ".join(cmd))
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
+PY
+    then
+        echo "❌ Failed to install supplemental pip requirements." >&2
+        exit 1
+    fi
+fi
+
 echo "🧪 Verifying key dependencies inside the Poetry environment..."
 poetry run python - <<'PY'
 import importlib
 
-deps = ["numpy", "pandas", "sklearn", "optuna", "xgboost", "lightgbm"]
+deps = [
+    "numpy",
+    "pandas",
+    "sklearn",
+    "optuna",
+    "xgboost",
+    "lightgbm",
+    "torch",
+    "tensorflow",
+    "transformers",
+    "matplotlib",
+    "seaborn",
+    "networkx",
+    "plotly",
+    "graphviz",
+    "squarify",
+    "rich",
+    "ccxt",
+    "yfinance",
+    "talib",
+    "asyncio_mqtt",
+    "aiohttp",
+    "websockets",
+    "yaml",
+    "structlog",
+    "loguru",
+]
 
 missing = []
 for module_name in deps:

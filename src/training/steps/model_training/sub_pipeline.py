@@ -406,6 +406,16 @@ class ModelTrainingSubPipeline:
 
         # Apply logging configuration
         self._apply_logging_config(self.config.logging)
+        
+        # Update log file with training direction if available
+        if hasattr(config, 'training_direction') and self.config.logging.log_file:
+            training_direction = getattr(config, 'training_direction', 'both')
+            log_file_path = Path(self.config.logging.log_file)
+            if log_file_path.suffix:
+                new_log_file = log_file_path.parent / f"{log_file_path.stem}_{training_direction}{log_file_path.suffix}"
+            else:
+                new_log_file = log_file_path.parent / f"{log_file_path.name}_{training_direction}.log"
+            self.config.logging.log_file = str(new_log_file)
 
     @property
     def sub_pipelines(self):
@@ -675,7 +685,8 @@ class ModelTrainingSubPipeline:
     ) -> str:
         """Create a comprehensive report with datetime stamp."""
         timestamp = self._generate_datetime_stamp()
-        report_filename = f"{sub_pipeline_name}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+        training_direction = getattr(config, 'training_direction', 'both')
+        report_filename = f"{sub_pipeline_name}_{training_direction}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
         report_path = f"outcomes/model_training/{report_filename}"
         
         # Ensure reports directory exists
@@ -3595,7 +3606,9 @@ class ModelTrainingSubPipeline:
             tprint_info("     🔄 Validating and saving all trained models...")
             
             # Create model directory
-            model_dir = Path(config.data_dir) / "tactician_models"
+            # Create model directory structure with training direction
+            training_direction = getattr(config, 'training_direction', 'both')
+            model_dir = Path(config.data_dir) / "tactician_models" / f"{training_direction}_models"
             model_dir.mkdir(parents=True, exist_ok=True)
             
             saved_models = {}
@@ -3606,7 +3619,7 @@ class ModelTrainingSubPipeline:
             long_models_dir.mkdir(exist_ok=True)
             
             for name, model in long_models.items():
-                model_path = long_models_dir / f"{name}.pkl"
+                model_path = long_models_dir / f"{name}_{training_direction}.pkl"
                 try:
                     import pickle
                     with open(model_path, 'wb') as f:
@@ -3622,7 +3635,7 @@ class ModelTrainingSubPipeline:
             short_models_dir.mkdir(exist_ok=True)
             
             for name, model in short_models.items():
-                model_path = short_models_dir / f"{name}.pkl"
+                model_path = short_models_dir / f"{name}_{training_direction}.pkl"
                 try:
                     import pickle
                     with open(model_path, 'wb') as f:
@@ -3638,7 +3651,7 @@ class ModelTrainingSubPipeline:
             
             # Save long ensemble
             long_ensemble = all_models_data['long_ensemble']['ensemble_model']
-            long_ensemble_path = ensemble_dir / "long_ensemble.pkl"
+            long_ensemble_path = ensemble_dir / f"long_ensemble_{training_direction}.pkl"
             try:
                 import pickle
                 with open(long_ensemble_path, 'wb') as f:
@@ -3650,7 +3663,7 @@ class ModelTrainingSubPipeline:
             
             # Save short ensemble
             short_ensemble = all_models_data['short_ensemble']['ensemble_model']
-            short_ensemble_path = ensemble_dir / "short_ensemble.pkl"
+            short_ensemble_path = ensemble_dir / f"short_ensemble_{training_direction}.pkl"
             try:
                 import pickle
                 with open(short_ensemble_path, 'wb') as f:

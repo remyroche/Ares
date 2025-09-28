@@ -1292,6 +1292,15 @@ async def main():
     
     # Initialize launcher
     tprint("🎯 [MAIN] Initializing AresLauncher...")
+    
+    # Configure tprint with training direction
+    from src.utils.tprint import get_tprint_config, set_tprint_config
+    from datetime import datetime
+    tprint_config = get_tprint_config()
+    if tprint_config:
+        tprint_config.run_id = f"{args.training_direction}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        set_tprint_config(tprint_config)
+    
     launcher = AresLauncher()
     tprint("✅ [MAIN] AresLauncher initialized successfully")
     

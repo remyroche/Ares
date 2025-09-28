@@ -1123,7 +1123,8 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
 
             # Generate filename with timestamp following outcomes naming convention
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_filename = f"market_analysis_feature_selection_outcome_{timestamp}.csv"
+            training_direction = getattr(config, 'training_direction', 'both')
+            csv_filename = f"market_analysis_feature_selection_{training_direction}_outcome_{timestamp}.csv"
             csv_path = outcomes_dir / csv_filename
             
             # Extract all scores

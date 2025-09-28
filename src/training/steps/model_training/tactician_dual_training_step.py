@@ -747,7 +747,9 @@ class TacticianDualTrainingStep:
     async def _save_training_results(self, result: DualTrainingResult):
         """Save training results to disk."""
         try:
-            output_dir = Path(self.config.output_directory)
+            # Create direction-specific output directory
+            training_direction = self.config.training_direction
+            output_dir = Path(self.config.output_directory) / f"{training_direction}_training"
             ensure_directory(output_dir)
 
             # Save orchestration results

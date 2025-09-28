@@ -210,6 +210,9 @@ class MainPipelineConfig:
     
     # Single stage execution control
     single_stage_only: bool = False  # Control whether to execute only the requested stage
+    
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
 
 @dataclass
 class MainPipelineResult:
@@ -330,15 +333,17 @@ class MainTrainingPipeline:
                     outcome_dir.mkdir(exist_ok=True)
                     tprint_info(f"📁 Created outcomes directory: {outcome_dir}")
             
-            # Generate filename with timestamp
+            # Generate filename with timestamp and training direction
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
+            training_direction = getattr(config, 'training_direction', 'both')
+            filename = f"{stage}_{sub_pipeline}_{training_direction}_outcome_{timestamp}.json"
             outcome_file = Path("outcomes") / filename
             
             # Create outcome data with validation
             outcome_data = {
                 'stage': stage,
                 'sub_pipeline': sub_pipeline,
+                'training_direction': training_direction,
                 'timestamp': datetime.now().isoformat(),
                 'status': result.status.value if hasattr(result, 'status') else 'completed',
                 'output_files': result.output_files if hasattr(result, 'output_files') else [],
@@ -443,8 +448,10 @@ class MainTrainingPipeline:
             return None
         
         # Look for the most recent outcome file for this stage/sub-pipeline
-        pattern = f"{stage}_{sub_pipeline}_outcome_*.json"
-        outcome_files = list(outcome_dir.glob(pattern))
+        # Support both old format (without direction) and new format (with direction)
+        pattern_old = f"{stage}_{sub_pipeline}_outcome_*.json"
+        pattern_new = f"{stage}_{sub_pipeline}_*_outcome_*.json"
+        outcome_files = list(outcome_dir.glob(pattern_old)) + list(outcome_dir.glob(pattern_new))
         
         if not outcome_files:
             return None
@@ -720,6 +727,7 @@ class MainTrainingPipeline:
             'validation_enabled': config.validation_enabled,
             'monitoring_enabled': config.monitoring_enabled,
             'single_stage_only': config.single_stage_only,
+            'training_direction': config.training_direction,
             'custom_params': config.stage_params.get(stage, {})
         }
         
@@ -1101,7 +1109,8 @@ def get_full_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
     from src.config.pipeline_modes import get_full_mode_config
@@ -1126,6 +1135,7 @@ def get_full_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -1160,7 +1170,8 @@ def get_light_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
     from src.config.pipeline_modes import get_light_mode_config
@@ -1185,6 +1196,7 @@ def get_light_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -1215,7 +1227,8 @@ def get_blank_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
     from src.config.pipeline_modes import get_blank_mode_config
@@ -1240,6 +1253,7 @@ def get_blank_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

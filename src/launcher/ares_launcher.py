@@ -216,7 +216,8 @@ class AresLauncher:
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,
         execution_mode: ExecutionModeType = ExecutionModeType.FULL,
-        custom_config: Optional[Dict[str, Any]] = None
+        custom_config: Optional[Dict[str, Any]] = None,
+        training_direction: str = "both"
     ) -> MainPipelineResult:
         """
         Execute the training pipeline with granular control and enhanced error handling.
@@ -231,6 +232,7 @@ class AresLauncher:
             sub_pipeline: Specific sub-pipeline to execute (for SUB_PIPELINE mode)
             execution_mode: Execution mode type (full, light, blank) for stage/sub-pipeline specific execution
             custom_config: Custom configuration parameters
+            training_direction: Training direction (long, short, or both)
             
         Returns:
             MainPipelineResult with execution details
@@ -286,7 +288,7 @@ class AresLauncher:
                 tprint("🚀 [EXECUTE_PIPELINE] Creating configuration...")
                 config = self._create_config(
                     mode, symbol, exchange, timeframe, data_dir, 
-                    stage, sub_pipeline, execution_mode, custom_config
+                    stage, sub_pipeline, execution_mode, custom_config, training_direction
                 )
                 tprint_success("✅ [EXECUTE_PIPELINE] Configuration created successfully")
             except Exception as e:
@@ -342,7 +344,8 @@ class AresLauncher:
         stage: Optional[PipelineStage],
         sub_pipeline: Optional[str],
         execution_mode: ExecutionModeType,
-        custom_config: Optional[Dict[str, Any]]
+        custom_config: Optional[Dict[str, Any]],
+        training_direction: str = "both"
     ) -> MainPipelineConfig:
         """Create pipeline configuration based on mode and parameters."""
         tprint("⚙️ [CREATE_CONFIG] Starting configuration creation...")
@@ -360,13 +363,14 @@ class AresLauncher:
             'exchange': exchange,
             'timeframe': timeframe,
             'data_dir': data_dir,
+            'training_direction': training_direction,
             'custom_params': custom_config or {}
         }
         tprint("✅ [CREATE_CONFIG] Base configuration created")
         
         # Filter base_config to only include supported parameters for each config function
         tprint("⚙️ [CREATE_CONFIG] Filtering configuration parameters...")
-        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir', 'training_direction']
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
         tprint(f"✅ [CREATE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
@@ -448,7 +452,8 @@ class AresLauncher:
                 'training_mode_config': config.training_mode_config,
                 'model_training': config.training_mode_config.get('model_training', {}),
                 'validation': config.training_mode_config.get('validation', {}),
-                'optimization': config.training_mode_config.get('optimization', {})
+                'optimization': config.training_mode_config.get('optimization', {}),
+                'training_direction': config.training_direction
             }
             tprint("✅ [STAGE_CONFIG] Intensity parameters added")
         else:
@@ -562,7 +567,8 @@ class AresLauncher:
                 'training_mode_config': config.training_mode_config,
                 'model_training': config.training_mode_config.get('model_training', {}),
                 'validation': config.training_mode_config.get('validation', {}),
-                'optimization': config.training_mode_config.get('optimization', {})
+                'optimization': config.training_mode_config.get('optimization', {}),
+                'training_direction': config.training_direction
             }
             tprint("✅ [SUB_PIPELINE_CONFIG] Intensity parameters added")
         else:
@@ -1250,6 +1256,13 @@ Examples:
     )
     
     parser.add_argument(
+        '--training-direction',
+        choices=['long', 'short', 'both'],
+        default='both',
+        help='Training direction: long only, short only, or both (default: both)'
+    )
+    
+    parser.add_argument(
         '--list-stages',
         action='store_true',
         help='List available pipeline stages'
@@ -1279,6 +1292,15 @@ async def main():
     
     # Initialize launcher
     tprint("🎯 [MAIN] Initializing AresLauncher...")
+    
+    # Configure tprint with training direction
+    from src.utils.tprint import get_tprint_config, set_tprint_config
+    from datetime import datetime
+    tprint_config = get_tprint_config()
+    if tprint_config:
+        tprint_config.run_id = f"{args.training_direction}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        set_tprint_config(tprint_config)
+    
     launcher = AresLauncher()
     tprint("✅ [MAIN] AresLauncher initialized successfully")
     
@@ -1335,6 +1357,11 @@ async def main():
     execution_mode = execution_mode_map[args.execution_mode]
     tprint(f"✅ [MAIN] Execution mode converted: {execution_mode.value}")
     
+    # Validate training direction
+    if args.training_direction not in ['long', 'short', 'both']:
+        raise ValueError(f"Invalid training direction: {args.training_direction}. Must be 'long', 'short', or 'both'")
+    tprint(f"✅ [MAIN] Training direction validated: {args.training_direction}")
+    
     # Convert string stage to enum if provided
     stage = None
     if args.stage:
@@ -1362,7 +1389,8 @@ async def main():
             stage=stage,
             sub_pipeline=args.sub_pipeline,
             execution_mode=execution_mode,
-            custom_config=custom_config
+            custom_config=custom_config,
+            training_direction=args.training_direction
         )
         tprint("✅ [MAIN] Pipeline execution completed successfully")
         

@@ -406,6 +406,16 @@ class ModelTrainingSubPipeline:
 
         # Apply logging configuration
         self._apply_logging_config(self.config.logging)
+        
+        # Update log file with training direction if available
+        if hasattr(config, 'training_direction') and self.config.logging.log_file:
+            training_direction = getattr(config, 'training_direction', 'both')
+            log_file_path = Path(self.config.logging.log_file)
+            if log_file_path.suffix:
+                new_log_file = log_file_path.parent / f"{log_file_path.stem}_{training_direction}{log_file_path.suffix}"
+            else:
+                new_log_file = log_file_path.parent / f"{log_file_path.name}_{training_direction}.log"
+            self.config.logging.log_file = str(new_log_file)
 
     @property
     def sub_pipelines(self):
@@ -675,7 +685,8 @@ class ModelTrainingSubPipeline:
     ) -> str:
         """Create a comprehensive report with datetime stamp."""
         timestamp = self._generate_datetime_stamp()
-        report_filename = f"{sub_pipeline_name}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+        training_direction = getattr(config, 'training_direction', 'both')
+        report_filename = f"{sub_pipeline_name}_{training_direction}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
         report_path = f"outcomes/model_training/{report_filename}"
         
         # Ensure reports directory exists
@@ -1584,7 +1595,7 @@ class ModelTrainingSubPipeline:
             'optimization_results': {},
             'optimized_lookbacks': {},
             'performance_metrics': {},
-            'optimization_report': f"tactician_lookback_optimization_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+            'optimization_report': f"tactician_lookback_optimization_report_{config.symbol}_{config.exchange}_{config.timeframe}_{getattr(config, 'training_direction', 'both')}_{timestamp}.json"
         }
         
         try:
@@ -2103,9 +2114,9 @@ class ModelTrainingSubPipeline:
                 },
                 'output_artifacts': {
                     'tactician_ready_lookbacks': optimization_result.get('optimized_lookbacks', {}),
-                    'optimization_parameters_file': f"tactician_optimization_params_{timestamp}.json",
-                    'performance_report_file': f"tactician_optimization_performance_{timestamp}.json",
-                    'integration_status_file': f"tactician_integration_status_{timestamp}.json"
+                    'optimization_parameters_file': f"tactician_optimization_params_{getattr(config, 'training_direction', 'both')}_{timestamp}.json",
+                    'performance_report_file': f"tactician_optimization_performance_{getattr(config, 'training_direction', 'both')}_{timestamp}.json",
+                    'integration_status_file': f"tactician_integration_status_{getattr(config, 'training_direction', 'both')}_{timestamp}.json"
                 }
             }
             
@@ -2298,7 +2309,7 @@ class ModelTrainingSubPipeline:
         
         # Generate summary report with timestamp
         timestamp = self._generate_datetime_stamp()
-        summary_report_path = f"{self.config.data_dir}/reports/execution_summary_{timestamp}.json"
+        summary_report_path = f"{self.config.data_dir}/reports/execution_summary_{getattr(self.config, 'training_direction', 'both')}_{timestamp}.json"
         
         summary_data = {
             'metadata': {
@@ -3144,11 +3155,15 @@ class ModelTrainingSubPipeline:
             return {'success': False, 'error': str(e)}
 
     async def _tactician_dual_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician dual training pipeline: train models twice (longs and shorts) with differentiated features and horizon labeling."""
+        """Tactician dual training pipeline: train models with direction-specific configuration."""
         tprint(f"   ⚔️ TACTICIAN DUAL TRAINING PIPELINE STARTED")
         self.logger.info("⚔️ Executing tactician dual training pipeline")
         
         try:
+            # Extract training direction from config
+            training_direction = getattr(config, 'training_direction', 'both')
+            tprint_info(f"   🎯 Training direction: {training_direction}")
+            
             # Load pre-processed data from the pre-ML orchestration pipeline
             tprint_info("   🔄 Loading pre-processed data from pre-ML orchestration...")
             pre_ml_data = await self._load_pre_ml_data(config)
@@ -3158,71 +3173,98 @@ class ModelTrainingSubPipeline:
                     'error': f"Failed to load pre-ML data: {pre_ml_data['error']}"
                 }
             
-            # Step 1: Train base models for long signals
-            tprint_info("   📈 Step 1: Training base models for long signals")
-            long_models_result = await self._train_long_signal_models(config, pre_ml_data['data'])
-            if not long_models_result['success']:
+            # Import and initialize the new TacticianDualTrainingStep
+            from src.training.steps.model_training.tactician_dual_training_step import (
+                TacticianDualTrainingStep, DualTrainingConfig
+            )
+            
+            # Create direction-specific configuration
+            dual_config = DualTrainingConfig(
+                training_direction=training_direction,
+                min_analyst_confidence=0.5,
+                subsequent_minutes=45,
+                output_directory="generated/tactician_dual_training",
+                enable_feature_optimization=True,
+                enable_pid_generation=True,
+                enable_horizon_labeling=True,
+                enable_feature_selection=True,
+                train_base_models=True,
+                train_ensemble_models=True,
+                max_lookback_periods=20,
+                max_interaction_features=100,
+                max_polynomial_features=50,
+                max_cross_timeframe_features=50,
+                enable_parallel_processing=True,
+                enable_gpu_acceleration=True,
+                memory_limit_gb=8.0,
+                validation_split=0.2,
+                min_training_samples=100,
+                save_models=True,
+                save_predictions=True,
+                save_metrics=True
+            )
+            
+            # Initialize the dual training step
+            dual_trainer = TacticianDualTrainingStep(dual_config)
+            
+            # Prepare data for training
+            analyst_signals = pre_ml_data['data'].get('analyst_signals', pd.DataFrame())
+            market_data = pre_ml_data['data'].get('market_data', pd.DataFrame())
+            feature_names = pre_ml_data['data'].get('feature_names', [])
+            
+            if analyst_signals.empty or market_data.empty:
                 return {
                     'status': 'failed',
-                    'error': f"Long signal model training failed: {long_models_result['error']}"
+                    'error': "Missing required data: analyst_signals or market_data"
                 }
             
-            # Step 2: Train base models for short signals
-            tprint_info("   📉 Step 2: Training base models for short signals")
-            short_models_result = await self._train_short_signal_models(config, pre_ml_data['data'])
-            if not short_models_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Short signal model training failed: {short_models_result['error']}"
-                }
+            # Execute dual training with direction-specific configuration
+            tprint_info(f"   🚀 Starting dual training for direction: {training_direction}")
+            training_result = await dual_trainer.train_dual_tactician_models(
+                analyst_signals=analyst_signals,
+                market_data=market_data,
+                feature_names=feature_names
+            )
             
-            # Step 3: Train ensemble models for long signals
-            tprint_info("   🎯 Step 3: Training ensemble model for long signals")
-            long_ensemble_result = await self._train_long_ensemble_model(config, long_models_result['data'])
-            if not long_ensemble_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Long ensemble training failed: {long_ensemble_result['error']}"
-                }
-            
-            # Step 4: Train ensemble models for short signals
-            tprint_info("   🎯 Step 4: Training ensemble model for short signals")
-            short_ensemble_result = await self._train_short_ensemble_model(config, short_models_result['data'])
-            if not short_ensemble_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Short ensemble training failed: {short_ensemble_result['error']}"
-                }
-            
-            # Step 5: Validate and save all models
-            tprint_info("   💾 Step 5: Validating and saving all trained models")
-            model_validation_result = await self._validate_and_save_models(config, {
-                'long_models': long_models_result['data'],
-                'short_models': short_models_result['data'],
-                'long_ensemble': long_ensemble_result['data'],
-                'short_ensemble': short_ensemble_result['data']
-            })
-            if not model_validation_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Model validation/saving failed: {model_validation_result['error']}"
-                }
-            
-            return {
+            # Process results based on training direction
+            result_data = {
                 'status': 'completed',
-                'message': 'Tactician dual training pipeline completed successfully',
-                'data': model_validation_result['data'],
-                'models_trained': {
-                    'long_base_models': len(long_models_result['data']['models']),
-                    'short_base_models': len(short_models_result['data']['models']),
-                    'long_ensemble': 1,
-                    'short_ensemble': 1
-                }
+                'training_direction': training_direction,
+                'execution_time': training_result.execution_time,
+                'total_long_samples': training_result.total_long_samples,
+                'total_short_samples': training_result.total_short_samples,
+                'pre_ml_orchestration_completed': training_result.pre_ml_orchestration_completed,
+                'long_base_training_completed': training_result.long_base_training_completed,
+                'short_base_training_completed': training_result.short_base_training_completed,
+                'long_ensemble_training_completed': training_result.long_ensemble_training_completed,
+                'short_ensemble_training_completed': training_result.short_ensemble_training_completed,
+                'validation_completed': training_result.validation_completed
             }
+            
+            # Add direction-specific results
+            if training_direction in ["long", "both"] and training_result.long_base_models:
+                result_data['long_base_models'] = training_result.long_base_models
+                result_data['long_ensemble_models'] = training_result.long_ensemble_models
+                result_data['long_training_metrics'] = training_result.long_training_metrics
+                result_data['long_ensemble_metrics'] = training_result.long_ensemble_metrics
+                tprint_success(f"   ✅ Long training completed: {len(training_result.long_base_models)} base models, {len(training_result.long_ensemble_models)} ensemble models")
+            
+            if training_direction in ["short", "both"] and training_result.short_base_models:
+                result_data['short_base_models'] = training_result.short_base_models
+                result_data['short_ensemble_models'] = training_result.short_ensemble_models
+                result_data['short_training_metrics'] = training_result.short_training_metrics
+                result_data['short_ensemble_metrics'] = training_result.short_ensemble_metrics
+                tprint_success(f"   ✅ Short training completed: {len(training_result.short_base_models)} base models, {len(training_result.short_ensemble_models)} ensemble models")
+            
+            tprint_success(f"   🎯 Tactician dual training completed for direction: {training_direction}")
+            return result_data
             
         except Exception as e:
             self.logger.error(f"❌ Tactician dual training pipeline failed: {e}")
-            raise
+            return {
+                'status': 'failed',
+                'error': str(e)
+            }
     
     async def _load_pre_ml_data(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Load pre-processed data from the pre-ML orchestration pipeline."""
@@ -3564,7 +3606,9 @@ class ModelTrainingSubPipeline:
             tprint_info("     🔄 Validating and saving all trained models...")
             
             # Create model directory
-            model_dir = Path(config.data_dir) / "tactician_models"
+            # Create model directory structure with training direction
+            training_direction = getattr(config, 'training_direction', 'both')
+            model_dir = Path(config.data_dir) / "tactician_models" / f"{training_direction}_models"
             model_dir.mkdir(parents=True, exist_ok=True)
             
             saved_models = {}
@@ -3575,7 +3619,7 @@ class ModelTrainingSubPipeline:
             long_models_dir.mkdir(exist_ok=True)
             
             for name, model in long_models.items():
-                model_path = long_models_dir / f"{name}.pkl"
+                model_path = long_models_dir / f"{name}_{training_direction}.pkl"
                 try:
                     import pickle
                     with open(model_path, 'wb') as f:
@@ -3591,7 +3635,7 @@ class ModelTrainingSubPipeline:
             short_models_dir.mkdir(exist_ok=True)
             
             for name, model in short_models.items():
-                model_path = short_models_dir / f"{name}.pkl"
+                model_path = short_models_dir / f"{name}_{training_direction}.pkl"
                 try:
                     import pickle
                     with open(model_path, 'wb') as f:
@@ -3607,7 +3651,7 @@ class ModelTrainingSubPipeline:
             
             # Save long ensemble
             long_ensemble = all_models_data['long_ensemble']['ensemble_model']
-            long_ensemble_path = ensemble_dir / "long_ensemble.pkl"
+            long_ensemble_path = ensemble_dir / f"long_ensemble_{training_direction}.pkl"
             try:
                 import pickle
                 with open(long_ensemble_path, 'wb') as f:
@@ -3619,7 +3663,7 @@ class ModelTrainingSubPipeline:
             
             # Save short ensemble
             short_ensemble = all_models_data['short_ensemble']['ensemble_model']
-            short_ensemble_path = ensemble_dir / "short_ensemble.pkl"
+            short_ensemble_path = ensemble_dir / f"short_ensemble_{training_direction}.pkl"
             try:
                 import pickle
                 with open(short_ensemble_path, 'wb') as f:

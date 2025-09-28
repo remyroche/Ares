@@ -286,6 +286,11 @@ class GenerationStatus(Enum):
 @dataclass
 class OrchestratorConfig:
     """Configuration for PID-based feature orchestrator with common utilities integration."""
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    enable_long_features: bool = True
+    enable_short_features: bool = True
+    
     # Feature Generation Limits
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
@@ -391,6 +396,18 @@ class PIDBasedFeatureOrchestrator:
                 raise TypeError(f"Config must be OrchestratorConfig or None, got {type(config)}")
             
             self.config = config or OrchestratorConfig()
+            
+            # Set direction flags based on training_direction
+            if self.config.training_direction == "long":
+                self.config.enable_long_features = True
+                self.config.enable_short_features = False
+            elif self.config.training_direction == "short":
+                self.config.enable_long_features = False
+                self.config.enable_short_features = True
+            elif self.config.training_direction == "both":
+                self.config.enable_long_features = True
+                self.config.enable_short_features = True
+            
             self.logger = logger.getChild('PIDBasedFeatureOrchestrator')
             
             # Initialize common utilities integration
@@ -1713,18 +1730,32 @@ class PIDBasedFeatureOrchestrator:
             if isinstance(target, dict) and 'long' in target and 'short' in target:
                 tprint_info("Generating separate interaction features for long and short opportunities")
                 
-                # Generate features for long targets
-                long_result = await self._generate_interaction_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['long']
-                )
+                results = {}
                 
-                # Generate features for short targets  
-                short_result = await self._generate_interaction_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['short']
-                )
+                # Generate features for long targets (if enabled)
+                if self.config.enable_long_features:
+                    tprint_info("Generating long interaction features...")
+                    long_result = await self._generate_interaction_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['long']
+                    )
+                    results['long'] = long_result
+                else:
+                    tprint_info("Skipping long interaction features - long features disabled")
+                    results['long'] = None
+                
+                # Generate features for short targets (if enabled)
+                if self.config.enable_short_features:
+                    tprint_info("Generating short interaction features...")
+                    short_result = await self._generate_interaction_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['short']
+                    )
+                    results['short'] = short_result
+                else:
+                    tprint_info("Skipping short interaction features - short features disabled")
+                    results['short'] = None
                 
                 # Combine results with differentiated naming
-                return self._combine_long_short_results(long_result, short_result, 'interaction')
+                return self._combine_long_short_results(results['long'], results['short'], 'interaction')
             
             elif isinstance(target, dict) and 'combined' in target:
                 # Handle combined target format
@@ -1756,18 +1787,32 @@ class PIDBasedFeatureOrchestrator:
             if isinstance(target, dict) and 'long' in target and 'short' in target:
                 tprint_info("Generating separate polynomial features for long and short opportunities")
                 
-                # Generate features for long targets
-                long_result = await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['long']
-                )
+                results = {}
                 
-                # Generate features for short targets
-                short_result = await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['short']
-                )
+                # Generate features for long targets (if enabled)
+                if self.config.enable_long_features:
+                    tprint_info("Generating long polynomial features...")
+                    long_result = await self._generate_polynomial_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['long']
+                    )
+                    results['long'] = long_result
+                else:
+                    tprint_info("Skipping long polynomial features - long features disabled")
+                    results['long'] = None
+                
+                # Generate features for short targets (if enabled)
+                if self.config.enable_short_features:
+                    tprint_info("Generating short polynomial features...")
+                    short_result = await self._generate_polynomial_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['short']
+                    )
+                    results['short'] = short_result
+                else:
+                    tprint_info("Skipping short polynomial features - short features disabled")
+                    results['short'] = None
                 
                 # Combine results with differentiated naming
-                return self._combine_long_short_results(long_result, short_result, 'polynomial')
+                return self._combine_long_short_results(results['long'], results['short'], 'polynomial')
             
             elif isinstance(target, dict) and 'combined' in target:
                 # Handle combined target format
@@ -1799,18 +1844,32 @@ class PIDBasedFeatureOrchestrator:
             if isinstance(target, dict) and 'long' in target and 'short' in target:
                 tprint_info("Generating separate cross-timeframe features for long and short opportunities")
                 
-                # Generate features for long targets
-                long_result = await self._generate_cross_timeframe_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['long']
-                )
+                results = {}
                 
-                # Generate features for short targets
-                short_result = await self._generate_cross_timeframe_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['short']
-                )
+                # Generate features for long targets (if enabled)
+                if self.config.enable_long_features:
+                    tprint_info("Generating long cross-timeframe features...")
+                    long_result = await self._generate_cross_timeframe_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['long']
+                    )
+                    results['long'] = long_result
+                else:
+                    tprint_info("Skipping long cross-timeframe features - long features disabled")
+                    results['long'] = None
+                
+                # Generate features for short targets (if enabled)
+                if self.config.enable_short_features:
+                    tprint_info("Generating short cross-timeframe features...")
+                    short_result = await self._generate_cross_timeframe_features_safe(
+                        X, feature_names, optimized_lookback_periods, target['short']
+                    )
+                    results['short'] = short_result
+                else:
+                    tprint_info("Skipping short cross-timeframe features - short features disabled")
+                    results['short'] = None
                 
                 # Combine results with differentiated naming
-                return self._combine_long_short_results(long_result, short_result, 'cross_timeframe')
+                return self._combine_long_short_results(results['long'], results['short'], 'cross_timeframe')
             
             elif isinstance(target, dict) and 'combined' in target:
                 # Handle combined target format

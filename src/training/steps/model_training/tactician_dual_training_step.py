@@ -123,6 +123,11 @@ class DualTrainingConfig:
     min_analyst_confidence: float = 0.5
     subsequent_minutes: int = 45
     output_directory: str = "generated/tactician_dual_training"
+    
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    enable_long_training: bool = True
+    enable_short_training: bool = True
 
     # Feature processing parameters
     enable_feature_optimization: bool = True
@@ -206,6 +211,18 @@ class DualTrainingConfig:
 
         if self.memory_limit_gb <= 0:
             raise ConfigurationError("memory_limit_gb must be positive")
+        
+        # Validate training direction
+        if self.training_direction not in ['long', 'short', 'both']:
+            raise ConfigurationError("training_direction must be 'long', 'short', or 'both'")
+        
+        # Validate direction flags consistency
+        if self.training_direction == "long" and not self.enable_long_training:
+            raise ConfigurationError("enable_long_training must be True when training_direction is 'long'")
+        if self.training_direction == "short" and not self.enable_short_training:
+            raise ConfigurationError("enable_short_training must be True when training_direction is 'short'")
+        if self.training_direction == "both" and (not self.enable_long_training or not self.enable_short_training):
+            raise ConfigurationError("Both enable_long_training and enable_short_training must be True when training_direction is 'both'")
 
 
 @dataclass
@@ -257,6 +274,18 @@ class TacticianDualTrainingStep:
         """Initialize the Tactician dual training step."""
         try:
             self.config = config or DualTrainingConfig()
+            
+            # Set direction flags based on training_direction
+            if self.config.training_direction == "long":
+                self.config.enable_long_training = True
+                self.config.enable_short_training = False
+            elif self.config.training_direction == "short":
+                self.config.enable_long_training = False
+                self.config.enable_short_training = True
+            elif self.config.training_direction == "both":
+                self.config.enable_long_training = True
+                self.config.enable_short_training = True
+            
             self.logger = system_logger.getChild('TacticianDualTrainingStep')
 
             if not COMMON_OPS_AVAILABLE:
@@ -357,8 +386,9 @@ class TacticianDualTrainingStep:
 
             tprint_success(f"✅ Pre-ML orchestration completed: {result.total_long_samples} long, {result.total_short_samples} short samples")
 
-            # Step 2: Train base models for long signals
-            if self.config.train_base_models and result.total_long_samples >= self.config.min_training_samples:
+            # Step 2: Train base models for long signals (if enabled)
+            if (self.config.enable_long_training and self.config.train_base_models and 
+                result.total_long_samples >= self.config.min_training_samples):
                 tprint_info("📈 Step 2: Training base models for long signals...")
                 long_base_result = await self._train_base_models(
                     orchestration_result.long_training_data,
@@ -370,10 +400,14 @@ class TacticianDualTrainingStep:
                 result.long_base_training_completed = True
                 tprint_success("✅ Long base model training completed")
             else:
-                tprint_info("⏭️ Skipping long base model training - insufficient data or disabled")
+                if not self.config.enable_long_training:
+                    tprint_info("⏭️ Skipping long base model training - long training disabled")
+                else:
+                    tprint_info("⏭️ Skipping long base model training - insufficient data or disabled")
 
-            # Step 3: Train base models for short signals
-            if self.config.train_base_models and result.total_short_samples >= self.config.min_training_samples:
+            # Step 3: Train base models for short signals (if enabled)
+            if (self.config.enable_short_training and self.config.train_base_models and 
+                result.total_short_samples >= self.config.min_training_samples):
                 tprint_info("📉 Step 3: Training base models for short signals...")
                 short_base_result = await self._train_base_models(
                     orchestration_result.short_training_data,
@@ -385,10 +419,14 @@ class TacticianDualTrainingStep:
                 result.short_base_training_completed = True
                 tprint_success("✅ Short base model training completed")
             else:
-                tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
+                if not self.config.enable_short_training:
+                    tprint_info("⏭️ Skipping short base model training - short training disabled")
+                else:
+                    tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
 
-            # Step 4: Train ensemble models for long signals
-            if self.config.train_ensemble_models and result.total_long_samples >= self.config.min_training_samples and result.long_base_models:
+            # Step 4: Train ensemble models for long signals (if enabled)
+            if (self.config.enable_long_training and self.config.train_ensemble_models and 
+                result.total_long_samples >= self.config.min_training_samples and result.long_base_models):
                 tprint_info("🔄 Step 4: Training ensemble models for long signals...")
                 long_ensemble_result = await self._train_ensemble_models(
                     orchestration_result.long_training_data,
@@ -402,10 +440,14 @@ class TacticianDualTrainingStep:
                 tprint_success("✅ Long ensemble model training completed with FULL FEATURE INTEGRATION")
                 tprint_info("   🎯 Long ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
             else:
-                tprint_info("⏭️ Skipping long ensemble model training - insufficient data, disabled, or no base models")
+                if not self.config.enable_long_training:
+                    tprint_info("⏭️ Skipping long ensemble model training - long training disabled")
+                else:
+                    tprint_info("⏭️ Skipping long ensemble model training - insufficient data, disabled, or no base models")
 
-            # Step 5: Train ensemble models for short signals
-            if self.config.train_ensemble_models and result.total_short_samples >= self.config.min_training_samples and result.short_base_models:
+            # Step 5: Train ensemble models for short signals (if enabled)
+            if (self.config.enable_short_training and self.config.train_ensemble_models and 
+                result.total_short_samples >= self.config.min_training_samples and result.short_base_models):
                 tprint_info("🔄 Step 5: Training ensemble models for short signals...")
                 short_ensemble_result = await self._train_ensemble_models(
                     orchestration_result.short_training_data,
@@ -419,7 +461,10 @@ class TacticianDualTrainingStep:
                 tprint_success("✅ Short ensemble model training completed with FULL FEATURE INTEGRATION")
                 tprint_info("   🎯 Short ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
             else:
-                tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
+                if not self.config.enable_short_training:
+                    tprint_info("⏭️ Skipping short ensemble model training - short training disabled")
+                else:
+                    tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
 
             # Step 6: Model evaluation and validation
             tprint_info("✅ Step 6: Model evaluation and validation...")
@@ -702,7 +747,9 @@ class TacticianDualTrainingStep:
     async def _save_training_results(self, result: DualTrainingResult):
         """Save training results to disk."""
         try:
-            output_dir = Path(self.config.output_directory)
+            # Create direction-specific output directory
+            training_direction = self.config.training_direction
+            output_dir = Path(self.config.output_directory) / f"{training_direction}_training"
             ensure_directory(output_dir)
 
             # Save orchestration results

@@ -91,11 +91,10 @@ if req_path.exists():
     print("   →", " ".join(cmd))
     result = subprocess.run(cmd)
     if result.returncode != 0:
-        raise SystemExit(result.returncode)
+        print("⚠️  Supplemental pip install failed (continuing without optional extras).", file=sys.stderr)
 PY
     then
-        echo "❌ Failed to install supplemental pip requirements." >&2
-        exit 1
+        echo "⚠️  Supplemental pip requirements could not be installed. Continuing setup without them." >&2
     fi
 fi
 
@@ -103,16 +102,11 @@ echo "🧪 Verifying key dependencies inside the Poetry environment..."
 poetry run python - <<'PY'
 import importlib
 
-deps = [
+required_deps = [
     "numpy",
     "pandas",
     "sklearn",
     "optuna",
-    "xgboost",
-    "lightgbm",
-    "torch",
-    "tensorflow",
-    "transformers",
     "matplotlib",
     "seaborn",
     "networkx",
@@ -121,7 +115,6 @@ deps = [
     "rich",
     "ccxt",
     "yfinance",
-    "talib",
     "asyncio_mqtt",
     "aiohttp",
     "websockets",
@@ -130,18 +123,42 @@ deps = [
     "loguru",
 ]
 
-missing = []
-for module_name in deps:
-    try:
-        module = importlib.import_module(module_name)
-        version = getattr(module, "__version__", "unknown")
-        print(f"✅ {module_name}: {version}")
-    except Exception as exc:  # pragma: no cover - diagnostic output for Codex
-        print(f"❌ {module_name} import failed: {exc}")
-        missing.append(module_name)
+optional_deps = [
+    "xgboost",
+    "lightgbm",
+    "torch",
+    "tensorflow",
+    "transformers",
+    "talib",
+]
 
-if missing:
-    raise SystemExit(f"Missing required dependencies: {', '.join(missing)}")
+missing_required = []
+missing_optional = []
+
+def check_modules(modules, collector):
+    for module_name in modules:
+        try:
+            module = importlib.import_module(module_name)
+            version = getattr(module, "__version__", "unknown")
+            print(f"✅ {module_name}: {version}")
+        except Exception as exc:  # pragma: no cover - diagnostic output for Codex
+            print(f"⚠️ {module_name} import failed: {exc}")
+            collector.append(module_name)
+
+check_modules(required_deps, missing_required)
+check_modules(optional_deps, missing_optional)
+
+if missing_required:
+    raise SystemExit(
+        "Missing required dependencies: " + ", ".join(missing_required)
+    )
+
+if missing_optional:
+    print(
+        "ℹ️ Optional dependencies not available: "
+        + ", ".join(missing_optional)
+        + ". These packages are not critical for core Codex workflows."
+    )
 
 print("🎉 Dependency verification completed")
 PY

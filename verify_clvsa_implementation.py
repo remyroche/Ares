@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Simple CLVSA Implementation Verification Script
+Simple PatchTST Implementation Verification Script
 
-This script verifies that the CLVSA implementation is correctly structured
+This script verifies that the PatchTST implementation is correctly structured
 without requiring complex test scenarios.
 """
 
@@ -14,19 +14,16 @@ logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(mes
 logger = logging.getLogger(__name__)
 
 def verify_imports():
-    """Verify that all CLVSA components can be imported correctly."""
-    logger.info("🔍 Verifying CLVSA component imports...")
+    """Verify that all PatchTST components can be imported correctly."""
+    logger.info("🔍 Verifying PatchTST component imports...")
 
     try:
         # Test basic imports
-        from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAWrapper, TreeCLVSAConfig, create_tree_clvsa_wrapper
-        logger.info("✅ TreeCLVSAWrapper imports: PASSED")
+        from src.utils.ml_common.models.tree_clvsa_wrapper import TreePatchTSTWrapper, PatchTSTTreeConfig
+        logger.info("✅ TreePatchTSTWrapper imports: PASSED")
 
-        from src.utils.ml_common.models.cvlsa_cache import CLVSACacheManager, CLVSACacheConfig, get_global_clvsa_cache
-        logger.info("✅ CLVSA cache imports: PASSED")
-
-        from src.utils.ml_common.cvlsa.cvlsa_architecture import EnhancedCVLSAConfig, create_enhanced_cvlsa_model, EnhancedCVLSATrainer
-        logger.info("✅ CVLSA architecture imports: PASSED")
+        from src.utils.ml_common.cvlsa.cvlsa_integration import PatchTSTTreeModel, create_default_patchtst_tree_model
+        logger.info("✅ PatchTST integration imports: PASSED")
 
         from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
         logger.info("✅ Model factory imports: PASSED")
@@ -37,30 +34,30 @@ def verify_imports():
         logger.error(f"❌ Import verification failed: {e}")
         return False
 
-def verify_clvsa_wrapper_structure():
-    """Verify that the CLVSA wrapper has the correct structure."""
-    logger.info("🔍 Verifying CLVSA wrapper structure...")
+def verify_patchtst_wrapper_structure():
+    """Verify that the PatchTST wrapper has the correct structure."""
+    logger.info("🔍 Verifying PatchTST wrapper structure...")
 
     try:
-        from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAWrapper, TreeCLVSAConfig
+        from src.utils.ml_common.models.tree_clvsa_wrapper import TreePatchTSTWrapper, PatchTSTTreeConfig
 
         # Check class structure
-        assert hasattr(TreeCLVSAWrapper, '__init__'), "TreeCLVSAWrapper should have __init__"
-        assert hasattr(TreeCLVSAWrapper, 'fit'), "TreeCLVSAWrapper should have fit method"
-        assert hasattr(TreeCLVSAWrapper, 'predict'), "TreeCLVSAWrapper should have predict method"
-        assert hasattr(TreeCLVSAWrapper, 'get_feature_importance'), "TreeCLVSAWrapper should have get_feature_importance"
+        assert hasattr(TreePatchTSTWrapper, '__init__'), "TreePatchTSTWrapper should have __init__"
+        assert hasattr(TreePatchTSTWrapper, 'fit'), "TreePatchTSTWrapper should have fit method"
+        assert hasattr(TreePatchTSTWrapper, 'predict'), "TreePatchTSTWrapper should have predict method"
+        assert hasattr(TreePatchTSTWrapper, 'predict_direction_proba'), "TreePatchTSTWrapper should have predict_direction_proba"
 
         # Check configuration
-        config = TreeCLVSAConfig()
-        assert hasattr(config, 'enable_cvlsa_enhancement'), "Config should have enable_cvlsa_enhancement"
-        assert hasattr(config, 'fusion_method'), "Config should have fusion_method"
-        assert hasattr(config, 'cvlsa_weight'), "Config should have cvlsa_weight"
+        config = PatchTSTTreeConfig()
+        assert hasattr(config, 'lookback'), "Config should have lookback"
+        assert hasattr(config, 'patch_size'), "Config should have patch_size"
+        assert hasattr(config, 'd_model'), "Config should have d_model"
 
-        logger.info("✅ CLVSA wrapper structure: PASSED")
+        logger.info("✅ PatchTST wrapper structure: PASSED")
         return True
 
     except Exception as e:
-        logger.error(f"❌ CLVSA wrapper structure verification failed: {e}")
+        logger.error(f"❌ PatchTST wrapper structure verification failed: {e}")
         return False
 
 def verify_cache_structure():
@@ -171,11 +168,11 @@ def verify_configuration_options():
 
 def main():
     """Run all verification checks."""
-    logger.info("🚀 Starting CLVSA implementation verification...")
+    logger.info("🚀 Starting PatchTST implementation verification...")
 
     tests = [
         verify_imports,
-        verify_clvsa_wrapper_structure,
+        verify_patchtst_wrapper_structure,
         verify_cache_structure,
         verify_model_factory_integration,
         verify_configuration_options

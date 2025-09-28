@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Test Script for CLVSA Integration with Tree Models
+Test Script for PatchTST Integration with Tree Models
 
-This script tests the comprehensive CLVSA integration, including:
-1. Automatic CLVSA wrapping of tree models
-2. CLVSA element caching and reuse
+This script tests the comprehensive PatchTST integration, including:
+1. Automatic PatchTST wrapping of tree models
+2. PatchTST element caching and reuse
 3. Memory optimization
 4. Performance improvements
 """
@@ -68,7 +68,7 @@ def test_clvsa_automatic_wrapping():
     logger.info("🧪 Testing automatic CLVSA wrapping of tree models...")
 
     from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
-    from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAWrapper
+    from src.utils.ml_common.models.tree_clvsa_wrapper import TreePatchTSTWrapper
 
     # Create model factory
     factory = EnhancedModelFactory()
@@ -78,7 +78,7 @@ def test_clvsa_automatic_wrapping():
         model_type=ModelType.RANDOM_FOREST,
         model_name="test_rf",
         model_params={
-            'use_clvsa': True,  # Should automatically enable CLVSA
+            'use_patchtst': True,  # Should automatically enable PatchTST
             'n_estimators': 50,
             'max_depth': 5
         }
@@ -87,18 +87,18 @@ def test_clvsa_automatic_wrapping():
     model = factory.create_model(config)
 
     # Verify it's wrapped with CLVSA
-    assert isinstance(model, TreeCLVSAWrapper), "Random Forest should be automatically wrapped with CLVSA"
-    assert hasattr(model, 'cvlsa_model'), "CLVSA wrapper should have CVLSA model"
-    assert model.config.enable_cvlsa_enhancement, "CLVSA enhancement should be enabled by default"
+    assert isinstance(model, TreePatchTSTWrapper), "Random Forest should be automatically wrapped with PatchTST"
+    assert hasattr(model, 'patch_model'), "PatchTST wrapper should have patch model"
+    assert model.config.lookback > 0, "PatchTST enhancement should be enabled by default"
 
-    logger.info("✅ Random Forest automatic CLVSA wrapping: PASSED")
+    logger.info("✅ Random Forest automatic PatchTST wrapping: PASSED")
 
     # Test XGBoost wrapping
     config = ModelConfig(
         model_type=ModelType.XGBOOST,
         model_name="test_xgb",
         model_params={
-            'use_clvsa': True,
+            'use_patchtst': True,
             'n_estimators': 50,
             'max_depth': 5
         }
@@ -106,17 +106,17 @@ def test_clvsa_automatic_wrapping():
 
     model = factory.create_model(config)
 
-    assert isinstance(model, TreeCLVSAWrapper), "XGBoost should be automatically wrapped with CLVSA"
-    assert hasattr(model, 'cvlsa_model'), "CLVSA wrapper should have CVLSA model"
+    assert isinstance(model, TreePatchTSTWrapper), "XGBoost should be automatically wrapped with PatchTST"
+    assert hasattr(model, 'patch_model'), "PatchTST wrapper should have patch model"
 
-    logger.info("✅ XGBoost automatic CLVSA wrapping: PASSED")
+    logger.info("✅ XGBoost automatic PatchTST wrapping: PASSED")
 
     # Test disabling CLVSA
     config = ModelConfig(
         model_type=ModelType.LIGHTGBM,
         model_name="test_lgb_no_clvsa",
         model_params={
-            'use_clvsa': False,  # Explicitly disable
+            'use_patchtst': False,  # Explicitly disable
             'n_estimators': 50
         }
     )
@@ -125,16 +125,16 @@ def test_clvsa_automatic_wrapping():
 
     # Should be the base model, not wrapped
     from lightgbm import LGBMRegressor
-    assert isinstance(model, LGBMRegressor), "LightGBM should not be wrapped when use_clvsa=False"
-    assert not isinstance(model, TreeCLVSAWrapper), "LightGBM should not be CLVSA wrapped when disabled"
+    assert isinstance(model, LGBMRegressor), "LightGBM should not be wrapped when use_patchtst=False"
+    assert not isinstance(model, TreePatchTSTWrapper), "LightGBM should not be PatchTST wrapped when disabled"
 
-    logger.info("✅ CLVSA disable functionality: PASSED")
+    logger.info("✅ PatchTST disable functionality: PASSED")
 
     return True
 
-def test_clvsa_caching():
-    """Test CLVSA element caching system."""
-    logger.info("🧪 Testing CLVSA element caching system...")
+def test_patchtst_caching():
+    """Test PatchTST element caching system."""
+    logger.info("🧪 Testing PatchTST element caching system...")
 
     from src.utils.ml_common.models.cvlsa_cache import get_global_clvsa_cache, CLVSACacheConfig
 
@@ -285,7 +285,7 @@ def test_end_to_end_integration():
     logger.info("🧪 Testing end-to-end CLVSA integration...")
 
     from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
-    from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAWrapper
+    from src.utils.ml_common.models.tree_clvsa_wrapper import TreePatchTSTWrapper
     import torch
 
     # Create training data
@@ -299,7 +299,7 @@ def test_end_to_end_integration():
         model_type=ModelType.RANDOM_FOREST_CLASSIFIER,
         model_name="test_clvsa_rf",
         model_params={
-            'use_clvsa': True,
+            'use_patchtst': True,
             'n_estimators': 20,  # Small number for quick testing
             'max_depth': 3,
             'clvsa_config': {

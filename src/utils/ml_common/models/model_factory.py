@@ -67,7 +67,7 @@ class ModelType(str, Enum):
     FINANCIAL_RESNET = "FinancialResNet"
     ADVANCED_MAMBA_HYBRID = "AdvancedMambaHybrid"
     DEEPSCALER_1M = "DeepScaler1m"
-    CLVSA = "CLVSA"
+    PATCHTST = "PatchTST"
     MULTISCALE_NBEATS = "MultiScaleNBEATS"
     NAS = "NAS"
     NAS_CLASSIFIER = "NASClassifier"
@@ -174,7 +174,7 @@ class ModelBuilderRegistry:
                 ModelType.FINANCIAL_RESNET: _build_financial_resnet,
                 ModelType.ADVANCED_MAMBA_HYBRID: _build_advanced_mamba_hybrid,
                 ModelType.DEEPSCALER_1M: _build_deepscaler_1m,
-                ModelType.CLVSA: _build_clvsa,
+                ModelType.PATCHTST: _build_patchtst,
                 ModelType.MULTISCALE_NBEATS: _build_multiscale_nbeats,
                 ModelType.NAS: _build_nas,
                 ModelType.NAS_CLASSIFIER: _build_nas,
@@ -254,16 +254,19 @@ def _build_random_forest(config: ModelConfig) -> Any:
     cls_name = "RandomForestClassifier" if config.model_type.name.endswith("CLASSIFIER") else "RandomForestRegressor"
     base_model = _configure_sklearn_model(cls_name, defaults, config)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -273,16 +276,19 @@ def _build_extra_trees(config: ModelConfig) -> Any:
     cls_name = "ExtraTreesClassifier" if config.model_type.name.endswith("CLASSIFIER") else "ExtraTreesRegressor"
     base_model = _configure_sklearn_model(cls_name, defaults, config)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -296,16 +302,19 @@ def _build_hist_gradient_boosting(config: ModelConfig) -> Any:
     defaults: Dict[str, Any] = {"random_state": config.random_state}
     base_model = _configure_sklearn_model(cls_name, defaults, config)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -358,16 +367,19 @@ def _build_lightgbm(config: ModelConfig) -> Any:
     params = {**defaults, **config.model_params}
     base_model = getattr(lgb, cls_name)(**params)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -385,16 +397,19 @@ def _build_catboost(config: ModelConfig) -> Any:
     params = {**defaults, **config.model_params}
     base_model = getattr(catboost, cls_name)(**params)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -413,16 +428,19 @@ def _build_xgboost(config: ModelConfig) -> Any:
     params = {**defaults, **config.model_params}
     base_model = getattr(xgb, cls_name)(**params)
 
-    # Automatically wrap with CLVSA enhancement
-    if config.model_params.get('use_clvsa', True):  # Default to True for automatic enhancement
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, TreeCLVSAConfig
+    # Automatically wrap with PatchTST enhancement
+    if config.model_params.get('use_patchtst', True):  # Default to True for automatic enhancement
+        from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
 
-        clvsa_config = config.model_params.get('clvsa_config', {})
-        tree_clvsa_config = TreeCLVSAConfig(**clvsa_config)
-
+        patchtst_config = config.model_params.get('patchtst_config', {})
+        
         logger = logging.getLogger(__name__)
-        logger.info(f"🌳 Automatically wrapping {cls_name} with CLVSA enhancement")
-        return create_tree_clvsa_wrapper(base_model, tree_clvsa_config)
+        logger.info(f"🌳 Automatically wrapping {cls_name} with PatchTST enhancement")
+        return create_default_patchtst_tree_model(
+            task_type="both",
+            tree_model=base_model,
+            patch_kwargs=patchtst_config
+        )
     else:
         return base_model
 
@@ -520,10 +538,20 @@ def _build_deepscaler_1m(config: ModelConfig) -> Any:
     return _build_random_forest(config)
 
 
-def _build_clvsa(config: ModelConfig) -> Any:
-    """Build CLVSA with fallback."""
-    _LOGGER.warning("CLVSA not implemented, falling back to RandomForest")
-    return _build_random_forest(config)
+def _build_patchtst(config: ModelConfig) -> Any:
+    """Build PatchTST model."""
+    from src.utils.ml_common.cvlsa.cvlsa_integration import create_default_patchtst_tree_model
+    
+    patchtst_config = config.model_params.get('patchtst_config', {})
+    tree_model = config.model_params.get('tree_model', 'random_forest')
+    classification_model = config.model_params.get('classification_model', tree_model)
+    
+    return create_default_patchtst_tree_model(
+        task_type="both",
+        tree_model=tree_model,
+        classification_model=classification_model,
+        patch_kwargs=patchtst_config
+    )
 
 
 def _build_multiscale_nbeats(config: ModelConfig) -> Any:

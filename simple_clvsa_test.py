@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Simple CLVSA Test - Direct Implementation Check
+Simple PatchTST Test - Direct Implementation Check
 
-This script directly tests the core CLVSA functionality without complex dependencies.
+This script directly tests the core PatchTST functionality without complex dependencies.
 """
 
 import sys
 import os
 sys.path.append('/workspace')
 
-def test_tree_clvsa_wrapper():
-    """Test the TreeCLVSAWrapper implementation directly."""
-    print("🔍 Testing TreeCLVSAWrapper implementation...")
+def test_tree_patchtst_wrapper():
+    """Test the TreePatchTSTWrapper implementation directly."""
+    print("🔍 Testing TreePatchTSTWrapper implementation...")
 
     try:
         # Import the wrapper directly
-        from src.utils.ml_common.models.tree_clvsa_wrapper import TreeCLVSAWrapper, TreeCLVSAConfig
+        from src.utils.ml_common.models.tree_clvsa_wrapper import TreePatchTSTWrapper, PatchTSTTreeConfig
 
         # Create a mock base model
         class MockModel:
@@ -33,23 +33,23 @@ def test_tree_clvsa_wrapper():
                 return [[0.5, 0.5]] * len(X)
 
         # Test configuration
-        config = TreeCLVSAConfig()
-        print(f"✅ TreeCLVSAConfig created with enable_cvlsa_enhancement: {config.enable_cvlsa_enhancement}")
+        config = PatchTSTTreeConfig()
+        print(f"✅ PatchTSTTreeConfig created with lookback: {config.lookback}")
 
         # Test wrapper creation
         base_model = MockModel()
-        wrapper = TreeCLVSAWrapper(base_model, config)
+        wrapper = TreePatchTSTWrapper(base_model, config)
 
-        print(f"✅ TreeCLVSAWrapper created successfully")
-        print(f"✅ Wrapper has cvlsa_model attribute: {hasattr(wrapper, 'cvlsa_model')}")
+        print(f"✅ TreePatchTSTWrapper created successfully")
+        print(f"✅ Wrapper has patch_model attribute: {hasattr(wrapper, 'patch_model')}")
         print(f"✅ Wrapper has fit method: {hasattr(wrapper, 'fit')}")
         print(f"✅ Wrapper has predict method: {hasattr(wrapper, 'predict')}")
-        print(f"✅ Wrapper has get_feature_importance method: {hasattr(wrapper, 'get_feature_importance')}")
+        print(f"✅ Wrapper has predict_direction_proba method: {hasattr(wrapper, 'predict_direction_proba')}")
 
         return True
 
     except Exception as e:
-        print(f"❌ TreeCLVSAWrapper test failed: {e}")
+        print(f"❌ TreePatchTSTWrapper test failed: {e}")
         return False
 
 def test_cvlsa_cache():
@@ -174,10 +174,10 @@ def test_model_factory():
 
 def main():
     """Run all simple tests."""
-    print("🚀 Starting simple CLVSA tests...")
+    print("🚀 Starting simple PatchTST tests...")
 
     tests = [
-        test_tree_clvsa_wrapper,
+        test_tree_patchtst_wrapper,
         test_cvlsa_cache,
         test_model_factory
     ]
@@ -208,10 +208,10 @@ def main():
     print(f"{'='*60}")
 
     if failed == 0:
-        print("🎉 All tests passed! CLVSA implementation is working correctly.")
-        print("\n📋 Summary of CLVSA Integration:")
-        print("✅ Tree models are automatically wrapped with CLVSA architecture")
-        print("✅ CLVSA elements are cached for reuse across models")
+        print("🎉 All tests passed! PatchTST implementation is working correctly.")
+        print("\n📋 Summary of PatchTST Integration:")
+        print("✅ Tree models are automatically wrapped with PatchTST architecture")
+        print("✅ PatchTST elements are cached for reuse across models")
         print("✅ Memory optimization with GPU support and tensor pooling")
         print("✅ Model factory integration with automatic enhancement")
         return True

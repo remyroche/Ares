@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Demonstration of Automatic CLVSA Feature Extraction
+Demonstration of Automatic PatchTST Feature Extraction
 
-This script demonstrates the automatic CLVSA feature extraction capabilities,
+This script demonstrates the automatic PatchTST feature extraction capabilities,
 showing how tree-based models are automatically enhanced with advanced attention mechanisms.
 """
 
@@ -136,16 +136,16 @@ def demonstrate_automatic_clvsa():
 
     # Make predictions
     logger.info("🔮 Making predictions...")
-    clvsa_predictions = clvsa_model.predict(X_test)
+    patchtst_predictions = clvsa_model.predict(X_test)
     standard_predictions = standard_model.predict(X_test)
 
     # Calculate scores
-    clvsa_mse = np.mean((clvsa_predictions - y_test) ** 2)
+    patchtst_mse = np.mean((patchtst_predictions - y_test) ** 2)
     standard_mse = np.mean((standard_predictions - y_test) ** 2)
 
-    logger.info(f"📈 CLVSA Model MSE: {clvsa_mse:.6f}")
-".6f"    logger.info(f"📈 Standard Model MSE: {standard_mse:.6f}")
-    logger.info(f"📈 Improvement: {((standard_mse - clvsa_mse) / standard_mse * 100):.2f}%")
+    logger.info(f"📈 PatchTST Model MSE: {patchtst_mse:.6f}")
+    logger.info(f"📈 Standard Model MSE: {standard_mse:.6f}")
+    logger.info(f"📈 Improvement: {((standard_mse - patchtst_mse) / standard_mse * 100):.2f}%")
 
     # Get model information
     clvsa_info = clvsa_model.get_model_info()
@@ -158,17 +158,16 @@ def demonstrate_automatic_clvsa():
     logger.info("TEST 2: Direct Feature Extractor Usage")
     logger.info("="*60)
 
-    from src.utils.ml_common.cvlsa.cvlsa_integration import create_feature_enhancer
+    from src.utils.ml_common.cvlsa.cvlsa_integration import create_patchtst_feature_extractor
 
     # Create feature enhancer
-    enhancer = create_feature_enhancer(
-        auto_detect=True,
-        enhancement_level='comprehensive'
+    enhancer = create_patchtst_feature_extractor(
+        config={'auto_detect': True, 'enhancement_level': 'comprehensive'}
     )
 
     logger.info("🔧 Applying automatic feature enhancement...")
-    X_train_enhanced = enhancer.fit_transform(X_train, y_train, market_data.iloc[:split_idx])
-    X_test_enhanced = enhancer.transform(X_test, market_data.iloc[split_idx:])
+    X_train_enhanced = enhancer.extract_features(X_train)
+    X_test_enhanced = enhancer.extract_features(X_test)
 
     logger.info(f"📊 Enhanced training features: {X_train.shape[1]} → {X_train_enhanced.shape[1]}")
     logger.info(f"📊 Enhanced test features: {X_test.shape[1]} → {X_test_enhanced.shape[1]}")
@@ -187,7 +186,7 @@ def demonstrate_automatic_clvsa():
     enhanced_mse = np.mean((enhanced_predictions - y_test) ** 2)
 
     logger.info(f"📈 Enhanced Model MSE: {enhanced_mse:.6f}")
-".6f"    logger.info(f"📈 Improvement over standard: {((standard_mse - enhanced_mse) / standard_mse * 100):.2f}%")
+    logger.info(f"📈 Improvement over standard: {((standard_mse - enhanced_mse) / standard_mse * 100):.2f}%")
 
     # Test 3: Cache System Demonstration
     logger.info("\n" + "="*60)
@@ -198,8 +197,8 @@ def demonstrate_automatic_clvsa():
     cache_stats = clvsa_model.get_cache_stats()
     if cache_stats:
         logger.info(f"💾 Cache size: {cache_stats.get('cache_size', 0)} entries")
-        logger.info(f"💾 Memory usage: {cache_stats.get('memory_usage_mb', 0)".2f"}MB")
-        logger.info(f"💾 Hit rate: {cache_stats.get('hit_rate', 0)".2f"}")
+        logger.info(f"💾 Memory usage: {cache_stats.get('memory_usage_mb', 0):.2f}MB")
+        logger.info(f"💾 Hit rate: {cache_stats.get('hit_rate', 0):.2f}")
 
     # Get feature importance
     feature_importance = clvsa_model.get_feature_importance()
@@ -253,9 +252,9 @@ def demonstrate_automatic_clvsa():
     logger.info("✅ Cache System: WORKING")
     logger.info("✅ Configuration Options: WORKING")
 
-    logger.info("
-🎉 All automatic CLVSA features are working correctly!"    logger.info("📈 Models are automatically enhanced with advanced attention mechanisms")
-    logger.info("💾 CLVSA computations are cached for efficient reuse")
+    logger.info("🎉 All automatic PatchTST features are working correctly!")
+    logger.info("📈 Models are automatically enhanced with advanced attention mechanisms")
+    logger.info("💾 PatchTST computations are cached for efficient reuse")
     logger.info("🔧 Comprehensive configuration options available")
 
     return True

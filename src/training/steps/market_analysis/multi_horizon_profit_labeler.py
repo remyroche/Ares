@@ -60,6 +60,11 @@ class ScoringConstants:
 @dataclass
 class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    enable_long_labeling: bool = True
+    enable_short_labeling: bool = True
+    
     # Profit targets (fee-aware, 0.3% minimum) - SHORT-TERM FOCUSED
     profit_targets: Dict[str, float] = field(default_factory=lambda: {
         'micro': 0.003,    # 0.3% (net: 0.22% after 0.08% fees)
@@ -97,6 +102,22 @@ class MultiHorizonConfig:
     # Quality validation settings
     enable_quality_validation: bool = True
     outlier_detection_enabled: bool = True
+    
+    def _validate_config(self) -> None:
+        """Validate configuration values to catch mistakes early."""
+        # Validate training direction
+        if self.training_direction not in ['long', 'short', 'both']:
+            raise ConfigurationError("training_direction must be 'long', 'short', or 'both'")
+        
+        # Validate direction flags consistency
+        if self.training_direction == "long" and not self.enable_long_labeling:
+            raise ConfigurationError("enable_long_labeling must be True when training_direction is 'long'")
+        if self.training_direction == "short" and not self.enable_short_labeling:
+            raise ConfigurationError("enable_short_labeling must be True when training_direction is 'short'")
+        if self.training_direction == "both" and (not self.enable_long_labeling or not self.enable_short_labeling):
+            raise ConfigurationError("Both enable_long_labeling and enable_short_labeling must be True when training_direction is 'both'")
+    
+    # Additional configuration fields
     outlier_threshold: float = 3.0  # Standard deviations for outlier detection
     min_sample_quality_score: float = 0.7  # Minimum quality score for samples
 
@@ -111,6 +132,18 @@ class MultiHorizonProfitLabeler:
     def __init__(self, config: Optional[MultiHorizonConfig] = None):
         """Initialize the multi-horizon profit labeler with memory optimization."""
         self.config = config or MultiHorizonConfig()
+        
+        # Set direction flags based on training_direction
+        if self.config.training_direction == "long":
+            self.config.enable_long_labeling = True
+            self.config.enable_short_labeling = False
+        elif self.config.training_direction == "short":
+            self.config.enable_long_labeling = False
+            self.config.enable_short_labeling = True
+        elif self.config.training_direction == "both":
+            self.config.enable_long_labeling = True
+            self.config.enable_short_labeling = True
+            
         self.logger = get_logger('MultiHorizonProfitLabeler')
 
         # Initialize matrix operations for performance
@@ -1086,7 +1119,7 @@ class MultiHorizonProfitLabeler:
         sample_labels = {}
         probability_scores = {}
         
-        # Generate labels for each target/horizon combination - BOTH DIRECTIONS
+        # Generate labels for each target/horizon combination - DIRECTION-SPECIFIC
         for target_name, horizon_name, target_pct, horizon_periods in self.target_horizon_combinations:
             window_end = min(index + horizon_periods + 1, len(close_prices))
             
@@ -1094,35 +1127,57 @@ class MultiHorizonProfitLabeler:
             window_highs = high_prices[index:window_end]
             window_lows = low_prices[index:window_end]
             
-            # Calculate probability for LONG direction
-            long_result = self._calculate_profit_probability_vectorized(
-                window_highs, window_lows, current_price, target_pct, horizon_periods, direction='long'
-            )
+            # Calculate probability for LONG direction (if enabled)
+            if self.config.enable_long_labeling:
+                long_result = self._calculate_profit_probability_vectorized(
+                    window_highs, window_lows, current_price, target_pct, horizon_periods, direction='long'
+                )
+                
+                # Store LONG results
+                long_base = f'{target_name}_{horizon_name}_long'
+                sample_labels[f'{long_base}_prob'] = long_result['probability']
+                sample_labels[f'{long_base}_time_to_hit'] = long_result['time_to_hit'] or -1
+                sample_labels[f'{long_base}_max_adverse'] = long_result['max_adverse_excursion']
+                sample_labels[f'{long_base}_net_profit'] = long_result['net_profit']
+                sample_labels[f'{long_base}_quality_score'] = long_result['quality_score']
+                
+                # Store for composite calculations
+                probability_scores[f'{target_name}_{horizon_name}_long'] = long_result['probability']
+            else:
+                # Set default values for disabled long labeling
+                long_base = f'{target_name}_{horizon_name}_long'
+                sample_labels[f'{long_base}_prob'] = 0.0
+                sample_labels[f'{long_base}_time_to_hit'] = -1
+                sample_labels[f'{long_base}_max_adverse'] = 0.0
+                sample_labels[f'{long_base}_net_profit'] = 0.0
+                sample_labels[f'{long_base}_quality_score'] = 0.0
+                probability_scores[f'{target_name}_{horizon_name}_long'] = 0.0
             
-            # Calculate probability for SHORT direction  
-            short_result = self._calculate_profit_probability_vectorized(
-                window_highs, window_lows, current_price, target_pct, horizon_periods, direction='short'
-            )
-            
-            # Store LONG results
-            long_base = f'{target_name}_{horizon_name}_long'
-            sample_labels[f'{long_base}_prob'] = long_result['probability']
-            sample_labels[f'{long_base}_time_to_hit'] = long_result['time_to_hit'] or -1
-            sample_labels[f'{long_base}_max_adverse'] = long_result['max_adverse_excursion']
-            sample_labels[f'{long_base}_net_profit'] = long_result['net_profit']
-            sample_labels[f'{long_base}_quality_score'] = long_result['quality_score']
-            
-            # Store SHORT results
-            short_base = f'{target_name}_{horizon_name}_short'
-            sample_labels[f'{short_base}_prob'] = short_result['probability']
-            sample_labels[f'{short_base}_time_to_hit'] = short_result['time_to_hit'] or -1
-            sample_labels[f'{short_base}_max_adverse'] = short_result['max_adverse_excursion']
-            sample_labels[f'{short_base}_net_profit'] = short_result['net_profit']
-            sample_labels[f'{short_base}_quality_score'] = short_result['quality_score']
-            
-            # Store for composite calculations (both directions)
-            probability_scores[f'{target_name}_{horizon_name}_long'] = long_result['probability']
-            probability_scores[f'{target_name}_{horizon_name}_short'] = short_result['probability']
+            # Calculate probability for SHORT direction (if enabled)
+            if self.config.enable_short_labeling:
+                short_result = self._calculate_profit_probability_vectorized(
+                    window_highs, window_lows, current_price, target_pct, horizon_periods, direction='short'
+                )
+                
+                # Store SHORT results
+                short_base = f'{target_name}_{horizon_name}_short'
+                sample_labels[f'{short_base}_prob'] = short_result['probability']
+                sample_labels[f'{short_base}_time_to_hit'] = short_result['time_to_hit'] or -1
+                sample_labels[f'{short_base}_max_adverse'] = short_result['max_adverse_excursion']
+                sample_labels[f'{short_base}_net_profit'] = short_result['net_profit']
+                sample_labels[f'{short_base}_quality_score'] = short_result['quality_score']
+                
+                # Store for composite calculations
+                probability_scores[f'{target_name}_{horizon_name}_short'] = short_result['probability']
+            else:
+                # Set default values for disabled short labeling
+                short_base = f'{target_name}_{horizon_name}_short'
+                sample_labels[f'{short_base}_prob'] = 0.0
+                sample_labels[f'{short_base}_time_to_hit'] = -1
+                sample_labels[f'{short_base}_max_adverse'] = 0.0
+                sample_labels[f'{short_base}_net_profit'] = 0.0
+                sample_labels[f'{short_base}_quality_score'] = 0.0
+                probability_scores[f'{target_name}_{horizon_name}_short'] = 0.0
         
         # Calculate composite scores
         composite_scores = self._calculate_composite_scores(probability_scores, sample_labels)
@@ -1273,40 +1328,62 @@ class MultiHorizonProfitLabeler:
         sample_labels = {}
         probability_scores = {}
         
-        # Generate labels for each target/horizon combination - BOTH DIRECTIONS
+        # Generate labels for each target/horizon combination - DIRECTION-SPECIFIC
         for target_name, horizon_name, target_pct, horizon_periods in self.target_horizon_combinations:
             window_end = min(index + horizon_periods + 1, len(data))
             window_data = data.iloc[index:window_end]
             
-            # Calculate probability for LONG direction
-            long_result = self._calculate_profit_probability(
-                window_data, current_price, target_pct, horizon_periods, direction='long'
-            )
+            # Calculate probability for LONG direction (if enabled)
+            if self.config.enable_long_labeling:
+                long_result = self._calculate_profit_probability(
+                    window_data, current_price, target_pct, horizon_periods, direction='long'
+                )
+                
+                # Store LONG results
+                long_base = f'{target_name}_{horizon_name}_long'
+                sample_labels[f'{long_base}_prob'] = long_result['probability']
+                sample_labels[f'{long_base}_time_to_hit'] = long_result['time_to_hit'] or -1
+                sample_labels[f'{long_base}_max_adverse'] = long_result['max_adverse_excursion']
+                sample_labels[f'{long_base}_net_profit'] = long_result['net_profit']
+                sample_labels[f'{long_base}_quality_score'] = long_result['quality_score']
+                
+                # Store for composite calculations
+                probability_scores[f'{target_name}_{horizon_name}_long'] = long_result['probability']
+            else:
+                # Set default values for disabled long labeling
+                long_base = f'{target_name}_{horizon_name}_long'
+                sample_labels[f'{long_base}_prob'] = 0.0
+                sample_labels[f'{long_base}_time_to_hit'] = -1
+                sample_labels[f'{long_base}_max_adverse'] = 0.0
+                sample_labels[f'{long_base}_net_profit'] = 0.0
+                sample_labels[f'{long_base}_quality_score'] = 0.0
+                probability_scores[f'{target_name}_{horizon_name}_long'] = 0.0
             
-            # Calculate probability for SHORT direction  
-            short_result = self._calculate_profit_probability(
-                window_data, current_price, target_pct, horizon_periods, direction='short'
-            )
-            
-            # Store LONG results
-            long_base = f'{target_name}_{horizon_name}_long'
-            sample_labels[f'{long_base}_prob'] = long_result['probability']
-            sample_labels[f'{long_base}_time_to_hit'] = long_result['time_to_hit'] or -1
-            sample_labels[f'{long_base}_max_adverse'] = long_result['max_adverse_excursion']
-            sample_labels[f'{long_base}_net_profit'] = long_result['net_profit']
-            sample_labels[f'{long_base}_quality_score'] = long_result['quality_score']
-            
-            # Store SHORT results
-            short_base = f'{target_name}_{horizon_name}_short'
-            sample_labels[f'{short_base}_prob'] = short_result['probability']
-            sample_labels[f'{short_base}_time_to_hit'] = short_result['time_to_hit'] or -1
-            sample_labels[f'{short_base}_max_adverse'] = short_result['max_adverse_excursion']
-            sample_labels[f'{short_base}_net_profit'] = short_result['net_profit']
-            sample_labels[f'{short_base}_quality_score'] = short_result['quality_score']
-            
-            # Store for composite calculations (both directions)
-            probability_scores[f'{target_name}_{horizon_name}_long'] = long_result['probability']
-            probability_scores[f'{target_name}_{horizon_name}_short'] = short_result['probability']
+            # Calculate probability for SHORT direction (if enabled)
+            if self.config.enable_short_labeling:
+                short_result = self._calculate_profit_probability(
+                    window_data, current_price, target_pct, horizon_periods, direction='short'
+                )
+                
+                # Store SHORT results
+                short_base = f'{target_name}_{horizon_name}_short'
+                sample_labels[f'{short_base}_prob'] = short_result['probability']
+                sample_labels[f'{short_base}_time_to_hit'] = short_result['time_to_hit'] or -1
+                sample_labels[f'{short_base}_max_adverse'] = short_result['max_adverse_excursion']
+                sample_labels[f'{short_base}_net_profit'] = short_result['net_profit']
+                sample_labels[f'{short_base}_quality_score'] = short_result['quality_score']
+                
+                # Store for composite calculations
+                probability_scores[f'{target_name}_{horizon_name}_short'] = short_result['probability']
+            else:
+                # Set default values for disabled short labeling
+                short_base = f'{target_name}_{horizon_name}_short'
+                sample_labels[f'{short_base}_prob'] = 0.0
+                sample_labels[f'{short_base}_time_to_hit'] = -1
+                sample_labels[f'{short_base}_max_adverse'] = 0.0
+                sample_labels[f'{short_base}_net_profit'] = 0.0
+                sample_labels[f'{short_base}_quality_score'] = 0.0
+                probability_scores[f'{target_name}_{horizon_name}_short'] = 0.0
         
         # Calculate composite scores
         composite_scores = self._calculate_composite_scores(probability_scores, sample_labels)

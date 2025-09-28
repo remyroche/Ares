@@ -452,7 +452,8 @@ class AresLauncher:
                 'training_mode_config': config.training_mode_config,
                 'model_training': config.training_mode_config.get('model_training', {}),
                 'validation': config.training_mode_config.get('validation', {}),
-                'optimization': config.training_mode_config.get('optimization', {})
+                'optimization': config.training_mode_config.get('optimization', {}),
+                'training_direction': config.training_direction
             }
             tprint("✅ [STAGE_CONFIG] Intensity parameters added")
         else:
@@ -566,7 +567,8 @@ class AresLauncher:
                 'training_mode_config': config.training_mode_config,
                 'model_training': config.training_mode_config.get('model_training', {}),
                 'validation': config.training_mode_config.get('validation', {}),
-                'optimization': config.training_mode_config.get('optimization', {})
+                'optimization': config.training_mode_config.get('optimization', {}),
+                'training_direction': config.training_direction
             }
             tprint("✅ [SUB_PIPELINE_CONFIG] Intensity parameters added")
         else:
@@ -1345,6 +1347,11 @@ async def main():
     }
     execution_mode = execution_mode_map[args.execution_mode]
     tprint(f"✅ [MAIN] Execution mode converted: {execution_mode.value}")
+    
+    # Validate training direction
+    if args.training_direction not in ['long', 'short', 'both']:
+        raise ValueError(f"Invalid training direction: {args.training_direction}. Must be 'long', 'short', or 'both'")
+    tprint(f"✅ [MAIN] Training direction validated: {args.training_direction}")
     
     # Convert string stage to enum if provided
     stage = None

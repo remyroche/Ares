@@ -723,6 +723,7 @@ class MainTrainingPipeline:
             'validation_enabled': config.validation_enabled,
             'monitoring_enabled': config.monitoring_enabled,
             'single_stage_only': config.single_stage_only,
+            'training_direction': config.training_direction,
             'custom_params': config.stage_params.get(stage, {})
         }
         

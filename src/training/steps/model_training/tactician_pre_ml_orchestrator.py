@@ -106,6 +106,11 @@ class OrchestratorConfig:
     # Signal filtering parameters
     min_analyst_confidence: float = 0.5
     subsequent_minutes: int = 45
+    
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    enable_long_processing: bool = True
+    enable_short_processing: bool = True
 
     # Feature processing parameters
     max_lookback_periods: int = 20
@@ -151,6 +156,20 @@ class OrchestratorConfig:
     enable_pid_generation: bool = True
     enable_horizon_labeling: bool = True
     enable_feature_selection: bool = True
+    
+    def _validate_config(self) -> None:
+        """Validate configuration values to catch mistakes early."""
+        # Validate training direction
+        if self.training_direction not in ['long', 'short', 'both']:
+            raise ConfigurationError("training_direction must be 'long', 'short', or 'both'")
+        
+        # Validate direction flags consistency
+        if self.training_direction == "long" and not self.enable_long_processing:
+            raise ConfigurationError("enable_long_processing must be True when training_direction is 'long'")
+        if self.training_direction == "short" and not self.enable_short_processing:
+            raise ConfigurationError("enable_short_processing must be True when training_direction is 'short'")
+        if self.training_direction == "both" and (not self.enable_long_processing or not self.enable_short_processing):
+            raise ConfigurationError("Both enable_long_processing and enable_short_processing must be True when training_direction is 'both'")
 
 
 @dataclass
@@ -214,6 +233,18 @@ class TacticianPreMLOrchestrator:
         """Initialize the Tactician pre-ML orchestrator."""
         try:
             self.config = config or OrchestratorConfig()
+            
+            # Set direction flags based on training_direction
+            if self.config.training_direction == "long":
+                self.config.enable_long_processing = True
+                self.config.enable_short_processing = False
+            elif self.config.training_direction == "short":
+                self.config.enable_long_processing = False
+                self.config.enable_short_processing = True
+            elif self.config.training_direction == "both":
+                self.config.enable_long_processing = True
+                self.config.enable_short_processing = True
+            
             self.logger = system_logger.getChild('TacticianPreMLOrchestrator')
 
             # Initialize hardware optimizers
@@ -355,8 +386,22 @@ class TacticianPreMLOrchestrator:
                 raise ValueError(f"Signal separation failed: {signal_separation_result['error']}")
 
             result.tagged_market_data = signal_separation_result['tagged_market_data']
-            result.long_signals = signal_separation_result['long_signals']
-            result.short_signals = signal_separation_result['short_signals']
+            
+            # Only process signals for enabled directions
+            if self.config.enable_long_processing:
+                result.long_signals = signal_separation_result['long_signals']
+                tprint_info(f"📈 Long signals processed: {signal_separation_result['long_tagged_count']} samples")
+            else:
+                result.long_signals = pd.DataFrame()
+                tprint_info("⏭️ Skipping long signal processing - long processing disabled")
+                
+            if self.config.enable_short_processing:
+                result.short_signals = signal_separation_result['short_signals']
+                tprint_info(f"📉 Short signals processed: {signal_separation_result['short_tagged_count']} samples")
+            else:
+                result.short_signals = pd.DataFrame()
+                tprint_info("⏭️ Skipping short signal processing - short processing disabled")
+                
             result.combined_signals = signal_separation_result['combined_signals']
             result.signal_separation_completed = True
 
@@ -371,8 +416,21 @@ class TacticianPreMLOrchestrator:
                     result.tagged_market_data, result.tagged_market_data, result.tagged_market_data, feature_names
                 )
 
-                result.long_optimized_lookbacks = lookback_result['long_lookbacks']
-                result.short_optimized_lookbacks = lookback_result['short_lookbacks']
+                # Only process lookbacks for enabled directions
+                if self.config.enable_long_processing:
+                    result.long_optimized_lookbacks = lookback_result['long_lookbacks']
+                    tprint_info(f"📈 Long lookback optimization: {len(result.long_optimized_lookbacks)} periods")
+                else:
+                    result.long_optimized_lookbacks = {}
+                    tprint_info("⏭️ Skipping long lookback optimization - long processing disabled")
+                    
+                if self.config.enable_short_processing:
+                    result.short_optimized_lookbacks = lookback_result['short_lookbacks']
+                    tprint_info(f"📉 Short lookback optimization: {len(result.short_optimized_lookbacks)} periods")
+                else:
+                    result.short_optimized_lookbacks = {}
+                    tprint_info("⏭️ Skipping short lookback optimization - short processing disabled")
+                    
                 result.feature_optimization_completed = True
 
                 tprint_success(f"✅ Feature lookback optimization completed: {len(result.long_optimized_lookbacks)} long, {len(result.short_optimized_lookbacks)} short periods")
@@ -397,11 +455,26 @@ class TacticianPreMLOrchestrator:
                     result.long_optimized_lookbacks, result.short_optimized_lookbacks
                 )
 
-                result.long_pid_features = pid_result['long_features']
-                result.short_pid_features = pid_result['short_features']
+                # Only process PID features for enabled directions
+                if self.config.enable_long_processing:
+                    result.long_pid_features = pid_result['long_features']
+                    tprint_info(f"📈 Long PID features: {result.long_pid_features.total_features_generated} features")
+                else:
+                    result.long_pid_features = None
+                    tprint_info("⏭️ Skipping long PID feature generation - long processing disabled")
+                    
+                if self.config.enable_short_processing:
+                    result.short_pid_features = pid_result['short_features']
+                    tprint_info(f"📉 Short PID features: {result.short_pid_features.total_features_generated} features")
+                else:
+                    result.short_pid_features = None
+                    tprint_info("⏭️ Skipping short PID feature generation - short processing disabled")
+                    
                 result.pid_generation_completed = True
 
-                tprint_success(f"✅ PID feature generation completed: {result.long_pid_features.total_features_generated} long, {result.short_pid_features.total_features_generated} short features")
+                long_count = result.long_pid_features.total_features_generated if result.long_pid_features else 0
+                short_count = result.short_pid_features.total_features_generated if result.short_pid_features else 0
+                tprint_success(f"✅ PID feature generation completed: {long_count} long, {short_count} short features")
             else:
                 tprint_warning("⚠️ Skipping PID feature generation - component not available")
 
@@ -413,8 +486,21 @@ class TacticianPreMLOrchestrator:
                     result.tagged_market_data, result.long_pid_features, result.short_pid_features
                 )
 
-                result.long_labeled_targets = labeling_result['long_targets']
-                result.short_labeled_targets = labeling_result['short_targets']
+                # Only process labeling for enabled directions
+                if self.config.enable_long_processing:
+                    result.long_labeled_targets = labeling_result['long_targets']
+                    tprint_info(f"📈 Long horizon labeling: {len(result.long_labeled_targets)} target sets")
+                else:
+                    result.long_labeled_targets = {}
+                    tprint_info("⏭️ Skipping long horizon labeling - long processing disabled")
+                    
+                if self.config.enable_short_processing:
+                    result.short_labeled_targets = labeling_result['short_targets']
+                    tprint_info(f"📉 Short horizon labeling: {len(result.short_labeled_targets)} target sets")
+                else:
+                    result.short_labeled_targets = {}
+                    tprint_info("⏭️ Skipping short horizon labeling - short processing disabled")
+                    
                 result.horizon_labeling_completed = True
 
                 tprint_success(f"✅ Horizon labeling completed: {len(result.long_labeled_targets)} long, {len(result.short_labeled_targets)} short target sets")
@@ -430,15 +516,28 @@ class TacticianPreMLOrchestrator:
                     result.long_labeled_targets, result.short_labeled_targets
                 )
 
-                result.long_selected_features = selection_result['long_features']
-                result.short_selected_features = selection_result['short_features']
+                # Only process feature selection for enabled directions
+                if self.config.enable_long_processing:
+                    result.long_selected_features = selection_result['long_features']
+                    tprint_info(f"📈 Long feature selection: {len(result.long_selected_features)} features")
+                else:
+                    result.long_selected_features = []
+                    tprint_info("⏭️ Skipping long feature selection - long processing disabled")
+                    
+                if self.config.enable_short_processing:
+                    result.short_selected_features = selection_result['short_features']
+                    tprint_info(f"📉 Short feature selection: {len(result.short_selected_features)} features")
+                else:
+                    result.short_selected_features = []
+                    tprint_info("⏭️ Skipping short feature selection - short processing disabled")
+                    
                 result.feature_selection_completed = True
 
                 tprint_success(f"✅ Feature selection completed: {len(result.long_selected_features)} long, {len(result.short_selected_features)} short features")
             else:
                 tprint_warning("⚠️ Skipping feature selection - component not available")
 
-            # Step 6: Prepare training data for both signal types
+            # Step 6: Prepare training data for enabled signal types
             tprint_info("📚 Step 6: Preparing training data...")
             training_data_result = await self._prepare_training_data(
                 result.tagged_market_data, result.tagged_market_data,
@@ -447,10 +546,24 @@ class TacticianPreMLOrchestrator:
                 result.long_selected_features, result.short_selected_features
             )
 
-            result.long_training_data = training_data_result['long_data']
-            result.short_training_data = training_data_result['short_data']
-            result.total_long_samples = len(result.long_training_data)
-            result.total_short_samples = len(result.short_training_data)
+            # Only prepare training data for enabled directions
+            if self.config.enable_long_processing:
+                result.long_training_data = training_data_result['long_data']
+                result.total_long_samples = len(result.long_training_data)
+                tprint_info(f"📈 Long training data: {result.total_long_samples} samples")
+            else:
+                result.long_training_data = pd.DataFrame()
+                result.total_long_samples = 0
+                tprint_info("⏭️ Skipping long training data preparation - long processing disabled")
+                
+            if self.config.enable_short_processing:
+                result.short_training_data = training_data_result['short_data']
+                result.total_short_samples = len(result.short_training_data)
+                tprint_info(f"📉 Short training data: {result.total_short_samples} samples")
+            else:
+                result.short_training_data = pd.DataFrame()
+                result.total_short_samples = 0
+                tprint_info("⏭️ Skipping short training data preparation - short processing disabled")
 
             tprint_success(f"✅ Training data prepared: {result.total_long_samples} long, {result.total_short_samples} short samples")
 

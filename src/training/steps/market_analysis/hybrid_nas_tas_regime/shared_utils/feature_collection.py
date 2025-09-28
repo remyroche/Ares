@@ -11,11 +11,11 @@ import logging
 from dataclasses import dataclass
 import time
 from datetime import datetime
-# from tprint import tprint  # Not available, using print instead
-def tprint(*args, **kwargs):
-    # Remove color argument if present since print() doesn't support it
-    kwargs.pop('color', None)
-    print(*args, **kwargs)
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 try:
     from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureConfig, FeatureResult

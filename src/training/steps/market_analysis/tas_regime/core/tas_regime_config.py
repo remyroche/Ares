@@ -49,7 +49,7 @@ class TASRegimeConfig:
     bootstrap_iterations: int = 1000
 
     # Advanced features
-    enable_clvsa_enhancement: bool = True
+    enable_patchtst_enhancement: bool = True
     enable_regime_adaptation: bool = True
     enable_uncertainty_quantification: bool = True
     enable_multi_scale_analysis: bool = True
@@ -94,7 +94,7 @@ class TASRegimeConfig:
             primary_timeframe="15m",
             tree_depth=8,
             n_estimators=1500,
-            enable_clvsa_enhancement=True,
+            enable_patchtst_enhancement=True,
             enable_economic_evaluation=True,
             enable_meta_learning=True,
             optimization_level=TASOptimizationLevel.MAXIMUM,
@@ -109,7 +109,7 @@ class TASRegimeConfig:
             primary_timeframe="15m",
             tree_depth=10,
             n_estimators=2000,
-            enable_clvsa_enhancement=True,
+            enable_patchtst_enhancement=True,
             enable_statistical_methods=True,
             enable_bootstrap_analysis=True,
             enable_meta_learning=True,
@@ -125,7 +125,7 @@ class TASRegimeConfig:
             primary_timeframe="15m",
             tree_depth=6,
             n_estimators=1000,
-            enable_clvsa_enhancement=True,
+            enable_patchtst_enhancement=True,
             enable_economic_evaluation=True,
             optimization_level=TASOptimizationLevel.ADVANCED,
             max_execution_time=60.0,

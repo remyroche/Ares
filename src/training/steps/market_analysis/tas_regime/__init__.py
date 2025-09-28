@@ -82,7 +82,7 @@ __version__ = "2.0.0"
 __author__ = "Advanced TAS Team"
 
 # Package configuration
-DEFAULT_CONFIG = TASConfig.create_advanced_trading_config()
+DEFAULT_CONFIG = None
 
 # Main exports
 __all__ = [

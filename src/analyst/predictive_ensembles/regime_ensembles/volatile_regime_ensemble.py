@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 import typing
 
+# Add tprint imports for enhanced logging
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
+
 class VolatileRegimeEnsemble(BaseEnsemble):
     """
     This ensemble specializes in detecting and predicting during volatile market conditions.
@@ -17,13 +20,16 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     """
 
     def __init__(self, config: dict, ensemble_name: str='VolatileRegimeEnsemble') -> None:
+        tprint(f"🚀 [VOLATILE_REGIME] Initializing VolatileRegimeEnsemble: {ensemble_name}", color="cyan", bold=True)
         self.logger = logging.getLogger(self.__class__.__name__)
         super().__init__(config, ensemble_name)
         self.dl_config = {'sequence_length': 20, 'lstm_units': 50, 'transformer_heads': 2, 'transformer_key_dim': 32, 'dropout_rate': 0.2, 'epochs': 50, 'batch_size': 32}
         self.models = {'lstm': None, 'transformer': None, 'garch': None, 'tabnet': None, 'order_flow_lgbm': None, 'logistic_regression': None}
+        tprint("✅ [VOLATILE_REGIME] VolatileRegimeEnsemble initialized successfully", color="green")
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
         """Trains multiple diverse base models for volatile regime detection."""
+        tprint("🏋️ [VOLATILE_REGIME] Training VolatileRegime base models", color="yellow")
         self.logger.info('Training VolatileRegime base models...')
         X_seq, y_seq_aligned_encoded = self._prepare_sequence_data(aligned_data, pd.Series(y_encoded, index = aligned_data.index))
         num_classes = len(np.unique(y_encoded))

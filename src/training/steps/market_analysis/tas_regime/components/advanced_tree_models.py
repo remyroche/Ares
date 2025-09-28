@@ -33,14 +33,14 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
-# Import CLVSA architecture for enhanced tree models
+# Import PatchTST wrapper for enhanced tree models
 try:
-    from src.utils.ml_common.models.clvsa_architecture import (
-        CLVSARegressor, CLVSAConfig, create_clvsa_model
+    from src.training.steps.model_training.patchtst_wrapper import (
+        PatchTSTWrapper, create_patchtst_wrapper
     )
-    CLVSA_AVAILABLE = True
+    PATCHTST_AVAILABLE = True
 except ImportError:
-    CLVSA_AVAILABLE = False
+    PATCHTST_AVAILABLE = False
 
 try:
     import xgboost as xgb
@@ -72,14 +72,14 @@ class AdvancedTreeConfig:
     enable_ensemble: bool = True
     ensemble_models: List[str] = field(default_factory=lambda: ["xgboost", "lightgbm", "catboost"])
     
-    # CLVSA integration
-    enable_clvsa_enhancement: bool = True
-    clvsa_input_dim: int = 100
-    clvsa_output_dim: int = 10
-    clvsa_seq_length: int = 200
-    clvsa_regime_aware: bool = True
-    clvsa_uncertainty_quantification: bool = True
-    clvsa_multi_scale: bool = True
+    # PatchTST integration
+    enable_patchtst_enhancement: bool = True
+    patchtst_patch_len: int = 16
+    patchtst_stride: int = 8
+    patchtst_use_attention: bool = True
+    patchtst_regime_aware: bool = True
+    patchtst_attention_dropout: float = 0.1
+    patchtst_num_heads: int = 4
     
     # Meta-learning parameters
     enable_meta_learning: bool = True
@@ -380,87 +380,87 @@ class ContinualLearningTreeModel:
             raise
 
 
-class CLVSAEnhancedTreeModel:
+class PatchTSTEnhancedTreeModel:
     """
-    CLVSA-enhanced tree model that combines tree-based learning with CLVSA architecture.
+    PatchTST-enhanced tree model that combines tree-based learning with PatchTST architecture.
     """
-    
-    def __init__(self, base_model, clvsa_model, config: AdvancedTreeConfig):
-        """Initialize CLVSA-enhanced tree model."""
+
+    def __init__(self, base_model, patchtst_model, config: AdvancedTreeConfig):
+        """Initialize PatchTST-enhanced tree model."""
         self.base_model = base_model
-        self.clvsa_model = clvsa_model
+        self.patchtst_model = patchtst_model
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # CLVSA enhancement state
-        self.clvsa_features = None
+
+        # PatchTST enhancement state
+        self.patchtst_features = None
         self.enhancement_history = []
-        
-        self.logger.info("✅ CLVSA-enhanced tree model initialized")
-    
+
+        self.logger.info("✅ PatchTST-enhanced tree model initialized")
+
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Fit the CLVSA-enhanced tree model."""
+        """Fit the PatchTST-enhanced tree model."""
         try:
-            # Extract CLVSA features if available
-            if self.clvsa_model and self.config.enable_clvsa_enhancement:
-                self.logger.info("🧠 Extracting CLVSA features...")
-                self.clvsa_features = self.clvsa_model.transform(X)
-                
-                # Combine original features with CLVSA features
-                if self.clvsa_features is not None:
-                    X_enhanced = np.concatenate([X, self.clvsa_features], axis=1)
+            # Extract PatchTST features if available
+            if self.patchtst_model and self.config.enable_patchtst_enhancement:
+                self.logger.info("🧠 Extracting PatchTST features...")
+                self.patchtst_features = self.patchtst_model.transform(X)
+
+                # Combine original features with PatchTST features
+                if self.patchtst_features is not None:
+                    X_enhanced = np.concatenate([X, self.patchtst_features], axis=1)
                     self.logger.info(f"Enhanced features shape: {X_enhanced.shape}")
                 else:
                     X_enhanced = X
-                    self.logger.warning("CLVSA feature extraction failed, using original features")
+                    self.logger.warning("PatchTST feature extraction failed, using original features")
             else:
                 X_enhanced = X
-            
+
             # Train the base model on enhanced features
             self.base_model.fit(X_enhanced, y)
-            
+
             # Record enhancement
             self.enhancement_history.append({
                 'timestamp': datetime.now(),
                 'original_features': X.shape[1],
                 'enhanced_features': X_enhanced.shape[1],
-                'clvsa_features': self.clvsa_features.shape[1] if self.clvsa_features is not None else 0
+                'patchtst_features': self.patchtst_features.shape[1] if self.patchtst_features is not None else 0
             })
-            
-            self.logger.info(f"CLVSA-enhanced model trained on {X_enhanced.shape[1]} features")
+
+            self.logger.info(f"PatchTST-enhanced model trained on {X_enhanced.shape[1]} features")
             
         except Exception as e:
-            self.logger.error(f"CLVSA-enhanced model training failed: {e}")
+            self.logger.error(f"PatchTST-enhanced model training failed: {e}")
             # Fallback to base model
             self.base_model.fit(X, y)
     
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions using CLVSA-enhanced features."""
+        """Make predictions using PatchTST-enhanced features."""
         try:
-            # Extract CLVSA features for prediction
-            if self.clvsa_model and self.config.enable_clvsa_enhancement and self.clvsa_features is not None:
-                clvsa_features = self.clvsa_model.transform(X)
-                X_enhanced = np.concatenate([X, clvsa_features], axis=1)
+            # Extract PatchTST features for prediction
+            if self.patchtst_model and self.config.enable_patchtst_enhancement and self.patchtst_features is not None:
+                patchtst_features = self.patchtst_model.transform(X)
+                X_enhanced = np.concatenate([X, patchtst_features], axis=1)
             else:
                 X_enhanced = X
-            
+
             return self.base_model.predict(X_enhanced)
-            
+
         except Exception as e:
-            self.logger.error(f"CLVSA-enhanced prediction failed: {e}")
+            self.logger.error(f"PatchTST-enhanced prediction failed: {e}")
             # Fallback to base model
             return self.base_model.predict(X)
-    
+
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Make probability predictions using CLVSA-enhanced features."""
+        """Make probability predictions using PatchTST-enhanced features."""
         try:
-            # Extract CLVSA features for prediction
-            if self.clvsa_model and self.config.enable_clvsa_enhancement and self.clvsa_features is not None:
-                clvsa_features = self.clvsa_model.transform(X)
-                X_enhanced = np.concatenate([X, clvsa_features], axis=1)
+            # Extract PatchTST features for prediction
+            if self.patchtst_model and self.config.enable_patchtst_enhancement and self.patchtst_features is not None:
+                patchtst_features = self.patchtst_model.transform(X)
+                X_enhanced = np.concatenate([X, patchtst_features], axis=1)
             else:
                 X_enhanced = X
-            
+
             if hasattr(self.base_model, 'predict_proba'):
                 return self.base_model.predict_proba(X_enhanced)
             else:
@@ -471,9 +471,9 @@ class CLVSAEnhancedTreeModel:
                 for i, pred in enumerate(predictions):
                     probabilities[i, pred] = 1.0
                 return probabilities
-                
+
         except Exception as e:
-            self.logger.error(f"CLVSA-enhanced probability prediction failed: {e}")
+            self.logger.error(f"PatchTST-enhanced probability prediction failed: {e}")
             # Fallback to base model
             if hasattr(self.base_model, 'predict_proba'):
                 return self.base_model.predict_proba(X)
@@ -488,7 +488,7 @@ class CLVSAEnhancedTreeModel:
 
 class AdvancedTreeModelFactory:
     """
-    Factory for creating advanced tree models with meta-learning capabilities and CLVSA enhancement.
+    Factory for creating advanced tree models with meta-learning capabilities and PatchTST enhancement.
     """
     
     def __init__(self, config: AdvancedTreeConfig):
@@ -496,47 +496,64 @@ class AdvancedTreeModelFactory:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize CLVSA model if enabled
-        self.clvsa_model = None
-        if self.config.enable_clvsa_enhancement and CLVSA_AVAILABLE:
+        # Initialize PatchTST model if enabled
+        self.patchtst_model = None
+        if self.config.enable_patchtst_enhancement and PATCHTST_AVAILABLE:
             try:
-                clvsa_config = CLVSAConfig(
-                    input_dim=self.config.clvsa_input_dim,
-                    output_dim=self.config.clvsa_output_dim,
-                    seq_length=self.config.clvsa_seq_length,
-                    regime_aware=self.config.clvsa_regime_aware,
-                    uncertainty_quantification=self.config.clvsa_uncertainty_quantification,
-                    multi_scale=self.config.clvsa_multi_scale
+                # Create a base tree model for PatchTST wrapper
+                from sklearn.ensemble import RandomForestRegressor
+                base_model = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
                 )
-                self.clvsa_model = create_clvsa_model({'clvsa_params': clvsa_config.__dict__})
-                self.logger.info("✅ CLVSA model initialized for tree enhancement")
+
+                patchtst_config = {
+                    'patch_len': 16,
+                    'stride': 8,
+                    'use_transformer_attention': True,
+                    'regime_aware': True,
+                    'attention_dropout': 0.1,
+                    'num_heads': 4
+                }
+
+                self.patchtst_model = create_patchtst_wrapper(
+                    base_model,
+                    patch_len=patchtst_config['patch_len'],
+                    stride=patchtst_config['stride'],
+                    use_transformer_attention=patchtst_config['use_transformer_attention'],
+                    regime_aware=patchtst_config['regime_aware'],
+                    attention_dropout=patchtst_config['attention_dropout'],
+                    num_heads=patchtst_config['num_heads']
+                )
+                self.logger.info("✅ PatchTST model initialized for tree enhancement")
             except Exception as e:
-                self.logger.warning(f"CLVSA model initialization failed: {e}")
-                self.clvsa_model = None
+                self.logger.warning(f"PatchTST model initialization failed: {e}")
+                self.patchtst_model = None
         
         self.logger.info("✅ Advanced Tree Model Factory initialized")
     
-    def create_model(self, model_type: str, enable_meta_learning: bool = True, 
-                    enable_continual_learning: bool = True, enable_clvsa_enhancement: bool = True) -> Union[MetaLearningTreeModel, ContinualLearningTreeModel, CLVSAEnhancedTreeModel]:
+    def create_model(self, model_type: str, enable_meta_learning: bool = True,
+                    enable_continual_learning: bool = True, enable_patchtst_enhancement: bool = True) -> Union[MetaLearningTreeModel, ContinualLearningTreeModel, PatchTSTEnhancedTreeModel]:
         """
-        Create an advanced tree model with optional CLVSA enhancement.
-        
+        Create an advanced tree model with optional PatchTST enhancement.
+
         Args:
             model_type: Type of model to create
             enable_meta_learning: Whether to enable meta-learning
             enable_continual_learning: Whether to enable continual learning
-            enable_clvsa_enhancement: Whether to enable CLVSA enhancement
-            
+            enable_patchtst_enhancement: Whether to enable PatchTST enhancement
+
         Returns:
             Advanced tree model instance
         """
         try:
             base_model = self._create_base_model(model_type)
-            
-            # Apply CLVSA enhancement if enabled
-            if enable_clvsa_enhancement and self.clvsa_model:
-                base_model = CLVSAEnhancedTreeModel(base_model, self.clvsa_model, self.config)
-                self.logger.info(f"Created CLVSA-enhanced {model_type} model")
+
+            # Apply PatchTST enhancement if enabled
+            if enable_patchtst_enhancement and self.patchtst_model:
+                base_model = PatchTSTEnhancedTreeModel(base_model, self.patchtst_model, self.config)
+                self.logger.info(f"Created PatchTST-enhanced {model_type} model")
             
             # Apply meta-learning or continual learning
             if enable_meta_learning:

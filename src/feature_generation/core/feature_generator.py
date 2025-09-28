@@ -104,7 +104,8 @@ class FeatureGenerator(ABC):
             'total_computation_time': 0.0
         }
         
-        self.logger.info(f"Initialized {self.__class__.__name__} for {config.name}")
+        # Reduced logging - only log at category level, not individual features
+        # self.logger.info(f"Initialized {self.__class__.__name__} for {config.name}")
     
     @abstractmethod
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:

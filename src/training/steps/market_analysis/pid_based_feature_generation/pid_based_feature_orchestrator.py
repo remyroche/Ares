@@ -23,6 +23,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading PID-based feature orchestrator...")
+
 # Core dependencies with fallback support
 try:
     import numpy as np
@@ -368,6 +373,7 @@ class PIDBasedFeatureOrchestrator:
     
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         """Initialize the PID-based feature orchestrator with common utilities integration."""
+        tprint("🔧 Initializing PIDBasedFeatureOrchestrator...")
         try:
             # Input validation
             if config is not None and not isinstance(config, OrchestratorConfig):
@@ -375,18 +381,26 @@ class PIDBasedFeatureOrchestrator:
             
             self.config = config or OrchestratorConfig()
             self.logger = logger.getChild('PIDBasedFeatureOrchestrator')
+            tprint("✅ Basic orchestrator configuration set")
             
             # Initialize common utilities integration
+            tprint("🔧 Initializing common utilities integration...")
             self._initialize_common_utilities()
+            tprint("✅ Common utilities integration complete")
             
             # Initialize math validation
+            tprint("🔧 Initializing math validation...")
             if MATH_VALIDATION_AVAILABLE:
                 self.math_validator = MathValidation()
+                tprint("✅ Math validation initialized")
             else:
                 self.math_validator = None
+                tprint("⚠️ Math validation not available")
             
             # Initialize components
+            tprint("🔧 Initializing orchestrator components...")
             self._initialize_components()
+            tprint("✅ Orchestrator components initialized")
             
             tprint_success("PIDBasedFeatureOrchestrator initialized successfully")
             tprint_info(f"Max interaction features: {self.config.max_interaction_features}")

@@ -69,18 +69,22 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the feature lookback optimization component."""
+        tprint("🔧 Initializing Modular FeatureLookbackOptimizationComponent...")
         super().__init__(config)
 
         # Use standardized logging
         self.logger = get_logger('FeatureLookbackOptimization')
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
+        tprint("✅ Basic modular component initialization complete")
 
         # Initialize modular components
+        tprint("🔧 Initializing modular components...")
         self.validator = InputValidator(logger=self.logger)
         self.error_handler = StandardizedErrorHandler(logger=self.logger, component_name="FeatureLookbackOptimization")
         self.performance_monitor = PerformanceMonitor(component_name="FeatureLookbackOptimization")
         self.core_optimizer = CoreOptimizer(logger=self.logger)
+        tprint("✅ Modular components initialized")
 
         # Component state
         self.optimization_status = "pending"
@@ -105,11 +109,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts for this component."""
-        return [
+        tprint("📋 Getting required artifacts for modular feature lookback optimization")
+        artifacts = [
             'market_data',
             'labeling_results',
             'regime_splitting_results'
         ]
+        tprint(f"✅ Required artifacts: {artifacts}")
+        return artifacts
 
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -122,10 +129,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with optimization results
         """
+        tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
 
         try:
             log_info("🚀 Starting feature lookback optimization...")
+            tprint("📊 Performance monitoring started for execute operation")
 
             # Validate inputs
             is_valid, validation_summary, cleaned_data = self.validator.validate_data(

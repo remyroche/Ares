@@ -89,8 +89,8 @@ class OptimizationConfig:
     pareto_epsilon: float = 0.01
     
     # Evaluation configuration
-    economic_config: Optional[EconomicEvaluationConfig] = None
-    trading_config: Optional[TradingViabilityConfig] = None
+    economic_config: Optional[EconomicEvaluationConfig] = field(default_factory=EconomicEvaluationConfig)
+    trading_config: Optional[TradingViabilityConfig] = field(default_factory=TradingViabilityConfig)
     
     # Advanced features
     enable_constraint_handling: bool = True

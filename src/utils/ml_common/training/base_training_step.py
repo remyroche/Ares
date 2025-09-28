@@ -11,6 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import time
 from abc import ABC, abstractmethod
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Use existing utilities
 from src.utils.logger import system_logger
 from src.utils.common_operations import safe_file_exists, safe_json_dump
@@ -94,21 +100,26 @@ class BaseTrainingStep(ABC):
         Args:
             config: Training configuration object
         """
+        tprint("🏗️ [BASE_TRAINING_STEP] Initializing Base Training Step", color="blue")
         self.config = config
         self.logger = logger.getChild(self.__class__.__name__)
         
         # Initialize common components
+        tprint("🔧 [BASE_TRAINING_STEP] Initializing common components", color="cyan")
         self._initialize_common_components()
         
         # Initialize validation integration
+        tprint("✅ [BASE_TRAINING_STEP] Initializing validation integration", color="cyan")
         self._initialize_validation_integration()
 
         # Initialize enhanced training utilities (lazy loading)
+        tprint("🚀 [BASE_TRAINING_STEP] Initializing enhanced training utilities", color="cyan")
         self._initialize_enhanced_training()
 
         # Training results
         self.training_results = {}
 
+        tprint_success("✅ [BASE_TRAINING_STEP] Base Training Step initialized successfully")
         self.logger.info("✅ Base Training Step initialized")
 
     def _initialize_enhanced_training(self):
@@ -130,26 +141,32 @@ class BaseTrainingStep(ABC):
     
     def _initialize_common_components(self):
         """Initialize common components using existing utilities."""
+        tprint("🔧 [BASE_TRAINING_STEP] Setting up training utilities", color="blue")
         # Initialize training utilities with hardware optimization
         self.training_utils = TrainingUtils(self.config)
         
+        tprint("📊 [BASE_TRAINING_STEP] Setting up data processors", color="blue")
         # Initialize data processors
         self.regime_processor = RegimeProcessor()
         self.feature_preparator = FeaturePreparator()
         
+        tprint("💾 [BASE_TRAINING_STEP] Setting up model manager", color="blue")
         # Initialize model manager with existing serialization utilities
         self.model_manager = ModelManager(
             save_path=self.config.model_save_path,
             save_format=self.config.save_format
         )
         
+        tprint("📈 [BASE_TRAINING_STEP] Setting up evaluation utilities", color="blue")
         # Initialize evaluation utilities
         self.evaluation_utils = EvaluationUtils()
         
+        tprint("🗄️ [BASE_TRAINING_STEP] Setting up data utilities", color="blue")
         # Initialize existing data utilities
         self.data_utils = UnifiedDataUtils()
         self.parquet_utils = ParquetUtils()
         
+        tprint_success("✅ [BASE_TRAINING_STEP] Common components initialized with existing utilities")
         self.logger.info("✅ Common components initialized with existing utilities")
     
     def _initialize_validation_integration(self):
@@ -193,6 +210,8 @@ class BaseTrainingStep(ABC):
         Returns:
             Dict: Validation results
         """
+        tprint(f"🔍 [BASE_TRAINING_STEP] validate_training_data() called for {model_type}", color="blue")
+        tprint(f"📊 [BASE_TRAINING_STEP] Input: X={X.shape}, y={y.shape}, regimes={len(np.unique(regime_labels))}", color="cyan")
         # Split data for validation
         from sklearn.model_selection import train_test_split
         # Use stratified split only if every class has at least 2 samples; otherwise fallback
@@ -228,14 +247,19 @@ class BaseTrainingStep(ABC):
         
         # Log validation results
         if validation_results['valid']:
+            tprint_success("✅ [BASE_TRAINING_STEP] validate_training_data() completed successfully")
             self.logger.info("✅ Training data validation passed")
         else:
+            tprint_error("❌ [BASE_TRAINING_STEP] validate_training_data() failed validation")
             self.logger.warning("⚠️ Training data validation failed")
             for issue in validation_results.get('critical_issues', []):
+                tprint_error(f"❌ [BASE_TRAINING_STEP] Critical issue: {issue}")
                 self.logger.error(f"Critical issue: {issue}")
             for warning in validation_results.get('warnings', []):
+                tprint_warning(f"⚠️ [BASE_TRAINING_STEP] Warning: {warning}")
                 self.logger.warning(f"Warning: {warning}")
         
+        tprint(f"📊 [BASE_TRAINING_STEP] validate_training_data() outcome: valid={validation_results['valid']}", color="green" if validation_results['valid'] else "red")
         return validation_results
     
     def validate_trained_model(self, 
@@ -267,6 +291,8 @@ class BaseTrainingStep(ABC):
         Returns:
             Dict: Comprehensive validation results
         """
+        tprint(f"🔍 [BASE_TRAINING_STEP] validate_trained_model() called for {model_name} ({model_type})", color="blue")
+        tprint(f"📊 [BASE_TRAINING_STEP] Model validation input: train={X_train.shape}, val={X_val.shape}", color="cyan")
         # Validate trained model
         validation_results = self.validation_integrator.validate_trained_model(
             model=model,
@@ -283,13 +309,18 @@ class BaseTrainingStep(ABC):
         
         # Log validation results
         if validation_results['valid']:
+            tprint_success(f"✅ [BASE_TRAINING_STEP] validate_trained_model() passed for {model_name}")
+            tprint(f"📊 [BASE_TRAINING_STEP] Validation score: {validation_results.get('validation_score', 'N/A')}", color="green")
             self.logger.info(f"✅ Model validation passed for {model_name}")
             self.logger.info(f"  Validation score: {validation_results.get('validation_score', 'N/A')}")
         else:
+            tprint_error(f"❌ [BASE_TRAINING_STEP] validate_trained_model() failed for {model_name}")
             self.logger.warning(f"⚠️ Model validation failed for {model_name}")
             for issue in validation_results.get('critical_issues', []):
+                tprint_error(f"❌ [BASE_TRAINING_STEP] Critical issue: {issue}")
                 self.logger.error(f"Critical issue: {issue}")
             for warning in validation_results.get('warnings', []):
+                tprint_warning(f"⚠️ [BASE_TRAINING_STEP] Warning: {warning}")
                 self.logger.warning(f"Warning: {warning}")
         
         # Store validation results in training results
@@ -309,11 +340,15 @@ class BaseTrainingStep(ABC):
                 model_metadata={'training_step': self.__class__.__name__}
             )
         
+        tprint(f"📊 [BASE_TRAINING_STEP] validate_trained_model() outcome: valid={validation_results['valid']}", color="green" if validation_results['valid'] else "red")
         return validation_results
     
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validations performed."""
-        return self.validation_integrator.get_validation_summary()
+        tprint("📊 [BASE_TRAINING_STEP] get_validation_summary() called", color="blue")
+        summary = self.validation_integrator.get_validation_summary()
+        tprint(f"📊 [BASE_TRAINING_STEP] get_validation_summary() outcome: {len(summary)} validation entries", color="green")
+        return summary
     
     def execute(
         self,
@@ -343,6 +378,8 @@ class BaseTrainingStep(ABC):
             Dictionary containing training results and metadata
         """
         start_time = time.time()
+        tprint("🚀 [BASE_TRAINING_STEP] Starting training execution", color="cyan", bold=True)
+        tprint(f"📊 [BASE_TRAINING_STEP] Input data shape: {X.shape}, targets: {y.shape}", color="blue")
         self.logger.info("🚀 Starting training execution")
 
         try:
@@ -493,12 +530,17 @@ class BaseTrainingStep(ABC):
         Returns:
             Dictionary containing regime analysis results
         """
-        return self.regime_processor.analyze_regimes(
+        tprint(f"🔍 [BASE_TRAINING_STEP] analyze_regimes() called for {len(regime_labels)} samples", color="blue")
+        tprint(f"📊 [BASE_TRAINING_STEP] Unique regimes: {len(np.unique(regime_labels))}", color="cyan")
+        result = self.regime_processor.analyze_regimes(
             regime_labels=regime_labels,
             min_samples=self.config.min_samples_per_regime,
             enable_regime_merging=self.config.enable_regime_merging,
             regime_merge_threshold=self.config.regime_merge_threshold
         )
+        tprint_success("✅ [BASE_TRAINING_STEP] analyze_regimes() completed successfully")
+        tprint(f"📊 [BASE_TRAINING_STEP] analyze_regimes() outcome: {len(result)} analysis results", color="green")
+        return result
     
     def prepare_regime_data(
         self,
@@ -586,13 +628,19 @@ class BaseTrainingStep(ABC):
         Returns:
             Dictionary containing training results
         """
-        return self.training_utils.train_models(
+        tprint(f"🤖 [BASE_TRAINING_STEP] train_models() called for {len(model_types)} model types", color="blue")
+        tprint(f"📊 [BASE_TRAINING_STEP] Input: X={X.shape}, y={y.shape}, HPO={enable_hpo}", color="cyan")
+        tprint(f"🤖 [BASE_TRAINING_STEP] Model types: {model_types}", color="yellow")
+        result = self.training_utils.train_models(
             model_types=model_types,
             X=X,
             y=y,
             enable_hpo=enable_hpo,
             search_spaces=search_spaces
         )
+        tprint_success("✅ [BASE_TRAINING_STEP] train_models() completed successfully")
+        tprint(f"📊 [BASE_TRAINING_STEP] train_models() outcome: {len(result.get('models', {}))} models trained", color="green")
+        return result
     
     def evaluate_models(
         self,

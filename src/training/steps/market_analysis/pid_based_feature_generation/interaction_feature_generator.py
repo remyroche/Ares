@@ -21,6 +21,11 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading interaction feature generator...")
+
 # Core dependencies with fallback support
 try:
     import numpy as np
@@ -201,10 +206,12 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
     
     def __init__(self, config: Optional[InteractionConfig] = None):
         """Initialize the interaction feature generator with common utilities integration."""
+        tprint("🔧 Initializing InteractionFeatureGenerator...")
         super().__init__(config or InteractionConfig(), "InteractionFeatureGenerator")
         
         self.logger.info(f"📊 Max interaction features: {self.config.max_interaction_features}")
         self.logger.info(f"📊 Interaction types: {[t.value for t in self.config.interaction_types]}")
+        tprint("✅ InteractionFeatureGenerator initialization complete")
     
     def _initialize_components(self):
         """Initialize required components."""

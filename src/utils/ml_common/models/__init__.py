@@ -7,12 +7,22 @@ from .model_factory import (
     create_model_factory
 )
 
-from .enhanced_model_trainer import (
-    EnhancedModelTrainer, train_model_with_confidence_metrics
+# Lazy import for EnhancedModelTrainer to avoid circular dependencies
+def get_enhanced_model_trainer():
+    """Lazy import for EnhancedModelTrainer to avoid circular dependencies."""
+    from .enhanced_model_trainer import EnhancedModelTrainer
+    return EnhancedModelTrainer
+
+from .model_training import (
+    train_model_with_confidence_metrics
 )
 
-from .model_evaluator import (
-    ModelEvaluator, ModelRegistry
+from ..post_training.model_evaluation import (
+    ModelEvaluator
+)
+
+from .model_registry import (
+    ModelRegistry
 )
 
 from .multi_output_models import (

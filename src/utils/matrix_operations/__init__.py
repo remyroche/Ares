@@ -155,6 +155,9 @@ try:
         record_batch_performance,
         get_batch_optimization_stats,
         
+        # Backwards compatibility
+        m1_matrix_multiply,
+        
         # Trading indicators
         compute_trading_indicators,
         compute_moving_averages,
@@ -290,6 +293,7 @@ if CONVENIENCE_FUNCTIONS_AVAILABLE:
         "optimize_batch_size",
         "record_batch_performance",
         "get_batch_optimization_stats",
+        "m1_matrix_multiply",  # Add backwards compatibility function
     ])
 
 # Add trading indicators and hardware optimization to __all__ if available

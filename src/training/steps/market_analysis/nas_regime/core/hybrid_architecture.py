@@ -47,7 +47,7 @@ class HybridRegimeArchitecture(nn.Module):
         self.state_space_model = neural_architectures.get('state_space')
         
         # Feature dimensions
-        self.input_dim = 4  # OHLC features
+        self.input_dim = 64  # Feature extractor output
         self.sequence_length = config.sequence_length
         self.hidden_dim = 128
         
@@ -142,26 +142,38 @@ class HybridRegimeArchitecture(nn.Module):
     
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Forward pass through hybrid architecture.
-        
+
         Args:
             x: Input tensor of shape (batch_size, sequence_length, features)
-            
+
         Returns:
-            Tuple of (regime_logits, metadata)
+            Tuple of (regime_logits, metadata) where regime_logits has shape (batch_size, sequence_length, n_regimes)
         """
         batch_size, seq_len, features = x.shape
-        
+
         # Extract features from each architecture
         architecture_features = {}
         architecture_outputs = {}
+
+        # Process sequence data properly to maintain temporal dimension
         
         # Neural ODE features
         if self.neural_ode is not None:
             try:
-                # Neural ODE expects different input format
-                ode_input = x.view(batch_size, -1)  # Flatten for ODE
-                ode_output = self.neural_ode(ode_input)
-                architecture_features['neural_ode'] = ode_output
+                # Neural ODE expects (batch_size, input_size) format
+                # Process each time step through the ODE
+                ode_outputs = []
+                for t in range(seq_len):
+                    ode_input = x[:, t, :]  # (batch_size, input_size)
+                    ode_output = self.neural_ode(ode_input)
+                    ode_outputs.append(ode_output)
+                
+                # Stack outputs: (batch_size, seq_len, output_size)
+                ode_output = torch.stack(ode_outputs, dim=1)
+                # Average over time dimension for features
+                ode_features = ode_output.mean(dim=1)  # (batch_size, output_size)
+                
+                architecture_features['neural_ode'] = ode_features
                 architecture_outputs['neural_ode'] = ode_output
             except Exception as e:
                 self.logger.warning(f"Neural ODE forward pass failed: {e}")
@@ -186,43 +198,129 @@ class HybridRegimeArchitecture(nn.Module):
             try:
                 ssm_output = self.state_space_model(x)
                 if isinstance(ssm_output, tuple):
-                    ssm_features = ssm_output[1].mean(dim=1) if len(ssm_output[1].shape) > 2 else ssm_output[1]
+                    # Handle tuple output - take the main output (usually first element)
+                    ssm_features = ssm_output[0].mean(dim=1) if len(ssm_output[0].shape) > 2 else ssm_output[0]
+                    architecture_outputs['state_space'] = ssm_output[0]  # Use main output for ensemble
                 else:
                     ssm_features = ssm_output.mean(dim=1) if len(ssm_output.shape) > 2 else ssm_output
+                    architecture_outputs['state_space'] = ssm_output
                 architecture_features['state_space'] = ssm_features
-                architecture_outputs['state_space'] = ssm_output
             except Exception as e:
                 self.logger.warning(f"State Space Model forward pass failed: {e}")
                 architecture_features['state_space'] = torch.zeros(batch_size, self.hidden_dim)
                 architecture_outputs['state_space'] = torch.zeros(batch_size, self.n_regimes)
         
-        # Fuse architecture features
-        fused_features = self._fuse_architecture_features(architecture_features)
-        
-        # Apply attention mechanisms
-        attended_features = self._apply_attention_mechanisms(fused_features, x)
-        
-        # Generate regime predictions
-        regime_logits = self.regime_classifier(attended_features)
-        
-        # Calculate ensemble predictions
-        ensemble_predictions = self._calculate_ensemble_predictions(architecture_outputs)
-        
-        # Estimate uncertainty
-        uncertainty = self.uncertainty_estimator(attended_features)
-        
-        # Predict regime transitions
-        transition_probs = self.transition_predictor(attended_features)
-        
+        # Process the entire sequence at once to maintain proper tensor flow
+        # This approach is more efficient and maintains proper gradient flow
+
+        # Initialize outputs for all time steps
+        all_regime_logits = []
+        all_ensemble_predictions = []
+        all_uncertainties = []
+        all_transition_probs = []
+        all_architecture_features = {}
+
+        # Process each time step
+        for t in range(seq_len):
+            current_features = x[:, t, :]  # (batch_size, features)
+
+            # Get architecture outputs for current time step
+            step_architecture_features = {}
+            step_architecture_outputs = {}
+
+            # Neural ODE for current time step
+            if self.neural_ode is not None:
+                try:
+                    ode_output = self.neural_ode(current_features)
+                    step_architecture_features['neural_ode'] = ode_output
+                    step_architecture_outputs['neural_ode'] = ode_output
+                except Exception as e:
+                    self.logger.warning(f"Neural ODE forward pass failed for step {t}: {e}")
+                    step_architecture_features['neural_ode'] = torch.zeros(batch_size, self.hidden_dim)
+                    step_architecture_outputs['neural_ode'] = torch.zeros(batch_size, self.n_regimes)
+
+            # Vision Transformer for current time step (use context from previous steps)
+            if self.vision_transformer is not None:
+                try:
+                    # Use a window of context around current time step
+                    context_start = max(0, t - 5)  # Reduced context window for efficiency
+                    context_end = min(seq_len, t + 6)
+                    context_window = x[:, context_start:context_end, :]
+                    vt_output = self.vision_transformer(context_window)
+                    vt_features = vt_output[:, -1, :] if len(vt_output.shape) > 2 else vt_output
+                    step_architecture_features['vision_transformer'] = vt_features
+                    step_architecture_outputs['vision_transformer'] = vt_output
+                except Exception as e:
+                    self.logger.warning(f"Vision Transformer forward pass failed for step {t}: {e}")
+                    step_architecture_features['vision_transformer'] = torch.zeros(batch_size, self.hidden_dim)
+                    step_architecture_outputs['vision_transformer'] = torch.zeros(batch_size, self.n_regimes)
+
+            # State Space Model for current time step
+            if self.state_space_model is not None:
+                try:
+                    ssm_output = self.state_space_model(current_features.unsqueeze(1))
+                    if isinstance(ssm_output, tuple):
+                        # Handle tuple output - take the main output (usually first element)
+                        ssm_features = ssm_output[0][:, -1, :] if len(ssm_output[0].shape) > 2 else ssm_output[0]
+                        step_architecture_outputs['state_space'] = ssm_output[0]  # Use main output for ensemble
+                    else:
+                        ssm_features = ssm_output[:, -1, :] if len(ssm_output.shape) > 2 else ssm_output
+                        step_architecture_outputs['state_space'] = ssm_output
+                    step_architecture_features['state_space'] = ssm_features
+                except Exception as e:
+                    self.logger.warning(f"State Space Model forward pass failed for step {t}: {e}")
+                    step_architecture_features['state_space'] = torch.zeros(batch_size, self.hidden_dim)
+                    step_architecture_outputs['state_space'] = torch.zeros(batch_size, self.n_regimes)
+
+            # Fuse features for current time step
+            fused_features = self._fuse_architecture_features(step_architecture_features)
+
+            # Apply attention mechanisms
+            attended_features = self._apply_attention_mechanisms(fused_features, current_features.unsqueeze(1))
+
+            # Generate regime predictions for current time step
+            regime_logits = self.regime_classifier(attended_features)
+            all_regime_logits.append(regime_logits)
+
+            # Calculate ensemble predictions for current time step
+            ensemble_predictions = self._calculate_ensemble_predictions(step_architecture_outputs)
+            all_ensemble_predictions.append(ensemble_predictions)
+
+            # Estimate uncertainty for current time step
+            uncertainty = self.uncertainty_estimator(attended_features)
+            all_uncertainties.append(uncertainty)
+
+            # Predict regime transitions for current time step
+            transition_probs = self.transition_predictor(attended_features)
+            all_transition_probs.append(transition_probs)
+
+            # Collect architecture features for metadata
+            for arch_name, features in step_architecture_features.items():
+                if arch_name not in all_architecture_features:
+                    all_architecture_features[arch_name] = []
+                all_architecture_features[arch_name].append(features)
+
+        # Stack all time step results
+        regime_logits = torch.stack(all_regime_logits, dim=1)  # (batch_size, seq_len, n_regimes)
+        ensemble_predictions = torch.stack(all_ensemble_predictions, dim=1)
+        uncertainty_estimates = torch.stack(all_uncertainties, dim=1)
+        transition_probabilities = torch.stack(all_transition_probs, dim=1)
+
+        # Average architecture features across time steps for metadata
+        metadata_architecture_features = {}
+        for arch_name, features_list in all_architecture_features.items():
+            if features_list:
+                metadata_architecture_features[arch_name] = torch.stack(features_list, dim=1).mean(dim=1).detach().cpu().numpy()
+
         # Create metadata
         metadata = {
-            'architecture_features': {k: v.detach().cpu().numpy() for k, v in architecture_features.items()},
+            'architecture_features': metadata_architecture_features,
             'ensemble_predictions': ensemble_predictions.detach().cpu().numpy(),
-            'uncertainty_estimates': uncertainty.detach().cpu().numpy(),
-            'transition_probabilities': transition_probs.detach().cpu().numpy(),
+            'uncertainty_estimates': uncertainty_estimates.detach().cpu().numpy(),
+            'transition_probabilities': transition_probabilities.detach().cpu().numpy(),
             'ensemble_weights': self.ensemble_weights.detach().cpu().numpy()
         }
-        
+
         return regime_logits, metadata
     
     def _fuse_architecture_features(self, architecture_features: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -294,22 +392,63 @@ class HybridRegimeArchitecture(nn.Module):
     def _calculate_ensemble_predictions(self, architecture_outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Calculate ensemble predictions from different architectures."""
         try:
+            if not architecture_outputs:
+                # Return default output if no architectures available
+                return torch.zeros(1, self.n_regimes)
+            
             # Normalize ensemble weights
             weights = F.softmax(self.ensemble_weights, dim=0)
             
-            # Weighted combination of outputs
-            ensemble_output = torch.zeros_like(list(architecture_outputs.values())[0])
+            # Filter out tuple outputs and convert to tensors
+            valid_outputs = {}
+            for arch_name, output in architecture_outputs.items():
+                if isinstance(output, tuple):
+                    # If output is a tuple, take the first element (usually the main output)
+                    if len(output) > 0 and isinstance(output[0], torch.Tensor):
+                        valid_outputs[arch_name] = output[0]
+                    else:
+                        self.logger.warning(f"Skipping {arch_name} due to invalid tuple output: {output}")
+                        continue
+                elif isinstance(output, torch.Tensor):
+                    valid_outputs[arch_name] = output
+                else:
+                    self.logger.warning(f"Skipping {arch_name} due to invalid output type: {type(output)}")
+                    continue
             
-            for i, (arch_name, output) in enumerate(architecture_outputs.items()):
+            if not valid_outputs:
+                return torch.zeros(1, self.n_regimes)
+            
+            # Get the first valid output to determine shape
+            first_output = list(valid_outputs.values())[0]
+            ensemble_output = torch.zeros_like(first_output)
+            
+            # Weighted combination of outputs
+            for i, (arch_name, output) in enumerate(valid_outputs.items()):
                 if i < len(weights):
+                    # Ensure output has the same shape as ensemble_output
+                    if output.shape != ensemble_output.shape:
+                        # Reshape or broadcast to match
+                        if output.numel() == ensemble_output.numel():
+                            output = output.reshape(ensemble_output.shape)
+                        else:
+                            # If shapes are incompatible, skip this architecture
+                            self.logger.warning(f"Skipping {arch_name} due to shape mismatch: {output.shape} vs {ensemble_output.shape}")
+                            continue
+                    
                     ensemble_output += weights[i] * output
             
             return ensemble_output
             
         except Exception as e:
             self.logger.warning(f"Ensemble calculation failed: {e}")
-            # Return first available output
-            return list(architecture_outputs.values())[0]
+            # Return first available output or default
+            if architecture_outputs:
+                first_output = list(architecture_outputs.values())[0]
+                if isinstance(first_output, tuple) and len(first_output) > 0:
+                    return first_output[0]
+                elif isinstance(first_output, torch.Tensor):
+                    return first_output
+            return torch.zeros(1, self.n_regimes)
     
     def get_architecture_importance(self, x: torch.Tensor) -> Dict[str, float]:
         """Get importance scores for different architectures."""

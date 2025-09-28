@@ -6,10 +6,10 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
 3. sr_clustering - Generate SR clusters
-4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
-5. nas_clustering - NAS-based regime clustering
-6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
-7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
+4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
+5. nas_tas_clustering - NAS-TAS-based regime clustering
+6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics
+7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics
 8. regime_data_splitting - Tag data by regimes
 9. feature_lookback_optimization - Optimize feature lookback periods
 10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
@@ -22,10 +22,12 @@ from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
 import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
+from src.utils.tprint import tprint
 from .logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
@@ -33,6 +35,16 @@ from .logging_standards import (
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
+
+# Import feature importance integration if available
+try:
+    from .shared_utils.feature_importance_integration import (
+        FeatureImportanceIntegrationManager, FeatureImportanceIntegrationConfig,
+        FeatureImportancePipelineHook
+    )
+    FEATURE_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    FEATURE_IMPORTANCE_AVAILABLE = False
 
 logger = system_logger.getChild('MarketAnalysisSubPipeline')
 
@@ -78,6 +90,13 @@ class SubPipelineConfig:
     single_stage_only: bool = False  # New parameter to control single vs sequential execution
     custom_params: Dict[str, Any] = field(default_factory=dict)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    # Feature importance analysis configuration
+    enable_feature_importance: bool = True
+    feature_importance_methods: List[str] = field(default_factory=lambda: ["mutual_information", "f_classif"])
+    enable_pre_clustering_analysis: bool = True
+    enable_post_clustering_analysis: bool = True
+    enable_regime_characterization: bool = True
 
 @dataclass
 class SubPipelineResult:
@@ -128,10 +147,10 @@ class SubPipelineResult:
             'sr_parameter_optimization': ['sr_parameter_optimization_result'],
             'sr_detection': ['sr_detection_result'],
             'sr_clustering': ['sr_clustering_result'],
-            'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_regime_discovery_result'],
-            'nas_clustering': ['optimal_regime_clustering_result'],
-            'nas_models_training': ['nas_models_training_result'],
-            'nas_ensemble_training': ['nas_ensemble_training_result'],
+            'nas_tas_regime_discovery': ['nas_tas_regime_discovery_result'],
+            'nas_tas_clustering': ['optimal_regime_clustering_result'],
+            'nas_tas_models_training': ['nas_tas_models_training_result'],
+            'nas_tas_ensemble_training': ['nas_tas_ensemble_training_result'],
             'regime_data_splitting': ['regime_data_splitting_result'],
             # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
@@ -180,7 +199,26 @@ class MarketAnalysisSubPipeline:
         
         # Initialize component factory
         self.component_factory = ComponentFactory()
-        
+
+        # Initialize feature importance manager if available
+        self.feature_importance_manager = None
+        if FEATURE_IMPORTANCE_AVAILABLE and self.config.enable_feature_importance:
+            try:
+                importance_config = FeatureImportanceIntegrationConfig(
+                    enable_pre_clustering_analysis=self.config.enable_pre_clustering_analysis,
+                    enable_post_clustering_analysis=self.config.enable_post_clustering_analysis,
+                    enable_regime_characterization=self.config.enable_regime_characterization,
+                    importance_methods=self.config.feature_importance_methods,
+                    auto_integrate_with_clustering=True,
+                    auto_integrate_with_reporting=True,
+                    include_detailed_analysis=True
+                )
+                self.feature_importance_manager = FeatureImportanceIntegrationManager(importance_config)
+                self.logger.info("✅ Feature importance manager initialized in sub-pipeline")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Feature importance manager initialization failed: {e}")
+                self.feature_importance_manager = None
+
         # Initialize pipeline state for component communication
         self._current_data = None
         self._current_pipeline_state = {}
@@ -268,7 +306,7 @@ class MarketAnalysisSubPipeline:
             mode=mode,
             symbol=config.get('symbol', 'BTCUSDT'),
             exchange=config.get('exchange', 'binance'),
-            timeframe=config.get('timeframe', '1m'),
+            timeframe=config.get('timeframe', '15m'),
             data_dir=config.get('data_dir', './data'),
             start_date=config.get('start_date'),
             end_date=config.get('end_date'),
@@ -312,10 +350,10 @@ class MarketAnalysisSubPipeline:
         log_info('   1. sr_parameter_optimization - Optimize SR detection levels')
         log_info('   2. sr_detection - Detect Support/Resistance levels')
         log_info('   3. sr_clustering - Generate SR clusters')
-        log_info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
-        log_info('   5. nas_clustering - NAS-based regime clustering')
-        log_info('   6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics')
-        log_info('   7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics')
+        log_info('   4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
+        log_info('   5. nas_tas_clustering - NAS-TAS-based regime clustering')
+        log_info('   6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics')
+        log_info('   7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics')
         log_info('   8. regime_data_splitting - Tag data by regimes')
         log_info('   9. feature_lookback_optimization - Optimize feature lookback periods')
         log_info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
@@ -350,11 +388,11 @@ class MarketAnalysisSubPipeline:
         2. SR detection
         3. SR clustering
 
-        HMM Steps (4-7):
-        4. HMM regime discovery
-        5. HMM clustering
-        6. HMM models training with HPO
-        7. HMM ensemble training (meta-model)
+        Regime Steps (4-7):
+        4. NAS-TAS regime discovery
+        5. NAS-TAS clustering
+        6. NAS-TAS models training with HPO
+        7. NAS-TAS ensemble training (meta-model)
 
         Data Processing Steps (8-12):
         8. Regime data splitting
@@ -364,6 +402,7 @@ class MarketAnalysisSubPipeline:
         12. Final feature selection (120→100→80→60)
         """
         log_info('🎯 Starting Market Analysis Sub-Pipeline execution')
+        tprint("🎯 [MARKET_ANALYSIS] Starting Market Analysis Sub-Pipeline execution", color="cyan", bold=True)
         # Reset results for a fresh run
         self.results = []
         
@@ -371,7 +410,9 @@ class MarketAnalysisSubPipeline:
             # Extract data from pipeline state
             data = pipeline_state.get('dataframe')
             if data is None:
+                tprint("❌ [MARKET_ANALYSIS] No dataframe found in pipeline state", color="red", bold=True)
                 raise ValueError("No dataframe found in pipeline state")
+            tprint(f"📊 [MARKET_ANALYSIS] Data loaded: {data.shape[0]} rows, {data.shape[1]} columns", color="green")
             
             # Store data and pipeline state for component communication
             self._current_data = data
@@ -382,9 +423,11 @@ class MarketAnalysisSubPipeline:
             
             # ===== SR STEPS GROUP =====
             log_info('🎯 ===== STARTING SR STEPS GROUP =====')
+            tprint("🎯 [MARKET_ANALYSIS] ===== STARTING SR STEPS GROUP =====", color="blue", bold=True)
             
             # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
             log_info('🎯 Executing Stage 1: SR Parameter Optimization')
+            tprint("🎯 [MARKET_ANALYSIS] Executing Stage 1: SR Parameter Optimization", color="yellow")
             param_optimization_result = await self.execute_sub_pipeline('sr_parameter_optimization', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(param_optimization_result, "SR Parameter Optimization")
             if not is_success:
@@ -438,16 +481,18 @@ class MarketAnalysisSubPipeline:
             
             # ===== HMM STEPS GROUP =====
             self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
+            tprint("🔍 [MARKET_ANALYSIS] ===== STARTING HMM STEPS GROUP =====", color="blue", bold=True)
             
-            # Stage 4: Hybrid NAS-TAS Regime Discovery
-            self.logger.info('🔍 Executing Stage 4: Hybrid NAS-TAS Regime Discovery')
-            hybrid_nas_tas_regime_discovery_result = await self.execute_sub_pipeline('hybrid_nas_tas_regime_discovery', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(hybrid_nas_tas_regime_discovery_result, "Hybrid NAS-TAS Regime Discovery")
+            # Stage 4: NAS-TAS Regime Discovery
+            self.logger.info('🔍 Executing Stage 4: NAS-TAS Regime Discovery')
+            tprint("🔍 [MARKET_ANALYSIS] Executing Stage 4: NAS-TAS Regime Discovery", color="yellow")
+            nas_tas_regime_discovery_result = await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_regime_discovery_result, "NAS-TAS Regime Discovery")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
-            nas_regime_data = hybrid_nas_tas_regime_discovery_result.artifacts.get('hybrid_nas_tas_regime_discovery_result', {})
+            nas_regime_data = nas_tas_regime_discovery_result.artifacts.get('nas_tas_regime_discovery_result', {})
             results['regime_models'] = nas_regime_data.get('regime_models', {})
             results['regime_assignments'] = nas_regime_data.get('regime_assignments', {})
             results['regime_metrics'] = nas_regime_data.get('regime_metrics', {})
@@ -458,22 +503,22 @@ class MarketAnalysisSubPipeline:
                 'regime_assignments': results['regime_assignments']
             })
             
-            # Stage 5: NAS Clustering
-            self.logger.info('🎯 Executing Stage 5: NAS Clustering')
-            nas_clustering_result = await self.execute_sub_pipeline('nas_clustering', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_clustering_result, "NAS Clustering")
+            # Stage 5: NAS-TAS Clustering
+            self.logger.info('🎯 Executing Stage 5: NAS-TAS Clustering')
+            nas_tas_clustering_result = await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_clustering_result, "NAS-TAS Clustering")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_clustering_data = nas_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
-            results['nas_clusters'] = nas_clustering_data.get('nas_clusters', {})
-            results['nas_clustering_metrics'] = nas_clustering_data.get('nas_clustering_metrics', {})
+            nas_tas_clustering_data = nas_tas_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
+            results['nas_tas_clusters'] = nas_tas_clustering_data.get('nas_tas_clusters', {})
+            results['nas_tas_clustering_metrics'] = nas_tas_clustering_data.get('nas_tas_clustering_metrics', {})
             
             # Update pipeline state for next components
-            cluster_assignments = nas_clustering_data.get('cluster_assignments', [])
+            cluster_assignments = nas_tas_clustering_data.get('cluster_assignments', [])
             self._current_pipeline_state.update({
-                'nas_clusters': nas_clustering_data,  # Store the full result
+                'nas_tas_clusters': nas_tas_clustering_data,  # Store the full result
                 'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
             })
             
@@ -503,7 +548,11 @@ class MarketAnalysisSubPipeline:
                 regime_labels = None
                 if 'regime_assignments' in results and results['regime_assignments']:
                     regime_data = results['regime_assignments']
-                    if isinstance(regime_data, dict) and 'regime_labels' in regime_data:
+                    if isinstance(regime_data, list):
+                        # regime_assignments is a list of regime assignments
+                        regime_labels = regime_data
+                    elif isinstance(regime_data, dict) and 'regime_labels' in regime_data:
+                        # Legacy format - regime_assignments is a dict with regime_labels
                         regime_labels = regime_data['regime_labels']
                 
                 # Update pipeline state with prepared data
@@ -525,38 +574,38 @@ class MarketAnalysisSubPipeline:
                 self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
             
-            # Stage 6: NAS Models Training
-            self.logger.info('🏋️ Executing Stage 6: NAS Models Training')
-            nas_models_training_result = await self.execute_sub_pipeline('nas_models_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_models_training_result, "NAS Models Training")
+            # Stage 6: NAS-TAS Models Training
+            self.logger.info('🏋️ Executing Stage 6: NAS-TAS Models Training')
+            nas_tas_models_training_result = await self.execute_sub_pipeline('nas_tas_models_training', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_models_training_result, "NAS-TAS Models Training")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_models_data = nas_models_training_result.artifacts.get('nas_models_training_result', {})
-            results['nas_models'] = nas_models_data.get('nas_models', {})
-            results['nas_training_metrics'] = nas_models_data.get('nas_training_metrics', {})
+            nas_tas_models_data = nas_tas_models_training_result.artifacts.get('nas_tas_models_training_result', {})
+            results['nas_tas_models'] = nas_tas_models_data.get('nas_tas_models', {})
+            results['nas_tas_training_metrics'] = nas_tas_models_data.get('nas_tas_training_metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'nas_models': results['nas_models']
+                'nas_tas_models': results['nas_tas_models']
             })
             
-            # Stage 7: NAS Ensemble Training
-            self.logger.info('🎭 Executing Stage 7: NAS Ensemble Training')
-            nas_ensemble_training_result = await self.execute_sub_pipeline('nas_ensemble_training', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(nas_ensemble_training_result, "NAS Ensemble Training")
+            # Stage 7: NAS-TAS Ensemble Training
+            self.logger.info('🎭 Executing Stage 7: NAS-TAS Ensemble Training')
+            nas_tas_ensemble_training_result = await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_ensemble_training_result, "NAS-TAS Ensemble Training")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_ensemble_data = nas_ensemble_training_result.artifacts.get('nas_ensemble_training_result', {})
-            results['nas_ensemble'] = nas_ensemble_data.get('nas_ensemble', {})
-            results['nas_ensemble_metrics'] = nas_ensemble_data.get('nas_ensemble_metrics', {})
+            nas_tas_ensemble_data = nas_tas_ensemble_training_result.artifacts.get('nas_tas_ensemble_training_result', {})
+            results['nas_tas_ensemble'] = nas_tas_ensemble_data.get('nas_tas_ensemble', {})
+            results['nas_tas_ensemble_metrics'] = nas_tas_ensemble_data.get('nas_tas_ensemble_metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'nas_ensemble': results['nas_ensemble']
+                'nas_tas_ensemble': results['nas_tas_ensemble']
             })
             
             # ===== DATA PROCESSING STEPS GROUP =====
@@ -700,6 +749,83 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f'❌ Market Analysis Sub-Pipeline failed: {e}')
             import traceback
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            # Add feature importance analysis if available
+            if self.feature_importance_manager:
+                try:
+                    log_info('🔍 Adding feature importance analysis to final results')
+                    # Extract features and regime assignments from pipeline results
+                    features = None
+                    feature_names = []
+                    regime_assignments = None
+
+                    # Look for features in accumulated artifacts with improved extraction
+                    if 'final_features' in self._accumulated_artifacts:
+                        final_features = self._accumulated_artifacts['final_features']
+                        if isinstance(final_features, dict):
+                            features = final_features.get('features')
+                            feature_names = final_features.get('feature_names', [])
+
+                    # Try alternative sources if final_features not available
+                    if features is None:
+                        # Look for features from previous pipeline stages
+                        for stage_result in self.results:
+                            if hasattr(stage_result, 'artifacts') and stage_result.artifacts:
+                                artifacts = stage_result.artifacts
+                                if 'features' in artifacts and 'feature_names' in artifacts:
+                                    features = artifacts['features']
+                                    feature_names = artifacts['feature_names']
+                                    break
+
+                    # Look for regime assignments
+                    if 'regime_assignments' in self._accumulated_artifacts:
+                        regime_assignments = self._accumulated_artifacts['regime_assignments']
+
+                    # Try to find regime assignments in pipeline results if not in artifacts
+                    if regime_assignments is None:
+                        for stage_result in self.results:
+                            if hasattr(stage_result, 'artifacts') and stage_result.artifacts:
+                                artifacts = stage_result.artifacts
+                                if 'regime_assignments' in artifacts or 'regime_predictions' in artifacts:
+                                    regime_assignments = artifacts.get('regime_assignments') or artifacts.get('regime_predictions')
+                                    break
+
+                    # Validate that we have the required data
+                    if features is not None and len(feature_names) > 0 and regime_assignments is not None:
+                        # Ensure feature_names matches the number of features
+                        if len(feature_names) != features.shape[1]:
+                            log_warning(f"⚠️ Feature names count ({len(feature_names)}) doesn't match features shape ({features.shape[1]})")
+                            # Generate fallback feature names
+                            feature_names = [f'feature_{i}' for i in range(features.shape[1])]
+
+                        # Ensure regime assignments match features length
+                        if len(regime_assignments) != features.shape[0]:
+                            log_warning(f"⚠️ Regime assignments length ({len(regime_assignments)}) doesn't match features length ({features.shape[0]})")
+                        else:
+                            # Perform feature importance analysis
+                            importance_analysis = self.feature_importance_manager.analyze_post_clustering_regimes(
+                                features, feature_names, np.array(regime_assignments)
+                            )
+
+                            if importance_analysis:
+                                results['feature_importance_analysis'] = importance_analysis
+                                log_info('✅ Feature importance analysis added to final results')
+                                log_info(f"📊 Analyzed {len(feature_names)} features across {len(np.unique(regime_assignments))} regimes")
+                            else:
+                                log_warning('⚠️ Feature importance analysis returned no results')
+                    else:
+                        missing_items = []
+                        if features is None:
+                            missing_items.append("features")
+                        if len(feature_names) == 0:
+                            missing_items.append("feature_names")
+                        if regime_assignments is None:
+                            missing_items.append("regime_assignments")
+                        log_warning(f"⚠️ Cannot perform feature importance analysis - missing: {', '.join(missing_items)}")
+
+                except Exception as e:
+                    log_warning(f'⚠️ Feature importance analysis addition failed: {e}')
+                    self.logger.error(f"Feature importance analysis error: {e}")
+
             return {
                 'success': False,
                 'error': str(e),
@@ -730,8 +856,8 @@ class MarketAnalysisSubPipeline:
         artifact_keys = list(artifacts.keys())
         
         self.logger.info(f"✅ {sub_pipeline_name} completed successfully")
-        # Ensure logs reflect single artifact expectation for nas_clustering
-        if sub_pipeline_name == 'nas_clustering' and artifact_count > 1:
+        # Ensure logs reflect single artifact expectation for nas_tas_clustering
+        if sub_pipeline_name == 'nas_tas_clustering' and artifact_count > 1:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys} (note: consolidated into single artifact group)")
         else:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys}")
@@ -773,8 +899,8 @@ class MarketAnalysisSubPipeline:
             
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
-            # Enforce 15m timeframe for HMM components only (log warning if overriding)
-            if sub_pipeline_name in ('hmm_models_training', 'hmm_ensemble_training'):
+            # Enforce 15m timeframe for Regime components only (log warning if overriding)
+            if sub_pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training'):
                 if component_config.timeframe != '15m':
                     self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
                 component_config.timeframe = '15m'
@@ -889,10 +1015,10 @@ class MarketAnalysisSubPipeline:
         1. sr_parameter_optimization - Optimize SR detection levels
         2. sr_detection - Detect Support/Resistance levels
         3. sr_clustering - Generate SR clusters
-        4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
-        5. nas_clustering - NAS-based regime clustering
-        6. nas_models_training - Base models training with NAS regime labels, HPO, saving, metrics
-        7. nas_ensemble_training - Meta-model with NAS regime labels, HPO, saving, metrics
+        4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
+        5. nas_tas_clustering - NAS-TAS-based regime clustering
+        6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics
+        7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics
         8. regime_data_splitting - Tag data by regimes
         9. feature_lookback_optimization - Optimize feature lookback periods
         10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
@@ -933,11 +1059,11 @@ class MarketAnalysisSubPipeline:
             'sr_clustering'
         ]
         
-        hmm_steps = [
-            'hybrid_nas_tas_regime_discovery',
-            'nas_clustering',
-            'nas_models_training',
-            'nas_ensemble_training'
+        regime_steps = [
+            'nas_tas_regime_discovery',
+            'nas_tas_clustering',
+            'nas_tas_models_training',
+            'nas_tas_ensemble_training'
         ]
         
         data_processing_steps = [
@@ -954,7 +1080,7 @@ class MarketAnalysisSubPipeline:
         ]
         
         # Complete execution sequence - ALL sub-pipelines in market_analysis stage
-        execution_sequence = sr_steps + hmm_steps + data_processing_steps + additional_steps
+        execution_sequence = sr_steps + regime_steps + data_processing_steps + additional_steps
         
         # Find the starting index
         try:
@@ -967,10 +1093,10 @@ class MarketAnalysisSubPipeline:
         current_group = None
         if sub_pipeline_name in sr_steps:
             current_group = "SR Steps"
-            self.logger.info('🎯 Starting from SR steps group - will complete all SR steps before moving to HMM')
-        elif sub_pipeline_name in hmm_steps:
-            current_group = "HMM Steps"
-            self.logger.info('🎯 Starting from HMM steps group - will complete all HMM steps before moving to data processing')
+            self.logger.info('🎯 Starting from SR steps group - will complete all SR steps before moving to Regime')
+        elif sub_pipeline_name in regime_steps:
+            current_group = "Regime Steps"
+            self.logger.info('🎯 Starting from Regime steps group - will complete all Regime steps before moving to data processing')
         elif sub_pipeline_name in data_processing_steps:
             current_group = "Data Processing Steps"
             self.logger.info('🎯 Starting from data processing steps group')
@@ -990,9 +1116,9 @@ class MarketAnalysisSubPipeline:
             if pipeline_name in sr_steps and current_group != "SR Steps":
                 self.logger.info('🔄 Transitioning to SR steps group')
                 current_group = "SR Steps"
-            elif pipeline_name in hmm_steps and current_group != "HMM Steps":
-                self.logger.info('🔄 Transitioning to HMM steps group')
-                current_group = "HMM Steps"
+            elif pipeline_name in regime_steps and current_group != "Regime Steps":
+                self.logger.info('🔄 Transitioning to Regime steps group')
+                current_group = "Regime Steps"
             elif pipeline_name in data_processing_steps and current_group != "Data Processing Steps":
                 self.logger.info('🔄 Transitioning to data processing steps group')
                 current_group = "Data Processing Steps"
@@ -1003,8 +1129,8 @@ class MarketAnalysisSubPipeline:
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
-                # Ensure 15m timeframe at dispatch time for HMM components only (log warning if overriding)
-                if pipeline_name in ('nas_models_training', 'nas_ensemble_training'):
+                # Ensure 15m timeframe at dispatch time for Regime components only (log warning if overriding)
+                if pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training'):
                     # Avoid mutating the shared config; create a scoped copy for this call
                     from dataclasses import replace as _dc_replace
                     scoped_config = _dc_replace(config, timeframe='15m')
@@ -1086,32 +1212,9 @@ class MarketAnalysisSubPipeline:
             
             self.logger.info(f'📊 Loaded full market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
             
-            # Apply date filtering after loading if dates are specified
-            if start_date is not None or end_date is not None:
-                original_rows = len(market_data)
-                
-                # Convert index to datetime if it isn't already
-                if not isinstance(market_data.index, pd.DatetimeIndex):
-                    try:
-                        if hasattr(market_data.index, 'max') and market_data.index.max() > 1e10:
-                            # Likely millisecond timestamps
-                            market_data.index = pd.to_datetime(market_data.index, unit='ms', utc=True).tz_localize(None)
-                        else:
-                            market_data.index = pd.to_datetime(market_data.index, utc=True).tz_localize(None)
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Could not convert index to datetime for filtering: {e}")
-                
-                # Apply date filtering
-                if start_date is not None:
-                    market_data = market_data[market_data.index >= start_date]
-                    self.logger.info(f'📅 Applied start_date filter: {start_date}')
-                
-                if end_date is not None:
-                    market_data = market_data[market_data.index <= end_date]
-                    self.logger.info(f'📅 Applied end_date filter: {end_date}')
-                
-                filtered_rows = len(market_data)
-                self.logger.info(f'🔍 Date filtering: {original_rows:,} → {filtered_rows:,} rows ({filtered_rows/original_rows*100:.1f}%)')
+            # Skip additional date filtering since it's already handled at the pipeline configuration level
+            # The KlinesParquetManager already applies the correct date filtering based on available data
+            self.logger.info(f'📅 Date filtering already applied at pipeline level, using loaded data as-is')
             
             self.logger.info(f'✅ Final market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
             self.logger.info(f'📊 Data columns: {list(market_data.columns)}')

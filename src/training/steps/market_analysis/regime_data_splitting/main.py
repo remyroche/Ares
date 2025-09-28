@@ -230,7 +230,7 @@ from src.utils.common_operations import (
     optimize_dataframe_dtypes,
     validate_dataframe_schema
 )
-from src.utils.validation.unified_framework import (
+from src.utils.math_validation import (
     safe_divide,
     safe_log,
     safe_sqrt,
@@ -1110,19 +1110,24 @@ class RegimeDataSplittingStep:
         Returns:
             Dictionary with execution results
         """
+        tprint('🚀 Starting regime data splitting execution')
+        
         # Get utility functions
         safe_dict_get = self.utils.get_function('common_operations', 'safe_dict_get')
         safe_float = self.utils.get_function('common_operations', 'safe_float')
         validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        tprint('📊 Utility functions loaded successfully')
         
         # Use utility functions for parameter extraction and validation
         symbol = safe_dict_get(training_input, 'symbol', None)
         exchange = safe_dict_get(training_input, 'exchange', None)
         timeframe = safe_dict_get(training_input, 'timeframe', '1m')
         data_dir = safe_dict_get(training_input, 'data_dir', None)
+        tprint(f'📋 Extracted parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}')
 
         # Validate required parameters using utility functions
         if not all([symbol, exchange, timeframe]):
+            tprint('❌ Missing required parameters: symbol, exchange, timeframe')
             return {
                 'success': False,
                 'step04_regime_data_splitting_completed': False,
@@ -1132,21 +1137,29 @@ class RegimeDataSplittingStep:
         try:
             # Initialize if not already done
             if not self.start_time:
+                tprint('🔧 Initializing regime data splitting step')
                 await self.initialize()
+                tprint('✅ Initialization completed')
 
             # Execute the main functionality
+            tprint('🔄 Starting regime data splitting process')
             result = await self.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
+            tprint('✅ Regime data splitting process completed')
 
             # Generate comprehensive function call summary
             log_function_call_summary()
+            tprint('📊 Function call summary generated')
 
             # Calculate execution time using utility functions
             execution_time = time.time() - self.start_time
             execution_time = validate_positive(safe_float(execution_time, 0.0), "execution_time")
+            tprint(f'⏱️ Execution time: {execution_time:.2f} seconds')
             
             if result.success:
+                tprint('✅ Regime data splitting completed successfully')
                 # Generate advanced metrics report
                 advanced_report = self.generate_advanced_metrics_report(result, training_input)
+                tprint('📊 Advanced metrics report generated')
                 return {
                     'success': True,
                     'step04_regime_data_splitting_completed': True,
@@ -1158,6 +1171,7 @@ class RegimeDataSplittingStep:
                     'advanced_metrics_report': advanced_report
                 }
             else:
+                tprint(f'❌ Regime data splitting failed: {result.error}')
                 return {
                     'success': False,
                     'step04_regime_data_splitting_completed': False,
@@ -1168,6 +1182,7 @@ class RegimeDataSplittingStep:
             }
 
         except Exception as e:
+            tprint(f'❌ Exception in regime data splitting execute: {e}')
             self.logger.exception(f'❌ Error in step04_regime_data_splitting execute: {e}')
             return {
                 'success': False,
@@ -1210,17 +1225,21 @@ class RegimeDataSplittingStep:
 
         Returns a standardized RegimeDataResult with all relevant information.
         """
+        tprint(f'🏷️ Starting regime data tagging for {symbol} on {exchange} ({timeframe})')
         step_start = time.time()
 
         # Start M1 memory monitoring for large datasets
         if self.m1_optimizations_enabled and self.memory_optimizer:
             with self.memory_optimizer.memory_checkpoint("regime_data_splitting_start"):
                 self.logger.info('🧠 M1 Memory monitoring enabled for large dataset processing')
+                tprint('🧠 M1 Memory monitoring enabled')
         elif PSUTIL_AVAILABLE:
             # Fallback to basic memory monitoring
             self.logger.info('📊 Basic memory monitoring enabled (M1 optimizations not available)')
+            tprint('📊 Basic memory monitoring enabled')
 
         self.logger.info(f'🏷️ Creating unified dataset with regime TAGS (not splits) for {symbol} on {exchange} ({timeframe})')
+        tprint(f'🏷️ Creating unified dataset with regime TAGS for {symbol} on {exchange} ({timeframe})')
         try:
             # Get utility functions with fallback
             try:

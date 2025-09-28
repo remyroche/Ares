@@ -48,6 +48,11 @@ class NeuralODE(nn.Module):
         try:
             batch_size = x.shape[0]
             
+            # Ensure input is properly shaped for projection
+            if x.dim() > 2:
+                # Flatten spatial dimensions if needed
+                x = x.view(batch_size, -1)
+            
             # Project input to hidden space
             hidden = self.input_projection(x)
             

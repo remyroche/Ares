@@ -211,10 +211,12 @@ class UnifiedTradingViabilityEvaluator:
         
         try:
             self.logger.info("📈 Starting unified trading viability evaluation...")
-            self.logger.info(f"   Data shape: {market_data.shape}")
-            self.logger.info(f"   Regimes: {len(np.unique(regime_predictions))}")
+            tprint("📈 Starting unified trading viability evaluation...", color="blue")
+            tprint(f"   Data shape: {market_data.shape}", color="cyan")
+            tprint(f"   Regimes: {len(np.unique(regime_predictions))}", color="cyan")
             
             # Convert data to numpy array if needed
+            tprint("🔄 Converting data to numpy array...", color="blue")
             if isinstance(market_data, pd.DataFrame):
                 data_array = market_data.values
                 if timestamps is None and 'timestamp' in market_data.columns:
@@ -223,43 +225,81 @@ class UnifiedTradingViabilityEvaluator:
                 data_array = market_data
                 if timestamps is None:
                     timestamps = np.arange(len(data_array))
+            tprint(f"✅ Data converted: {data_array.shape} array", color="green")
             
             # Calculate individual trading viability metrics
+            tprint("📊 Calculating individual trading viability metrics...", color="blue")
+            tprint("📈 Calculating trading frequency viability...", color="cyan")
             frequency_scores = self._calculate_trading_frequency_viability(data_array, regime_predictions, timestamps)
+            tprint(f"✅ Trading frequency calculated: {np.mean(frequency_scores):.3f} average", color="green")
+            
+            tprint("⏱️ Calculating position duration viability...", color="cyan")
             duration_scores = self._calculate_position_duration_viability(data_array, regime_predictions, timestamps)
+            tprint(f"✅ Position duration calculated: {np.mean(duration_scores):.3f} average", color="green")
+            
+            tprint("🎯 Calculating model confidence viability...", color="cyan")
             confidence_scores = self._calculate_model_confidence_viability(regime_probabilities, regime_predictions)
+            tprint(f"✅ Model confidence calculated: {np.mean(confidence_scores):.3f} average", color="green")
+            
+            tprint("⚠️ Calculating risk-adjusted returns viability...", color="cyan")
             risk_scores = self._calculate_risk_adjusted_returns_viability(data_array, regime_predictions)
+            tprint(f"✅ Risk-adjusted returns calculated: {np.mean(risk_scores):.3f} average", color="green")
+            
+            tprint("💰 Calculating transaction costs viability...", color="cyan")
             cost_scores = self._calculate_transaction_costs_viability(data_array, regime_predictions)
+            tprint(f"✅ Transaction costs calculated: {np.mean(cost_scores):.3f} average", color="green")
+            
+            tprint("💧 Calculating market liquidity viability...", color="cyan")
             liquidity_scores = self._calculate_market_liquidity_viability(data_array, regime_predictions)
+            tprint(f"✅ Market liquidity calculated: {np.mean(liquidity_scores):.3f} average", color="green")
+            
+            tprint("🔒 Calculating regime stability viability...", color="cyan")
             stability_scores = self._calculate_regime_stability_viability(regime_predictions)
+            tprint(f"✅ Regime stability calculated: {np.mean(stability_scores):.3f} average", color="green")
+            
+            tprint("⚡ Calculating execution feasibility viability...", color="cyan")
             execution_scores = self._calculate_execution_feasibility_viability(data_array, regime_predictions)
+            tprint(f"✅ Execution feasibility calculated: {np.mean(execution_scores):.3f} average", color="green")
             
             # Architecture-specific enhancements
             if architecture_type == "TAS" and self.config.enable_tree_based_viability:
+                tprint("🌳 Calculating tree-based trading viability...", color="blue")
                 tree_viability_scores = self._calculate_tree_based_trading_viability(
                     data_array, regime_predictions, model_metadata
                 )
+                tprint(f"✅ Tree-based trading viability calculated: {np.mean(tree_viability_scores):.3f} average", color="green")
                 # Adjust scores based on tree analysis
+                tprint("🔧 Adjusting scores with tree viability...", color="cyan")
                 frequency_scores = self._adjust_scores_with_tree_viability(frequency_scores, tree_viability_scores)
                 confidence_scores = self._adjust_scores_with_tree_viability(confidence_scores, tree_viability_scores)
+                tprint("✅ Scores adjusted with tree viability", color="green")
                 
             elif architecture_type == "NAS" and self.config.enable_neural_based_viability:
+                tprint("🧠 Calculating neural-based trading viability...", color="blue")
                 neural_viability_scores = self._calculate_neural_based_trading_viability(
                     data_array, regime_predictions, regime_probabilities, model_metadata
                 )
+                tprint(f"✅ Neural-based trading viability calculated: {np.mean(neural_viability_scores):.3f} average", color="green")
                 # Adjust scores based on neural analysis
+                tprint("🔧 Adjusting scores with neural viability...", color="cyan")
                 frequency_scores = self._adjust_scores_with_neural_viability(frequency_scores, neural_viability_scores)
                 confidence_scores = self._adjust_scores_with_neural_viability(confidence_scores, neural_viability_scores)
+                tprint("✅ Scores adjusted with neural viability", color="green")
                 
             elif architecture_type == "HYBRID" and self.config.enable_hybrid_viability:
+                tprint("🔄 Calculating hybrid trading viability...", color="blue")
                 hybrid_viability_scores = self._calculate_hybrid_trading_viability(
                     data_array, regime_predictions, regime_probabilities, model_metadata
                 )
+                tprint(f"✅ Hybrid trading viability calculated: {np.mean(hybrid_viability_scores):.3f} average", color="green")
                 # Adjust scores based on hybrid analysis
+                tprint("🔧 Adjusting scores with hybrid viability...", color="cyan")
                 frequency_scores = self._adjust_scores_with_hybrid_viability(frequency_scores, hybrid_viability_scores)
                 confidence_scores = self._adjust_scores_with_hybrid_viability(confidence_scores, hybrid_viability_scores)
+                tprint("✅ Scores adjusted with hybrid viability", color="green")
             
             # Calculate weighted overall trading viability
+            tprint("⚖️ Calculating weighted overall trading viability...", color="blue")
             overall_scores = (
                 frequency_scores * self.config.trading_frequency_weight +
                 duration_scores * self.config.position_duration_weight +
@@ -269,48 +309,69 @@ class UnifiedTradingViabilityEvaluator:
                 liquidity_scores * self.config.market_liquidity_weight +
                 stability_scores * self.config.regime_stability_weight
             )
+            tprint(f"✅ Overall trading viability calculated: {np.mean(overall_scores):.3f} average", color="green")
             
             # Apply viability threshold
+            tprint(f"🔍 Applying viability threshold: {self.config.viability_threshold}", color="blue")
             viable_regimes = overall_scores >= self.config.viability_threshold
+            tprint(f"✅ Viability threshold applied: {np.sum(viable_regimes)}/{len(viable_regimes)} regimes viable", color="green")
             
             # Regime-specific analysis
             regime_profiles = {}
             regime_viability = {}
             if self.config.enable_regime_specific_analysis:
+                tprint("📊 Analyzing regime-specific viability profiles...", color="blue")
                 regime_profiles = self._analyze_regime_viability_profiles(data_array, regime_predictions, timestamps)
                 regime_viability = self._calculate_regime_viability_scores(regime_predictions, overall_scores)
+                tprint(f"✅ Regime-specific analysis completed: {len(regime_profiles)} profiles", color="green")
             
             # Trading simulation
             trading_simulation = None
             if self.config.enable_execution_analysis:
+                tprint("🎮 Performing trading simulation...", color="blue")
                 trading_simulation = self._perform_trading_simulation(data_array, regime_predictions, timestamps)
+                tprint("✅ Trading simulation completed", color="green")
             
             # Position-aware analysis
             position_analysis = None
             if self.position_analyzer:
                 try:
-                    df_data = pd.DataFrame(data_array, columns=['open', 'high', 'low', 'close', 'volume'])
+                    tprint("💼 Performing position-aware analysis...", color="blue")
+                    # Dynamically create column names based on actual data shape
+                    n_cols = data_array.shape[1]
+                    if n_cols >= 5:
+                        columns = ['open', 'high', 'low', 'close', 'volume'] + [f'feature_{i}' for i in range(5, n_cols)]
+                    else:
+                        columns = [f'col_{i}' for i in range(n_cols)]
+                    df_data = pd.DataFrame(data_array, columns=columns)
                     position_analysis = self.position_analyzer.calculate_position_aware_trading_viability(
                         df_data, regime_predictions
                     )
+                    tprint("✅ Position-aware analysis completed", color="green")
                 except Exception as e:
                     self.logger.warning(f"Position-aware analysis failed: {e}")
+                    tprint(f"❌ Position-aware analysis failed: {e}", color="red")
             
             # Execution feasibility analysis
             execution_analysis = None
             if self.config.enable_execution_analysis:
+                tprint("⚡ Analyzing execution feasibility...", color="blue")
                 execution_analysis = self._analyze_execution_feasibility(data_array, regime_predictions, timestamps)
+                tprint("✅ Execution feasibility analysis completed", color="green")
             
             # Determine viability level
             mean_score = np.mean(overall_scores)
+            tprint(f"📊 Determining viability level: {mean_score:.3f} mean score", color="blue")
             if mean_score >= 0.8:
                 viability_level = 'high'
             elif mean_score >= 0.6:
                 viability_level = 'medium'
             else:
                 viability_level = 'low'
+            tprint(f"✅ Viability level determined: {viability_level}", color="green")
             
             execution_time = time.time() - start_time
+            tprint(f"🏁 Creating trading viability result...", color="blue")
             
             # Create result
             result = TradingViabilityResult(
@@ -333,6 +394,11 @@ class UnifiedTradingViabilityEvaluator:
                 n_regimes=len(np.unique(regime_predictions)),
                 evaluation_time=execution_time
             )
+            
+            tprint(f"✅ Trading viability evaluation completed in {execution_time:.2f}s", color="green")
+            tprint(f"   Overall score: {mean_score:.3f}", color="green")
+            tprint(f"   Viability level: {viability_level}", color="green")
+            tprint(f"   Viable regimes: {np.sum(viable_regimes)}/{len(regime_predictions)}", color="green")
             
             self.logger.info(f"✅ Unified trading viability evaluation completed in {execution_time:.2f}s")
             self.logger.info(f"   Overall score: {mean_score:.3f}")

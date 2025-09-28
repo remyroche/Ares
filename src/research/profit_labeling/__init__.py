@@ -56,6 +56,10 @@ Usage:
     )
 """
 
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading enhanced multi-horizon profit labeling research framework...")
+
 # Original components
 from .heuristic_analyzer import HeuristicAnalyzer, HeuristicAnalysisConfig
 from .labeling_validator import LabelingValidator, ValidationConfig
@@ -138,6 +142,7 @@ from .bonus_penalty_optimizer import (
     get_optimal_bonus_penalty_config
 )
 
+tprint("📋 Setting up module exports...")
 __all__ = [
     # Original components
     'HeuristicAnalyzer',
@@ -212,3 +217,4 @@ __all__ = [
 __version__ = '1.0.0'
 __author__ = 'Ares Trading System'
 __description__ = 'Multi-Horizon Profit Labeling Research Framework'
+tprint("✅ Enhanced multi-horizon profit labeling research framework fully loaded")

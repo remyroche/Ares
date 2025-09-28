@@ -7,6 +7,9 @@ to make them easily configurable and maintainable.
 
 from dataclasses import dataclass
 from typing import Dict, List
+from src.utils.tprint import tprint
+
+tprint("📋 Loading PID-based feature generation constants...")
 
 
 @dataclass

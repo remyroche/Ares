@@ -159,8 +159,7 @@ class EnhancedTASHardwareOptimizer:
             self.matrix_ops = UnifiedMatrixOperations(
                 enable_gpu=self.config.enable_gpu_acceleration,
                 enable_memory_optimization=self.config.enable_memory_optimization,
-                enable_parallel_processing=self.config.enable_parallel_processing,
-                optimization_level=self.config.matrix_optimization_level
+                enable_parallel=self.config.enable_parallel_processing
             )
             
             # Initialize specialized components

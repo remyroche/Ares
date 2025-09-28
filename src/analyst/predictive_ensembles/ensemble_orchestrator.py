@@ -13,6 +13,10 @@ import pandas as pd
 import json
 import logging
 
+# Add tprint imports for enhanced logging
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
+
+
 class RegimePredictiveEnsembles:
     """
     Orchestrates the training and prediction workflows for all specialized ensembles.
@@ -46,8 +50,10 @@ class RegimePredictiveEnsembles:
     }
 
     def __init__(self, config: Dict[str, Any]) -> None:
+        tprint("🚀 [ENSEMBLE_ORCHESTRATOR] Initializing RegimePredictiveEnsembles", color="cyan", bold=True)
         self.config = config.get('analyst', {})
         self.logger = system_logger.getChild('PredictiveEnsembles.Orchestrator')
+        tprint("✅ [ENSEMBLE_ORCHESTRATOR] RegimePredictiveEnsembles initialized successfully", color="green")
         self.regime_ensembles = {'VOLATILE_REGIME': VolatileRegimeEnsemble(config, 'VolatileRegimeEnsemble')}
         self.model_storage_dir = os.path.join(CONFIG['CHECKPOINT_DIR'], 'analyst_models', 'ensembles')
         os.makedirs(self.model_storage_dir, exist_ok = True)
@@ -79,6 +85,7 @@ class RegimePredictiveEnsembles:
             prepared_data (pd.DataFrame): The full prepared historical data with 'regime' and 'target' columns.
             model_path_prefix (str, optional): A prefix for saving models (e.g., includes fold_id).
         """
+        tprint(f"🚀 [ENSEMBLE_ORCHESTRATOR] Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})", color="cyan", bold=True)
         self.logger.info(f'Orchestrator: Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})...')
         if 'composite_cluster_id' in prepared_data.columns:
             self.logger.info('🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)')
@@ -270,6 +277,7 @@ class RegimePredictiveEnsembles:
                 X_val = pca.transform(X_val)
             else:
                 pca = None
+            # Create base LightGBM model (no PatchTST wrapper for global meta-learner)
             model = LGBMClassifier(**self.global_meta_config, random_state = 42)
             model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[LGBMClassifier.early_stopping(10, verbose = False)])
             score = model.score(X_val, y_val)

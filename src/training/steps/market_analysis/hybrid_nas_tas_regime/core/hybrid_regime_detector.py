@@ -43,8 +43,6 @@ except ImportError:
         print(f"[SUCCESS] {message}")
     def tprint_progress(message: str, **kwargs) -> None:
         print(f"[PROGRESS] {message}")
-    def tprint_performance(message: str, **kwargs) -> None:
-        print(f"[PERFORMANCE] {message}")
     def tprint_timer(message: str, **kwargs) -> None:
         print(f"[TIMER] {message}")
     TPRINT_AVAILABLE = False
@@ -162,23 +160,28 @@ class HybridNASTASRegimeDetector:
             # Step 1: Preprocess market data
             tprint("📊 Step 1: Preprocessing market data", color="cyan")
             processed_data = self._preprocess_market_data(market_data, timestamps)
+            tprint(f"✅ Market data preprocessing completed: {processed_data.shape}")
 
             # Step 2: Extract features using both TAS and NAS approaches
             tprint("🔧 Step 2: Extracting TAS and NAS features", color="cyan")
             tas_features, tas_results = self._extract_tas_features(processed_data)
+            tprint(f"✅ TAS features extracted: {tas_features.shape}")
             nas_features, nas_results = self._extract_nas_features(processed_data)
+            tprint(f"✅ NAS features extracted: {nas_features.shape}")
 
             # Step 3: Combine features based on strategy
             tprint("🔄 Step 3: Combining features using strategy", color="cyan")
             combined_features = self._combine_features(
                 tas_features, nas_features, tas_results, nas_results
             )
+            tprint(f"✅ Features combined: {combined_features.shape}")
 
             # Step 4: Perform economic clustering on combined features
             tprint("🔍 Step 4: Performing economic clustering", color="cyan")
             economic_clustering_result = self._perform_economic_clustering(
                 combined_features, processed_data
             )
+            tprint(f"✅ Economic clustering completed: {economic_clustering_result.success}")
 
             if economic_clustering_result.success:
                 tprint("✅ Economic clustering successful", color="green")
@@ -186,16 +189,20 @@ class HybridNASTASRegimeDetector:
                 regime_probabilities = economic_clustering_result.regime_probabilities
                 cluster_metrics = economic_clustering_result.economic_clustering_metrics
                 transition_probabilities = economic_clustering_result.transition_probabilities
+                tprint(f"✅ Regime predictions: {len(np.unique(regime_predictions))} unique regimes")
             else:
                 # Fallback to standard clustering
                 tprint("⚠️ Economic clustering failed, using standard clustering fallback", color="yellow")
                 regime_predictions, cluster_metrics = self._perform_standard_clustering(combined_features)
+                tprint(f"✅ Standard clustering completed: {len(np.unique(regime_predictions))} regimes")
                 regime_probabilities = self._calculate_regime_probabilities(
                     combined_features, regime_predictions
                 )
+                tprint("✅ Regime probabilities calculated")
                 transition_probabilities = self._calculate_transition_probabilities(
                     regime_predictions, regime_probabilities
                 )
+                tprint("✅ Transition probabilities calculated")
 
             # Step 6: Evaluate economic and financial significance
             tprint("📊 Step 5: Evaluating economic and financial significance", color="cyan")
@@ -208,18 +215,21 @@ class HybridNASTASRegimeDetector:
                 economic_scores = self._evaluate_economic_significance(
                     processed_data, regime_predictions, regime_probabilities
                 )
+                tprint(f"✅ Economic significance evaluation completed: {np.mean(economic_scores):.3f} average score")
 
             if validate_financial_relevance:
                 tprint("💎 Evaluating financial relevance", color="yellow")
                 financial_scores = self._evaluate_financial_relevance(
                     processed_data, regime_predictions, regime_probabilities
                 )
+                tprint(f"✅ Financial relevance evaluation completed: {np.mean(financial_scores):.3f} average score")
 
             # Calculate regime stability and momentum/volume scores
             tprint("⚖️ Calculating regime stability scores", color="yellow")
             stability_scores = self._calculate_regime_stability(
                 regime_predictions, regime_probabilities, transition_probabilities
             )
+            tprint(f"✅ Regime stability scores calculated: {np.mean(stability_scores):.3f} average stability")
 
             # Calculate momentum and volume profiles
             tprint("📈 Calculating momentum and volume profiles", color="yellow")
@@ -229,6 +239,9 @@ class HybridNASTASRegimeDetector:
             if economic_clustering_result.success:
                 momentum_scores = economic_clustering_result.momentum_scores
                 volume_profiles = economic_clustering_result.volume_profiles
+                tprint(f"✅ Momentum and volume profiles from economic clustering: {len(momentum_scores)} scores")
+            else:
+                tprint("⚠️ Using default momentum and volume profiles")
 
             # Perform coherent regime modeling
             if self.config.economic_evaluation.get('enabled', True):
@@ -324,88 +337,130 @@ class HybridNASTASRegimeDetector:
                                timestamps: Optional[np.ndarray] = None) -> pd.DataFrame:
         """Preprocess market data for regime detection."""
         try:
-            tprint(f"🔧 Preprocessing market data: {market_data.shape if hasattr(market_data, 'shape') else len(market_data)} points", color="cyan")
+            tprint(f"🔧 [HYBRID_NAS_TAS] Preprocessing market data: {market_data.shape if hasattr(market_data, 'shape') else len(market_data)} points", color="cyan")
+            tprint_debug(f"📊 [HYBRID_NAS_TAS] Input data type: {type(market_data)}")
+            
             if isinstance(market_data, np.ndarray):
+                tprint("🔄 [HYBRID_NAS_TAS] Converting numpy array to DataFrame", color="blue")
                 # Convert numpy array to DataFrame with default columns
                 columns = ['open', 'high', 'low', 'close', 'volume']
                 if market_data.shape[1] >= 5:
                     market_data = pd.DataFrame(market_data[:, :5], columns=columns[:market_data.shape[1]])
+                    tprint(f"✅ [HYBRID_NAS_TAS] Array converted with {market_data.shape[1]} columns", color="green")
                 else:
                     market_data = pd.DataFrame(market_data, columns=columns[:market_data.shape[1]])
+                    tprint(f"⚠️ [HYBRID_NAS_TAS] Array converted with {market_data.shape[1]} columns (limited)", color="yellow")
 
             if not isinstance(market_data, pd.DataFrame):
+                tprint_error("❌ [HYBRID_NAS_TAS] Market data must be pandas DataFrame or numpy array")
                 raise ValueError("Market data must be pandas DataFrame or numpy array")
 
             # Ensure required columns exist
+            tprint("🔍 [HYBRID_NAS_TAS] Validating required columns", color="blue")
             required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = []
             for col in required_columns:
                 if col not in market_data.columns:
                     if col == 'volume':
+                        tprint(f"⚠️ [HYBRID_NAS_TAS] Volume column missing, using default value 1.0", color="yellow")
                         market_data[col] = 1.0  # Default volume
                     else:
-                        raise ValueError(f"Required column '{col}' not found in market data")
+                        missing_columns.append(col)
+                        tprint_error(f"❌ [HYBRID_NAS_TAS] Required column '{col}' not found in market data")
+            
+            if missing_columns:
+                raise ValueError(f"Required columns missing: {missing_columns}")
+            
+            tprint("✅ [HYBRID_NAS_TAS] All required columns validated", color="green")
 
             # Add timestamps if provided
             if timestamps is not None:
+                tprint(f"📅 [HYBRID_NAS_TAS] Adding provided timestamps: {len(timestamps)} timestamps", color="blue")
                 market_data['timestamp'] = timestamps
             elif 'timestamp' not in market_data.columns:
+                tprint("📅 [HYBRID_NAS_TAS] No timestamps provided, generating default timestamps", color="yellow")
                 market_data['timestamp'] = pd.date_range(
                     start=datetime.now().strftime('%Y-%m-%d'),
                     periods=len(market_data),
                     freq='1min'
                 )
+                tprint(f"✅ [HYBRID_NAS_TAS] Generated {len(market_data)} default timestamps", color="green")
 
             # Basic data cleaning
-            tprint("🧹 Cleaning data: removing NaN and infinite values", color="yellow")
+            tprint("🧹 [HYBRID_NAS_TAS] Cleaning data: removing NaN and infinite values", color="yellow")
+            initial_rows = len(market_data)
             market_data = market_data.dropna()
+            tprint(f"📊 [HYBRID_NAS_TAS] After NaN removal: {len(market_data)} rows (removed {initial_rows - len(market_data)})", color="cyan")
+            
             market_data = market_data.replace([np.inf, -np.inf], np.nan).dropna()
+            final_rows = len(market_data)
+            tprint(f"📊 [HYBRID_NAS_TAS] After infinite value removal: {final_rows} rows (removed {initial_rows - final_rows})", color="cyan")
+            tprint(f"✅ [HYBRID_NAS_TAS] Data cleaning completed: {final_rows} clean samples remaining", color="green")
 
-            tprint(f"✅ Data preprocessing complete: {market_data.shape[0]} clean samples", color="green")
+            tprint(f"✅ [HYBRID_NAS_TAS] Data preprocessing complete: {final_rows} clean samples", color="green")
             return market_data
 
         except Exception as e:
             self.logger.error(f"Data preprocessing failed: {e}")
-            tprint(f"❌ Data preprocessing failed: {e}", color="red")
+            tprint_error(f"❌ [HYBRID_NAS_TAS] Data preprocessing failed: {e}")
             raise
 
     def _extract_tas_features(self,
                              market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Extract features using TAS (Tree Architecture Search) approach."""
         try:
-            tprint("🌳 Extracting TAS features...", color="blue")
+            tprint("🌳 [HYBRID_NAS_TAS] Extracting TAS features...", color="blue")
+            tprint_debug(f"📊 [HYBRID_NAS_TAS] Input market data shape: {market_data.shape}")
             self.logger.info("🔍 Extracting TAS features...")
 
             # Use TAS integration component
+            tprint("🔧 [HYBRID_NAS_TAS] Using TAS integration component...")
+            tprint_debug(f"🔧 [HYBRID_NAS_TAS] TAS config: {self.config.tas_config}")
+            
             features, results = self.tas_integration.extract_features(market_data)
+            tprint(f"✅ [HYBRID_NAS_TAS] TAS integration completed: {features.shape}")
+            tprint_debug(f"📈 [HYBRID_NAS_TAS] TAS results keys: {list(results.keys()) if isinstance(results, dict) else 'Not a dict'}")
 
             self.logger.info(f"   TAS features extracted: {features.shape}")
-            tprint(f"✅ TAS features extracted: {features.shape}", color="green")
+            tprint_success(f"✅ [HYBRID_NAS_TAS] TAS features extracted: {features.shape}")
+            tprint_performance(f"⚡ [HYBRID_NAS_TAS] TAS feature extraction performance: {features.shape[0]} samples, {features.shape[1]} features")
             return features, results
 
         except Exception as e:
             self.logger.warning(f"TAS feature extraction failed: {e}, using fallback")
-            tprint(f"⚠️ TAS feature extraction failed: {e}, using fallback", color="yellow")
+            tprint_warning(f"⚠️ [HYBRID_NAS_TAS] TAS feature extraction failed: {e}, using fallback")
+            tprint_debug(f"🔍 [HYBRID_NAS_TAS] TAS fallback reason: {str(e)}")
             # Fallback to basic feature extraction
+            tprint("🔄 [HYBRID_NAS_TAS] Falling back to basic feature extraction", color="yellow")
             return self._extract_basic_features(market_data), {'method': 'fallback'}
 
     def _extract_nas_features(self,
                              market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Extract features using NAS (Neural Architecture Search) approach."""
         try:
-            tprint("🧠 Extracting NAS features...", color="blue")
+            tprint("🧠 [HYBRID_NAS_TAS] Extracting NAS features...", color="blue")
+            tprint_debug(f"📊 [HYBRID_NAS_TAS] Input market data shape: {market_data.shape}")
             self.logger.info("🔍 Extracting NAS features...")
 
             # Use NAS integration component
+            tprint("🔧 [HYBRID_NAS_TAS] Using NAS integration component...")
+            tprint_debug(f"🔧 [HYBRID_NAS_TAS] NAS config: {self.config.nas_config}")
+            
             features, results = self.nas_integration.extract_features(market_data)
+            tprint(f"✅ [HYBRID_NAS_TAS] NAS integration completed: {features.shape}")
+            tprint_debug(f"📈 [HYBRID_NAS_TAS] NAS results keys: {list(results.keys()) if isinstance(results, dict) else 'Not a dict'}")
 
             self.logger.info(f"   NAS features extracted: {features.shape}")
-            tprint(f"✅ NAS features extracted: {features.shape}", color="green")
+            tprint_success(f"✅ [HYBRID_NAS_TAS] NAS features extracted: {features.shape}")
+            tprint_performance(f"⚡ [HYBRID_NAS_TAS] NAS feature extraction performance: {features.shape[0]} samples, {features.shape[1]} features")
             return features, results
 
         except Exception as e:
             self.logger.warning(f"NAS feature extraction failed: {e}, using fallback")
-            tprint(f"⚠️ NAS feature extraction failed: {e}, using fallback", color="yellow")
+            tprint_warning(f"⚠️ [HYBRID_NAS_TAS] NAS feature extraction failed: {e}, using fallback")
+            tprint_debug(f"🔍 [HYBRID_NAS_TAS] NAS fallback reason: {str(e)}")
             # Fallback to basic feature extraction
+            tprint("🔄 [HYBRID_NAS_TAS] Falling back to basic feature extraction", color="yellow")
             return self._extract_basic_features(market_data), {'method': 'fallback'}
 
     def _combine_features(self,
@@ -415,62 +470,85 @@ class HybridNASTASRegimeDetector:
                          nas_results: Dict[str, Any]) -> np.ndarray:
         """Combine TAS and NAS features based on configured strategy."""
         try:
-            tprint(f"🔄 Combining TAS ({tas_features.shape}) and NAS ({nas_features.shape}) features", color="blue")
+            tprint(f"🔄 [HYBRID_NAS_TAS] Combining TAS ({tas_features.shape}) and NAS ({nas_features.shape}) features", color="blue")
+            tprint_debug(f"📊 [HYBRID_NAS_TAS] TAS features shape: {tas_features.shape}, NAS features shape: {nas_features.shape}")
             self.logger.info("🔄 Combining TAS and NAS features...")
 
             tas_weight = self.config.tas_config.get('weight', 0.5)
             nas_weight = self.config.nas_config.get('weight', 0.5)
+            tprint_debug(f"⚖️ [HYBRID_NAS_TAS] Initial weights - TAS: {tas_weight}, NAS: {nas_weight}")
 
             # Normalize weights
             total_weight = tas_weight + nas_weight
             tas_weight = tas_weight / total_weight
             nas_weight = nas_weight / total_weight
+            tprint(f"⚖️ [HYBRID_NAS_TAS] Normalized weights - TAS: {tas_weight:.3f}, NAS: {nas_weight:.3f}", color="cyan")
 
             # Strategy-specific combination
-            if self.config.combination_strategy == RegimeCombinationStrategy.WEIGHTED_AVERAGE:
+            strategy = self.config.combination_strategy
+            tprint(f"🎯 [HYBRID_NAS_TAS] Using combination strategy: {strategy.value}", color="magenta")
+            
+            if strategy == RegimeCombinationStrategy.WEIGHTED_AVERAGE:
+                tprint("📊 [HYBRID_NAS_TAS] Using weighted average combination", color="blue")
                 combined_features = tas_weight * tas_features + nas_weight * nas_features
+                tprint_debug(f"📈 [HYBRID_NAS_TAS] Weighted average: TAS*{tas_weight:.3f} + NAS*{nas_weight:.3f}")
 
-            elif self.config.combination_strategy == RegimeCombinationStrategy.ENSEMBLE_VOTING:
+            elif strategy == RegimeCombinationStrategy.ENSEMBLE_VOTING:
+                tprint("🗳️ [HYBRID_NAS_TAS] Using ensemble voting combination", color="blue")
                 # Use ensemble approach - take features with highest confidence
                 tas_confidence = tas_results.get('confidence', 0.5)
                 nas_confidence = nas_results.get('confidence', 0.5)
+                tprint_debug(f"📊 [HYBRID_NAS_TAS] Confidence scores - TAS: {tas_confidence:.3f}, NAS: {nas_confidence:.3f}")
 
                 if tas_confidence >= nas_confidence:
                     combined_features = tas_features
+                    tprint("✅ [HYBRID_NAS_TAS] Selected TAS features (higher confidence)", color="green")
                 else:
                     combined_features = nas_features
+                    tprint("✅ [HYBRID_NAS_TAS] Selected NAS features (higher confidence)", color="green")
 
-            elif self.config.combination_strategy == RegimeCombinationStrategy.ECONOMIC_PRIORITY:
+            elif strategy == RegimeCombinationStrategy.ECONOMIC_PRIORITY:
+                tprint("💰 [HYBRID_NAS_TAS] Using economic priority combination", color="blue")
                 # Prioritize features based on economic significance
                 tas_economic = tas_results.get('economic_significance', 0.5)
                 nas_economic = nas_results.get('economic_significance', 0.5)
+                tprint_debug(f"💰 [HYBRID_NAS_TAS] Economic significance - TAS: {tas_economic:.3f}, NAS: {nas_economic:.3f}")
 
                 if tas_economic >= nas_economic:
                     combined_features = tas_features * tas_weight + nas_features * nas_weight
+                    tprint("✅ [HYBRID_NAS_TAS] TAS prioritized (higher economic significance)", color="green")
                 else:
                     combined_features = nas_features * tas_weight + tas_features * nas_weight
+                    tprint("✅ [HYBRID_NAS_TAS] NAS prioritized (higher economic significance)", color="green")
 
-            elif self.config.combination_strategy == RegimeCombinationStrategy.ADAPTIVE_FUSION:
+            elif strategy == RegimeCombinationStrategy.ADAPTIVE_FUSION:
+                tprint("🧠 [HYBRID_NAS_TAS] Using adaptive fusion combination", color="blue")
                 # Adaptive combination based on data characteristics
                 combined_features = self._adaptive_feature_fusion(
                     tas_features, nas_features, tas_results, nas_results
                 )
+                tprint("✅ [HYBRID_NAS_TAS] Adaptive fusion completed", color="green")
 
             else:  # MULTI_OBJECTIVE
+                tprint("🎯 [HYBRID_NAS_TAS] Using multi-objective combination", color="blue")
                 # Concatenate features for multi-objective approach
                 min_len = min(len(tas_features), len(nas_features))
                 tas_subset = tas_features[:min_len]
                 nas_subset = nas_features[:min_len]
                 combined_features = np.hstack([tas_subset * tas_weight, nas_subset * nas_weight])
+                tprint(f"📊 [HYBRID_NAS_TAS] Multi-objective: concatenated {min_len} samples with weights", color="cyan")
 
             self.logger.info(f"   Combined features shape: {combined_features.shape}")
-            tprint(f"✅ Feature combination complete: {combined_features.shape}", color="green")
+            tprint_success(f"✅ [HYBRID_NAS_TAS] Feature combination complete: {combined_features.shape}")
+            tprint_performance(f"⚡ [HYBRID_NAS_TAS] Combined features: {combined_features.shape[0]} samples, {combined_features.shape[1]} features")
             return combined_features
 
         except Exception as e:
             self.logger.error(f"Feature combination failed: {e}")
-            tprint(f"❌ Feature combination failed: {e}, using fallback", color="red")
+            tprint_error(f"❌ [HYBRID_NAS_TAS] Feature combination failed: {e}, using fallback")
+            tprint_debug(f"🔍 [HYBRID_NAS_TAS] Combination fallback reason: {str(e)}")
             # Fallback to basic combination
+            tprint("🔄 [HYBRID_NAS_TAS] Using basic combination fallback", color="yellow")
             return (tas_features + nas_features) / 2
 
     def _adaptive_feature_fusion(self,
@@ -522,20 +600,23 @@ class HybridNASTASRegimeDetector:
     def _perform_clustering(self, features: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
         """Perform clustering on combined features."""
         try:
-            tprint(f"🔍 Performing clustering on {features.shape[0]} samples with {features.shape[1]} features", color="blue")
+            tprint(f"🔍 [HYBRID_NAS_TAS] Performing clustering on {features.shape[0]} samples with {features.shape[1]} features", color="blue")
+            tprint_debug(f"📊 [HYBRID_NAS_TAS] Features shape: {features.shape}, n_regimes: {self.config.n_regimes}")
             self.logger.info("🔍 Performing clustering on combined features...")
 
             # Use globally imported clustering algorithms
-
             algorithm = self.config.clustering_config.get('algorithm', 'adaptive')
+            tprint(f"🎯 [HYBRID_NAS_TAS] Using clustering algorithm: {algorithm}", color="cyan")
 
             if algorithm == 'adaptive':
+                tprint("🧠 [HYBRID_NAS_TAS] Using adaptive algorithm selection", color="blue")
                 # Try different algorithms and choose best
                 algorithms = {
                     'kmeans': KMeans(n_clusters=self.config.n_regimes, random_state=42),
                     'gmm': GaussianMixture(n_components=self.config.n_regimes, random_state=42),
                     'agglomerative': AgglomerativeClustering(n_clusters=self.config.n_regimes)
                 }
+                tprint_debug(f"🔧 [HYBRID_NAS_TAS] Testing {len(algorithms)} algorithms: {list(algorithms.keys())}")
 
                 best_score = -1
                 best_labels = None
@@ -543,64 +624,88 @@ class HybridNASTASRegimeDetector:
 
                 for name, alg in algorithms.items():
                     try:
+                        tprint_debug(f"🧪 [HYBRID_NAS_TAS] Testing {name} algorithm...")
                         labels = alg.fit_predict(features)
 
                         # Calculate silhouette score
                         if len(set(labels)) > 1:
                             score = silhouette_score(features, labels)
+                            tprint_debug(f"📊 [HYBRID_NAS_TAS] {name} silhouette score: {score:.3f}")
                         else:
                             score = 0.0
+                            tprint_debug(f"⚠️ [HYBRID_NAS_TAS] {name} produced single cluster, score: 0.0")
 
                         if score > best_score:
                             best_score = score
                             best_labels = labels
                             best_algorithm = name
+                            tprint(f"🏆 [HYBRID_NAS_TAS] New best algorithm: {name} (score: {score:.3f})", color="green")
 
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"❌ [HYBRID_NAS_TAS] {name} algorithm failed: {e}")
                         continue
 
                 if best_labels is None:
+                    tprint_error("❌ [HYBRID_NAS_TAS] No clustering algorithm succeeded")
                     raise ValueError("No clustering algorithm succeeded")
 
                 labels = best_labels
+                tprint(f"✅ [HYBRID_NAS_TAS] Adaptive selection completed: {best_algorithm} (score: {best_score:.3f})", color="green")
 
             elif algorithm == 'kmeans':
+                tprint("🔵 [HYBRID_NAS_TAS] Using K-Means clustering", color="blue")
                 kmeans = KMeans(n_clusters=self.config.n_regimes, random_state=42)
                 labels = kmeans.fit_predict(features)
+                tprint("✅ [HYBRID_NAS_TAS] K-Means clustering completed", color="green")
 
             elif algorithm == 'gmm':
+                tprint("🟢 [HYBRID_NAS_TAS] Using Gaussian Mixture Model clustering", color="blue")
                 gmm = GaussianMixture(n_components=self.config.n_regimes, random_state=42)
                 labels = gmm.fit_predict(features)
+                tprint("✅ [HYBRID_NAS_TAS] GMM clustering completed", color="green")
 
             else:  # agglomerative
+                tprint("🟡 [HYBRID_NAS_TAS] Using Agglomerative clustering", color="blue")
                 agg = AgglomerativeClustering(n_clusters=self.config.n_regimes)
                 labels = agg.fit_predict(features)
+                tprint("✅ [HYBRID_NAS_TAS] Agglomerative clustering completed", color="green")
 
             # Calculate clustering metrics
+            tprint("📊 [HYBRID_NAS_TAS] Calculating clustering metrics", color="blue")
             metrics = {}
             try:
                 if len(set(labels)) > 1:
-                    metrics['silhouette_score'] = silhouette_score(features, labels)
-                    metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, labels)
+                    silhouette = silhouette_score(features, labels)
+                    calinski = calinski_harabasz_score(features, labels)
+                    metrics['silhouette_score'] = silhouette
+                    metrics['calinski_harabasz_score'] = calinski
+                    tprint(f"📈 [HYBRID_NAS_TAS] Silhouette score: {silhouette:.3f}", color="cyan")
+                    tprint(f"📈 [HYBRID_NAS_TAS] Calinski-Harabasz score: {calinski:.3f}", color="cyan")
                 else:
                     metrics['silhouette_score'] = 0.0
                     metrics['calinski_harabasz_score'] = 0.0
-            except:
+                    tprint("⚠️ [HYBRID_NAS_TAS] Single cluster detected, metrics set to 0.0", color="yellow")
+            except Exception as e:
+                tprint_warning(f"⚠️ [HYBRID_NAS_TAS] Metrics calculation failed: {e}")
                 metrics['silhouette_score'] = 0.0
                 metrics['calinski_harabasz_score'] = 0.0
 
+            unique_clusters = len(set(labels))
             self.logger.info(f"   Clustering completed with algorithm: {algorithm}")
             self.logger.info(f"   Silhouette score: {metrics.get('silhouette_score', 0):.3f}")
             
-            tprint(f"✅ Clustering completed: {algorithm}, silhouette score: {metrics.get('silhouette_score', 0):.3f}", color="green")
+            tprint_success(f"✅ [HYBRID_NAS_TAS] Clustering completed: {algorithm}, {unique_clusters} clusters, silhouette: {metrics.get('silhouette_score', 0):.3f}")
+            tprint_performance(f"⚡ [HYBRID_NAS_TAS] Clustering performance: {len(labels)} samples clustered into {unique_clusters} regimes")
             return labels, metrics
 
         except Exception as e:
             self.logger.error(f"Clustering failed: {e}")
-            tprint(f"❌ Clustering failed: {e}, using random fallback", color="red")
+            tprint_error(f"❌ [HYBRID_NAS_TAS] Clustering failed: {e}, using random fallback")
+            tprint_debug(f"🔍 [HYBRID_NAS_TAS] Clustering fallback reason: {str(e)}")
             # Fallback to simple clustering
             n_samples = len(features)
             labels = np.random.randint(0, self.config.n_regimes, n_samples)
+            tprint_warning(f"⚠️ [HYBRID_NAS_TAS] Using random fallback: {n_samples} samples, {self.config.n_regimes} regimes")
             return labels, {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0}
 
     def _calculate_regime_probabilities(self,

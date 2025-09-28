@@ -114,8 +114,7 @@ class UtilityIntegrationExample:
         self.matrix_ops = UnifiedMatrixOperations(
             enable_gpu=True,
             enable_memory_optimization=True,
-            enable_parallel=True,
-            optimization_level='aggressive'
+            enable_parallel=True
         )
 
         logger.info("✅ All utility tools initialized for example")

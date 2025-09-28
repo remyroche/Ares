@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from dataclasses import dataclass
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 
 try:
@@ -205,14 +205,68 @@ class MarketDataProcessor:
             if self.config.end_date:
                 end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
             
-            # Try processed data first
-            data = manager.read_data(
-                self.config.symbol, 
-                self.config.timeframe, 
-                start_date=start_date, 
-                end_date=end_date, 
-                data_type=self.config.data_type
-            )
+            # If date filtering is requested, load all data first to determine available range
+            if start_date or end_date:
+                self.logger.info(f"🔍 Date filtering requested, loading all data first to determine available range")
+                # Load all data first without date filtering
+                all_data = manager.read_data(
+                    self.config.symbol, 
+                    self.config.timeframe, 
+                    start_date=None, 
+                    end_date=None, 
+                    data_type=self.config.data_type
+                )
+                
+                if all_data is not None and not all_data.empty:
+                    # Determine the last 10 days of available data
+                    if 'timestamp' in all_data.columns:
+                        # Convert timestamp to datetime
+                        timestamps = pd.to_datetime(all_data['timestamp'], unit='s')
+                        max_date = timestamps.max()
+                        min_date = timestamps.min()
+                        
+                        self.logger.info(f"📅 Available data range: {min_date.date()} to {max_date.date()}")
+                        
+                        # Use the last 10 days of available data instead of hardcoded dates
+                        if start_date is None:
+                            start_date = max_date - timedelta(days=10)
+                        if end_date is None:
+                            end_date = max_date
+                            
+                        self.logger.info(f"📅 Using date range: {start_date.date()} to {end_date.date()}")
+                        
+                        # Apply date filtering to the loaded data
+                        mask = (timestamps >= start_date) & (timestamps <= end_date)
+                        data = all_data[mask]
+                        
+                        if data.empty:
+                            self.logger.warning(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
+                            # Fall back to the last 10 days of available data
+                            last_10_days = max_date - timedelta(days=10)
+                            mask = timestamps >= last_10_days
+                            data = all_data[mask]
+                            self.logger.info(f"📅 Fallback: Using last 10 days from {last_10_days.date()}")
+                    else:
+                        # No timestamp column, use the original data
+                        data = all_data
+                else:
+                    # No data available, try with original date filtering
+                    data = manager.read_data(
+                        self.config.symbol, 
+                        self.config.timeframe, 
+                        start_date=start_date, 
+                        end_date=end_date, 
+                        data_type=self.config.data_type
+                    )
+            else:
+                # No date filtering requested, load all data
+                data = manager.read_data(
+                    self.config.symbol, 
+                    self.config.timeframe, 
+                    start_date=None, 
+                    end_date=None, 
+                    data_type=self.config.data_type
+                )
             
             if data is None or data.empty:
                 # Fallback to raw data

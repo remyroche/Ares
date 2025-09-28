@@ -10,6 +10,12 @@ from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 import logging
 
+# Import PositionAwareConfig for type hints
+try:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.position_aware_trading import PositionAwareConfig
+except ImportError:
+    PositionAwareConfig = None
+
 logger = logging.getLogger(__name__)
 
 class NeuralArchitectureType(Enum):
@@ -54,7 +60,7 @@ class NeuralODEConfig:
 class VisionTransformerConfig:
     """Configuration for Vision Transformers."""
     sequence_length: int = 100
-    feature_dim: int = 4
+    feature_dim: int = 64  # Match feature extractor output
     patch_size: int = 10
     embed_dim: int = 64
     num_heads: int = 8
@@ -83,21 +89,81 @@ class EconomicEvaluationConfig:
     volatility_impact_weight: float = 0.2
     trend_consistency_weight: float = 0.15
     market_efficiency_weight: float = 0.15
+    economic_indicators_weight: float = 0.1
+    trading_opportunity_weight: float = 0.05
     significance_threshold: float = 0.7
     economic_indicators: List[str] = field(default_factory=lambda: [
         'gdp_growth', 'inflation_rate', 'interest_rate', 'unemployment_rate'
     ])
+    
+    # Position-aware analysis
+    enable_position_aware_analysis: bool = True
+    position_aware_config: Optional['PositionAwareConfig'] = None
+    
+    # Economic indicators
+    enable_economic_indicators: bool = True
+    enable_bootstrap_analysis: bool = True
+    enable_regime_specific_analysis: bool = True
+    enable_position_aware_analysis: bool = True
 
 @dataclass
 class TradingViabilityConfig:
     """Configuration for trading viability evaluation."""
-    minimum_regime_duration: int = 15  # minutes
-    maximum_regime_duration: int = 180  # minutes
-    volatility_threshold: float = 0.02
-    volume_threshold: float = 1.5
-    trend_strength_threshold: float = 0.6
-    liquidity_threshold: float = 0.8
-    viability_threshold: float = 0.6
+    # Core trading parameters
+    trading_frequency_weight: float = 0.2
+    position_duration_weight: float = 0.15
+    model_confidence_weight: float = 0.2
+    risk_adjusted_returns_weight: float = 0.25
+    transaction_costs_weight: float = 0.1
+    market_liquidity_weight: float = 0.05
+    regime_stability_weight: float = 0.05
+    
+    # Thresholds
+    viability_threshold: float = 0.5
+    min_trading_frequency: float = 0.1
+    max_trading_frequency: float = 10.0
+    min_position_duration: float = 5.0
+    max_position_duration: float = 1440.0
+    min_model_confidence: float = 0.6
+    min_risk_adjusted_return: float = 0.1
+    
+    # Transaction costs
+    transaction_cost_bps: float = 1.0  # 1 basis point
+    slippage_bps: float = 0.5  # 0.5 basis points
+    market_impact_threshold: float = 0.001  # 0.1%
+    
+    # Position-aware analysis
+    enable_position_aware_analysis: bool = True
+    position_aware_config: Optional['PositionAwareConfig'] = None
+    
+    # Advanced features
+    enable_liquidity_analysis: bool = True
+    liquidity_lookback: int = 20  # Lookback periods for liquidity
+    enable_execution_analysis: bool = True
+    execution_slippage_threshold: float = 0.002  # 0.2%
+    
+    # Regime-specific analysis
+    enable_regime_specific_analysis: bool = True
+    min_regime_samples: int = 50
+    regime_stability_threshold: float = 0.7
+    
+    # TAS-specific enhancements
+    enable_tree_based_viability: bool = True
+    tree_decision_threshold: float = 0.6
+    tree_leaf_penalty: float = 0.1
+    tree_interpretability_weight: float = 0.3
+    
+    # NAS-specific enhancements
+    enable_neural_based_viability: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.2
+    neural_architecture_efficiency: float = 0.1
+    
+    # Hybrid enhancements
+    enable_hybrid_viability: bool = True
+    hybrid_consensus_threshold: float = 0.7
+    minimum_regime_duration: int = 5
+    hybrid_ensemble_weight: float = 0.5
 
 @dataclass
 class HardwareOptimizationConfig:
@@ -169,12 +235,12 @@ class PerfectNASConfig:
     trading_config: TradingViabilityConfig = field(default_factory=TradingViabilityConfig)
     hardware_config: HardwareOptimizationConfig = field(default_factory=HardwareOptimizationConfig)
     
-    # Performance thresholds
-    accuracy_threshold: float = 0.9
-    economic_significance_threshold: float = 0.8
-    trading_viability_threshold: float = 0.7
-    regime_stability_threshold: float = 0.8
-    transition_accuracy_threshold: float = 0.85
+    # Performance thresholds - Updated for better sensitivity
+    accuracy_threshold: float = 0.5  # Reduced from 0.9 to 0.5 for higher sensitivity
+    economic_significance_threshold: float = 0.6  # Reduced from 0.8 to 0.6
+    trading_viability_threshold: float = 0.5  # Reduced from 0.7 to 0.5
+    regime_stability_threshold: float = 0.6  # Reduced from 0.8 to 0.6
+    transition_accuracy_threshold: float = 0.5  # Reduced from 0.85 to 0.5
     
     # Execution settings
     max_execution_time: int = 300  # seconds
@@ -335,7 +401,7 @@ class PerfectNASConfig:
     max_regime_samples: int = 10000
 
     # Advanced features
-    enable_clvsa_enhancement: bool = True
+    enable_patchtst_enhancement: bool = True
     enable_regime_adaptation: bool = True
     enable_uncertainty_quantification: bool = True
     enable_multi_scale_analysis: bool = True

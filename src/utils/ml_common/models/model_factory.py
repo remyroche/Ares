@@ -15,12 +15,16 @@ Key Features:
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union, Type
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 import time
 from datetime import datetime
+
+# Suppress LightGBM warnings about no further splits
+warnings.filterwarnings('ignore', message='.*No further splits with positive gain.*')
 
 # PyTorch import for GPU acceleration
 try:

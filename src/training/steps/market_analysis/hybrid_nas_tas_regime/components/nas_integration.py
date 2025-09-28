@@ -92,17 +92,31 @@ class NASIntegrationComponent:
             Tuple of (features, metadata)
         """
         try:
+            tprint("🧠 [NAS_INTEGRATION] Starting NAS feature extraction", color="blue", bold=True)
+            tprint_debug(f"📊 [NAS_INTEGRATION] Market data shape: {market_data.shape}")
+            tprint_debug(f"📊 [NAS_INTEGRATION] Market data columns: {list(market_data.columns)}")
+            tprint_debug(f"🔧 [NAS_INTEGRATION] NAS detector available: {self.nas_detector is not None}")
+            
             if self.nas_detector is not None:
+                tprint("🔧 [NAS_INTEGRATION] Using NAS detector for feature extraction", color="blue")
                 # Use NAS detector for feature extraction
                 nas_results = self.nas_detector.detect_regimes(market_data)
+                tprint_success(f"✅ [NAS_INTEGRATION] NAS regime detection completed")
+                tprint_debug(f"📈 [NAS_INTEGRATION] NAS results keys: {list(nas_results.keys()) if isinstance(nas_results, dict) else 'Not a dict'}")
 
                 # Extract features from NAS results
+                tprint("🔧 [NAS_INTEGRATION] Extracting features from NAS results", color="cyan")
                 features = self._extract_features_from_nas_results(nas_results)
+                tprint_success(f"✅ [NAS_INTEGRATION] Features extracted: {features.shape}")
+                tprint_performance(f"⚡ [NAS_INTEGRATION] NAS features: {features.shape[0]} samples, {features.shape[1]} features")
 
                 # Calculate adaptive weight based on performance
+                tprint("⚖️ [NAS_INTEGRATION] Calculating adaptive weight", color="cyan")
                 adaptive_weight = self._calculate_adaptive_weight(nas_results)
+                tprint_debug(f"⚖️ [NAS_INTEGRATION] Adaptive weight: {adaptive_weight:.3f}")
 
                 # Add metadata
+                tprint("📊 [NAS_INTEGRATION] Building metadata", color="cyan")
                 metadata = {
                     'method': 'nas_detector',
                     'feature_dimensions': features.shape[1] if features.ndim > 1 else 1,
@@ -113,15 +127,23 @@ class NASIntegrationComponent:
                     'performance_metrics': self._extract_performance_metrics(nas_results),
                     'feature_quality': self._calculate_feature_quality(features)
                 }
+                tprint_success(f"✅ [NAS_INTEGRATION] Metadata built: {len(metadata)} fields")
+                tprint_debug(f"📊 [NAS_INTEGRATION] Confidence: {metadata['confidence']:.3f}, Architecture: {metadata['architecture']}")
 
+                tprint_success(f"🎉 [NAS_INTEGRATION] NAS feature extraction completed successfully")
                 return features, metadata
 
             else:
+                tprint_warning("⚠️ [NAS_INTEGRATION] NAS detector not available, using fallback")
+                tprint_debug(f"🔍 [NAS_INTEGRATION] NAS detector status: {self.nas_detector is None}")
                 # Fallback to manual feature extraction
                 return self._extract_nas_features_fallback(market_data)
 
         except Exception as e:
+            tprint_error(f"❌ [NAS_INTEGRATION] NAS feature extraction failed: {e}")
+            tprint_debug(f"🔍 [NAS_INTEGRATION] Error details: {str(e)}")
             self.logger.warning(f"NAS feature extraction failed: {e}, using fallback")
+            tprint("🔄 [NAS_INTEGRATION] Using fallback feature extraction", color="yellow")
             return self._extract_nas_features_fallback(market_data)
 
     def _extract_features_from_nas_results(self, nas_results) -> np.ndarray:

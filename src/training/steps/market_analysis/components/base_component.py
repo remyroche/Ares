@@ -19,6 +19,7 @@ class ComponentConfig:
     exchange: str = "binance"
     timeframe: str = "5m"
     data_dir: str = "historical_data"
+    output_dir: str = "data_cache"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False

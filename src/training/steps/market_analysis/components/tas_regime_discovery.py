@@ -178,7 +178,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'architecture_type': 'TAS',
                         'tree_depth': tas_config.get('tree_depth', 6),
                         'n_estimators': tas_config.get('n_estimators', 1000),
-                        'enable_clvsa_enhancement': tas_config.get('enable_clvsa_enhancement', True),
+                        'enable_patchtst_enhancement': tas_config.get('enable_patchtst_enhancement', True),
                         'enable_statistical_methods': tas_config.get('enable_statistical_methods', True),
                         'enable_economic_evaluation': tas_config.get('enable_economic_evaluation', True),
                         'enable_meta_learning': tas_config.get('enable_meta_learning', True)
@@ -254,7 +254,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'min_samples_split': 10,
                 'min_samples_leaf': 5,
                 'max_features': 'sqrt',
-                'enable_clvsa_enhancement': True,
+                'enable_patchtst_enhancement': True,
                 'enable_statistical_methods': True,
                 'enable_economic_evaluation': True,
                 'enable_meta_learning': True,
@@ -283,7 +283,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'min_samples_split': 10,
                 'min_samples_leaf': 5,
                 'max_features': 'sqrt',
-                'enable_clvsa_enhancement': True,
+                'enable_patchtst_enhancement': True,
                 'enable_statistical_methods': True,
                 'enable_economic_evaluation': True,
                 'enable_meta_learning': True
@@ -309,7 +309,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 min_samples_split=tas_config.get('min_samples_split', 10),
                 min_samples_leaf=tas_config.get('min_samples_leaf', 5),
                 max_features=tas_config.get('max_features', 'sqrt'),
-                enable_clvsa_enhancement=tas_config.get('enable_clvsa_enhancement', True),
+                enable_patchtst_enhancement=tas_config.get('enable_patchtst_enhancement', True),
                 enable_statistical_methods=tas_config.get('enable_statistical_methods', True),
                 enable_economic_evaluation=tas_config.get('enable_economic_evaluation', True),
                 enable_meta_learning=tas_config.get('enable_meta_learning', True),
@@ -331,7 +331,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tas_result = tas_detector.detect_regimes(
                 market_data,
                 optimize_performance=True,
-                enable_clvsa_enhancement=True
+                enable_patchtst_enhancement=True
             )
             
             return tas_result

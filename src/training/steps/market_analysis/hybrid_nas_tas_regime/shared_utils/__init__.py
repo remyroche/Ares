@@ -28,6 +28,9 @@ class EconomicSignificanceConfig:
     """Configuration for economic significance evaluation."""
     significance_threshold: float = 0.5
     min_regime_duration: int = 10
+    enable_position_aware_analysis: bool = True
+    enable_economic_indicators: bool = True
+    enable_bootstrap_analysis: bool = True
 
 # TradingViabilityConfig is now imported from unified_trading_viability_evaluator
 
@@ -55,7 +58,13 @@ class HardwareOptimizationConfig:
 class MetricsReportingConfig:
     """Configuration for metrics reporting."""
     include_detailed_metrics: bool = True
-    save_to_file: bool = False
+    include_visualization_data: bool = True
+    include_performance_metrics: bool = True
+    include_economic_metrics: bool = True
+    include_trading_metrics: bool = True
+    report_format: str = "json"  # "json", "csv", "html"
+    save_to_file: bool = True
+    output_directory: str = "reports"
 
 # Placeholder managers
 class EconomicSignificanceEvaluator:
@@ -214,6 +223,12 @@ from .unified_evaluation_framework import (
     create_evaluation_framework, create_basic_evaluator, create_trading_evaluator
 )
 
+# Clustering Quality Metrics
+from .clustering_quality_metrics import (
+    ClusteringQualityMetrics, ClusteringQualityConfig, ClusteringQualityResult,
+    create_clustering_quality_evaluator, quick_clustering_evaluation
+)
+
 __all__ = [
     # Original utilities
     'DataPipelineManager', 'MarketDataProcessor',
@@ -322,5 +337,9 @@ __all__ = [
     # Unified Evaluation Framework
     'UnifiedEvaluationFramework', 'EvaluationType', 'EvaluationMetric',
     'EvaluationResult', 'EvaluationConfig',
-    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator'
+    'create_evaluation_framework', 'create_basic_evaluator', 'create_trading_evaluator',
+
+    # Clustering Quality Metrics
+    'ClusteringQualityMetrics', 'ClusteringQualityConfig', 'ClusteringQualityResult',
+    'create_clustering_quality_evaluator', 'quick_clustering_evaluation'
 ]

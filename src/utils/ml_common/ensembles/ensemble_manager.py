@@ -1016,23 +1016,118 @@ class EnsembleManager:
     def _get_optimization_used(self) -> List[str]:
         """Get list of optimizations used."""
         self.logger.debug("🔍 Getting list of optimizations used...")
-        
+
         optimizations = []
-        
+
         if self.config.enable_gpu_acceleration and self.m1_gpu:
             optimizations.append("m1_gpu_acceleration")
             self.logger.debug("✅ M1 GPU acceleration enabled")
-        
+
         if self.config.enable_memory_optimization and self.m1_memory:
             optimizations.append("m1_memory_optimization")
             self.logger.debug("✅ M1 memory optimization enabled")
-        
+
         if self.config.enable_parallel_processing and self.m1_cpu:
             optimizations.append("m1_parallel_processing")
             self.logger.debug("✅ M1 parallel processing enabled")
-        
+
         self.logger.debug(f"📊 Optimizations used: {optimizations}")
         return optimizations
+
+    @staticmethod
+    def _create_voting_ensemble_static(models: Dict[str, Any]) -> Any:
+        """Create voting ensemble (static method for utilities)."""
+        from sklearn.ensemble import VotingClassifier, VotingRegressor
+
+        # Determine if classification or regression
+        is_classification = any('Classifier' in str(type(model)) for model in models.values())
+
+        # Prepare estimators
+        estimators = [(name, model) for name, model in models.items()]
+
+        # Create voting ensemble
+        if is_classification:
+            ensemble = VotingClassifier(
+                estimators=estimators,
+                voting='soft',
+                n_jobs=-1
+            )
+        else:
+            ensemble = VotingRegressor(
+                estimators=estimators,
+                n_jobs=-1
+            )
+
+        return ensemble
+
+    @staticmethod
+    def _create_stacking_ensemble_static(models: Dict[str, Any]) -> Any:
+        """Create stacking ensemble (static method for utilities)."""
+        from sklearn.ensemble import StackingClassifier, StackingRegressor
+        from sklearn.linear_model import LogisticRegression, LinearRegression
+
+        # Determine if classification or regression
+        is_classification = any('Classifier' in str(type(model)) for model in models.values())
+
+        # Prepare base estimators
+        base_estimators = [(name, model) for name, model in models.items()]
+
+        # Create meta-learner
+        if is_classification:
+            meta_learner = LogisticRegression(random_state=42)
+            ensemble = StackingClassifier(
+                estimators=base_estimators,
+                final_estimator=meta_learner,
+                cv=5,
+                stack_method='predict_proba',
+                n_jobs=-1
+            )
+        else:
+            meta_learner = LinearRegression()
+            ensemble = StackingRegressor(
+                estimators=base_estimators,
+                final_estimator=meta_learner,
+                cv=5,
+                n_jobs=-1
+            )
+
+        return ensemble
+
+    @staticmethod
+    def _create_weighted_average_ensemble_static(models: Dict[str, Any]) -> Any:
+        """Create weighted average ensemble (static method for utilities)."""
+        class WeightedAverageEnsemble:
+            def __init__(self, models, weights):
+                self.models = models
+                self.weights = weights
+                self.is_fitted = False
+
+            def fit(self, X, y):
+                # Train all models
+                for model in self.models.values():
+                    model.fit(X, y)
+                self.is_fitted = True
+
+            def predict(self, X):
+                if not self.is_fitted:
+                    raise ValueError("Ensemble not fitted")
+
+                predictions = []
+                for model, weight in zip(self.models.values(), self.weights):
+                    pred = model.predict(X) * weight
+                    predictions.append(pred)
+
+                return np.sum(predictions, axis=0)
+
+        # Calculate weights based on model count
+        weights = np.ones(len(models)) / len(models)
+
+        ensemble = WeightedAverageEnsemble(
+            models=models,
+            weights=weights
+        )
+
+        return ensemble
     
     @traced(span_name='predict')
     async def predict(self, X: pd.DataFrame) -> Tuple[np.ndarray, Optional[np.ndarray]]:

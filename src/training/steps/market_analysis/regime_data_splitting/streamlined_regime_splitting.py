@@ -131,28 +131,35 @@ class StreamlinedRegimeDataSplitting:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the streamlined regime data splitting component."""
+        tprint('🔧 Initializing StreamlinedRegimeDataSplitting')
         self.config = config or {}
         self.logger = system_logger.getChild('StreamlinedRegimeSplitting')
+        tprint('✅ Logger initialized')
 
         # Initialize hardware optimizations
         self.hardware_manager = UnifiedHardwareManager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.gpu_manager = get_m1_gpu_manager()
+        tprint('✅ Hardware optimizations initialized')
 
         # Initialize data validation
         self.data_quality_framework = DataQualityFramework()
         self.cross_step_validator = CrossStepValidator()
+        tprint('✅ Data validation utilities initialized')
 
         # Initialize metrics tracking
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[float] = None
+        tprint('✅ Metrics tracking initialized')
 
         # Initialize streaming configuration
         self.chunk_size = self.config.get('chunk_size', 10000)
         self.max_memory_gb = self.config.get('max_memory_gb', 8.0)
+        tprint(f'📊 Streaming config: chunk_size={self.chunk_size}, max_memory_gb={self.max_memory_gb}')
 
         self.logger.info("✅ Streamlined regime data splitting initialized")
+        tprint("✅ Streamlined regime data splitting initialized")
 
     async def execute_regime_splitting(
         self,
@@ -171,30 +178,45 @@ class StreamlinedRegimeDataSplitting:
         """
         self.start_time = time.time()
         self.logger.info("🚀 Starting streamlined regime data splitting")
+        tprint("🚀 Starting streamlined regime data splitting")
 
         try:
             # Validate inputs
+            tprint("🔍 Validating inputs")
             validation_result = self._validate_inputs(training_input)
             if not validation_result:
+                tprint("❌ Input validation failed")
                 return RegimeSplittingResult.failure_result("Input validation failed")
+            tprint("✅ Input validation passed")
 
             # Load and validate regime data
+            tprint("📊 Loading regime data")
             regime_data = await self._load_regime_data_optimized(training_input)
             if regime_data is None:
+                tprint("❌ Failed to load regime data")
                 return RegimeSplittingResult.failure_result("Failed to load regime data")
+            tprint(f"✅ Regime data loaded: {len(regime_data)} rows")
 
             # Perform data quality assessment
+            tprint("📈 Assessing data quality")
             quality_score = self._assess_data_quality(regime_data)
             if quality_score < 0.5:
+                tprint(f"❌ Data quality too low: {quality_score}")
                 return RegimeSplittingResult.failure_result("Data quality too low for processing")
+            tprint(f"✅ Data quality score: {quality_score:.2f}")
 
             # Apply regime tagging using streaming approach
+            tprint("🏷️ Applying regime tagging with streaming approach")
             tagged_data = await self._apply_regime_tagging_streaming(regime_data)
+            tprint("✅ Regime tagging completed")
 
             # Validate tagged data
+            tprint("🔍 Validating tagged data")
             validation_passed = self._validate_tagged_data(tagged_data)
             if not validation_passed:
+                tprint("❌ Tagged data validation failed")
                 return RegimeSplittingResult.failure_result("Tagged data validation failed")
+            tprint("✅ Tagged data validation passed")
 
             # Calculate final metrics
             self._calculate_final_metrics(tagged_data)

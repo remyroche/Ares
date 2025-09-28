@@ -121,8 +121,7 @@ def create_feature_bank_with_defaults() -> FeatureBank:
             TrendFeatureGenerator,
             OscillatorFeatureGenerator,
             SupportResistanceFeatureGenerator,
-            CandlestickPatternFeatureGenerator,
-            HMMRegimeFeatureGenerator
+            CandlestickPatternFeatureGenerator
         )
         
         # Create and register default generators
@@ -134,8 +133,7 @@ def create_feature_bank_with_defaults() -> FeatureBank:
             TrendFeatureGenerator.create_default(),
             OscillatorFeatureGenerator.create_default(),
             SupportResistanceFeatureGenerator.create_default(),
-            CandlestickPatternFeatureGenerator.create_default(),
-            HMMRegimeFeatureGenerator.create_default()
+            CandlestickPatternFeatureGenerator.create_default()
         ]
         
         for generator in default_generators:

@@ -87,9 +87,7 @@ class UnifiedUtilitiesIntegrationExample:
                 max_position_duration=1440.0,
                 min_model_confidence=0.6,
                 min_risk_adjusted_return=0.1,
-                enable_position_aware_analysis=True,
-                enable_liquidity_analysis=True,
-                enable_execution_analysis=True
+                enable_position_aware_analysis=True
             )
             self.trading_evaluator = create_unified_trading_viability_evaluator(trading_config)
             

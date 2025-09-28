@@ -11,17 +11,18 @@ import torch.nn as nn
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from dataclasses import dataclass
+from src.utils.tprint import tprint
 
 # Import NAS modeling components with fallback
 try:
-    from ..nas_modeling.core.nas_evaluator import NASEvaluator
-    from ..nas_modeling.core.nas_trainer import NASTrainer
-    from ..nas_modeling.core.hardware_acceleration import OptimizedTrainer
-    from ..nas_modeling.core.advanced_preprocessing import AdvancedPreprocessor
-    from ..nas_modeling.core.meta_learning import MetaNAS_Optimizer
-    from ..nas_modeling.core.neural_odes import NeuralODE
-    from ..nas_modeling.core.neural_state_space_nas import NeuralSSM_NAS_Optimizer
-    from ..nas_modeling.core.rl_nas import RL_NAS_Optimizer
+    from ...nas_modeling.core.nas_evaluator import NASEvaluator
+    from ...nas_modeling.core.nas_trainer import NASTrainer
+    from ...nas_modeling.core.hardware_acceleration import OptimizedTrainer
+    from ...nas_modeling.core.advanced_preprocessing import AdvancedPreprocessor
+    from ...nas_modeling.core.meta_learning import MetaNAS_Optimizer
+    from ...nas_modeling.core.neural_odes import NeuralODE
+    from ...nas_modeling.core.neural_state_space_nas import NeuralSSM_NAS_Optimizer
+    from ...nas_modeling.core.rl_nas import RL_NAS_Optimizer
     NAS_MODELING_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"NAS modeling components not available: {e}")
@@ -71,17 +72,22 @@ class EnhancedNASModelingIntegration:
         # Initialize NAS modeling components if available
         if NAS_MODELING_AVAILABLE:
             try:
+                tprint("🚀 Initializing NAS modeling components...", color="blue")
                 self._initialize_nas_modeling_components()
                 self.logger.info("✅ Enhanced NAS modeling integration initialized with full components")
+                tprint("✅ Enhanced NAS modeling integration initialized with full components", color="green")
             except Exception as e:
                 self.logger.warning(f"NAS modeling components initialization failed: {e}")
+                tprint(f"⚠️ NAS modeling components initialization failed: {e}", color="yellow")
                 self._initialize_fallback_components()
         else:
             self.logger.warning("NAS modeling components not available - using fallback implementations")
+            tprint("⚠️ NAS modeling components not available - using fallback implementations", color="yellow")
             self._initialize_fallback_components()
     
     def _initialize_nas_modeling_components(self):
         """Initialize NAS modeling components."""
+        tprint("🔧 Initializing NAS Evaluator...", color="cyan")
         # Initialize NAS Evaluator
         evaluator_config = {
             'enable_hardware_acceleration': self.config.enable_hardware_acceleration,
@@ -89,7 +95,9 @@ class EnhancedNASModelingIntegration:
             'enable_memory_optimization': self.config.enable_memory_optimization
         }
         self.nas_evaluator = NASEvaluator(evaluator_config)
+        tprint("✅ NAS Evaluator initialized", color="green")
         
+        tprint("🔧 Initializing NAS Trainer...", color="cyan")
         # Initialize NAS Trainer
         trainer_config = {
             'batch_size': self.config.batch_size,
@@ -98,6 +106,7 @@ class EnhancedNASModelingIntegration:
             'enable_hardware_acceleration': self.config.enable_hardware_acceleration
         }
         self.nas_trainer = NASTrainer(trainer_config)
+        tprint("✅ NAS Trainer initialized", color="green")
         
         # Initialize Optimized Trainer
         if self.config.enable_hardware_acceleration:
@@ -174,14 +183,22 @@ class EnhancedNASModelingIntegration:
                       metrics: List[str] = None) -> Dict[str, float]:
         """Evaluate model using integrated evaluator."""
         try:
+            tprint("📊 Evaluating model...", color="blue")
             if self.nas_evaluator:
-                return self.nas_evaluator.evaluate_model(model, data_loader, metrics)
+                tprint("🔧 Using NAS evaluator...", color="cyan")
+                result = self.nas_evaluator.evaluate_model(model, data_loader, metrics)
+                tprint(f"✅ Model evaluation completed: {len(result)} metrics", color="green")
+                return result
             else:
+                tprint("⚠️ Using fallback model evaluation...", color="yellow")
                 # Fallback model evaluation
-                return self._fallback_model_evaluation(model, data_loader, metrics)
+                result = self._fallback_model_evaluation(model, data_loader, metrics)
+                tprint(f"✅ Fallback model evaluation completed: {len(result)} metrics", color="green")
+                return result
                 
         except Exception as e:
             self.logger.warning(f"Model evaluation failed: {e}")
+            tprint(f"❌ Model evaluation failed: {e}", color="red")
             return {'error': str(e)}
     
     def _fallback_model_evaluation(self, model: nn.Module, data_loader: torch.utils.data.DataLoader, 
@@ -234,16 +251,27 @@ class EnhancedNASModelingIntegration:
                    val_loader: torch.utils.data.DataLoader = None) -> Dict[str, Any]:
         """Train model using integrated trainer."""
         try:
+            tprint("🚀 Training model...", color="blue")
             if self.optimized_trainer:
-                return self.optimized_trainer.train(model, train_loader, val_loader)
+                tprint("🔧 Using optimized trainer...", color="cyan")
+                result = self.optimized_trainer.train(model, train_loader, val_loader)
+                tprint(f"✅ Model training completed with optimized trainer", color="green")
+                return result
             elif self.nas_trainer:
-                return self.nas_trainer.train(model, train_loader, val_loader)
+                tprint("🔧 Using NAS trainer...", color="cyan")
+                result = self.nas_trainer.train(model, train_loader, val_loader)
+                tprint(f"✅ Model training completed with NAS trainer", color="green")
+                return result
             else:
+                tprint("⚠️ Using fallback model training...", color="yellow")
                 # Fallback model training
-                return self._fallback_model_training(model, train_loader, val_loader)
+                result = self._fallback_model_training(model, train_loader, val_loader)
+                tprint(f"✅ Fallback model training completed", color="green")
+                return result
                 
         except Exception as e:
             self.logger.warning(f"Model training failed: {e}")
+            tprint(f"❌ Model training failed: {e}", color="red")
             return {'error': str(e)}
     
     def _fallback_model_training(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, 

@@ -73,7 +73,7 @@ class TASModelSelector:
                 market_data=market_data,
                 timestamps=timestamps,
                 optimize_performance=True,
-                enable_clvsa_enhancement=True
+                enable_patchtst_enhancement=True
             )
             
             if not tas_result.success:

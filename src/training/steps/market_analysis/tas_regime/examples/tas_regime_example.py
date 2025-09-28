@@ -74,7 +74,7 @@ def main():
         print("\n⚙️ Creating TAS configuration...")
         config = TASRegimeConfig.create_short_term_trading_config()
         config.n_regimes = 8  # Use 8 regimes for this example
-        config.enable_clvsa_enhancement = True
+        config.enable_patchtst_enhancement = True
         config.enable_statistical_methods = True
         config.enable_bootstrap_analysis = True
         config.enable_uncertainty_quantification = True
@@ -93,7 +93,7 @@ def main():
             market_data=market_data[['open', 'high', 'low', 'close', 'volume']].values,
             timestamps=timestamps,
             optimize_performance=True,
-            enable_clvsa_enhancement=True
+            enable_patchtst_enhancement=True
         )
 
         # Analyze results

@@ -21,6 +21,12 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, StepL
 from torch.utils.data import DataLoader, TensorDataset
 import warnings
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 from .financial_architecture_primitives import RegimeType, FinancialActivationType
 from .financial_loss_functions import FinancialLossType, create_financial_loss_function, CompositeFinancialLoss
 from .financial_optimizers import FinancialOptimizerConfig, create_financial_optimizer
@@ -145,10 +151,12 @@ class RegimeAwareTrainer:
     """Regime-aware trainer for financial models."""
     
     def __init__(self, config: RegimeAwareTrainingConfig):
+        tprint("🎯 [REGIME_AWARE_TRAINER] Initializing Regime-Aware Trainer", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Training state
+        tprint("📊 [REGIME_AWARE_TRAINER] Setting up training state", color="cyan")
         self.current_regime = None
         self.regime_history = []
         self.regime_models = {}
@@ -156,21 +164,26 @@ class RegimeAwareTrainer:
         self.regime_transitions = []
         
         # Performance tracking
+        tprint("📈 [REGIME_AWARE_TRAINER] Setting up performance tracking", color="cyan")
         self.training_history = []
         self.validation_history = []
         self.regime_adaptation_history = []
         
         # Regime detection
+        tprint("🔍 [REGIME_AWARE_TRAINER] Setting up regime detection", color="cyan")
         self.regime_detector = None
         self.regime_detection_history = []
         
         # Loss function
+        tprint("📉 [REGIME_AWARE_TRAINER] Creating loss function", color="cyan")
         self.loss_function = self._create_loss_function()
         
         # Optimizer and scheduler
+        tprint("⚙️ [REGIME_AWARE_TRAINER] Setting up optimizer and scheduler", color="cyan")
         self.optimizer = None
         self.scheduler = None
         
+        tprint_success("✅ [REGIME_AWARE_TRAINER] Regime-Aware Trainer initialized")
         self.logger.info("✅ Regime-Aware Trainer initialized")
         self.logger.info(f"   Training Mode: {config.training_mode.value}")
         self.logger.info(f"   Regime Awareness: {config.enable_regime_awareness}")
@@ -178,10 +191,13 @@ class RegimeAwareTrainer:
     
     def _create_loss_function(self) -> nn.Module:
         """Create loss function based on configuration."""
+        tprint(f"📉 [REGIME_AWARE_TRAINER] _create_loss_function() called", color="blue")
+        tprint(f"📊 [REGIME_AWARE_TRAINER] Primary loss: {self.config.primary_loss_type.value}, Secondary losses: {len(self.config.secondary_loss_types)}", color="cyan")
         if len(self.config.secondary_loss_types) > 0:
             # Create composite loss function
+            tprint("📉 [REGIME_AWARE_TRAINER] Creating composite loss function", color="yellow")
             loss_weights = self.config.loss_weights
-            return CompositeFinancialLoss(
+            loss_function = CompositeFinancialLoss(
                 FinancialLossConfig(
                     loss_type=self.config.primary_loss_type,
                     enable_regime_awareness=self.config.enable_regime_awareness
@@ -190,28 +206,38 @@ class RegimeAwareTrainer:
             )
         else:
             # Create single loss function
+            tprint("📉 [REGIME_AWARE_TRAINER] Creating single loss function", color="yellow")
             loss_config = FinancialLossConfig(
                 loss_type=self.config.primary_loss_type,
                 enable_regime_awareness=self.config.enable_regime_awareness
             )
-            return create_financial_loss_function(loss_config)
+            loss_function = create_financial_loss_function(loss_config)
+        
+        tprint_success("✅ [REGIME_AWARE_TRAINER] _create_loss_function() completed successfully")
+        tprint(f"📊 [REGIME_AWARE_TRAINER] _create_loss_function() outcome: {type(loss_function).__name__}", color="green")
+        return loss_function
     
     def train(self, model: nn.Module, train_data: Tuple[torch.Tensor, torch.Tensor],
               validation_data: Tuple[torch.Tensor, torch.Tensor],
               regime_data: Optional[Dict[str, Any]] = None) -> RegimeTrainingResult:
         """Train model with regime awareness."""
         start_time = time.time()
+        tprint("🚀 [REGIME_AWARE_TRAINER] Starting Regime-Aware Training", color="cyan", bold=True)
+        tprint(f"📊 [REGIME_AWARE_TRAINER] Training mode: {self.config.training_mode.value}", color="blue")
         self.logger.info("🚀 Starting Regime-Aware Training...")
         
         try:
             # Initialize training components
+            tprint("🔧 [REGIME_AWARE_TRAINER] Initializing training components", color="yellow")
             self._initialize_training_components(model)
             
             # Detect initial regimes
             if regime_data is not None:
+                tprint("🔍 [REGIME_AWARE_TRAINER] Detecting initial regimes", color="yellow")
                 self._detect_initial_regimes(regime_data)
             
             # Training loop
+            tprint(f"🔄 [REGIME_AWARE_TRAINER] Starting training loop for {self.config.max_epochs} epochs", color="yellow")
             best_model_state = None
             best_score = -np.inf
             patience_counter = 0
@@ -219,6 +245,7 @@ class RegimeAwareTrainer:
             for epoch in range(self.config.max_epochs):
                 # Detect regime changes
                 if self.config.enable_regime_awareness and epoch % self.config.regime_detection_frequency == 0:
+                    tprint(f"🔍 [REGIME_AWARE_TRAINER] Detecting regime changes at epoch {epoch}", color="blue")
                     self._detect_regime_changes(epoch, regime_data)
                 
                 # Training step

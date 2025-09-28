@@ -26,16 +26,19 @@ def tprint(message: str, level: str = "INFO") -> None:
 
 # Import from sub-modules
 try:
-    # Models
+    # Models - use lazy imports to avoid circular dependencies
     from .models import (
         EnhancedModelFactory, ModelType, ModelConfig,
         create_model_factory,
         MultiOutputConfig, MultiOutputModel, MultiOutputStackingModel, MultiOutputResult,
         prepare_multi_output_targets, create_analyst_outputs, create_tactician_outputs,
         create_multi_output_stacking_model,
-        EnhancedModelTrainer, train_model_with_confidence_metrics,
+        train_model_with_confidence_metrics,
         ModelEvaluator, ModelRegistry
     )
+    
+    # Lazy import for EnhancedModelTrainer to avoid circular dependency
+    from .models import get_enhanced_model_trainer
     
     # Ensembles
     from .ensembles import (
@@ -135,7 +138,7 @@ try:
         'MultiOutputConfig', 'MultiOutputModel', 'MultiOutputStackingModel', 'MultiOutputResult',
         'prepare_multi_output_targets', 'create_analyst_outputs', 'create_tactician_outputs',
         'create_multi_output_stacking_model',
-        'EnhancedModelTrainer', 'train_model_with_confidence_metrics',
+        'get_enhanced_model_trainer', 'train_model_with_confidence_metrics',
         'ModelEvaluator', 'ModelRegistry',
         
         # Ensembles

@@ -515,3 +515,6 @@ def cleanup_hardware_resources():
     if _hardware_processor:
         _hardware_processor.cleanup()
         _hardware_processor = None
+
+# Backward compatibility alias
+HardwareOptimizedOperations = HardwareOptimizedMatrixProcessor

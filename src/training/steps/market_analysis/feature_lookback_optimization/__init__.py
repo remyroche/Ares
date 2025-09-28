@@ -9,6 +9,10 @@ Main Components:
 - Modular components in submodules for better architecture
 """
 
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading feature lookback optimization module...")
+
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .feature_lookback_optimization_modular import FeatureLookbackOptimizationComponent as ModularFeatureLookbackOptimizationComponent
 from .optimization_reporter import OptimizationReporter
@@ -16,12 +20,17 @@ from src.utils.validation.unified_framework import FeatureLookbackValidationFram
 from .dependency_manager import DependencyManager, get_dependency, is_dependency_available
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
 
+tprint("✅ Core components imported successfully")
+
 # Import modular components
+tprint("🔧 Importing modular components...")
 from .core.optimizer import CoreOptimizer, OptimizationMethod, OptimizationResult
 from .validation.validator import InputValidator
 from .error_handling.error_handler import StandardizedErrorHandler
 from .performance.monitor import PerformanceMonitor
+tprint("✅ Modular components imported successfully")
 
+tprint("📋 Setting up module exports...")
 __all__ = [
     # Main components
     'FeatureLookbackOptimizationComponent',
@@ -49,3 +58,4 @@ __all__ = [
     'MetricType',
     'MetricLevel'
 ]
+tprint("✅ Feature lookback optimization module fully loaded")

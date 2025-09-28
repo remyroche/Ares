@@ -98,7 +98,6 @@ try:
         VolumeFeatureGenerator,
         SupportResistanceFeatureGenerator,
         CandlestickPatternFeatureGenerator,
-        HMMRegimeFeatureGenerator,
         VolatilityFeatureGenerator,
         TrendFeatureGenerator,
         OscillatorFeatureGenerator,
@@ -277,11 +276,10 @@ if BASE_CALCULATIONS_AVAILABLE:
 if CATEGORIES_AVAILABLE:
     __all__.extend([
         "ReturnsFeatureGenerator",
-        "MomentumFeatureGenerator", 
+        "MomentumFeatureGenerator",
         "VolumeFeatureGenerator",
         "SupportResistanceFeatureGenerator",
         "CandlestickPatternFeatureGenerator",
-        "HMMRegimeFeatureGenerator",
         "VolatilityFeatureGenerator",
         "TrendFeatureGenerator",
         "OscillatorFeatureGenerator",

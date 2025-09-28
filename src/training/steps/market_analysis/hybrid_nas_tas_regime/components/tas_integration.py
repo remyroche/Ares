@@ -90,17 +90,31 @@ class TASIntegrationComponent:
             Tuple of (features, metadata)
         """
         try:
+            tprint("🌳 [TAS_INTEGRATION] Starting TAS feature extraction", color="blue", bold=True)
+            tprint_debug(f"📊 [TAS_INTEGRATION] Market data shape: {market_data.shape}")
+            tprint_debug(f"📊 [TAS_INTEGRATION] Market data columns: {list(market_data.columns)}")
+            tprint_debug(f"🔧 [TAS_INTEGRATION] TAS detector available: {self.tas_detector is not None}")
+            
             if self.tas_detector is not None:
+                tprint("🔧 [TAS_INTEGRATION] Using TAS detector for feature extraction", color="blue")
                 # Use TAS detector for feature extraction
                 tas_results = self.tas_detector.detect_regimes(market_data)
+                tprint_success(f"✅ [TAS_INTEGRATION] TAS regime detection completed")
+                tprint_debug(f"📈 [TAS_INTEGRATION] TAS results keys: {list(tas_results.keys()) if isinstance(tas_results, dict) else 'Not a dict'}")
 
                 # Extract features from TAS results
+                tprint("🔧 [TAS_INTEGRATION] Extracting features from TAS results", color="cyan")
                 features = self._extract_features_from_tas_results(tas_results)
+                tprint_success(f"✅ [TAS_INTEGRATION] Features extracted: {features.shape}")
+                tprint_performance(f"⚡ [TAS_INTEGRATION] TAS features: {features.shape[0]} samples, {features.shape[1]} features")
 
                 # Calculate adaptive weight based on performance
+                tprint("⚖️ [TAS_INTEGRATION] Calculating adaptive weight", color="cyan")
                 adaptive_weight = self._calculate_adaptive_weight(tas_results)
+                tprint_debug(f"⚖️ [TAS_INTEGRATION] Adaptive weight: {adaptive_weight:.3f}")
 
                 # Add metadata
+                tprint("📊 [TAS_INTEGRATION] Building metadata", color="cyan")
                 metadata = {
                     'method': 'tas_detector',
                     'feature_dimensions': features.shape[1] if features.ndim > 1 else 1,
@@ -111,15 +125,23 @@ class TASIntegrationComponent:
                     'performance_metrics': self._extract_performance_metrics(tas_results),
                     'feature_quality': self._calculate_feature_quality(features)
                 }
+                tprint_success(f"✅ [TAS_INTEGRATION] Metadata built: {len(metadata)} fields")
+                tprint_debug(f"📊 [TAS_INTEGRATION] Confidence: {metadata['confidence']:.3f}, Strategy: {metadata['strategy']}")
 
+                tprint_success(f"🎉 [TAS_INTEGRATION] TAS feature extraction completed successfully")
                 return features, metadata
 
             else:
+                tprint_warning("⚠️ [TAS_INTEGRATION] TAS detector not available, using fallback")
+                tprint_debug(f"🔍 [TAS_INTEGRATION] TAS detector status: {self.tas_detector is None}")
                 # Fallback to manual feature extraction
                 return self._extract_tas_features_fallback(market_data)
 
         except Exception as e:
+            tprint_error(f"❌ [TAS_INTEGRATION] TAS feature extraction failed: {e}")
+            tprint_debug(f"🔍 [TAS_INTEGRATION] Error details: {str(e)}")
             self.logger.warning(f"TAS feature extraction failed: {e}, using fallback")
+            tprint("🔄 [TAS_INTEGRATION] Using fallback feature extraction", color="yellow")
             return self._extract_tas_features_fallback(market_data)
 
     def _extract_features_from_tas_results(self, tas_results: Dict[str, Any]) -> np.ndarray:

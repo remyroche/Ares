@@ -42,12 +42,15 @@ class DependencyManager:
     
     def __init__(self):
         """Initialize the dependency manager."""
+        tprint("🔧 Initializing DependencyManager...")
         self.logger = logger.getChild('DependencyManager')
         self.dependencies: Dict[str, DependencyInfo] = {}
         self.fallback_modules: Dict[str, Any] = {}
         
         # Check all dependencies
+        tprint("🔍 Checking core dependencies...")
         self._check_core_dependencies()
+        tprint("✅ DependencyManager initialization complete")
         self._check_optional_dependencies()
         self._check_ml_dependencies()
         self._check_visualization_dependencies()

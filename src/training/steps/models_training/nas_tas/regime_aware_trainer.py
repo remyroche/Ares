@@ -195,7 +195,7 @@ class RegimeAwareTrainer:
         Args:
             config: Training configuration
         """
-        tprint("🎓 Initializing Regime-Aware Trainer", color="blue")
+        tprint("🎓 [REGIME_AWARE_TRAINER] Initializing Regime-Aware Trainer", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         tprint(f"📊 Config: strategy={config.training_strategy.value}, models={[mt.value for mt in config.model_types]}, regime_method={config.regime_detection_method}", color="cyan")
@@ -332,10 +332,14 @@ class RegimeAwareTrainer:
             RegimeTrainingResult with training results
         """
         start_time = datetime.now()
+        tprint("🚀 [REGIME_AWARE_TRAINER] Starting regime-aware model training", color="cyan", bold=True)
+        tprint(f"📊 [REGIME_AWARE_TRAINER] Input data: {len(market_data)} samples, target: {target_variable}", color="blue")
         self.logger.info("🚀 Starting regime-aware model training")
         
         try:
             # Step 1: Detect regimes
+            tprint("🔍 [REGIME_AWARE_TRAINER] Step 1: Detecting market regimes", color="yellow")
+            tprint(f"🔍 [REGIME_AWARE_TRAINER] Using {self.config.regime_detection_method} detection method", color="blue")
             self.logger.info("🔍 Detecting market regimes...")
             regime_results = self._detect_regimes(market_data, timestamps)
             
@@ -349,22 +353,30 @@ class RegimeAwareTrainer:
                 )
             
             # Step 2: Prepare regime-specific datasets
+            tprint("📊 [REGIME_AWARE_TRAINER] Step 2: Preparing regime-specific datasets", color="yellow")
+            tprint(f"📊 [REGIME_AWARE_TRAINER] Processing {regime_results['n_regimes']} detected regimes", color="blue")
             self.logger.info("📊 Preparing regime-specific datasets...")
             regime_datasets = self._prepare_regime_datasets(
                 market_data, target_variable, feature_columns, regime_results
             )
             
             # Step 3: Train models for each regime
+            tprint("🤖 [REGIME_AWARE_TRAINER] Step 3: Training models for each regime", color="yellow")
+            tprint(f"🤖 [REGIME_AWARE_TRAINER] Training {len(self.config.model_types)} model types per regime", color="blue")
             self.logger.info("🤖 Training models for each regime...")
             regime_models = self._train_regime_models(regime_datasets)
             
             # Step 4: Train ensemble models
             ensemble_models = None
             if self.config.enable_ensemble_training:
+                tprint("🎯 [REGIME_AWARE_TRAINER] Step 4: Training ensemble models", color="yellow")
+                tprint(f"🎯 [REGIME_AWARE_TRAINER] Using {self.config.ensemble_method} ensemble method", color="blue")
                 self.logger.info("🎯 Training ensemble models...")
                 ensemble_models = self._train_ensemble_models(regime_datasets, regime_models)
             
             # Step 5: Evaluate performance
+            tprint("📈 [REGIME_AWARE_TRAINER] Step 5: Evaluating model performance", color="yellow")
+            tprint("📈 [REGIME_AWARE_TRAINER] Computing cross-regime and overall performance metrics", color="blue")
             self.logger.info("📈 Evaluating model performance...")
             performance_results = self._evaluate_performance(
                 regime_datasets, regime_models, ensemble_models
@@ -372,6 +384,8 @@ class RegimeAwareTrainer:
             
             # Step 6: Save models if requested
             if self.config.save_models:
+                tprint("💾 [REGIME_AWARE_TRAINER] Step 6: Saving trained models", color="yellow")
+                tprint(f"💾 [REGIME_AWARE_TRAINER] Saving to {self.config.model_save_path}", color="blue")
                 self.logger.info("💾 Saving trained models...")
                 self._save_models(regime_models, ensemble_models)
             
@@ -414,8 +428,11 @@ class RegimeAwareTrainer:
     
     def _detect_regimes(self, market_data: pd.DataFrame, timestamps: Optional[pd.Series]) -> Dict[str, Any]:
         """Detect market regimes using configured method."""
+        tprint(f"🔍 [REGIME_AWARE_TRAINER] _detect_regimes() called with method: {self.config.regime_detection_method}", color="blue")
+        tprint(f"📊 [REGIME_AWARE_TRAINER] Input: market_data={market_data.shape}, timestamps={'provided' if timestamps is not None else 'None'}", color="cyan")
         try:
             if self.config.regime_detection_method == "tas" and self.tas_detector:
+                tprint("🌳 [REGIME_AWARE_TRAINER] Using TAS regime detection", color="yellow")
                 result = self.tas_detector.detect_regimes(market_data, timestamps)
                 return {
                     'success': result.success,
@@ -426,6 +443,7 @@ class RegimeAwareTrainer:
                 }
             
             elif self.config.regime_detection_method == "nas" and self.nas_detector:
+                tprint("🧠 [REGIME_AWARE_TRAINER] Using NAS regime detection", color="yellow")
                 result = self.nas_detector.detect_regimes(market_data, timestamps)
                 return {
                     'success': result.success,
@@ -436,6 +454,7 @@ class RegimeAwareTrainer:
                 }
             
             elif self.config.regime_detection_method == "hybrid":
+                tprint("🔄 [REGIME_AWARE_TRAINER] Using hybrid regime detection", color="yellow")
                 # Use both detectors and combine results
                 tas_result = self.tas_detector.detect_regimes(market_data, timestamps) if self.tas_detector else None
                 nas_result = self.nas_detector.detect_regimes(market_data, timestamps) if self.nas_detector else None

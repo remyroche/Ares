@@ -125,51 +125,90 @@ class EconomicClusterer:
             EconomicClusteringResult with economic clustering results
         """
         try:
-            tprint_info("🔍 Starting economic clustering...")
-            tprint_debug(f"Features shape: {features.shape}")
-            tprint_debug(f"Market data shape: {market_data.shape}")
+            tprint("🔍 [ECONOMIC_CLUSTERING] Starting economic clustering", color="blue", bold=True)
+            tprint_debug(f"📊 [ECONOMIC_CLUSTERING] Features shape: {features.shape}")
+            tprint_debug(f"📊 [ECONOMIC_CLUSTERING] Market data shape: {market_data.shape}")
+            tprint_debug(f"⚙️ [ECONOMIC_CLUSTERING] Economic weights - significance: {self.economic_significance_weight}, momentum: {self.momentum_weight}, volume: {self.volume_weight}")
             self.logger.info("🔍 Starting economic clustering...")
 
             # Extract economic features
-            tprint_debug("📊 Extracting economic features...")
+            tprint("📊 [ECONOMIC_CLUSTERING] Extracting economic features", color="cyan")
+            tprint_debug(f"🔧 [ECONOMIC_CLUSTERING] Using economic significance weight: {self.economic_significance_weight}")
             economic_features = self._extract_economic_features(features, market_data)
-            tprint_success(f"✅ Economic features extracted: {economic_features.shape}")
+            tprint_success(f"✅ [ECONOMIC_CLUSTERING] Economic features extracted: {economic_features.shape}")
+            tprint_performance(f"⚡ [ECONOMIC_CLUSTERING] Economic features: {economic_features.shape[0]} samples, {economic_features.shape[1]} features")
 
             # Calculate momentum features
+            tprint("📈 [ECONOMIC_CLUSTERING] Calculating momentum features", color="cyan")
+            tprint_debug(f"🔧 [ECONOMIC_CLUSTERING] Momentum weight: {self.momentum_weight}, periods: {self.momentum_periods}")
             momentum_features = self._calculate_momentum_features(market_data)
+            tprint_success(f"✅ [ECONOMIC_CLUSTERING] Momentum features calculated: {momentum_features.shape}")
+            tprint_performance(f"⚡ [ECONOMIC_CLUSTERING] Momentum features: {momentum_features.shape[0]} samples, {momentum_features.shape[1]} features")
 
             # Calculate volume features
+            tprint("📊 [ECONOMIC_CLUSTERING] Calculating volume features", color="cyan")
+            tprint_debug(f"🔧 [ECONOMIC_CLUSTERING] Volume weight: {self.volume_weight}, threshold: {self.volume_threshold}")
             volume_features = self._calculate_volume_features(market_data)
+            tprint_success(f"✅ [ECONOMIC_CLUSTERING] Volume features calculated: {volume_features.shape}")
+            tprint_performance(f"⚡ [ECONOMIC_CLUSTERING] Volume features: {volume_features.shape[0]} samples, {volume_features.shape[1]} features")
 
             # Combine all features with economic weighting
+            tprint("🔄 [ECONOMIC_CLUSTERING] Combining features with economic weighting", color="cyan")
+            tprint_debug(f"🔧 [ECONOMIC_CLUSTERING] Combining: base({features.shape}) + economic({economic_features.shape}) + momentum({momentum_features.shape}) + volume({volume_features.shape})")
             combined_features = self._combine_economic_features(
                 features, economic_features, momentum_features, volume_features
             )
+            tprint_success(f"✅ [ECONOMIC_CLUSTERING] Combined features: {combined_features.shape}")
+            tprint_performance(f"⚡ [ECONOMIC_CLUSTERING] Combined features: {combined_features.shape[0]} samples, {combined_features.shape[1]} features")
 
             # Choose clustering algorithm
             algorithm = self.config.get('primary_algorithm', 'economic_adaptive').replace('economic_', '')
+            tprint(f"🎯 [ECONOMIC_CLUSTERING] Using clustering algorithm: {algorithm}", color="magenta")
+            tprint_debug(f"🔧 [ECONOMIC_CLUSTERING] Available algorithms: {list(self.clustering_algorithms.keys())}")
 
             if algorithm in self.clustering_algorithms:
+                tprint(f"🔧 [ECONOMIC_CLUSTERING] Using {algorithm} clustering", color="blue")
                 result = self.clustering_algorithms[algorithm](combined_features)
+                tprint_success(f"✅ [ECONOMIC_CLUSTERING] {algorithm} clustering completed")
             else:
+                tprint("⚠️ [ECONOMIC_CLUSTERING] Algorithm not found, using economic_adaptive", color="yellow")
                 result = self._economic_adaptive(combined_features)
+                tprint_success("✅ [ECONOMIC_CLUSTERING] Economic adaptive clustering completed")
+
+            unique_clusters = len(set(result['labels']))
+            tprint(f"📊 [ECONOMIC_CLUSTERING] Clustering result: {unique_clusters} clusters, {len(result['labels'])} samples", color="green")
 
             # Calculate quality metrics
+            tprint("📊 [ECONOMIC_CLUSTERING] Calculating quality metrics", color="cyan")
             quality_metrics = self._calculate_economic_quality_metrics(combined_features, result['labels'])
+            tprint_success("✅ [ECONOMIC_CLUSTERING] Quality metrics calculated")
+            tprint_debug(f"📈 [ECONOMIC_CLUSTERING] Quality metrics keys: {list(quality_metrics.keys())}")
 
             # Calculate economic metrics
+            tprint("💰 [ECONOMIC_CLUSTERING] Calculating economic metrics", color="cyan")
             economic_metrics = self._calculate_economic_metrics(
                 market_data, result['labels'], result['cluster_centers']
             )
+            tprint_success("✅ [ECONOMIC_CLUSTERING] Economic metrics calculated")
+            tprint_debug(f"💰 [ECONOMIC_CLUSTERING] Economic metrics keys: {list(economic_metrics.keys())}")
 
             # Perform frontier analysis
+            tprint("📈 [ECONOMIC_CLUSTERING] Performing frontier analysis", color="cyan")
             frontier_metrics = self._economic_frontier_analysis(combined_features, result['labels'])
+            tprint_success("✅ [ECONOMIC_CLUSTERING] Frontier analysis completed")
+            tprint_debug(f"📈 [ECONOMIC_CLUSTERING] Frontier metrics keys: {list(frontier_metrics.keys())}")
 
             # Optimize regime transfers
+            tprint("🔄 [ECONOMIC_CLUSTERING] Optimizing regime transfers", color="cyan")
             regime_transfers = self._economic_regime_transfer_optimization(
                 combined_features, result['labels'], frontier_metrics
             )
+            tprint_success(f"✅ [ECONOMIC_CLUSTERING] Regime transfers optimized: {len(regime_transfers)} transfers")
+            tprint_debug(f"🔄 [ECONOMIC_CLUSTERING] Regime transfer details: {len(regime_transfers)} transitions")
 
+            tprint_success(f"🎉 [ECONOMIC_CLUSTERING] Economic clustering completed successfully")
+            tprint_performance(f"⚡ [ECONOMIC_CLUSTERING] Final result: {unique_clusters} clusters, {len(result['labels'])} samples, {combined_features.shape[1]} features")
+            
             return EconomicClusteringResult(
                 labels=result['labels'],
                 cluster_centers=result['cluster_centers'],
@@ -195,6 +234,8 @@ class EconomicClusterer:
             )
 
         except Exception as e:
+            tprint_error(f"❌ [ECONOMIC_CLUSTERING] Economic clustering failed: {e}")
+            tprint_debug(f"🔍 [ECONOMIC_CLUSTERING] Error details: {str(e)}")
             self.logger.error(f"Economic clustering failed: {e}")
             raise
 
@@ -364,15 +405,17 @@ class EconomicClusterer:
             # Trend strength for different periods
             for period in [5, 10, 20, 50]:
                 if len(prices) > period:
-                    # Linear trend R-squared
-                    x = np.arange(period)
-                    for i in range(max(1, len(prices) - period + 1)):
-                        price_window = prices[i:i+period]
-                        if len(price_window) == period:
-                            from scipy.stats import linregress
-                            slope, intercept, r_value, p_value, std_err = linregress(x, price_window)
-                            trend_strength = r_value ** 2
-                            features_list.append(np.array([trend_strength]))
+                    # Linear trend R-squared - calculate for the entire series
+                    x = np.arange(len(prices))
+                    y = prices
+
+                    from scipy.stats import linregress
+                    slope, intercept, r_value, p_value, std_err = linregress(x, y)
+                    trend_strength = r_value ** 2
+
+                    # Create array with same length as prices to match dimensions
+                    trend_array = np.full(len(prices), trend_strength)
+                    features_list.append(trend_array.reshape(-1, 1))
 
             # Trend direction
             trend_direction = np.diff(prices, prepend=prices[0])

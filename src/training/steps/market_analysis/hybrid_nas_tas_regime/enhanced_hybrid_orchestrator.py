@@ -18,12 +18,31 @@ from enum import Enum
 
 # Import tprint for enhanced logging
 try:
-    from src.utils.tprint import tprint
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
     TPRINT_AVAILABLE = True
 except ImportError:
     def tprint(message: str, **kwargs) -> None:
         """Fallback tprint function if not available."""
         print(f"[HYBRID_NAS_TAS] {message}")
+    def tprint_debug(message: str, **kwargs) -> None:
+        print(f"[DEBUG] {message}")
+    def tprint_info(message: str, **kwargs) -> None:
+        print(f"[INFO] {message}")
+    def tprint_warning(message: str, **kwargs) -> None:
+        print(f"[WARNING] {message}")
+    def tprint_error(message: str, **kwargs) -> None:
+        print(f"[ERROR] {message}")
+    def tprint_success(message: str, **kwargs) -> None:
+        print(f"[SUCCESS] {message}")
+    def tprint_progress(message: str, **kwargs) -> None:
+        print(f"[PROGRESS] {message}")
+    def tprint_performance(message: str, **kwargs) -> None:
+        print(f"[PERFORMANCE] {message}")
+    def tprint_timer(message: str, **kwargs) -> None:
+        print(f"[TIMER] {message}")
     TPRINT_AVAILABLE = False
 
 # Import enhanced utility integrations

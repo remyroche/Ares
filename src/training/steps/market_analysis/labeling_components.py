@@ -10,12 +10,16 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading labeling components...")
 
 class RegimeAwareLabeling:
     """Regime-aware triple barrier labeling component."""
 
     @log_important_calls
     def __init__(self, config: Dict[str, Any], logger: Any = None):
+        tprint("🔧 Initializing RegimeAwareLabeling...")
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.regime_barrier_optimizer = None
@@ -23,6 +27,7 @@ class RegimeAwareLabeling:
         self.time_barrier_minutes = None
         self.max_lookahead = None
         self._initialize_components()
+        tprint("✅ RegimeAwareLabeling initialized")
 
     @log_all_calls
     def _initialize_components(self) -> None:

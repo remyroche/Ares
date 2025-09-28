@@ -9,6 +9,7 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import warnings
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
@@ -17,6 +18,14 @@ import time
 import gc
 import psutil
 from pathlib import Path
+
+# Suppress LightGBM warnings about no further splits
+warnings.filterwarnings('ignore', message='.*No further splits with positive gain.*')
+
+# ML library imports
+import lightgbm as lgb
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
 
 # Common utilities
 from src.utils.common_operations import (
@@ -28,6 +37,8 @@ from src.utils.common_operations import (
 
 # Import evaluation result types
 from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_evaluation_framework import EvaluationResult
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_validation_system import ValidationResult
+from src.utils.ml_common.post_training.model_persistence import PersistenceResult
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,
@@ -54,21 +65,10 @@ from .model_registry import (
     ModelRegistry
 )
 
-# Import evaluation result from post_training
-try:
-    from ..post_training.model_evaluation import EvaluationResult
-except ImportError:
-    # Fallback if post_training module is not available
-    from dataclasses import dataclass
-    from typing import Optional, Dict, Any
-    
-    @dataclass
-    class EvaluationResult:
-        """Fallback EvaluationResult class."""
-        pre_hpo_metrics: Optional[Dict[str, Any]] = None
-        post_hpo_metrics: Optional[Dict[str, Any]] = None
-        validation_metrics: Optional[Dict[str, Any]] = None
-        test_metrics: Optional[Dict[str, Any]] = None
+# Import post-training components
+from ..post_training.model_evaluation import ModelEvaluator, EvaluationConfig, EvaluationResult
+from ..post_training.model_validation import ModelValidator, ValidationConfig, ValidationResult
+from ..post_training.model_persistence import ModelPersistence, PersistenceConfig, PersistenceResult
 
 # Import multi-timeframe training - commented out as module doesn't exist
 # from .multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
@@ -388,13 +388,10 @@ class EnhancedModelTrainer:
         """Train an initial model with default parameters."""
         try:
             if model_type == "lightgbm":
-                import lightgbm as lgb
                 model = lgb.LGBMClassifier(random_state=42, verbose=-1)
             elif model_type == "random_forest":
-                from sklearn.ensemble import RandomForestClassifier
                 model = RandomForestClassifier(random_state=42, n_jobs=-1)
             elif model_type == "neural_network":
-                from sklearn.neural_network import MLPClassifier
                 model = MLPClassifier(random_state=42, max_iter=1000)
             else:
                 # Default to LightGBM

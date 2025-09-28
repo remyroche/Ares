@@ -77,15 +77,21 @@ class HMMRegimeTagger:
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize HMM regime tagger."""
+        tprint('🔧 Initializing HMMRegimeTagger')
         self.config = config
         self.logger = logger.getChild('HMMRegimeTagger')
         self.base_models = {}
         self.ensemble_models = {}
         self.feature_generator = None
         self.feature_selector = None
+        tprint('✅ HMMRegimeTagger basic initialization completed')
         
         if HMM_TRAINING_AVAILABLE:
+            tprint('🤖 HMM training available, initializing components')
             self._initialize_components()
+            tprint('✅ HMM components initialized')
+        else:
+            tprint('⚠️ HMM training not available')
     
     def _initialize_components(self):
         """Initialize HMM training components."""
@@ -110,6 +116,7 @@ class HMMRegimeTagger:
     
     def load_trained_models(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Load trained HMM models."""
+        tprint(f'🤖 Loading trained HMM models for {symbol} on {exchange} ({timeframe})')
         try:
             models_dir = Path("generated/market_analysis") / 'models' / 'hmm'
             
@@ -204,8 +211,10 @@ class HMMRegimeTagger:
     def tag_regimes_with_models(self, market_data: pd.DataFrame, 
                               use_ensemble: bool = True) -> Dict[str, Any]:
         """Tag regimes using trained HMM models."""
+        tprint('🏷️ Starting regime tagging with HMM models')
         # Input validation using standardized error messages
         if market_data is None:
+            tprint('❌ market_data is None')
             raise ValueError("market_data is None - Provide valid market data DataFrame")
         
         if not isinstance(market_data, pd.DataFrame):
@@ -306,9 +315,11 @@ class RegimeDataSplittingEnhanced:
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize enhanced regime data splitting."""
+        tprint('🔧 Initializing RegimeDataSplittingEnhanced')
         self.config = config
         self.logger = logger.getChild('RegimeDataSplittingEnhanced')
         self.hmm_tagger = None
+        tprint('✅ Basic initialization completed')
         
         # Initialize error handler using existing utilities
         error_context = ErrorContext(
@@ -316,13 +327,16 @@ class RegimeDataSplittingEnhanced:
             component="RegimeDataSplittingEnhanced"
         )
         self.error_handler = EnhancedErrorHandler(logger=self.logger)
+        tprint('✅ Error handler initialized')
         
         # Initialize hardware manager using existing utilities
         self.hardware_manager = UnifiedHardwareManager()
+        tprint('✅ Hardware manager initialized')
         
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
         self.data_quality_framework = DataQualityFramework()
+        tprint('✅ Data validation utilities initialized')
         
         # Initialize configuration and path managers
         self.config_manager = get_config_manager(config)

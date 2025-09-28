@@ -105,41 +105,60 @@ class MicroRegimeDetector:
             List of detected micro-regimes
         """
         self.logger.info("🔍 Starting micro-regime detection...")
+        tprint("🔍 Starting micro-regime detection...", color="blue")
 
         detected_regimes = []
 
         try:
             # Preprocess data
+            tprint("📊 Preprocessing data for micro-regime detection...", color="cyan")
             processed_data = self._preprocess_data(market_data)
+            tprint(f"✅ Data preprocessed: {len(processed_data)} data points", color="green")
 
             # Detect different micro-regime types
+            tprint("🚀 Detecting breakouts...", color="yellow")
             breakout_regimes = self._detect_breakouts(processed_data)
             detected_regimes.extend(breakout_regimes)
+            tprint(f"✅ Breakouts detected: {len(breakout_regimes)}", color="green")
 
+            tprint("📊 Detecting consolidations...", color="yellow")
             consolidation_regimes = self._detect_consolidations(processed_data)
             detected_regimes.extend(consolidation_regimes)
+            tprint(f"✅ Consolidations detected: {len(consolidation_regimes)}", color="green")
 
+            tprint("🔄 Detecting reversals...", color="yellow")
             reversal_regimes = self._detect_reversals(processed_data)
             detected_regimes.extend(reversal_regimes)
+            tprint(f"✅ Reversals detected: {len(reversal_regimes)}", color="green")
 
+            tprint("⚡ Detecting accelerations...", color="yellow")
             acceleration_regimes = self._detect_accelerations(processed_data)
             detected_regimes.extend(acceleration_regimes)
+            tprint(f"✅ Accelerations detected: {len(acceleration_regimes)}", color="green")
 
+            tprint("📈 Detecting volume spikes...", color="yellow")
             volume_spikes = self._detect_volume_spikes(processed_data)
             detected_regimes.extend(volume_spikes)
+            tprint(f"✅ Volume spikes detected: {len(volume_spikes)}", color="green")
 
+            tprint("📊 Detecting volatility spikes...", color="yellow")
             volatility_spikes = self._detect_volatility_spikes(processed_data)
             detected_regimes.extend(volatility_spikes)
+            tprint(f"✅ Volatility spikes detected: {len(volatility_spikes)}", color="green")
 
             # Filter and rank by confidence
+            tprint("🔍 Filtering and ranking micro-regimes...", color="cyan")
             filtered_regimes = [r for r in detected_regimes if r.confidence >= self.detection_threshold]
             filtered_regimes.sort(key=lambda x: x.confidence, reverse=True)
+            tprint(f"✅ Filtered micro-regimes: {len(filtered_regimes)}", color="green")
 
             self.logger.info(f"✅ Detected {len(filtered_regimes)} micro-regimes")
+            tprint(f"✅ Detected {len(filtered_regimes)} micro-regimes", color="green")
             return filtered_regimes
 
         except Exception as e:
             self.logger.error(f"Micro-regime detection failed: {e}")
+            tprint(f"❌ Micro-regime detection failed: {e}", color="red")
             return []
 
     def _preprocess_data(self, market_data: pd.DataFrame) -> Dict[str, Any]:

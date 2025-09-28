@@ -18,31 +18,43 @@ Key Features:
 - Actionable insights for continuous improvement
 """
 
+from src.utils.tprint import tprint
+tprint('📦 Loading Regime Data Splitting Package')
+
+tprint('📦 Importing component module')
 from .component import (
     RegimeDataSplittingComponent,
     RegimeSplittingStatus,
     RegimeSplittingMetrics,
     RegimeSplittingReport
 )
+tprint('✅ Component module imported')
 
+tprint('📦 Importing enhanced module')
 from .enhanced import (
     RegimeDataSplittingEnhanced,
     HMMRegimeTagger,
     execute_enhanced_regime_data_splitting
 )
+tprint('✅ Enhanced module imported')
 
+tprint('📦 Importing main module')
 from .main import (
     RegimeDataSplittingStep,
     RegimeDataResult,
     StepResult,
     StepResultStatus
 )
+tprint('✅ Main module imported')
 
+tprint('📦 Importing validator module')
 from .validator import (
     Step4RegimeDataSplittingValidator,
     run_validator
 )
+tprint('✅ Validator module imported')
 
+tprint('📦 Importing validation utilities')
 from .validation_utils import (
     StandardizedValidator,
     ValidationResult,
@@ -51,7 +63,9 @@ from .validation_utils import (
     validate_training_input,
     validate_pipeline_state
 )
+tprint('✅ Validation utilities imported')
 
+tprint('📦 Importing configuration utilities')
 from .config_utils import (
     RegimeDataSplittingConfig,
     PathManager,
@@ -59,6 +73,7 @@ from .config_utils import (
     get_config_manager,
     get_path_manager
 )
+tprint('✅ Configuration utilities imported')
 
 __all__ = [
     # Component classes
@@ -101,3 +116,5 @@ __all__ = [
 __version__ = "1.0.0"
 __author__ = "Market Analysis Team"
 __description__ = "Comprehensive regime data splitting with enhanced error handling and reporting"
+
+tprint('✅ Regime Data Splitting Package loaded successfully')

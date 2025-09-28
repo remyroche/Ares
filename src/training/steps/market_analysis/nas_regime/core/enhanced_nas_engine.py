@@ -17,9 +17,11 @@ from datetime import datetime
 import pickle
 import os
 from pathlib import Path
-# from tprint import tprint  # Not available, using print instead
-def tprint(*args, **kwargs):
-    print(*args, **kwargs)
+# Import tprint for comprehensive logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import enhanced utility tools
 from src.utils.common_operations import (
@@ -89,7 +91,7 @@ from src.utils.serialization_utils import (
 # Import ML Common Utilities
 from src.utils.ml_common import (
     # Model utilities
-    EnhancedModelTrainer, train_model_with_confidence_metrics,
+    get_enhanced_model_trainer, train_model_with_confidence_metrics,
     ModelEvaluator, ModelRegistry,
     # Validation utilities
     UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,

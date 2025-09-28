@@ -27,6 +27,12 @@ import hashlib
 from scipy.optimize import minimize_scalar
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, Matern
+from sklearn.ensemble import (
+    RandomForestClassifier, RandomForestRegressor,
+    ExtraTreesClassifier, ExtraTreesRegressor,
+    StackingClassifier, StackingRegressor,
+    VotingClassifier, VotingRegressor
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ class TreeArchitectureConfig:
     max_trees: int = 500
     min_features_per_split: int = 2
     max_features_per_split: int = 20
+    tree_type: str = "auto"  # Add tree_type parameter
 
     # Splitting strategies
     splitting_strategies: List[str] = field(default_factory=lambda: [
@@ -820,7 +827,7 @@ class TreeArchitectureSearch:
         """Evaluate a hierarchical ensemble architecture."""
         try:
             # Create hierarchical model
-            model = self._create_hierarchical_model(candidate)
+            model = self._create_hierarchical_model(candidate, y_train)
 
             # Train hierarchical model
             start_time = time.time()
@@ -858,11 +865,8 @@ class TreeArchitectureSearch:
             self.logger.warning(f"Hierarchical candidate evaluation failed: {e}")
             candidate.overall_score = 0.0
 
-    def _create_hierarchical_model(self, candidate: TreeArchitectureCandidate):
+    def _create_hierarchical_model(self, candidate: TreeArchitectureCandidate, y_train: np.ndarray):
         """Create a hierarchical ensemble model."""
-        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
-
         # Determine problem type
         n_classes = len(np.unique(y_train)) if len(y_train.shape) == 1 else y_train.shape[1]
 

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
+import time
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass
@@ -19,6 +20,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import warnings
 warnings.filterwarnings('ignore')
+
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,20 +99,37 @@ class UnifiedClusteringAlgorithm:
             ClusteringResult with clustering results
         """
         try:
+            tprint("🔍 [UNIFIED_CLUSTERING] Starting unified clustering", color="blue", bold=True)
+            tprint_debug(f"📊 [UNIFIED_CLUSTERING] Features shape: {features.shape}")
+            tprint_debug(f"📊 [UNIFIED_CLUSTERING] Market data shape: {market_data.shape if market_data is not None else 'None'}")
+            tprint_debug(f"⚙️ [UNIFIED_CLUSTERING] Algorithm type: {self.algorithm_type}")
+            tprint_debug(f"⚙️ [UNIFIED_CLUSTERING] Economic clustering: {self.enable_economic_clustering}")
+            tprint_debug(f"⚙️ [UNIFIED_CLUSTERING] Ensemble clustering: {self.enable_ensemble_clustering}")
             self.logger.info("🔍 Starting unified clustering...")
             start_time = time.time()
             
             # Choose clustering strategy
+            tprint(f"🎯 [UNIFIED_CLUSTERING] Using clustering strategy: {self.algorithm_type}", color="magenta")
             if self.algorithm_type == 'adaptive_clustering':
+                tprint("🧠 [UNIFIED_CLUSTERING] Using adaptive clustering", color="blue")
                 result = self._adaptive_clustering(features, market_data, economic_weights)
             elif self.algorithm_type == 'ensemble_clustering':
+                tprint("🎭 [UNIFIED_CLUSTERING] Using ensemble clustering", color="blue")
                 result = self._ensemble_clustering(features, market_data, economic_weights)
             elif self.algorithm_type.startswith('economic_'):
+                tprint("💰 [UNIFIED_CLUSTERING] Using economic clustering", color="blue")
                 result = self._economic_clustering(features, market_data, economic_weights)
             else:
+                tprint("📊 [UNIFIED_CLUSTERING] Using standard clustering", color="blue")
                 result = self._standard_clustering(features, economic_weights)
             
             execution_time = time.time() - start_time
+            unique_clusters = len(set(result['labels']))
+            
+            tprint_success(f"✅ [UNIFIED_CLUSTERING] Unified clustering completed in {execution_time:.2f}s")
+            tprint_performance("Unified clustering", execution_time)
+            tprint_debug(f"🔧 [UNIFIED_CLUSTERING] Algorithm used: {self.algorithm_type}")
+            tprint_debug(f"📊 [UNIFIED_CLUSTERING] Number of clusters: {unique_clusters}")
             
             return ClusteringResult(
                 labels=result['labels'],
@@ -119,6 +143,9 @@ class UnifiedClusteringAlgorithm:
             
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"❌ [UNIFIED_CLUSTERING] Unified clustering failed: {e}")
+            tprint_debug(f"🔍 [UNIFIED_CLUSTERING] Error details: {str(e)}")
+            tprint_debug(f"⏱️ [UNIFIED_CLUSTERING] Execution time before failure: {execution_time:.2f}s")
             self.logger.error(f"❌ Unified clustering failed: {e}")
             return ClusteringResult(
                 labels=np.array([]),
@@ -536,16 +563,21 @@ class UnifiedClusteringAlgorithm:
         """Calculate volatility-based features."""
         try:
             features_list = []
-            
+            n_samples = len(returns)
+
             # Rolling volatility
             for window in [5, 10, 20, 50]:
                 if len(returns) > window:
                     rolling_vol = pd.Series(np.abs(returns)).rolling(window=window, min_periods=window//2).std()
                     rolling_vol = rolling_vol.fillna(rolling_vol.mean()).values
                     features_list.append(rolling_vol.reshape(-1, 1))
-            
+                else:
+                    # Create dummy feature with same length
+                    dummy_vol = np.full(n_samples, rolling_vol.mean() if 'rolling_vol' in locals() else 0.01)
+                    features_list.append(dummy_vol.reshape(-1, 1))
+
             return np.hstack(features_list) if features_list else np.zeros((len(returns), 1))
-            
+
         except Exception as e:
             self.logger.warning(f"Volatility feature calculation failed: {e}")
             return np.zeros((len(returns), 1))
@@ -554,16 +586,23 @@ class UnifiedClusteringAlgorithm:
         """Calculate trend-based features."""
         try:
             features_list = []
-            
+            n_samples = len(prices)
+
             # Trend strength for different periods
             for period in [5, 10, 20, 50]:
                 if len(prices) > period:
-                    # Simple trend calculation
+                    # Simple trend calculation - repeat for all time periods
                     trend = (prices[-1] - prices[0]) / (prices[0] + 1e-8)
-                    features_list.append(np.array([trend]))
-            
+                    # Create array with same length as prices to match dimensions
+                    trend_array = np.full(n_samples, trend)
+                    features_list.append(trend_array.reshape(-1, 1))
+                else:
+                    # Create dummy trend feature
+                    dummy_trend = np.full(n_samples, 0.0)
+                    features_list.append(dummy_trend.reshape(-1, 1))
+
             return np.hstack(features_list) if features_list else np.zeros((len(prices), 1))
-            
+
         except Exception as e:
             self.logger.warning(f"Trend feature calculation failed: {e}")
             return np.zeros((len(prices), 1))

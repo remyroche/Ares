@@ -231,28 +231,38 @@ class PositionAwareTradingAnalyzer:
                 # Get returns and positions for this regime
                 regime_returns = regime_data['close'].pct_change().dropna().values
 
-                # Get position directions for this regime
-                regime_positions = position_directions[regime_mask]
-                regime_positions = regime_positions[1:]  # Align with returns
+            # Get position directions for this regime - need to align dimensions properly
+            # regime_mask has length N, but position_directions has length N-1 after alignment
+            # So we need to create a mask of length N-1 for the aligned position_directions
+            aligned_regime_mask = regime_mask[1:]  # Align mask with position_directions
+            if len(position_directions) != len(aligned_regime_mask):
+                # Handle dimension mismatch by ensuring they have the same length
+                min_length = min(len(position_directions), len(aligned_regime_mask))
+                aligned_regime_mask = aligned_regime_mask[:min_length]
+                position_directions = position_directions[:min_length]
+            regime_positions = position_directions[aligned_regime_mask]
 
-                # Calculate position-aware metrics
-                regime_win_rates = self.calculate_position_aware_win_rate(
-                    regime_returns, regime_positions
+            # Get aligned regime data for economic significance calculation
+            aligned_regime_data = market_data[aligned_regime_mask]
+
+            # Calculate position-aware metrics
+            regime_win_rates = self.calculate_position_aware_win_rate(
+                regime_returns, regime_positions
+            )
+
+            # Add additional regime-specific analysis
+            regime_analysis = {
+                **regime_win_rates,
+                'regime_id': regime_id,
+                'regime_duration': len(regime_returns),  # Use returns length for consistency
+                'regime_volatility': np.std(regime_returns),
+                'position_bias': np.mean(regime_positions),  # >0 = long bias, <0 = short bias
+                'economic_significance': self._calculate_regime_economic_significance(
+                    aligned_regime_data, regime_positions
                 )
+            }
 
-                # Add additional regime-specific analysis
-                regime_analysis = {
-                    **regime_win_rates,
-                    'regime_id': regime_id,
-                    'regime_duration': len(regime_data),
-                    'regime_volatility': np.std(regime_returns),
-                    'position_bias': np.mean(regime_positions),  # >0 = long bias, <0 = short bias
-                    'economic_significance': self._calculate_regime_economic_significance(
-                        regime_data, regime_positions
-                    )
-                }
-
-                results['regime_analyses'][f"regime_{regime_id}"] = regime_analysis
+            results['regime_analyses'][f"regime_{regime_id}"] = regime_analysis
 
             # Position balance analysis
             results['position_balance_analysis'] = self._analyze_position_balance(

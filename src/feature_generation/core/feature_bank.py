@@ -124,12 +124,16 @@ class FeatureBank:
             ]
 
             registered_count = 0
-            for category in categories_to_register:
+            total_categories = len(categories_to_register)
+            self.logger.info(f"🚀 Initializing {total_categories} feature categories...")
+            
+            for i, category in enumerate(categories_to_register, 1):
                 try:
                     generators = self._create_default_generators_for_category(category)
                     for generator in generators:
                         self.register_generator(generator)
                         registered_count += 1
+                    self.logger.info(f"📊 Progress: {i}/{total_categories} categories completed")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to register {category.value} generators: {e}")
 
@@ -176,6 +180,7 @@ class FeatureBank:
 
             creator_func = category_creators.get(category)
             if creator_func:
+                self.logger.info(f"🔧 Creating {category.value} features...")
                 generators = creator_func()
                 self.logger.info(f"✅ Created {len(generators)} generators for {category.value}")
                 return generators

@@ -274,6 +274,7 @@ class UnifiedRegimeAnalyzer:
     def _analyze_regime_stability(self, regime_predictions: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Analyze regime stability."""
         try:
+            tprint("🔒 Analyzing regime stability...", color="blue")
             stability_scores = np.zeros(len(regime_predictions))
             
             for i in range(len(regime_predictions)):
@@ -305,17 +306,21 @@ class UnifiedRegimeAnalyzer:
                 'unstable_periods': np.sum(stability_scores < self.config.stability_threshold)
             }
             
+            tprint(f"✅ Regime stability analysis completed: {np.mean(stability_scores):.3f} average stability", color="green")
             return stability_scores, stability_analysis
             
         except Exception as e:
             self.logger.warning(f"Regime stability analysis failed: {e}")
+            tprint(f"❌ Regime stability analysis failed: {e}", color="red")
             return np.zeros(len(regime_predictions)), {}
     
     def _analyze_regime_transitions(self, regime_predictions: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Analyze regime transitions."""
         try:
+            tprint("🔄 Analyzing regime transitions...", color="blue")
             unique_regimes = np.unique(regime_predictions)
             n_regimes = len(unique_regimes)
+            tprint(f"📊 Found {n_regimes} unique regimes", color="cyan")
             
             # Calculate transition matrix
             transition_matrix = np.zeros((n_regimes, n_regimes))

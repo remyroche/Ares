@@ -72,7 +72,7 @@ class HardwareConfig:
     
     # Adaptive Configuration
     enable_adaptive_optimization: bool = True
-    learning_enabled: bool = True
+    enable_learning: bool = True  # Rename learning_enabled to enable_learning
     auto_tuning_enabled: bool = True
     performance_monitoring_enabled: bool = True
     
@@ -609,6 +609,21 @@ class UnifiedHardwareManager:
         """Reduce thermal load."""
         self.logger.info("🌡️ Reducing thermal load")
         # Implementation would reduce CPU/GPU frequencies, etc.
+    
+    def optimize_for_inference(self):
+        """Optimize hardware for inference workload."""
+        try:
+            # Optimize for inference workload with aggressive optimization
+            success = self.optimize_for_workload(
+                WorkloadType.INFERENCE, 
+                OptimizationLevel.AGGRESSIVE
+            )
+            if success:
+                self.logger.info("✅ Hardware optimized for inference")
+            else:
+                self.logger.warning("⚠️ Failed to optimize hardware for inference")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Inference optimization failed: {e}")
         
     @contextmanager
     def optimization_context(self, workload_type: WorkloadType, 

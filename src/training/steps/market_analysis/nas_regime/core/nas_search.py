@@ -67,42 +67,63 @@ class EssentialNASClusterer:
         """Perform neural architecture search."""
         try:
             self.logger.info("🔍 Starting NAS search...")
+            tprint("🔍 Starting NAS search...", color="blue")
+            tprint(f"📊 Data shape: {data.shape}, Labels: {len(labels)}", color="cyan")
             
             # Initialize population
+            tprint("🎲 Initializing population...", color="yellow")
             self._initialize_population()
+            tprint(f"✅ Population initialized: {len(self.population)} individuals", color="green")
             
             # Evolve population
             for generation in range(self.generations):
                 self.logger.info(f"🔄 Generation {generation + 1}/{self.generations}")
+                tprint(f"🔄 Generation {generation + 1}/{self.generations}", color="cyan")
                 
                 # Evaluate population
+                tprint("📊 Evaluating population...", color="yellow")
                 self._evaluate_population(data, labels)
+                tprint("✅ Population evaluation completed", color="green")
                 
                 # Update Pareto frontier
+                tprint("📈 Updating Pareto frontier...", color="yellow")
                 self._update_pareto_frontier()
+                tprint(f"✅ Pareto frontier updated: {len(self.pareto_frontier)} solutions", color="green")
                 
                 # Create next generation
                 if generation < self.generations - 1:
+                    tprint("🧬 Creating next generation...", color="yellow")
                     self._create_next_generation()
+                    tprint("✅ Next generation created", color="green")
                 
                 # Record search statistics
+                tprint("📊 Recording search statistics...", color="yellow")
                 self._record_search_statistics(generation)
+                tprint("✅ Search statistics recorded", color="green")
             
             # Final evaluation
+            tprint("🏁 Performing final evaluation...", color="blue")
             self._evaluate_population(data, labels)
             self._update_pareto_frontier()
+            tprint("✅ Final evaluation completed", color="green")
             
             # Create result
+            tprint("📋 Creating search result...", color="yellow")
             result = self._create_search_result()
+            tprint("✅ Search result created", color="green")
             
             self.logger.info(f"✅ NAS search completed")
+            tprint(f"✅ NAS search completed", color="green")
             self.logger.info(f"   Best fitness: {result.best_architecture.fitness_score:.4f}")
+            tprint(f"   Best fitness: {result.best_architecture.fitness_score:.4f}", color="green")
             self.logger.info(f"   Pareto solutions: {len(result.pareto_frontier)}")
+            tprint(f"   Pareto solutions: {len(result.pareto_frontier)}", color="green")
             
             return result
             
         except Exception as e:
             self.logger.error(f"❌ NAS search failed: {e}")
+            tprint(f"❌ NAS search failed: {e}", color="red")
             return NASClusteringResult(
                 success=False,
                 best_architecture=None,
@@ -114,6 +135,7 @@ class EssentialNASClusterer:
     def _initialize_population(self):
         """Initialize random population of architectures."""
         try:
+            tprint("🎲 Initializing random population...", color="yellow")
             self.population = []
             
             for i in range(self.population_size):
@@ -121,9 +143,11 @@ class EssentialNASClusterer:
                 self.population.append(architecture)
             
             self.logger.info(f"✅ Initialized population of {len(self.population)} architectures")
+            tprint(f"✅ Population initialized: {len(self.population)} individuals", color="green")
             
         except Exception as e:
             self.logger.warning(f"Population initialization failed: {e}")
+            tprint(f"❌ Population initialization failed: {e}", color="red")
     
     def _create_random_architecture(self) -> Architecture:
         """Create a random neural architecture."""
@@ -184,7 +208,8 @@ class EssentialNASClusterer:
     def _evaluate_population(self, data: np.ndarray, labels: np.ndarray):
         """Evaluate all architectures in population."""
         try:
-            for architecture in self.population:
+            tprint(f"📊 Evaluating {len(self.population)} architectures...", color="yellow")
+            for i, architecture in enumerate(self.population):
                 # Simulate architecture evaluation
                 architecture.regime_accuracy = self._evaluate_regime_accuracy(architecture, data, labels)
                 architecture.economic_significance = self._evaluate_economic_significance(architecture, data)
@@ -198,8 +223,13 @@ class EssentialNASClusterer:
                 else:
                     architecture.fitness_score = architecture.regime_accuracy
                 
+                if i % 10 == 0:  # Progress update every 10 architectures
+                    tprint(f"   Evaluated {i+1}/{len(self.population)} architectures", color="cyan")
+                
+            tprint(f"✅ Population evaluation completed: {len(self.population)} architectures", color="green")
         except Exception as e:
             self.logger.warning(f"Population evaluation failed: {e}")
+            tprint(f"❌ Population evaluation failed: {e}", color="red")
     
     def _evaluate_regime_accuracy(self, architecture: Architecture, data: np.ndarray, labels: np.ndarray) -> float:
         """Evaluate regime detection accuracy."""

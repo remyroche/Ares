@@ -17,7 +17,7 @@ from .sr_clustering import SRClusteringComponent
 # from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
 from .nas_regime_discovery import NASRegimeDiscoveryComponent
 from .tas_regime_discovery import TASRegimeDiscoveryComponent
-from .hybrid_nas_tas_regime_discovery import HybridNASTASRegimeDiscoveryComponent
+from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
 from .nas_tas_clustering import NASTASClusteringComponent
 # from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
@@ -28,6 +28,9 @@ from .nas_tas_clustering import NASTASClusteringComponent
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
 from .final_feature_selection import FinalFeatureSelectionComponent
+from .nas_tas_models_training import NASTASModelsTrainingComponent
+from .nas_tas_ensemble_training import NASTASEnsembleTrainingComponent
+from .nas_ensemble_training import NASEnsembleTrainingComponent
 # Import the actual PID-based component for direct use
 try:
     from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
@@ -80,9 +83,14 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 data = data.tail(259200).copy()  # 180 days for 1m data  
                 print(f"🔥 COMPONENT FACTORY BLANK FILTERING: {original_data_size:,} → {len(data):,} rows")
             
+            # Extract regime labels from pipeline state artifacts
+            artifacts = pipeline_state.get('artifacts', {})
+            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+            regime_labels = nas_tas_clustering_result.get('regime_assignments')
+            
             result = self.adapter_instance.execute_multi_horizon_labeling_step(
                 data=data,
-                regime_labels=pipeline_state.get('regime_labels'),
+                regime_labels=regime_labels,
                 config=labeling_config,
                 symbol=pipeline_state.get('symbol', 'UNKNOWN'),
                 exchange=pipeline_state.get('exchange', 'UNKNOWN'),
@@ -621,8 +629,11 @@ class ComponentFactory:
         'sr_clustering': SRClusteringComponent,
         'nas_regime_discovery': NASRegimeDiscoveryComponent,
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
-        'hybrid_nas_tas_regime_discovery': HybridNASTASRegimeDiscoveryComponent,
+        'nas_tas_regime_discovery': NASTASRegimeDiscoveryComponent,
         'nas_tas_clustering': NASTASClusteringComponent,  # NAS-TAS combined clustering
+        'nas_tas_models_training': NASTASModelsTrainingComponent,  # NAS-TAS models training
+        'nas_tas_ensemble_training': NASTASEnsembleTrainingComponent,  # NAS-TAS ensemble training
+        'nas_ensemble_training': NASEnsembleTrainingComponent,  # Simplified NAS ensemble training
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports

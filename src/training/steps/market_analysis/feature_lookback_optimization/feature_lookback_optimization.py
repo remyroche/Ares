@@ -345,6 +345,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the feature lookback optimization component."""
+        tprint("🔧 Initializing FeatureLookbackOptimizationComponent...")
         super().__init__(config)
         # Use standardized logging
         self.logger = get_logger('FeatureLookbackOptimization')
@@ -352,6 +353,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.optimization_status = OptimizationStatus.PENDING
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
+        tprint("✅ Basic component initialization complete")
         
         # Performance monitoring with memory tracking
         self.performance_monitor = {
@@ -380,9 +382,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.feature_preparator = None
         
         # Initialize common utilities
+        tprint("🔧 Initializing common utilities...")
         self.common_utils = CommonUtilities()
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
+        tprint("✅ Common utilities initialized")
         
         # Initialize ML common utilities
         self.data_quality_checker = None
@@ -506,31 +510,43 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 self.feature_preparator = None
         
         # Initialize reporter
+        tprint("🔧 Initializing optimization reporter...")
         self.reporter = OptimizationReporter(
             output_dir=(
                 f"outcomes/market_analysis/feature_lookback_optimization/"
                 f"{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}"
             )
         )
+        tprint("✅ Optimization reporter initialized")
         
         # Initialize validation framework
+        tprint("🔧 Initializing validation framework...")
         self.validation_framework = FeatureLookbackValidationFramework()
+        tprint("✅ Validation framework initialized")
         
         # Initialize monitoring metrics
+        tprint("🔧 Initializing monitoring metrics...")
         self.monitoring = MonitoringMetrics(f"FeatureLookbackOptimization_{self.config.symbol}")
+        tprint("✅ Monitoring metrics initialized")
         
         # Memory cleanup counter
         self.operation_count = 0
+        tprint("🎯 FeatureLookbackOptimizationComponent initialization complete")
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['feature_lookback_optimization_result']
+        tprint("📋 Getting required artifacts for feature lookback optimization")
+        artifacts = ['feature_lookback_optimization_result']
+        tprint(f"✅ Required artifacts: {artifacts}")
+        return artifacts
     
     def _cleanup_memory(self) -> None:
         """Clean up memory using hardware optimization tools."""
+        tprint("🧹 Starting memory cleanup...")
         self.operation_count += 1
         
         if self.operation_count % PERFORMANCE_CONSTANTS.DEFAULT_CLEANUP_INTERVAL == 0:
+            tprint(f"🔄 Memory cleanup triggered (operation #{self.operation_count})")
             try:
                 # Use M1 memory optimizer if available
                 if self.m1_memory_optimizer:
@@ -974,10 +990,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     
     def _monitor_performance(self, operation_name: str) -> None:
         """Monitor performance metrics during execution."""
+        tprint(f"📊 Monitoring performance for operation: {operation_name}")
         try:
             # Use common utilities for memory monitoring
             memory_usage = get_memory_usage()
             memory_mb = memory_usage / 1024 / 1024 if memory_usage > 0 else 0.0
+            tprint(f"💾 Current memory usage: {memory_mb:.2f} MB")
             
             # Try to get CPU usage
             try:

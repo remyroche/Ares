@@ -55,12 +55,11 @@ class ArtifactManager:
         # Create timestamp for this session
         self.session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Create base artifact directory
+        # Store base directory and artifact directory path (lazy creation)
         self.base_dir = Path(base_dir)
         self.artifact_dir = self.base_dir / f"{symbol}_{exchange}_{timeframe}_{self.session_timestamp}"
-        self.artifact_dir.mkdir(parents=True, exist_ok=True)
         
-        self.logger.info(f"Artifact directory created: {self.artifact_dir}")
+        self.logger.info(f"Artifact directory path prepared: {self.artifact_dir}")
     
     def get_artifact_path(self, component_name: str, artifact_type: str, extension: str = "json") -> Path:
         """
@@ -74,6 +73,9 @@ class ArtifactManager:
         Returns:
             Path to the artifact file
         """
+        # Ensure artifact directory exists only when we actually need to save something
+        self.artifact_dir.mkdir(parents=True, exist_ok=True)
+        
         filename = f"{component_name}_{artifact_type}_{self.session_timestamp}.{extension}"
         return self.artifact_dir / filename
     
@@ -235,20 +237,23 @@ class ArtifactManager:
                 "timeframe": self.timeframe,
                 "total_files": 0,
                 "components": {},
-                "file_sizes": {}
+                "file_sizes": {},
+                "directory_exists": self.artifact_dir.exists()
             }
             
-            # Count files and get sizes
-            for file_path in self.artifact_dir.glob("*"):
-                if file_path.is_file():
-                    summary["total_files"] += 1
-                    summary["file_sizes"][file_path.name] = file_path.stat().st_size
-                    
-                    # Group by component
-                    component_name = file_path.name.split('_')[0]
-                    if component_name not in summary["components"]:
-                        summary["components"][component_name] = []
-                    summary["components"][component_name].append(file_path.name)
+            # Only count files if directory exists
+            if self.artifact_dir.exists():
+                # Count files and get sizes
+                for file_path in self.artifact_dir.glob("*"):
+                    if file_path.is_file():
+                        summary["total_files"] += 1
+                        summary["file_sizes"][file_path.name] = file_path.stat().st_size
+                        
+                        # Group by component
+                        component_name = file_path.name.split('_')[0]
+                        if component_name not in summary["components"]:
+                            summary["components"][component_name] = []
+                        summary["components"][component_name].append(file_path.name)
             
             return summary
             
@@ -264,6 +269,11 @@ class ArtifactManager:
             component_name: Name of the component that failed
         """
         try:
+            # Only cleanup if directory exists
+            if not self.artifact_dir.exists():
+                self.logger.info(f"No artifacts to cleanup for {component_name} - directory doesn't exist")
+                return
+                
             pattern = f"{component_name}_*_{self.session_timestamp}.*"
             for file_path in self.artifact_dir.glob(pattern):
                 file_path.unlink()
@@ -284,6 +294,11 @@ class ArtifactManager:
             True if all artifacts are valid
         """
         try:
+            # If directory doesn't exist, no artifacts to validate
+            if not self.artifact_dir.exists():
+                self.logger.error(f"Artifact directory doesn't exist: {self.artifact_dir}")
+                return False
+                
             for artifact_name in required_artifacts:
                 # Check for any file with this artifact name
                 pattern = f"{component_name}_{artifact_name}_*"

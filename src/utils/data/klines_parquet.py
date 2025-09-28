@@ -6,10 +6,12 @@ historical klines data stored in optimized parquet format.
 """
 
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
@@ -35,6 +37,90 @@ class KlinesParquetManager:
         # Create directories
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
+
+    def _apply_date_filter_to_dataframe(self, df: pd.DataFrame, start_date: Optional[datetime], end_date: Optional[datetime]) -> Optional[pd.DataFrame]:
+        """Apply date filtering to a dataframe.
+
+        Args:
+            df: DataFrame to filter
+            start_date: Start date for filtering
+            end_date: End date for filtering
+
+        Returns:
+            Filtered DataFrame or None if no data matches the filter
+        """
+        if df is None or df.empty:
+            return None
+
+        # Apply date filtering if specified
+        if start_date is not None or end_date is not None:
+            self.logger.info(f"📅 Applying date filter to dataframe: {start_date} to {end_date}")
+
+            # Convert timestamps to datetime for proper filtering
+            timestamp_col = None
+            if 'timestamp' in df.columns:
+                # Use timestamp column for filtering
+                try:
+                    # First, clean the timestamp column by removing NaN and infinite values
+                    timestamp_series = df['timestamp'].copy()
+
+                    # Remove NaN and infinite values
+                    valid_mask = pd.notna(timestamp_series) & np.isfinite(timestamp_series)
+                    if not valid_mask.all():
+                        invalid_count = len(timestamp_series) - valid_mask.sum()
+                        self.logger.warning(f"⚠️ Found {invalid_count} invalid timestamps in dataframe, removing them")
+                        timestamp_series = timestamp_series[valid_mask]
+                        df = df[valid_mask]
+
+                    # Try to convert timestamps to datetime using seconds first
+                    timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+                except (OverflowError, FloatingPointError):
+                    # If overflow occurs, try with milliseconds
+                    try:
+                        timestamp_col = pd.to_datetime(timestamp_series, unit='ms')
+                    except (OverflowError, FloatingPointError):
+                        # If still failing, convert to int64 and try again
+                        timestamp_int = timestamp_series.astype('int64')
+                        timestamp_col = pd.to_datetime(timestamp_int, unit='s')
+            elif 'open_time' in df.columns:
+                # Handle case where data has open_time but no timestamp column
+                try:
+                    # First, clean the open_time column by removing NaN and infinite values
+                    open_time_series = df['open_time'].copy()
+
+                    # Remove NaN and infinite values
+                    valid_mask = pd.notna(open_time_series) & np.isfinite(open_time_series)
+                    if not valid_mask.all():
+                        invalid_count = len(open_time_series) - valid_mask.sum()
+                        self.logger.warning(f"⚠️ Found {invalid_count} invalid open_time values in dataframe, removing them")
+                        open_time_series = open_time_series[valid_mask]
+                        df = df[valid_mask]
+
+                    # open_time is typically in milliseconds for Binance data
+                    timestamp_col = pd.to_datetime(open_time_series, unit='ms')
+                except (OverflowError, FloatingPointError):
+                    # If overflow occurs, try with seconds
+                    try:
+                        timestamp_col = pd.to_datetime(open_time_series, unit='s')
+                    except (OverflowError, FloatingPointError):
+                        # If still failing, convert to int64 and try again
+                        timestamp_int = open_time_series.astype('int64')
+                        timestamp_col = pd.to_datetime(timestamp_int, unit='ms')
+
+            if timestamp_col is not None:
+                # Apply the date filtering
+                mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
+                df = df[mask]
+
+                if len(df) == 0:
+                    self.logger.warning(f"⚠️ No data found in date range {start_date} to {end_date}")
+                    return None
+
+                self.logger.info(f"📅 Date filtering result: {len(df)} records")
+            else:
+                self.logger.warning("⚠️ Could not find timestamp column for date filtering")
+
+        return df
     
     def get_data_info(self, symbol: str, interval: str, data_type: str = "raw") -> Dict[str, Any]:
         """Get information about available data.
@@ -208,11 +294,11 @@ class KlinesParquetManager:
                 self.logger.warning(f"🔍 DEBUG: Looking for directory: {data_dir}")
                 return None
             
-            # Find matching files
-            files = list(data_dir.glob(f"{pattern}*"))
+            # Find matching files - be more flexible with pattern matching
+            files = list(data_dir.glob(f"*{symbol.lower()}_{interval}*"))
             
             self.logger.info(f"🔍 DEBUG: Searching in {data_dir}")
-            self.logger.info(f"🔍 DEBUG: Using pattern: {pattern}*")
+            self.logger.info(f"🔍 DEBUG: Using pattern: *{symbol.lower()}_{interval}*")
             self.logger.info(f"🔍 DEBUG: Found {len(files)} files: {[f.name for f in files]}")
             
             if not files:
@@ -225,9 +311,77 @@ class KlinesParquetManager:
             # Load and combine data
             dataframes = []
             
-            for file_path in sorted(files):
+            # Prioritize consolidated files over partitioned directories
+            consolidated_files = [f for f in files if f.is_file() and 'consolidated' in f.name.lower()]
+            partitioned_dirs = [f for f in files if f.is_dir()]
+            
+            self.logger.info(f"🔍 Found {len(consolidated_files)} consolidated files and {len(partitioned_dirs)} partitioned directories")
+            
+            # First try consolidated files
+            for file_path in sorted(consolidated_files):
                 try:
-                    if data_type == "processed" and file_path.is_dir():
+                    df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
+                    if df is not None and not df.empty:
+                        # Apply date filtering to consolidated file if dates are specified
+                        if start_date is not None or end_date is not None:
+                            df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
+                            if df is not None and not df.empty:
+                                dataframes.append(df)
+                                self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records (date filtered)")
+                                break  # Use only the first consolidated file
+                            else:
+                                self.logger.info(f"📅 Consolidated file filtered out by date range")
+                        else:
+                            dataframes.append(df)
+                            self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records")
+                            break  # Use only the first consolidated file
+                except Exception as e:
+                    self.logger.warning(f"Could not read consolidated file {file_path}: {e}")
+            
+            # If no consolidated file was found, use partitioned directories
+            if not dataframes:
+                self.logger.info(f"🔍 No consolidated file found, using partitioned data")
+
+                # Filter partitioned directories by date range if dates are specified
+                filtered_partitioned_dirs = []
+                if start_date is not None or end_date is not None:
+                    self.logger.info(f"📅 Filtering partitioned directories by date range: {start_date} to {end_date}")
+                    for file_path in sorted(partitioned_dirs):
+                        # Extract year and month from path (format: year=YYYY/month=MM)
+                        path_str = str(file_path)
+                        year_match = re.search(r'year=(\d{4})', path_str)
+                        month_match = re.search(r'month=(\d{1,2})', path_str)
+
+                        if year_match and month_match:
+                            year = int(year_match.group(1))
+                            month = int(month_match.group(1))
+
+                            # Check if this partition overlaps with the requested date range
+                            partition_start = datetime(year, month, 1)
+                            if month == 12:
+                                partition_end = datetime(year + 1, 1, 1) - timedelta(days=1)
+                            else:
+                                partition_end = datetime(year, month + 1, 1) - timedelta(days=1)
+
+                            # Check if partition overlaps with requested range
+                            range_start = start_date if start_date else datetime.min
+                            range_end = end_date if end_date else datetime.max
+
+                            if partition_end >= range_start and partition_start <= range_end:
+                                filtered_partitioned_dirs.append(file_path)
+                                self.logger.info(f"📅 Including partition: {year}-{month:02d} ({partition_start.date()} to {partition_end.date()})")
+                            else:
+                                self.logger.info(f"📅 Skipping partition: {year}-{month:02d} (outside range)")
+                        else:
+                            # If we can't parse the date, include it (fallback)
+                            filtered_partitioned_dirs.append(file_path)
+                else:
+                    filtered_partitioned_dirs = partitioned_dirs
+
+                self.logger.info(f"📅 Loading {len(filtered_partitioned_dirs)}/{len(partitioned_dirs)} filtered partitions")
+
+                for file_path in sorted(filtered_partitioned_dirs):
+                    try:
                         # For processed data, it might be partitioned - recursively find all parquet files
                         all_parquet_files = []
                         for root, dirs, files_in_dir in os.walk(file_path):
@@ -242,19 +396,29 @@ class KlinesParquetManager:
                             df = self.parquet_utils.safe_read_parquet(pf, columns=columns)
                             if df is not None and not df.empty:
                                 dataframes.append(df)
-                    else:
-                        # For raw data or single files
+                    except Exception as e:
+                        self.logger.warning(f"Could not read partitioned directory {file_path}: {e}")
+            
+            # Handle other files (non-consolidated, non-partitioned)
+            other_files = [f for f in files if f.is_file() and 'consolidated' not in f.name.lower()]
+            if not dataframes:  # Only use other files if no consolidated or partitioned data was found
+                for file_path in sorted(other_files):
+                    try:
                         df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
                         if df is not None and not df.empty:
                             dataframes.append(df)
-                except Exception as e:
-                    self.logger.warning(f"Could not read {file_path}: {e}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not read file {file_path}: {e}")
             
             if not dataframes:
                 self.logger.warning(f"No valid data found for {symbol} {interval}")
                 return None
             
             # Combine all dataframes
+            self.logger.info(f"🔧 Combining {len(dataframes)} dataframes")
+            if dataframes:
+                self.logger.info(f"🔧 First dataframe shape: {dataframes[0].shape}")
+                self.logger.info(f"🔧 First dataframe columns: {list(dataframes[0].columns)}")
             combined_df = pd.concat(dataframes, ignore_index=False)
             
             # Normalize index types before sorting to prevent Timestamp vs int comparison errors
@@ -278,26 +442,149 @@ class KlinesParquetManager:
                         self.logger.warning(f"Could not convert index to numeric either: {e2}")
             
             combined_df = combined_df.sort_index()
+            self.logger.info(f"🔧 After sorting: {len(combined_df)} records")
             
             # Remove duplicates
             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+            self.logger.info(f"🔧 After duplicate removal: {len(combined_df)} records")
             
             # Apply date filtering if specified
             if start_date is not None or end_date is not None:
+                self.logger.info(f"🔧 Date filtering requested, determining available data range")
+                self.logger.info(f"🔧 Before date filtering: {len(combined_df)} records")
+                
                 # Convert timestamps to datetime for proper filtering
+                timestamp_col = None
                 if 'timestamp' in combined_df.columns:
                     # Use timestamp column for filtering
-                    timestamp_col = pd.to_datetime(combined_df['timestamp'], unit='s')
+                    try:
+                        # First, clean the timestamp column by removing NaN and infinite values
+                        timestamp_series = combined_df['timestamp'].copy()
+                        
+                        # Remove NaN and infinite values
+                        valid_mask = pd.notna(timestamp_series) & np.isfinite(timestamp_series)
+                        if not valid_mask.all():
+                            invalid_count = len(timestamp_series) - valid_mask.sum()
+                            invalid_indices = timestamp_series.index[~valid_mask].tolist()
+                            
+                            # Get sample of invalid values for debugging
+                            invalid_sample = timestamp_series[~valid_mask].head(5).tolist()
+                            
+                            self.logger.warning(
+                                f"⚠️ Found {invalid_count} invalid timestamps (NaN or inf) in 'timestamp' column, removing them\n"
+                                f"   📊 Dataframe info: {len(combined_df)} rows × {len(combined_df.columns)} columns\n"
+                                f"   📋 Columns: {list(combined_df.columns)}\n"
+                                f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
+                                f"   🧪 Sample invalid values: {invalid_sample}"
+                            )
+                            timestamp_series = timestamp_series[valid_mask]
+                            combined_df = combined_df[valid_mask]
+                            self.logger.info(f"🔧 After cleaning invalid timestamps: {len(combined_df)} records")
+                        
+                        # Try to convert timestamps to datetime using seconds first
+                        timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+                    except (OverflowError, FloatingPointError):
+                        # If overflow occurs, try with milliseconds
+                        try:
+                            timestamp_col = pd.to_datetime(timestamp_series, unit='ms')
+                        except (OverflowError, FloatingPointError):
+                            # If still failing, convert to int64 and try again
+                            timestamp_int = timestamp_series.astype('int64')
+                            timestamp_col = pd.to_datetime(timestamp_int, unit='s')
+                elif 'open_time' in combined_df.columns:
+                    # Handle case where data has open_time but no timestamp column
+                    try:
+                        # First, clean the open_time column by removing NaN and infinite values
+                        open_time_series = combined_df['open_time'].copy()
+                        
+                        # Remove NaN and infinite values
+                        valid_mask = pd.notna(open_time_series) & np.isfinite(open_time_series)
+                        if not valid_mask.all():
+                            invalid_count = len(open_time_series) - valid_mask.sum()
+                            invalid_indices = open_time_series.index[~valid_mask].tolist()
+                            
+                            # Get sample of invalid values for debugging
+                            invalid_sample = open_time_series[~valid_mask].head(5).tolist()
+                            
+                            self.logger.warning(
+                                f"⚠️ Found {invalid_count} invalid timestamps (NaN or inf) in 'open_time' column, removing them\n"
+                                f"   📊 Dataframe info: {len(combined_df)} rows × {len(combined_df.columns)} columns\n"
+                                f"   📋 Columns: {list(combined_df.columns)}\n"
+                                f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
+                                f"   🧪 Sample invalid values: {invalid_sample}"
+                            )
+                            open_time_series = open_time_series[valid_mask]
+                            combined_df = combined_df[valid_mask]
+                            self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df)} records")
+                        
+                        # open_time is typically in milliseconds for Binance data
+                        timestamp_col = pd.to_datetime(open_time_series, unit='ms')
+                        self.logger.info(f"🔧 Using 'open_time' column for timestamp filtering")
+                    except (OverflowError, FloatingPointError):
+                        # If overflow occurs, try with seconds
+                        try:
+                            timestamp_col = pd.to_datetime(open_time_series, unit='s')
+                        except (OverflowError, FloatingPointError):
+                            # If still failing, convert to int64 and try again
+                            timestamp_int = open_time_series.astype('int64')
+                            timestamp_col = pd.to_datetime(timestamp_int, unit='ms')
+                    
+                    max_date = timestamp_col.max()
+                    min_date = timestamp_col.min()
+                    
+                    self.logger.info(f"📅 Available data range: {min_date.date()} to {max_date.date()}")
+                    
+                    # If the requested date range doesn't match available data, use last 10 days
                     if start_date is not None:
-                        combined_df = combined_df[timestamp_col >= start_date]
+                        # Convert string to datetime if needed
+                        if isinstance(start_date, str):
+                            start_date = pd.to_datetime(start_date)
+                        if start_date.date() > max_date.date():
+                            self.logger.warning(f"⚠️ Requested start_date {start_date.date()} is beyond available data (max: {max_date.date()})")
+                            self.logger.info(f"📅 Using last 10 days of available data instead")
+                            start_date = max_date - timedelta(days=10)
+                            end_date = max_date
+                    
                     if end_date is not None:
-                        combined_df = combined_df[timestamp_col <= end_date]
+                        # Convert string to datetime if needed
+                        if isinstance(end_date, str):
+                            end_date = pd.to_datetime(end_date)
+                        if end_date.date() > max_date.date():
+                            self.logger.warning(f"⚠️ Requested end_date {end_date.date()} is beyond available data (max: {max_date.date()})")
+                            self.logger.info(f"📅 Using last 10 days of available data instead")
+                            start_date = max_date - timedelta(days=10)
+                            end_date = max_date
+                    
+                    if start_date is not None and end_date is not None and start_date.date() > end_date.date():
+                        self.logger.warning(f"⚠️ Invalid date range: start_date {start_date.date()} > end_date {end_date.date()}")
+                        self.logger.info(f"📅 Using last 10 days of available data instead")
+                        start_date = max_date - timedelta(days=10)
+                        end_date = max_date
+                    
+                    self.logger.info(f"📅 Final date range: {start_date.date()} to {end_date.date()}")
+                    
+                    # Apply the date filtering
+                    mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
+                    combined_df = combined_df[mask]
+                    
+                    if len(combined_df) == 0:
+                        self.logger.warning(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
+                        self.logger.info(f"📅 Fallback: Using last 10 days from {max_date.date()}")
+                        last_10_days = max_date - timedelta(days=10)
+                        mask = timestamp_col >= last_10_days
+                        combined_df = combined_df[mask]
+                        self.logger.info(f"📅 Fallback result: {len(combined_df)} records")
                 else:
                     # Fallback to index-based filtering
                     try:
                         # Convert index to datetime if it's not already
                         if not isinstance(combined_df.index, pd.DatetimeIndex):
-                            combined_df.index = pd.to_datetime(combined_df.index, unit='s')
+                            # Try to use open_time as index if available
+                            if 'open_time' in combined_df.columns:
+                                combined_df.index = pd.to_datetime(combined_df['open_time'], unit='ms')
+                                self.logger.info(f"🔧 Using 'open_time' column as DataFrame index")
+                            else:
+                                combined_df.index = pd.to_datetime(combined_df.index, unit='s')
                         
                         if start_date is not None:
                             combined_df = combined_df[combined_df.index >= start_date]
@@ -306,6 +593,10 @@ class KlinesParquetManager:
                     except Exception as e:
                         self.logger.warning(f"Could not apply date filtering: {e}")
                         # Continue without filtering if conversion fails
+                
+                self.logger.info(f"🔧 After date filtering: {len(combined_df)} records")
+            else:
+                self.logger.info(f"🔧 No date filtering applied")
             
             self.logger.info(f"📊 Loaded {len(combined_df)} records for {symbol} {interval}")
             return combined_df

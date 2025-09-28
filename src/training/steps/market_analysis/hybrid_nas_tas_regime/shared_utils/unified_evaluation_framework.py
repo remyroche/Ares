@@ -28,6 +28,15 @@ from .unified_architecture_config import ArchitectureType, OptimizationObjective
 from .unified_economic_evaluator import UnifiedEconomicSignificanceEvaluator, EconomicEvaluationConfig
 from .unified_trading_viability_evaluator import UnifiedTradingViabilityEvaluator, TradingViabilityConfig
 
+# Import feature importance integration if available
+try:
+    from ...market_analysis.shared_utils.feature_importance_integration import (
+        FeatureImportanceIntegrationManager, FeatureImportanceIntegrationConfig
+    )
+    FEATURE_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    FEATURE_IMPORTANCE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,6 +123,7 @@ class EvaluationResult:
     # Detailed analysis
     regime_performance: Dict[str, Dict[str, float]] = field(default_factory=dict)
     feature_importance: Dict[str, float] = field(default_factory=dict)
+    feature_importance_analysis: Dict[str, Any] = field(default_factory=dict)
     error_analysis: Dict[str, Any] = field(default_factory=dict)
     
     # Metadata
@@ -159,7 +169,12 @@ class EvaluationConfig:
     enable_cross_validation: bool = True
     cv_folds: int = 5
     cv_strategy: str = "temporal"
-    
+
+    # Feature importance analysis
+    enable_feature_importance: bool = True
+    feature_importance_methods: List[str] = field(default_factory=lambda: ["mutual_information", "f_classif"])
+    feature_importance_threshold: float = 0.01
+
     # Bootstrap analysis
     enable_bootstrap: bool = True
     bootstrap_iterations: int = 100
@@ -188,7 +203,24 @@ class UnifiedEvaluationFramework:
         
         # Initialize specialized evaluators
         self._initialize_specialized_evaluators()
-        
+
+        # Initialize feature importance manager if available
+        if FEATURE_IMPORTANCE_AVAILABLE and self.config.enable_feature_importance:
+            try:
+                importance_config = FeatureImportanceIntegrationConfig(
+                    importance_methods=self.config.feature_importance_methods,
+                    importance_threshold=self.config.feature_importance_threshold,
+                    enable_pre_clustering_analysis=False,  # Not needed for model evaluation
+                    enable_post_clustering_analysis=True,  # For regime analysis
+                    enable_regime_characterization=True,
+                    include_detailed_analysis=True
+                )
+                self.feature_importance_manager = FeatureImportanceIntegrationManager(importance_config)
+                self.logger.info("✅ Feature importance manager initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Feature importance manager initialization failed: {e}")
+                self.feature_importance_manager = None
+
         # Evaluation state
         self.evaluation_history: List[EvaluationResult] = []
         self.performance_baselines: Dict[str, float] = {}
@@ -287,7 +319,13 @@ class UnifiedEvaluationFramework:
             # Regime-specific evaluation
             if self.config.enable_regime_metrics and regime_labels is not None:
                 self._evaluate_regime_metrics(model, X_test, y_test, regime_labels, result)
-            
+
+            # Feature importance analysis if available
+            if (self.config.enable_feature_importance and
+                self.feature_importance_manager and
+                regime_labels is not None):
+                self._evaluate_feature_importance(model, X_test, y_test, regime_labels, result)
+
             # Model characteristics
             self._evaluate_model_characteristics(model, X_test, result)
             
@@ -486,7 +524,60 @@ class UnifiedEvaluationFramework:
             
         except Exception as e:
             self.logger.warning(f"Regime metrics evaluation failed: {e}")
-    
+
+    def _evaluate_feature_importance(self, model: Any, X_test: np.ndarray,
+                                   y_test: np.ndarray, regime_labels: np.ndarray,
+                                   result: EvaluationResult):
+        """Evaluate feature importance for regime discovery and interpretability."""
+        try:
+            # Prepare features for analysis
+            # Try to get meaningful feature names from the model or data
+            feature_names = []
+
+            # Check if model has feature names
+            if hasattr(model, 'feature_names_'):
+                feature_names = getattr(model, 'feature_names_')
+            elif hasattr(model, 'get_feature_names_out'):
+                try:
+                    feature_names = model.get_feature_names_out()
+                except:
+                    pass
+
+            # If still no feature names, generate them
+            if not feature_names and X_test.shape[1] > 0:
+                feature_names = [f'feature_{i}' for i in range(X_test.shape[1])]
+
+            # Perform feature importance analysis
+            importance_analysis = self.feature_importance_manager.analyze_post_clustering_regimes(
+                X_test, feature_names, regime_labels
+            )
+
+            if importance_analysis:
+                result.feature_importance_analysis = importance_analysis
+
+                # Extract key insights for the result
+                feature_ranking = importance_analysis.get('feature_importance_ranking', [])
+                if feature_ranking:
+                    # Store top feature importances
+                    top_features = {}
+                    for i, (feature_name, importance_score) in enumerate(feature_ranking[:20]):
+                        top_features[feature_name] = float(importance_score)
+                    result.feature_importance = top_features
+
+                # Add interpretation to notes
+                interpretation = importance_analysis.get('interpretation', '')
+                if interpretation and result.notes:
+                    result.notes += f" | Feature Importance: {interpretation}"
+                elif interpretation:
+                    result.notes = f"Feature Importance: {interpretation}"
+
+                self.logger.info("✅ Feature importance analysis completed")
+            else:
+                self.logger.warning("⚠️ Feature importance analysis returned no results")
+
+        except Exception as e:
+            self.logger.warning(f"Feature importance evaluation failed: {e}")
+
     def _evaluate_model_characteristics(self, model: Any, X_test: np.ndarray, result: EvaluationResult):
         """Evaluate model characteristics."""
         try:

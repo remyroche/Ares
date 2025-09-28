@@ -94,8 +94,7 @@ class EnhancedMatrixOperations:
                 self.matrix_ops = UnifiedMatrixOperations(
                     enable_gpu=enable_gpu,
                     enable_memory_optimization=True,
-                    enable_parallel_processing=True,
-                    optimization_level='aggressive'
+                    enable_parallel=True
                 )
                 self.vectorized_core = get_vectorized_processing_core()
                 self.batch_ops = BatchMatrixOperations()

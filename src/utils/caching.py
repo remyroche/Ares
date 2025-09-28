@@ -2,7 +2,7 @@ from typing import Dict, Optional, Any
 import logging
 import asyncio
 
-from src.utils.unified_cache import UnifiedCache
+from src.utils.unified_cache import UnifiedCache, cached
 
 """Caching utilities for the Ares project."""
 
@@ -58,3 +58,7 @@ class IntelligentCache:
 
     def get_stats(self) -> Dict[str, Any]:
         return self._cache.get_stats()
+
+
+# Export the cached decorator as intelligent_caching for backwards compatibility
+intelligent_caching = cached

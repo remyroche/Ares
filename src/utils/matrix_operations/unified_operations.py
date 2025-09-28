@@ -1058,6 +1058,79 @@ class UnifiedMatrixOperations:
             # Return original matrix on failure
             return similarity_matrix
 
+    def calculate_regime_stability(self, regime_predictions: np.ndarray, 
+                                  timestamps: np.ndarray) -> np.ndarray:
+        """
+        Calculate regime stability scores for each time point.
+        
+        Args:
+            regime_predictions: Array of regime labels for each time point
+            timestamps: Array of timestamps corresponding to regime predictions
+            
+        Returns:
+            Array of stability scores (0-1, higher is more stable)
+        """
+        try:
+            stability_scores = np.zeros(len(regime_predictions))
+            
+            for i in range(len(regime_predictions)):
+                current_regime = regime_predictions[i]
+                
+                # Look ahead and behind for regime consistency
+                lookback = min(10, i)
+                lookahead = min(10, len(regime_predictions) - i - 1)
+                
+                if lookback > 0:
+                    past_regimes = regime_predictions[i-lookback:i]
+                    past_consistency = np.mean(past_regimes == current_regime)
+                else:
+                    past_consistency = 1.0
+                
+                if lookahead > 0:
+                    future_regimes = regime_predictions[i+1:i+1+lookahead]
+                    future_consistency = np.mean(future_regimes == current_regime)
+                else:
+                    future_consistency = 1.0
+                
+                stability_scores[i] = (past_consistency + future_consistency) / 2.0
+            
+            return stability_scores
+            
+        except Exception as e:
+            self.logger.warning(f"Regime stability calculation failed: {e}")
+            return np.ones(len(regime_predictions)) * 0.5
+
+    def calculate_transition_probabilities(self, regime_predictions: np.ndarray, 
+                                         n_regimes: int) -> np.ndarray:
+        """
+        Calculate regime transition probability matrix.
+        
+        Args:
+            regime_predictions: Array of regime labels for each time point
+            n_regimes: Number of unique regimes
+            
+        Returns:
+            Transition probability matrix (n_regimes x n_regimes)
+        """
+        try:
+            transition_matrix = np.zeros((n_regimes, n_regimes))
+            
+            for i in range(len(regime_predictions) - 1):
+                current_regime = regime_predictions[i]
+                next_regime = regime_predictions[i + 1]
+                transition_matrix[current_regime, next_regime] += 1
+            
+            # Normalize transition matrix
+            row_sums = transition_matrix.sum(axis=1)
+            transition_matrix = transition_matrix / (row_sums[:, np.newaxis] + 1e-8)
+            
+            return transition_matrix
+            
+        except Exception as e:
+            self.logger.warning(f"Transition probability calculation failed: {e}")
+            # Return uniform transition matrix as fallback
+            return np.ones((n_regimes, n_regimes)) / n_regimes
+
 
 # Alias for backward compatibility
 M1EnhancedMatrixOperations = UnifiedMatrixOperations

@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
 
 import logging
 import os
@@ -55,6 +55,15 @@ except ImportError:
     TORCH_AVAILABLE = False
     torch = None
 
+# Import PatchTST wrapper for tree-based models
+try:
+    from src.training.steps.model_training.patchtst_wrapper import create_patchtst_wrapper
+    PATCHTST_AVAILABLE = True
+except ImportError as e:
+    PATCHTST_AVAILABLE = False
+    create_patchtst_wrapper = None
+    tprint(f"⚠️ PatchTST wrapper not available: {e}")
+
 class BaseEnsemble:
     """
     Base class for all child ensembles to train highly optimized and robust models.
@@ -86,6 +95,26 @@ class BaseEnsemble:
         self.enable_m1_optimizations = enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
         self.enable_gpu_acceleration = TORCH_AVAILABLE
         
+        # Initialize PatchTST wrapper for tree-based models only
+        self.enable_patchtst_wrapper = self.config.get('enable_patchtst_wrapper', True) and PATCHTST_AVAILABLE
+        self.patchtst_config = self.config.get('patchtst_config', {
+            'patch_len': 16,
+            'stride': 8,
+            'use_transformer_attention': True,
+            'regime_aware': True,
+            'attention_dropout': 0.1,
+            'num_heads': 4
+        })
+        
+        # Tree-based model types that support PatchTST wrapper
+        self.tree_model_types = {
+            'LGBMClassifier', 'LGBMRegressor',
+            'XGBClassifier', 'XGBRegressor', 
+            'RandomForestClassifier', 'RandomForestRegressor',
+            'ExtraTreesClassifier', 'ExtraTreesRegressor',
+            'GradientBoostingClassifier', 'GradientBoostingRegressor'
+        }
+        
         if self.enable_m1_optimizations:
             try:
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
@@ -103,60 +132,64 @@ class BaseEnsemble:
         self.flat_features = ['RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9', 'MACDh_12_26_9', 'BBU_20_2.0', 'BBM_20_2.0', 'BBL_20_2.0', 'BBW_20_2.0', 'BBP_20_2.0', 'STOCHk_14_3_3', 'STOCHd_14_3_3', 'ATR_14', 'ADX_14', 'OBV', 'VWAP', 'SMA_9', 'SMA_21', 'SMA_50', 'EMA_12', 'EMA_26', 'CCI_14', 'MFI_14', 'ROC_10', 'Williams_R_14', 'Parabolic_SAR', 'SuperTrend_10_2.0', 'DCU_20', 'DCL_20', 'DCM_20', 'ATRr_14', 'Volatility_Regime_Numeric', 'Hour_Sin', 'Hour_Cos', 'DayOfWeek_Sin', 'DayOfWeek_Cos', 'VROC', 'OBV_Divergence', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'Price_Momentum', 'Price_Acceleration', 'Volume_Momentum', 'Volume_Acceleration', 'Volatility_Momentum', 'RSI_MACD_Divergence', 'Volume_Price_Divergence', 'Price_SMA_9_Ratio', 'Price_SMA_21_Ratio', 'Price_SMA_50_Ratio', 'Volatility_Regime', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_health', 'realized_volatility', 'parkinson_volatility', 'garman_klass_volatility', 'volatility_regime', 'volatility_percentile', 'autocorrelation_5', 'autocorrelation_20', 'cross_timeframe_correlation', 'momentum_5', 'momentum_20', 'momentum_50', 'momentum_acceleration', 'momentum_strength', 'momentum_divergence', 'adaptive_sma', 'adaptive_ema', 'adaptive_period', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'spread_liquidity_pct_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'price_impact_pct_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'kyle_lambda_pct_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'amihud_illiquidity_pct_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'realized_volatility_log', 'realized_volatility_z_score', 'realized_volatility_change', 'realized_volatility_pct_change', 'parkinson_volatility_log', 'parkinson_volatility_z_score', 'parkinson_volatility_change', 'parkinson_volatility_pct_change', 'garman_klass_volatility_log', 'garman_klass_volatility_z_score', 'garman_klass_volatility_change', 'garman_klass_volatility_pct_change', 'momentum_5_z_score', 'momentum_5_acceleration', 'momentum_10_z_score', 'momentum_10_acceleration', 'momentum_20_z_score', 'momentum_20_acceleration', 'momentum_50_z_score', 'momentum_50_acceleration', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
         self.order_flow_features = ['volume', 'volume_delta', 'cvd_slope', 'OBV', 'CMF', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_stress', 'liquidity_health', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_stress_log', 'liquidity_stress_z_score', 'liquidity_stress_change', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
 
-    @handles_errors(default_return = None, context='ensemble training')
-    def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
-        self.logger.info(f'Starting full training pipeline for {self.ensemble_name}...')
-        if historical_features.empty:
-            self.logger.warning(f'No historical features for {self.ensemble_name}. Skipping training.')
-            return
-        self.logger.info('Applying comprehensive feature normalization...')
-        historical_features = self.normalize_non_price_features(historical_features)
-        all_expected_features = list(set(self.sequence_features + self.flat_features + self.order_flow_features))
-        for col in all_expected_features:
-            if col not in historical_features.columns:
-                historical_features[col] = 0.0
-        if historical_targets is None:
-            self.logger.warning(f'No historical targets for {self.ensemble_name}. Skipping training.')
-            return
-        aligned_data = historical_features.join(historical_targets.rename('target')).dropna()
-        if aligned_data.empty:
-            self.logger.warning(f'Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.')
-            return
-        try:
-            y_encoded = self.label_encoder.fit_transform(aligned_data['target'].to_numpy())
-        except ValueError as e:
-            self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info = True)
-            return
-        self._train_base_models(aligned_data, y_encoded)
-        meta_features_train = self._get_meta_features(aligned_data, is_live = False)
-        if not isinstance(meta_features_train, pd.DataFrame) or meta_features_train.empty:
-            self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
-            return
-        y_meta_train = pd.Series(y_encoded, index = aligned_data.index).loc[meta_features_train.index].values
-        X_meta_train = meta_features_train
-        if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
-            self.logger.warning(f'Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.')
-            return
-        self.logger.info('Scaling and applying PCA to meta-features (train-only fit)...')
-        self.meta_feature_scaler = StandardScaler()
-        X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
-        n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
-        self.pca = PCA(n_components = n_components)
-        X_meta_pca = self.pca.fit_transform(X_meta_scaled)
-        X_meta_pca_df = pd.DataFrame(X_meta_pca, index = X_meta_train.index)
-        self.logger.info('Tuning hyperparameters for meta-learner...')
-        self.best_meta_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train)
-        self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
-        self.trained = True
-        self.logger.info(f'Training pipeline for {self.ensemble_name} complete.')
-        self._validate_ensemble_state()
+@handles_errors(default_return = None, context='ensemble training')
+def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
+    tprint(f"🚀 [BASE_ENSEMBLE] Starting ensemble training for {self.ensemble_name}", color="cyan", bold=True)
+    self.logger.info(f'Starting full training pipeline for {self.ensemble_name}...')
+    if historical_features.empty:
+        self.logger.warning(f'No historical features for {self.ensemble_name}. Skipping training.')
+        return
+    self.logger.info('Applying comprehensive feature normalization...')
+    historical_features = self.normalize_non_price_features(historical_features)
+    all_expected_features = list(set(self.sequence_features + self.flat_features + self.order_flow_features))
+    for col in all_expected_features:
+        if col not in historical_features.columns:
+            historical_features[col] = 0.0
+    if historical_targets is None:
+        self.logger.warning(f'No historical targets for {self.ensemble_name}. Skipping training.')
+        return
+    aligned_data = historical_features.join(historical_targets.rename('target')).dropna()
+    if aligned_data.empty:
+        self.logger.warning(f'Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.')
+        return
+    try:
+        y_encoded = self.label_encoder.fit_transform(aligned_data['target'].to_numpy())
+    except ValueError as e:
+        self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info = True)
+        return
+    self._train_base_models(aligned_data, y_encoded)
+    meta_features_train = self._get_meta_features(aligned_data, is_live = False)
+    if not isinstance(meta_features_train, pd.DataFrame) or meta_features_train.empty:
+        self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
+        return
+    y_meta_train = pd.Series(y_encoded, index = aligned_data.index).loc[meta_features_train.index].values
+    X_meta_train = meta_features_train
+    if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
+        self.logger.warning(f'Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.')
+        return
+    self.logger.info('Scaling and applying PCA to meta-features (train-only fit)...')
+    self.meta_feature_scaler = StandardScaler()
+    X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
+    n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
+    self.pca = PCA(n_components = n_components)
+    X_meta_pca = self.pca.fit_transform(X_meta_scaled)
+    X_meta_pca_df = pd.DataFrame(X_meta_pca, index = X_meta_train.index)
+    self.logger.info('Tuning hyperparameters for meta-learner...')
+    self.best_meta_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train)
+    self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
+    self.trained = True
+    self.logger.info(f'Training pipeline for {self.ensemble_name} complete.')
+    self._validate_ensemble_state()
 
     def train_ensemble_m1_optimized(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
         """Train ensemble with M1 optimization."""
+        tprint(f"🚀 [BASE_ENSEMBLE] Starting M1-optimized ensemble training for {self.ensemble_name}", color="cyan", bold=True)
         if not self.enable_m1_optimizations:
+            tprint("⚠️ [BASE_ENSEMBLE] M1 optimizations not available, falling back to standard method", color="yellow")
             self.logger.warning("⚠️ M1 optimizations not available, falling back to standard method")
             return self.train_ensemble(historical_features, historical_targets)
         
+        tprint(f"🚀 [BASE_ENSEMBLE] Starting M1-optimized training pipeline for {self.ensemble_name}", color="cyan")
         self.logger.info(f'🚀 Starting M1-optimized training pipeline for {self.ensemble_name}...')
         
         if historical_features.empty:
@@ -220,7 +253,18 @@ class BaseEnsemble:
             self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
             return
         
-        y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[meta_features_train.index].values
+        # Ensure index alignment between y_encoded and meta_features_train
+        try:
+            y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[meta_features_train.index].values
+        except IndexError:
+            # Handle index mismatch by using common indices
+            common_indices = aligned_data.index.intersection(meta_features_train.index)
+            if len(common_indices) == 0:
+                self.logger.warning(f'No common indices between aligned_data and meta_features for {self.ensemble_name}. Skipping meta-learner training.')
+                return
+            y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[common_indices].values
+            meta_features_train = meta_features_train.loc[common_indices]
+        
         X_meta_train = meta_features_train
         
         if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
@@ -546,8 +590,35 @@ class BaseEnsemble:
 
     @handles_errors(default_return = None, context='meta learner training')
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
-        self.meta_learner = LGBMClassifier(**params, random_state = 42, verbose=-1)
+        # Create base LightGBM model
+        base_model = LGBMClassifier(**params, random_state = 42, verbose=-1)
+        
+        # Apply PatchTST wrapper only for tree-based models
+        self.meta_learner = self._apply_patchtst_wrapper_if_needed(base_model, "Meta-learner")
+        
         self.meta_learner.fit(X, y)
+
+    def _is_tree_based_model(self, model) -> bool:
+        """Check if a model is tree-based and should use PatchTST wrapper."""
+        model_type = model.__class__.__name__
+        return model_type in self.tree_model_types
+
+    def _apply_patchtst_wrapper_if_needed(self, base_model, model_name: str = "model") -> Any:
+        """Apply PatchTST wrapper to tree-based models only."""
+        if not self._is_tree_based_model(base_model):
+            self.logger.info(f"ℹ️ PatchTST wrapper not applied to {model_name} (not a tree-based model)")
+            return base_model
+        
+        if not (self.enable_patchtst_wrapper and create_patchtst_wrapper is not None):
+            return base_model
+        
+        try:
+            wrapped_model = create_patchtst_wrapper(base_model, self.patchtst_config)
+            self.logger.info(f"✅ {model_name} enhanced with PatchTST wrapper")
+            return wrapped_model
+        except Exception as e:
+            self.logger.warning(f"⚠️ PatchTST wrapper failed for {model_name}, using base model: {e}")
+            return base_model
 
     @handles_errors(default_return={'prediction': 'HOLD', 'confidence': 0.0}, context='meta prediction')
     def _get_meta_prediction(self, meta_input_pca: np.ndarray) -> dict[str, Any]:

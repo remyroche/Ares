@@ -323,7 +323,8 @@ class SingleTimeframeNBEATS(nn.Module):
         # Add regime embedding if available
         if self.config.regime_aware and regime_id is not None:
             regime_emb = self.regime_embedding(torch.tensor([regime_id]).to(x.device))
-            regime_emb = regime_emb.unsqueeze(1).expand(-1, x.size(1), -1)
+            # Expand to match batch size and sequence length: [1, embedding_dim] -> [batch_size, seq_length, embedding_dim]
+            regime_emb = regime_emb.unsqueeze(0).expand(x.size(0), -1, -1).unsqueeze(1).expand(-1, x.size(1), -1)
             x = x + regime_emb
 
         # Process through stacks

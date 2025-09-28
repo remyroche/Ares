@@ -102,7 +102,13 @@ class EnhancedMLCommonIntegration:
         
         # Initialize math validator
         if self.config.enable_safe_math:
-            validation_level = ValidationLevel(self.config.math_validation_level)
+            # Convert string to ValidationLevel enum member
+            if self.config.math_validation_level == 'lax':
+                validation_level = ValidationLevel.LAX
+            elif self.config.math_validation_level == 'strict':
+                validation_level = ValidationLevel.STRICT
+            else:  # default to 'standard'
+                validation_level = ValidationLevel.STANDARD
             self.math_validator = MathValidator(validation_level)
         else:
             self.math_validator = None

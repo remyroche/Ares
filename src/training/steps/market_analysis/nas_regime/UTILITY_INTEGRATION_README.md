@@ -132,8 +132,7 @@ loaded_data = universal_serializer.load("data.parquet")
 matrix_ops = UnifiedMatrixOperations(
     enable_gpu=True,
     enable_memory_optimization=True,
-    enable_parallel_processing=True,
-    optimization_level='aggressive'
+    enable_parallel=True
 )
 
 # Safe matrix operations

@@ -7,6 +7,9 @@ to improve maintainability and reduce hardcoded values.
 
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
+from src.utils.tprint import tprint
+
+tprint("📋 Loading feature lookback optimization constants...")
 
 
 @dataclass
@@ -169,17 +172,20 @@ class AlgorithmConstants:
 
 
 # Global instances for easy access
+tprint("🔧 Creating global constant instances...")
 OPTIMIZATION_CONSTANTS = OptimizationConstants()
 PERFORMANCE_CONSTANTS = PerformanceConstants()
 VALIDATION_CONSTANTS = ValidationConstants()
 QUALITY_CONSTANTS = QualityConstants()
 FILE_CONSTANTS = FileConstants()
 ALGORITHM_CONSTANTS = AlgorithmConstants()
+tprint("✅ All constant instances created successfully")
 
 
 def get_all_constants() -> Dict[str, any]:
     """Get all constants as a dictionary for easy access."""
-    return {
+    tprint("📋 Getting all constants dictionary...")
+    constants_dict = {
         'optimization': OPTIMIZATION_CONSTANTS,
         'performance': PERFORMANCE_CONSTANTS,
         'validation': VALIDATION_CONSTANTS,
@@ -187,3 +193,5 @@ def get_all_constants() -> Dict[str, any]:
         'file': FILE_CONSTANTS,
         'algorithm': ALGORITHM_CONSTANTS
     }
+    tprint(f"✅ Constants dictionary created with {len(constants_dict)} categories")
+    return constants_dict

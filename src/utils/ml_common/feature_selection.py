@@ -68,6 +68,19 @@ except Exception as e:
 
 logger = _LOGGER
 
+# Global instance for feature selection utilities
+_feature_selection_framework: Optional['FeatureSelectionFramework'] = None
+
+def get_feature_selection_utils() -> 'FeatureSelectionFramework':
+    """Get or create the global feature selection framework instance."""
+    global _feature_selection_framework
+    
+    if _feature_selection_framework is None:
+        _feature_selection_framework = FeatureSelectionFramework()
+        logger.info("✅ Feature selection framework initialized")
+    
+    return _feature_selection_framework
+
 try:
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
     from sklearn.feature_selection import RFE, RFECV

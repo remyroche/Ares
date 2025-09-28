@@ -78,11 +78,13 @@ class MonitoringMetrics:
     
     def __init__(self, component_name: str = "FeatureLookbackOptimization"):
         """Initialize the monitoring metrics collector."""
+        tprint(f"🔧 Initializing MonitoringMetrics for {component_name}...")
         self.logger = logger.getChild('MonitoringMetrics')
         self.component_name = component_name
         self.metrics: List[MetricPoint] = []
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
+        tprint(f"✅ MonitoringMetrics initialized for {component_name}")
         
         # Performance tracking
         self.performance_metrics = {

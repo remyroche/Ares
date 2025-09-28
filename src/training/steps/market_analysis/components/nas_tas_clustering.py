@@ -19,6 +19,7 @@ import traceback
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
 
 logger = logging.getLogger(__name__)
 
@@ -84,61 +85,94 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with clustering results
         """
+        tprint("🚀 [NAS_TAS_CLUSTERING] Starting NAS-TAS Clustering", color="blue", bold=True)
         self.logger.info('🚀 Starting NAS-TAS Clustering')
 
         try:
             # Update execution metadata
+            tprint("📊 [NAS_TAS_CLUSTERING] Initializing execution metadata", color="cyan")
             self.execution_metadata = {
                 'start_time': datetime.now(),
                 'symbol': self.config.symbol if self.config else 'UNKNOWN',
                 'timeframe': self.config.timeframe if self.config else '15m',
                 'component': 'nas_tas_clustering'
             }
+            tprint_debug(f"⚙️ [NAS_TAS_CLUSTERING] Symbol: {self.execution_metadata['symbol']}")
+            tprint_debug(f"⚙️ [NAS_TAS_CLUSTERING] Timeframe: {self.execution_metadata['timeframe']}")
 
             # Load market data
+            tprint("📊 [NAS_TAS_CLUSTERING] Loading market data", color="blue")
             market_data = await self._load_market_data(data)
             if market_data is None or market_data.empty:
+                tprint_error("❌ [NAS_TAS_CLUSTERING] No market data available for clustering")
                 raise ValueError("No market data available for clustering")
+            tprint(f"✅ [NAS_TAS_CLUSTERING] Market data loaded: {len(market_data)} rows", color="green")
 
             # Prepare features for clustering
+            tprint("🔧 [NAS_TAS_CLUSTERING] Preparing features for clustering", color="blue")
             features = self._prepare_features(market_data)
             if features is None:
+                tprint_error("❌ [NAS_TAS_CLUSTERING] Failed to prepare features for clustering")
                 raise ValueError("Failed to prepare features for clustering")
+            tprint(f"✅ [NAS_TAS_CLUSTERING] Features prepared: {features.shape}", color="green")
+            tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Feature shape: {features.shape}")
 
             # Initialize unified clustering
+            tprint("⚙️ [NAS_TAS_CLUSTERING] Creating clustering configuration", color="cyan")
             clustering_config = self._create_clustering_config()
+            tprint_debug(f"🔧 [NAS_TAS_CLUSTERING] Clustering config: {clustering_config}")
+            
+            tprint("🚀 [NAS_TAS_CLUSTERING] Initializing unified clustering", color="blue")
             self.unified_clustering = self._initialize_unified_clustering(clustering_config)
+            tprint("✅ [NAS_TAS_CLUSTERING] Unified clustering initialized", color="green")
 
             # Perform clustering
+            import time
+            clustering_start = time.time()
+            tprint("🧠 [NAS_TAS_CLUSTERING] Starting clustering process", color="cyan", bold=True)
+            tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Clustering {features.shape[0]} samples with {features.shape[1]} features")
+
             clustering_result = self.unified_clustering.cluster_features(
                 features=features,
                 market_data=market_data
             )
 
+            execution_time = time.time() - clustering_start
+
             if not clustering_result.success:
+                tprint_error(f"❌ [NAS_TAS_CLUSTERING] Clustering failed: {clustering_result.error_message}")
                 raise ValueError(f"Clustering failed: {clustering_result.error_message}")
 
             self.clustering_result = clustering_result
-            self.logger.info(f"✅ NAS-TAS Clustering completed: {len(set(clustering_result.labels))} regimes discovered")
+            unique_regimes = len(set(clustering_result.labels))
+            tprint(f"✅ [NAS_TAS_CLUSTERING] Clustering completed: {unique_regimes} regimes discovered", color="green")
+            tprint_performance("NAS-TAS clustering", execution_time)
+            self.logger.info(f"✅ NAS-TAS Clustering completed: {unique_regimes} regimes discovered")
 
             # Generate outputs
+            tprint("📁 [NAS_TAS_CLUSTERING] Generating outputs", color="blue")
             outputs = await self._generate_outputs(market_data, clustering_result)
+            tprint("✅ [NAS_TAS_CLUSTERING] Outputs generated", color="green")
 
             # Update execution metadata
+            total_execution_time = (datetime.now() - self.execution_metadata['start_time']).total_seconds()
+            tprint(f"⏱️ [NAS_TAS_CLUSTERING] Execution completed in {total_execution_time:.2f}s", color="cyan")
+
             self.execution_metadata.update({
                 'end_time': datetime.now(),
-                'execution_time': (datetime.now() - self.execution_metadata['start_time']).total_seconds(),
+                'execution_time': total_execution_time,
                 'success': True,
-                'regime_count': len(set(clustering_result.labels)),
+                'regime_count': unique_regimes,
                 'algorithm_used': clustering_result.algorithm_used,
                 'quality_metrics': clustering_result.quality_metrics
             })
 
+            tprint_success(f"🎉 [NAS_TAS_CLUSTERING] SUCCESS: {unique_regimes} regimes discovered in {execution_time:.2f}s")
             return ComponentResult(
                 success=True,
                 artifacts={
                     'nas_tas_clustering_result': {
-                        'regime_count': len(set(clustering_result.labels)),
+                        'regime_count': unique_regimes,
                         'total_samples': len(clustering_result.labels),
                         'regime_assignments': clustering_result.labels.tolist(),
                         'cluster_centers': clustering_result.cluster_centers.tolist(),
@@ -154,7 +188,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'symbol': self.config.symbol if self.config else 'UNKNOWN',
                     'timeframe': self.config.timeframe if self.config else '15m',
                     'data_points_processed': len(market_data),
-                    'regime_count': len(set(clustering_result.labels)),
+                    'regime_count': unique_regimes,
                     'algorithm_used': clustering_result.algorithm_used,
                     'execution_successful': True,
                     'execution_time': clustering_result.execution_time
@@ -162,6 +196,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
 
         except Exception as e:
+            tprint_error(f"❌ [NAS_TAS_CLUSTERING] NAS-TAS Clustering failed: {e}")
+            tprint_debug(f"🔍 [NAS_TAS_CLUSTERING] Error details: {str(e)}")
             self.logger.error(f'❌ NAS-TAS Clustering failed: {e}')
             self.logger.error(traceback.format_exc())
 
@@ -180,7 +216,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _create_clustering_config(self) -> Dict[str, Any]:
         """Create clustering configuration."""
         try:
-            config = self.config if self.config else NASTASClusteringConfig()
+            # Use our specific config class which has the required attributes
+            config = NASTASClusteringConfig()
 
             clustering_config = {
                 'n_regimes': config.n_regimes,
@@ -226,46 +263,80 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _prepare_features(self, market_data: pd.DataFrame) -> Optional[np.ndarray]:
         """Prepare features for clustering."""
         try:
+            import time
+            feature_prep_start = time.time()
+            tprint("🔧 [NAS_TAS_CLUSTERING] Starting feature preparation", color="blue")
+            tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Market data shape: {market_data.shape}")
+            tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Available columns: {list(market_data.columns)}")
+            
             features = []
 
             # Price-based features
             if 'close' in market_data.columns:
+                tprint("💰 [NAS_TAS_CLUSTERING] Processing price-based features", color="cyan")
                 returns = market_data['close'].pct_change().fillna(0)
                 features.append(returns.values.reshape(-1, 1))
+                tprint_debug(f"📈 [NAS_TAS_CLUSTERING] Returns feature: {returns.shape}")
 
                 # Volatility (rolling std)
                 volatility = returns.rolling(20).std().fillna(0)
                 features.append(volatility.values.reshape(-1, 1))
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Volatility feature: {volatility.shape}")
 
                 # Moving averages ratio
                 sma_20 = market_data['close'].rolling(20).mean().fillna(market_data['close'].iloc[0])
                 ma_ratio = market_data['close'] / sma_20 - 1
                 features.append(ma_ratio.values.reshape(-1, 1))
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] MA ratio feature: {ma_ratio.shape}")
+            else:
+                tprint("⚠️ [NAS_TAS_CLUSTERING] No 'close' column found, skipping price features", color="yellow")
 
             # Volume features
             if 'volume' in market_data.columns:
+                tprint("📊 [NAS_TAS_CLUSTERING] Processing volume features", color="cyan")
                 volume_ma = market_data['volume'].rolling(20).mean().fillna(market_data['volume'].mean())
                 volume_ratio = market_data['volume'] / volume_ma
                 features.append(volume_ratio.fillna(1).values.reshape(-1, 1))
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Volume ratio feature: {volume_ratio.shape}")
+            else:
+                tprint("⚠️ [NAS_TAS_CLUSTERING] No 'volume' column found, skipping volume features", color="yellow")
 
             # High-low spread
             if all(col in market_data.columns for col in ['high', 'low', 'close']):
+                tprint("📊 [NAS_TAS_CLUSTERING] Processing high-low spread features", color="cyan")
                 hl_spread = (market_data['high'] - market_data['low']) / market_data['close']
                 features.append(hl_spread.fillna(0).values.reshape(-1, 1))
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] HL spread feature: {hl_spread.shape}")
+            else:
+                tprint("⚠️ [NAS_TAS_CLUSTERING] Missing high/low/close columns, skipping HL spread", color="yellow")
 
             # Combine features
             if features:
+                tprint(f"🔄 [NAS_TAS_CLUSTERING] Combining {len(features)} feature arrays", color="blue")
                 feature_array = np.hstack(features)
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Combined features shape: {feature_array.shape}")
+                
                 # Remove any NaN or infinite values
+                tprint("🧹 [NAS_TAS_CLUSTERING] Cleaning features: removing NaN and infinite values", color="yellow")
+                initial_shape = feature_array.shape
                 feature_array = np.nan_to_num(feature_array, nan=0.0, posinf=1.0, neginf=-1.0)
+                tprint(f"✅ [NAS_TAS_CLUSTERING] Features cleaned: {feature_array.shape}", color="green")
+                feature_prep_time = time.time() - feature_prep_start
+                tprint_performance("Feature preparation", feature_prep_time)
                 return feature_array
             else:
-                # If no features could be created, return dummy features
-                return np.random.randn(len(market_data), 5)
+                tprint("⚠️ [NAS_TAS_CLUSTERING] No features could be created, using dummy features", color="yellow")
+                dummy_features = np.random.randn(len(market_data), 5)
+                tprint_debug(f"📊 [NAS_TAS_CLUSTERING] Dummy features shape: {dummy_features.shape}")
+                return dummy_features
 
         except Exception as e:
+            tprint_warning(f"⚠️ [NAS_TAS_CLUSTERING] Failed to prepare features: {e}")
+            tprint_debug(f"🔍 [NAS_TAS_CLUSTERING] Feature preparation error: {str(e)}")
             self.logger.warning(f"Failed to prepare features: {e}")
-            return np.random.randn(len(market_data), 5)
+            dummy_features = np.random.randn(len(market_data), 5)
+            tprint("🔄 [NAS_TAS_CLUSTERING] Using fallback dummy features", color="yellow")
+            return dummy_features
 
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and prepare market data for clustering."""
@@ -321,14 +392,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
 
             # Save clustering report
-            if clustering_result:
+            if clustering_result and clustering_result.success:
                 report_file = self._save_clustering_report(clustering_result)
                 outputs['clustering_report'] = report_file
                 outputs['output_files'].append(report_file)
 
                 # Generate regime assignments
                 regime_data = self._generate_regime_assignments(market_data, clustering_result)
-                if regime_data:
+                if regime_data is not None and not regime_data.empty:
                     regime_file = self._save_regime_assignments(regime_data)
                     outputs['regime_assignments'] = regime_file
                     outputs['output_files'].append(regime_file)
@@ -422,11 +493,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if clustering_result.labels is None or len(clustering_result.labels) == 0:
                 return None
 
+            # Handle probabilities - extract probability for assigned cluster
+            if clustering_result.probabilities is not None and len(clustering_result.probabilities) > 0:
+                # probabilities is 2D array (n_samples, n_clusters)
+                # Extract probability for the assigned cluster for each sample
+                if clustering_result.probabilities.ndim == 2:
+                    # Get the probability for the assigned cluster (maximum probability)
+                    regime_probs = np.max(clustering_result.probabilities, axis=1)
+                else:
+                    # Fallback to uniform probabilities if not 2D
+                    regime_probs = np.ones(len(market_data)) * 0.5
+            else:
+                # Use zeros if no probabilities available
+                regime_probs = np.zeros(len(market_data))
+
             # Create DataFrame with regime assignments
             regime_data = pd.DataFrame({
                 'timestamp': market_data.index,
                 'regime_id': clustering_result.labels,
-                'regime_prob': clustering_result.probabilities if clustering_result.probabilities is not None else np.zeros(len(market_data))
+                'regime_prob': regime_probs
             }).set_index('timestamp')
 
             return regime_data

@@ -169,8 +169,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the regime data splitting component."""
+        tprint('🔧 Initializing RegimeDataSplittingComponent')
         super().__init__(config)
         self.logger = system_logger.getChild('RegimeDataSplitting')
+        tprint('✅ Logger initialized')
         
         # Initialize error handler using existing utilities
         error_context = ErrorContext(
@@ -178,23 +180,29 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             component="RegimeDataSplittingComponent"
         )
         self.error_handler = EnhancedErrorHandler(logger=self.logger)
+        tprint('✅ Error handler initialized')
         
         # Initialize hardware manager using existing utilities
         self.hardware_manager = UnifiedHardwareManager()
+        tprint('✅ Hardware manager initialized')
         
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
         self.data_quality_framework = DataQualityFramework()
+        tprint('✅ Data validation utilities initialized')
         
         # Validate dependencies and fail fast if missing
         self._validate_dependencies()
+        tprint('✅ Dependencies validated')
         
         # Initialize metrics tracking
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[datetime] = None
+        tprint('✅ Metrics tracking initialized')
         
         # Initialize hardware optimizations using existing utilities
         self._initialize_hardware_optimizations()
+        tprint('✅ Hardware optimizations initialized')
         
         # Initialize common utilities
         self.math_validator = MathValidation()
@@ -212,6 +220,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
+        tprint('🔍 Validating dependencies')
         try:
             missing_deps = []
             
@@ -223,9 +232,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if missing_deps:
                 error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}"
                 self.logger.error(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 raise ImportError(error_msg)
                 
             self.logger.info("✅ All required dependencies available")
+            tprint("✅ All required dependencies available")
             
         except Exception as e:
             self.logger.error(f"❌ Critical error in dependency validation: {e}")
@@ -671,6 +682,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Perform the actual regime data splitting process using common utilities and hardware optimizations."""
         self.logger.info("✂️ Performing regime data splitting...")
+        tprint("✂️ Performing regime data splitting...")
         
         # Use hardware manager for proper memory management
         from src.utils.hardware.memory_optimization import memory_context

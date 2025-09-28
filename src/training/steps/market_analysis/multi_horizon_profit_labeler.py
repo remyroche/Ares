@@ -22,6 +22,11 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading multi-horizon profit labeler...")
+
 # Import utilities from src level
 import sys
 import os
@@ -119,35 +124,49 @@ class MultiHorizonProfitLabeler:
     
     def __init__(self, config: Optional[MultiHorizonConfig] = None):
         """Initialize the multi-horizon profit labeler with memory optimization."""
+        tprint("🔧 Initializing MultiHorizonProfitLabeler...")
         self.config = config or MultiHorizonConfig()
         self.logger = get_logger('MultiHorizonProfitLabeler')
+        tprint("✅ Basic configuration and logger initialized")
 
         # Initialize matrix operations for performance
+        tprint("🔧 Initializing matrix operations...")
         self.matrix_ops = UnifiedMatrixOperations()
         self.enhanced_ops = EnhancedMatrixOperations()
+        tprint("✅ Matrix operations initialized")
 
         # Initialize hardware optimizers
+        tprint("🔧 Initializing hardware optimizers...")
         self.memory_optimizer = None
         self.cpu_optimizer = None
 
         if self.config.enable_m1_optimization:
+            tprint("🔧 Setting up M1 optimization...")
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint("✅ M1 optimizers initialized")
 
             # Set memory limits if specified
             if self.config.max_memory_usage_gb and self.memory_optimizer:
                 self.memory_optimizer.set_memory_limit(self.config.max_memory_usage_gb)
+                tprint(f"✅ Memory limit set to {self.config.max_memory_usage_gb} GB")
 
         # Optimize CPU for data processing
         if self.cpu_optimizer:
+            tprint("🔧 Optimizing CPU operations...")
             self.cpu_optimizer.optimize_numpy_operations()
             self.cpu_optimizer.optimize_pandas_operations()
+            tprint("✅ CPU operations optimized")
 
         # Validate configuration
+        tprint("🔧 Validating configuration...")
         self._validate_config()
+        tprint("✅ Configuration validated")
 
         # Pre-calculate combinations for efficiency
+        tprint("🔧 Pre-calculating target-horizon combinations...")
         self.target_horizon_combinations = self._generate_combinations()
+        tprint(f"✅ Generated {len(self.target_horizon_combinations)} combinations")
 
         self.logger.info(f'🚀 Multi-Horizon Profit Labeler initialized (ENHANCED VERSION)')
         self.logger.info(f'   → Profit targets: {list(self.config.profit_targets.keys())}')
@@ -195,20 +214,25 @@ class MultiHorizonProfitLabeler:
         Returns:
             DataFrame with probability columns for each target/horizon combination
         """
+        tprint("🚀 Starting multi-horizon profit labeling...")
         self.logger.info(f'🔍 Generating multi-horizon labels for {len(data)} samples (FIXED VERSION)')
         
         if len(data) < max(self.config.time_horizons.values()) + 1:
+            tprint("⚠️ Insufficient data for labeling")
             self.logger.warning(f'⚠️ Insufficient data for labeling')
             return data.copy()
 
         # ENHANCED: Comprehensive data quality validation and preprocessing
+        tprint("🔍 Validating and preprocessing data...")
         data_quality_result = self._validate_and_preprocess_data(data)
         if not data_quality_result['is_valid']:
+            tprint(f"❌ Data validation failed: {data_quality_result['errors']}")
             self.logger.error(f'❌ Data validation failed: {data_quality_result["errors"]}')
             return data.copy()
 
         # Apply data quality recommendations
         data = data_quality_result['processed_data']
+        tprint(f"✅ Data preprocessing completed: {len(data)} rows validated")
         self.logger.info(f'✅ Data preprocessing completed: {len(data)} rows validated')
 
         # ENHANCED: Memory optimization and data preparation
@@ -1899,13 +1923,19 @@ class MultiHorizonProfitLabeler:
 # Convenience functions for backward compatibility
 def create_multi_horizon_labeler(config: Optional[MultiHorizonConfig] = None) -> MultiHorizonProfitLabeler:
     """Create multi-horizon profit labeler."""
-    return MultiHorizonProfitLabeler(config)
+    tprint("🔧 Creating multi-horizon profit labeler...")
+    labeler = MultiHorizonProfitLabeler(config)
+    tprint("✅ Multi-horizon profit labeler created")
+    return labeler
 
 def apply_multi_horizon_labeling(data: pd.DataFrame, 
                                 config: Optional[MultiHorizonConfig] = None) -> pd.DataFrame:
     """Apply multi-horizon profit labeling to data."""
+    tprint("🚀 Applying multi-horizon profit labeling...")
     labeler = MultiHorizonProfitLabeler(config)
-    return labeler.generate_labels(data)
+    result = labeler.generate_labels(data)
+    tprint("✅ Multi-horizon profit labeling completed")
+    return result
 
 # Test function
 if __name__ == '__main__':

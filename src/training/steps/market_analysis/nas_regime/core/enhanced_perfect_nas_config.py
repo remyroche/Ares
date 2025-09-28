@@ -116,15 +116,15 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
                 self._threshold_learning_enabled = True
                 
                 tprint("✅ [ENHANCED_NAS_CONFIG] Adaptive threshold learning initialized successfully", color="green")
-                self.logger.info("✅ Adaptive threshold learning initialized")
+                logger.info("✅ Adaptive threshold learning initialized")
             else:
                 self._threshold_learning_enabled = False
                 tprint("⚠️ [ENHANCED_NAS_CONFIG] Adaptive threshold learning disabled", color="yellow")
-                self.logger.info("⚠️ Adaptive threshold learning disabled")
+                logger.info("⚠️ Adaptive threshold learning disabled")
                 
         except Exception as e:
             tprint(f"❌ [ENHANCED_NAS_CONFIG] Adaptive threshold initialization failed: {e}", color="red")
-            self.logger.error(f"❌ Adaptive threshold initialization failed: {e}")
+            logger.error(f"❌ Adaptive threshold initialization failed: {e}")
             self._threshold_learning_enabled = False
     
     def learn_thresholds(self, market_data: np.ndarray, regime_predictions: np.ndarray,
@@ -142,11 +142,11 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
         """
         try:
             if not self._threshold_learning_enabled or not self._threshold_learner:
-                self.logger.warning("Threshold learning not enabled")
+                logger.warning("Threshold learning not enabled")
                 return False
             
             if len(market_data) < self.adaptive_thresholds.min_samples_for_learning:
-                self.logger.warning(f"Insufficient data for learning: {len(market_data)} < {self.adaptive_thresholds.min_samples_for_learning}")
+                logger.warning(f"Insufficient data for learning: {len(market_data)} < {self.adaptive_thresholds.min_samples_for_learning}")
                 return False
             
             # Learn thresholds
@@ -157,14 +157,14 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
             if learned_thresholds.learning_confidence >= self.adaptive_thresholds.min_learning_confidence:
                 self._learned_thresholds = learned_thresholds
                 self._update_configuration_thresholds(learned_thresholds)
-                self.logger.info("✅ Adaptive thresholds learned and applied")
+                logger.info("✅ Adaptive thresholds learned and applied")
                 return True
             else:
-                self.logger.warning(f"Learning confidence too low: {learned_thresholds.learning_confidence:.3f} < {self.adaptive_thresholds.min_learning_confidence}")
+                logger.warning(f"Learning confidence too low: {learned_thresholds.learning_confidence:.3f} < {self.adaptive_thresholds.min_learning_confidence}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Threshold learning failed: {e}")
+            logger.error(f"❌ Threshold learning failed: {e}")
             return False
     
     def _update_configuration_thresholds(self, learned_thresholds: AdaptiveThresholds):
@@ -173,24 +173,24 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
             # Update economic significance threshold
             if self.adaptive_thresholds.enable_economic_learning:
                 self.economic_significance_threshold = learned_thresholds.economic_significance_threshold
-                self.logger.info(f"Updated economic significance threshold: {self.economic_significance_threshold:.3f}")
+                logger.info(f"Updated economic significance threshold: {self.economic_significance_threshold:.3f}")
             
             # Update trading viability threshold
             if self.adaptive_thresholds.enable_trading_learning:
                 self.trading_viability_threshold = learned_thresholds.trading_viability_threshold
-                self.logger.info(f"Updated trading viability threshold: {self.trading_viability_threshold:.3f}")
+                logger.info(f"Updated trading viability threshold: {self.trading_viability_threshold:.3f}")
             
             # Update regime stability threshold
             if self.adaptive_thresholds.enable_stability_learning:
                 self.regime_stability_threshold = learned_thresholds.regime_stability_threshold
-                self.logger.info(f"Updated regime stability threshold: {self.regime_stability_threshold:.3f}")
+                logger.info(f"Updated regime stability threshold: {self.regime_stability_threshold:.3f}")
             
             # Update economic and trading configs
             self.economic_config.significance_threshold = learned_thresholds.economic_significance_threshold
             self.trading_config.viability_threshold = learned_thresholds.trading_viability_threshold
             
         except Exception as e:
-            self.logger.error(f"❌ Configuration update failed: {e}")
+            logger.error(f"❌ Configuration update failed: {e}")
     
     def get_adaptive_thresholds(self) -> Optional[AdaptiveThresholds]:
         """Get current adaptive thresholds."""
@@ -228,7 +228,7 @@ class EnhancedPerfectNASConfig(PerfectNASConfig):
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Threshold update failed: {e}")
+            logger.error(f"❌ Threshold update failed: {e}")
             return False
     
     def get_effective_thresholds(self) -> Dict[str, float]:

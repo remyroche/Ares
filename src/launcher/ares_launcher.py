@@ -246,7 +246,7 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
                                 'hmm_models_training', 'hmm_ensemble_training',
                                 'feature_lookback_optimization', 'pid_based_feature_generation',
                                 'multi_horizon_profit_labeler', 'triple_barrier_labeling',
@@ -506,9 +506,10 @@ class AresLauncher:
         # SET 15M AS DEFAULT TIMEFRAME FOR NAS-RELATED SUB-PIPELINES
         nas_sub_pipelines = [
             'nas_regime_discovery',     # Discover market regimes using NAS
+            'nas_tas_regime_discovery', # Hybrid NAS-TAS regime discovery
             'nas_clustering',           # NAS-based regime clustering
-            'nas_models_training',      # Train regime detection models using NAS regime labels
-            'nas_ensemble_training',    # Train ensemble regime detection models using NAS regime labels
+            'nas_tas_models_training',      # Train regime detection models using NAS-TAS regime labels
+            'nas_tas_ensemble_training',    # Train ensemble regime detection models using NAS-TAS regime labels
             'nas'                       # Combined NAS regime discovery + clustering
         ]
         
@@ -569,6 +570,16 @@ class AresLauncher:
         if sub_pipeline in sr_components:
             config.single_stage_only = False
             tprint(f"🔗 [SUB_PIPELINE_CONFIG] SR chaining enabled for {sub_pipeline} - will automatically run: sr_parameter_optimization -> sr_detection -> sr_clustering")
+        # Enable chaining for NAS-TAS components to automatically run the full NAS-TAS pipeline
+        nas_tas_components = ['nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_tas_models_training', 'nas_tas_ensemble_training']
+        if sub_pipeline in nas_tas_components:
+            config.single_stage_only = False
+            if sub_pipeline == 'nas_tas_regime_discovery':
+                tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_regime_discovery -> nas_tas_clustering -> nas_tas_models_training -> nas_tas_ensemble_training")
+            elif sub_pipeline == 'nas_tas_clustering':
+                tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_clustering -> nas_tas_models_training -> nas_tas_ensemble_training")
+            elif sub_pipeline == 'nas_tas_models_training':
+                tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_models_training -> nas_tas_ensemble_training")
         else:
             config.single_stage_only = True
             tprint("🎯 [SUB_PIPELINE_CONFIG] Single stage execution mode enabled")
@@ -918,11 +929,11 @@ class AresLauncher:
             'sr_clustering': "Generate SR clusters",
             'nas_clustering': "NAS-based regime clustering (DEPRECATED - use nas_tas_clustering instead)",
             'nas_tas_clustering': "Advanced regime clustering using combined NAS-TAS approaches with economic awareness and ensemble methods",
-            'hybrid_nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
-            'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
-            'nas_models_training': "Train regime detection models using NAS regime labels",
-            'nas_ensemble_training': "Train ensemble regime detection models using NAS regime labels",
-            'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)",
+            'nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
+            'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use nas_tas_regime_discovery instead)",
+            'nas_tas_models_training': "Train regime detection models using NAS-TAS regime labels",
+            'nas_tas_ensemble_training': "Train ensemble regime detection models using NAS-TAS regime labels",
+            'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use nas_tas_regime_discovery instead)",
             'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
@@ -975,11 +986,11 @@ class AresLauncher:
             'sr_clustering': ['sr_detection'],
             'nas_clustering': ['sr_clustering'],  # DEPRECATED - use nas_tas_clustering instead
             'nas_tas_clustering': ['sr_clustering'],
-            'hybrid_nas_tas_regime_discovery': ['sr_clustering'],
-            'nas_regime_discovery': ['nas_tas_clustering'],  # DEPRECATED - use hybrid_nas_tas_regime_discovery instead
-            'nas_models_training': ['hybrid_nas_tas_regime_discovery'],  # Updated to use hybrid discovery
-            'nas_ensemble_training': ['nas_models_training'],
-            'feature_lookback_optimization': ['hmm_regime_discovery', 'hybrid_nas_tas_regime_discovery'],
+            'nas_tas_regime_discovery': ['sr_clustering'],
+            'nas_regime_discovery': ['nas_tas_clustering'],  # DEPRECATED - use nas_tas_regime_discovery instead
+            'nas_tas_models_training': ['nas_tas_regime_discovery'],  # Updated to use hybrid discovery
+            'nas_tas_ensemble_training': ['nas_tas_models_training'],
+            'feature_lookback_optimization': ['hmm_regime_discovery', 'nas_tas_regime_discovery'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
             'triple_barrier_labeling': ['hmm_regime_discovery'],
@@ -1031,10 +1042,10 @@ class AresLauncher:
             'sr_clustering': ['sr_clusters.json'],
             'nas_clustering': ['nas_clusters.json'],
             'nas_tas_clustering': ['nas_tas_clustering_report.json', 'nas_tas_regime_assignments.parquet'],
-            'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_consolidated_report.json', 'hybrid_nas_tas_regime_assignments.parquet'],
+            'nas_tas_regime_discovery': ['nas_tas_consolidated_report.json', 'nas_tas_regime_assignments.parquet'],
             'nas_regime_discovery': ['nas_regime_assignments.parquet'],
-            'nas_models_training': ['nas_models_training_result.json'],
-            'nas_ensemble_training': ['nas_ensemble_training_result.json'],
+            'nas_tas_models_training': ['nas_tas_models_training_result.json'],
+            'nas_tas_ensemble_training': ['nas_tas_ensemble_training_result.json'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
@@ -1123,9 +1134,9 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Note: The following sub-pipelines are DEPRECATED and will be removed in future versions:
-  - nas_regime_discovery (use hybrid_nas_tas_regime_discovery instead)
+  - nas_regime_discovery (use nas_tas_regime_discovery instead)
   - nas_clustering (use nas_tas_clustering instead)
-  - nas (use hybrid_nas_tas_regime_discovery instead)
+  - nas (use nas_tas_regime_discovery instead)
 
 Examples:
   # Full pipeline execution (1460 days, 100% intensity)
@@ -1144,15 +1155,15 @@ Examples:
   python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
 
   # Execute specific sub-pipeline with full execution mode (1460 days, 100% intensity)
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline hybrid_nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
 
   # Execute NAS-TAS clustering with full execution mode
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_clustering --execution-mode full --symbol ETHUSDT
 
   # Execute specific sub-pipeline with full execution mode (1460 days, 100% intensity) - RECOMMENDED
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline hybrid_nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with full execution mode (DEPRECATED - use hybrid_nas_tas_regime_discovery instead)
+  # Execute specific sub-pipeline with full execution mode (DEPRECATED - use nas_tas_regime_discovery instead)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_regime_discovery --execution-mode full --symbol ETHUSDT
 
   # Execute basic backtesting (pre-optimization baseline)
@@ -1215,7 +1226,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hybrid_nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_models_training, nas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

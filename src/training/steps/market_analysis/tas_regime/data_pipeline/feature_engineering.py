@@ -3,6 +3,7 @@ Feature Engineering for TAS
 
 Comprehensive feature engineering system for tree architecture search including
 technical indicators, regime features, and advanced feature transformations.
+Now uses shared balanced feature extraction to prevent clustering imbalance.
 """
 
 import numpy as np
@@ -12,8 +13,18 @@ from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
+
+# Import shared balanced feature extractor
+try:
+    from src.training.steps.market_analysis.shared_utils.balanced_feature_extractor import (
+        BalancedFeatureExtractor, BalancedFeatureConfig, create_tas_config
+    )
+    BALANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    BALANCED_FEATURES_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +188,7 @@ class FeatureEngineer:
     
     def engineer_features(self, data: pd.DataFrame, regime_data: Optional[Dict[str, Any]] = None) -> FeatureResult:
         """
-        Engineer features for TAS.
+        Engineer features for TAS using shared balanced feature extraction.
         
         Args:
             data: Input data
@@ -186,9 +197,64 @@ class FeatureEngineer:
         Returns:
             Feature engineering result
         """
-        self.logger.info("🚀 Starting feature engineering")
+        self.logger.info("🚀 Starting balanced feature engineering")
         start_time = datetime.now()
         
+        try:
+            # Try to use shared balanced feature extractor first
+            if BALANCED_FEATURES_AVAILABLE:
+                self.logger.info("📊 Using shared balanced feature extractor")
+                return self._engineer_features_balanced(data, regime_data, start_time)
+            else:
+                self.logger.warning("⚠️ Shared balanced features not available, using original method")
+                return self._engineer_features_original(data, regime_data, start_time)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Balanced feature engineering failed: {e}")
+            # Fallback to original method
+            return self._engineer_features_original(data, regime_data, start_time)
+    
+    def _engineer_features_balanced(self, data: pd.DataFrame, regime_data: Optional[Dict[str, Any]], 
+                                  start_time: datetime) -> FeatureResult:
+        """Engineer features using shared balanced feature extractor."""
+        try:
+            # Create TAS-optimized configuration
+            config = create_tas_config()
+            extractor = BalancedFeatureExtractor(config)
+            
+            # Extract balanced features
+            result = extractor.extract_balanced_features(data)
+            
+            if result.success:
+                # Convert back to FeatureResult format
+                features_df = pd.DataFrame(result.features, index=data.index, columns=result.feature_names)
+                
+                processing_time = (datetime.now() - start_time).total_seconds()
+                
+                return FeatureResult(
+                    features=features_df,
+                    feature_names=result.feature_names,
+                    feature_types=result.feature_categories,
+                    feature_importance={},
+                    metadata={
+                        'extraction_method': 'balanced_shared_extractor',
+                        'balance_metrics': result.balance_metrics,
+                        'processing_time': processing_time,
+                        'extraction_metadata': result.extraction_metadata
+                    },
+                    processing_time=processing_time,
+                    success=True
+                )
+            else:
+                raise ValueError(f"Balanced feature extraction failed: {result.error_message}")
+                
+        except Exception as e:
+            self.logger.error(f"Balanced feature engineering failed: {e}")
+            raise
+    
+    def _engineer_features_original(self, data: pd.DataFrame, regime_data: Optional[Dict[str, Any]], 
+                                  start_time: datetime) -> FeatureResult:
+        """Original feature engineering method as fallback."""
         try:
             # Initialize feature engineering
             features = pd.DataFrame(index=data.index)

@@ -22,6 +22,12 @@ from collections import defaultdict, deque
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 # Import regime detection and model selection
 from ..regime_model_mapping import DataDrivenModelSelector, ModelSelectorConfig
 from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector
@@ -60,7 +66,7 @@ class RegimeTrainingConfig:
     # Advanced features
     enable_meta_learning: bool = True
     enable_continual_learning: bool = True
-    enable_clvsa_enhancement: bool = True
+    enable_patchtst_enhancement: bool = True
     enable_ensemble_training: bool = True
     
     # Data preprocessing
@@ -111,9 +117,11 @@ class RegimeDataExtractor:
     
     def __init__(self, config: RegimeTrainingConfig):
         """Initialize regime data extractor."""
+        tprint("🔧 [REGIME_EXTRACTOR] Initializing Regime Data Extractor", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint("✅ [REGIME_EXTRACTOR] Regime Data Extractor initialized", color="green")
         self.logger.info("✅ Regime Data Extractor initialized")
     
     def extract_regime_data(self, 
@@ -131,36 +139,51 @@ class RegimeDataExtractor:
         Returns:
             Tuple of (regime_data, regime_labels, regime_features)
         """
+        tprint(f"🔍 [REGIME_EXTRACTOR] extract_regime_data() called for regime {regime_id}", color="blue")
+        tprint(f"📊 [REGIME_EXTRACTOR] Input: market_data={market_data.shape}, predictions={regime_predictions.shape}", color="cyan")
         try:
+            tprint(f"🔍 [REGIME_EXTRACTOR] Extracting data for regime {regime_id}", color="blue")
+            
             # Get regime mask
             regime_mask = regime_predictions == regime_id
             regime_data = market_data[regime_mask]
+            tprint(f"📊 [REGIME_EXTRACTOR] Found {len(regime_data)} samples for regime {regime_id}", color="cyan")
             
             if len(regime_data) < self.config.min_regime_samples:
+                tprint(f"⚠️ [REGIME_EXTRACTOR] Regime {regime_id} has insufficient samples: {len(regime_data)} < {self.config.min_regime_samples}", color="yellow")
                 self.logger.warning(f"Regime {regime_id} has insufficient samples: {len(regime_data)}")
                 return np.array([]), np.array([]), np.array([])
             
             # Limit data size if too large
             if len(regime_data) > self.config.max_regime_samples:
+                tprint(f"📏 [REGIME_EXTRACTOR] Limiting regime {regime_id} data from {len(regime_data)} to {self.config.max_regime_samples} samples", color="yellow")
                 indices = np.random.choice(len(regime_data), self.config.max_regime_samples, replace=False)
                 regime_data = regime_data[indices]
             
             # Create labels (simplified - in practice would be more complex)
+            tprint(f"🏷️ [REGIME_EXTRACTOR] Creating labels for regime {regime_id}", color="blue")
             regime_labels = self._create_regime_labels(regime_data)
             
             # Extract features
+            tprint(f"🔧 [REGIME_EXTRACTOR] Extracting features for regime {regime_id}", color="blue")
             regime_features = self._extract_regime_features(regime_data)
             
+            tprint(f"✅ [REGIME_EXTRACTOR] Extracted {len(regime_data)} samples for regime {regime_id}", color="green")
             self.logger.info(f"Extracted {len(regime_data)} samples for regime {regime_id}")
             
+            tprint_success(f"✅ [REGIME_EXTRACTOR] extract_regime_data() completed successfully for regime {regime_id}")
+            tprint(f"📊 [REGIME_EXTRACTOR] extract_regime_data() outcome: {len(regime_data)} samples, {regime_features.shape[1]} features", color="green")
             return regime_data, regime_labels, regime_features
             
         except Exception as e:
+            tprint_error(f"❌ [REGIME_EXTRACTOR] extract_regime_data() failed for regime {regime_id}: {e}")
             self.logger.error(f"Failed to extract data for regime {regime_id}: {e}")
+            tprint(f"📊 [REGIME_EXTRACTOR] extract_regime_data() outcome: FAILED", color="red")
             return np.array([]), np.array([]), np.array([])
     
     def _create_regime_labels(self, regime_data: np.ndarray) -> np.ndarray:
         """Create labels for regime data."""
+        tprint(f"🏷️ [REGIME_EXTRACTOR] _create_regime_labels() called for {len(regime_data)} samples", color="blue")
         try:
             # Simplified labeling - in practice would be more sophisticated
             # For now, create binary labels based on price movement
@@ -172,27 +195,37 @@ class RegimeDataExtractor:
             else:
                 labels = np.zeros(len(regime_data))
             
+            tprint(f"📊 [REGIME_EXTRACTOR] _create_regime_labels() outcome: {len(labels)} labels created", color="green")
             return labels
             
         except Exception as e:
+            tprint_error(f"❌ [REGIME_EXTRACTOR] _create_regime_labels() failed: {e}")
             self.logger.error(f"Failed to create regime labels: {e}")
+            tprint(f"📊 [REGIME_EXTRACTOR] _create_regime_labels() outcome: FAILED", color="red")
             return np.zeros(len(regime_data))
     
     def _extract_regime_features(self, regime_data: np.ndarray) -> np.ndarray:
         """Extract features from regime data."""
+        tprint(f"🔧 [REGIME_EXTRACTOR] _extract_regime_features() called for {len(regime_data)} samples", color="blue")
         try:
             if self.config.enable_feature_engineering:
+                tprint("🔧 [REGIME_EXTRACTOR] Feature engineering enabled", color="cyan")
                 features = self._engineer_features(regime_data)
             else:
+                tprint("🔧 [REGIME_EXTRACTOR] Using raw features", color="cyan")
                 features = regime_data
             
             if self.config.enable_feature_selection:
+                tprint("🔧 [REGIME_EXTRACTOR] Feature selection enabled", color="cyan")
                 features = self._select_features(features)
             
+            tprint(f"📊 [REGIME_EXTRACTOR] _extract_regime_features() outcome: {features.shape[1]} features", color="green")
             return features
             
         except Exception as e:
+            tprint_error(f"❌ [REGIME_EXTRACTOR] _extract_regime_features() failed: {e}")
             self.logger.error(f"Failed to extract regime features: {e}")
+            tprint(f"📊 [REGIME_EXTRACTOR] _extract_regime_features() outcome: FAILED", color="red")
             return regime_data
     
     def _engineer_features(self, data: np.ndarray) -> np.ndarray:
@@ -255,12 +288,14 @@ class RegimeModelTrainer:
     
     def __init__(self, config: RegimeTrainingConfig):
         """Initialize regime model trainer."""
+        tprint("🤖 [REGIME_TRAINER] Initializing Regime Model Trainer", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize advanced tree model factory
+        tprint("🔧 [REGIME_TRAINER] Setting up advanced tree model factory", color="blue")
         tree_config = AdvancedTreeConfig(
-            enable_clvsa_enhancement=config.enable_clvsa_enhancement,
+            enable_patchtst_enhancement=config.enable_patchtst_enhancement,
             enable_meta_learning=config.enable_meta_learning,
             enable_continual_learning=config.enable_continual_learning
         )
@@ -270,6 +305,7 @@ class RegimeModelTrainer:
         self.trained_models: Dict[Tuple[int, str], Any] = {}
         self.training_history: List[Dict[str, Any]] = []
         
+        tprint("✅ [REGIME_TRAINER] Regime Model Trainer initialized", color="green")
         self.logger.info("✅ Regime Model Trainer initialized")
     
     def train_regime_models(self, 
@@ -289,16 +325,25 @@ class RegimeModelTrainer:
         Returns:
             List of training results for each model
         """
+        tprint(f"🤖 [REGIME_TRAINER] train_regime_models() called for regime {regime_id}", color="blue")
+        tprint(f"📊 [REGIME_TRAINER] Input: data={regime_data.shape}, labels={regime_labels.shape}, features={regime_features.shape}", color="cyan")
         try:
+            tprint(f"🚀 [REGIME_TRAINER] Starting model training for regime {regime_id}", color="cyan", bold=True)
+            tprint(f"📊 [REGIME_TRAINER] Training data: {len(regime_data)} samples, {regime_features.shape[1]} features", color="blue")
+            
             results = []
             
             # Split data
+            tprint(f"✂️ [REGIME_TRAINER] Splitting data for regime {regime_id}", color="blue")
             train_data, test_data, train_labels, test_labels = self._split_data(
                 regime_features, regime_labels
             )
+            tprint(f"📊 [REGIME_TRAINER] Data split: {len(train_data)} train, {len(test_data)} test", color="cyan")
             
             # Train each model type
+            tprint(f"🤖 [REGIME_TRAINER] Training {len(self.config.model_types)} model types for regime {regime_id}", color="yellow")
             for model_type in self.config.model_types:
+                tprint(f"🔧 [REGIME_TRAINER] Training {model_type} for regime {regime_id}...", color="blue")
                 self.logger.info(f"Training {model_type} for regime {regime_id}...")
                 
                 result = self._train_single_model(
@@ -311,22 +356,31 @@ class RegimeModelTrainer:
                     key = (regime_id, model_type)
                     self.trained_models[key] = result
                     
+                    tprint(f"✅ [REGIME_TRAINER] {model_type} trained successfully for regime {regime_id}", color="green")
                     self.logger.info(f"✅ {model_type} trained successfully for regime {regime_id}")
                 else:
+                    tprint(f"❌ [REGIME_TRAINER] {model_type} training failed for regime {regime_id}: {result.error_message}", color="red")
                     self.logger.error(f"❌ {model_type} training failed for regime {regime_id}: {result.error_message}")
             
             # Train ensemble if enabled
             if self.config.enable_ensemble_training:
+                tprint(f"🎯 [REGIME_TRAINER] Training ensemble model for regime {regime_id}", color="magenta")
                 ensemble_result = self._train_ensemble_model(
                     regime_id, train_data, train_labels, test_data, test_labels, results
                 )
                 if ensemble_result:
                     results.append(ensemble_result)
+                    tprint(f"✅ [REGIME_TRAINER] Ensemble model trained for regime {regime_id}", color="green")
             
+            tprint(f"🎉 [REGIME_TRAINER] Completed training for regime {regime_id}: {len(results)} models", color="green", bold=True)
+            tprint_success(f"✅ [REGIME_TRAINER] train_regime_models() completed successfully for regime {regime_id}")
+            tprint(f"📊 [REGIME_TRAINER] train_regime_models() outcome: {len(results)} models trained", color="green")
             return results
             
         except Exception as e:
+            tprint_error(f"❌ [REGIME_TRAINER] train_regime_models() failed for regime {regime_id}: {e}")
             self.logger.error(f"Failed to train models for regime {regime_id}: {e}")
+            tprint(f"📊 [REGIME_TRAINER] train_regime_models() outcome: FAILED", color="red")
             return []
     
     def _split_data(self, features: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -359,27 +413,38 @@ class RegimeModelTrainer:
         """Train a single model for a regime."""
         try:
             start_time = time.time()
+            tprint(f"🔧 [MODEL_TRAINER] Training {model_type} for regime {regime_id}", color="blue")
+            tprint(f"📊 [MODEL_TRAINER] Training data: {len(train_data)} samples, {train_data.shape[1]} features", color="cyan")
             
             # Create model
+            tprint(f"🏗️ [MODEL_TRAINER] Creating {model_type} model", color="yellow")
             model = self.tree_factory.create_model(
                 model_type,
                 enable_meta_learning=self.config.enable_meta_learning,
                 enable_continual_learning=self.config.enable_continual_learning,
-                enable_clvsa_enhancement=self.config.enable_clvsa_enhancement
+                enable_patchtst_enhancement=self.config.enable_patchtst_enhancement
             )
+            tprint(f"✅ [MODEL_TRAINER] {model_type} model created", color="green")
             
             # Train model
+            tprint(f"🚀 [MODEL_TRAINER] Training {model_type} model", color="blue")
             model.fit(train_data, train_labels)
+            tprint(f"✅ [MODEL_TRAINER] {model_type} model training completed", color="green")
             
             # Make predictions
+            tprint(f"🔮 [MODEL_TRAINER] Making predictions with {model_type}", color="blue")
             predictions = model.predict(test_data)
             probabilities = model.predict_proba(test_data) if hasattr(model, 'predict_proba') else None
+            tprint(f"✅ [MODEL_TRAINER] Predictions generated: {len(predictions)} predictions", color="green")
             
             # Calculate validation scores
+            tprint(f"📊 [MODEL_TRAINER] Calculating validation scores for {model_type}", color="blue")
             validation_scores = self._calculate_validation_scores(test_labels, predictions, probabilities)
+            tprint(f"📈 [MODEL_TRAINER] Validation scores: {validation_scores}", color="cyan")
             
             # Check if model meets deployment threshold
             deployment_status = "deployed" if validation_scores.get('f1_score', 0) >= self.config.deployment_threshold else "pending"
+            tprint(f"🎯 [MODEL_TRAINER] Deployment status: {deployment_status} (F1: {validation_scores.get('f1_score', 0):.3f})", color="green" if deployment_status == "deployed" else "yellow")
             
             training_time = time.time() - start_time
             
@@ -421,15 +486,21 @@ class RegimeModelTrainer:
                             individual_results: List[RegimeTrainingResult]) -> Optional[RegimeTrainingResult]:
         """Train ensemble model for a regime."""
         try:
+            tprint(f"🎯 [ENSEMBLE_TRAINER] Creating ensemble model for regime {regime_id}", color="magenta")
+            
             # Get successful models
             successful_models = [r for r in individual_results if r.success]
+            tprint(f"📊 [ENSEMBLE_TRAINER] Found {len(successful_models)} successful models out of {len(individual_results)}", color="cyan")
+            
             if len(successful_models) < 2:
+                tprint(f"⚠️ [ENSEMBLE_TRAINER] Not enough successful models for ensemble in regime {regime_id}", color="yellow")
                 self.logger.warning(f"Not enough successful models for ensemble in regime {regime_id}")
                 return None
             
             start_time = time.time()
             
             # Create ensemble predictions
+            tprint(f"🔮 [ENSEMBLE_TRAINER] Creating ensemble predictions", color="blue")
             ensemble_predictions = []
             ensemble_probabilities = []
             
@@ -440,16 +511,22 @@ class RegimeModelTrainer:
                     ensemble_probabilities.append(result.model_performance['probabilities'])
             
             if not ensemble_predictions:
+                tprint(f"❌ [ENSEMBLE_TRAINER] No ensemble predictions available", color="red")
                 return None
+            
+            tprint(f"📊 [ENSEMBLE_TRAINER] Combining {len(ensemble_predictions)} model predictions", color="blue")
             
             # Combine predictions (simple averaging)
             ensemble_pred = np.mean(ensemble_predictions, axis=0)
             ensemble_pred = np.round(ensemble_pred).astype(int)
             
             ensemble_prob = np.mean(ensemble_probabilities, axis=0) if ensemble_probabilities else None
+            tprint(f"✅ [ENSEMBLE_TRAINER] Ensemble predictions created: {len(ensemble_pred)} predictions", color="green")
             
             # Calculate validation scores
+            tprint(f"📊 [ENSEMBLE_TRAINER] Calculating ensemble validation scores", color="blue")
             validation_scores = self._calculate_validation_scores(test_labels, ensemble_pred, ensemble_prob)
+            tprint(f"📈 [ENSEMBLE_TRAINER] Ensemble validation scores: {validation_scores}", color="cyan")
             
             training_time = time.time() - start_time
             
@@ -513,19 +590,26 @@ class AutomaticRegimeTrainingPipeline:
                  hybrid_config: HybridRegimeConfig,
                  training_config: RegimeTrainingConfig):
         """Initialize automatic training pipeline."""
+        tprint("🚀 [AUTO_PIPELINE] Initializing Automatic Regime Training Pipeline", color="blue")
         self.hybrid_config = hybrid_config
         self.training_config = training_config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize components
+        tprint("🔧 [AUTO_PIPELINE] Setting up hybrid regime detector", color="blue")
         self.hybrid_detector = HybridNASTASRegimeDetector(hybrid_config)
+        
+        tprint("🔧 [AUTO_PIPELINE] Setting up regime data extractor", color="blue")
         self.data_extractor = RegimeDataExtractor(training_config)
+        
+        tprint("🔧 [AUTO_PIPELINE] Setting up regime model trainer", color="blue")
         self.model_trainer = RegimeModelTrainer(training_config)
         
         # Training state
         self.training_results: Dict[int, List[RegimeTrainingResult]] = {}
         self.deployed_models: Dict[int, str] = {}  # regime_id -> best_model_name
         
+        tprint("✅ [AUTO_PIPELINE] Automatic Regime Training Pipeline initialized", color="green")
         self.logger.info("✅ Automatic Regime Training Pipeline initialized")
     
     def run_automatic_training(self,
@@ -543,8 +627,12 @@ class AutomaticRegimeTrainingPipeline:
         """
         try:
             start_time = time.time()
+            tprint("🚀 [AUTO_PIPELINE] Starting automatic regime training pipeline", color="cyan", bold=True)
+            tprint(f"📊 [AUTO_PIPELINE] Input data: {len(market_data)} samples", color="blue")
             
             # Step 1: Detect regimes
+            tprint("🔍 [AUTO_PIPELINE] Step 1: Detecting regimes...", color="yellow")
+            tprint("🔍 [AUTO_PIPELINE] Running hybrid regime detection with economic validation", color="blue")
             self.logger.info("🔍 Detecting regimes...")
             hybrid_result = self.hybrid_detector.detect_regimes(
                 market_data=market_data,
@@ -554,14 +642,21 @@ class AutomaticRegimeTrainingPipeline:
             )
             
             if not hybrid_result.success:
+                tprint(f"❌ [AUTO_PIPELINE] Regime detection failed: {hybrid_result.error_message}", color="red", bold=True)
                 raise ValueError(f"Regime detection failed: {hybrid_result.error_message}")
             
+            unique_regimes = np.unique(hybrid_result.regime_predictions)
+            tprint(f"✅ [AUTO_PIPELINE] Detected {len(unique_regimes)} regimes: {unique_regimes}", color="green")
+            
             # Step 2: Extract data for each regime
+            tprint("📊 [AUTO_PIPELINE] Step 2: Extracting regime data...", color="yellow")
+            tprint(f"📊 [AUTO_PIPELINE] Processing {len(unique_regimes)} unique regimes", color="blue")
             self.logger.info("📊 Extracting regime data...")
             regime_data_dict = {}
-            unique_regimes = np.unique(hybrid_result.regime_predictions)
             
             for regime_id in unique_regimes:
+                tprint(f"🔍 [AUTO_PIPELINE] Extracting data for regime {regime_id}", color="blue")
+                tprint(f"🔍 [AUTO_PIPELINE] Running regime data extraction with feature engineering", color="cyan")
                 regime_data, regime_labels, regime_features = self.data_extractor.extract_regime_data(
                     market_data, hybrid_result.regime_predictions, regime_id
                 )
@@ -572,15 +667,21 @@ class AutomaticRegimeTrainingPipeline:
                         'labels': regime_labels,
                         'features': regime_features
                     }
+                    tprint(f"✅ [AUTO_PIPELINE] Extracted {len(regime_data)} samples for regime {regime_id}", color="green")
                     self.logger.info(f"Extracted {len(regime_data)} samples for regime {regime_id}")
                 else:
+                    tprint(f"⚠️ [AUTO_PIPELINE] No data extracted for regime {regime_id}", color="yellow")
                     self.logger.warning(f"No data extracted for regime {regime_id}")
             
             # Step 3: Train models for each regime
+            tprint(f"🤖 [AUTO_PIPELINE] Step 3: Training models for {len(regime_data_dict)} regimes...", color="yellow")
+            tprint(f"🤖 [AUTO_PIPELINE] Training {len(self.training_config.model_types)} model types per regime", color="blue")
             self.logger.info("🤖 Training models for each regime...")
             all_training_results = {}
             
             for regime_id, regime_info in regime_data_dict.items():
+                tprint(f"🚀 [AUTO_PIPELINE] Training models for regime {regime_id}...", color="cyan")
+                tprint(f"🚀 [AUTO_PIPELINE] Training with {len(regime_info['data'])} samples and {regime_info['features'].shape[1]} features", color="blue")
                 self.logger.info(f"Training models for regime {regime_id}...")
                 
                 training_results = self.model_trainer.train_regime_models(
@@ -596,11 +697,13 @@ class AutomaticRegimeTrainingPipeline:
                 best_model = self._select_best_model(training_results)
                 if best_model:
                     self.deployed_models[regime_id] = best_model.model_name
+                    tprint(f"🎯 [AUTO_PIPELINE] Deployed {best_model.model_name} for regime {regime_id}", color="green")
                     self.logger.info(f"Deployed {best_model.model_name} for regime {regime_id}")
             
             execution_time = time.time() - start_time
             
             # Create comprehensive result
+            tprint("📊 [AUTO_PIPELINE] Creating comprehensive results", color="blue")
             result = {
                 'success': True,
                 'execution_time': execution_time,
@@ -615,12 +718,14 @@ class AutomaticRegimeTrainingPipeline:
                     'config': {
                         'model_types': self.training_config.model_types,
                         'enable_meta_learning': self.training_config.enable_meta_learning,
-                        'enable_clvsa_enhancement': self.training_config.enable_clvsa_enhancement,
+                        'enable_patchtst_enhancement': self.training_config.enable_patchtst_enhancement,
                         'enable_ensemble_training': self.training_config.enable_ensemble_training
                     }
                 }
             }
             
+            tprint(f"🎉 [AUTO_PIPELINE] SUCCESS: Automatic training pipeline completed in {execution_time:.2f}s", color="green", bold=True)
+            tprint(f"📊 [AUTO_PIPELINE] Results: {len(unique_regimes)} regimes detected, {len(regime_data_dict)} trained, {len(self.deployed_models)} deployed", color="cyan")
             self.logger.info(f"✅ Automatic training pipeline completed in {execution_time:.2f}s")
             self.logger.info(f"   Regimes detected: {len(unique_regimes)}")
             self.logger.info(f"   Regimes trained: {len(regime_data_dict)}")

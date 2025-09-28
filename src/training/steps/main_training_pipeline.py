@@ -63,6 +63,7 @@ except ImportError:
     STANDARDIZED_LOGGING_AVAILABLE = False
 
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint
 
 # Import sub-pipelines with optional imports
 try:
@@ -133,7 +134,7 @@ class MainPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
-    timeframe: str = "1m"
+    timeframe: str = "15m"
     data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -678,20 +679,28 @@ class MainTrainingPipeline:
     ) -> List[ModelTrainingResult]:
         """Execute model training stage."""
         self.logger.info(f"🤖 Executing model training stage with {len(sub_pipeline_names)} sub-pipelines")
+        tprint(f"🤖 [MAIN_TRAINING] Starting model training stage with {len(sub_pipeline_names)} sub-pipelines", color="blue")
+        tprint(f"📊 [MAIN_TRAINING] Sub-pipelines: {', '.join(sub_pipeline_names)}", color="cyan")
         
         # Update pipeline configuration
+        tprint("⚙️ [MAIN_TRAINING] Updating model training pipeline configuration", color="yellow")
         self.model_training_pipeline.config = config
         
         # Execute sub-pipelines
         if config.parallel_processing:
+            tprint("⚡ [MAIN_TRAINING] Executing sub-pipelines in parallel mode", color="magenta")
             results = await self.model_training_pipeline.execute_multiple_sub_pipelines(
                 sub_pipeline_names, config, sequential=False
             )
+            tprint("✅ [MAIN_TRAINING] Parallel execution completed", color="green")
         else:
+            tprint("🔄 [MAIN_TRAINING] Executing sub-pipelines sequentially", color="yellow")
             results = await self.model_training_pipeline.execute_multiple_sub_pipelines(
                 sub_pipeline_names, config, sequential=True
             )
+            tprint("✅ [MAIN_TRAINING] Sequential execution completed", color="green")
         
+        tprint(f"📊 [MAIN_TRAINING] Model training stage completed with {len(results)} results", color="cyan")
         return results
     
     async def _execute_backtesting_stage(
@@ -833,7 +842,7 @@ async def execute_main_training_pipeline(
 def get_full_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
-    timeframe: str = "1m",
+    timeframe: str = "15m",
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
@@ -842,9 +851,52 @@ def get_full_pipeline_config(
     # Get centralized full mode configuration
     mode_config = get_full_mode_config()
     
-    # Full mode: 1460 days of data
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=mode_config.lookback_days)
+    # Full mode: Use last available data instead of current date
+    # This ensures we use actual historical data rather than future dates
+    try:
+        # Try to determine the last available date from the data
+        from src.utils.data.klines_parquet import KlinesParquetManager
+        manager = KlinesParquetManager(data_dir=data_dir)
+
+        # Load a small sample of recent data to determine the date range
+        # Use last 30 days to get a representative sample without loading everything
+        from datetime import datetime, timedelta
+        recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        recent_end = datetime.now().strftime('%Y-%m-%d')
+
+        sample_data = manager.read_data(
+            symbol=symbol,
+            interval=timeframe,
+            start_date=recent_start,
+            end_date=recent_end,
+            data_type="processed"
+        )
+        
+        if sample_data is not None and not sample_data.empty:
+            # Get the last available date from the data
+            if 'timestamp' in sample_data.columns:
+                timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                end_date = timestamps.max()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
+            else:
+                # Fallback to using the index if available
+                if hasattr(sample_data.index, 'max'):
+                    end_date = sample_data.index.max()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+                else:
+                    # Final fallback to current date
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+        else:
+            # No data available, use current date as fallback
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            
+    except Exception as e:
+        # If there's any error, fall back to current date
+        print(f"⚠️ Could not determine available data range: {e}")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     # Set intensity percentage for full mode
     intensity_pct = 1.0  # 100% intensity for full mode
@@ -891,7 +943,7 @@ def get_full_pipeline_config(
 def get_light_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
-    timeframe: str = "1m",
+    timeframe: str = "15m",
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
@@ -899,10 +951,53 @@ def get_light_pipeline_config(
     
     # Get centralized light mode configuration
     mode_config = get_light_mode_config()
-    
-    # Light mode: 10 days of data
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=mode_config.lookback_days)
+
+    # Light mode: Use last 10 days of available data instead of current date
+    # This ensures we use actual historical data rather than future dates
+    try:
+        # Try to determine the last available date from the data
+        from src.utils.data.klines_parquet import KlinesParquetManager
+        manager = KlinesParquetManager(data_dir=data_dir)
+
+        # Load a small sample of recent data to determine the date range
+        # Use last 30 days to get a representative sample without loading everything
+        from datetime import datetime, timedelta
+        recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        recent_end = datetime.now().strftime('%Y-%m-%d')
+
+        sample_data = manager.read_data(
+            symbol=symbol,
+            interval=timeframe,
+            start_date=recent_start,
+            end_date=recent_end,
+            data_type="processed"
+        )
+        
+        if sample_data is not None and not sample_data.empty:
+            # Get the last available date from the data
+            if 'timestamp' in sample_data.columns:
+                timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                end_date = timestamps.max()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
+            else:
+                # Fallback to using the index if available
+                if hasattr(sample_data.index, 'max'):
+                    end_date = sample_data.index.max()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+                else:
+                    # Final fallback to current date
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+        else:
+            # No data available, use current date as fallback
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            
+    except Exception as e:
+        # If there's any error, fall back to current date
+        print(f"⚠️ Could not determine available data range: {e}")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     # Set intensity percentage for light mode
     intensity_pct = 0.5  # 50% intensity for light mode
@@ -945,7 +1040,7 @@ def get_light_pipeline_config(
 def get_blank_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
-    timeframe: str = "1m",
+    timeframe: str = "15m",
     data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
@@ -954,9 +1049,52 @@ def get_blank_pipeline_config(
     # Get centralized blank mode configuration
     mode_config = get_blank_mode_config()
     
-    # Blank mode: 180 days of data
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=mode_config.lookback_days)
+    # Blank mode: Use last available data instead of current date
+    # This ensures we use actual historical data rather than future dates
+    try:
+        # Try to determine the last available date from the data
+        from src.utils.data.klines_parquet import KlinesParquetManager
+        manager = KlinesParquetManager(data_dir=data_dir)
+
+        # Load a small sample of recent data to determine the date range
+        # Use last 30 days to get a representative sample without loading everything
+        from datetime import datetime, timedelta
+        recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        recent_end = datetime.now().strftime('%Y-%m-%d')
+
+        sample_data = manager.read_data(
+            symbol=symbol,
+            interval=timeframe,
+            start_date=recent_start,
+            end_date=recent_end,
+            data_type="processed"
+        )
+        
+        if sample_data is not None and not sample_data.empty:
+            # Get the last available date from the data
+            if 'timestamp' in sample_data.columns:
+                timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                end_date = timestamps.max()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
+            else:
+                # Fallback to using the index if available
+                if hasattr(sample_data.index, 'max'):
+                    end_date = sample_data.index.max()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+                else:
+                    # Final fallback to current date
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+        else:
+            # No data available, use current date as fallback
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            
+    except Exception as e:
+        # If there's any error, fall back to current date
+        print(f"⚠️ Could not determine available data range: {e}")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     # Set intensity percentage for blank mode
     intensity_pct = 0.1  # 10% intensity for blank mode

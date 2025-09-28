@@ -74,11 +74,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the PID-based feature generation component."""
+        tprint("🔧 Initializing PIDBasedFeatureGenerationComponent...")
         super().__init__(config)
         self.logger = logger.getChild('PIDBasedFeatureGenerationComponent')
         
         # Initialize components
+        tprint("🔧 Initializing PID-based feature generation components...")
         self._initialize_components()
+        tprint("✅ Components initialized successfully")
         
         # Track generation status
         self.generation_status = GenerationStatus.PENDING
@@ -96,14 +99,18 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         self.logger.info(f"📊 Symbol: {self.config.symbol}")
         self.logger.info(f"📊 Exchange: {self.config.exchange}")
         self.logger.info(f"📊 Timeframe: {self.config.timeframe}")
+        tprint("✅ PIDBasedFeatureGenerationComponent initialization complete")
     
     def _initialize_components(self):
         """Initialize required components."""
+        tprint("🔧 Initializing lookback integration...")
         # Initialize lookback integration FIRST (before feature generators)
         self.lookback_integration = OptimizedLookbackIntegration()
         self.logger.info("✅ Optimized Lookback Integration initialized")
+        tprint("✅ Lookback integration initialized")
         
         # Initialize orchestrator configuration
+        tprint("🔧 Creating orchestrator configuration...")
         orchestrator_config = OrchestratorConfig(
             max_interaction_features=100,
             max_polynomial_features=50,
@@ -115,14 +122,20 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             enable_gpu_acceleration=True,
             memory_limit_gb=8.0
         )
+        tprint("✅ Orchestrator configuration created")
         
         # Initialize orchestrator
+        tprint("🔧 Initializing PID-based feature orchestrator...")
         self.orchestrator = PIDBasedFeatureOrchestrator(orchestrator_config)
         self.logger.info("✅ PID-Based Feature Orchestrator initialized")
+        tprint("✅ PID-based feature orchestrator initialized")
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['pid_based_feature_generation_result']
+        tprint("📋 Getting required artifacts for PID-based feature generation")
+        artifacts = ['pid_based_feature_generation_result']
+        tprint(f"✅ Required artifacts: {artifacts}")
+        return artifacts
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -135,6 +148,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         Returns:
             ComponentResult with PID-based feature generation results
         """
+        tprint("🚀 Starting PID-based feature generation execution...")
         self.start_time = time.time()
         self.generation_status = GenerationStatus.IN_PROGRESS
         
@@ -144,6 +158,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             'exchange': self.config.exchange,
             'timeframe': self.config.timeframe
         })
+        tprint("📊 Generation status set to IN_PROGRESS")
         
         try:
             # Store pipeline state for data access

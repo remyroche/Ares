@@ -157,7 +157,7 @@ def demonstrate_tas_position_awareness():
 
         logger.info("🚀 Running TAS with position-aware analysis...")
         tas_result = tas_detector.detect_regimes(
-            market_data, optimize_performance=True, enable_clvsa_enhancement=True
+            market_data, optimize_performance=True, enable_patchtst_enhancement=True
         )
 
         logger.info("📊 TAS Results with Position-Aware Analysis:")

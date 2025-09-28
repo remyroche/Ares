@@ -81,7 +81,11 @@ class EnhancedNASClusteringIntegration:
         clusterer_config = {
             'population_size': self.config.population_size,
             'generations': self.config.generations,
-            'enable_multi_objective': self.config.enable_multi_objective
+            'enable_multi_objective': self.config.enable_multi_objective,
+            'light_mode': getattr(self.config, 'light_mode', False),
+            'max_cluster_size_ratio': 0.25,  # Reduced from 0.35 to prevent over-concentration
+            'adaptive_clustering': True,     # Enable adaptive clustering
+            'concentration_threshold': 0.2   # More strict concentration threshold
         }
         
         self.nas_clusterer = EssentialNASClusterer(**clusterer_config)
@@ -153,11 +157,11 @@ class EnhancedNASClusteringIntegration:
             if self.nas_clusterer:
                 result = self.nas_clusterer.search(data, labels)
                 return {
-                    'success': result.success,
-                    'best_architecture': result.best_architecture,
-                    'pareto_frontier': result.pareto_frontier,
-                    'search_statistics': result.search_statistics,
-                    'execution_time': result.execution_time
+                    'success': result.get('success', False),
+                    'best_architecture': result.get('best_params', {}),
+                    'pareto_frontier': result.get('search_history', []),
+                    'search_statistics': result.get('cluster_metrics', {}),
+                    'execution_time': result.get('search_time', 0.0)
                 }
             else:
                 # Fallback NAS search

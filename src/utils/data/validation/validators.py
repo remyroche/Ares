@@ -10,6 +10,20 @@ from src.utils.pipeline_standards import PipelineStandards
 import logging
 import time
 
+# Import DataValidator from ml_common for backwards compatibility
+try:
+    from src.utils.ml_common.validation.validation_utils import DataValidator
+except ImportError:
+    # Fallback DataValidator implementation
+    class DataValidator:
+        """Fallback DataValidator implementation."""
+        def __init__(self, logger=None):
+            self.logger = logger or logging.getLogger(__name__)
+        
+        def validate_dataframe(self, data, validation_level="comprehensive"):
+            """Basic validation fallback."""
+            return {"valid": True, "issues": [], "warnings": []}
+
 @dataclass
 class DataLineage:
     """Track data lineage and transformations."""

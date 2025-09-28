@@ -228,6 +228,7 @@ class StandardizedParquetHandler:
         try:
             # Use PyArrow for partitioned reading if available
             try:
+                import pyarrow.dataset as ds
                 
                 # Read partitioned dataset
                 dataset = ds.dataset(base_path, format='parquet')
@@ -404,8 +405,18 @@ class StandardizedParquetHandler:
 
                 # Handle missing columns for processed data files
                 if 'timestamp' in missing_columns and 'open_time' in df.columns:
+                    # Clean open_time values before conversion
+                    open_time_clean = df['open_time'].copy()
+
+                    # Remove NaN and infinite values
+                    valid_mask = pd.notna(open_time_clean) & np.isfinite(open_time_clean)
+                    if not valid_mask.all():
+                        invalid_count = len(open_time_clean) - valid_mask.sum()
+                        self.logger.warning(f"⚠️ Found {invalid_count} invalid open_time values, cleaning them")
+                        open_time_clean = open_time_clean[valid_mask]
+
                     # Convert open_time from milliseconds to datetime
-                    df['timestamp'] = pd.to_datetime(df['open_time'], unit='ms')
+                    df['timestamp'] = pd.to_datetime(open_time_clean, unit='ms')
                     missing_columns.remove('timestamp')
                     self.logger.debug(f"✅ Added 'timestamp' column from 'open_time'")
 
@@ -752,6 +763,7 @@ class StandardizedParquetHandler:
             metadata_path = file_path.with_suffix('.metadata.json')
             if metadata_path.exists():
                 try:
+                    import json
                     with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
                     file_info['metadata'] = metadata

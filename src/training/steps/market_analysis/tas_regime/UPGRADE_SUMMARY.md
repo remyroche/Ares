@@ -173,7 +173,7 @@ detector = TASRegimeDetector(config)
 result = detector.detect_regimes(
     market_data=market_df,
     optimize_performance=True,
-    enable_clvsa_enhancement=True
+    enable_patchtst_enhancement=True
 )
 ```
 

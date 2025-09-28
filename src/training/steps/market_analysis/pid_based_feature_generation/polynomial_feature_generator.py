@@ -21,6 +21,11 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
+tprint("🔧 Loading polynomial feature generator...")
+
 # Core dependencies with fallback support
 try:
     import numpy as np

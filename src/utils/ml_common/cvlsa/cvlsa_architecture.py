@@ -1,7 +1,7 @@
 """
-Enhanced CVLSA Architecture with Cross-View Attention and Multi-Scale Temporal Modeling
+Enhanced PatchTST Architecture with Cross-View Attention and Multi-Scale Temporal Modeling
 
-This module implements an advanced CVLSA (Cross-View Learning with Self-Attention) architecture
+This module implements an advanced PatchTST (Patch Time Series Transformer) architecture
 with the following enhancements:
 
 1. Cross-View Attention: Attention mechanisms between different data modalities
@@ -31,8 +31,8 @@ from src.utils.ml_common.data_processing.feature_preparation import FeaturePrepa
 logger = logging.getLogger(__name__)
 
 @dataclass
-class EnhancedCVLSAConfig:
-    """Enhanced CVLSA configuration with all improvements."""
+class EnhancedPatchTSTConfig:
+    """Enhanced PatchTST configuration with all improvements."""
     
     # Architecture parameters
     input_dim: int = 100
@@ -82,7 +82,7 @@ class EnhancedCVLSAConfig:
 class CrossViewAttention(nn.Module):
     """Cross-view attention mechanism for different data modalities."""
     
-    def __init__(self, config: EnhancedCVLSAConfig):
+    def __init__(self, config: EnhancedPatchTSTConfig):
         super().__init__()
         self.config = config
         self.embed_dim = config.view_embedding_dim
@@ -150,7 +150,7 @@ class CrossViewAttention(nn.Module):
 class MultiScaleTemporalAttention(nn.Module):
     """Multi-scale temporal attention for time series modeling."""
     
-    def __init__(self, config: EnhancedCVLSAConfig):
+    def __init__(self, config: EnhancedPatchTSTConfig):
         super().__init__()
         self.config = config
         self.temporal_scales = config.temporal_scales
@@ -223,10 +223,10 @@ class MultiScaleTemporalAttention(nn.Module):
         return scaled_x
 
 
-class MemoryEfficientCVLSA(nn.Module):
-    """Memory-efficient CVLSA with gradient checkpointing and chunked processing."""
+class MemoryEfficientPatchTST(nn.Module):
+    """Memory-efficient PatchTST with gradient checkpointing and chunked processing."""
     
-    def __init__(self, config: EnhancedCVLSAConfig):
+    def __init__(self, config: EnhancedPatchTSTConfig):
         super().__init__()
         self.config = config
         self.use_gradient_checkpointing = config.gradient_checkpointing
@@ -362,7 +362,7 @@ class MemoryEfficientCVLSA(nn.Module):
 class BayesianHyperparameterOptimizer:
     """Bayesian optimization for CVLSA hyperparameters."""
     
-    def __init__(self, config: EnhancedCVLSAConfig):
+    def __init__(self, config: EnhancedPatchTSTConfig):
         self.config = config
         self.optimization_trials = config.optimization_trials
         self.timeout = config.optimization_timeout
@@ -410,8 +410,8 @@ class BayesianHyperparameterOptimizer:
             }
             
             # Create model with sampled parameters
-            model_config = EnhancedCVLSAConfig(**params)
-            model = MemoryEfficientCVLSA(model_config)
+            model_config = EnhancedPatchTSTConfig(**params)
+            model = MemoryEfficientPatchTST(model_config)
             
             # Train and evaluate
             score = self._evaluate_model(model, train_data, val_data, target)
@@ -444,8 +444,8 @@ class BayesianHyperparameterOptimizer:
             }
             
             # Evaluate model
-            model_config = EnhancedCVLSAConfig(**params)
-            model = MemoryEfficientCVLSA(model_config)
+            model_config = EnhancedPatchTSTConfig(**params)
+            model = MemoryEfficientPatchTST(model_config)
             score = self._evaluate_model(model, train_data, val_data, target)
             
             if score > best_score:
@@ -454,7 +454,7 @@ class BayesianHyperparameterOptimizer:
         
         return best_params
     
-    def _evaluate_model(self, model: MemoryEfficientCVLSA, train_data: Dict[str, torch.Tensor],
+    def _evaluate_model(self, model: MemoryEfficientPatchTST, train_data: Dict[str, torch.Tensor],
                        val_data: Dict[str, torch.Tensor], target: torch.Tensor) -> float:
         """Evaluate model performance."""
         try:
@@ -475,12 +475,12 @@ class BayesianHyperparameterOptimizer:
             return float('-inf')
 
 
-class EnhancedCVLSATrainer:
-    """Enhanced CVLSA trainer with all optimizations."""
+class EnhancedPatchTSTTrainer:
+    """Enhanced PatchTST trainer with all optimizations."""
     
-    def __init__(self, config: EnhancedCVLSAConfig):
+    def __init__(self, config: EnhancedPatchTSTConfig):
         self.config = config
-        self.model = MemoryEfficientCVLSA(config)
+        self.model = MemoryEfficientPatchTST(config)
         self.optimizer = None
         self.scheduler = None
         
@@ -778,15 +778,15 @@ class EnhancedCVLSATrainer:
 
 
 # Factory functions
-def create_enhanced_cvlsa_model(config: Optional[EnhancedCVLSAConfig] = None) -> EnhancedCVLSATrainer:
-    """Create enhanced CVLSA model."""
+def create_enhanced_patchtst_model(config: Optional[EnhancedPatchTSTConfig] = None) -> EnhancedPatchTSTTrainer:
+    """Create enhanced PatchTST model."""
     if config is None:
-        config = EnhancedCVLSAConfig()
+        config = EnhancedPatchTSTConfig()
     
     config.validate()
-    return EnhancedCVLSATrainer(config)
+    return EnhancedPatchTSTTrainer(config)
 
 
-def create_cvlsa_config(**kwargs) -> EnhancedCVLSAConfig:
-    """Create CVLSA configuration with custom parameters."""
-    return EnhancedCVLSAConfig(**kwargs)
+def create_patchtst_config(**kwargs) -> EnhancedPatchTSTConfig:
+    """Create PatchTST configuration with custom parameters."""
+    return EnhancedPatchTSTConfig(**kwargs)

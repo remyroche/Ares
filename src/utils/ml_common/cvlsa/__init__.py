@@ -1,11 +1,11 @@
 """
-Enhanced CVLSA (Cross-View Learning with Self-Attention) Architecture
+Enhanced PatchTST (Patch Time Series Transformer) Architecture
 
-This package contains the complete implementation of the Enhanced CVLSA architecture
+This package contains the complete implementation of the Enhanced PatchTST architecture
 with advanced features for financial machine learning applications.
 
 Key Components:
-- cvlsa_architecture: Core CVLSA implementation with cross-view attention
+- cvlsa_architecture: Core PatchTST implementation with cross-view attention
 - cvlsa_integration: Integration with tree-based models
 - adaptive_cascade_architecture: Adaptive cascade system with genetic optimization
 - enhanced_variable_selection: Enhanced variable selection with parallel processing
@@ -16,34 +16,34 @@ Key Components:
 - configuration_simplification: Configuration profiles and auto-configuration
 
 Quick Start:
-    from src.utils.ml_common.cvlsa.cvlsa_architecture import create_enhanced_cvlsa_model
+    from src.utils.ml_common.cvlsa.cvlsa_architecture import create_enhanced_patchtst_model
     from src.utils.ml_common.cvlsa.configuration_simplification import create_configuration_simplification
     
     # Auto-configure the system
     config_simplifier = create_configuration_simplification()
     auto_result = config_simplifier.auto_configure(X, y, use_case='research')
     
-    # Create and use CVLSA model
-    cvlsa_model = create_enhanced_cvlsa_model(auto_result.config)
+    # Create and use PatchTST model
+    patchtst_model = create_enhanced_patchtst_model(auto_result.config)
 """
 
-# Core CVLSA components
+# Core PatchTST components
 from .cvlsa_architecture import (
-    EnhancedCVLSAConfig,
+    EnhancedPatchTSTConfig,
     CrossViewAttention,
     MultiScaleTemporalAttention,
-    MemoryEfficientCVLSA,
+    MemoryEfficientPatchTST,
     BayesianHyperparameterOptimizer,
-    EnhancedCVLSATrainer,
-    create_enhanced_cvlsa_model,
-    create_cvlsa_config
+    EnhancedPatchTSTTrainer,
+    create_enhanced_patchtst_model,
+    create_patchtst_config
 )
 
 from .cvlsa_integration import (
-    HybridCVLSATreeModel,
-    CVLSAFeatureExtractor,
-    create_hybrid_cvlsa_tree_model,
-    create_cvlsa_feature_extractor
+    PatchTSTTreeModel,
+    PatchTSTFeatureExtractor,
+    create_default_patchtst_tree_model,
+    create_patchtst_feature_extractor
 )
 
 # Adaptive cascade architecture
@@ -116,23 +116,23 @@ from .configuration_simplification import (
 )
 
 __version__ = "1.0.0"
-__author__ = "Enhanced CVLSA Team"
-__description__ = "Enhanced CVLSA Architecture for Financial Machine Learning"
+__author__ = "Enhanced PatchTST Team"
+__description__ = "Enhanced PatchTST Architecture for Financial Machine Learning"
 
 # Main exports for easy access
 __all__ = [
-    # Core CVLSA
-    "EnhancedCVLSAConfig",
+    # Core PatchTST
+    "EnhancedPatchTSTConfig",
     "CrossViewAttention", 
     "MultiScaleTemporalAttention",
-    "MemoryEfficientCVLSA",
-    "EnhancedCVLSATrainer",
-    "create_enhanced_cvlsa_model",
+    "MemoryEfficientPatchTST",
+    "EnhancedPatchTSTTrainer",
+    "create_enhanced_patchtst_model",
     
     # Integration
-    "HybridCVLSATreeModel",
-    "CVLSAFeatureExtractor",
-    "create_hybrid_cvlsa_tree_model",
+    "PatchTSTTreeModel",
+    "PatchTSTFeatureExtractor",
+    "create_default_patchtst_tree_model",
     
     # Adaptive cascade
     "AdaptiveCascadeArchitecture",

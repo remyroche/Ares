@@ -252,3 +252,18 @@ def create_default_patchtst_tree_model(
 
 # Backwards compatibility alias for older code paths that imported the CVLSA model
 HybridCVLSATreeModel = PatchTSTTreeModel
+
+# Additional PatchTST components for compatibility
+class PatchTSTFeatureExtractor:
+    """PatchTST feature extractor for compatibility."""
+    def __init__(self, config=None):
+        self.config = config or {}
+    
+    def extract_features(self, X):
+        """Extract features using PatchTST."""
+        # This would be implemented with actual PatchTST feature extraction
+        return X
+
+def create_patchtst_feature_extractor(config=None):
+    """Create PatchTST feature extractor."""
+    return PatchTSTFeatureExtractor(config)

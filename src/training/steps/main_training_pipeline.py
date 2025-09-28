@@ -210,6 +210,9 @@ class MainPipelineConfig:
     
     # Single stage execution control
     single_stage_only: bool = False  # Control whether to execute only the requested stage
+    
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
 
 @dataclass
 class MainPipelineResult:
@@ -1101,7 +1104,8 @@ def get_full_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
     from src.config.pipeline_modes import get_full_mode_config
@@ -1126,6 +1130,7 @@ def get_full_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -1160,7 +1165,8 @@ def get_light_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
     from src.config.pipeline_modes import get_light_mode_config
@@ -1185,6 +1191,7 @@ def get_light_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -1215,7 +1222,8 @@ def get_blank_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    training_direction: str = "both"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
     from src.config.pipeline_modes import get_blank_mode_config
@@ -1240,6 +1248,7 @@ def get_blank_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        training_direction=training_direction,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

@@ -123,6 +123,11 @@ class DualTrainingConfig:
     min_analyst_confidence: float = 0.5
     subsequent_minutes: int = 45
     output_directory: str = "generated/tactician_dual_training"
+    
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    enable_long_training: bool = True
+    enable_short_training: bool = True
 
     # Feature processing parameters
     enable_feature_optimization: bool = True
@@ -206,6 +211,18 @@ class DualTrainingConfig:
 
         if self.memory_limit_gb <= 0:
             raise ConfigurationError("memory_limit_gb must be positive")
+            
+        # Validate training direction
+        if self.training_direction not in ["long", "short", "both"]:
+            raise ConfigurationError("training_direction must be 'long', 'short', or 'both'")
+            
+        # Validate direction flags consistency
+        if self.training_direction == "long" and not self.enable_long_training:
+            raise ConfigurationError("Cannot disable long training when training_direction is 'long'")
+        if self.training_direction == "short" and not self.enable_short_training:
+            raise ConfigurationError("Cannot disable short training when training_direction is 'short'")
+        if self.training_direction == "both" and not (self.enable_long_training or self.enable_short_training):
+            raise ConfigurationError("At least one direction must be enabled when training_direction is 'both'")
 
 
 @dataclass
@@ -357,8 +374,9 @@ class TacticianDualTrainingStep:
 
             tprint_success(f"✅ Pre-ML orchestration completed: {result.total_long_samples} long, {result.total_short_samples} short samples")
 
-            # Step 2: Train base models for long signals
-            if self.config.train_base_models and result.total_long_samples >= self.config.min_training_samples:
+            # Step 2: Train base models for long signals (if enabled)
+            if (self.config.enable_long_training and self.config.train_base_models and 
+                result.total_long_samples >= self.config.min_training_samples):
                 tprint_info("📈 Step 2: Training base models for long signals...")
                 long_base_result = await self._train_base_models(
                     orchestration_result.long_training_data,
@@ -370,10 +388,14 @@ class TacticianDualTrainingStep:
                 result.long_base_training_completed = True
                 tprint_success("✅ Long base model training completed")
             else:
-                tprint_info("⏭️ Skipping long base model training - insufficient data or disabled")
+                if not self.config.enable_long_training:
+                    tprint_info("⏭️ Skipping long base model training - long training disabled")
+                else:
+                    tprint_info("⏭️ Skipping long base model training - insufficient data or disabled")
 
-            # Step 3: Train base models for short signals
-            if self.config.train_base_models and result.total_short_samples >= self.config.min_training_samples:
+            # Step 3: Train base models for short signals (if enabled)
+            if (self.config.enable_short_training and self.config.train_base_models and 
+                result.total_short_samples >= self.config.min_training_samples):
                 tprint_info("📉 Step 3: Training base models for short signals...")
                 short_base_result = await self._train_base_models(
                     orchestration_result.short_training_data,
@@ -385,7 +407,10 @@ class TacticianDualTrainingStep:
                 result.short_base_training_completed = True
                 tprint_success("✅ Short base model training completed")
             else:
-                tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
+                if not self.config.enable_short_training:
+                    tprint_info("⏭️ Skipping short base model training - short training disabled")
+                else:
+                    tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
 
             # Step 4: Train ensemble models for long signals
             if self.config.train_ensemble_models and result.total_long_samples >= self.config.min_training_samples and result.long_base_models:

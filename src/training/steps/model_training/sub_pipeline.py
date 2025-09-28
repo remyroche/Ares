@@ -1595,7 +1595,7 @@ class ModelTrainingSubPipeline:
             'optimization_results': {},
             'optimized_lookbacks': {},
             'performance_metrics': {},
-            'optimization_report': f"tactician_lookback_optimization_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
+            'optimization_report': f"tactician_lookback_optimization_report_{config.symbol}_{config.exchange}_{config.timeframe}_{getattr(config, 'training_direction', 'both')}_{timestamp}.json"
         }
         
         try:
@@ -2114,9 +2114,9 @@ class ModelTrainingSubPipeline:
                 },
                 'output_artifacts': {
                     'tactician_ready_lookbacks': optimization_result.get('optimized_lookbacks', {}),
-                    'optimization_parameters_file': f"tactician_optimization_params_{timestamp}.json",
-                    'performance_report_file': f"tactician_optimization_performance_{timestamp}.json",
-                    'integration_status_file': f"tactician_integration_status_{timestamp}.json"
+                    'optimization_parameters_file': f"tactician_optimization_params_{getattr(config, 'training_direction', 'both')}_{timestamp}.json",
+                    'performance_report_file': f"tactician_optimization_performance_{getattr(config, 'training_direction', 'both')}_{timestamp}.json",
+                    'integration_status_file': f"tactician_integration_status_{getattr(config, 'training_direction', 'both')}_{timestamp}.json"
                 }
             }
             
@@ -2309,7 +2309,7 @@ class ModelTrainingSubPipeline:
         
         # Generate summary report with timestamp
         timestamp = self._generate_datetime_stamp()
-        summary_report_path = f"{self.config.data_dir}/reports/execution_summary_{timestamp}.json"
+        summary_report_path = f"{self.config.data_dir}/reports/execution_summary_{getattr(self.config, 'training_direction', 'both')}_{timestamp}.json"
         
         summary_data = {
             'metadata': {

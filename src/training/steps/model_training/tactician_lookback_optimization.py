@@ -118,6 +118,9 @@ class TacticianLookbackConfig:
     analyst_model_path: str = "./models/analyst_models"
     analyst_ensemble_path: str = "./models/analyst_ensemble"
     
+    # Training direction control
+    training_direction: str = "both"  # "long", "short", or "both"
+    
     # Optimization parameters
     optimization_method: str = "two_step_grid_tpe"
     coarse_grid_size: int = 5
@@ -1866,13 +1869,13 @@ class TacticianLookbackOptimizer:
             (results_path / "artifacts").mkdir(parents=True, exist_ok=True)
             
             # 1. Save main optimization results
-            results_file = results_path / "optimization_results" / f"tactician_lookback_optimization_{timestamp}.json"
+            results_file = results_path / "optimization_results" / f"tactician_lookback_optimization_{self.config.training_direction}_{timestamp}.json"
             results_file.parent.mkdir(parents=True, exist_ok=True)
             with open(results_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             
             # 2. Save best lookbacks separately for easy loading by Tactician training
-            lookbacks_file = results_path / "optimization_results" / f"best_lookbacks_{timestamp}.json"
+            lookbacks_file = results_path / "optimization_results" / f"best_lookbacks_{self.config.training_direction}_{timestamp}.json"
             with open(lookbacks_file, 'w') as f:
                 json.dump(self.best_lookbacks, f, indent=2)
             
@@ -1904,30 +1907,30 @@ class TacticianLookbackOptimizer:
                 }
             }
             
-            metrics_file = results_path / "performance_metrics" / f"optimization_metrics_{timestamp}.json"
+            metrics_file = results_path / "performance_metrics" / f"optimization_metrics_{self.config.training_direction}_{timestamp}.json"
             with open(metrics_file, 'w') as f:
                 json.dump(enhanced_metrics, f, indent=2, default=str)
             
             # 4. Save feature analysis
             if 'feature_analysis' in results:
-                feature_file = results_path / "feature_analysis" / f"feature_analysis_{timestamp}.json"
+                feature_file = results_path / "feature_analysis" / f"feature_analysis_{self.config.training_direction}_{timestamp}.json"
                 with open(feature_file, 'w') as f:
                     json.dump(results['feature_analysis'], f, indent=2, default=str)
             
             # 5. Save convergence analysis
             if 'convergence_analysis' in results:
-                convergence_file = results_path / "convergence_analysis" / f"convergence_analysis_{timestamp}.json"
+                convergence_file = results_path / "convergence_analysis" / f"convergence_analysis_{self.config.training_direction}_{timestamp}.json"
                 with open(convergence_file, 'w') as f:
                     json.dump(results['convergence_analysis'], f, indent=2, default=str)
             
             # 6. Generate and save comprehensive summary report
             summary_report = self._generate_comprehensive_summary_report(results, timestamp)
-            summary_file = results_path / "detailed_reports" / f"optimization_summary_{timestamp}.json"
+            summary_file = results_path / "detailed_reports" / f"optimization_summary_{self.config.training_direction}_{timestamp}.json"
             with open(summary_file, 'w') as f:
                 json.dump(summary_report, f, indent=2, default=str)
             
             # 7. Save optimization history for analysis
-            history_file = results_path / "artifacts" / f"optimization_history_{timestamp}.json"
+            history_file = results_path / "artifacts" / f"optimization_history_{self.config.training_direction}_{timestamp}.json"
             with open(history_file, 'w') as f:
                 json.dump(self.optimization_history, f, indent=2, default=str)
             
@@ -1957,7 +1960,7 @@ class TacticianLookbackOptimizer:
                 }
             }
             
-            manifest_file = results_path / "artifacts" / f"artifact_manifest_{timestamp}.json"
+            manifest_file = results_path / "artifacts" / f"artifact_manifest_{self.config.training_direction}_{timestamp}.json"
             with open(manifest_file, 'w') as f:
                 json.dump(artifact_manifest, f, indent=2, default=str)
             

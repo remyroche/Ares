@@ -218,9 +218,8 @@ class RegimeHPOWrapper:
                     'high': max(extratrees_config.get('n_estimators', [300, 500, 800]))
                 },
                 'max_depth': {
-                    'type': 'int',
-                    'low': 10,
-                    'high': 15
+                    'type': 'categorical',
+                    'choices': extratrees_config.get('max_depth', [None, 10, 15])
                 },
                 'min_samples_split': {
                     'type': 'int',
@@ -646,11 +645,20 @@ class RegimeHPOWrapper:
             raise ImportError("Scikit-learn not available")
         
         def factory(**params):
+            processed_params = params.copy()
+            max_depth = processed_params.get('max_depth')
+
+            if isinstance(max_depth, str):
+                if max_depth.strip().lower() in {'none', 'null', ''}:
+                    processed_params['max_depth'] = None
+            elif max_depth is not None and isinstance(max_depth, float) and np.isnan(max_depth):
+                processed_params['max_depth'] = None
+
             return ExtraTreesClassifier(
                 bootstrap=False,
                 criterion='gini',
                 random_state=42,
-                **params
+                **processed_params
             )
         return factory
     

@@ -630,8 +630,8 @@ class ModelComplexityAnalyzer:
 
             # Feature concentration risk
             if hasattr(self, '_analyze_feature_usage'):
-                # We already have this from previous analysis, but we'll simulate
-                concentration = 0.5  # Placeholder
+                # Calculate actual feature concentration based on feature importance
+                concentration = self._calculate_feature_concentration(model, X)
                 if concentration > 0.8:
                     analysis['risk_score'] += 0.3
                     analysis['indicators'].append(f"High feature concentration: {concentration:.2f}")
@@ -745,8 +745,8 @@ class ModelComplexityAnalyzer:
     def _check_regularization_potential(self, model: Any, model_type: str) -> bool:
         """Check if increased regularization would be beneficial."""
         try:
-            # Check current regularization strength
-            current_reg = 0.5  # Placeholder
+            # Check current regularization strength based on model type
+            current_reg = self._get_current_regularization_strength(model, model_type)
             return current_reg < 0.7  # Room for more regularization
         except Exception as e:
             logger.error(f"Regularization potential check failed: {e}")
@@ -755,8 +755,8 @@ class ModelComplexityAnalyzer:
     def _check_architecture_simplification_potential(self, model: Any, model_type: str) -> bool:
         """Check if architecture can be simplified."""
         try:
-            # Check if model is very complex
-            complexity = 0.5  # Placeholder
+            # Check if model is very complex based on actual model structure
+            complexity = self._calculate_model_architecture_complexity(model, model_type)
             return complexity > 0.7
         except Exception as e:
             logger.error(f"Architecture simplification potential check failed: {e}")
@@ -882,6 +882,118 @@ class ModelComplexityAnalyzer:
     def get_analysis_history(self) -> List[ComplexityAnalysisReport]:
         """Get analysis history."""
         return self.analysis_history.copy()
+    
+    def _calculate_feature_concentration(self, model: Any, X: np.ndarray) -> float:
+        """Calculate feature concentration based on feature importance."""
+        try:
+            feature_importances = self._get_feature_importances(model, X, "unknown")
+            if not feature_importances:
+                return 0.5  # Default if no feature importance available
+            
+            # Calculate concentration as the ratio of top features to total features
+            total_features = len(feature_importances)
+            if total_features == 0:
+                return 0.5
+            
+            # Sort features by importance and get top 20%
+            sorted_importances = sorted(feature_importances.values(), reverse=True)
+            top_20_percent = max(1, int(total_features * 0.2))
+            top_features_importance = sum(sorted_importances[:top_20_percent])
+            total_importance = sum(sorted_importances)
+            
+            if total_importance == 0:
+                return 0.5
+            
+            concentration = top_features_importance / total_importance
+            return min(1.0, max(0.0, concentration))
+        except Exception as e:
+            logger.warning(f"Failed to calculate feature concentration: {e}")
+            return 0.5
+    
+    def _get_current_regularization_strength(self, model: Any, model_type: str) -> float:
+        """Get current regularization strength of the model."""
+        try:
+            if hasattr(model, 'get_params'):
+                params = model.get_params()
+                
+                # Check for common regularization parameters
+                if model_type.lower() in ['random_forest', 'extra_trees']:
+                    # For tree-based models, check min_samples_split, min_samples_leaf
+                    min_samples_split = params.get('min_samples_split', 2)
+                    min_samples_leaf = params.get('min_samples_leaf', 1)
+                    # Higher values = more regularization
+                    reg_strength = min(1.0, (min_samples_split + min_samples_leaf) / 20.0)
+                    return reg_strength
+                
+                elif model_type.lower() in ['linear', 'logistic', 'ridge', 'lasso', 'elasticnet']:
+                    # For linear models, check alpha/C parameters
+                    alpha = params.get('alpha', 1.0)
+                    C = params.get('C', 1.0)
+                    # Convert to regularization strength (higher alpha/lower C = more regularization)
+                    if 'alpha' in params:
+                        reg_strength = min(1.0, alpha / 10.0)
+                    elif 'C' in params:
+                        reg_strength = min(1.0, 1.0 / C)
+                    else:
+                        reg_strength = 0.1
+                    return reg_strength
+                
+                elif model_type.lower() in ['neural_network', 'mlp']:
+                    # For neural networks, check dropout, weight decay
+                    dropout = params.get('dropout_rate', 0.0)
+                    weight_decay = params.get('weight_decay', 0.0)
+                    reg_strength = min(1.0, (dropout + weight_decay) / 2.0)
+                    return reg_strength
+            
+            return 0.1  # Default low regularization
+        except Exception as e:
+            logger.warning(f"Failed to get regularization strength: {e}")
+            return 0.1
+    
+    def _calculate_model_architecture_complexity(self, model: Any, model_type: str) -> float:
+        """Calculate model architecture complexity."""
+        try:
+            if model_type.lower() in ['random_forest', 'extra_trees']:
+                # For tree-based models, complexity based on number of trees and depth
+                n_estimators = getattr(model, 'n_estimators', 100)
+                max_depth = getattr(model, 'max_depth', None)
+                if max_depth is None:
+                    max_depth = 10  # Default assumption
+                
+                # Normalize complexity (0-1 scale)
+                complexity = min(1.0, (n_estimators * max_depth) / 10000.0)
+                return complexity
+            
+            elif model_type.lower() in ['neural_network', 'mlp']:
+                # For neural networks, complexity based on layers and neurons
+                if hasattr(model, 'hidden_layer_sizes'):
+                    hidden_sizes = model.hidden_layer_sizes
+                    if isinstance(hidden_sizes, int):
+                        total_neurons = hidden_sizes
+                    else:
+                        total_neurons = sum(hidden_sizes)
+                    complexity = min(1.0, total_neurons / 1000.0)
+                    return complexity
+                else:
+                    return 0.5  # Default medium complexity
+            
+            elif model_type.lower() in ['linear', 'logistic', 'ridge', 'lasso', 'elasticnet']:
+                # Linear models are generally simple
+                return 0.2
+            
+            else:
+                # For unknown models, try to estimate based on parameters
+                if hasattr(model, 'get_params'):
+                    params = model.get_params()
+                    param_count = len(params)
+                    complexity = min(1.0, param_count / 50.0)
+                    return complexity
+                else:
+                    return 0.5  # Default medium complexity
+                    
+        except Exception as e:
+            logger.warning(f"Failed to calculate architecture complexity: {e}")
+            return 0.5
 
 # Global instance
 DEFAULT_COMPLEXITY_ANALYZER = ModelComplexityAnalyzer()

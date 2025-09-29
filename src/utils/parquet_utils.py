@@ -70,8 +70,9 @@ class ParquetUtils:
         finally:
             try:
                 del sample_df  # type: ignore[name-defined]
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                logger.warning(f"Failed to delete sample_df: {e}")
             gc.collect()
 
         return result

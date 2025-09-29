@@ -54,8 +54,9 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-    except Exception:
-        pass
+    except Exception as e:
+        # Log the exception for debugging but don't fail the operation
+        logger.warning(f"Failed to parse name_candidate: {e}")
 
     effective_state = kwargs.get("state", state)
     try:
@@ -146,8 +147,9 @@ class ModelManager:
         # Base path used by training-style persistence APIs
         try:
             os.makedirs(self.models_dir, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the exception for debugging but don't fail the operation
+            self.logger.warning(f"Failed to create models directory: {e}")
         self._save_base_path = self.models_dir
 
     @handles_errors(
@@ -473,8 +475,9 @@ class ModelManager:
                     dmatrix = xgb.DMatrix(data)
                     y_pred = model.predict(dmatrix)
                     return {"predictions": y_pred}
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                self.logger.warning(f"Failed to predict with XGBoost model: {e}")
 
             # LightGBM Booster
             try:
@@ -482,8 +485,9 @@ class ModelManager:
                 if isinstance(model, lgb.Booster):
                     y_pred = model.predict(data)
                     return {"predictions": y_pred}
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                self.logger.warning(f"Failed to predict with LightGBM model: {e}")
 
             # PyTorch models require a wrapper; we cannot infer here
             self.logger.warning(warn_symbol("Model type not directly supported for prediction"))
@@ -718,18 +722,21 @@ class ModelManager:
         if hasattr(model, "get_params"):
             try:
                 metadata["model_params"] = model.get_params()
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                self.logger.warning(f"Failed to get model parameters: {e}")
         if hasattr(model, "feature_importances_"):
             try:
                 metadata["feature_importances"] = getattr(model, "feature_importances_").tolist()  # type: ignore[no-any-return]
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                self.logger.warning(f"Failed to get feature importances: {e}")
         if hasattr(model, "n_features_in_"):
             try:
                 metadata["n_features_in"] = int(getattr(model, "n_features_in_"))
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the operation
+                self.logger.warning(f"Failed to get n_features_in: {e}")
         return metadata
 
     def cleanup_old_models(

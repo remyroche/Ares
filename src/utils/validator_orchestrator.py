@@ -59,8 +59,9 @@ class ValidatorOrchestrator:
             self.logger.info(f'🔍 Running {validation_level} validator for {step_name}')
             try:
                 self.logger.debug('Input context - training_input_keys=%s pipeline_state_keys=%s validation_level=%s', list(training_input.keys()) if isinstance(training_input, dict) else type(training_input).__name__, list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else type(pipeline_state).__name__, validation_level)
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging but don't fail the validation
+                self.logger.warning(f"Failed to log input context: {e}")
             pre_validation_result = await self._run_pre_validation_checks(step_name, training_input, pipeline_state, config, validation_level)
             if not pre_validation_result.get('passed', True):
                 duration = max(0.0, time.perf_counter() - start_perf)

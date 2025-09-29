@@ -533,22 +533,67 @@ class PolynomialFeatureGenerator(BaseFeatureGenerator):
     ) -> Tuple[np.ndarray, List[str]]:
         """Apply optimized lookback periods to features."""
         try:
-            # This is a placeholder for applying optimized lookback periods
-            # In practice, this would involve resampling or windowing the data
-            # based on the optimized periods from feature_lookback_optimization
-            
             self.logger.info(f"📊 Applying optimized lookback periods: {optimized_lookback_periods}")
             
-            # For now, we'll just log the optimization and return the original data
-            # In a full implementation, this would:
-            # 1. Identify which features correspond to which optimized periods
-            # 2. Apply the appropriate windowing/resampling
-            # 3. Update feature names to reflect the optimization
+            # Apply optimized lookback periods to features
+            optimized_features = []
+            optimized_names = []
             
-            return X, feature_names
+            for feature_name, lookback_period in optimized_lookback_periods.items():
+                if feature_name in feature_names:
+                    feature_idx = feature_names.index(feature_name)
+                    feature_data = X[:, feature_idx]
+                    
+                    # Apply lookback windowing
+                    if len(feature_data) >= lookback_period:
+                        # Create rolling window features
+                        rolling_features = []
+                        for i in range(lookback_period - 1, len(feature_data)):
+                            window_data = feature_data[i - lookback_period + 1:i + 1]
+                            
+                            # Calculate window statistics
+                            window_mean = np.mean(window_data)
+                            window_std = np.std(window_data)
+                            window_max = np.max(window_data)
+                            window_min = np.min(window_data)
+                            
+                            # Create feature vector for this window
+                            window_features = np.array([window_mean, window_std, window_max, window_min])
+                            rolling_features.append(window_features)
+                        
+                        if rolling_features:
+                            # Stack features and add to results
+                            feature_matrix = np.array(rolling_features)
+                            for i, stat_name in enumerate(['mean', 'std', 'max', 'min']):
+                                optimized_features.append(feature_matrix[:, i])
+                                optimized_names.append(f"{feature_name}_{stat_name}_lb{lookback_period}")
+                    else:
+                        # If data is shorter than lookback period, use original feature
+                        optimized_features.append(feature_data)
+                        optimized_names.append(feature_name)
+                else:
+                    # Keep original feature if not in optimization list
+                    if feature_name in feature_names:
+                        feature_idx = feature_names.index(feature_name)
+                        optimized_features.append(X[:, feature_idx])
+                        optimized_names.append(feature_name)
+            
+            # Add any remaining features not in optimization list
+            for i, name in enumerate(feature_names):
+                if name not in optimized_lookback_periods:
+                    optimized_features.append(X[:, i])
+                    optimized_names.append(name)
+            
+            if optimized_features:
+                optimized_X = np.column_stack(optimized_features)
+                self.logger.info(f"✅ Applied lookback optimization: {X.shape} -> {optimized_X.shape}")
+                return optimized_X, optimized_names
+            else:
+                self.logger.warning("⚠️ No optimized features generated, returning original data")
+                return X, feature_names
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to apply optimized lookback periods: {e}")
+            self.logger.error(f"❌ Failed to apply optimized lookback periods: {e}")
             return X, feature_names
     
     def _extract_significant_features(

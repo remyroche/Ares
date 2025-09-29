@@ -371,10 +371,14 @@ class TPrintManager:
         """Write message to configured outputs."""
         colored_message = self._get_colored_message(level, message)
 
+        # Filter out tprint-specific parameters that print() doesn't accept
+        filtered_kwargs = {k: v for k, v in kwargs.items() 
+                          if k not in ['color', 'bold']}
+
         if self.config.output_to_console:
             try:
                 # Use original print to avoid recursion with captured stdout
-                _original_print(colored_message, **kwargs)
+                _original_print(colored_message, **filtered_kwargs)
             except BrokenPipeError:
                 # Handle broken pipe gracefully (e.g., when piping output)
                 sys.stdout.close()

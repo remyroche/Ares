@@ -113,51 +113,85 @@ class NASEngine:
             config: Configuration dictionary for NAS engine
         """
         tprint_info("🚀 Initializing NAS Engine with extensive utility integration")
+        tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
         
         # Initialize configuration
         self.config = config or {}
+        tprint_debug(f"⚙️ NAS Engine config keys: {list(self.config.keys()) if self.config else 'None'}")
         self.logger = logger.getChild("NASEngine")
+        tprint_debug(f"📝 Logger initialized: {self.logger.name}")
         
         # Initialize utility classes
         tprint_debug("🔧 Initializing utility classes")
         self.common_ops = CommonUtilities()
+        tprint_debug("✅ CommonUtilities initialized")
         self.math_validator = MathValidation()
+        tprint_debug("✅ MathValidation initialized")
         self.klines_manager = get_klines_manager()
+        tprint_debug("✅ KlinesParquetManager initialized")
         self.serializer = UniversalSerializer()
+        tprint_debug("✅ UniversalSerializer initialized")
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
         self.matrix_ops = MatrixOperations()
+        tprint_debug("✅ MatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
+        tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
+        tprint_debug("✅ BatchMatrixOperations initialized")
         self.vectorized_core = VectorizedCore()
+        tprint_debug("✅ VectorizedCore initialized")
         
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
         self.m1_integration = integrate_with_m1_optimizers()
+        tprint_debug(f"🔍 M1 integration result: {self.m1_integration}")
         if self.m1_integration['success']:
             tprint_success("✅ M1 integration successful")
             self.gpu_manager = get_m1_gpu_manager()
+            tprint_debug("✅ M1 GPU Manager initialized")
             self.memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("✅ M1 Memory Optimizer initialized")
             self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_debug("✅ M1 CPU Optimizer initialized")
         else:
             tprint_warning("⚠️ M1 integration failed, using fallback")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
+            tprint_debug("🔄 Using fallback configurations")
         
         # Initialize optimization components
         tprint_debug("🔧 Initializing optimization components")
         self.bayesian_optimizer = BayesianEntryTimingOptimizer()
+        tprint_debug("✅ BayesianEntryTimingOptimizer initialized")
         self.grid_optimizer = GridSearchOptimizer()
+        tprint_debug("✅ GridSearchOptimizer initialized")
         self.hpo_utils = HPOUtils()
+        tprint_debug("✅ HPOUtils initialized")
         self.hierarchical_hpo = HierarchicalHPO()
+        tprint_debug("✅ HierarchicalHPO initialized")
         
         # Initialize performance tracking
         self.performance_metrics = {}
+        tprint_debug("✅ Performance metrics tracking initialized")
         self.search_history = []
+        tprint_debug("✅ Search history tracking initialized")
         
         tprint_success("✅ NAS Engine initialized successfully")
+        tprint_info(f"📊 Engine components: {len([attr for attr in dir(self) if not attr.startswith('_')])} public attributes")
+        tprint_structured({
+            'engine_type': 'NAS',
+            'initialization_time': time.time(),
+            'm1_integration': self.m1_integration['success'],
+            'components_initialized': {
+                'utility_classes': True,
+                'matrix_operations': True,
+                'hardware_optimization': self.m1_integration['success'],
+                'optimization_components': True
+            }
+        }, LogLevel.INFO)
     
     @tprint_timer("Data Loading and Validation")
     def load_and_validate_data(
@@ -182,7 +216,11 @@ class NASEngine:
         
         try:
             # Load data using klines parquet manager
+            tprint_debug(f"📊 Loading data with parameters: symbol={symbol}, interval={interval}")
+            tprint_debug(f"📅 Date range: {start_date} to {end_date}")
+            
             with memory_checkpoint("data_loading"):
+                tprint_debug("🔍 Accessing klines manager for data retrieval")
                 data = self.klines_manager.read_data(
                     symbol=symbol,
                     interval=interval,
@@ -190,33 +228,80 @@ class NASEngine:
                     end_date=end_date,
                     data_type="processed"
                 )
+                tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
             
             if data is None or data.empty:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
+                tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
                 return None
             
             tprint_info(f"📊 Loaded {len(data)} records")
+            tprint_debug(f"📋 Data columns: {list(data.columns)}")
+            tprint_debug(f"📅 Data date range: {data.index.min()} to {data.index.max()}")
+            tprint_structured({
+                'data_loading': {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'records_loaded': len(data),
+                    'columns_count': len(data.columns),
+                    'memory_usage': get_memory_usage()
+                }
+            }, LogLevel.DEBUG)
             
             # Validate data using common utilities
             tprint_debug("🔍 Validating data quality")
             validation_result = validate_klines_data(data)
+            tprint_debug(f"📋 Validation result: {validation_result}")
             
             if not validation_result['valid']:
                 tprint_error(f"❌ Data validation failed: {validation_result['errors']}")
+                tprint_structured({
+                    'validation_failure': {
+                        'errors': validation_result['errors'],
+                        'data_shape': data.shape,
+                        'data_types': data.dtypes.to_dict()
+                    }
+                }, LogLevel.ERROR)
                 return None
             
+            tprint_success("✅ Data validation passed")
+            
             # Apply data quality metrics
+            tprint_debug("📊 Calculating data quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_info(f"📈 Data quality metrics: {quality_metrics}")
+            tprint_structured({
+                'data_quality': quality_metrics,
+                'data_characteristics': {
+                    'shape': data.shape,
+                    'null_counts': data.isnull().sum().to_dict(),
+                    'memory_usage': data.memory_usage(deep=True).sum()
+                }
+            }, LogLevel.INFO)
             
             # Optimize data types for memory efficiency
             tprint_debug("🔧 Optimizing data types")
+            memory_before = data.memory_usage(deep=True).sum()
             data = optimize_dataframe_dtypes(data)
+            memory_after = data.memory_usage(deep=True).sum()
+            tprint_debug(f"💾 Memory optimization: {memory_before} -> {memory_after} bytes ({(memory_after/memory_before-1)*100:.1f}% change)")
             
             # Guard against null values
+            tprint_debug("🛡️ Applying null value guards")
+            null_counts_before = data.isnull().sum().sum()
             data = guard_dataframe_nulls(data, threshold=0.1)
+            null_counts_after = data.isnull().sum().sum()
+            tprint_debug(f"🔍 Null values: {null_counts_before} -> {null_counts_after}")
             
             tprint_success(f"✅ Data loaded and validated: {len(data)} records")
+            tprint_info(f"📊 Final data summary: {data.shape[0]} rows × {data.shape[1]} columns")
+            tprint_structured({
+                'data_validation_summary': {
+                    'final_shape': data.shape,
+                    'memory_usage': get_memory_usage(),
+                    'validation_completed': True
+                }
+            }, LogLevel.SUCCESS)
             return data
             
         except Exception as e:

@@ -18,7 +18,8 @@ import time
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+    tprint_success, tprint_progress, tprint_performance, tprint_timer,
+    tprint_structured, tprint_with_level, tprint_logged, LogLevel
 )
 
 from ..config.base_config import UnifiedArchitectureConfig, ArchitectureType
@@ -193,15 +194,43 @@ class UnifiedTrainingOrchestrator:
             config: Training configuration
             architecture_config: Architecture configuration
         """
+        tprint_info("Initializing Unified Training Orchestrator")
+        
         self.config = config or TrainingConfig()
         self.architecture_config = architecture_config or UnifiedArchitectureConfig()
         
-        # Initialize components
-        self.data_processor = UnifiedDataProcessor()
-        self.evaluator = UnifiedEvaluator()
-        self.result_manager = ResultManager()
-        self.error_handler = UnifiedErrorHandler()
-        self.logger = UnifiedLogger()
+        # Log configuration
+        tprint_structured({
+            "training_config": self.config.to_dict(),
+            "architecture_config": {
+                "optimization_mode": self.architecture_config.optimization_mode.value,
+                "search_strategy": self.architecture_config.search_strategy.value,
+                "max_architectures": self.architecture_config.max_architectures
+            }
+        }, LogLevel.INFO)
+        
+        # Initialize components with detailed logging
+        tprint_debug("Initializing training orchestrator components")
+        
+        with tprint_timer("data_processor_initialization", LogLevel.DEBUG):
+            self.data_processor = UnifiedDataProcessor()
+            tprint_success("Data processor initialized")
+        
+        with tprint_timer("evaluator_initialization", LogLevel.DEBUG):
+            self.evaluator = UnifiedEvaluator()
+            tprint_success("Evaluator initialized")
+        
+        with tprint_timer("result_manager_initialization", LogLevel.DEBUG):
+            self.result_manager = ResultManager()
+            tprint_success("Result manager initialized")
+        
+        with tprint_timer("error_handler_initialization", LogLevel.DEBUG):
+            self.error_handler = UnifiedErrorHandler()
+            tprint_success("Error handler initialized")
+        
+        with tprint_timer("logger_initialization", LogLevel.DEBUG):
+            self.logger = UnifiedLogger()
+            tprint_success("Logger initialized")
         
         # Training state
         self.training_status = TrainingStatus()
@@ -212,7 +241,7 @@ class UnifiedTrainingOrchestrator:
         self.trained_models = []
         self.model_performance = {}
         
-        tprint_info("Unified training orchestrator initialized")
+        tprint_success("Unified training orchestrator initialized successfully")
     
     async def execute_training(
         self,
@@ -234,33 +263,77 @@ class UnifiedTrainingOrchestrator:
         tprint_info("Starting unified training execution")
         start_time = datetime.now()
         
+        # Log training parameters
+        data_shape = data.shape if hasattr(data, 'shape') else f"Unknown shape: {type(data)}"
+        target_shape = target.shape if target is not None and hasattr(target, 'shape') else "No target"
+        search_interface_type = type(search_interface).__name__ if search_interface else "No search interface"
+        
+        tprint_structured({
+            "training_execution": {
+                "data_shape": data_shape,
+                "target_shape": target_shape,
+                "search_interface": search_interface_type,
+                "max_models": self.config.max_models,
+                "enable_parallel_training": self.config.enable_parallel_training,
+                "max_parallel_models": self.config.max_parallel_models,
+                "timestamp": start_time.isoformat()
+            }
+        }, LogLevel.INFO)
+        
         try:
             # Initialize training status
+            tprint_debug("Initializing training status")
             self.training_status.start_training(self.config.max_models)
+            tprint_success(f"Training status initialized for {self.config.max_models} models")
             
             # Process data
+            tprint_info("Processing training data")
             processed_data, processed_target, validation_result = await self._process_data(data, target)
             
             if not validation_result.validation_passed:
-                raise ValueError(f"Data validation failed: {validation_result.validation_errors}")
+                error_msg = f"Data validation failed: {validation_result.validation_errors}"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            
+            tprint_success("Data processing completed successfully")
             
             # Search architectures if interface provided
             architectures = []
             if search_interface:
+                tprint_info("Searching architectures using provided interface")
                 architectures = await self._search_architectures(search_interface, processed_data, processed_target)
             else:
+                tprint_info("Creating default architectures")
                 architectures = await self._create_default_architectures(processed_data, processed_target)
             
+            tprint_success(f"Found {len(architectures)} architectures to train")
+            
             # Train models
+            tprint_info("Starting model training")
             training_result = await self._train_models(architectures, processed_data, processed_target)
             
+            # Log training results
+            tprint_structured({
+                "training_results": {
+                    "training_successful": training_result.training_successful,
+                    "models_trained": len(training_result.trained_models),
+                    "training_duration_seconds": training_result.training_duration_seconds,
+                    "best_model_type": type(training_result.best_model).__name__ if training_result.best_model else None,
+                    "errors_count": len(training_result.errors),
+                    "warnings_count": len(training_result.warnings)
+                }
+            }, LogLevel.INFO)
+            
             # Create unified result
+            tprint_debug("Creating unified architecture result")
             unified_result = await self._create_unified_result(
                 training_result, architectures, start_time
             )
             
             # Store result
+            tprint_debug("Storing training result")
             self.result_manager.store_result(unified_result)
+            tprint_success("Result stored successfully")
             
             # Finish training
             self.training_status.finish_training(True)
@@ -274,6 +347,16 @@ class UnifiedTrainingOrchestrator:
             self.training_status.add_error(str(e))
             
             tprint_error(f"Training failed: {e}")
+            
+            # Log error details
+            tprint_structured({
+                "training_error": {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "training_duration_seconds": (datetime.now() - start_time).total_seconds(),
+                    "timestamp": datetime.now().isoformat()
+                }
+            }, LogLevel.ERROR)
             
             # Create failed result
             failed_result = UnifiedArchitectureResult()
@@ -291,15 +374,49 @@ class UnifiedTrainingOrchestrator:
         target: Optional[Union[np.ndarray, pd.Series]] = None
     ) -> Tuple[np.ndarray, Optional[np.ndarray], Any]:
         """Process training data."""
+        tprint_debug("Starting data processing")
         self.training_status.update_progress("data_processing", 0)
         
-        with self.logger.log_execution_time("data_processing", "training"):
-            processed_data, processed_target, validation_result = self.data_processor.process_data(
-                data, target, fit=True
-            )
+        # Log data information
+        data_shape = data.shape if hasattr(data, 'shape') else f"Unknown shape: {type(data)}"
+        target_shape = target.shape if target is not None and hasattr(target, 'shape') else "No target"
+        
+        tprint_structured({
+            "data_processing": {
+                "input_data_shape": data_shape,
+                "input_target_shape": target_shape,
+                "data_type": type(data).__name__,
+                "target_type": type(target).__name__ if target is not None else "None"
+            }
+        }, LogLevel.DEBUG)
+        
+        with tprint_timer("data_processing", LogLevel.DEBUG):
+            with self.logger.log_execution_time("data_processing", "training"):
+                processed_data, processed_target, validation_result = self.data_processor.process_data(
+                    data, target, fit=True
+                )
+        
+        # Log processing results
+        processed_data_shape = processed_data.shape if hasattr(processed_data, 'shape') else f"Unknown shape: {type(processed_data)}"
+        processed_target_shape = processed_target.shape if processed_target is not None and hasattr(processed_target, 'shape') else "No target"
+        
+        tprint_structured({
+            "data_processing_results": {
+                "processed_data_shape": processed_data_shape,
+                "processed_target_shape": processed_target_shape,
+                "validation_passed": validation_result.validation_passed,
+                "validation_errors": validation_result.validation_errors if hasattr(validation_result, 'validation_errors') else []
+            }
+        }, LogLevel.DEBUG)
+        
+        if validation_result.validation_passed:
+            tprint_success("Data processing completed successfully")
+        else:
+            tprint_warning(f"Data validation issues: {validation_result.validation_errors}")
         
         return processed_data, processed_target, validation_result
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     async def _search_architectures(
         self,
         search_interface: Any,
@@ -307,42 +424,82 @@ class UnifiedTrainingOrchestrator:
         target: Optional[np.ndarray]
     ) -> List[ArchitectureResult]:
         """Search for architectures using provided interface."""
+        tprint_debug("Starting architecture search")
         self.training_status.update_progress("architecture_search", 0)
         
-        with self.logger.log_execution_time("architecture_search", "training"):
-            try:
-                search_result = await search_interface.search(data, self.architecture_config)
-                return search_result.architectures
-            except Exception as e:
-                self.error_handler.handle_training_error(e, {
-                    "component": "architecture_search",
-                    "data_shape": data.shape
-                })
-                return []
+        # Log search parameters
+        tprint_structured({
+            "architecture_search": {
+                "data_shape": data.shape,
+                "target_shape": target.shape if target is not None else None,
+                "search_interface": type(search_interface).__name__,
+                "architecture_config": self.architecture_config.to_dict()
+            }
+        }, LogLevel.DEBUG)
+        
+        with tprint_timer("architecture_search", LogLevel.DEBUG):
+            with self.logger.log_execution_time("architecture_search", "training"):
+                try:
+                    search_result = await search_interface.search(data, self.architecture_config)
+                    architecture_count = len(search_result.architectures)
+                    tprint_success(f"Found {architecture_count} architectures")
+                    
+                    # Log architecture details
+                    tprint_structured({
+                        "search_results": {
+                            "architecture_count": architecture_count,
+                            "search_type": search_result.search_type if hasattr(search_result, 'search_type') else "unknown",
+                            "execution_time": search_result.execution_info.duration_seconds if hasattr(search_result, 'execution_info') else 0.0
+                        }
+                    }, LogLevel.DEBUG)
+                    
+                    return search_result.architectures
+                except Exception as e:
+                    tprint_error(f"Architecture search failed: {e}")
+                    self.error_handler.handle_training_error(e, {
+                        "component": "architecture_search",
+                        "data_shape": data.shape
+                    })
+                    return []
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     async def _create_default_architectures(
         self,
         data: np.ndarray,
         target: Optional[np.ndarray]
     ) -> List[ArchitectureResult]:
         """Create default architectures if no search interface provided."""
+        tprint_debug("Creating default architectures")
         self.training_status.update_progress("default_architecture_creation", 0)
+        
+        # Log architecture creation parameters
+        tprint_structured({
+            "default_architecture_creation": {
+                "data_shape": data.shape,
+                "target_shape": target.shape if target is not None else None,
+                "has_target": target is not None
+            }
+        }, LogLevel.DEBUG)
         
         # Create simple default architectures
         architectures = []
         
         # Neural architecture
+        tprint_debug("Creating default neural architecture")
+        neural_layers = [data.shape[1], 64, 32, 1] if target is not None else [data.shape[1], 64, 32]
         neural_arch = ArchitectureResult(
             architecture_type=ArchitectureType.NEURAL_ONLY,
             architecture_config={
-                "layers": [data.shape[1], 64, 32, 1] if target is not None else [data.shape[1], 64, 32],
+                "layers": neural_layers,
                 "activation": "relu",
                 "optimizer": "adam"
             }
         )
         architectures.append(neural_arch)
+        tprint_success(f"Created neural architecture with layers: {neural_layers}")
         
         # Tree architecture
+        tprint_debug("Creating default tree architecture")
         tree_arch = ArchitectureResult(
             architecture_type=ArchitectureType.TREE_ONLY,
             architecture_config={
@@ -352,9 +509,21 @@ class UnifiedTrainingOrchestrator:
             }
         )
         architectures.append(tree_arch)
+        tprint_success("Created tree architecture with max_depth=10, n_estimators=100")
         
+        # Log created architectures
+        tprint_structured({
+            "created_architectures": {
+                "total_count": len(architectures),
+                "neural_architectures": len([a for a in architectures if a.architecture_type == ArchitectureType.NEURAL_ONLY]),
+                "tree_architectures": len([a for a in architectures if a.architecture_type == ArchitectureType.TREE_ONLY])
+            }
+        }, LogLevel.DEBUG)
+        
+        tprint_success(f"Created {len(architectures)} default architectures")
         return architectures
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     async def _train_models(
         self,
         architectures: List[ArchitectureResult],
@@ -362,7 +531,20 @@ class UnifiedTrainingOrchestrator:
         target: Optional[np.ndarray]
     ) -> TrainingResult:
         """Train models for given architectures."""
+        tprint_info("Starting model training")
         self.training_status.update_progress("model_training", 0)
+        
+        # Log training parameters
+        tprint_structured({
+            "model_training": {
+                "architecture_count": len(architectures),
+                "data_shape": data.shape,
+                "target_shape": target.shape if target is not None else None,
+                "enable_parallel_training": self.config.enable_parallel_training,
+                "max_parallel_models": self.config.max_parallel_models,
+                "max_models": self.config.max_models
+            }
+        }, LogLevel.INFO)
         
         training_result = TrainingResult()
         training_result.training_config = self.config
@@ -376,25 +558,54 @@ class UnifiedTrainingOrchestrator:
         
         try:
             if self.config.enable_parallel_training and len(architectures) > 1:
+                tprint_info("Using parallel training")
                 # Parallel training
                 trained_models = await self._train_models_parallel(architectures, data, target)
             else:
+                tprint_info("Using sequential training")
                 # Sequential training
                 trained_models = await self._train_models_sequential(architectures, data, target)
             
             training_result.trained_models = trained_models
             training_result.training_successful = len(trained_models) > 0
             
+            tprint_success(f"Training completed: {len(trained_models)} models trained successfully")
+            
             # Evaluate models
             if trained_models:
+                tprint_debug("Evaluating trained models")
                 training_result.model_performance = await self._evaluate_models(trained_models, data, target)
                 training_result.best_model = self._select_best_model(trained_models, training_result.model_performance)
+                
+                # Log evaluation results
+                tprint_structured({
+                    "model_evaluation": {
+                        "models_evaluated": len(trained_models),
+                        "performance_metrics": training_result.model_performance,
+                        "best_model_type": type(training_result.best_model).__name__ if training_result.best_model else None
+                    }
+                }, LogLevel.INFO)
+            else:
+                tprint_warning("No models were trained successfully")
             
             training_result.training_duration_seconds = (datetime.now() - start_time).total_seconds()
+            
+            # Log final training results
+            tprint_structured({
+                "training_summary": {
+                    "training_successful": training_result.training_successful,
+                    "models_trained": len(trained_models),
+                    "training_duration_seconds": training_result.training_duration_seconds,
+                    "errors_count": len(training_result.errors),
+                    "warnings_count": len(training_result.warnings)
+                }
+            }, LogLevel.INFO)
             
         except Exception as e:
             training_result.training_successful = False
             training_result.errors.append(str(e))
+            tprint_error(f"Model training failed: {e}")
+            
             self.error_handler.handle_training_error(e, {
                 "component": "model_training",
                 "architecture_count": len(architectures)
@@ -402,6 +613,7 @@ class UnifiedTrainingOrchestrator:
         
         return training_result
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     async def _train_models_parallel(
         self,
         architectures: List[ArchitectureResult],
@@ -409,34 +621,71 @@ class UnifiedTrainingOrchestrator:
         target: Optional[np.ndarray]
     ) -> List[Any]:
         """Train models in parallel."""
+        tprint_debug("Starting parallel model training")
+        
+        # Log parallel training parameters
+        max_models = min(len(architectures), self.config.max_models)
+        tprint_structured({
+            "parallel_training": {
+                "total_architectures": len(architectures),
+                "max_models": max_models,
+                "data_shape": data.shape,
+                "target_shape": target.shape if target is not None else None
+            }
+        }, LogLevel.DEBUG)
+        
         trained_models = []
         
         # Create tasks for parallel execution
+        tprint_debug("Creating parallel training tasks")
         tasks = []
-        for arch in architectures[:self.config.max_models]:
+        for i, arch in enumerate(architectures[:self.config.max_models]):
+            tprint_debug(f"Creating task {i+1}/{max_models} for architecture {arch.architecture_type.value}")
             task = asyncio.create_task(self._train_single_model(arch, data, target))
             tasks.append((task, arch))
         
+        tprint_success(f"Created {len(tasks)} parallel training tasks")
+        
         # Wait for all tasks to complete
+        tprint_debug("Executing parallel training tasks")
+        completed_tasks = 0
         for task, arch in tasks:
             try:
+                tprint_debug(f"Training architecture {arch.architecture_type.value}")
                 model = await task
                 if model is not None:
                     trained_models.append(model)
+                    completed_tasks += 1
                     self.training_status.update_progress(
                         "model_training",
                         len(trained_models)
                     )
+                    tprint_success(f"Successfully trained model {completed_tasks}/{max_models}")
+                else:
+                    tprint_warning(f"Model training returned None for architecture {arch.architecture_type.value}")
             except Exception as e:
                 error_msg = f"Failed to train architecture {arch.architecture_id}: {e}"
+                tprint_error(error_msg)
                 self.training_status.add_error(error_msg)
                 self.error_handler.handle_training_error(e, {
                     "component": "single_model_training",
                     "architecture_id": arch.architecture_id
                 })
         
+        # Log parallel training results
+        tprint_structured({
+            "parallel_training_results": {
+                "total_tasks": len(tasks),
+                "successful_models": len(trained_models),
+                "failed_tasks": len(tasks) - len(trained_models),
+                "success_rate": len(trained_models) / len(tasks) if tasks else 0.0
+            }
+        }, LogLevel.DEBUG)
+        
+        tprint_success(f"Parallel training completed: {len(trained_models)}/{len(tasks)} models trained successfully")
         return trained_models
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     async def _train_models_sequential(
         self,
         architectures: List[ArchitectureResult],
@@ -444,27 +693,61 @@ class UnifiedTrainingOrchestrator:
         target: Optional[np.ndarray]
     ) -> List[Any]:
         """Train models sequentially."""
+        tprint_debug("Starting sequential model training")
+        
+        # Log sequential training parameters
+        max_models = min(len(architectures), self.config.max_models)
+        tprint_structured({
+            "sequential_training": {
+                "total_architectures": len(architectures),
+                "max_models": max_models,
+                "data_shape": data.shape,
+                "target_shape": target.shape if target is not None else None
+            }
+        }, LogLevel.DEBUG)
+        
         trained_models = []
         
         for i, arch in enumerate(architectures[:self.config.max_models]):
+            tprint_debug(f"Training model {i+1}/{max_models}: {arch.architecture_type.value}")
+            
             try:
-                model = await self._train_single_model(arch, data, target)
+                with tprint_timer(f"model_{i+1}_training", LogLevel.DEBUG):
+                    model = await self._train_single_model(arch, data, target)
+                
                 if model is not None:
                     trained_models.append(model)
                     self.training_status.update_progress("model_training", i + 1)
+                    tprint_success(f"Model {i+1}/{max_models} trained successfully")
+                else:
+                    tprint_warning(f"Model {i+1}/{max_models} training returned None")
                 
                 # Check if training should stop
                 if self.stop_training:
+                    tprint_info("Training stop requested - breaking sequential training")
                     break
                     
             except Exception as e:
                 error_msg = f"Failed to train architecture {arch.architecture_id}: {e}"
+                tprint_error(error_msg)
                 self.training_status.add_error(error_msg)
                 self.error_handler.handle_training_error(e, {
                     "component": "single_model_training",
                     "architecture_id": arch.architecture_id
                 })
         
+        # Log sequential training results
+        tprint_structured({
+            "sequential_training_results": {
+                "total_architectures": max_models,
+                "successful_models": len(trained_models),
+                "failed_models": max_models - len(trained_models),
+                "success_rate": len(trained_models) / max_models if max_models > 0 else 0.0,
+                "stopped_early": self.stop_training
+            }
+        }, LogLevel.DEBUG)
+        
+        tprint_success(f"Sequential training completed: {len(trained_models)}/{max_models} models trained successfully")
         return trained_models
     
     async def _train_single_model(

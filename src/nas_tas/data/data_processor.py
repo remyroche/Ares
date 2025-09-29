@@ -22,7 +22,8 @@ import joblib
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+    tprint_success, tprint_progress, tprint_performance, tprint_timer,
+    tprint_structured, tprint_with_level, tprint_logged, LogLevel
 )
 
 
@@ -188,8 +189,15 @@ class UnifiedDataProcessor:
         Args:
             config: Data processing configuration
         """
+        tprint_info("Initializing Unified Data Processor")
+        
         self.config = config or DataProcessingConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Log configuration
+        tprint_structured({
+            "data_processing_config": self.config.to_dict()
+        }, LogLevel.INFO)
         
         # Processing components
         self.scaler = None
@@ -198,6 +206,7 @@ class UnifiedDataProcessor:
         self.dimension_reducer = None
         
         # Processing state
+        tprint_success("Unified Data Processor initialized successfully")
         self.is_fitted = False
         self.feature_names = None
         self.target_name = None
@@ -227,93 +236,162 @@ class UnifiedDataProcessor:
         tprint_info("Starting data processing pipeline")
         start_time = datetime.now()
         
+        # Log processing parameters
+        X_shape = X.shape if hasattr(X, 'shape') else f"Unknown shape: {type(X)}"
+        y_shape = y.shape if y is not None and hasattr(y, 'shape') else "No target"
+        
+        tprint_structured({
+            "data_processing": {
+                "input_X_shape": X_shape,
+                "input_y_shape": y_shape,
+                "fit_mode": fit,
+                "data_type_X": type(X).__name__,
+                "data_type_y": type(y).__name__ if y is not None else "None"
+            }
+        }, LogLevel.INFO)
+        
         try:
             # Convert to DataFrame if needed
+            tprint_debug("Converting data to appropriate formats")
             if isinstance(X, np.ndarray):
+                tprint_debug(f"Converting numpy array to DataFrame: {X.shape}")
                 X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+                tprint_success(f"Created DataFrame with {X.shape[1]} features")
             
             if y is not None and isinstance(y, np.ndarray):
+                tprint_debug(f"Converting target numpy array to Series: {y.shape}")
                 y = pd.Series(y, name="target")
+                tprint_success("Created target Series")
             
             # Store original feature names
             if fit:
+                tprint_debug("Storing feature and target names for fitting")
                 self.feature_names = list(X.columns)
                 self.target_name = y.name if y is not None else None
+                tprint_success(f"Stored {len(self.feature_names)} feature names")
             
             # Validate data quality
-            validation_result = self.validate_data(X, y)
+            tprint_debug("Validating data quality")
+            with tprint_timer("data_validation", LogLevel.DEBUG):
+                validation_result = self.validate_data(X, y)
+            
+            tprint_structured({
+                "validation_results": {
+                    "validation_passed": validation_result.validation_passed,
+                    "validation_score": validation_result.validation_score,
+                    "min_required_score": self.config.min_data_quality_score
+                }
+            }, LogLevel.DEBUG)
             
             if not validation_result.validation_passed and self.config.validate_data:
                 tprint_warning(f"Data validation failed (score: {validation_result.validation_score:.3f})")
                 if validation_result.validation_score < self.config.min_data_quality_score:
-                    raise ValueError(f"Data quality too low: {validation_result.validation_score:.3f} < {self.config.min_data_quality_score}")
+                    error_msg = f"Data quality too low: {validation_result.validation_score:.3f} < {self.config.min_data_quality_score}"
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+            else:
+                tprint_success(f"Data validation passed (score: {validation_result.validation_score:.3f})")
             
             # Apply preprocessing pipeline
+            tprint_debug("Starting preprocessing pipeline")
             processed_X = X.copy()
             processed_y = y.copy() if y is not None else None
             
             # Memory optimization
             if self.config.optimize_memory:
-                processed_X = self._optimize_memory(processed_X)
-                if processed_y is not None:
-                    processed_y = self._optimize_memory(processed_y)
+                tprint_debug("Optimizing memory usage")
+                with tprint_timer("memory_optimization", LogLevel.DEBUG):
+                    processed_X = self._optimize_memory(processed_X)
+                    if processed_y is not None:
+                        processed_y = self._optimize_memory(processed_y)
+                tprint_success("Memory optimization completed")
             
             # Custom preprocessing
-            for preprocessor in self.config.custom_preprocessors:
-                try:
-                    processed_X = preprocessor(processed_X)
-                    if processed_y is not None:
-                        processed_y = preprocessor(processed_y)
-                except Exception as e:
-                    tprint_error(f"Error in custom preprocessor {preprocessor.__name__}: {e}")
+            if self.config.custom_preprocessors:
+                tprint_debug(f"Applying {len(self.config.custom_preprocessors)} custom preprocessors")
+                for i, preprocessor in enumerate(self.config.custom_preprocessors):
+                    try:
+                        tprint_debug(f"Applying custom preprocessor {i+1}/{len(self.config.custom_preprocessors)}: {preprocessor.__name__}")
+                        processed_X = preprocessor(processed_X)
+                        if processed_y is not None:
+                            processed_y = preprocessor(processed_y)
+                        tprint_success(f"Custom preprocessor {preprocessor.__name__} completed")
+                    except Exception as e:
+                        tprint_error(f"Error in custom preprocessor {preprocessor.__name__}: {e}")
             
             # Handle missing values
             if self.config.handle_missing_values:
-                processed_X, processed_y = self._handle_missing_values(
-                    processed_X, processed_y, fit=fit
-                )
+                tprint_debug("Handling missing values")
+                with tprint_timer("missing_values_handling", LogLevel.DEBUG):
+                    processed_X, processed_y = self._handle_missing_values(
+                        processed_X, processed_y, fit=fit
+                    )
+                tprint_success("Missing values handling completed")
             
             # Handle outliers
             if self.config.handle_outliers:
-                processed_X = self._handle_outliers(processed_X, fit=fit)
+                tprint_debug("Handling outliers")
+                with tprint_timer("outlier_handling", LogLevel.DEBUG):
+                    processed_X = self._handle_outliers(processed_X, fit=fit)
+                tprint_success("Outlier handling completed")
             
             # Feature engineering
             if self.config.enable_feature_engineering:
-                processed_X = self._engineer_features(processed_X, fit=fit)
+                tprint_debug("Engineering features")
+                with tprint_timer("feature_engineering", LogLevel.DEBUG):
+                    processed_X = self._engineer_features(processed_X, fit=fit)
+                tprint_success("Feature engineering completed")
             
             # Feature scaling
             if self.config.enable_scaling:
-                processed_X, processed_y = self._scale_features(
-                    processed_X, processed_y, fit=fit
-                )
+                tprint_debug("Scaling features")
+                with tprint_timer("feature_scaling", LogLevel.DEBUG):
+                    processed_X, processed_y = self._scale_features(
+                        processed_X, processed_y, fit=fit
+                    )
+                tprint_success("Feature scaling completed")
             
             # Feature selection
             if self.config.enable_feature_selection:
-                processed_X = self._select_features(processed_X, processed_y, fit=fit)
+                tprint_debug("Selecting features")
+                with tprint_timer("feature_selection", LogLevel.DEBUG):
+                    processed_X = self._select_features(processed_X, processed_y, fit=fit)
+                tprint_success("Feature selection completed")
             
             # Dimensionality reduction
             if self.config.enable_dimensionality_reduction:
-                processed_X = self._reduce_dimensions(processed_X, fit=fit)
+                tprint_debug("Reducing dimensions")
+                with tprint_timer("dimensionality_reduction", LogLevel.DEBUG):
+                    processed_X = self._reduce_dimensions(processed_X, fit=fit)
+                tprint_success("Dimensionality reduction completed")
             
             # Custom postprocessing
-            for postprocessor in self.config.custom_postprocessors:
-                try:
-                    processed_X = postprocessor(processed_X)
-                    if processed_y is not None:
-                        processed_y = postprocessor(processed_y)
-                except Exception as e:
-                    tprint_error(f"Error in custom postprocessor {postprocessor.__name__}: {e}")
+            if self.config.custom_postprocessors:
+                tprint_debug(f"Applying {len(self.config.custom_postprocessors)} custom postprocessors")
+                for i, postprocessor in enumerate(self.config.custom_postprocessors):
+                    try:
+                        tprint_debug(f"Applying custom postprocessor {i+1}/{len(self.config.custom_postprocessors)}: {postprocessor.__name__}")
+                        processed_X = postprocessor(processed_X)
+                        if processed_y is not None:
+                            processed_y = postprocessor(processed_y)
+                        tprint_success(f"Custom postprocessor {postprocessor.__name__} completed")
+                    except Exception as e:
+                        tprint_error(f"Error in custom postprocessor {postprocessor.__name__}: {e}")
             
             # Convert back to numpy arrays
+            tprint_debug("Converting processed data back to numpy arrays")
             if isinstance(processed_X, pd.DataFrame):
                 processed_X = processed_X.values
+                tprint_success("Converted processed X to numpy array")
             
             if processed_y is not None and isinstance(processed_y, pd.Series):
                 processed_y = processed_y.values
+                tprint_success("Converted processed y to numpy array")
             
             # Update processing state
             if fit:
                 self.is_fitted = True
+                tprint_success("Data processor fitted successfully")
             
             # Record processing history
             processing_time = (datetime.now() - start_time).total_seconds()
@@ -325,6 +403,19 @@ class UnifiedDataProcessor:
                 'fit': fit
             })
             
+            # Log final processing results
+            tprint_structured({
+                "processing_summary": {
+                    "processing_time_seconds": processing_time,
+                    "input_shape": X.shape,
+                    "output_shape": processed_X.shape,
+                    "fit_mode": fit,
+                    "is_fitted": self.is_fitted,
+                    "validation_passed": validation_result.validation_passed,
+                    "validation_score": validation_result.validation_score
+                }
+            }, LogLevel.INFO)
+            
             tprint_success(f"Data processing completed in {processing_time:.2f}s "
                           f"({X.shape} -> {processed_X.shape})")
             
@@ -332,6 +423,14 @@ class UnifiedDataProcessor:
             
         except Exception as e:
             tprint_error(f"Error in data processing: {e}")
+            tprint_structured({
+                "processing_error": {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "processing_time_seconds": (datetime.now() - start_time).total_seconds(),
+                    "timestamp": datetime.now().isoformat()
+                }
+            }, LogLevel.ERROR)
             self.logger.error(f"Error in data processing: {e}", exc_info=True)
             raise
     

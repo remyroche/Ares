@@ -47,6 +47,17 @@ except ImportError:
         print(f"[TIMER] {message}")
     TPRINT_AVAILABLE = False
 
+# Import unified NAS/TAS tools
+try:
+    from src.nas_tas.data.data_processor import UnifiedDataProcessor, DataProcessingConfig
+    from src.nas_tas.config.base_config import UnifiedArchitectureConfig, create_comprehensive_config
+    from src.nas_tas.evaluation.unified_evaluator import UnifiedEvaluator, EvaluationConfig
+    from src.nas_tas.unified_pipeline import UnifiedPipelineConfig, create_nas_pipeline, create_tas_pipeline
+    UNIFIED_TOOLS_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Unified NAS/TAS tools not available: {e}")
+    UNIFIED_TOOLS_AVAILABLE = False
+
 # Import components
 from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult
 from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionResult
@@ -393,7 +404,7 @@ class TrainingOrchestrator:
                                     target_variable: str,
                                     feature_columns: Optional[List[str]],
                                     timestamps: Optional[pd.Series]) -> pd.DataFrame:
-        """Validate and preprocess market data."""
+        """Validate and preprocess market data using unified data processor."""
         try:
             # Check if target variable exists
             if target_variable not in market_data.columns:
@@ -403,46 +414,96 @@ class TrainingOrchestrator:
             if feature_columns is None:
                 feature_columns = [col for col in market_data.columns if col != target_variable]
             
-            # Check for missing values
-            missing_values = market_data.isnull().sum()
-            if missing_values.any():
-                missing_summary = missing_values[missing_values > 0].to_dict()
-                self.logger.warning(f"⚠️ Found missing values in {len(missing_summary)} columns: {missing_summary}")
-                try:
-                    # Fill missing values with forward fill, then backward fill
-                    market_data = market_data.ffill().bfill()
-                    self.logger.info(f"✅ Filled missing values using forward/backward fill")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to fill missing values: {e}")
-                    raise
+            # Use unified data processor if available
+            if UNIFIED_TOOLS_AVAILABLE:
+                tprint_info("Using unified data processor for validation and preprocessing")
+                
+                # Initialize unified data processor
+                data_config = DataProcessingConfig(
+                    handle_missing_values=True,
+                    missing_value_strategy="median",
+                    handle_outliers=True,
+                    outlier_method="iqr",
+                    enable_scaling=True,
+                    scaling_method="standard",
+                    enable_feature_engineering=True,
+                    create_time_features=True,
+                    validate_data=True,
+                    min_data_quality_score=0.7
+                )
+                
+                processor = UnifiedDataProcessor(data_config)
+                
+                # Separate features and target
+                X = market_data[feature_columns]
+                y = market_data[target_variable]
+                
+                # Process data
+                processed_X, processed_y, validation_result = processor.process_data(X, y, fit=True)
+                
+                # Check validation results
+                if not validation_result.validation_passed:
+                    tprint_warning(f"Data validation failed: {validation_result.validation_score:.3f}")
+                    if validation_result.validation_score < 0.5:
+                        raise ValueError(f"Data quality too low: {validation_result.validation_score:.3f}")
+                
+                # Reconstruct DataFrame
+                processed_data = pd.DataFrame(processed_X, columns=feature_columns, index=market_data.index)
+                processed_data[target_variable] = processed_y
+                
+                tprint_success(f"Unified data processing completed - Shape: {processed_data.shape}")
+                tprint_info(f"Data quality score: {validation_result.validation_score:.3f}")
+                
+                return processed_data
             
-            # Check for infinite values
-            inf_values = np.isinf(market_data.select_dtypes(include=[np.number])).sum()
-            if inf_values.any():
-                inf_summary = inf_values[inf_values > 0].to_dict()
-                self.logger.warning(f"⚠️ Found infinite values in {len(inf_summary)} columns: {inf_summary}")
-                try:
-                    # Replace infinite values with NaN and fill
-                    market_data = market_data.replace([np.inf, -np.inf], np.nan)
-                    market_data = market_data.ffill().bfill()
-                    self.logger.info(f"✅ Replaced infinite values and filled using forward/backward fill")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to handle infinite values: {e}")
-                    raise
-            
-            # Check data types
-            numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-            non_numeric_features = [col for col in feature_columns if col not in numeric_columns]
-            if non_numeric_features:
-                self.logger.warning(f"⚠️ Non-numeric feature columns detected: {non_numeric_features}")
-                self.logger.info(f"   Total features: {len(feature_columns)}, Numeric features: {len(numeric_columns)}")
-            
-            self.logger.info(f"✅ Data validation completed - Shape: {market_data.shape}")
-            return market_data
+            else:
+                # Fallback to original implementation
+                tprint_warning("Unified tools not available, using fallback data processing")
+                return self._fallback_data_validation(market_data, target_variable, feature_columns)
             
         except Exception as e:
             self.logger.error(f"❌ Data validation failed: {e}")
             raise
+    
+    def _fallback_data_validation(self, 
+                                market_data: pd.DataFrame,
+                                target_variable: str,
+                                feature_columns: Optional[List[str]]) -> pd.DataFrame:
+        """Fallback data validation when unified tools are not available."""
+        # Original implementation as fallback
+        missing_values = market_data.isnull().sum()
+        if missing_values.any():
+            missing_summary = missing_values[missing_values > 0].to_dict()
+            self.logger.warning(f"⚠️ Found missing values in {len(missing_summary)} columns: {missing_summary}")
+            try:
+                market_data = market_data.ffill().bfill()
+                self.logger.info(f"✅ Filled missing values using forward/backward fill")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to fill missing values: {e}")
+                raise
+        
+        # Check for infinite values
+        inf_values = np.isinf(market_data.select_dtypes(include=[np.number])).sum()
+        if inf_values.any():
+            inf_summary = inf_values[inf_values > 0].to_dict()
+            self.logger.warning(f"⚠️ Found infinite values in {len(inf_summary)} columns: {inf_summary}")
+            try:
+                market_data = market_data.replace([np.inf, -np.inf], np.nan)
+                market_data = market_data.ffill().bfill()
+                self.logger.info(f"✅ Replaced infinite values and filled using forward/backward fill")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to handle infinite values: {e}")
+                raise
+        
+        # Check data types
+        numeric_columns = market_data.select_dtypes(include=[np.number]).columns
+        non_numeric_features = [col for col in feature_columns if col not in numeric_columns]
+        if non_numeric_features:
+            self.logger.warning(f"⚠️ Non-numeric feature columns detected: {non_numeric_features}")
+            self.logger.info(f"   Total features: {len(feature_columns)}, Numeric features: {len(numeric_columns)}")
+        
+        self.logger.info(f"✅ Fallback data validation completed - Shape: {market_data.shape}")
+        return market_data
     
     def _perform_feature_engineering(self, 
                                    market_data: pd.DataFrame,

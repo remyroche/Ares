@@ -8,8 +8,8 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
 3. sr_clustering - Generate SR clusters
 4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
 5. nas_tas_clustering - NAS-TAS-based regime clustering
-6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics
-7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics
+        6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
+        7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
 8. regime_data_splitting - Tag data by regimes
 9. feature_lookback_optimization - Optimize feature lookback periods
 10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
@@ -527,8 +527,8 @@ class MarketAnalysisSubPipeline:
         log_info('   3. sr_clustering - Generate SR clusters')
         log_info('   4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
         log_info('   5. nas_tas_clustering - NAS-TAS-based regime clustering')
-        log_info('   6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics')
-        log_info('   7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics')
+        log_info('   6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)')
+        log_info('   7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)')
         log_info('   8. regime_data_splitting - Tag data by regimes')
         log_info('   9. feature_lookback_optimization - Optimize feature lookback periods')
         log_info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
@@ -566,8 +566,8 @@ class MarketAnalysisSubPipeline:
         Regime Steps (4-7):
         4. NAS-TAS regime discovery
         5. NAS-TAS clustering
-        6. NAS-TAS models training with HPO
-        7. NAS-TAS ensemble training (meta-model)
+        6. Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
+        7. Regime detection ensemble training (stacker_lgbm_calibrated)
 
         Data Processing Steps (8-12):
         8. Regime data splitting
@@ -765,54 +765,44 @@ class MarketAnalysisSubPipeline:
                 self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
             
-            # Stage 6: NAS-TAS Models Training
-            self.logger.info('🏋️ Executing Stage 6: NAS-TAS Models Training')
+            # Stage 6: Regime Detection Models Training
+            self.logger.info('🏋️ Executing Stage 6: Regime Detection Models Training')
             
-            # Use unified pipeline if available and enabled
-            if (UNIFIED_PIPELINE_AVAILABLE and 
-                self.config.use_unified_pipeline and 
-                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
-                nas_tas_models_training_result = await self._execute_unified_nas_tas_models_training()
-            else:
-                nas_tas_models_training_result = await self.execute_sub_pipeline('nas_tas_models_training', self.config)
+            # Use the new regime detection models training component
+            regime_models_training_result = await self.execute_sub_pipeline('regime_models_training', self.config)
             
-            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_models_training_result, "NAS-TAS Models Training")
+            is_success, error_info = self._validate_sub_pipeline_result(regime_models_training_result, "Regime Detection Models Training")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_tas_models_data = nas_tas_models_training_result.artifacts.get('nas_tas_models_training_result', {})
-            results['nas_tas_models'] = nas_tas_models_data.get('nas_tas_models', {})
-            results['nas_tas_training_metrics'] = nas_tas_models_data.get('nas_tas_training_metrics', {})
+            regime_models_data = regime_models_training_result.artifacts.get('regime_models_training_result', {})
+            results['regime_models'] = regime_models_data.get('regime_models', {})
+            results['regime_training_metrics'] = regime_models_data.get('metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'nas_tas_models': results['nas_tas_models']
+                'regime_models': results['regime_models']
             })
             
-            # Stage 7: NAS-TAS Ensemble Training
-            self.logger.info('🎭 Executing Stage 7: NAS-TAS Ensemble Training')
+            # Stage 7: Regime Detection Ensemble Training
+            self.logger.info('🎭 Executing Stage 7: Regime Detection Ensemble Training')
             
-            # Use unified pipeline if available and enabled
-            if (UNIFIED_PIPELINE_AVAILABLE and 
-                self.config.use_unified_pipeline and 
-                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
-                nas_tas_ensemble_training_result = await self._execute_unified_nas_tas_ensemble_training()
-            else:
-                nas_tas_ensemble_training_result = await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
+            # Use the new regime detection ensemble training component
+            regime_ensemble_training_result = await self.execute_sub_pipeline('regime_ensemble_training', self.config)
             
-            is_success, error_info = self._validate_sub_pipeline_result(nas_tas_ensemble_training_result, "NAS-TAS Ensemble Training")
+            is_success, error_info = self._validate_sub_pipeline_result(regime_ensemble_training_result, "Regime Detection Ensemble Training")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_tas_ensemble_data = nas_tas_ensemble_training_result.artifacts.get('nas_tas_ensemble_training_result', {})
-            results['nas_tas_ensemble'] = nas_tas_ensemble_data.get('nas_tas_ensemble', {})
-            results['nas_tas_ensemble_metrics'] = nas_tas_ensemble_data.get('nas_tas_ensemble_metrics', {})
+            regime_ensemble_data = regime_ensemble_training_result.artifacts.get('regime_ensemble_training_result', {})
+            results['regime_ensemble'] = regime_ensemble_data.get('stacker_lgbm_calibrated', {})
+            results['regime_ensemble_metrics'] = regime_ensemble_data.get('ensemble_metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
-                'nas_tas_ensemble': results['nas_tas_ensemble']
+                'regime_ensemble': results['regime_ensemble']
             })
             
             # ===== DATA PROCESSING STEPS GROUP =====
@@ -1224,8 +1214,8 @@ class MarketAnalysisSubPipeline:
         3. sr_clustering - Generate SR clusters
         4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
         5. nas_tas_clustering - NAS-TAS-based regime clustering
-        6. nas_tas_models_training - Base models training with NAS-TAS regime labels, HPO, saving, metrics
-        7. nas_tas_ensemble_training - Meta-model with NAS-TAS regime labels, HPO, saving, metrics
+        6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
+        7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
         8. regime_data_splitting - Tag data by regimes
         9. feature_lookback_optimization - Optimize feature lookback periods
         10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
@@ -1269,8 +1259,8 @@ class MarketAnalysisSubPipeline:
         regime_steps = [
             'nas_tas_regime_discovery',
             'nas_tas_clustering',
-            'nas_tas_models_training',
-            'nas_tas_ensemble_training'
+            'regime_models_training',
+            'regime_ensemble_training'
         ]
         
         data_processing_steps = [

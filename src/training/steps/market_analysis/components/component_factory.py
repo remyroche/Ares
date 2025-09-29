@@ -31,6 +31,8 @@ from .final_feature_selection import FinalFeatureSelectionComponent
 from .nas_tas_models_training import NASTASModelsTrainingComponent
 from .nas_tas_ensemble_training import NASTASEnsembleTrainingComponent
 from .nas_ensemble_training import NASEnsembleTrainingComponent
+from .regime_models_training import RegimeModelsTrainingComponent
+from .regime_ensemble_training import RegimeEnsembleTrainingComponent
 # Import the actual PID-based component for direct use
 try:
     from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
@@ -634,6 +636,8 @@ class ComponentFactory:
         'nas_tas_models_training': NASTASModelsTrainingComponent,  # NAS-TAS models training
         'nas_tas_ensemble_training': NASTASEnsembleTrainingComponent,  # NAS-TAS ensemble training
         'nas_ensemble_training': NASEnsembleTrainingComponent,  # Simplified NAS ensemble training
+        'regime_models_training': RegimeModelsTrainingComponent,  # Regime detection models training
+        'regime_ensemble_training': RegimeEnsembleTrainingComponent,  # Regime detection ensemble training
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports

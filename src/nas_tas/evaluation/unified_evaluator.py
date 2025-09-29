@@ -14,6 +14,7 @@ import logging
 from abc import ABC, abstractmethod
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from scipy import stats
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
@@ -326,24 +327,111 @@ class RegimeEvaluationStrategy(EvaluationStrategy):
         tprint_info("Evaluating regime performance")
         
         try:
-            # This is a placeholder for regime evaluation
-            # In practice, you would implement regime detection and evaluation logic
-            
             metrics = EvaluationMetrics()
             
-            # Placeholder regime metrics
-            metrics.regime_accuracy = 0.75  # Would be calculated from actual regime predictions
-            metrics.regime_stability = 0.80  # Would be calculated from regime consistency
-            metrics.adaptation_speed = 0.65  # Would be calculated from regime transition speed
+            # Regime detection using volatility clustering
+            if len(y) > 50:  # Need sufficient data for regime analysis
+                # Calculate rolling volatility as regime indicator
+                window_size = min(20, len(y) // 4)
+                rolling_vol = pd.Series(y).rolling(window=window_size).std()
+                
+                # Detect regime changes using volatility thresholds
+                vol_threshold = rolling_vol.quantile(0.7)  # 70th percentile as threshold
+                regimes = (rolling_vol > vol_threshold).astype(int)
+                
+                # Calculate regime accuracy (how well model adapts to regime changes)
+                if hasattr(model, 'predict'):
+                    predictions = model.predict(X)
+                    if len(predictions) == len(regimes):
+                        # Calculate accuracy within each regime
+                        regime_0_mask = regimes == 0
+                        regime_1_mask = regimes == 1
+                        
+                        if np.sum(regime_0_mask) > 0 and np.sum(regime_1_mask) > 0:
+                            # Calculate regime-specific accuracy
+                            regime_0_acc = self._calculate_regime_accuracy(
+                                y[regime_0_mask], predictions[regime_0_mask]
+                            )
+                            regime_1_acc = self._calculate_regime_accuracy(
+                                y[regime_1_mask], predictions[regime_1_mask]
+                            )
+                            
+                            # Overall regime accuracy as weighted average
+                            metrics.regime_accuracy = (
+                                regime_0_acc * np.sum(regime_0_mask) + 
+                                regime_1_acc * np.sum(regime_1_mask)
+                            ) / len(regimes)
+                        else:
+                            metrics.regime_accuracy = 0.5  # Default if no regime separation
+                    else:
+                        metrics.regime_accuracy = 0.5
+                else:
+                    metrics.regime_accuracy = 0.5
+                
+                # Calculate regime stability (consistency of regime predictions)
+                regime_changes = np.sum(np.diff(regimes) != 0)
+                total_periods = len(regimes) - 1
+                metrics.regime_stability = 1.0 - (regime_changes / max(total_periods, 1))
+                
+                # Calculate adaptation speed (how quickly model responds to regime changes)
+                if regime_changes > 0:
+                    # Measure prediction consistency around regime changes
+                    change_points = np.where(np.diff(regimes) != 0)[0]
+                    adaptation_scores = []
+                    
+                    for change_point in change_points:
+                        # Look at prediction consistency before and after change
+                        before_window = max(0, change_point - 5)
+                        after_window = min(len(predictions), change_point + 6)
+                        
+                        if after_window - before_window > 5:
+                            before_preds = predictions[before_window:change_point]
+                            after_preds = predictions[change_point:after_window]
+                            
+                            # Calculate consistency (lower variance = better adaptation)
+                            before_consistency = 1.0 - np.std(before_preds) if len(before_preds) > 1 else 1.0
+                            after_consistency = 1.0 - np.std(after_preds) if len(after_preds) > 1 else 1.0
+                            
+                            adaptation_scores.append((before_consistency + after_consistency) / 2)
+                    
+                    metrics.adaptation_speed = np.mean(adaptation_scores) if adaptation_scores else 0.5
+                else:
+                    metrics.adaptation_speed = 1.0  # No regime changes = perfect adaptation
+            else:
+                # Insufficient data for regime analysis
+                metrics.regime_accuracy = 0.5
+                metrics.regime_stability = 0.5
+                metrics.adaptation_speed = 0.5
             
             tprint_success(f"Regime evaluation completed: Accuracy={metrics.regime_accuracy:.3f}, "
-                          f"Stability={metrics.regime_stability:.3f}")
+                          f"Stability={metrics.regime_stability:.3f}, "
+                          f"Adaptation={metrics.adaptation_speed:.3f}")
             
             return metrics
             
         except Exception as e:
             tprint_error(f"Error in regime evaluation: {e}")
             return EvaluationMetrics()
+    
+    def _calculate_regime_accuracy(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Calculate accuracy for a specific regime."""
+        if len(y_true) == 0 or len(y_pred) == 0:
+            return 0.5
+        
+        # For regression, use R² score
+        if len(np.unique(y_true)) > 2:
+            from sklearn.metrics import r2_score
+            try:
+                return max(0, r2_score(y_true, y_pred))
+            except:
+                return 0.5
+        else:
+            # For classification, use accuracy
+            from sklearn.metrics import accuracy_score
+            try:
+                return accuracy_score(y_true, y_pred)
+            except:
+                return 0.5
 
 
 class UnifiedEvaluator:

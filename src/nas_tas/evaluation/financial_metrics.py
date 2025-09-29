@@ -244,8 +244,15 @@ class FinancialMetricsCalculator:
             
             # Profit factor
             total_wins = np.sum(winning_returns) if len(winning_returns) > 0 else 0
-            total_losses = abs(np.sum(losing_returns)) if len(losing_returns) > 0 else 1e-8
-            metrics.profit_factor = total_wins / total_losses if total_losses > 0 else float('inf')
+            total_losses = abs(np.sum(losing_returns)) if len(losing_returns) > 0 else 0
+            
+            # Safe division with validation
+            if total_losses > 1e-8:  # Avoid division by very small numbers
+                metrics.profit_factor = total_wins / total_losses
+            elif total_wins > 0:
+                metrics.profit_factor = float('inf')  # All wins, no losses
+            else:
+                metrics.profit_factor = 0.0  # No wins, no losses
             
             # Benchmark comparison metrics
             if benchmark_returns is not None:

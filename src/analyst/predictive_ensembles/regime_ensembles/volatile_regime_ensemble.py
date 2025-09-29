@@ -9,9 +9,13 @@ from .base_ensemble import BaseEnsemble
 import numpy as np
 import pandas as pd
 import typing
+from typing import Dict, Any
 
 # Add tprint imports for enhanced logging
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
+
+# Import meta-feature generator
+from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
 
 class VolatileRegimeEnsemble(BaseEnsemble):
     """
@@ -25,6 +29,10 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         super().__init__(config, ensemble_name)
         self.dl_config = {'sequence_length': 20, 'lstm_units': 50, 'transformer_heads': 2, 'transformer_key_dim': 32, 'dropout_rate': 0.2, 'epochs': 50, 'batch_size': 32}
         self.models = {'lstm': None, 'transformer': None, 'garch': None, 'tabnet': None, 'order_flow_lgbm': None, 'logistic_regression': None}
+        
+        # Initialize meta-feature generator
+        self.meta_feature_generator = EnsembleMetaFeatureGenerator(self.logger)
+        
         tprint("✅ [VOLATILE_REGIME] VolatileRegimeEnsemble initialized successfully", color="green")
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
@@ -181,3 +189,119 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         except Exception as e:
             self.logger.exception(f'Error in VolatileRegime prediction: {e}')
             return (0.5, 0.5)
+    
+    def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame:
+        """
+        Extract comprehensive meta-features including disagreement features for the ensemble.
+        
+        Args:
+            df: Input DataFrame with features
+            is_live: Whether this is for live trading or backtesting
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            DataFrame containing meta-features including disagreement features
+        """
+        try:
+            tprint(f"🔍 [VOLATILE_REGIME] Generating meta-features for {self.ensemble_name}", color="cyan")
+            
+            # Get base model predictions for disagreement analysis
+            base_predictions = self._get_base_model_predictions(df, is_live=is_live)
+            
+            # Use the meta-feature generator from feature engineering
+            meta_features = self.meta_feature_generator.generate_meta_features_for_volatile_regime_ensemble(
+                df, base_predictions, is_live
+            )
+            
+            tprint(f"✅ [VOLATILE_REGIME] Generated {len(meta_features.columns)} meta-features", color="green")
+            return meta_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating meta-features for {self.ensemble_name}: {e}")
+            # Return basic meta-features as fallback
+            try:
+                return self._generate_meta_features(df)
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback meta-feature generation also failed: {fallback_error}")
+                return pd.DataFrame(index=df.index)
+    
+    def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool = False) -> Dict[str, Any]:
+        """
+        Get predictions from all base models for disagreement analysis.
+        
+        Args:
+            df: Input DataFrame with features
+            is_live: Whether this is for live trading or backtesting
+            
+        Returns:
+            Dict containing model predictions and probabilities
+        """
+        try:
+            base_predictions = {}
+            
+            # Get predictions from each trained model
+            for model_name, model in self.models.items():
+                if model is None:
+                    continue
+                    
+                try:
+                    if model_name in ['lstm', 'transformer']:
+                        # Handle deep learning models
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(df[self.flat_features + self.order_flow_features].fillna(0).values)
+                            prediction = np.argmax(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                            confidence = np.max(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                        else:
+                            prediction = 0.5
+                            confidence = 0.5
+                    elif model_name == 'garch':
+                        # Handle GARCH model
+                        if hasattr(model, 'forecast'):
+                            try:
+                                forecast = model.forecast(horizon=1)
+                                prediction = float(forecast.mean.iloc[-1, 0]) if hasattr(forecast, 'mean') else 0.5
+                                confidence = 0.7  # GARCH models typically have moderate confidence
+                            except:
+                                prediction = 0.5
+                                confidence = 0.5
+                        else:
+                            prediction = 0.5
+                            confidence = 0.5
+                    elif model_name == 'tabnet':
+                        # Handle TabNet model
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(df[self.flat_features].fillna(0).values)
+                            prediction = np.argmax(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                            confidence = np.max(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                        else:
+                            prediction = 0.5
+                            confidence = 0.5
+                    else:
+                        # Handle other models (LGBM, Logistic Regression)
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(df[self.flat_features].fillna(0).values)
+                            prediction = np.argmax(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                            confidence = np.max(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                        else:
+                            prediction = 0.5
+                            confidence = 0.5
+                    
+                    base_predictions[model_name] = {
+                        'prediction': float(prediction),
+                        'probability': float(prediction),  # Use prediction as probability for simplicity
+                        'confidence': float(confidence)
+                    }
+                    
+                except Exception as model_error:
+                    self.logger.warning(f"Error getting prediction from {model_name}: {model_error}")
+                    base_predictions[model_name] = {
+                        'prediction': 0.5,
+                        'probability': 0.5,
+                        'confidence': 0.0
+                    }
+            
+            return base_predictions
+            
+        except Exception as e:
+            self.logger.error(f"Error getting base model predictions: {e}")
+            return {}

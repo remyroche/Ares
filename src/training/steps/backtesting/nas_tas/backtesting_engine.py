@@ -86,7 +86,10 @@ class PerformanceMetric(Enum):
 
 @dataclass
 class BacktestingConfig:
-    """Configuration for backtesting engine."""
+    """Configuration for backtesting engine using unified system."""
+    
+    # Unified configuration - primary config source
+    unified_config: Optional[UnifiedArchitectureConfig] = None
     
     # Backtesting settings
     mode: BacktestingMode = BacktestingMode.HISTORICAL
@@ -96,7 +99,7 @@ class BacktestingConfig:
     commission_rate: float = 0.001  # 0.1%
     slippage_rate: float = 0.0005   # 0.05%
     
-    # Data settings
+    # Data settings (delegated to unified data processor)
     data_frequency: str = "daily"  # "minute", "hourly", "daily"
     enable_data_validation: bool = True
     fill_missing_data: bool = True
@@ -140,6 +143,40 @@ class BacktestingConfig:
     max_workers: int = 4
     enable_caching: bool = True
     cache_path: str = "backtesting_cache"
+    
+    def __post_init__(self):
+        """Initialize unified configuration if not provided."""
+        if self.unified_config is None and UNIFIED_TOOLS_AVAILABLE:
+            # Create comprehensive config as base for backtesting
+            self.unified_config = create_comprehensive_config()
+            
+            # Apply backtesting-specific settings
+            self.unified_config.architecture_type = ArchitectureType.HYBRID_NEURAL_TREE
+            self.unified_config.optimization_mode = OptimizationMode.REGIME_AWARE
+            self.unified_config.n_regimes = 8
+            
+            # Apply backtesting settings
+            self.unified_config.enable_parallel_processing = self.enable_parallel_processing
+            self.unified_config.max_workers = self.max_workers
+            self.unified_config.output_dir = self.results_path
+            self.unified_config.verbose = self.enable_detailed_logging
+            self.unified_config.save_intermediate_results = self.save_results
+            self.unified_config.save_best_models = True
+            
+            # Apply data settings
+            self.unified_config.enable_data_validation = self.enable_data_validation
+            self.unified_config.enable_feature_engineering = True
+            self.unified_config.enable_data_preprocessing = True
+    
+    def get_unified_config(self) -> UnifiedArchitectureConfig:
+        """Get or create unified configuration."""
+        if self.unified_config is None:
+            if UNIFIED_TOOLS_AVAILABLE:
+                self.__post_init__()  # Initialize if not done
+            else:
+                raise RuntimeError("Unified tools not available and no unified config provided")
+        
+        return self.unified_config
 
 
 @dataclass
@@ -471,9 +508,12 @@ class BacktestingEngine:
             self.logger.info("🔄 Running backtesting loop...")
             backtest_results = self._run_backtesting_loop(data, target_variable)
             
-            # Calculate performance metrics
+            # Calculate performance metrics using unified evaluator if available
             self.logger.info("📈 Calculating performance metrics...")
-            performance_metrics = self._calculate_performance_metrics()
+            if UNIFIED_TOOLS_AVAILABLE and self.unified_evaluator:
+                performance_metrics = await self._calculate_performance_metrics_unified()
+            else:
+                performance_metrics = self._calculate_performance_metrics()
             
             # Analyze regime performance
             regime_analysis = {}
@@ -928,8 +968,64 @@ class BacktestingEngine:
         except Exception as e:
             self.logger.warning(f"Capital update failed: {e}")
     
+    async def _calculate_performance_metrics_unified(self) -> Dict[str, float]:
+        """Calculate performance metrics using unified evaluator."""
+        try:
+            if not self.performance_history:
+                return self._get_default_metrics()
+            
+            # Create mock model for evaluation (backtesting results)
+            class BacktestingModel:
+                def __init__(self, performance_history):
+                    self.performance_history = performance_history
+                
+                def predict(self, X):
+                    # Return predictions based on backtesting results
+                    predictions = []
+                    for i, hist in enumerate(self.performance_history):
+                        if i < len(X):
+                            # Extract prediction from history
+                            prediction = hist.get('prediction', 0)
+                            predictions.append(prediction)
+                    return predictions[:len(X)]
+            
+            # Create mock target values from performance history
+            y_true = []
+            y_pred = []
+            for hist in self.performance_history:
+                # Use capital change as target (simplified)
+                capital_change = hist.get('trade_result', {}).get('capital_change', 0)
+                y_true.append(1 if capital_change > 0 else 0)  # Binary: profit/loss
+                y_pred.append(hist.get('prediction', 0))
+            
+            # Create model instance
+            model = BacktestingModel(self.performance_history)
+            
+            # Evaluate using unified evaluator
+            eval_result = await self.unified_evaluator.evaluate_model(model, None, None)
+            
+            # Extract metrics
+            metrics = {
+                'total_return': self._calculate_total_return(),
+                'annualized_return': self._calculate_annualized_return(),
+                'sharpe_ratio': eval_result.metrics.sharpe_ratio if hasattr(eval_result.metrics, 'sharpe_ratio') else 0.0,
+                'max_drawdown': eval_result.metrics.max_drawdown if hasattr(eval_result.metrics, 'max_drawdown') else 0.0,
+                'win_rate': eval_result.metrics.accuracy if hasattr(eval_result.metrics, 'accuracy') else 0.0,
+                'profit_factor': eval_result.metrics.profit_factor if hasattr(eval_result.metrics, 'profit_factor') else 0.0,
+                'var_95': eval_result.risk_metrics.var_95 if hasattr(eval_result, 'risk_metrics') and hasattr(eval_result.risk_metrics, 'var_95') else 0.0,
+                'cvar_95': eval_result.risk_metrics.cvar_95 if hasattr(eval_result, 'risk_metrics') and hasattr(eval_result.risk_metrics, 'cvar_95') else 0.0
+            }
+            
+            self.logger.info("✅ Performance metrics calculated using unified evaluator")
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Unified performance calculation failed: {e}")
+            # Fallback to legacy calculation
+            return self._calculate_performance_metrics()
+    
     def _calculate_performance_metrics(self) -> Dict[str, float]:
-        """Calculate comprehensive performance metrics."""
+        """Calculate comprehensive performance metrics (legacy method)."""
         try:
             if not self.performance_history:
                 return self._get_default_metrics()

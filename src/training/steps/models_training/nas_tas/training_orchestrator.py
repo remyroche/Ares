@@ -84,35 +84,38 @@ class OrchestrationMode(Enum):
 
 @dataclass
 class OrchestratorConfig:
-    """Configuration for training orchestrator."""
+    """Configuration for training orchestrator using unified system."""
+    
+    # Unified configuration - primary config source
+    unified_config: Optional[UnifiedArchitectureConfig] = None
     
     # Orchestration mode
     mode: OrchestrationMode = OrchestrationMode.FULL_PIPELINE
     
-    # Component configurations
+    # Component configurations (legacy support)
     training_config: RegimeAwareTrainingConfig = field(default_factory=RegimeAwareTrainingConfig)
     selection_config: ModelSelectionConfig = field(default_factory=ModelSelectionConfig)
     manager_config: ModelManagerConfig = field(default_factory=ModelManagerConfig)
     performance_config: PerformanceConfig = field(default_factory=PerformanceConfig)
     
-    # Pipeline settings
+    # Pipeline settings (delegated to unified config when available)
     enable_regime_detection: bool = True
     enable_model_training: bool = True
     enable_model_selection: bool = True
     enable_model_management: bool = True
     enable_performance_tracking: bool = True
     
-    # Data settings
+    # Data settings (delegated to unified data processor)
     data_validation: bool = True
     feature_engineering: bool = True
     data_preprocessing: bool = True
     
-    # Training settings
+    # Training settings (delegated to unified config)
     enable_hyperparameter_optimization: bool = True
     enable_cross_validation: bool = True
     enable_ensemble_training: bool = True
     
-    # Evaluation settings
+    # Evaluation settings (delegated to unified evaluator)
     enable_backtesting: bool = True
     enable_walk_forward_analysis: bool = True
     enable_performance_attribution: bool = True
@@ -124,7 +127,7 @@ class OrchestratorConfig:
     enable_logging: bool = True
     log_level: str = "INFO"
     
-    # Advanced settings
+    # Advanced settings (delegated to unified config)
     enable_parallel_processing: bool = False
     max_workers: int = 4
     enable_caching: bool = True
@@ -132,6 +135,42 @@ class OrchestratorConfig:
 
     # Hybrid regime detection
     enable_hybrid_regime_detection: bool = True
+    
+    def __post_init__(self):
+        """Initialize unified configuration if not provided."""
+        if self.unified_config is None and UNIFIED_TOOLS_AVAILABLE:
+            # Create comprehensive config as base
+            self.unified_config = create_comprehensive_config()
+            
+            # Apply orchestrator-specific settings
+            self.unified_config.architecture_type = ArchitectureType.NEURAL_ONLY
+            self.unified_config.optimization_mode = OptimizationMode.REGIME_AWARE
+            self.unified_config.n_regimes = 8
+            self.unified_config.population_size = 50
+            self.unified_config.generations = 100
+            
+            # Apply pipeline settings
+            self.unified_config.enable_parallel_processing = self.enable_parallel_processing
+            self.unified_config.max_workers = self.max_workers
+            self.unified_config.output_dir = self.output_directory
+            self.unified_config.verbose = self.enable_logging
+            self.unified_config.save_intermediate_results = self.save_results
+            self.unified_config.save_best_models = self.save_models
+            
+            # Apply data settings
+            self.unified_config.enable_feature_engineering = self.feature_engineering
+            self.unified_config.enable_data_preprocessing = self.data_preprocessing
+            self.unified_config.enable_data_validation = self.data_validation
+    
+    def get_unified_config(self) -> UnifiedArchitectureConfig:
+        """Get or create unified configuration."""
+        if self.unified_config is None:
+            if UNIFIED_TOOLS_AVAILABLE:
+                self.__post_init__()  # Initialize if not done
+            else:
+                raise RuntimeError("Unified tools not available and no unified config provided")
+        
+        return self.unified_config
     hybrid_regime_weight_tas: float = 0.4
     hybrid_regime_weight_nas: float = 0.6
 
@@ -186,6 +225,10 @@ class TrainingOrchestrator:
         self.logger = logging.getLogger(self.__class__.__name__)
         tprint(f"📊 Config: mode={config.mode.value}, regime_detection={config.enable_regime_detection}", color="cyan")
         
+        # Initialize unified tools first
+        tprint("🔧 Initializing unified tools", color="yellow")
+        self._initialize_unified_tools()
+        
         # Set up logging
         tprint("📝 Setting up logging", color="yellow")
         if config.enable_logging:
@@ -208,11 +251,72 @@ class TrainingOrchestrator:
         self.logger.info(f"     - Hybrid regime detection: {config.enable_hybrid_regime_detection}")
         self.logger.info(f"     - Model training: {config.enable_model_training}")
         self.logger.info(f"     - Model selection: {config.enable_model_selection}")
+        self.logger.info(f"   Unified tools available: {UNIFIED_TOOLS_AVAILABLE}")
         self.logger.info(f"     - Model management: {config.enable_model_management}")
         self.logger.info(f"     - Performance tracking: {config.enable_performance_tracking}")
         
         tprint("✅ Training Orchestrator initialization complete", color="green")
         tprint(f"🎯 Mode: {config.mode.value}, Components: regime={config.enable_regime_detection}, training={config.enable_model_training}, selection={config.enable_model_selection}", color="cyan")
+    
+    def _initialize_unified_tools(self):
+        """Initialize unified NAS/TAS tools."""
+        if not UNIFIED_TOOLS_AVAILABLE:
+            tprint_warning("Unified NAS/TAS tools not available")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_pipeline = None
+            return
+        
+        try:
+            # Get unified configuration
+            unified_config = self.config.get_unified_config()
+            
+            # Initialize unified data processor
+            data_config = DataProcessingConfig(
+                handle_missing_values=True,
+                missing_value_strategy="median",
+                handle_outliers=True,
+                outlier_method="iqr",
+                enable_scaling=True,
+                scaling_method="standard",
+                enable_feature_engineering=unified_config.enable_feature_engineering,
+                create_time_features=True,
+                validate_data=unified_config.enable_data_validation,
+                min_data_quality_score=0.8
+            )
+            self.unified_data_processor = UnifiedDataProcessor(data_config)
+            tprint_success("Unified data processor initialized")
+            
+            # Initialize unified evaluator
+            eval_config = EvaluationConfig(
+                evaluation_type="comprehensive",
+                calculate_performance_metrics=True,
+                calculate_financial_metrics=True,
+                calculate_regime_metrics=True,
+                calculate_risk_metrics=True,
+                financial_validation=True,
+                enable_parallel_evaluation=unified_config.enable_parallel_processing,
+                max_workers=unified_config.max_workers
+            )
+            self.unified_evaluator = UnifiedEvaluator(eval_config)
+            tprint_success("Unified evaluator initialized")
+            
+            # Initialize unified pipeline based on architecture type
+            if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
+                self.unified_pipeline = create_nas_pipeline()
+            elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
+                self.unified_pipeline = create_tas_pipeline()
+            else:  # HYBRID_NEURAL_TREE
+                from src.nas_tas.unified_pipeline import create_hybrid_pipeline
+                self.unified_pipeline = create_hybrid_pipeline()
+            
+            tprint_success("Unified pipeline initialized")
+            
+        except Exception as e:
+            tprint_error(f"Unified tools initialization failed: {e}")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_pipeline = None
     
     def _setup_logging(self):
         """Set up logging configuration."""
@@ -283,7 +387,7 @@ class TrainingOrchestrator:
                    timestamps: Optional[pd.Series] = None,
                    context: Optional[Dict[str, Any]] = None) -> OrchestrationResult:
         """
-        Orchestrate the complete training pipeline.
+        Orchestrate the complete training pipeline using unified tools when available.
         
         Args:
             market_data: Market data for training
@@ -306,6 +410,16 @@ class TrainingOrchestrator:
                 mode=self.config.mode,
                 start_time=start_time
             )
+            
+            # Use unified pipeline if available and appropriate
+            if UNIFIED_TOOLS_AVAILABLE and self.unified_pipeline and self.config.mode == OrchestrationMode.FULL_PIPELINE:
+                self.logger.info("🔧 Using unified pipeline for orchestration")
+                return self._orchestrate_with_unified_pipeline(
+                    market_data, target_variable, feature_columns, timestamps, context, start_time
+                )
+            
+            # Fallback to legacy orchestration
+            self.logger.info("🔧 Using legacy orchestration pipeline")
             
             # Step 1: Data validation and preprocessing
             if self.config.data_validation or self.config.data_preprocessing:
@@ -397,6 +511,76 @@ class TrainingOrchestrator:
                 error_message=str(e),
                 start_time=start_time,
                 end_time=datetime.now()
+            )
+    
+    async def _orchestrate_with_unified_pipeline(self, 
+                                               market_data: pd.DataFrame,
+                                               target_variable: str,
+                                               feature_columns: Optional[List[str]],
+                                               timestamps: Optional[pd.Series],
+                                               context: Optional[Dict[str, Any]],
+                                               start_time: datetime) -> OrchestrationResult:
+        """Orchestrate using unified pipeline."""
+        try:
+            # Get unified configuration
+            unified_config = self.config.get_unified_config()
+            
+            # Separate features and target
+            if feature_columns is None:
+                feature_columns = [col for col in market_data.columns if col != target_variable]
+            
+            X = market_data[feature_columns]
+            y = market_data[target_variable]
+            
+            # Process data using unified data processor
+            if self.unified_data_processor:
+                tprint_info("Processing data with unified data processor")
+                processed_X, processed_y, validation_result = self.unified_data_processor.process_data(X, y, fit=True)
+                
+                if not validation_result.validation_passed:
+                    tprint_warning(f"Data validation failed: {validation_result.validation_score:.3f}")
+                    if validation_result.validation_score < 0.5:
+                        raise ValueError(f"Data quality too low: {validation_result.validation_score:.3f}")
+            else:
+                processed_X, processed_y = X, y
+            
+            # Execute unified pipeline
+            tprint_info("Executing unified pipeline")
+            pipeline_result = await self.unified_pipeline.execute_pipeline(
+                processed_X, processed_y, unified_config
+            )
+            
+            # Convert unified result to orchestrator result
+            result = OrchestrationResult(
+                success=pipeline_result.execution_info.status == "completed",
+                execution_time=(datetime.now() - start_time).total_seconds(),
+                mode=self.config.mode,
+                start_time=start_time,
+                end_time=datetime.now()
+            )
+            
+            if pipeline_result.execution_info.status == "completed":
+                result.n_regimes_detected = getattr(pipeline_result, 'n_regimes', 0)
+                result.n_models_trained = len(getattr(pipeline_result, 'models', []))
+                result.best_model = getattr(pipeline_result, 'best_model', None)
+                result.performance_metrics = getattr(pipeline_result, 'performance_metrics', {})
+                
+                tprint_success("Unified pipeline execution completed successfully")
+            else:
+                result.error_message = f"Pipeline failed: {pipeline_result.execution_info.error_message}"
+                tprint_error(f"Unified pipeline failed: {result.error_message}")
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"Unified pipeline orchestration failed: {e}")
+            return OrchestrationResult(
+                success=False,
+                execution_time=(datetime.now() - start_time).total_seconds(),
+                mode=self.config.mode,
+                start_time=start_time,
+                end_time=datetime.now(),
+                error_message=str(e)
             )
     
     def _validate_and_preprocess_data(self, 

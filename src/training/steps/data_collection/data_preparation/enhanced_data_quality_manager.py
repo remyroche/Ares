@@ -44,12 +44,12 @@ class EnhancedDataQualityManager:
             from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
             from src.utils.data.quality.data_quality import DataQualityFramework
             from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
-            from src.utils.data.quality.data_cleaning import DataCleaner
+            from src.utils.data.quality.data_cleaning import get_data_cleaner
             
             self.quality_scorer = get_quality_scorer()
             self.quality_framework = DataQualityFramework()
             self.advanced_quality_metrics = AdvancedQualityMetrics()
-            self.data_cleaner = DataCleaner(data_type='klines')
+            self.data_cleaner = get_data_cleaner(data_type='klines')
             
             logger.info("✅ Comprehensive quality tools initialized")
         except ImportError as e:

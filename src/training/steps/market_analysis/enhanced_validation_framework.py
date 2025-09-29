@@ -57,12 +57,12 @@ class EnhancedValidator:
             # Use comprehensive quality assessment
             from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
             from src.utils.data.quality.data_quality import DataQualityFramework
-            from src.utils.data.quality.data_cleaning import DataCleaner
+            from src.utils.data.quality.data_cleaning import get_data_cleaner
             
             # Initialize quality tools
             quality_scorer = get_quality_scorer()
             quality_framework = DataQualityFramework()
-            data_cleaner = DataCleaner(data_type='klines')
+            data_cleaner = get_data_cleaner(data_type='klines')
             
             # Perform comprehensive quality assessment
             self.logger.info(f"📊 Performing comprehensive data quality assessment for {context}")

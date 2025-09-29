@@ -13,6 +13,8 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import time
+import threading
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -154,6 +156,7 @@ class DataCleaner:
             log_details: Whether to log detailed information
             data_type: Type of data ('klines', 'aggtrades', 'futures') for gap thresholds
         """
+        start_time = time.time()
         self.logger = system_logger.getChild('DataCleaner')
         self.max_forward_fill_gap = max_forward_fill_gap
         self.download_threshold = download_threshold
@@ -294,6 +297,15 @@ class DataCleaner:
         
         # Reduce verbosity of initialization logging
         self.logger.debug(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
+        
+        # Add timing information (Numba-safe implementation)
+        duration = time.time() - start_time
+        try:
+            from src.utils.tprint import tprint_performance
+            tprint_performance(f"DataCleaner({data_type}) initialization", duration)
+        except ImportError:
+            # Fallback to basic logging (Numba-safe)
+            self.logger.info(f"⏱️ DataCleaner({data_type}) initialized in {duration:.3f}s")
 
     async def handle_missing_values_intelligently(
         self,
@@ -1254,3 +1266,64 @@ def validate_data_schema(data: pd.DataFrame, schema_name: str) -> Dict[str, Any]
 # Create global instances for backwards compatibility
 enhanced_missing_value_handler = DataCleaner()
 enhanced_outlier_handler = DataCleaner()
+
+
+class DataCleanerManager:
+    """Centralized manager for DataCleaner instances to prevent duplicate initialization."""
+    
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if not hasattr(self, '_initialized') or not self._initialized:
+            self.logger = system_logger.getChild('DataCleanerManager')
+            self._cleaners: Dict[str, DataCleaner] = {}
+            self._initialized = True
+            self.logger.info("🔧 DataCleanerManager initialized (singleton)")
+    
+    def get_cleaner(self, data_type: str = 'klines', **kwargs) -> DataCleaner:
+        """Get or create DataCleaner instance for specific data type."""
+        start_time = time.time()
+        
+        if data_type not in self._cleaners:
+            with self._lock:
+                if data_type not in self._cleaners:
+                    self.logger.info(f"🏭 Creating DataCleaner for data_type='{data_type}'")
+                    self._cleaners[data_type] = DataCleaner(data_type=data_type, **kwargs)
+                    duration = time.time() - start_time
+                    self.logger.info(f"✅ DataCleaner for '{data_type}' created in {duration:.3f}s")
+                else:
+                    duration = time.time() - start_time
+                    self.logger.info(f"♻️ Reusing existing DataCleaner for '{data_type}' (took {duration:.3f}s)")
+        else:
+            duration = time.time() - start_time
+            self.logger.info(f"♻️ Reusing existing DataCleaner for '{data_type}' (took {duration:.3f}s)")
+        
+        return self._cleaners[data_type]
+    
+    def get_all_cleaners(self) -> Dict[str, DataCleaner]:
+        """Get all created cleaners."""
+        return self._cleaners.copy()
+    
+    def clear_cleaners(self):
+        """Clear all cleaners (for testing)."""
+        with self._lock:
+            self._cleaners.clear()
+            self.logger.info("🧹 All DataCleaner instances cleared")
+
+
+# Global manager instance
+_data_cleaner_manager = DataCleanerManager()
+
+
+def get_data_cleaner(data_type: str = 'klines', **kwargs) -> DataCleaner:
+    """Get DataCleaner instance through centralized manager."""
+    return _data_cleaner_manager.get_cleaner(data_type, **kwargs)

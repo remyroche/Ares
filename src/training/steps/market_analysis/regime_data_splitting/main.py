@@ -1284,12 +1284,12 @@ class RegimeDataSplittingStep:
             try:
                 if QUALITY_TOOLS_AVAILABLE and get_quality_scorer is not None:
                     from src.utils.data.quality.data_quality import DataQualityFramework
-                    from src.utils.data.quality.data_cleaning import DataCleaner
+                    from src.utils.data.quality.data_cleaning import get_data_cleaner
                     
                     # Initialize quality assessment tools
                     quality_scorer = get_quality_scorer()
                     quality_framework = DataQualityFramework()
-                    data_cleaner = DataCleaner(data_type='klines')
+                    data_cleaner = get_data_cleaner(data_type='klines')
                 
                 # Perform comprehensive quality assessment
                 self.logger.info('📊 Performing comprehensive data quality assessment...')

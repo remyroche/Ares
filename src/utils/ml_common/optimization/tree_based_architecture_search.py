@@ -402,44 +402,45 @@ class TreeBasedArchitectureSearch:
     def _sample_architecture_from_trial(self, trial) -> TreeArchitectureCandidate:
         """Sample architecture from Optuna trial."""
         model_type = trial.suggest_categorical('model_type', self.config.model_types)
-        
+
         # Sample model parameters based on type
         model_params = {}
         if model_type == 'xgboost':
             model_params = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
-                'max_depth': trial.suggest_int('max_depth', 3, 15),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2),
-                'subsample': trial.suggest_float('subsample', 0.8, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.8, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0, 10.0),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0, 10.0)
+                'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                'gamma': trial.suggest_float('gamma', 1e-8, 5.0, log=True),
+                'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+                'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True)
             }
         elif model_type == 'lightgbm':
             model_params = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
+                'n_estimators': trial.suggest_int('n_estimators', 50, 300),
                 'max_depth': trial.suggest_int('max_depth', 3, 15),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2),
-                'subsample': trial.suggest_float('subsample', 0.8, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.8, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0, 10.0),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0, 10.0),
-                'num_leaves': trial.suggest_int('num_leaves', 31, 255)
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+                'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                'num_leaves': trial.suggest_int('num_leaves', 10, 63)
             }
         elif model_type == 'catboost':
             model_params = {
-                'iterations': trial.suggest_int('iterations', 100, 2000),
-                'depth': trial.suggest_int('depth', 3, 15),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2),
-                'l2_leaf_reg': trial.suggest_int('l2_leaf_reg', 1, 9),
-                'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli', 'MVS']),
-                'subsample': trial.suggest_float('subsample', 0.8, 1.0)
+                'iterations': trial.suggest_int('iterations', 500, 1200),
+                'depth': trial.suggest_int('depth', 4, 6),
+                'learning_rate': trial.suggest_float('learning_rate', 0.03, 0.06),
+                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 6.0, 12.0),
+                'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli']),
+                'subsample': trial.suggest_float('subsample', 0.5, 0.9)
             }
         elif model_type == 'random_forest':
             model_params = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                'max_depth': trial.suggest_int('max_depth', 3, 15),
-                'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.5, 0.8, 1.0]),
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 5, 30),
+                'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.3, 0.5]),
                 'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
                 'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 8),
                 'bootstrap': trial.suggest_categorical('bootstrap', [True, False])

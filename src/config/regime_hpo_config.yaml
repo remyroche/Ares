@@ -43,13 +43,23 @@ base_model_optimization:
   bayesian_rule_lists:
     enabled: true
     search_space:
-      max_rules: [20, 30, 40]
-      max_rule_length: [2, 3, 4]
-      n_chains: [2, 3, 4]
-      n_iter: [5000, 10000, 15000]
-      min_support: [0.01, 0.02, 0.05]
-      alpha: [0.5, 1.0, 2.0]
-      beta: [0.5, 1.0, 2.0]
+      # Keep complexity under control
+      max_rules:        [6, 8, 10, 12]
+      max_rule_length:  [2, 3]
+      min_support:      [0.02, 0.03, 0.05]
+      # Priors / regularization
+      alpha:            [0.5, 1.0, 2.0]
+      beta:             [0.5, 1.0, 2.0]
+      list_length_lambda: [3, 4, 5]          # if supported
+      rule_length_penalty: [0.8, 1.0, 1.2]   # if supported
+      # Sampler
+      n_chains:         [2, 3]
+      n_iter:           [6000, 10000, 14000]
+      burn_in:          [1000, 2000]         # if supported
+      thin:             [1, 5]               # if supported
+      # Candidate mining (optional but helpful)
+      discretization:   ["quantile3", "quantile5"]
+      max_candidates:   [1000, 2000, 4000]
 
 # Meta model HPO settings
 meta_model_optimization:

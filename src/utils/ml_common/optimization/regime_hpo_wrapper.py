@@ -290,27 +290,17 @@ class RegimeHPOWrapper:
             search_spaces['bayesian_rule_lists'] = {
                 'max_rules': {
                     'type': 'int',
-                    'low': 20,
-                    'high': 40
+                    'low': 6,
+                    'high': 12
                 },
                 'max_rule_length': {
                     'type': 'int',
                     'low': 2,
-                    'high': 4
-                },
-                'n_chains': {
-                    'type': 'int',
-                    'low': 2,
-                    'high': 4
-                },
-                'n_iter': {
-                    'type': 'int',
-                    'low': 5000,
-                    'high': 15000
+                    'high': 3
                 },
                 'min_support': {
                     'type': 'float',
-                    'low': 0.01,
+                    'low': 0.02,
                     'high': 0.05
                 },
                 'alpha': {
@@ -322,6 +312,41 @@ class RegimeHPOWrapper:
                     'type': 'float',
                     'low': 0.5,
                     'high': 2.0
+                },
+                'list_length_lambda': {
+                    'type': 'int',
+                    'low': 3,
+                    'high': 5
+                },
+                'rule_length_penalty': {
+                    'type': 'float',
+                    'low': 0.8,
+                    'high': 1.2
+                },
+                'n_chains': {
+                    'type': 'int',
+                    'low': 2,
+                    'high': 3
+                },
+                'n_iter': {
+                    'type': 'int',
+                    'low': 6000,
+                    'high': 14000
+                },
+                'burn_in': {
+                    'type': 'int',
+                    'low': 1000,
+                    'high': 2000
+                },
+                'thin': {
+                    'type': 'int',
+                    'low': 1,
+                    'high': 5
+                },
+                'max_candidates': {
+                    'type': 'int',
+                    'low': 1000,
+                    'high': 4000
                 }
             }
         

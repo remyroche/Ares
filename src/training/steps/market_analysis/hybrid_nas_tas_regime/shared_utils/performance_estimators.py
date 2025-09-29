@@ -129,15 +129,133 @@ class BasePerformanceEstimator:
 
     def extract_features(self, architecture: Any) -> ArchitectureFeatures:
         """Extract features from an architecture."""
-        raise NotImplementedError("Subclasses must implement extract_features")
+        try:
+            # Basic feature extraction
+            features = {
+                'complexity': getattr(architecture, 'complexity', 0.5),
+                'depth': getattr(architecture, 'depth', 1),
+                'width': getattr(architecture, 'width', 1),
+                'connections': getattr(architecture, 'n_connections', 0),
+                'parameters': getattr(architecture, 'n_parameters', 0),
+                'layers': getattr(architecture, 'n_layers', 1),
+                'activation_functions': getattr(architecture, 'n_activation_functions', 1),
+                'regularization': getattr(architecture, 'regularization_strength', 0.0),
+                'dropout_rate': getattr(architecture, 'dropout_rate', 0.0),
+                'learning_rate': getattr(architecture, 'learning_rate', 0.001)
+            }
+            
+            return ArchitectureFeatures(
+                features=features,
+                architecture_id=getattr(architecture, 'id', 'unknown'),
+                extraction_time=time.time(),
+                metadata={'extraction_method': 'basic'}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting features: {e}")
+            return ArchitectureFeatures(
+                features={},
+                architecture_id='error',
+                extraction_time=0.0,
+                metadata={'error': str(e)}
+            )
 
     def predict_performance(self, architecture: Any) -> PerformancePrediction:
         """Predict performance of an architecture."""
-        raise NotImplementedError("Subclasses must implement predict_performance")
+        try:
+            if not self.is_trained or self.model is None:
+                # Return default prediction if not trained
+                return PerformancePrediction(
+                    predicted_score=0.5,
+                    confidence=0.0,
+                    prediction_time=0.0,
+                    metadata={'status': 'not_trained'}
+                )
+            
+            # Extract features
+            features = self.extract_features(architecture)
+            feature_vector = np.array(list(features.features.values())).reshape(1, -1)
+            
+            # Scale features
+            feature_vector_scaled = self.feature_scaler.transform(feature_vector)
+            
+            # Make prediction
+            start_time = time.time()
+            predicted_score = self.model.predict(feature_vector_scaled)[0]
+            prediction_time = time.time() - start_time
+            
+            # Calculate confidence (simplified)
+            confidence = min(0.9, max(0.1, abs(predicted_score - 0.5) * 2))
+            
+            return PerformancePrediction(
+                predicted_score=float(predicted_score),
+                confidence=confidence,
+                prediction_time=prediction_time,
+                metadata={'model_type': type(self.model).__name__}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting performance: {e}")
+            return PerformancePrediction(
+                predicted_score=0.0,
+                confidence=0.0,
+                prediction_time=0.0,
+                metadata={'error': str(e)}
+            )
 
     def train(self, architectures: List[ArchitectureFeatures], performances: List[float]) -> Dict[str, float]:
         """Train the performance estimator."""
-        raise NotImplementedError("Subclasses must implement train")
+        try:
+            if len(architectures) != len(performances):
+                raise ValueError("Number of architectures must match number of performances")
+            
+            if len(architectures) < 2:
+                raise ValueError("Need at least 2 samples for training")
+            
+            self.logger.info(f"Training performance estimator with {len(architectures)} samples")
+            
+            # Extract feature vectors
+            X = []
+            for arch_features in architectures:
+                feature_vector = list(arch_features.features.values())
+                X.append(feature_vector)
+            
+            X = np.array(X)
+            y = np.array(performances)
+            
+            # Scale features
+            X_scaled = self.feature_scaler.fit_transform(X)
+            
+            # Train model (using simple linear regression as default)
+            from sklearn.linear_model import LinearRegression
+            self.model = LinearRegression()
+            self.model.fit(X_scaled, y)
+            
+            # Calculate training metrics
+            y_pred = self.model.predict(X_scaled)
+            mse = np.mean((y - y_pred) ** 2)
+            r2 = self.model.score(X_scaled, y)
+            
+            self.is_trained = True
+            
+            # Update training history
+            self.training_history.architectures.extend(architectures)
+            self.training_history.true_performances.extend(performances)
+            self.training_history.metadata.extend([{'training_round': len(self.training_history.architectures)}] * len(architectures))
+            
+            metrics = {
+                'mse': float(mse),
+                'r2_score': float(r2),
+                'n_samples': len(architectures),
+                'n_features': X.shape[1]
+            }
+            
+            self.logger.info(f"Training completed. MSE: {mse:.4f}, R²: {r2:.4f}")
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error training performance estimator: {e}")
+            return {'error': str(e)}
 
     def save(self, filepath: str) -> bool:
         """Save the trained estimator."""

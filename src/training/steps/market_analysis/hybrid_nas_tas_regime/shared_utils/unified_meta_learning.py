@@ -694,11 +694,28 @@ class BaseMetaModel(nn.Module):
     
     def clone(self):
         """Create a clone of the meta-model."""
-        raise NotImplementedError
+        # Create a new instance with the same configuration
+        cloned = self.__class__(self.base_model, self.config)
+        # Copy the state if the model has parameters
+        if hasattr(self, 'state_dict'):
+            cloned.load_state_dict(self.state_dict())
+        return cloned
     
     def compute_loss(self, X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Compute loss for given inputs and targets."""
-        raise NotImplementedError
+        # Forward pass through the model
+        outputs = self.forward(X)
+        
+        # Use appropriate loss function based on task type
+        if self.config.task_type == 'classification':
+            loss_fn = nn.CrossEntropyLoss()
+        elif self.config.task_type == 'regression':
+            loss_fn = nn.MSELoss()
+        else:
+            # Default to MSE loss
+            loss_fn = nn.MSELoss()
+        
+        return loss_fn(outputs, y)
 
 
 class TASMetaModel(BaseMetaModel):

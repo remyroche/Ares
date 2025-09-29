@@ -132,15 +132,181 @@ class BaseConstraintValidator:
 
     def validate(self, architecture: Any) -> ConstraintValidationResult:
         """Validate an architecture against all constraints."""
-        raise NotImplementedError("Subclasses must implement validate")
+        try:
+            violations = []
+            is_valid = True
+            
+            # Check each constraint type
+            constraint_types = [
+                ConstraintType.MEMORY,
+                ConstraintType.COMPUTATIONAL,
+                ConstraintType.ARCHITECTURAL,
+                ConstraintType.PERFORMANCE
+            ]
+            
+            for constraint_type in constraint_types:
+                violation = self.check_single_constraint(architecture, constraint_type)
+                if violation:
+                    violations.append(violation)
+                    is_valid = False
+            
+            return ConstraintValidationResult(
+                is_valid=is_valid,
+                violations=violations,
+                validation_time=time.time()
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error validating architecture: {e}")
+            return ConstraintValidationResult(
+                is_valid=False,
+                violations=[ConstraintViolation(
+                    constraint_type=ConstraintType.ARCHITECTURAL,
+                    message=f"Validation error: {e}",
+                    severity=ConstraintSeverity.ERROR
+                )],
+                validation_time=time.time()
+            )
 
     def check_single_constraint(self, architecture: Any, constraint_type: ConstraintType) -> Optional[ConstraintViolation]:
         """Check a single constraint type."""
-        raise NotImplementedError("Subclasses must implement check_single_constraint")
+        try:
+            if constraint_type == ConstraintType.MEMORY:
+                return self._check_memory_constraint(architecture)
+            elif constraint_type == ConstraintType.COMPUTATIONAL:
+                return self._check_computational_constraint(architecture)
+            elif constraint_type == ConstraintType.ARCHITECTURAL:
+                return self._check_architectural_constraint(architecture)
+            elif constraint_type == ConstraintType.PERFORMANCE:
+                return self._check_performance_constraint(architecture)
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error checking {constraint_type} constraint: {e}")
+            return ConstraintViolation(
+                constraint_type=constraint_type,
+                message=f"Constraint check error: {e}",
+                severity=ConstraintSeverity.ERROR
+            )
 
     def get_constraint_summary(self) -> Dict[str, Any]:
         """Get a summary of all constraints."""
-        raise NotImplementedError("Subclasses must implement get_constraint_summary")
+        try:
+            return {
+                'total_constraints': len(ConstraintType),
+                'constraint_types': [ct.value for ct in ConstraintType],
+                'system_info': self.system_info,
+                'config': self.config,
+                'is_initialized': self.is_initialized
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting constraint summary: {e}")
+            return {'error': str(e)}
+
+    def _check_memory_constraint(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check memory constraints for the architecture."""
+        try:
+            # Estimate memory usage based on architecture complexity
+            estimated_memory_gb = self._estimate_memory_usage(architecture)
+            max_memory_gb = self.config.get('max_memory_gb', 8)
+            
+            if estimated_memory_gb > max_memory_gb:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.MEMORY,
+                    message=f"Estimated memory usage {estimated_memory_gb:.2f}GB exceeds limit {max_memory_gb}GB",
+                    severity=ConstraintSeverity.ERROR
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Error checking memory constraint: {e}")
+            return None
+
+    def _check_computational_constraint(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check computational constraints for the architecture."""
+        try:
+            # Estimate computational complexity
+            estimated_flops = self._estimate_computational_cost(architecture)
+            max_flops = self.config.get('max_flops', 1e12)  # 1 trillion FLOPS
+            
+            if estimated_flops > max_flops:
+                return ConstraintViolation(
+                    constraint_type=ConstraintType.COMPUTATIONAL,
+                    message=f"Estimated computational cost {estimated_flops:.2e} exceeds limit {max_flops:.2e}",
+                    severity=ConstraintSeverity.ERROR
+                )
+            return None
+        except Exception as e:
+            self.logger.error(f"Error checking computational constraint: {e}")
+            return None
+
+    def _check_architectural_constraint(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check architectural constraints for the architecture."""
+        try:
+            # Check for invalid architectural patterns
+            if hasattr(architecture, 'layers'):
+                layer_count = len(architecture.layers)
+                max_layers = self.config.get('max_layers', 50)
+                
+                if layer_count > max_layers:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.ARCHITECTURAL,
+                        message=f"Layer count {layer_count} exceeds limit {max_layers}",
+                        severity=ConstraintSeverity.ERROR
+                    )
+            return None
+        except Exception as e:
+            self.logger.error(f"Error checking architectural constraint: {e}")
+            return None
+
+    def _check_performance_constraint(self, architecture: Any) -> Optional[ConstraintViolation]:
+        """Check performance constraints for the architecture."""
+        try:
+            # Check for performance-related constraints
+            if hasattr(architecture, 'complexity_score'):
+                complexity_score = architecture.complexity_score
+                max_complexity = self.config.get('max_complexity', 1.0)
+                
+                if complexity_score > max_complexity:
+                    return ConstraintViolation(
+                        constraint_type=ConstraintType.PERFORMANCE,
+                        message=f"Complexity score {complexity_score:.3f} exceeds limit {max_complexity}",
+                        severity=ConstraintSeverity.WARNING
+                    )
+            return None
+        except Exception as e:
+            self.logger.error(f"Error checking performance constraint: {e}")
+            return None
+
+    def _estimate_memory_usage(self, architecture: Any) -> float:
+        """Estimate memory usage in GB for the architecture."""
+        try:
+            # Simple estimation based on architecture complexity
+            base_memory = 0.1  # Base memory in GB
+            
+            if hasattr(architecture, 'layers'):
+                layer_count = len(architecture.layers)
+                memory_per_layer = 0.05  # 50MB per layer
+                return base_memory + (layer_count * memory_per_layer)
+            
+            return base_memory
+        except:
+            return 0.5  # Default estimate
+
+    def _estimate_computational_cost(self, architecture: Any) -> float:
+        """Estimate computational cost in FLOPS for the architecture."""
+        try:
+            # Simple estimation based on architecture complexity
+            base_flops = 1e6  # Base FLOPS
+            
+            if hasattr(architecture, 'layers'):
+                layer_count = len(architecture.layers)
+                flops_per_layer = 1e8  # 100M FLOPS per layer
+                return base_flops + (layer_count * flops_per_layer)
+            
+            return base_flops
+        except:
+            return 1e6  # Default estimate
 
     def _get_system_info(self) -> Dict[str, Any]:
         """Get system information for resource constraints."""

@@ -110,7 +110,93 @@ class BaseAdvancedSearchStrategy:
                constraint_validator: Callable,
                n_iterations: int = 100) -> SearchStrategyResult:
         """Perform advanced search."""
-        raise NotImplementedError("Subclasses must implement search")
+        try:
+            start_time = time.time()
+            self.logger.info(f"Starting advanced search with {n_iterations} iterations")
+            
+            best_architecture = None
+            best_score = float('-inf')
+            search_history = []
+            
+            for iteration in range(n_iterations):
+                try:
+                    # Generate new architecture
+                    architecture = architecture_generator()
+                    
+                    # Validate architecture against constraints
+                    validation_result = constraint_validator(architecture)
+                    if not validation_result.is_valid:
+                        self.logger.warning(f"Iteration {iteration}: Architecture failed validation")
+                        search_history.append({
+                            'iteration': iteration,
+                            'architecture': architecture,
+                            'score': None,
+                            'valid': False,
+                            'violations': validation_result.violations
+                        })
+                        continue
+                    
+                    # Evaluate architecture performance
+                    performance_score = performance_evaluator(architecture)
+                    
+                    # Update best architecture if this one is better
+                    if performance_score > best_score:
+                        best_score = performance_score
+                        best_architecture = architecture
+                        self.logger.info(f"Iteration {iteration}: New best score {best_score:.4f}")
+                    
+                    # Record search history
+                    search_history.append({
+                        'iteration': iteration,
+                        'architecture': architecture,
+                        'score': performance_score,
+                        'valid': True,
+                        'violations': []
+                    })
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in iteration {iteration}: {e}")
+                    search_history.append({
+                        'iteration': iteration,
+                        'architecture': None,
+                        'score': None,
+                        'valid': False,
+                        'error': str(e)
+                    })
+                    continue
+            
+            execution_time = time.time() - start_time
+            
+            # Create convergence info
+            convergence_info = {
+                'total_iterations': n_iterations,
+                'successful_iterations': len([h for h in search_history if h.get('valid', False)]),
+                'best_score': best_score,
+                'score_improvement': best_score - float('-inf') if best_score != float('-inf') else 0,
+                'execution_time': execution_time
+            }
+            
+            return SearchStrategyResult(
+                best_architecture=best_architecture,
+                best_score=best_score,
+                search_history=search_history,
+                strategy_used=self.__class__.__name__,
+                convergence_info=convergence_info,
+                execution_time=execution_time,
+                metadata={'config': self.config}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error in advanced search: {e}")
+            return SearchStrategyResult(
+                best_architecture=None,
+                best_score=float('-inf'),
+                search_history=[],
+                strategy_used=self.__class__.__name__,
+                convergence_info={'error': str(e)},
+                execution_time=0.0,
+                metadata={'error': str(e)}
+            )
 
     def reset(self):
         """Reset the search strategy state."""

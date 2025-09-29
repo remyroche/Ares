@@ -750,17 +750,75 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
         """
-        Abstract method to train base models for the ensemble.
-        Must be implemented by child classes.
+        Train base models for the ensemble using comprehensive model selection.
         
         Args:
             aligned_data: DataFrame with aligned features
             y_encoded: Encoded target labels
-            
-        Raises:
-            NotImplementedError: This is an abstract method
         """
-        raise NotImplementedError(f'{self.__class__.__name__} must implement _train_base_models method')
+        try:
+            self.logger.info(f'Training base models for {self.ensemble_name}...')
+            
+            # Prepare features for training
+            feature_columns = [col for col in aligned_data.columns if col != 'target']
+            X = aligned_data[feature_columns]
+            
+            # Define base models with comprehensive configurations
+            base_models_config = {
+                'lightgbm': {
+                    'model': LGBMClassifier,
+                    'params': {
+                        'n_estimators': 100,
+                        'learning_rate': 0.1,
+                        'num_leaves': 31,
+                        'colsample_bytree': 0.8,
+                        'subsample': 0.8,
+                        'random_state': 42,
+                        'verbose': -1
+                    }
+                },
+                'logistic_regression': {
+                    'model': LogisticRegression,
+                    'params': {
+                        'random_state': 42,
+                        'max_iter': 1000,
+                        'solver': 'liblinear'
+                    }
+                }
+            }
+            
+            # Train each base model
+            for model_name, config in base_models_config.items():
+                try:
+                    self.logger.info(f'Training {model_name}...')
+                    
+                    # Create model instance
+                    model_class = config['model']
+                    model_params = config['params'].copy()
+                    
+                    # Apply PatchTST wrapper if enabled and model is tree-based
+                    base_model = model_class(**model_params)
+                    model = self._apply_patchtst_wrapper_if_needed(base_model, f"{model_name}_base")
+                    
+                    # Train with SMOTE if enabled
+                    trained_model = self._train_with_smote(model, X, y_encoded)
+                    
+                    # Store trained model
+                    self.models[model_name] = trained_model
+                    self.logger.info(f'Successfully trained {model_name}')
+                    
+                except Exception as e:
+                    self.logger.error(f'Error training {model_name}: {e}')
+                    continue
+            
+            if not self.models:
+                self.logger.error('No base models were successfully trained')
+                return
+                
+            self.logger.info(f'Successfully trained {len(self.models)} base models: {list(self.models.keys())}')
+            
+        except Exception as e:
+            self.logger.error(f'Error in base model training: {e}', exc_info=True)
 
     @handles_errors(default_return={'support': [], 'resistance': []}, context='pivot levels extraction')
     def _extract_pivot_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
@@ -948,8 +1006,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
     @handles_errors
     def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
         """
-        Abstract method to extract meta-features for the ensemble.
-        Must be implemented by child classes based on their specific needs.
+        Extract comprehensive meta-features for the ensemble.
         
         Args:
             df: Input DataFrame with features
@@ -958,11 +1015,113 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             
         Returns:
             DataFrame or dict of meta-features
-            
-        Raises:
-            NotImplementedError: This is an abstract method
         """
-        raise NotImplementedError(f'{self.__class__.__name__} must implement _get_meta_features method')
+        try:
+            if df.empty:
+                self.logger.warning('Empty DataFrame provided for meta-feature extraction')
+                return pd.DataFrame()
+            
+            meta_features = {}
+            
+            # Base model predictions as meta-features
+            if self.models and not is_live:
+                # For training data, we need to generate predictions from base models
+                for model_name, model in self.models.items():
+                    try:
+                        if hasattr(model, 'predict_proba'):
+                            # Get prediction probabilities
+                            proba = model.predict_proba(df)
+                            if proba.shape[1] > 1:
+                                meta_features[f'{model_name}_prob_0'] = proba[:, 0]
+                                meta_features[f'{model_name}_prob_1'] = proba[:, 1]
+                            else:
+                                meta_features[f'{model_name}_prob'] = proba[:, 0]
+                        else:
+                            # Get binary predictions
+                            pred = model.predict(df)
+                            meta_features[f'{model_name}_pred'] = pred
+                    except Exception as e:
+                        self.logger.warning(f'Error getting predictions from {model_name}: {e}')
+                        continue
+            
+            # Statistical meta-features
+            if 'close' in df.columns:
+                close_prices = df['close']
+                meta_features['price_mean'] = close_prices.mean()
+                meta_features['price_std'] = close_prices.std()
+                meta_features['price_min'] = close_prices.min()
+                meta_features['price_max'] = close_prices.max()
+                meta_features['price_range'] = close_prices.max() - close_prices.min()
+                
+                # Price momentum features
+                if len(close_prices) > 1:
+                    meta_features['price_change'] = close_prices.iloc[-1] - close_prices.iloc[0]
+                    meta_features['price_change_pct'] = (close_prices.iloc[-1] - close_prices.iloc[0]) / close_prices.iloc[0]
+            
+            # Volume meta-features
+            if 'volume' in df.columns:
+                volume = df['volume']
+                meta_features['volume_mean'] = volume.mean()
+                meta_features['volume_std'] = volume.std()
+                meta_features['volume_sum'] = volume.sum()
+                
+                # Volume momentum
+                if len(volume) > 1:
+                    meta_features['volume_change'] = volume.iloc[-1] - volume.iloc[0]
+                    meta_features['volume_change_pct'] = (volume.iloc[-1] - volume.iloc[0]) / volume.iloc[0]
+            
+            # Technical indicator meta-features
+            technical_indicators = ['RSI_14', 'MACD_12_26_9', 'ATR_14', 'ADX_14']
+            for indicator in technical_indicators:
+                if indicator in df.columns:
+                    indicator_values = df[indicator]
+                    meta_features[f'{indicator}_mean'] = indicator_values.mean()
+                    meta_features[f'{indicator}_std'] = indicator_values.std()
+                    meta_features[f'{indicator}_latest'] = indicator_values.iloc[-1]
+            
+            # Volatility meta-features
+            volatility_indicators = ['realized_volatility', 'parkinson_volatility', 'garman_klass_volatility']
+            for vol_indicator in volatility_indicators:
+                if vol_indicator in df.columns:
+                    vol_values = df[vol_indicator]
+                    meta_features[f'{vol_indicator}_mean'] = vol_values.mean()
+                    meta_features[f'{vol_indicator}_std'] = vol_values.std()
+                    meta_features[f'{vol_indicator}_latest'] = vol_values.iloc[-1]
+            
+            # Liquidity meta-features
+            liquidity_indicators = ['volume_liquidity', 'liquidity_percentile', 'liquidity_health']
+            for liq_indicator in liquidity_indicators:
+                if liq_indicator in df.columns:
+                    liq_values = df[liq_indicator]
+                    meta_features[f'{liq_indicator}_mean'] = liq_values.mean()
+                    meta_features[f'{liq_indicator}_std'] = liq_values.std()
+                    meta_features[f'{liq_indicator}_latest'] = liq_values.iloc[-1]
+            
+            # Order flow meta-features
+            order_flow_indicators = ['order_flow_imbalance', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance']
+            for ofi_indicator in order_flow_indicators:
+                if ofi_indicator in df.columns:
+                    ofi_values = df[ofi_indicator]
+                    meta_features[f'{ofi_indicator}_mean'] = ofi_values.mean()
+                    meta_features[f'{ofi_indicator}_std'] = ofi_values.std()
+                    meta_features[f'{ofi_indicator}_latest'] = ofi_values.iloc[-1]
+            
+            # Time-based meta-features
+            if hasattr(df.index, 'hour'):
+                meta_features['hour'] = df.index.hour.iloc[-1] if hasattr(df.index, 'hour') else 0
+            if hasattr(df.index, 'dayofweek'):
+                meta_features['dayofweek'] = df.index.dayofweek.iloc[-1] if hasattr(df.index, 'dayofweek') else 0
+            
+            # Convert to DataFrame if we have multiple rows, otherwise return dict
+            if len(df) > 1:
+                meta_df = pd.DataFrame([meta_features])
+                return meta_df
+            else:
+                return meta_features
+                
+        except Exception as e:
+            self.logger.error(f'Error extracting meta-features: {e}', exc_info=True)
+            return pd.DataFrame()
 
     @handles_errors(default_return = None, context='feature normalization')
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:

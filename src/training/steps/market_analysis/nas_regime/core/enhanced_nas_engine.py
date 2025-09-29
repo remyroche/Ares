@@ -106,16 +106,8 @@ from src.utils.ml_common import (
     setup_logger, get_logger
 )
 
-# Circular import removed to prevent import errors
-# from ...hybrid_nas_tas_regime.core.unified_architecture_search_engine import (
-#     UnifiedArchitectureSearchEngine, UnifiedSearchConfig, ArchitectureType
-# )
-# from ...hybrid_nas_tas_regime.core.performance_estimator import (
-#     UnifiedPerformanceEstimator, create_unified_performance_estimator
-# )
-# from ...hybrid_nas_tas_regime.core.advanced_search_strategies import (
-#     AdvancedSearchStrategies, SearchStrategyType
-# )
+# Circular imports removed to prevent import errors
+# Clustering-related imports removed - will be implemented in subsequent step
 from ...hybrid_nas_tas_regime.core.multi_objective_optimizer import (
     TradingMultiObjectiveOptimizer, MultiObjectiveConfig, ObjectiveType
 )

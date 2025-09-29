@@ -29,13 +29,7 @@ class Architecture:
     trading_viability: float
 
 @dataclass
-class NASClusteringResult:
-    """Result from NAS clustering."""
-    success: bool
-    best_architecture: Optional[Architecture]
-    pareto_frontier: List[Architecture]
-    search_statistics: Dict[str, Any]
-    error_message: Optional[str] = None
+# NAS clustering result class removed - will be implemented in subsequent step
 
 class EssentialNASClusterer:
     """

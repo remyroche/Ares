@@ -25,6 +25,18 @@ from .walk_forward_analyzer import WalkForwardAnalyzer, WalkForwardConfig, WalkF
 from .performance_attribution import PerformanceAttributor, AttributionConfig, AttributionResult
 from .scenario_tester import ScenarioTester, ScenarioConfig, ScenarioResult
 
+# Import unified NAS/TAS tools
+try:
+    from src.nas_tas.data.data_processor import UnifiedDataProcessor, DataProcessingConfig
+    from src.nas_tas.evaluation.unified_evaluator import UnifiedEvaluator, EvaluationConfig
+    from src.nas_tas.config.base_config import UnifiedArchitectureConfig, create_comprehensive_config
+    from src.nas_tas.error_handling import UnifiedErrorHandler
+    from src.nas_tas.logging import UnifiedLogger, LoggingConfig
+    UNIFIED_TOOLS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Unified NAS/TAS tools not available: {e}")
+    UNIFIED_TOOLS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,6 +143,9 @@ class ValidationOrchestrator:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified tools first
+        self._initialize_unified_tools()
+        
         # Initialize components
         self._initialize_components()
         
@@ -146,6 +161,68 @@ class ValidationOrchestrator:
         self.logger.info(f"     - Walk-forward: {config.enable_walk_forward}")
         self.logger.info(f"     - Attribution: {config.enable_attribution}")
         self.logger.info(f"     - Scenario testing: {config.enable_scenario_testing}")
+        self.logger.info(f"   Unified tools available: {UNIFIED_TOOLS_AVAILABLE}")
+    
+    def _initialize_unified_tools(self):
+        """Initialize unified NAS/TAS tools."""
+        if not UNIFIED_TOOLS_AVAILABLE:
+            self.logger.warning("⚠️ Unified NAS/TAS tools not available")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_error_handler = None
+            self.unified_logger = None
+            return
+        
+        try:
+            # Initialize unified data processor
+            data_config = DataProcessingConfig(
+                handle_missing_values=True,
+                missing_value_strategy="median",
+                handle_outliers=True,
+                outlier_method="iqr",
+                enable_scaling=True,
+                scaling_method="standard",
+                enable_feature_engineering=True,
+                validate_data=True,
+                min_data_quality_score=0.8
+            )
+            self.unified_data_processor = UnifiedDataProcessor(data_config)
+            self.logger.info("✅ Unified data processor initialized")
+            
+            # Initialize unified evaluator
+            eval_config = EvaluationConfig(
+                evaluation_type="comprehensive",
+                calculate_performance_metrics=True,
+                calculate_financial_metrics=True,
+                calculate_regime_metrics=True,
+                calculate_risk_metrics=True,
+                financial_validation=True,
+                enable_parallel_evaluation=True,
+                max_workers=self.config.max_workers
+            )
+            self.unified_evaluator = UnifiedEvaluator(eval_config)
+            self.logger.info("✅ Unified evaluator initialized")
+            
+            # Initialize unified error handler
+            self.unified_error_handler = UnifiedErrorHandler()
+            self.logger.info("✅ Unified error handler initialized")
+            
+            # Initialize unified logger
+            logging_config = LoggingConfig(
+                log_level="INFO",
+                enable_file_logging=True,
+                enable_console_logging=True,
+                log_format="detailed"
+            )
+            self.unified_logger = UnifiedLogger(logging_config)
+            self.logger.info("✅ Unified logger initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"Unified tools initialization failed: {e}")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_error_handler = None
+            self.unified_logger = None
     
     def _initialize_components(self):
         """Initialize validation components."""

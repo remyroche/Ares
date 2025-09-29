@@ -26,6 +26,18 @@ try:
 except ImportError:
     ML_COMMON_AVAILABLE = False
 
+# Import unified NAS/TAS tools
+try:
+    from src.nas_tas.data.data_processor import UnifiedDataProcessor, DataProcessingConfig
+    from src.nas_tas.evaluation.unified_evaluator import UnifiedEvaluator, EvaluationConfig
+    from src.nas_tas.config.base_config import UnifiedArchitectureConfig, create_comprehensive_config
+    from src.nas_tas.error_handling import UnifiedErrorHandler
+    from src.nas_tas.logging import UnifiedLogger, LoggingConfig
+    UNIFIED_TOOLS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Unified NAS/TAS tools not available: {e}")
+    UNIFIED_TOOLS_AVAILABLE = False
+
 # Import general ML pipeline optimization tools
 try:
     from src.utils.common_ml.backtesting.backtesting_engine import (
@@ -74,7 +86,10 @@ class PerformanceMetric(Enum):
 
 @dataclass
 class BacktestingConfig:
-    """Configuration for backtesting engine."""
+    """Configuration for backtesting engine using unified system."""
+    
+    # Unified configuration - primary config source
+    unified_config: Optional[UnifiedArchitectureConfig] = None
     
     # Backtesting settings
     mode: BacktestingMode = BacktestingMode.HISTORICAL
@@ -84,7 +99,7 @@ class BacktestingConfig:
     commission_rate: float = 0.001  # 0.1%
     slippage_rate: float = 0.0005   # 0.05%
     
-    # Data settings
+    # Data settings (delegated to unified data processor)
     data_frequency: str = "daily"  # "minute", "hourly", "daily"
     enable_data_validation: bool = True
     fill_missing_data: bool = True
@@ -128,6 +143,40 @@ class BacktestingConfig:
     max_workers: int = 4
     enable_caching: bool = True
     cache_path: str = "backtesting_cache"
+    
+    def __post_init__(self):
+        """Initialize unified configuration if not provided."""
+        if self.unified_config is None and UNIFIED_TOOLS_AVAILABLE:
+            # Create comprehensive config as base for backtesting
+            self.unified_config = create_comprehensive_config()
+            
+            # Apply backtesting-specific settings
+            self.unified_config.architecture_type = ArchitectureType.HYBRID_NEURAL_TREE
+            self.unified_config.optimization_mode = OptimizationMode.REGIME_AWARE
+            self.unified_config.n_regimes = 8
+            
+            # Apply backtesting settings
+            self.unified_config.enable_parallel_processing = self.enable_parallel_processing
+            self.unified_config.max_workers = self.max_workers
+            self.unified_config.output_dir = self.results_path
+            self.unified_config.verbose = self.enable_detailed_logging
+            self.unified_config.save_intermediate_results = self.save_results
+            self.unified_config.save_best_models = True
+            
+            # Apply data settings
+            self.unified_config.enable_data_validation = self.enable_data_validation
+            self.unified_config.enable_feature_engineering = True
+            self.unified_config.enable_data_preprocessing = True
+    
+    def get_unified_config(self) -> UnifiedArchitectureConfig:
+        """Get or create unified configuration."""
+        if self.unified_config is None:
+            if UNIFIED_TOOLS_AVAILABLE:
+                self.__post_init__()  # Initialize if not done
+            else:
+                raise RuntimeError("Unified tools not available and no unified config provided")
+        
+        return self.unified_config
 
 
 @dataclass
@@ -199,6 +248,9 @@ class BacktestingEngine:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize unified tools first
+        self._initialize_unified_tools()
+        
         # Initialize components
         self._initialize_ml_common()
         self._initialize_regime_detection()
@@ -220,6 +272,68 @@ class BacktestingEngine:
         self.logger.info(f"   Initial capital: ${config.initial_capital:,.2f}")
         self.logger.info(f"   Regime detection: {config.enable_regime_detection}")
         self.logger.info(f"   Risk management: {config.enable_risk_management}")
+        self.logger.info(f"   Unified tools available: {UNIFIED_TOOLS_AVAILABLE}")
+    
+    def _initialize_unified_tools(self):
+        """Initialize unified NAS/TAS tools."""
+        if not UNIFIED_TOOLS_AVAILABLE:
+            self.logger.warning("⚠️ Unified NAS/TAS tools not available")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_error_handler = None
+            self.unified_logger = None
+            return
+        
+        try:
+            # Initialize unified data processor
+            data_config = DataProcessingConfig(
+                handle_missing_values=True,
+                missing_value_strategy="median",
+                handle_outliers=True,
+                outlier_method="iqr",
+                enable_scaling=True,
+                scaling_method="standard",
+                enable_feature_engineering=True,
+                validate_data=True,
+                min_data_quality_score=0.8
+            )
+            self.unified_data_processor = UnifiedDataProcessor(data_config)
+            self.logger.info("✅ Unified data processor initialized")
+            
+            # Initialize unified evaluator
+            eval_config = EvaluationConfig(
+                evaluation_type="comprehensive",
+                calculate_performance_metrics=True,
+                calculate_financial_metrics=True,
+                calculate_regime_metrics=True,
+                calculate_risk_metrics=True,
+                financial_validation=True,
+                enable_parallel_evaluation=True,
+                max_workers=self.config.max_workers
+            )
+            self.unified_evaluator = UnifiedEvaluator(eval_config)
+            self.logger.info("✅ Unified evaluator initialized")
+            
+            # Initialize unified error handler
+            self.unified_error_handler = UnifiedErrorHandler()
+            self.logger.info("✅ Unified error handler initialized")
+            
+            # Initialize unified logger
+            logging_config = LoggingConfig(
+                log_level="INFO",
+                enable_file_logging=True,
+                enable_console_logging=True,
+                log_format="detailed"
+            )
+            self.unified_logger = UnifiedLogger(logging_config)
+            self.logger.info("✅ Unified logger initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"Unified tools initialization failed: {e}")
+            self.unified_data_processor = None
+            self.unified_evaluator = None
+            self.unified_error_handler = None
+            self.unified_logger = None
     
     def _initialize_ml_common(self):
         """Initialize ML common utilities."""
@@ -394,9 +508,12 @@ class BacktestingEngine:
             self.logger.info("🔄 Running backtesting loop...")
             backtest_results = self._run_backtesting_loop(data, target_variable)
             
-            # Calculate performance metrics
+            # Calculate performance metrics using unified evaluator if available
             self.logger.info("📈 Calculating performance metrics...")
-            performance_metrics = self._calculate_performance_metrics()
+            if UNIFIED_TOOLS_AVAILABLE and self.unified_evaluator:
+                performance_metrics = await self._calculate_performance_metrics_unified()
+            else:
+                performance_metrics = self._calculate_performance_metrics()
             
             # Analyze regime performance
             regime_analysis = {}
@@ -457,7 +574,7 @@ class BacktestingEngine:
                      market_data: pd.DataFrame,
                      target_variable: str,
                      feature_columns: Optional[List[str]]) -> Dict[str, Any]:
-        """Prepare data for backtesting."""
+        """Prepare data for backtesting using unified data processor."""
         try:
             # Validate data
             if market_data.empty:
@@ -471,34 +588,82 @@ class BacktestingEngine:
             if feature_columns is None:
                 feature_columns = [col for col in market_data.columns if col != target_variable]
             
-            # Check data quality
-            missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
-            data_quality = {
-                'completeness': 1.0 - missing_ratio,
-                'total_records': len(market_data),
-                'total_features': len(feature_columns)
-            }
+            # Use unified data processor if available
+            if UNIFIED_TOOLS_AVAILABLE and self.unified_data_processor:
+                self.logger.info("Using unified data processor for backtesting data preparation")
+                
+                # Separate features and target
+                X = market_data[feature_columns]
+                y = market_data[target_variable]
+                
+                # Process data using unified processor
+                processed_X, processed_y, validation_result = self.unified_data_processor.process_data(X, y, fit=True)
+                
+                # Check validation results
+                if not validation_result.validation_passed:
+                    if validation_result.validation_score < self.config.data_quality_threshold:
+                        return {'success': False, 'error': f'Data quality too low: {validation_result.validation_score:.3f}'}
+                
+                # Reconstruct DataFrame
+                processed_data = pd.DataFrame(processed_X, columns=feature_columns, index=market_data.index)
+                processed_data[target_variable] = processed_y
+                
+                # Extract data quality metrics
+                data_quality = {
+                    'completeness': validation_result.quality_metrics.complete_rows_percentage / 100,
+                    'total_records': len(processed_data),
+                    'total_features': len(feature_columns),
+                    'missing_percentage': validation_result.quality_metrics.missing_value_percentage,
+                    'overall_quality_score': validation_result.validation_score
+                }
+                
+                self.logger.info(f"✅ Unified data processing completed - Quality score: {validation_result.validation_score:.3f}")
+                
+                return {
+                    'success': True,
+                    'data': processed_data,
+                    'data_quality': data_quality,
+                    'validation_result': validation_result
+                }
             
-            if data_quality['completeness'] < self.config.data_quality_threshold:
-                return {'success': False, 'error': f'Data quality too low: {data_quality["completeness"]:.3f}'}
-            
-            # Fill missing data if requested
-            if self.config.fill_missing_data and missing_ratio > 0:
-                market_data = market_data.fillna(method='ffill').fillna(method='bfill')
-                self.logger.info(f"📊 Filled {missing_ratio:.1%} missing data")
-            
-            # Sort by index if datetime
-            if hasattr(market_data.index, 'sort_values'):
-                market_data = market_data.sort_index()
-            
-            return {
-                'success': True,
-                'data': market_data,
-                'data_quality': data_quality
-            }
+            else:
+                # Fallback to original implementation
+                self.logger.info("Using fallback data preparation")
+                return self._fallback_data_preparation(market_data, target_variable, feature_columns)
             
         except Exception as e:
             return {'success': False, 'error': str(e)}
+    
+    def _fallback_data_preparation(self, 
+                                 market_data: pd.DataFrame,
+                                 target_variable: str,
+                                 feature_columns: Optional[List[str]]) -> Dict[str, Any]:
+        """Fallback data preparation when unified tools are not available."""
+        # Check data quality
+        missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
+        data_quality = {
+            'completeness': 1.0 - missing_ratio,
+            'total_records': len(market_data),
+            'total_features': len(feature_columns)
+        }
+        
+        if data_quality['completeness'] < self.config.data_quality_threshold:
+            return {'success': False, 'error': f'Data quality too low: {data_quality["completeness"]:.3f}'}
+        
+        # Fill missing data if requested
+        if self.config.fill_missing_data and missing_ratio > 0:
+            market_data = market_data.fillna(method='ffill').fillna(method='bfill')
+            self.logger.info(f"📊 Filled {missing_ratio:.1%} missing data")
+        
+        # Sort by index if datetime
+        if hasattr(market_data.index, 'sort_values'):
+            market_data = market_data.sort_index()
+        
+        return {
+            'success': True,
+            'data': market_data,
+            'data_quality': data_quality
+        }
     
     def _initialize_backtesting_state(self):
         """Initialize backtesting state."""
@@ -803,8 +968,64 @@ class BacktestingEngine:
         except Exception as e:
             self.logger.warning(f"Capital update failed: {e}")
     
+    async def _calculate_performance_metrics_unified(self) -> Dict[str, float]:
+        """Calculate performance metrics using unified evaluator."""
+        try:
+            if not self.performance_history:
+                return self._get_default_metrics()
+            
+            # Create mock model for evaluation (backtesting results)
+            class BacktestingModel:
+                def __init__(self, performance_history):
+                    self.performance_history = performance_history
+                
+                def predict(self, X):
+                    # Return predictions based on backtesting results
+                    predictions = []
+                    for i, hist in enumerate(self.performance_history):
+                        if i < len(X):
+                            # Extract prediction from history
+                            prediction = hist.get('prediction', 0)
+                            predictions.append(prediction)
+                    return predictions[:len(X)]
+            
+            # Create mock target values from performance history
+            y_true = []
+            y_pred = []
+            for hist in self.performance_history:
+                # Use capital change as target (simplified)
+                capital_change = hist.get('trade_result', {}).get('capital_change', 0)
+                y_true.append(1 if capital_change > 0 else 0)  # Binary: profit/loss
+                y_pred.append(hist.get('prediction', 0))
+            
+            # Create model instance
+            model = BacktestingModel(self.performance_history)
+            
+            # Evaluate using unified evaluator
+            eval_result = await self.unified_evaluator.evaluate_model(model, None, None)
+            
+            # Extract metrics
+            metrics = {
+                'total_return': self._calculate_total_return(),
+                'annualized_return': self._calculate_annualized_return(),
+                'sharpe_ratio': eval_result.metrics.sharpe_ratio if hasattr(eval_result.metrics, 'sharpe_ratio') else 0.0,
+                'max_drawdown': eval_result.metrics.max_drawdown if hasattr(eval_result.metrics, 'max_drawdown') else 0.0,
+                'win_rate': eval_result.metrics.accuracy if hasattr(eval_result.metrics, 'accuracy') else 0.0,
+                'profit_factor': eval_result.metrics.profit_factor if hasattr(eval_result.metrics, 'profit_factor') else 0.0,
+                'var_95': eval_result.risk_metrics.var_95 if hasattr(eval_result, 'risk_metrics') and hasattr(eval_result.risk_metrics, 'var_95') else 0.0,
+                'cvar_95': eval_result.risk_metrics.cvar_95 if hasattr(eval_result, 'risk_metrics') and hasattr(eval_result.risk_metrics, 'cvar_95') else 0.0
+            }
+            
+            self.logger.info("✅ Performance metrics calculated using unified evaluator")
+            return metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Unified performance calculation failed: {e}")
+            # Fallback to legacy calculation
+            return self._calculate_performance_metrics()
+    
     def _calculate_performance_metrics(self) -> Dict[str, float]:
-        """Calculate comprehensive performance metrics."""
+        """Calculate comprehensive performance metrics (legacy method)."""
         try:
             if not self.performance_history:
                 return self._get_default_metrics()

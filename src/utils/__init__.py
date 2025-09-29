@@ -11,9 +11,9 @@ except ImportError:
 
 # Import data utilities
 try:
-    from .data import *
+    from .data import *  # noqa: F401,F403 - re-export convenience
     DATA_AVAILABLE = True
-except ImportError:
+except Exception:  # pragma: no cover - fallback when optional deps fail
     DATA_AVAILABLE = False
 
 # Import config utilities

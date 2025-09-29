@@ -508,15 +508,49 @@ class UnifiedDataProcessor:
     
     def _create_time_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Create time-based features."""
-        # This is a placeholder - implement based on your time column
-        # For example, if you have a datetime column:
-        # if 'datetime' in X.columns:
-        #     X['hour'] = X['datetime'].dt.hour
-        #     X['day_of_week'] = X['datetime'].dt.dayofweek
-        #     X['month'] = X['datetime'].dt.month
-        pass
+        X_engineered = X.copy()
         
-        return X
+        # Look for common datetime column names
+        datetime_columns = []
+        for col in X.columns:
+            if any(keyword in col.lower() for keyword in ['datetime', 'timestamp', 'date', 'time']):
+                try:
+                    # Try to convert to datetime if not already
+                    if not pd.api.types.is_datetime64_any_dtype(X[col]):
+                        X_engineered[col] = pd.to_datetime(X[col], errors='coerce')
+                    datetime_columns.append(col)
+                except (ValueError, TypeError):
+                    continue
+        
+        # Create time features for each datetime column
+        for dt_col in datetime_columns:
+            if pd.api.types.is_datetime64_any_dtype(X_engineered[dt_col]):
+                # Basic time features
+                X_engineered[f'{dt_col}_hour'] = X_engineered[dt_col].dt.hour
+                X_engineered[f'{dt_col}_day_of_week'] = X_engineered[dt_col].dt.dayofweek
+                X_engineered[f'{dt_col}_day_of_month'] = X_engineered[dt_col].dt.day
+                X_engineered[f'{dt_col}_month'] = X_engineered[dt_col].dt.month
+                X_engineered[f'{dt_col}_quarter'] = X_engineered[dt_col].dt.quarter
+                X_engineered[f'{dt_col}_year'] = X_engineered[dt_col].dt.year
+                
+                # Cyclical encoding for periodic features
+                X_engineered[f'{dt_col}_hour_sin'] = np.sin(2 * np.pi * X_engineered[f'{dt_col}_hour'] / 24)
+                X_engineered[f'{dt_col}_hour_cos'] = np.cos(2 * np.pi * X_engineered[f'{dt_col}_hour'] / 24)
+                X_engineered[f'{dt_col}_day_sin'] = np.sin(2 * np.pi * X_engineered[f'{dt_col}_day_of_week'] / 7)
+                X_engineered[f'{dt_col}_day_cos'] = np.cos(2 * np.pi * X_engineered[f'{dt_col}_day_of_week'] / 7)
+                X_engineered[f'{dt_col}_month_sin'] = np.sin(2 * np.pi * X_engineered[f'{dt_col}_month'] / 12)
+                X_engineered[f'{dt_col}_month_cos'] = np.cos(2 * np.pi * X_engineered[f'{dt_col}_month'] / 12)
+                
+                # Business day features
+                X_engineered[f'{dt_col}_is_weekend'] = (X_engineered[f'{dt_col}_day_of_week'] >= 5).astype(int)
+                X_engineered[f'{dt_col}_is_month_start'] = X_engineered[dt_col].dt.is_month_start.astype(int)
+                X_engineered[f'{dt_col}_is_month_end'] = X_engineered[dt_col].dt.is_month_end.astype(int)
+                X_engineered[f'{dt_col}_is_quarter_start'] = X_engineered[dt_col].dt.is_quarter_start.astype(int)
+                X_engineered[f'{dt_col}_is_quarter_end'] = X_engineered[dt_col].dt.is_quarter_end.astype(int)
+                X_engineered[f'{dt_col}_is_year_start'] = X_engineered[dt_col].dt.is_year_start.astype(int)
+                X_engineered[f'{dt_col}_is_year_end'] = X_engineered[dt_col].dt.is_year_end.astype(int)
+        
+        return X_engineered
     
     def _create_interaction_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Create interaction features between numerical columns."""

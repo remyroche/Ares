@@ -21,7 +21,7 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
-from ..config.base_config import UnifiedArchitectureConfig
+from ..config.base_config import UnifiedArchitectureConfig, ArchitectureType
 from ..data.data_processor import UnifiedDataProcessor
 from ..evaluation.unified_evaluator import UnifiedEvaluator
 from ..results.result_manager import UnifiedArchitectureResult, ArchitectureResult, ResultManager
@@ -481,10 +481,10 @@ class UnifiedTrainingOrchestrator:
             # In practice, you would implement the actual training logic here
             # based on the architecture type and configuration
             
-            if architecture.architecture_type.value == "neural":
+            if architecture.architecture_type == ArchitectureType.NEURAL:
                 # Train neural network
                 model = self._train_neural_model(architecture, data, target)
-            elif architecture.architecture_type.value == "tree":
+            elif architecture.architecture_type == ArchitectureType.TREE:
                 # Train tree model
                 model = self._train_tree_model(architecture, data, target)
             else:
@@ -503,43 +503,117 @@ class UnifiedTrainingOrchestrator:
         data: np.ndarray,
         target: Optional[np.ndarray]
     ) -> Any:
-        """Train neural network model."""
-        # Placeholder implementation
-        # In practice, you would use frameworks like TensorFlow, PyTorch, etc.
+        """Train neural network model with architecture-specific configuration."""
         from sklearn.neural_network import MLPRegressor, MLPClassifier
+        from sklearn.preprocessing import StandardScaler
         
         config = architecture.architecture_config
         
+        # Extract architecture-specific parameters
+        layers = config.get("layers", [data.shape[1], 64, 32, 1] if target is not None else [data.shape[1], 64, 32])
+        activation = config.get("activation", "relu")
+        optimizer = config.get("optimizer", "adam")
+        learning_rate = config.get("learning_rate", 0.001)
+        batch_size = config.get("batch_size", 200)
+        max_iter = config.get("max_iter", 1000)
+        early_stopping = config.get("early_stopping", True)
+        validation_fraction = config.get("validation_fraction", 0.1)
+        
+        # Scale data for neural networks
+        scaler = StandardScaler()
+        data_scaled = scaler.fit_transform(data)
+        
+        # Determine problem type and create appropriate model
         if target is not None:
             if len(np.unique(target)) == 2:
                 # Binary classification
                 model = MLPClassifier(
-                    hidden_layer_sizes=tuple(config.get("layers", [64, 32])),
-                    activation=config.get("activation", "relu"),
-                    max_iter=1000,
-                    random_state=42
+                    hidden_layer_sizes=tuple(layers[1:-1]),  # Exclude input and output layers
+                    activation=activation,
+                    solver=optimizer,
+                    learning_rate_init=learning_rate,
+                    batch_size=batch_size,
+                    max_iter=max_iter,
+                    early_stopping=early_stopping,
+                    validation_fraction=validation_fraction,
+                    random_state=42,
+                    verbose=False
                 )
             else:
-                # Regression
-                model = MLPRegressor(
-                    hidden_layer_sizes=tuple(config.get("layers", [64, 32])),
-                    activation=config.get("activation", "relu"),
-                    max_iter=1000,
-                    random_state=42
-                )
+                # Multi-class classification or regression
+                if len(np.unique(target)) <= 10:  # Multi-class classification
+                    model = MLPClassifier(
+                        hidden_layer_sizes=tuple(layers[1:-1]),
+                        activation=activation,
+                        solver=optimizer,
+                        learning_rate_init=learning_rate,
+                        batch_size=batch_size,
+                        max_iter=max_iter,
+                        early_stopping=early_stopping,
+                        validation_fraction=validation_fraction,
+                        random_state=42,
+                        verbose=False
+                    )
+                else:
+                    # Regression
+                    model = MLPRegressor(
+                        hidden_layer_sizes=tuple(layers[1:-1]),
+                        activation=activation,
+                        solver=optimizer,
+                        learning_rate_init=learning_rate,
+                        batch_size=batch_size,
+                        max_iter=max_iter,
+                        early_stopping=early_stopping,
+                        validation_fraction=validation_fraction,
+                        random_state=42,
+                        verbose=False
+                    )
         else:
-            # Unsupervised
+            # Unsupervised learning - use autoencoder-like approach
             model = MLPRegressor(
-                hidden_layer_sizes=tuple(config.get("layers", [64, 32])),
-                activation=config.get("activation", "relu"),
-                max_iter=1000,
-                random_state=42
+                hidden_layer_sizes=tuple(layers[1:-1]),
+                activation=activation,
+                solver=optimizer,
+                learning_rate_init=learning_rate,
+                batch_size=batch_size,
+                max_iter=max_iter,
+                early_stopping=early_stopping,
+                validation_fraction=validation_fraction,
+                random_state=42,
+                verbose=False
             )
         
+        # Train the model
+        try:
+            if target is not None:
+                model.fit(data_scaled, target)
+            else:
+                # For unsupervised learning, reconstruct the input
+                model.fit(data_scaled, data_scaled)
+            
+            # Store the scaler with the model for later use
+            model.scaler = scaler
+            
+            tprint_success(f"Neural model trained: {len(layers)} layers, {activation} activation")
+            return model
+            
+        except Exception as e:
+            tprint_error(f"Error training neural model: {e}")
+            # Fallback to simpler model
+            return self._train_fallback_neural_model(data, target)
+    
+    def _train_fallback_neural_model(self, data: np.ndarray, target: Optional[np.ndarray]) -> Any:
+        """Fallback neural model with simpler configuration."""
+        from sklearn.neural_network import MLPRegressor, MLPClassifier
+        
         if target is not None:
+            if len(np.unique(target)) == 2:
+                model = MLPClassifier(hidden_layer_sizes=(50,), max_iter=500, random_state=42)
+            else:
+                model = MLPRegressor(hidden_layer_sizes=(50,), max_iter=500, random_state=42)
             model.fit(data, target)
         else:
-            # For unsupervised learning, you might use autoencoder or similar
+            model = MLPRegressor(hidden_layer_sizes=(50,), max_iter=500, random_state=42)
             model.fit(data, data)
         
         return model
@@ -550,39 +624,151 @@ class UnifiedTrainingOrchestrator:
         data: np.ndarray,
         target: Optional[np.ndarray]
     ) -> Any:
-        """Train tree model."""
-        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+        """Train tree model with architecture-specific configuration."""
+        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
+        from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
         
         config = architecture.architecture_config
         
+        # Extract architecture-specific parameters
+        n_estimators = config.get("n_estimators", 100)
+        max_depth = config.get("max_depth", 10)
+        min_samples_split = config.get("min_samples_split", 2)
+        min_samples_leaf = config.get("min_samples_leaf", 1)
+        max_features = config.get("max_features", "sqrt")
+        bootstrap = config.get("bootstrap", True)
+        random_state = config.get("random_state", 42)
+        tree_type = config.get("tree_type", "random_forest")  # random_forest, gradient_boosting, decision_tree
+        
+        # Determine problem type and create appropriate model
         if target is not None:
             if len(np.unique(target)) == 2:
                 # Binary classification
-                model = RandomForestClassifier(
-                    n_estimators=config.get("n_estimators", 100),
-                    max_depth=config.get("max_depth", 10),
-                    random_state=config.get("random_state", 42)
-                )
+                if tree_type == "gradient_boosting":
+                    model = GradientBoostingClassifier(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        random_state=random_state,
+                        verbose=0
+                    )
+                elif tree_type == "decision_tree":
+                    model = DecisionTreeClassifier(
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        random_state=random_state
+                    )
+                else:  # random_forest
+                    model = RandomForestClassifier(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        max_features=max_features,
+                        bootstrap=bootstrap,
+                        random_state=random_state,
+                        n_jobs=-1
+                    )
             else:
-                # Regression
-                model = RandomForestRegressor(
-                    n_estimators=config.get("n_estimators", 100),
-                    max_depth=config.get("max_depth", 10),
-                    random_state=config.get("random_state", 42)
-                )
+                # Multi-class classification or regression
+                if len(np.unique(target)) <= 10:  # Multi-class classification
+                    if tree_type == "gradient_boosting":
+                        model = GradientBoostingClassifier(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            random_state=random_state,
+                            verbose=0
+                        )
+                    elif tree_type == "decision_tree":
+                        model = DecisionTreeClassifier(
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            random_state=random_state
+                        )
+                    else:  # random_forest
+                        model = RandomForestClassifier(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            max_features=max_features,
+                            bootstrap=bootstrap,
+                            random_state=random_state,
+                            n_jobs=-1
+                        )
+                else:
+                    # Regression
+                    if tree_type == "gradient_boosting":
+                        model = GradientBoostingRegressor(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            random_state=random_state,
+                            verbose=0
+                        )
+                    elif tree_type == "decision_tree":
+                        model = DecisionTreeRegressor(
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            random_state=random_state
+                        )
+                    else:  # random_forest
+                        model = RandomForestRegressor(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            max_features=max_features,
+                            bootstrap=bootstrap,
+                            random_state=random_state,
+                            n_jobs=-1
+                        )
         else:
-            # Unsupervised
-            model = RandomForestRegressor(
-                n_estimators=config.get("n_estimators", 100),
-                max_depth=config.get("max_depth", 10),
-                random_state=config.get("random_state", 42)
+            # Unsupervised learning - use isolation forest
+            from sklearn.ensemble import IsolationForest
+            model = IsolationForest(
+                n_estimators=n_estimators,
+                max_samples=min(256, len(data)),
+                contamination=0.1,
+                random_state=random_state
             )
         
+        # Train the model
+        try:
+            if target is not None:
+                model.fit(data, target)
+            else:
+                # For unsupervised learning
+                model.fit(data)
+            
+            tprint_success(f"Tree model trained: {tree_type}, {n_estimators} estimators, max_depth={max_depth}")
+            return model
+            
+        except Exception as e:
+            tprint_error(f"Error training tree model: {e}")
+            # Fallback to simpler model
+            return self._train_fallback_tree_model(data, target)
+    
+    def _train_fallback_tree_model(self, data: np.ndarray, target: Optional[np.ndarray]) -> Any:
+        """Fallback tree model with simpler configuration."""
+        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+        
         if target is not None:
+            if len(np.unique(target)) == 2:
+                model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+            else:
+                model = RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)
             model.fit(data, target)
         else:
-            # For unsupervised learning, you might use isolation forest or similar
-            model.fit(data)
+            model = RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)
+            model.fit(data, data)
         
         return model
     

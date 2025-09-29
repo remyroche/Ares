@@ -296,8 +296,8 @@ class UnifiedHybridPipeline:
     
     def _create_hybrid_architectures(
         self,
-        architectures: List
-    ) -> List:
+        architectures: List[ArchitectureResult]
+    ) -> List[ArchitectureResult]:
         """Create hybrid architectures combining neural and tree components."""
         from .results.result_manager import ArchitectureResult
         from .config.base_config import ArchitectureType

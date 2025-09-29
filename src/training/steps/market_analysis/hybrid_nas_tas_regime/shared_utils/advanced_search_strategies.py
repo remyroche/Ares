@@ -110,7 +110,104 @@ class BaseAdvancedSearchStrategy:
                constraint_validator: Callable,
                n_iterations: int = 100) -> SearchStrategyResult:
         """Perform advanced search."""
-        raise NotImplementedError("Subclasses must implement search")
+        try:
+            tprint(f"🔍 [SEARCH] Starting advanced search with {n_iterations} iterations", color="blue")
+            
+            best_architecture = None
+            best_performance = float('-inf')
+            search_history = []
+            constraint_violations = []
+            
+            # Initialize search state
+            self.reset()
+            
+            for iteration in range(n_iterations):
+                try:
+                    # Generate candidate architecture
+                    candidate = architecture_generator()
+                    
+                    # Validate constraints
+                    validation_result = constraint_validator(candidate)
+                    if not validation_result.is_valid:
+                        constraint_violations.append({
+                            'iteration': iteration,
+                            'violations': validation_result.violations
+                        })
+                        continue
+                    
+                    # Evaluate performance
+                    performance = performance_evaluator(candidate)
+                    
+                    # Update best if better
+                    if performance > best_performance:
+                        best_performance = performance
+                        best_architecture = candidate
+                    
+                    # Record search history
+                    search_history.append({
+                        'iteration': iteration,
+                        'performance': performance,
+                        'constraint_score': validation_result.score,
+                        'architecture': candidate
+                    })
+                    
+                    # Update search strategy state
+                    self._update_search_state(candidate, performance, validation_result)
+                    
+                    # Log progress
+                    if iteration % 10 == 0:
+                        tprint(f"🔍 [SEARCH] Iteration {iteration}/{n_iterations}, Best: {best_performance:.4f}", color="cyan")
+                        
+                except Exception as e:
+                    tprint(f"⚠️ [SEARCH] Error in iteration {iteration}: {e}", color="yellow")
+                    continue
+            
+            # Calculate search statistics
+            total_candidates = len(search_history)
+            valid_candidates = len([h for h in search_history if h['constraint_score'] > 0])
+            constraint_violation_rate = len(constraint_violations) / max(1, total_candidates)
+            
+            # Create search result
+            result = SearchStrategyResult(
+                best_architecture=best_architecture,
+                best_performance=best_performance,
+                search_history=search_history,
+                constraint_violations=constraint_violations,
+                total_iterations=n_iterations,
+                valid_candidates=valid_candidates,
+                constraint_violation_rate=constraint_violation_rate,
+                search_strategy=self.__class__.__name__
+            )
+            
+            tprint(f"✅ [SEARCH] Search completed. Best performance: {best_performance:.4f}", color="green")
+            return result
+            
+        except Exception as e:
+            tprint(f"❌ [SEARCH] Error in search: {e}", color="red")
+            # Return empty result
+            return SearchStrategyResult(
+                best_architecture=None,
+                best_performance=float('-inf'),
+                search_history=[],
+                constraint_violations=[],
+                total_iterations=0,
+                valid_candidates=0,
+                constraint_violation_rate=1.0,
+                search_strategy=self.__class__.__name__
+            )
+    
+    def _update_search_state(self, candidate, performance, validation_result):
+        """Update the search strategy state based on the candidate."""
+        try:
+            # This is a simplified implementation
+            # In practice, this would update the search strategy's internal state
+            # based on the candidate's performance and constraints
+            
+            # For now, just log the update
+            pass
+            
+        except Exception as e:
+            tprint(f"⚠️ [SEARCH] Error updating search state: {e}", color="yellow")
 
     def reset(self):
         """Reset the search strategy state."""

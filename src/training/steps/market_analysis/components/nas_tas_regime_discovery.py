@@ -41,16 +41,29 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the hybrid NAS-TAS regime discovery component."""
-        tprint_info("🚀 Initializing Hybrid NAS-TAS Regime Discovery Component")
-        tprint_debug(f"Configuration: {config}")
+        tprint_info("🚀 [INIT] Initializing Hybrid NAS-TAS Regime Discovery Component")
+        tprint_debug(f"🔧 [INIT] Configuration object type: {type(config)}")
+        tprint_debug(f"🔧 [INIT] Configuration attributes: {dir(config) if config else 'None'}")
+        
+        if config:
+            tprint_debug(f"🔧 [INIT] Config symbol: {getattr(config, 'symbol', 'Not set')}")
+            tprint_debug(f"🔧 [INIT] Config timeframe: {getattr(config, 'timeframe', 'Not set')}")
+            tprint_debug(f"🔧 [INIT] Config start_date: {getattr(config, 'start_date', 'Not set')}")
+            tprint_debug(f"🔧 [INIT] Config end_date: {getattr(config, 'end_date', 'Not set')}")
         
         super().__init__(config)
+        tprint_debug("🔧 [INIT] Base component initialization completed")
+        
         # Use standardized logging
         self.logger = get_logger('HybridNASTASRegimeDiscovery')
-        self._resources_to_cleanup = []
+        tprint_debug("🔧 [INIT] Logger initialized successfully")
         
-        tprint_success("✅ Hybrid NAS-TAS Regime Discovery Component initialized")
-        tprint_info("🔧 Component ready for regime discovery")
+        self._resources_to_cleanup = []
+        tprint_debug("🔧 [INIT] Resource cleanup list initialized")
+        
+        tprint_success("✅ [INIT] Hybrid NAS-TAS Regime Discovery Component initialized")
+        tprint_info("🔧 [INIT] Component ready for regime discovery")
+        log_success("Hybrid NAS-TAS Regime Discovery Component initialization completed")
     
     def __enter__(self):
         """Context manager entry."""
@@ -93,92 +106,191 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """
         execution_start_time = time.time()
         tprint("🚀 [HYBRID_NAS_TAS] Starting Hybrid NAS-TAS Regime Discovery", color="cyan", bold=True)
+        tprint_debug(f"🔧 [EXEC] Execution started at: {datetime.now().isoformat()}")
+        tprint_debug(f"🔧 [EXEC] Data type: {type(data)}")
+        tprint_debug(f"🔧 [EXEC] Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else 'Empty'}")
+        tprint_debug(f"🔧 [EXEC] Pipeline state: {pipeline_state}")
+        
         log_info('🚀 Starting Hybrid NAS-TAS Regime Discovery')
+        log_debug(f"Execution parameters - Data type: {type(data)}, Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else 'Empty'}")
         
         try:
             # Resolve symbol from config or pipeline state
             tprint("🔍 [HYBRID_NAS_TAS] Resolving symbol configuration", color="yellow")
+            tprint_debug(f"🔧 [SYMBOL] Config symbol: {getattr(self.config, 'symbol', None)}")
+            tprint_debug(f"🔧 [SYMBOL] Pipeline state symbol: {pipeline_state.get('symbol', 'Not found')}")
+            
             symbol = getattr(self.config, 'symbol', None)
+            tprint_debug(f"🔧 [SYMBOL] Initial symbol from config: {symbol}")
+            
             if symbol is None and 'symbol' in pipeline_state:
                 symbol = pipeline_state['symbol']
+                tprint_debug(f"🔧 [SYMBOL] Symbol from pipeline state: {symbol}")
+            
             if symbol is None:
                 tprint("❌ [HYBRID_NAS_TAS] Symbol must be provided in config or pipeline state", color="red", bold=True)
+                tprint_debug(f"🔧 [SYMBOL] Config attributes: {dir(self.config) if self.config else 'None'}")
+                tprint_debug(f"🔧 [SYMBOL] Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else 'Empty'}")
+                log_error("Symbol resolution failed - no symbol found in config or pipeline state")
                 raise ValueError("Symbol must be provided in config or pipeline state")
+            
             tprint(f"✅ [HYBRID_NAS_TAS] Symbol resolved: {symbol}", color="green")
+            log_info(f"Symbol successfully resolved: {symbol}")
                 
             # Resolve timeframe from config or pipeline state
             tprint("🔍 [HYBRID_NAS_TAS] Resolving timeframe configuration", color="yellow")
+            tprint_debug(f"🔧 [TIMEFRAME] Config timeframe: {getattr(self.config, 'timeframe', None)}")
+            tprint_debug(f"🔧 [TIMEFRAME] Pipeline state timeframe: {pipeline_state.get('timeframe', 'Not found')}")
+            
             timeframe = getattr(self.config, 'timeframe', None)
+            tprint_debug(f"🔧 [TIMEFRAME] Initial timeframe from config: {timeframe}")
+            
             if timeframe is None and 'timeframe' in pipeline_state:
                 timeframe = pipeline_state['timeframe']
+                tprint_debug(f"🔧 [TIMEFRAME] Timeframe from pipeline state: {timeframe}")
+            
             if timeframe is None:
                 timeframe = '1h'  # Default timeframe for regime discovery
                 tprint(f"⚠️ [HYBRID_NAS_TAS] Using default timeframe: {timeframe}", color="yellow")
+                tprint_debug(f"🔧 [TIMEFRAME] No timeframe specified, using default: {timeframe}")
+                log_warning(f"Using default timeframe: {timeframe}")
+            
             tprint(f"✅ [HYBRID_NAS_TAS] Timeframe resolved: {timeframe}", color="green")
+            log_info(f"Timeframe successfully resolved: {timeframe}")
 
             # Get market data
             tprint("📊 [HYBRID_NAS_TAS] Loading market data", color="blue")
+            tprint_debug(f"🔧 [DATA] Input data type: {type(data)}")
+            tprint_debug(f"🔧 [DATA] Input data shape: {getattr(data, 'shape', 'No shape attribute') if hasattr(data, 'shape') else 'Not a DataFrame'}")
+            tprint_debug(f"🔧 [DATA] Symbol for data loading: {symbol}")
+            
             market_data = await self._load_market_data(data, symbol)
+            tprint_debug(f"🔧 [DATA] Market data loaded - type: {type(market_data)}")
+            tprint_debug(f"🔧 [DATA] Market data shape: {market_data.shape if market_data is not None else 'None'}")
+            tprint_debug(f"🔧 [DATA] Market data columns: {list(market_data.columns) if market_data is not None and not market_data.empty else 'Empty or None'}")
+            
             if market_data is None or market_data.empty:
                 tprint(f"❌ [HYBRID_NAS_TAS] No market data available for symbol: {symbol}", color="red", bold=True)
+                tprint_debug(f"🔧 [DATA] Market data is None: {market_data is None}")
+                tprint_debug(f"🔧 [DATA] Market data is empty: {market_data.empty if market_data is not None else 'N/A'}")
+                log_error(f"No market data available for symbol: {symbol}")
                 raise ValueError(f"No market data available for hybrid regime discovery for symbol: {symbol}")
+            
             tprint(f"✅ [HYBRID_NAS_TAS] Market data loaded: {len(market_data)} rows", color="green")
+            log_info(f"Market data successfully loaded: {len(market_data)} rows")
+            log_data_info("Market data", market_data, f"Symbol: {symbol}, Timeframe: {timeframe}")
             
             # Configure hybrid regime detection
             tprint("⚙️ [HYBRID_NAS_TAS] Creating hybrid configuration", color="magenta")
+            tprint_debug(f"🔧 [CONFIG] Market data size: {len(market_data)}")
+            tprint_debug(f"🔧 [CONFIG] Pipeline state for config: {pipeline_state}")
+            
             hybrid_config = self._create_hybrid_config(market_data, pipeline_state)
+            tprint_debug(f"🔧 [CONFIG] Hybrid config keys: {list(hybrid_config.keys())}")
+            tprint_debug(f"🔧 [CONFIG] NAS config: {hybrid_config.get('nas_config', {})}")
+            tprint_debug(f"🔧 [CONFIG] TAS config: {hybrid_config.get('tas_config', {})}")
+            
             tprint("✅ [HYBRID_NAS_TAS] Hybrid configuration created successfully", color="green")
+            log_success("Hybrid configuration created successfully")
             
             # Perform hybrid regime discovery
             tprint("🧠 [HYBRID_NAS_TAS] Starting hybrid regime discovery process", color="cyan", bold=True)
+            tprint_debug(f"🔧 [DISCOVERY] Market data shape: {market_data.shape}")
+            tprint_debug(f"🔧 [DISCOVERY] Hybrid config: {hybrid_config}")
+            
             discovery_start_time = time.time()
+            tprint_debug(f"🔧 [DISCOVERY] Discovery start time: {discovery_start_time}")
+            
             hybrid_result = await self._perform_hybrid_regime_discovery(market_data, hybrid_config)
+            
             discovery_time = time.time() - discovery_start_time
             tprint(f"⏱️ [HYBRID_NAS_TAS] Discovery process completed in {discovery_time:.2f}s", color="blue")
+            tprint_debug(f"🔧 [DISCOVERY] Discovery result keys: {list(hybrid_result.keys()) if isinstance(hybrid_result, dict) else 'Not a dict'}")
+            tprint_debug(f"🔧 [DISCOVERY] Discovery success: {hybrid_result.get('success', 'Not specified')}")
+            
+            log_performance(f"Hybrid regime discovery completed in {discovery_time:.2f}s")
             
             if not hybrid_result.get('success', False):
-                tprint(f"❌ [HYBRID_NAS_TAS] Hybrid regime discovery failed: {hybrid_result.get('error', 'Unknown error')}", color="red", bold=True)
-                raise ValueError(f"Hybrid regime discovery failed: {hybrid_result.get('error', 'Unknown error')}")
+                error_msg = hybrid_result.get('error', 'Unknown error')
+                tprint(f"❌ [HYBRID_NAS_TAS] Hybrid regime discovery failed: {error_msg}", color="red", bold=True)
+                tprint_debug(f"🔧 [ERROR] Full hybrid result: {hybrid_result}")
+                tprint_debug(f"🔧 [ERROR] Error details: {error_msg}")
+                log_error(f"Hybrid regime discovery failed: {error_msg}")
+                raise ValueError(f"Hybrid regime discovery failed: {error_msg}")
 
             # Extract regime data
             tprint("📈 [HYBRID_NAS_TAS] Extracting regime predictions", color="yellow")
+            tprint_debug(f"🔧 [PREDICTIONS] Hybrid result keys: {list(hybrid_result.keys())}")
+            tprint_debug(f"🔧 [PREDICTIONS] Looking for consolidated_assignments in result")
 
             # Handle both old and new hybrid analysis formats
             if 'consolidated_assignments' in hybrid_result:
                 # Legacy format
                 regime_predictions = hybrid_result['consolidated_assignments']
+                tprint_debug(f"🔧 [PREDICTIONS] Using legacy format - consolidated_assignments")
             elif 'hybrid_labels' in hybrid_result:
                 # New format
                 regime_predictions = hybrid_result['hybrid_labels']
+                tprint_debug(f"🔧 [PREDICTIONS] Using new format - hybrid_labels")
             else:
                 # Fallback to direct predictions
+                tprint_debug(f"🔧 [PREDICTIONS] Using fallback format - direct predictions")
                 tas_predictions = hybrid_result.get('tas_contribution', {}).get('regime_predictions', [])
                 nas_predictions = hybrid_result.get('nas_contribution', {}).get('regime_predictions', [])
+                tprint_debug(f"🔧 [PREDICTIONS] TAS predictions: {len(tas_predictions)}, NAS predictions: {len(nas_predictions)}")
+                
                 if len(nas_predictions) > 0:
                     regime_predictions = nas_predictions
+                    tprint_debug(f"🔧 [PREDICTIONS] Using NAS predictions")
                 elif len(tas_predictions) > 0:
                     regime_predictions = tas_predictions
+                    tprint_debug(f"🔧 [PREDICTIONS] Using TAS predictions")
                 else:
                     regime_predictions = []
+                    tprint_debug(f"🔧 [PREDICTIONS] No predictions available")
+
+            tprint_debug(f"🔧 [PREDICTIONS] Regime predictions length: {len(regime_predictions)}")
+            tprint_debug(f"🔧 [PREDICTIONS] First 10 predictions: {regime_predictions[:10] if regime_predictions else 'Empty'}")
 
             if len(regime_predictions) == 0:
                 tprint("❌ [HYBRID_NAS_TAS] No regime predictions returned from hybrid discovery", color="red", bold=True)
+                tprint_debug(f"🔧 [PREDICTIONS] Hybrid result content: {hybrid_result}")
+                log_error("No regime predictions returned from hybrid discovery")
                 raise ValueError("No regime predictions returned from hybrid discovery")
             
             unique_regimes = len(set(regime_predictions))
             tprint(f"🎯 [HYBRID_NAS_TAS] Found {unique_regimes} unique regimes in {len(regime_predictions)} predictions", color="green")
+            tprint_debug(f"🔧 [PREDICTIONS] Unique regime IDs: {sorted(set(regime_predictions))}")
+            tprint_debug(f"🔧 [PREDICTIONS] Regime distribution: {dict(zip(*np.unique(regime_predictions, return_counts=True)))}")
+            
+            log_success(f"Regime predictions extracted: {unique_regimes} unique regimes, {len(regime_predictions)} total predictions")
             
             # Calculate regime metrics
             tprint("📊 [HYBRID_NAS_TAS] Calculating hybrid regime metrics", color="blue")
+            tprint_debug(f"🔧 [METRICS] Regime predictions for metrics: {len(regime_predictions)} predictions")
+            tprint_debug(f"🔧 [METRICS] Hybrid result for metrics: {list(hybrid_result.keys())}")
+            
             regime_metrics = self._calculate_hybrid_regime_metrics(regime_predictions, hybrid_result)
+            tprint_debug(f"🔧 [METRICS] Calculated metrics keys: {list(regime_metrics.keys()) if isinstance(regime_metrics, dict) else 'Not a dict'}")
+            tprint_debug(f"🔧 [METRICS] Regime metrics: {regime_metrics}")
+            
             tprint("✅ [HYBRID_NAS_TAS] Regime metrics calculated", color="green")
+            log_success("Hybrid regime metrics calculated successfully")
             
             # Create regime characteristics for clustering
             tprint("🔬 [HYBRID_NAS_TAS] Creating regime characteristics for clustering", color="magenta")
+            tprint_debug(f"🔧 [CHARACTERISTICS] Market data shape: {market_data.shape}")
+            tprint_debug(f"🔧 [CHARACTERISTICS] Regime predictions: {len(regime_predictions)} predictions")
+            tprint_debug(f"🔧 [CHARACTERISTICS] Hybrid result keys: {list(hybrid_result.keys())}")
+            
             regime_characteristics = self._create_hybrid_regime_characteristics(
                 market_data, regime_predictions, hybrid_result
             )
+            tprint_debug(f"🔧 [CHARACTERISTICS] Created characteristics for {len(regime_characteristics)} regimes")
+            tprint_debug(f"🔧 [CHARACTERISTICS] Characteristics keys: {list(regime_characteristics.keys())}")
+            
             tprint("✅ [HYBRID_NAS_TAS] Regime characteristics created", color="green")
+            log_success(f"Regime characteristics created for {len(regime_characteristics)} regimes")
 
             # Create single consolidated artifact
             tprint("📦 [HYBRID_NAS_TAS] Creating consolidated artifacts", color="blue")
@@ -249,7 +361,14 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [HYBRID_NAS_TAS] Final Results: {unique_regimes} regimes, {len(regime_predictions)} predictions", color="cyan")
             tprint(f"⏱️ [HYBRID_NAS_TAS] Performance: Discovery={discovery_time:.2f}s, Total={total_execution_time:.2f}s", color="blue")
             
+            tprint_debug(f"🔧 [SUCCESS] Total execution time: {total_execution_time:.2f}s")
+            tprint_debug(f"🔧 [SUCCESS] Discovery time: {discovery_time:.2f}s")
+            tprint_debug(f"🔧 [SUCCESS] Unique regimes: {unique_regimes}")
+            tprint_debug(f"🔧 [SUCCESS] Total predictions: {len(regime_predictions)}")
+            tprint_debug(f"🔧 [SUCCESS] Artifacts created: {len(artifacts)}")
+            
             log_success(f'Hybrid NAS-TAS Regime Discovery completed: {unique_regimes} consolidated regimes discovered')
+            log_performance(f"Total execution time: {total_execution_time:.2f}s, Discovery time: {discovery_time:.2f}s")
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -270,10 +389,20 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             total_execution_time = time.time() - execution_start_time
             tprint(f"💥 [HYBRID_NAS_TAS] FAILURE: Discovery failed after {total_execution_time:.2f}s", color="red", bold=True)
             tprint(f"❌ [HYBRID_NAS_TAS] Error: {str(e)}", color="red")
+            
+            tprint_debug(f"🔧 [ERROR] Exception type: {type(e).__name__}")
+            tprint_debug(f"🔧 [ERROR] Exception message: {str(e)}")
+            tprint_debug(f"🔧 [ERROR] Execution time before failure: {total_execution_time:.2f}s")
+            
             log_error(f'Hybrid NAS-TAS Regime Discovery failed: {e}')
+            
             import traceback
-            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            error_traceback = traceback.format_exc()
+            tprint_debug(f"🔧 [ERROR] Full traceback: {error_traceback}")
+            
+            self.logger.error(f'❌ Error details: {error_traceback}')
             tprint(f"🔍 [HYBRID_NAS_TAS] Full traceback logged to system logger", color="yellow")
+            
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -283,9 +412,14 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     def _create_hybrid_config(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create hybrid configuration based on data and pipeline state."""
         try:
+            tprint_debug("🔧 [CONFIG] Starting hybrid configuration creation")
+            tprint_debug(f"🔧 [CONFIG] Market data shape: {market_data.shape}")
+            tprint_debug(f"🔧 [CONFIG] Pipeline state: {pipeline_state}")
+            
             # Calculate optimal parameters based on data size
             data_size = len(market_data)
             tprint(f"🔧 [HYBRID_NAS_TAS] Analyzing data size: {data_size} rows", color="blue")
+            tprint_debug(f"🔧 [CONFIG] Data size analysis: {data_size} rows")
             
             # Determine configuration based on data characteristics
             if data_size < 1000:
@@ -295,6 +429,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tree_depth = 4
                 n_estimators = 100
                 tprint("📊 [HYBRID_NAS_TAS] Using small dataset configuration", color="yellow")
+                tprint_debug(f"🔧 [CONFIG] Small dataset config: {n_regimes} regimes, pop={population_size}, gen={generations}")
             elif data_size < 5000:
                 n_regimes = 8
                 population_size = 50
@@ -302,6 +437,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tree_depth = 6
                 n_estimators = 500
                 tprint("📊 [HYBRID_NAS_TAS] Using medium dataset configuration", color="yellow")
+                tprint_debug(f"🔧 [CONFIG] Medium dataset config: {n_regimes} regimes, pop={population_size}, gen={generations}")
             else:
                 n_regimes = 10
                 population_size = 100
@@ -309,6 +445,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tree_depth = 8
                 n_estimators = 1000
                 tprint("📊 [HYBRID_NAS_TAS] Using large dataset configuration", color="yellow")
+                tprint_debug(f"🔧 [CONFIG] Large dataset config: {n_regimes} regimes, pop={population_size}, gen={generations}")
             
             hybrid_config = {
                 # Hybrid orchestration settings
@@ -358,11 +495,18 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             }
             
             tprint(f"⚙️ [HYBRID_NAS_TAS] Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})", color="cyan")
+            tprint_debug(f"🔧 [CONFIG] Final hybrid config keys: {list(hybrid_config.keys())}")
+            tprint_debug(f"🔧 [CONFIG] NAS config: {hybrid_config.get('nas_config', {})}")
+            tprint_debug(f"🔧 [CONFIG] TAS config: {hybrid_config.get('tas_config', {})}")
+            
             log_info(f"📊 Hybrid Configuration: {n_regimes} regimes, NAS(pop={population_size}, gen={generations}), TAS(depth={tree_depth}, est={n_estimators})")
+            log_success("Hybrid configuration created successfully")
             return hybrid_config
             
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Config creation failed: {e}, using defaults", color="yellow")
+            tprint_debug(f"🔧 [CONFIG] Config creation error: {str(e)}")
+            tprint_debug(f"🔧 [CONFIG] Using fallback default configuration")
             log_warning(f"Failed to create hybrid config: {e}, using defaults")
             return {
                 'combination_strategy': 'ensemble',

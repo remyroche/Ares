@@ -38,7 +38,8 @@ class DataStreamingManager:
         """
         if self._initialized:
             return
-            
+        
+        start_time = time.time()
         self.logger = system_logger.getChild('DataStreamingManager')
         self.chunk_size = chunk_size
         self.memory_threshold = memory_threshold
@@ -48,6 +49,14 @@ class DataStreamingManager:
         self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
         self.logger.info(f'🚀 DataStreamingManager initialized (singleton): chunk_size={chunk_size}, memory_threshold={memory_threshold}')
         self._initialized = True
+        
+        # Add timing information
+        duration = time.time() - start_time
+        try:
+            from src.utils.tprint import tprint_performance
+            tprint_performance("DataStreamingManager initialization", duration)
+        except ImportError:
+            self.logger.info(f"⏱️ DataStreamingManager initialized in {duration:.3f}s")
 
 
 class DataTransformer:

@@ -170,7 +170,8 @@ class DataQualityFramework:
         """Initialize data quality framework (only once due to singleton)."""
         if self._initialized:
             return
-            
+        
+        start_time = time.time()
         self.logger = system_logger.getChild('DataQualityFramework')
         self.thresholds = thresholds or QualityThresholds()
 
@@ -232,6 +233,14 @@ class DataQualityFramework:
 
         self.logger.info('🔧 Unified Data Quality Framework initialized (singleton)')
         self._initialized = True
+        
+        # Add timing information
+        duration = time.time() - start_time
+        try:
+            from src.utils.tprint import tprint_performance
+            tprint_performance("DataQualityFramework initialization", duration)
+        except ImportError:
+            self.logger.info(f"⏱️ DataQualityFramework initialized in {duration:.3f}s")
 
     def validate_dataframe_quality(self, df: pd.DataFrame, context: str = '') -> QualityResult:
         """Validate DataFrame quality with comprehensive checks."""

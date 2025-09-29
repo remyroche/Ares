@@ -35,7 +35,8 @@ from .quality.data_cleaning import (
     detect_outliers,
     validate_data_schema,
     enhanced_missing_value_handler,
-    enhanced_outlier_handler
+    enhanced_outlier_handler,
+    get_data_cleaner
 )
 
 from .processing.transformers import (
@@ -144,6 +145,7 @@ __all__ = [
     'validate_data_schema',
     'enhanced_missing_value_handler',
     'enhanced_outlier_handler',
+    'get_data_cleaner',
     
     # Data Streaming
     'DataStreamingManager',

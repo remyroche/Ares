@@ -113,51 +113,85 @@ class NASEngine:
             config: Configuration dictionary for NAS engine
         """
         tprint_info("🚀 Initializing NAS Engine with extensive utility integration")
+        tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
         
         # Initialize configuration
         self.config = config or {}
+        tprint_debug(f"⚙️ NAS Engine config keys: {list(self.config.keys()) if self.config else 'None'}")
         self.logger = logger.getChild("NASEngine")
+        tprint_debug(f"📝 Logger initialized: {self.logger.name}")
         
         # Initialize utility classes
         tprint_debug("🔧 Initializing utility classes")
         self.common_ops = CommonUtilities()
+        tprint_debug("✅ CommonUtilities initialized")
         self.math_validator = MathValidation()
+        tprint_debug("✅ MathValidation initialized")
         self.klines_manager = get_klines_manager()
+        tprint_debug("✅ KlinesParquetManager initialized")
         self.serializer = UniversalSerializer()
+        tprint_debug("✅ UniversalSerializer initialized")
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
         self.matrix_ops = MatrixOperations()
+        tprint_debug("✅ MatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
+        tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
+        tprint_debug("✅ BatchMatrixOperations initialized")
         self.vectorized_core = VectorizedCore()
+        tprint_debug("✅ VectorizedCore initialized")
         
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
         self.m1_integration = integrate_with_m1_optimizers()
+        tprint_debug(f"🔍 M1 integration result: {self.m1_integration}")
         if self.m1_integration['success']:
             tprint_success("✅ M1 integration successful")
             self.gpu_manager = get_m1_gpu_manager()
+            tprint_debug("✅ M1 GPU Manager initialized")
             self.memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("✅ M1 Memory Optimizer initialized")
             self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_debug("✅ M1 CPU Optimizer initialized")
         else:
             tprint_warning("⚠️ M1 integration failed, using fallback")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
+            tprint_debug("🔄 Using fallback configurations")
         
         # Initialize optimization components
         tprint_debug("🔧 Initializing optimization components")
         self.bayesian_optimizer = BayesianEntryTimingOptimizer()
+        tprint_debug("✅ BayesianEntryTimingOptimizer initialized")
         self.grid_optimizer = GridSearchOptimizer()
+        tprint_debug("✅ GridSearchOptimizer initialized")
         self.hpo_utils = HPOUtils()
+        tprint_debug("✅ HPOUtils initialized")
         self.hierarchical_hpo = HierarchicalHPO()
+        tprint_debug("✅ HierarchicalHPO initialized")
         
         # Initialize performance tracking
         self.performance_metrics = {}
+        tprint_debug("✅ Performance metrics tracking initialized")
         self.search_history = []
+        tprint_debug("✅ Search history tracking initialized")
         
         tprint_success("✅ NAS Engine initialized successfully")
+        tprint_info(f"📊 Engine components: {len([attr for attr in dir(self) if not attr.startswith('_')])} public attributes")
+        tprint_structured({
+            'engine_type': 'NAS',
+            'initialization_time': time.time(),
+            'm1_integration': self.m1_integration['success'],
+            'components_initialized': {
+                'utility_classes': True,
+                'matrix_operations': True,
+                'hardware_optimization': self.m1_integration['success'],
+                'optimization_components': True
+            }
+        }, LogLevel.INFO)
     
     @tprint_timer("Data Loading and Validation")
     def load_and_validate_data(
@@ -182,7 +216,11 @@ class NASEngine:
         
         try:
             # Load data using klines parquet manager
+            tprint_debug(f"📊 Loading data with parameters: symbol={symbol}, interval={interval}")
+            tprint_debug(f"📅 Date range: {start_date} to {end_date}")
+            
             with memory_checkpoint("data_loading"):
+                tprint_debug("🔍 Accessing klines manager for data retrieval")
                 data = self.klines_manager.read_data(
                     symbol=symbol,
                     interval=interval,
@@ -190,33 +228,80 @@ class NASEngine:
                     end_date=end_date,
                     data_type="processed"
                 )
+                tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
             
             if data is None or data.empty:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
+                tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
                 return None
             
             tprint_info(f"📊 Loaded {len(data)} records")
+            tprint_debug(f"📋 Data columns: {list(data.columns)}")
+            tprint_debug(f"📅 Data date range: {data.index.min()} to {data.index.max()}")
+            tprint_structured({
+                'data_loading': {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'records_loaded': len(data),
+                    'columns_count': len(data.columns),
+                    'memory_usage': get_memory_usage()
+                }
+            }, LogLevel.DEBUG)
             
             # Validate data using common utilities
             tprint_debug("🔍 Validating data quality")
             validation_result = validate_klines_data(data)
+            tprint_debug(f"📋 Validation result: {validation_result}")
             
             if not validation_result['valid']:
                 tprint_error(f"❌ Data validation failed: {validation_result['errors']}")
+                tprint_structured({
+                    'validation_failure': {
+                        'errors': validation_result['errors'],
+                        'data_shape': data.shape,
+                        'data_types': data.dtypes.to_dict()
+                    }
+                }, LogLevel.ERROR)
                 return None
             
+            tprint_success("✅ Data validation passed")
+            
             # Apply data quality metrics
+            tprint_debug("📊 Calculating data quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_info(f"📈 Data quality metrics: {quality_metrics}")
+            tprint_structured({
+                'data_quality': quality_metrics,
+                'data_characteristics': {
+                    'shape': data.shape,
+                    'null_counts': data.isnull().sum().to_dict(),
+                    'memory_usage': data.memory_usage(deep=True).sum()
+                }
+            }, LogLevel.INFO)
             
             # Optimize data types for memory efficiency
             tprint_debug("🔧 Optimizing data types")
+            memory_before = data.memory_usage(deep=True).sum()
             data = optimize_dataframe_dtypes(data)
+            memory_after = data.memory_usage(deep=True).sum()
+            tprint_debug(f"💾 Memory optimization: {memory_before} -> {memory_after} bytes ({(memory_after/memory_before-1)*100:.1f}% change)")
             
             # Guard against null values
+            tprint_debug("🛡️ Applying null value guards")
+            null_counts_before = data.isnull().sum().sum()
             data = guard_dataframe_nulls(data, threshold=0.1)
+            null_counts_after = data.isnull().sum().sum()
+            tprint_debug(f"🔍 Null values: {null_counts_before} -> {null_counts_after}")
             
             tprint_success(f"✅ Data loaded and validated: {len(data)} records")
+            tprint_info(f"📊 Final data summary: {data.shape[0]} rows × {data.shape[1]} columns")
+            tprint_structured({
+                'data_validation_summary': {
+                    'final_shape': data.shape,
+                    'memory_usage': get_memory_usage(),
+                    'validation_completed': True
+                }
+            }, LogLevel.SUCCESS)
             return data
             
         except Exception as e:
@@ -247,11 +332,26 @@ class NASEngine:
         
         try:
             # Validate input data
-            if not validate_dataframe_columns(data, ['open', 'high', 'low', 'close', 'volume']):
+            tprint_debug("🔍 Validating input data for architecture search")
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            tprint_debug(f"📋 Required columns: {required_columns}")
+            tprint_debug(f"📊 Available columns: {list(data.columns)}")
+            
+            if not validate_dataframe_columns(data, required_columns):
                 tprint_error("❌ Invalid data columns for architecture search")
+                tprint_structured({
+                    'validation_error': {
+                        'required_columns': required_columns,
+                        'available_columns': list(data.columns),
+                        'missing_columns': [col for col in required_columns if col not in data.columns]
+                    }
+                }, LogLevel.ERROR)
                 return {}
             
+            tprint_success("✅ Data validation passed for architecture search")
+            
             # Initialize search results
+            tprint_debug("📊 Initializing search results structure")
             search_results = {
                 'method': optimization_method,
                 'n_trials': n_trials,
@@ -261,29 +361,48 @@ class NASEngine:
                 'search_time': 0,
                 'performance_metrics': {}
             }
+            tprint_structured({
+                'search_configuration': {
+                    'optimization_method': optimization_method,
+                    'n_trials': n_trials,
+                    'data_shape': data.shape,
+                    'search_space_keys': list(search_space.keys()) if search_space else []
+                }
+            }, LogLevel.INFO)
             
             start_time = time.time()
+            tprint_debug(f"⏰ Search start time: {start_time}")
             
             # Use M1 GPU context if available
+            context_type = "GPU" if self.gpu_manager else "Memory"
+            tprint_debug(f"🔧 Using {context_type} context for architecture search")
+            
             with gpu_context("architecture_search") if self.gpu_manager else memory_checkpoint("architecture_search"):
                 
                 if optimization_method == "bayesian_tpe":
                     tprint_info("🧠 Using Bayesian TPE optimization")
-                    best_architecture, best_score, trials = self._bayesian_search(
-                        data, search_space, n_trials
-                    )
+                    tprint_debug(f"🔧 Bayesian TPE parameters: n_trials={n_trials}, search_space_size={len(search_space)}")
+                    with tprint_timer("Bayesian TPE Architecture Search"):
+                        best_architecture, best_score, trials = self._bayesian_search(
+                            data, search_space, n_trials
+                        )
                 elif optimization_method == "grid":
                     tprint_info("🔧 Using Grid Search optimization")
-                    best_architecture, best_score, trials = self._grid_search(
-                        data, search_space, n_trials
-                    )
+                    tprint_debug(f"🔧 Grid Search parameters: n_trials={n_trials}, search_space_size={len(search_space)}")
+                    with tprint_timer("Grid Search Architecture Search"):
+                        best_architecture, best_score, trials = self._grid_search(
+                            data, search_space, n_trials
+                        )
                 elif optimization_method == "hierarchical":
                     tprint_info("🏗️ Using Hierarchical HPO optimization")
-                    best_architecture, best_score, trials = self._hierarchical_search(
-                        data, search_space, n_trials
-                    )
+                    tprint_debug(f"🔧 Hierarchical HPO parameters: n_trials={n_trials}, search_space_size={len(search_space)}")
+                    with tprint_timer("Hierarchical HPO Architecture Search"):
+                        best_architecture, best_score, trials = self._hierarchical_search(
+                            data, search_space, n_trials
+                        )
                 else:
                     tprint_error(f"❌ Unknown optimization method: {optimization_method}")
+                    tprint_debug(f"📋 Available methods: ['bayesian_tpe', 'grid', 'hierarchical']")
                     return {}
                 
                 search_results.update({
@@ -291,15 +410,33 @@ class NASEngine:
                     'best_score': best_score,
                     'trials': trials
                 })
+                
+                tprint_info(f"📊 Search results updated: {len(trials)} trials completed")
+                tprint_debug(f"🏆 Best architecture found: {bool(best_architecture)}")
+                tprint_debug(f"📈 Best score: {best_score:.6f}")
             
             search_time = time.time() - start_time
             search_results['search_time'] = search_time
             
             # Calculate performance metrics
+            tprint_debug("📊 Calculating architecture search performance metrics")
             search_results['performance_metrics'] = self._calculate_search_metrics(trials)
             
             tprint_success(f"✅ Architecture search completed in {search_time:.2f}s")
             tprint_info(f"🏆 Best score: {best_score:.4f}")
+            tprint_info(f"📊 Total trials: {len(trials)}")
+            
+            # Log comprehensive search summary
+            tprint_structured({
+                'search_summary': {
+                    'method': optimization_method,
+                    'total_trials': len(trials),
+                    'best_score': best_score,
+                    'search_time_seconds': search_time,
+                    'trials_per_second': len(trials) / search_time if search_time > 0 else 0,
+                    'performance_metrics_available': bool(search_results['performance_metrics'])
+                }
+            }, LogLevel.SUCCESS)
             
             return search_results
             
@@ -739,23 +876,71 @@ class NASEngine:
         try:
             tprint_info("🧹 Cleaning up NAS Engine resources")
             
+            # Get memory usage before cleanup
+            memory_before = get_memory_usage()
+            tprint_debug(f"💾 Memory usage before cleanup: {memory_before}")
+            
             # Cleanup M1 optimizers
+            tprint_debug("🔧 Cleaning up M1 optimizers")
             cleanup_m1_optimizers()
+            tprint_debug("✅ M1 optimizers cleaned up")
             
             # Clear search history
+            search_count = len(self.search_history)
+            tprint_debug(f"📊 Clearing {search_count} search history entries")
             self.search_history.clear()
             
+            # Clear performance metrics
+            perf_count = len(self.performance_metrics)
+            tprint_debug(f"📊 Clearing {perf_count} performance metrics entries")
+            self.performance_metrics.clear()
+            
+            # Get memory usage after cleanup
+            memory_after = get_memory_usage()
+            tprint_debug(f"💾 Memory usage after cleanup: {memory_after}")
+            
             tprint_success("✅ NAS Engine cleanup completed")
+            tprint_structured({
+                'cleanup_summary': {
+                    'search_history_cleared': search_count,
+                    'performance_metrics_cleared': perf_count,
+                    'memory_before': memory_before,
+                    'memory_after': memory_after,
+                    'cleanup_successful': True
+                }
+            }, LogLevel.INFO)
             
         except Exception as e:
             tprint_error(f"❌ Error during cleanup: {e}")
+            tprint_structured({
+                'cleanup_error': {
+                    'error_message': str(e),
+                    'error_type': type(e).__name__,
+                    'cleanup_failed': True
+                }
+            }, LogLevel.ERROR)
     
     def __enter__(self):
         """Context manager entry."""
+        tprint_debug("🚪 Entering NAS Engine context manager")
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
+        tprint_debug("🚪 Exiting NAS Engine context manager")
+        
+        if exc_type is not None:
+            tprint_error(f"❌ Exception in context manager: {exc_type.__name__}: {exc_val}")
+            tprint_structured({
+                'context_manager_exception': {
+                    'exception_type': exc_type.__name__,
+                    'exception_value': str(exc_val),
+                    'traceback_available': exc_tb is not None
+                }
+            }, LogLevel.ERROR)
+        else:
+            tprint_debug("✅ Context manager exited normally")
+        
         self.cleanup()
 
 
@@ -769,28 +954,46 @@ def create_nas_engine(config: Optional[Dict[str, Any]] = None) -> NASEngine:
     Returns:
         Configured NASEngine instance
     """
-    return NASEngine(config)
+    tprint_info("🏭 Creating NAS Engine instance")
+    tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
+    
+    if config:
+        tprint_debug(f"⚙️ Config keys: {list(config.keys())}")
+    
+    engine = NASEngine(config)
+    tprint_success("✅ NAS Engine instance created successfully")
+    return engine
 
 
 # Example usage
 if __name__ == "__main__":
     # Configure tprint for better output
+    tprint_info("🚀 Starting NAS Engine example")
     from ...tprint import TPrintConfig, configure_tprint
     
+    tprint_debug("⚙️ Configuring tprint for enhanced output")
     config = TPrintConfig(
         use_colors=True,
         output_to_console=True,
-        enable_structured_logging=True
+        enable_structured_logging=True,
+        min_log_level=LogLevel.DEBUG
     )
     configure_tprint(config)
+    tprint_success("✅ Tprint configuration applied")
     
     # Create and use NAS engine
+    tprint_info("🏭 Creating NAS engine for example usage")
     with create_nas_engine() as nas_engine:
+        tprint_info("📊 Starting data loading and validation example")
+        
         # Load data
         data = nas_engine.load_and_validate_data("ETHUSDT", "1m")
         
         if data is not None:
+            tprint_success("✅ Data loaded successfully, proceeding with architecture search")
+            
             # Define search space
+            tprint_debug("🔧 Defining architecture search space")
             search_space = {
                 'complexity': [1.0, 1.5, 2.0, 2.5, 3.0],
                 'depth': [1, 2, 3, 4, 5],
@@ -798,15 +1001,39 @@ if __name__ == "__main__":
                 'activation': ['relu', 'tanh', 'sigmoid']
             }
             
+            tprint_info(f"📋 Search space defined: {len(search_space)} parameters")
+            tprint_structured({
+                'search_space_summary': {
+                    'parameter_count': len(search_space),
+                    'parameter_names': list(search_space.keys()),
+                    'total_combinations': np.prod([len(v) for v in search_space.values()])
+                }
+            }, LogLevel.INFO)
+            
             # Perform architecture search
-            results = nas_engine.search_architectures(
-                data=data,
-                search_space=search_space,
-                optimization_method="bayesian_tpe",
-                n_trials=50
-            )
+            tprint_info("🔍 Starting architecture search")
+            with tprint_timer("Complete Architecture Search Example"):
+                results = nas_engine.search_architectures(
+                    data=data,
+                    search_space=search_space,
+                    optimization_method="bayesian_tpe",
+                    n_trials=50
+                )
             
             # Save results
             if results:
-                nas_engine.save_results(results, "nas_results.json")
+                tprint_info("💾 Saving architecture search results")
+                success = nas_engine.save_results(results, "nas_results.json")
+                if success:
+                    tprint_success("✅ Results saved successfully")
+                else:
+                    tprint_warning("⚠️ Failed to save results")
+                
+                tprint_info("📊 Displaying search results summary")
                 tprint_structured(results, LogLevel.INFO)
+            else:
+                tprint_error("❌ No results to save")
+        else:
+            tprint_error("❌ Failed to load data, skipping architecture search")
+    
+    tprint_success("✅ NAS Engine example completed")

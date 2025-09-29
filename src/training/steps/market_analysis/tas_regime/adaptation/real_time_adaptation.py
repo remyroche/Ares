@@ -18,7 +18,7 @@ from collections import defaultdict, deque
 import warnings
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+# DecisionTreeClassifier removed - only advanced tree models supported
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 
@@ -478,8 +478,21 @@ class TreeRealTimeAdapter:
         Args:
             config: TAS configuration
         """
+        tprint_info("🔄 Initializing Real-Time Adaptation System")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Adaptation enabled: {config.enable_real_time_adaptation}")
+        tprint_debug(f"Adaptation threshold: {config.adaptation_threshold}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'adaptation_time': 0.0,
+            'monitoring_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Adaptation state
         self.current_architecture = None

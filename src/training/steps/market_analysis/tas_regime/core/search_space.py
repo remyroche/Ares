@@ -178,7 +178,7 @@ class TreeSearchSpace:
                 'base_learner': ParameterRange(
                     name='base_learner',
                     param_type=SearchSpaceType.CATEGORICAL,
-                    choices=['decision_tree', 'extra_tree']
+                    choices=['random_forest', 'extra_trees']  # decision_tree removed
                 ),
                 'natural_gradient': ParameterRange(
                     name='natural_gradient',

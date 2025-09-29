@@ -648,7 +648,7 @@ class EnhancedTASEngine:
             # Tree-specific evaluation based on architecture properties
             n_trees = len(architecture.trees)
             avg_depth = sum(tree.max_depth or 10 for tree in architecture.trees) / max(n_trees, 1)
-            has_boosting = any(tree.tree_type.value in ['gradient_boosting', 'xgboost'] for tree in architecture.trees)
+            has_boosting = any(tree.tree_type.value in ['xgboost', 'lightgbm', 'catboost'] for tree in architecture.trees)
 
             # Simulate performance based on tree characteristics
             base_score = 0.6  # Trees often perform well
@@ -680,7 +680,7 @@ class EnhancedTASEngine:
             # Tree-specific evaluation based on architecture properties
             n_trees = len(architecture.trees)
             avg_depth = sum(tree.max_depth or 10 for tree in architecture.trees) / max(n_trees, 1)
-            has_boosting = any(tree.tree_type.value in ['gradient_boosting', 'xgboost'] for tree in architecture.trees)
+            has_boosting = any(tree.tree_type.value in ['xgboost', 'lightgbm', 'catboost'] for tree in architecture.trees)
 
             # Simulate performance based on tree characteristics
             base_score = 0.6  # Trees often perform well

@@ -9,7 +9,7 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from dataclasses import dataclass
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+# DecisionTreeClassifier removed - only advanced tree models supported
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 
@@ -33,27 +33,59 @@ class TreeUtils:
         self.config = config or TreeConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
     
-    def create_tree_classifier(self, config: TreeConfig = None) -> DecisionTreeClassifier:
-        """Create a decision tree classifier."""
+    def create_tree_classifier(self, config: TreeConfig = None):
+        """Create a tree classifier - DecisionTreeClassifier removed, use RandomForest instead."""
+        tprint_debug("Creating tree classifier (using RandomForest as DecisionTree replacement)")
+        tprint_debug(f"Config: {config}")
+        
         config = config or self.config
-        return DecisionTreeClassifier(
+        
+        tprint_debug(f"Max depth: {config.max_depth}")
+        tprint_debug(f"Min samples split: {config.min_samples_split}")
+        tprint_debug(f"Min samples leaf: {config.min_samples_leaf}")
+        tprint_debug(f"Max features: {config.max_features}")
+        tprint_debug(f"Random state: {config.random_state}")
+        
+        # Use RandomForest as replacement for DecisionTree
+        classifier = RandomForestClassifier(
+            n_estimators=1,  # Single tree equivalent
             max_depth=config.max_depth,
             min_samples_split=config.min_samples_split,
             min_samples_leaf=config.min_samples_leaf,
             max_features=config.max_features,
             random_state=config.random_state
         )
+        
+        tprint_debug(f"Tree classifier created successfully: {type(classifier)}")
+        
+        return classifier
     
-    def create_tree_regressor(self, config: TreeConfig = None) -> DecisionTreeRegressor:
-        """Create a decision tree regressor."""
+    def create_tree_regressor(self, config: TreeConfig = None):
+        """Create a tree regressor - DecisionTreeRegressor removed, use RandomForest instead."""
+        tprint_debug("Creating tree regressor (using RandomForest as DecisionTree replacement)")
+        tprint_debug(f"Config: {config}")
+        
         config = config or self.config
-        return DecisionTreeRegressor(
+        
+        tprint_debug(f"Max depth: {config.max_depth}")
+        tprint_debug(f"Min samples split: {config.min_samples_split}")
+        tprint_debug(f"Min samples leaf: {config.min_samples_leaf}")
+        tprint_debug(f"Max features: {config.max_features}")
+        tprint_debug(f"Random state: {config.random_state}")
+        
+        # Use RandomForest as replacement for DecisionTree
+        regressor = RandomForestRegressor(
+            n_estimators=1,  # Single tree equivalent
             max_depth=config.max_depth,
             min_samples_split=config.min_samples_split,
             min_samples_leaf=config.min_samples_leaf,
             max_features=config.max_features,
             random_state=config.random_state
         )
+        
+        tprint_debug(f"Tree regressor created successfully: {type(regressor)}")
+        
+        return regressor
     
     def create_random_forest_classifier(self, n_estimators: int = 100, config: TreeConfig = None) -> RandomForestClassifier:
         """Create a random forest classifier."""

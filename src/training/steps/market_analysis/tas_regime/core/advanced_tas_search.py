@@ -103,10 +103,26 @@ class AdvancedTradingArchitectureSearch:
         Args:
             config: Advanced TAS configuration
         """
+        tprint_info("🔍 Initializing Advanced TAS Search")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Search enabled: {config.enable_advanced_search}")
+        tprint_debug(f"Search iterations: {config.search_iterations}")
+        tprint_debug(f"Micro regime sensitivity: {config.micro_regime_sensitivity}")
+        tprint_debug(f"Micro regime detection threshold: {config.micro_regime_detection_threshold}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'search_time': 0.0,
+            'evaluation_time': 0.0,
+            'total_execution_time': 0.0
+        }
+
         # Initialize components
+        tprint_debug("Initializing micro regime detector...")
         self.micro_regime_detector = MicroRegimeDetector(
             sensitivity=config.micro_regime_sensitivity,
             detection_threshold=config.micro_regime_detection_threshold
@@ -636,18 +652,22 @@ class AdvancedTradingArchitectureSearch:
 
             # Use unsupervised learning to detect regimes
             from sklearn.ensemble import RandomForestClassifier
-            from sklearn.cluster import KMeans
+            # KMeans clustering removed - will be handled in subsequent step
 
             # Try different numbers of regimes
             for n_regimes in range(3, 8):  # 3 to 7 regimes
                 try:
                     # Cluster the feature space
-                    kmeans = KMeans(n_clusters=n_regimes, random_state=42)
-                    clusters = kmeans.fit_predict(regime_features)
+                    # Simple regime assignment instead of KMeans
+                    n_samples = len(regime_features)
+                    regime_size = n_samples // n_regimes
+                    regime_labels = np.array([i // regime_size for i in range(n_samples)])
+                    regime_labels = np.minimum(regime_labels, n_regimes - 1)
+                    # clusters already assigned above
 
                     # Analyze each cluster
                     for cluster_id in range(n_regimes):
-                        cluster_mask = clusters == cluster_id
+                        cluster_mask = regime_labels == cluster_id
                         cluster_data = market_data[cluster_mask]
 
                         if len(cluster_data) >= self.config.min_regime_samples:

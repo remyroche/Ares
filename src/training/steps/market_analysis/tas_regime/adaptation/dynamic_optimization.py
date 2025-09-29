@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, deque
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+# DecisionTreeClassifier removed - only advanced tree models supported
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 
@@ -51,8 +51,21 @@ class TreeDynamicOptimizer:
         Args:
             config: TAS configuration
         """
+        tprint_info("⚡ Initializing Dynamic Optimization System")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Optimization enabled: {config.enable_dynamic_optimization}")
+        tprint_debug(f"Optimization frequency: {config.optimization_frequency}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'optimization_time': 0.0,
+            'analysis_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Optimization state
         self.optimization_state = OptimizationState(

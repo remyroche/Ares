@@ -61,7 +61,7 @@ class TASHardwareConfig:
     
     # TAS-specific optimizations
     enable_tree_optimization: bool = True
-    enable_clustering_optimization: bool = True
+    enable_clustering_optimization: bool = False  # Clustering removed
     enable_statistical_optimization: bool = True
     enable_regime_optimization: bool = True
     
@@ -95,8 +95,22 @@ class EnhancedTASHardwareOptimizer:
     
     def __init__(self, config: TASHardwareConfig):
         """Initialize enhanced TAS hardware optimizer."""
+        tprint_info("⚡ Initializing Enhanced TAS Hardware Optimizer")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Hardware available: {HARDWARE_AVAILABLE}")
+        tprint_debug(f"Matrix ops available: {MATRIX_OPS_AVAILABLE}")
+        tprint_debug(f"Enable clustering optimization: {config.enable_clustering_optimization}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'optimization_time': 0.0,
+            'regime_assignment_time': 0.0,
+            'total_execution_time': 0.0
+        }
         
         # Initialize hardware components
         self.hardware_manager = None
@@ -108,7 +122,6 @@ class EnhancedTASHardwareOptimizer:
         self.hardware_processor = None
         
         # Performance tracking
-        self.performance_metrics = {}
         self.optimization_history = []
         self.memory_usage_history = []
         
@@ -247,14 +260,14 @@ class EnhancedTASHardwareOptimizer:
                                      data: np.ndarray,
                                      clustering_config: Dict[str, Any]) -> np.ndarray:
         """
-        Optimize clustering operations with hardware acceleration.
+        Optimize regime assignment operations (clustering removed).
         
         Args:
-            data: Input data for clustering
-            clustering_config: Clustering configuration parameters
+            data: Input data for regime assignment
+            clustering_config: Regime assignment configuration parameters
             
         Returns:
-            Optimized clustering results
+            Optimized regime assignment results
         """
         try:
             start_time = time.time()
@@ -268,28 +281,27 @@ class EnhancedTASHardwareOptimizer:
                 if self.matrix_ops:
                     # Optimize distance calculations
                     data = self.matrix_ops.optimize_distance_calculations(data)
-                    data = self.matrix_ops.optimize_clustering_operations(data)
                 
-                # Hardware acceleration for clustering
+                # Hardware acceleration for regime assignment
                 if self.hardware_processor and self.config.enable_gpu_acceleration:
                     data = self.hardware_processor.process_matrix(data)
                 
-                # Perform clustering operations (simplified)
-                result = self._perform_optimized_clustering(data, clustering_config)
+                # Perform regime assignment operations (simplified)
+                result = self._perform_optimized_regime_assignment(data, clustering_config)
                 
                 # Memory cleanup
                 if self.config.enable_memory_cleanup:
                     self._cleanup_memory()
             
             execution_time = time.time() - start_time
-            self._track_performance('clustering_operations', execution_time, len(data))
+            self._track_performance('regime_assignment_operations', execution_time, len(data))
             
             return result
             
         except Exception as e:
-            self.logger.error(f"Failed to optimize clustering operations: {e}")
-            # Fallback to basic clustering
-            return self._perform_basic_clustering(data, clustering_config)
+            self.logger.error(f"Failed to optimize regime assignment operations: {e}")
+            # Fallback to basic regime assignment
+            return self._perform_basic_regime_assignment(data, clustering_config)
     
     def optimize_statistical_operations(self,
                                       data: np.ndarray,
@@ -397,15 +409,17 @@ class EnhancedTASHardwareOptimizer:
             self.logger.error(f"Failed to perform optimized tree operations: {e}")
             return np.zeros((len(data), config.get('n_features', 10)))
     
-    def _perform_optimized_clustering(self, data: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
-        """Perform optimized clustering operations."""
+    def _perform_optimized_regime_assignment(self, data: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Perform optimized regime assignment operations."""
         try:
-            # This would integrate with actual clustering algorithms
-            # For now, return a simplified result
-            n_clusters = config.get('n_clusters', 3)
-            return np.random.randint(0, n_clusters, len(data))
+            # Simple regime assignment instead of clustering
+            n_regimes = config.get('n_regimes', 3)
+            n_samples = len(data)
+            regime_size = n_samples // n_regimes
+            labels = np.array([i // regime_size for i in range(n_samples)])
+            return np.minimum(labels, n_regimes - 1)
         except Exception as e:
-            self.logger.error(f"Failed to perform optimized clustering: {e}")
+            self.logger.error(f"Failed to perform optimized regime assignment: {e}")
             return np.zeros(len(data), dtype=int)
     
     def _perform_optimized_statistical_analysis(self, data: np.ndarray, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -443,10 +457,33 @@ class EnhancedTASHardwareOptimizer:
         """Fallback basic tree operations."""
         return np.random.rand(len(data), config.get('n_features', 10))
     
-    def _perform_basic_clustering(self, data: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
-        """Fallback basic clustering."""
-        n_clusters = config.get('n_clusters', 3)
-        return np.random.randint(0, n_clusters, len(data))
+    def _perform_basic_regime_assignment(self, data: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
+        """Fallback basic regime assignment."""
+        tprint_debug("Performing basic regime assignment...")
+        tprint_debug(f"Data shape: {data.shape}")
+        tprint_debug(f"Config: {config}")
+        
+        assignment_start = time.time()
+        
+        n_regimes = config.get('n_regimes', 3)
+        n_samples = len(data)
+        regime_size = n_samples // n_regimes
+        
+        tprint_debug(f"Number of regimes: {n_regimes}")
+        tprint_debug(f"Number of samples: {n_samples}")
+        tprint_debug(f"Regime size: {regime_size}")
+        
+        labels = np.array([i // regime_size for i in range(n_samples)])
+        result = np.minimum(labels, n_regimes - 1)
+        
+        assignment_time = time.time() - assignment_start
+        
+        tprint_debug(f"Basic regime assignment completed in {assignment_time:.3f}s")
+        tprint_debug(f"Result shape: {result.shape}")
+        tprint_debug(f"Unique regimes: {len(np.unique(result))}")
+        tprint_debug(f"Regime distribution: {np.bincount(result)}")
+        
+        return result
     
     def _perform_basic_statistical_analysis(self, data: np.ndarray, config: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback basic statistical analysis."""

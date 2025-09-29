@@ -139,7 +139,7 @@ class TreeArchitectureCandidate:
 
     def _get_default_base_learner(self) -> str:
         """Get default base learner for NGBoost."""
-        return "decision_tree"
+        return "random_forest"  # Use RandomForest instead of decision_tree
 
     def _get_default_natural_gradient(self) -> bool:
         """Get default natural gradient setting."""

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from scipy import stats
 from scipy.signal import find_peaks
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import DBSCAN
+# DBSCAN clustering removed - will be handled in subsequent step
 from sklearn.mixture import GaussianMixture
 
 from ..core.tas_config import MicroRegimeType, MarketRegime
@@ -52,9 +52,21 @@ class MicroRegimeDetector:
             sensitivity: Detection sensitivity (0-1)
             detection_threshold: Minimum confidence for detection
         """
+        tprint_info("🔬 Initializing Micro Regime Detector")
+        tprint_debug(f"Sensitivity: {sensitivity}")
+        tprint_debug(f"Detection threshold: {detection_threshold}")
+        
         self.sensitivity = sensitivity
         self.detection_threshold = detection_threshold
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'detection_time': 0.0,
+            'analysis_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Detection parameters
         self.breakout_params = {

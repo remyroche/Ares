@@ -32,6 +32,12 @@ from .shared_utils.unified_trading_viability_evaluator import (
     TradingViabilityConfig
 )
 
+# Import enhanced components
+from .regime_alignment_manager import RegimeAlignmentManager, AlignmentConfig
+from .enhanced_economic_evaluator import EnhancedEconomicEvaluator, EconomicEvaluationConfig
+from .consensus_validator import ConsensusValidator, ConsensusValidationConfig
+from .multi_objective_optimizer import MultiObjectiveOptimizer, MultiObjectiveConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +105,9 @@ class HybridOrchestrator:
         
         # Initialize component managers
         self._initialize_managers()
+        
+        # Initialize enhanced components
+        self._initialize_enhanced_components()
         
         self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized")
 
@@ -302,6 +311,94 @@ class HybridOrchestrator:
         except Exception as e:
             print(f"❌ Manager initialization failed: {e}")
             self.logger.error(f"❌ Manager initialization failed: {e}")
+            raise
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced components for advanced regime discovery."""
+        try:
+            print("🔧 Initializing enhanced components...")
+            
+            # Initialize regime alignment manager
+            print("🔄 Setting up regime alignment manager...")
+            alignment_config = AlignmentConfig(
+                method='hungarian',
+                min_overlap_threshold=0.1,
+                max_regime_distance=0.5,
+                enable_soft_alignment=True,
+                alignment_confidence_threshold=0.3
+            )
+            self.regime_aligner = RegimeAlignmentManager(alignment_config)
+            print("✅ Regime alignment manager initialized")
+            
+            # Initialize enhanced economic evaluator
+            print("💰 Setting up enhanced economic evaluator...")
+            economic_config = EconomicEvaluationConfig(
+                target_cluster_count_min=6,
+                target_cluster_count_max=15,
+                max_cluster_distribution=0.25,
+                min_cluster_distribution=0.03,
+                volatility_cv_weight=0.4,
+                returns_cv_weight=0.3,
+                volume_cv_weight=0.3,
+                momentum_cv_weight=0.1,
+                entropy_cv_weight=0.1
+            )
+            self.enhanced_economic_evaluator = EnhancedEconomicEvaluator(economic_config)
+            print("✅ Enhanced economic evaluator initialized")
+            
+            # Initialize consensus validator
+            print("🔍 Setting up consensus validator...")
+            consensus_config = ConsensusValidationConfig(
+                silhouette_weight=0.25,
+                calinski_harabasz_weight=0.20,
+                davies_bouldin_weight=0.20,
+                inertia_weight=0.15,
+                economic_significance_weight=0.30,
+                trading_viability_weight=0.25,
+                regime_stability_weight=0.25,
+                cv_optimization_weight=0.20,
+                temporal_smoothness_weight=0.30,
+                regime_duration_weight=0.25,
+                transition_consistency_weight=0.25,
+                persistence_weight=0.20,
+                min_consensus_quality=0.6,
+                enable_multi_objective=True,
+                pareto_frontier_size=20
+            )
+            self.consensus_validator = ConsensusValidator(consensus_config)
+            print("✅ Consensus validator initialized")
+            
+            # Initialize multi-objective optimizer
+            print("🎯 Setting up multi-objective optimizer...")
+            multi_objective_config = MultiObjectiveConfig(
+                target_cluster_count_min=6,
+                target_cluster_count_max=15,
+                max_cluster_distribution=0.25,
+                min_cluster_distribution=0.03,
+                volatility_cv_weight=0.4,
+                returns_cv_weight=0.3,
+                volume_cv_weight=0.3,
+                momentum_cv_weight=0.1,
+                entropy_cv_weight=0.1,
+                statistical_weight=0.25,
+                economic_weight=0.30,
+                temporal_weight=0.20,
+                cv_optimization_weight=0.25,
+                max_iterations=100,
+                population_size=50,
+                convergence_threshold=0.01,
+                enable_pareto_frontier=True,
+                pareto_frontier_size=20
+            )
+            self.multi_objective_optimizer = MultiObjectiveOptimizer(multi_objective_config)
+            print("✅ Multi-objective optimizer initialized")
+            
+            print("✅ All enhanced components initialized")
+            self.logger.info("✅ All enhanced components initialized")
+            
+        except Exception as e:
+            print(f"❌ Enhanced components initialization failed: {e}")
+            self.logger.error(f"❌ Enhanced components initialization failed: {e}")
             raise
     
     async def execute_hybrid_pipeline(self) -> ConsolidatedMetricsReport:
@@ -1173,103 +1270,133 @@ class HybridOrchestrator:
                                 timestamps: Optional[np.ndarray],
                                 tas_result: Dict[str, Any],
                                 nas_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform hybrid analysis combining TAS and NAS results."""
+        """Perform enhanced hybrid analysis combining TAS and NAS results."""
         try:
-            # Combine TAS and NAS predictions
+            self.logger.info("🔬 Starting enhanced hybrid analysis")
+            
+            # Extract predictions
             tas_predictions = tas_result.get('regime_predictions', np.array([]))
             nas_predictions = nas_result.get('regime_predictions', np.array([]))
 
             if len(tas_predictions) == 0 or len(nas_predictions) == 0:
-                return {'error': 'Empty predictions from one or both systems'}
+                return {'error': 'Empty predictions from one or both systems', 'success': False}
 
-            # Use shared clustering utilities for hybrid analysis
-            if hasattr(self, 'clustering_manager'):
-                # Perform hybrid clustering
-                combined_features = np.column_stack([tas_predictions, nas_predictions])
-                hybrid_labels, hybrid_centers, metrics = self.clustering_manager.perform_shared_clustering(
-                    combined_features, n_clusters=8, algorithm='auto'
+            # Step 1: Regime Alignment
+            self.logger.info("🔄 Step 1: Performing regime alignment")
+            alignment_result = self.regime_aligner.align_regimes(
+                nas_predictions, tas_predictions, market_data
+            )
+            
+            # Step 2: Multi-Objective Optimization
+            self.logger.info("🎯 Step 2: Performing multi-objective optimization")
+            optimization_result = self.multi_objective_optimizer.optimize_regime_clustering(
+                nas_predictions, tas_predictions, market_data
+            )
+            
+            # Step 3: Enhanced Economic Evaluation
+            self.logger.info("💰 Step 3: Performing enhanced economic evaluation")
+            best_solution = optimization_result.get('best_solution', {})
+            consensus_predictions = best_solution.get('solution', np.array([]))
+            
+            if len(consensus_predictions) > 0:
+                economic_evaluation = self.enhanced_economic_evaluator.evaluate_regime_clustering(
+                    consensus_predictions, market_data
                 )
-
-                # Calculate clustering quality metrics if analyzer is available
-                clustering_quality = {}
-                if self.clustering_quality_analyzer:
-                    try:
-                        # Prepare features for quality analysis
-                        if isinstance(market_data, pd.DataFrame):
-                            # Use numeric columns for quality analysis
-                            numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-                            if len(numeric_columns) > 0:
-                                features = market_data[numeric_columns].values
-                            else:
-                                # Fallback to basic OHLCV columns
-                                basic_columns = ['open', 'high', 'low', 'close', 'volume']
-                                available_columns = [col for col in basic_columns if col in market_data.columns]
-                                features = market_data[available_columns].values if available_columns else market_data.values
-                        else:
-                            features = market_data
-
-                        # Calculate quality metrics for TAS, NAS, and hybrid results
-                        # Ensure features and predictions have the same length for TAS
-                        tas_features = features
-                        if len(tas_features) != len(tas_predictions):
-                            min_length = min(len(tas_features), len(tas_predictions))
-                            tas_features = tas_features[:min_length]
-                            tas_predictions = tas_predictions[:min_length]
-
-                        tas_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            tas_features, tas_predictions
-                        )
-
-                        # Ensure features and predictions have the same length for NAS
-                        nas_features = features
-                        if len(nas_features) != len(nas_predictions):
-                            min_length = min(len(nas_features), len(nas_predictions))
-                            nas_features = nas_features[:min_length]
-                            nas_predictions = nas_predictions[:min_length]
-
-                        nas_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            nas_features, nas_predictions
-                        )
-
-                        # Ensure features and predictions have the same length for hybrid
-                        hybrid_features = features
-                        if len(hybrid_features) != len(hybrid_labels):
-                            min_length = min(len(hybrid_features), len(hybrid_labels))
-                            hybrid_features = hybrid_features[:min_length]
-                            hybrid_labels = hybrid_labels[:min_length]
-
-                        hybrid_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            hybrid_features, hybrid_labels
-                        )
-
-                        clustering_quality = {
-                            'tas_quality': tas_quality,
-                            'nas_quality': nas_quality,
-                            'hybrid_quality': hybrid_quality,
-                            'comparison': {
-                                'best_silhouette': 'TAS' if tas_quality['silhouette_score'] > nas_quality['silhouette_score'] else 'NAS',
-                                'best_davies_bouldin': 'TAS' if tas_quality['davies_bouldin_index'] < nas_quality['davies_bouldin_index'] else 'NAS',
-                                'best_calinski_harabasz': 'TAS' if tas_quality['calinski_harabasz_score'] > nas_quality['calinski_harabasz_score'] else 'NAS'
-                            }
-                        }
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Clustering quality analysis failed: {e}")
-                        clustering_quality = {'error': str(e)}
-
-                return {
-                    'hybrid_labels': hybrid_labels,
-                    'hybrid_centers': hybrid_centers,
-                    'clustering_metrics': metrics,
-                    'clustering_quality': clustering_quality,
-                    'tas_contribution': tas_result,
-                    'nas_contribution': nas_result,
-                    'success': True
-                }
             else:
-                return {'error': 'Clustering manager not available', 'success': False}
+                economic_evaluation = {'error': 'No consensus predictions available'}
+            
+            # Step 4: Consensus Validation
+            self.logger.info("🔍 Step 4: Performing consensus validation")
+            validation_result = self.consensus_validator.validate_consensus(
+                consensus_predictions, nas_result, tas_result, market_data
+            )
+            
+            # Step 5: Generate final results
+            self.logger.info("📊 Step 5: Generating final hybrid results")
+            hybrid_results = {
+                'hybrid_labels': consensus_predictions,
+                'hybrid_centers': self._calculate_hybrid_centers(consensus_predictions, market_data),
+                'clustering_metrics': best_solution.get('objectives', {}),
+                'clustering_quality': validation_result.get('statistical_validation', {}),
+                'alignment_result': alignment_result,
+                'optimization_result': optimization_result,
+                'economic_evaluation': economic_evaluation,
+                'validation_result': validation_result,
+                'tas_contribution': tas_result,
+                'nas_contribution': nas_result,
+                'success': True,
+                'enhanced_analysis': True
+            }
+            
+            # Add clustering quality metrics
+            if self.clustering_quality_analyzer and len(consensus_predictions) > 0:
+                try:
+                    # Prepare features for quality analysis
+                    if isinstance(market_data, pd.DataFrame):
+                        numeric_columns = market_data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_columns) > 0:
+                            features = market_data[numeric_columns].values
+                        else:
+                            basic_columns = ['open', 'high', 'low', 'close', 'volume']
+                            available_columns = [col for col in basic_columns if col in market_data.columns]
+                            features = market_data[available_columns].values if available_columns else market_data.values
+                    else:
+                        features = market_data
+
+                    # Ensure same length
+                    min_length = min(len(features), len(consensus_predictions))
+                    features = features[:min_length]
+                    consensus_predictions = consensus_predictions[:min_length]
+
+                    # Calculate comprehensive quality metrics
+                    comprehensive_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
+                        features, consensus_predictions
+                    )
+                    
+                    hybrid_results['comprehensive_quality'] = comprehensive_quality
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Comprehensive quality analysis failed: {e}")
+                    hybrid_results['comprehensive_quality'] = {'error': str(e)}
+            
+            self.logger.info("✅ Enhanced hybrid analysis completed successfully")
+            return hybrid_results
 
         except Exception as e:
+            self.logger.error(f"❌ Enhanced hybrid analysis failed: {e}")
             return {'error': str(e), 'success': False}
+    
+    def _calculate_hybrid_centers(self, consensus_predictions: np.ndarray, 
+                                market_data: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
+        """Calculate hybrid regime centers."""
+        try:
+            unique_regimes = np.unique(consensus_predictions)
+            centers = []
+            
+            for regime in unique_regimes:
+                regime_mask = consensus_predictions == regime
+                regime_data = market_data[regime_mask]
+                
+                if len(regime_data) > 0:
+                    if isinstance(regime_data, pd.DataFrame):
+                        # Calculate centroid from numeric columns
+                        numeric_columns = regime_data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_columns) > 0:
+                            centroid = regime_data[numeric_columns].mean().values
+                        else:
+                            centroid = np.zeros(5)  # Default for OHLCV
+                    else:
+                        centroid = np.mean(regime_data, axis=0)
+                    
+                    centers.append(centroid)
+                else:
+                    centers.append(np.zeros(5))  # Default center
+            
+            return np.array(centers) if centers else np.array([])
+            
+        except Exception as e:
+            self.logger.error(f"❌ Hybrid centers calculation failed: {e}")
+            return np.array([])
 
     def _get_fallback_error_result(self, error: str, timeframe: str, system: str) -> Dict[str, Any]:
         """Return error result when systems fail without fallback."""

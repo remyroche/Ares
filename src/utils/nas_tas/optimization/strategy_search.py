@@ -3,6 +3,7 @@ Strategy Search Optimizer
 
 This module provides unified strategy search capabilities that consolidate
 strategy search logic previously scattered across NAS and TAS implementations.
+Enhanced with comprehensive utility integration for optimal performance.
 """
 
 import numpy as np
@@ -15,10 +16,89 @@ from abc import ABC, abstractmethod
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+# Enhanced utility imports
+from ...common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    validate_finite, validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, optimize_dataframe_dtypes,
+    safe_to_parquet, safe_read_parquet, integrate_with_m1_optimizers,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, memory_checkpoint, gpu_context, optimize_memory,
+    get_memory_usage, safe_copy, safe_deepcopy, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls, timed_operation,
+    format_bytes, parallel_map, chunked_iterable
 )
+
+from ...common_utilities import (
+    CommonUtilities, safe_dataframe_operation as cu_safe_dataframe_operation,
+    validate_dataframe_columns as cu_validate_dataframe_columns,
+    calculate_data_quality_metrics as cu_calculate_data_quality_metrics,
+    safe_merge_dataframes as cu_safe_merge_dataframes,
+    safe_groupby_operation as cu_safe_groupby_operation,
+    safe_apply_function as cu_safe_apply_function,
+    create_summary_statistics as cu_create_summary_statistics,
+    safe_drop_columns as cu_safe_drop_columns,
+    safe_rename_columns as cu_safe_rename_columns,
+    validate_timestamp_column as cu_validate_timestamp_column,
+    safe_timestamp_conversion as cu_safe_timestamp_conversion,
+    get_dataframe_info as cu_get_dataframe_info,
+    safe_filter_dataframe as cu_safe_filter_dataframe,
+    create_data_quality_report as cu_create_data_quality_report
+)
+
+from ...math_validation import (
+    MathValidation, safe_divide as mv_safe_divide, safe_log as mv_safe_log,
+    safe_sqrt as mv_safe_sqrt, safe_power as mv_safe_power,
+    validate_finite as mv_validate_finite, validate_positive as mv_validate_positive,
+    validate_range as mv_validate_range, safe_kelly_calculation as mv_safe_kelly_calculation,
+    safe_weighted_average as mv_safe_weighted_average, safe_percentage_change as mv_safe_percentage_change,
+    safe_correlation, safe_covariance, safe_mean as mv_safe_mean, safe_std as mv_safe_std,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    validate_numeric_array
+)
+
+from ...tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_structured,
+    tprint_with_level, tprint_timer, tprint_logged, configure_tprint,
+    get_tprint_config, tprint_context, LogLevel
+)
+
+# Data utilities
+from ...data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from ...data.processing.data_processing import DataProcessor
+from ...data.basic_returns_engineer import BasicReturnsEngineer
+from ...data.feature_engineer import FeatureEngineer
+from ...data.gap_detector import GapDetector
+from ...data.unified_data_utils import UnifiedDataUtils
+
+# ML optimization utilities
+from ...ml_common.optimization.bayesian_entry_timing_optimizer import BayesianEntryTimingOptimizer
+from ...ml_common.optimization.grid_utils import GridSearchOptimizer
+from ...ml_common.optimization.hpo_utils import HPOUtils
+from ...ml_common.optimization.hierarchical_hpo import HierarchicalHPO
+from ...ml_common.optimization.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
+
+# Matrix operations
+from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
+from ...matrix_operations.batch_operations import BatchMatrixOperations
+from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.convenience import MatrixConvenience
+
+# Hardware utilities
+from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
+from ...hardware.m1_memory_optimizer import M1MemoryOptimizer
+from ...hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 from ..core.nas_engine import NASEngine
 from ..core.tas_engine import TASEngine
@@ -96,6 +176,7 @@ class StrategySearchResult:
     configuration: Dict[str, Any]
 
 
+@tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
 class StrategySearchOptimizer:
     """
     Unified strategy search optimizer for both NAS and TAS systems.
@@ -103,16 +184,63 @@ class StrategySearchOptimizer:
     This class consolidates strategy search logic that was previously
     scattered across different implementations, providing a unified interface
     for both neural and tree-based strategy search.
+    Enhanced with comprehensive utility integration for optimal performance.
     """
     
     def __init__(self, config: StrategySearchConfig):
-        """Initialize strategy search optimizer.
+        """Initialize strategy search optimizer with comprehensive utility integration.
         
         Args:
             config: Strategy search configuration
         """
+        tprint_info("🚀 Initializing Strategy Search Optimizer with comprehensive utility integration")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize utility classes
+        tprint_debug("🔧 Initializing utility classes")
+        self.common_ops = CommonUtilities()
+        self.math_validator = MathValidation()
+        self.klines_manager = get_klines_manager()
+        
+        # Initialize data processing utilities
+        tprint_debug("🔧 Initializing data processing utilities")
+        self.data_processor = DataProcessor()
+        self.returns_engineer = BasicReturnsEngineer()
+        self.feature_engineer = FeatureEngineer()
+        self.gap_detector = GapDetector()
+        self.unified_data_utils = UnifiedDataUtils()
+        
+        # Initialize matrix operations
+        tprint_debug("🔧 Initializing matrix operations")
+        self.matrix_ops = MatrixOperations()
+        self.enhanced_matrix_ops = EnhancedMatrixOperations()
+        self.batch_matrix_ops = BatchMatrixOperations()
+        self.vectorized_core = VectorizedCore()
+        self.matrix_convenience = MatrixConvenience()
+        
+        # Initialize M1 hardware optimizations
+        tprint_debug("🔧 Initializing M1 hardware optimizations")
+        self.m1_integration = integrate_with_m1_optimizers()
+        if self.m1_integration['success']:
+            tprint_success("✅ M1 integration successful")
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+        else:
+            tprint_warning("⚠️ M1 integration failed, using fallback")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        # Initialize optimization components
+        tprint_debug("🔧 Initializing optimization components")
+        self.bayesian_optimizer = BayesianEntryTimingOptimizer()
+        self.grid_optimizer = GridSearchOptimizer()
+        self.hpo_utils = HPOUtils()
+        self.hierarchical_hpo = HierarchicalHPO()
+        self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer()
         
         # Initialize search engines
         self.nas_engine = None
@@ -123,7 +251,7 @@ class StrategySearchOptimizer:
         self.best_strategy = None
         self.best_score = -np.inf
         
-        tprint_info("Strategy Search Optimizer initialized")
+        tprint_success("✅ Strategy Search Optimizer initialized successfully")
     
     def initialize_engines(self, unified_config: UnifiedArchitectureConfig):
         """Initialize NAS and TAS engines based on configuration.
@@ -146,13 +274,14 @@ class StrategySearchOptimizer:
             tprint_error(f"Engine initialization failed: {e}")
             raise
     
+    @tprint_timer("Unified Strategy Search")
     async def search_strategies(
         self,
         data: pd.DataFrame,
         search_space: Dict[str, Any],
         unified_config: UnifiedArchitectureConfig
     ) -> StrategySearchResult:
-        """Search for optimal strategies using unified approach.
+        """Search for optimal strategies using unified approach with comprehensive utility integration.
         
         Args:
             data: Input data for strategy search
@@ -163,41 +292,69 @@ class StrategySearchOptimizer:
             StrategySearchResult with search results
         """
         start_time = datetime.now()
-        tprint_info("Starting unified strategy search")
+        tprint_info("🔍 Starting unified strategy search with comprehensive utility integration")
         
         try:
+            # Validate and prepare data using utilities
+            tprint_debug("🔍 Validating and preparing data")
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not validate_dataframe_columns(data, required_columns):
+                tprint_error("❌ Invalid data columns for strategy search")
+                raise ValueError("Invalid data columns")
+            
+            # Apply data quality metrics
+            quality_metrics = calculate_data_quality_metrics(data)
+            tprint_info(f"📈 Data quality metrics: {quality_metrics}")
+            
+            # Optimize data types for memory efficiency
+            data = optimize_dataframe_dtypes(data)
+            
+            # Guard against null values
+            data = guard_dataframe_nulls(data, threshold=0.1)
+            
             # Initialize engines
             self.initialize_engines(unified_config)
             
-            # Perform search based on architecture type
-            if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
-                result = await self._search_neural_strategies(data, search_space)
-            elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
-                result = await self._search_tree_strategies(data, search_space)
-            elif unified_config.architecture_type == ArchitectureType.HYBRID_NEURAL_TREE:
-                result = await self._search_hybrid_strategies(data, search_space)
-            else:
-                raise ValueError(f"Unsupported architecture type: {unified_config.architecture_type}")
+            # Use M1 GPU context if available
+            with gpu_context("strategy_search") if self.gpu_manager else memory_checkpoint("strategy_search"):
+                
+                # Perform search based on architecture type
+                if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
+                    result = await self._search_neural_strategies(data, search_space)
+                elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
+                    result = await self._search_tree_strategies(data, search_space)
+                elif unified_config.architecture_type == ArchitectureType.HYBRID_NEURAL_TREE:
+                    result = await self._search_hybrid_strategies(data, search_space)
+                else:
+                    raise ValueError(f"Unsupported architecture type: {unified_config.architecture_type}")
             
-            # Calculate search metrics
+            # Calculate search metrics using math validation utilities
             search_time = (datetime.now() - start_time).total_seconds()
             result.search_time = search_time
             result.total_iterations = len(self.search_history)
             result.convergence_iteration = self._find_convergence_point()
             
-            # Perform backtesting
+            # Calculate risk and complexity scores
+            result.risk_score = self._calculate_risk_score(result.best_strategy)
+            result.complexity_score = self._calculate_strategy_complexity_score(result.best_strategy)
+            
+            # Perform backtesting with enhanced metrics
             if self.config.backtest_periods > 0:
+                tprint_info("📊 Performing enhanced backtesting")
                 result.backtest_results = await self._backtest_strategy(
                     result.best_strategy, data
                 )
             
-            tprint_success(f"Strategy search completed in {search_time:.2f}s")
-            tprint_info(f"Best score: {result.best_score:.4f}")
+            tprint_success(f"✅ Strategy search completed in {search_time:.2f}s")
+            tprint_info(f"🏆 Best score: {result.best_score:.4f}")
+            tprint_info(f"⚠️ Risk score: {result.risk_score:.4f}")
+            tprint_info(f"📊 Complexity score: {result.complexity_score:.4f}")
             
             return result
             
         except Exception as e:
-            tprint_error(f"Strategy search failed: {e}")
+            tprint_error(f"❌ Strategy search failed: {e}")
+            self.logger.exception("Strategy search error")
             raise
     
     async def _search_neural_strategies(
@@ -377,7 +534,7 @@ class StrategySearchOptimizer:
         }
     
     def _calculate_search_efficiency(self) -> float:
-        """Calculate search efficiency metric."""
+        """Calculate search efficiency metric using math validation utilities."""
         if not self.search_history:
             return 0.0
         
@@ -387,7 +544,65 @@ class StrategySearchOptimizer:
             if self.search_history[i].get('score', 0.0) > self.search_history[i-1].get('score', 0.0):
                 improvements += 1
         
-        return improvements / max(1, len(self.search_history) - 1)
+        return safe_divide(improvements, max(1, len(self.search_history) - 1))
+    
+    def _calculate_risk_score(self, strategy: Dict[str, Any]) -> float:
+        """Calculate strategy risk score using math validation utilities."""
+        try:
+            if not strategy:
+                return 0.0
+            
+            # Extract risk indicators
+            risk_factors = []
+            
+            # Position size risk
+            position_size = strategy.get('position_size', 0.1)
+            risk_factors.append(position_size)
+            
+            # Stop loss risk
+            stop_loss = strategy.get('stop_loss', 0.02)
+            risk_factors.append(stop_loss)
+            
+            # Risk factor
+            risk_factor = strategy.get('risk_factor', 1.0)
+            risk_factors.append(risk_factor)
+            
+            # Calculate weighted risk score
+            risk_score = safe_weighted_average(risk_factors, [0.4, 0.3, 0.3])
+            
+            return validate_finite(risk_score, "risk_score")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating risk score: {e}")
+            return 0.0
+    
+    def _calculate_strategy_complexity_score(self, strategy: Dict[str, Any]) -> float:
+        """Calculate strategy complexity score using math validation utilities."""
+        try:
+            if not strategy:
+                return 0.0
+            
+            # Extract complexity indicators
+            complexity_factors = []
+            
+            # Count parameters
+            param_count = len(strategy)
+            complexity_factors.append(safe_log(param_count + 1))
+            
+            # Calculate parameter diversity
+            param_values = list(strategy.values())
+            if param_values:
+                param_std = safe_std(np.array([float(v) for v in param_values if isinstance(v, (int, float))]))
+                complexity_factors.append(param_std)
+            
+            # Calculate weighted complexity
+            complexity_score = safe_weighted_average(complexity_factors, [0.7, 0.3])
+            
+            return validate_finite(complexity_score, "strategy_complexity_score")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating strategy complexity score: {e}")
+            return 0.0
 
 
 # Convenience function for quick strategy search

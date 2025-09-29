@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from scipy import stats
 from scipy.signal import find_peaks
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import DBSCAN
+# DBSCAN clustering removed - will be handled in subsequent step
 from sklearn.mixture import GaussianMixture
 
 from ..core.tas_config import MicroRegimeType, MarketRegime

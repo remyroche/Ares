@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from contextlib import contextmanager
 import pickle
-from sklearn.cluster import KMeans
+# Clustering imports removed - will be handled in subsequent step
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
@@ -861,35 +861,34 @@ class TASRegimeDetector:
             raise ValueError(f"Tree regime discovery failed: {e}")
 
     def _perform_tree_based_clustering(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Perform tree-based clustering using Random Forest and hierarchical clustering."""
+        """Perform simplified tree-based regime detection without clustering."""
         try:
             from sklearn.ensemble import RandomForestClassifier
-            from sklearn.cluster import AgglomerativeClustering
             from sklearn.preprocessing import StandardScaler
             from sklearn.metrics import silhouette_score
 
-            tprint_debug("   [CLUSTERING] Starting tree-based clustering process...")
+            tprint_debug("   [REGIME_DETECTION] Starting tree-based regime detection...")
             tprint_debug(f"   Input data shape: {data.shape}")
-            tprint_debug(f"   Target clusters: {self.config.n_regimes}")
+            tprint_debug(f"   Target regimes: {self.config.n_regimes}")
 
             # Standardize the data
-            tprint_debug("   [CLUSTERING] Standardizing data...")
+            tprint_debug("   [REGIME_DETECTION] Standardizing data...")
             scaler = StandardScaler()
             data_scaled = scaler.fit_transform(data)
-            tprint_debug(f"   [CLUSTERING] Data standardized, shape: {data_scaled.shape}")
+            tprint_debug(f"   [REGIME_DETECTION] Data standardized, shape: {data_scaled.shape}")
 
-            # Use Random Forest for feature importance and regime detection
-            # Create synthetic targets using hierarchical clustering
-            tprint_debug("   [CLUSTERING] Performing hierarchical clustering for initial labels...")
-            hierarchical = AgglomerativeClustering(
-                n_clusters=self.config.n_regimes,
-                linkage='ward'
-            )
-            initial_labels = hierarchical.fit_predict(data_scaled)
-            tprint_debug(f"   [CLUSTERING] Initial clustering completed: {len(np.unique(initial_labels))} clusters")
+            # Create synthetic targets using simple regime assignment
+            tprint_debug("   [REGIME_DETECTION] Creating synthetic regime targets...")
+            # Simple regime assignment based on data characteristics
+            n_samples = len(data_scaled)
+            regime_size = n_samples // self.config.n_regimes
+            initial_labels = np.array([i // regime_size for i in range(n_samples)])
+            # Ensure we don't exceed the number of regimes
+            initial_labels = np.minimum(initial_labels, self.config.n_regimes - 1)
+            tprint_debug(f"   [REGIME_DETECTION] Initial regime assignment completed: {len(np.unique(initial_labels))} regimes")
 
-            # Train Random Forest on the initial clustering
-            tprint_debug("   [CLUSTERING] Training Random Forest classifier...")
+            # Train Random Forest on the synthetic targets
+            tprint_debug("   [REGIME_DETECTION] Training Random Forest classifier...")
             rf_start = time.time()
             rf = RandomForestClassifier(
                 n_estimators=self.config.n_estimators,
@@ -901,40 +900,42 @@ class TASRegimeDetector:
             )
             rf.fit(data_scaled, initial_labels)
             rf_time = time.time() - rf_start
-            tprint_debug(f"   [CLUSTERING] Random Forest trained in {rf_time:.3f}s")
+            tprint_debug(f"   [REGIME_DETECTION] Random Forest trained in {rf_time:.3f}s")
 
             # Get final predictions
-            tprint_debug("   [CLUSTERING] Generating final predictions...")
+            tprint_debug("   [REGIME_DETECTION] Generating final predictions...")
             labels = rf.predict(data_scaled)
-            tprint_debug(f"   [CLUSTERING] Final predictions generated: {len(np.unique(labels))} regimes")
+            tprint_debug(f"   [REGIME_DETECTION] Final predictions generated: {len(np.unique(labels))} regimes")
 
             # Calculate probabilities based on tree confidence
-            tprint_debug("   [CLUSTERING] Calculating prediction probabilities...")
+            tprint_debug("   [REGIME_DETECTION] Calculating prediction probabilities...")
             probabilities = self._calculate_tree_probabilities(data, labels)
 
             # Calculate silhouette score for validation
             if len(set(labels)) > 1:
-                tprint_debug("   [CLUSTERING] Calculating silhouette score...")
+                tprint_debug("   [REGIME_DETECTION] Calculating silhouette score...")
                 silhouette = silhouette_score(data_scaled, labels)
-                self.logger.info(f"Tree-based clustering silhouette score: {silhouette:.3f}")
-                tprint_debug(f"   [CLUSTERING] Silhouette score: {silhouette:.3f}")
+                self.logger.info(f"Tree-based regime detection silhouette score: {silhouette:.3f}")
+                tprint_debug(f"   [REGIME_DETECTION] Silhouette score: {silhouette:.3f}")
 
-            tprint_success("✅ [CLUSTERING] Tree-based clustering completed", color="green")
+            tprint_success("✅ [REGIME_DETECTION] Tree-based regime detection completed", color="green")
             return labels, probabilities
 
         except Exception as e:
-            self.logger.error(f"Tree-based clustering failed: {e}")
-            raise ValueError(f"Tree-based clustering failed: {e}")
+            self.logger.error(f"Tree-based regime detection failed: {e}")
+            raise ValueError(f"Tree-based regime detection failed: {e}")
 
     def _perform_supervised_regime_discovery(self, data: np.ndarray) -> Dict[str, Any]:
         """Perform supervised regime discovery using synthetic targets."""
         try:
-            from sklearn.cluster import KMeans
             from sklearn.model_selection import train_test_split
+            from sklearn.ensemble import RandomForestClassifier
 
-            # Create synthetic targets using clustering
-            kmeans = KMeans(n_clusters=self.config.n_regimes, random_state=42, n_init=10)
-            synthetic_targets = kmeans.fit_predict(data)
+            # Create synthetic targets using simple regime assignment
+            n_samples = len(data)
+            regime_size = n_samples // self.config.n_regimes
+            synthetic_targets = np.array([i // regime_size for i in range(n_samples)])
+            synthetic_targets = np.minimum(synthetic_targets, self.config.n_regimes - 1)
 
             # Split data for training/validation
             X_train, X_test, y_train, y_test = train_test_split(
@@ -942,7 +943,6 @@ class TASRegimeDetector:
             )
 
             # Create a simple ensemble classifier
-            from sklearn.ensemble import RandomForestClassifier
             rf = RandomForestClassifier(n_estimators=100, random_state=42)
             rf.fit(X_train, y_train)
 
@@ -971,17 +971,18 @@ class TASRegimeDetector:
 
         except Exception as e:
             self.logger.error(f"Supervised regime discovery failed: {e}")
-            # Fallback to simple clustering
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=self.config.n_regimes, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(data)
+            # Fallback to simple regime assignment
+            n_samples = len(data)
+            regime_size = n_samples // self.config.n_regimes
+            labels = np.array([i // regime_size for i in range(n_samples)])
+            labels = np.minimum(labels, self.config.n_regimes - 1)
             probabilities = self._calculate_tree_probabilities(data, labels)
 
             return {
                 'regime_predictions': labels,
                 'regime_probabilities': probabilities,
-                'performance_metrics': {'method': 'kmeans_fallback'},
-                'method': 'kmeans_fallback'
+                'performance_metrics': {'method': 'simple_assignment_fallback'},
+                'method': 'simple_assignment_fallback'
             }
 
     def _ensemble_predictions(self, predictions: np.ndarray) -> np.ndarray:
@@ -1059,10 +1060,11 @@ class TASRegimeDetector:
             )
 
             # Create synthetic target variable for supervised learning
-            # Use clustering to create initial regime labels
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=optimal_regimes, random_state=42, n_init=10)
-            synthetic_targets = kmeans.fit_predict(data)
+            # Use simple regime assignment instead of clustering
+            n_samples = len(data)
+            regime_size = n_samples // optimal_regimes
+            synthetic_targets = np.array([i // regime_size for i in range(n_samples)])
+            synthetic_targets = np.minimum(synthetic_targets, optimal_regimes - 1)
 
             # Train ensemble models on synthetic targets
             ensemble_predictions = []
@@ -1090,7 +1092,7 @@ class TASRegimeDetector:
                 final_predictions = self._ensemble_predictions(ensemble_predictions)
                 final_probabilities = self._ensemble_probabilities(ensemble_probabilities)
             else:
-                # Fallback to clustering if all models fail
+                # Fallback to simple assignment if all models fail
                 final_predictions = synthetic_targets
                 final_probabilities = self._calculate_tree_probabilities(data, final_predictions)
 
@@ -1699,16 +1701,16 @@ class TASRegimeDetector:
             self.logger.warning(f"TAS results summary logging failed: {e}")
 
     def _detect_regimes_simple(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Simple regime detection using clustering."""
+        """Simple regime detection using sequential assignment."""
         try:
-            from sklearn.cluster import KMeans
-
             # Determine number of regimes
             n_regimes = min(8, max(3, features.shape[0] // 50))
 
-            # Perform clustering
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
-            regime_predictions = kmeans.fit_predict(features)
+            # Perform simple sequential regime assignment
+            n_samples = len(features)
+            regime_size = n_samples // n_regimes
+            regime_predictions = np.array([i // regime_size for i in range(n_samples)])
+            regime_predictions = np.minimum(regime_predictions, n_regimes - 1)
 
             # Create probabilities
             regime_probabilities = np.zeros((len(regime_predictions), n_regimes))

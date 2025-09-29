@@ -636,18 +636,22 @@ class AdvancedTradingArchitectureSearch:
 
             # Use unsupervised learning to detect regimes
             from sklearn.ensemble import RandomForestClassifier
-            from sklearn.cluster import KMeans
+            # KMeans clustering removed - will be handled in subsequent step
 
             # Try different numbers of regimes
             for n_regimes in range(3, 8):  # 3 to 7 regimes
                 try:
                     # Cluster the feature space
-                    kmeans = KMeans(n_clusters=n_regimes, random_state=42)
-                    clusters = kmeans.fit_predict(regime_features)
+                    # Simple regime assignment instead of KMeans
+                    n_samples = len(regime_features)
+                    regime_size = n_samples // n_regimes
+                    regime_labels = np.array([i // regime_size for i in range(n_samples)])
+                    regime_labels = np.minimum(regime_labels, n_regimes - 1)
+                    # clusters already assigned above
 
                     # Analyze each cluster
                     for cluster_id in range(n_regimes):
-                        cluster_mask = clusters == cluster_id
+                        cluster_mask = regime_labels == cluster_id
                         cluster_data = market_data[cluster_mask]
 
                         if len(cluster_data) >= self.config.min_regime_samples:

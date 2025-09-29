@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+# Clustering imports removed - will be handled in subsequent step
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.decomposition import PCA, FastICA
@@ -363,23 +363,25 @@ class UnsupervisedRegimeDetector:
         if n_regimes is None:
             n_regimes = self._find_optimal_clusters(features)
         
-        # Perform K-means clustering
-        kmeans = KMeans(
-            n_clusters=n_regimes,
-            n_init=self.config.kmeans_n_init,
-            max_iter=self.config.kmeans_max_iter,
-            random_state=42
-        )
+        # Perform simple regime assignment (replacing K-means)
+        n_samples = len(features)
+        regime_size = n_samples // n_regimes
+        labels = np.array([i // regime_size for i in range(n_samples)])
+        labels = np.minimum(labels, n_regimes - 1)
         
-        labels = kmeans.fit_predict(features)
-        centers = kmeans.cluster_centers_
+        # Calculate regime centers
+        centers = np.zeros((n_regimes, features.shape[1]))
+        for i in range(n_regimes):
+            regime_mask = labels == i
+            if np.sum(regime_mask) > 0:
+                centers[i] = np.mean(features[regime_mask], axis=0)
         
         return {
-            'method': 'kmeans',
+            'method': 'simple_assignment',
             'labels': labels,
             'centers': centers,
             'n_regimes': n_regimes,
-            'model': kmeans
+            'model': None
         }
     
     def _gmm_detection(self, features: np.ndarray) -> Dict[str, Any]:

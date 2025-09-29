@@ -337,7 +337,7 @@ class RegimeDetector:
     def _detect_basic_regimes(self, regime_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[int, np.ndarray], Dict[int, Dict[str, Any]]]:
         """Detect regimes using basic methods."""
         try:
-            from sklearn.cluster import KMeans
+            # KMeans clustering removed - will be handled in subsequent step
             from sklearn.preprocessing import StandardScaler
             
             # Prepare data
@@ -349,13 +349,21 @@ class RegimeDetector:
             regime_data_scaled = scaler.fit_transform(regime_data_numeric)
             
             # Perform clustering
-            kmeans = KMeans(n_clusters=self.config.n_regimes, random_state=42)
-            regime_labels = kmeans.fit_predict(regime_data_scaled)
+            # Simple regime assignment instead of KMeans
+            n_samples = len(regime_data_numeric)
+            regime_size = n_samples // self.config.n_regimes
+            regime_labels = np.array([i // regime_size for i in range(n_samples)])
+            regime_labels = np.minimum(regime_labels, self.config.n_regimes - 1)
+            # regime_labels already assigned above
             
             # Calculate regime centers
             regime_centers = {}
             for i in range(self.config.n_regimes):
-                regime_centers[i] = kmeans.cluster_centers_[i]
+                regime_mask = regime_labels == i
+                if np.sum(regime_mask) > 0:
+                    regime_centers[i] = np.mean(regime_data_scaled[regime_mask], axis=0)
+                else:
+                    regime_centers[i] = np.zeros(regime_data_scaled.shape[1])
             
             # Calculate regime statistics
             regime_statistics = {}

@@ -5,12 +5,29 @@ This module implements comprehensive disagreement meta-features for ensemble mod
 to capture model disagreement and uncertainty in predictions.
 
 Features implemented:
-1. Prediction Dispersion - Variance of predicted returns across models
-2. Direction Conflict - Fraction of models long vs short (hard votes)
-3. Ensemble Confidence Gap - Difference between highest and second-highest aggregated probability
-4. Uncertainty/Entropy - Entropy of the average probability distribution
-5. Model Spread Indicators - Range and IQR of predicted returns/probs across models
-6. Pairwise Divergence - Jensen-Shannon and KL divergence between model probability distributions
+1. Prediction Dispersion
+Variance of predicted returns across models.
+Std. deviation of probability of "up" vs "down" across models.
+👉 If variance is high → models disagree strongly → signal less reliable.
+2. Direction Conflict
+Fraction of models long vs short (hard votes).
+Example: 4 models → 3 long, 1 short ⇒ disagreement rate = 25%.
+👉 Useful as a filter: trade only if ≥70% of models agree on direction.
+3. Ensemble Confidence Gap (Margin)
+Difference between highest and second-highest aggregated probability.
+High margin = conviction trade.
+Low margin = market regime uncertain, avoid or size down.
+4. Uncertainty / Entropy
+Entropy of the average probability distribution.
+H=−∑kpˉklog⁡pˉkH = -\sum_k \bar p_k \log \bar p_kH=−∑k​pˉ​k​logpˉ​k​.
+👉 High entropy = scattered belief → uncertain trade environment.
+5. Model Spread Indicators
+Range: max⁡(plong(m))−min⁡(plong(m))\max(p^{(m)}_{long}) - \min(p^{(m)}_{long})max(plong(m)​)−min(plong(m)​).
+IQR (interquartile range): of predicted returns/probs across models.
+👉 Captures disagreement magnitude on trade strength.
+6. Pairwise Divergence
+Jensen–Shannon divergence or KL divergence between model probability distributions.
+Large divergence = models view market very differently.
 """
 
 import numpy as np

@@ -14,8 +14,8 @@ from typing import Dict, Any
 # Add tprint imports for enhanced logging
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
 
-# Import disagreement meta-features
-from ..disagreement_meta_features import DisagreementMetaFeatures
+# Import meta-feature generator
+from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
 
 class VolatileRegimeEnsemble(BaseEnsemble):
     """
@@ -30,8 +30,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         self.dl_config = {'sequence_length': 20, 'lstm_units': 50, 'transformer_heads': 2, 'transformer_key_dim': 32, 'dropout_rate': 0.2, 'epochs': 50, 'batch_size': 32}
         self.models = {'lstm': None, 'transformer': None, 'garch': None, 'tabnet': None, 'order_flow_lgbm': None, 'logistic_regression': None}
         
-        # Initialize disagreement meta-features calculator
-        self.disagreement_calculator = DisagreementMetaFeatures(self.logger)
+        # Initialize meta-feature generator
+        self.meta_feature_generator = EnsembleMetaFeatureGenerator(self.logger)
         
         tprint("✅ [VOLATILE_REGIME] VolatileRegimeEnsemble initialized successfully", color="green")
 
@@ -205,36 +205,13 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         try:
             tprint(f"🔍 [VOLATILE_REGIME] Generating meta-features for {self.ensemble_name}", color="cyan")
             
-            # Start with base meta-features
-            meta_features = self._generate_meta_features(df)
-            
             # Get base model predictions for disagreement analysis
             base_predictions = self._get_base_model_predictions(df, is_live=is_live)
             
-            if base_predictions and len(base_predictions) > 1:
-                # Calculate disagreement meta-features
-                disagreement_features = self.disagreement_calculator.calculate_disagreement_features_for_ensemble(
-                    base_predictions, is_live=is_live
-                )
-                
-                # Add disagreement features to meta-features
-                for feature_name, feature_value in disagreement_features.items():
-                    meta_features[feature_name] = feature_value
-                
-                tprint(f"✅ [VOLATILE_REGIME] Added {len(disagreement_features)} disagreement features", color="green")
-            else:
-                tprint("⚠️ [VOLATILE_REGIME] Insufficient base model predictions for disagreement analysis", color="yellow")
-                # Add default disagreement features
-                default_disagreement = self.disagreement_calculator._get_default_disagreement_features()
-                for feature_name, feature_value in default_disagreement.items():
-                    meta_features[feature_name] = feature_value
-            
-            # Ensure all features are numeric and handle any NaN values
-            meta_features = meta_features.fillna(0.0)
-            
-            # Convert to numeric, coercing any non-numeric values
-            for col in meta_features.columns:
-                meta_features[col] = pd.to_numeric(meta_features[col], errors='coerce').fillna(0.0)
+            # Use the meta-feature generator from feature engineering
+            meta_features = self.meta_feature_generator.generate_meta_features_for_volatile_regime_ensemble(
+                df, base_predictions, is_live
+            )
             
             tprint(f"✅ [VOLATILE_REGIME] Generated {len(meta_features.columns)} meta-features", color="green")
             return meta_features

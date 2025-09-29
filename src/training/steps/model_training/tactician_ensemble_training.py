@@ -2207,23 +2207,19 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
             base_predictions = self._get_base_model_predictions(df, is_live=is_live)
             
             if base_predictions and len(base_predictions) > 1:
-                # Import disagreement calculator
+                # Use meta-feature generator from feature engineering
                 try:
-                    from src.analyst.predictive_ensembles.disagreement_meta_features import DisagreementMetaFeatures
-                    disagreement_calculator = DisagreementMetaFeatures(self.logger)
+                    from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
+                    meta_feature_generator = EnsembleMetaFeatureGenerator(self.logger)
                     
-                    # Calculate disagreement meta-features
-                    disagreement_features = disagreement_calculator.calculate_disagreement_features_for_ensemble(
-                        base_predictions, is_live=is_live
+                    # Generate meta-features using the feature engineering module
+                    meta_features = meta_feature_generator.generate_meta_features_for_tactician_ensemble(
+                        df, base_predictions, is_live
                     )
                     
-                    # Add disagreement features to meta-features
-                    for feature_name, feature_value in disagreement_features.items():
-                        meta_features[feature_name] = feature_value
-                    
-                    tprint(f"✅ [TACTICIAN_ENSEMBLE] Added {len(disagreement_features)} disagreement features", color="green")
+                    tprint(f"✅ [TACTICIAN_ENSEMBLE] Generated {len(meta_features.columns)} meta-features", color="green")
                 except ImportError as e:
-                    tprint(f"⚠️ [TACTICIAN_ENSEMBLE] Could not import disagreement calculator: {e}", color="yellow")
+                    tprint(f"⚠️ [TACTICIAN_ENSEMBLE] Could not import meta-feature generator: {e}", color="yellow")
                     # Add default disagreement features
                     default_disagreement = {
                         "prediction_dispersion": 0.0, "prediction_std": 0.0,

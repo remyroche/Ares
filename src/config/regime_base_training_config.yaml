@@ -40,13 +40,27 @@ extratrees:
 
 # Bayesian Rule Lists Configuration
 bayesian_rule_lists:
-  max_rules: 30  # cap total rules
-  max_rule_length: 3  # "if cond1 & cond2 & cond3"
-  n_chains: 3  # MCMC chains
-  n_iter: 10000  # iterations per chain
-  min_support: 0.02  # rules must cover at least 2% of samples
-  alpha: 1.0  # prior for rule selection (higher → shorter lists)
-  beta: 1.0  # prior for list length
+  # Interpretability and stability
+  max_rules: 12              # hard cap; posterior usually 3–7
+  max_rule_length: 3         # 2–3 is the sweet spot
+  min_support: 0.02          # ≥2% of samples per rule (raise if dataset is big)
+  # Priors (generic; map to your library's names)
+  alpha: 1.0                 # class prior (Beta/Dirichlet strength)
+  beta: 1.0
+  list_length_lambda: 4      # if supported (Poisson mean ~4 rules)
+  rule_length_penalty: 1.0   # if supported (≥1 encourages shorter rules)
+  # Sampling
+  n_chains: 3
+  n_iter: 10000
+  burn_in: 2000              # discard early samples (if supported)
+  thin: 5                    # keep every 5th sample (if supported)
+  random_state: 42
+  # Candidate rules (upstream mining; if your stack supports these knobs)
+  candidate_source: "trees"  # trees | apriori | mixed
+  max_candidates: 2000
+  discretization: "quantile" # 3–5 bins per continuous feature
+  max_tree_depth_mining: 3
+  min_impurity_decrease: 0.0
 
 # Meta-features Configuration
 meta_features:

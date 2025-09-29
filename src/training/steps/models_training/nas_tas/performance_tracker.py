@@ -267,13 +267,114 @@ class PerformanceTracker:
     
     def _create_drift_detector(self):
         """Create drift detector for a model."""
-        # Simple drift detector implementation
-        return {
-            'baseline_metrics': {},
-            'recent_metrics': [],
-            'drift_threshold': 0.1,
-            'detected_drift': False
-        }
+        try:
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.decomposition import PCA
+            from sklearn.cluster import KMeans
+            import numpy as np
+            
+            # Advanced drift detector implementation
+            drift_detector = {
+                'baseline_metrics': {},
+                'recent_metrics': [],
+                'drift_threshold': self.config.drift_detection_window,
+                'detected_drift': False,
+                'drift_score': 0.0,
+                'drift_history': [],
+                'statistical_tests': {
+                    'ks_test': None,  # Kolmogorov-Smirnov test
+                    'psi_score': None,  # Population Stability Index
+                    'wasserstein_distance': None  # Wasserstein distance
+                },
+                'feature_drift': {},
+                'performance_drift': {},
+                'data_drift': {},
+                'concept_drift': {},
+                'detection_methods': {
+                    'statistical': True,
+                    'distributional': True,
+                    'performance_based': True,
+                    'feature_importance': True
+                },
+                'alerts': [],
+                'last_drift_check': None,
+                'drift_trend': 'stable',  # 'increasing', 'decreasing', 'stable'
+                'confidence_level': 0.95,
+                'min_samples': 100,  # Minimum samples for drift detection
+                'window_size': self.config.drift_detection_window,
+                'scalers': {
+                    'feature_scaler': StandardScaler(),
+                    'performance_scaler': StandardScaler()
+                },
+                'pca_components': None,
+                'clustering_model': None,
+                'drift_models': {
+                    'isolation_forest': None,
+                    'one_class_svm': None
+                }
+            }
+            
+            # Initialize drift detection models
+            try:
+                from sklearn.ensemble import IsolationForest
+                from sklearn.svm import OneClassSVM
+                
+                drift_detector['drift_models']['isolation_forest'] = IsolationForest(
+                    contamination=0.1,
+                    random_state=42,
+                    n_estimators=100
+                )
+                
+                drift_detector['drift_models']['one_class_svm'] = OneClassSVM(
+                    nu=0.1,
+                    kernel='rbf',
+                    gamma='scale'
+                )
+                
+            except ImportError:
+                self.logger.warning("Could not import advanced drift detection models")
+                drift_detector['drift_models'] = None
+            
+            # Initialize PCA for dimensionality reduction
+            try:
+                drift_detector['pca_components'] = PCA(
+                    n_components=min(10, self.config.drift_detection_window // 10),
+                    random_state=42
+                )
+            except Exception as e:
+                self.logger.warning(f"Could not initialize PCA: {e}")
+                drift_detector['pca_components'] = None
+            
+            # Initialize clustering for regime detection
+            try:
+                drift_detector['clustering_model'] = KMeans(
+                    n_clusters=3,  # Default number of clusters
+                    random_state=42,
+                    n_init=10
+                )
+            except Exception as e:
+                self.logger.warning(f"Could not initialize clustering: {e}")
+                drift_detector['clustering_model'] = None
+            
+            return drift_detector
+            
+        except Exception as e:
+            self.logger.error(f"Error creating drift detector: {e}")
+            # Fallback to simple implementation
+            return {
+                'baseline_metrics': {},
+                'recent_metrics': [],
+                'drift_threshold': 0.1,
+                'detected_drift': False,
+                'drift_score': 0.0,
+                'drift_history': [],
+                'alerts': [],
+                'last_drift_check': None,
+                'drift_trend': 'stable',
+                'confidence_level': 0.95,
+                'min_samples': 100,
+                'window_size': self.config.drift_detection_window
+            }
     
     def record_performance(self, 
                          model_id: str,

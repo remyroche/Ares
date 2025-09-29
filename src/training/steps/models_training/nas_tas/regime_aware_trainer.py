@@ -1032,8 +1032,47 @@ class RegimeAwareTrainer:
         )
     
     def _create_ensemble(self):
-        # This will be handled in _train_ensemble_models
-        return None
+        """Create ensemble model based on configuration."""
+        try:
+            from sklearn.ensemble import VotingClassifier, StackingClassifier
+            from sklearn.linear_model import LogisticRegression
+            
+            if self.config.ensemble_method == "voting":
+                # Voting ensemble - simple majority voting
+                return VotingClassifier(
+                    estimators=[],  # Will be populated with base models
+                    voting='soft',  # Use predicted probabilities
+                    n_jobs=-1
+                )
+            
+            elif self.config.ensemble_method == "stacking":
+                # Stacking ensemble - meta-learner on top of base models
+                return StackingClassifier(
+                    estimators=[],  # Will be populated with base models
+                    final_estimator=LogisticRegression(random_state=42),
+                    cv=5,  # 5-fold cross-validation for meta-learner
+                    n_jobs=-1
+                )
+            
+            elif self.config.ensemble_method == "blending":
+                # Blending ensemble - weighted combination
+                # This will be handled differently in _train_ensemble_models
+                return None
+            
+            else:
+                self.logger.warning(f"Unknown ensemble method: {self.config.ensemble_method}")
+                return VotingClassifier(
+                    estimators=[],
+                    voting='soft',
+                    n_jobs=-1
+                )
+                
+        except ImportError as e:
+            self.logger.warning(f"Could not import ensemble libraries: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating ensemble: {e}")
+            return None
     
     def predict(self, 
                 market_data: pd.DataFrame,

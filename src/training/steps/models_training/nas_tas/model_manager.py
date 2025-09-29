@@ -442,10 +442,38 @@ class ModelManager:
     def _gradual_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """Gradual deployment strategy."""
         try:
-            # Gradual rollout implementation
             self.logger.info(f"   📦 Gradual deployment of {model_id}")
-            # In a real implementation, this would gradually increase traffic
+            
+            # Initialize gradual rollout tracking
+            if model_id not in self.model_monitoring:
+                self.model_monitoring[model_id] = {}
+            
+            # Set initial traffic percentage (start with 5%)
+            initial_traffic_percentage = 0.05
+            self.model_monitoring[model_id]['traffic_percentage'] = initial_traffic_percentage
+            self.model_monitoring[model_id]['rollout_start_time'] = datetime.now()
+            self.model_monitoring[model_id]['rollout_phases'] = [
+                {'percentage': 0.05, 'duration_hours': 2, 'completed': False},
+                {'percentage': 0.15, 'duration_hours': 4, 'completed': False},
+                {'percentage': 0.35, 'duration_hours': 8, 'completed': False},
+                {'percentage': 0.60, 'duration_hours': 12, 'completed': False},
+                {'percentage': 1.00, 'duration_hours': 24, 'completed': False}
+            ]
+            
+            # Deploy with initial traffic percentage
+            self.logger.info(f"   📊 Starting gradual rollout: {initial_traffic_percentage*100:.1f}% traffic")
+            
+            # Set up monitoring for gradual rollout
+            self.model_monitoring[model_id]['performance_threshold'] = 0.7  # Minimum performance to continue
+            self.model_monitoring[model_id]['error_rate_threshold'] = 0.05  # Maximum error rate
+            self.model_monitoring[model_id]['rollout_active'] = True
+            
+            # Schedule next phase check
+            self.model_monitoring[model_id]['next_phase_check'] = datetime.now() + timedelta(hours=2)
+            
+            self.logger.info(f"   ✅ Gradual deployment initiated for {model_id}")
             return True
+            
         except Exception as e:
             self.logger.error(f"   ❌ Gradual deployment failed: {e}")
             return False
@@ -453,10 +481,73 @@ class ModelManager:
     def _ab_testing_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """A/B testing deployment strategy."""
         try:
-            # A/B testing implementation
             self.logger.info(f"   📦 A/B testing deployment of {model_id}")
-            # In a real implementation, this would split traffic between old and new models
+            
+            # Initialize A/B testing tracking
+            if model_id not in self.model_monitoring:
+                self.model_monitoring[model_id] = {}
+            
+            # Set up A/B test configuration
+            ab_test_config = {
+                'test_id': f"ab_test_{model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                'control_group_percentage': 0.5,  # 50% traffic to control (old model)
+                'treatment_group_percentage': 0.5,  # 50% traffic to treatment (new model)
+                'test_duration_hours': 168,  # 7 days
+                'start_time': datetime.now(),
+                'status': 'active',
+                'metrics_tracking': {
+                    'accuracy': [],
+                    'f1_score': [],
+                    'latency': [],
+                    'error_rate': []
+                },
+                'control_model_id': None,  # Will be set if previous model exists
+                'treatment_model_id': model_id
+            }
+            
+            # Check if there's a previous model to compare against
+            previous_models = [m for m in self.model_registry.keys() 
+                             if m != model_id and m.startswith(f"regime_{metadata.regime_id}")]
+            
+            if previous_models:
+                # Use the most recent previous model as control
+                control_model_id = max(previous_models, key=lambda x: self.model_registry[x].created_at)
+                ab_test_config['control_model_id'] = control_model_id
+                self.logger.info(f"   🔄 A/B test control: {control_model_id}")
+            else:
+                # No previous model, use baseline performance as control
+                ab_test_config['control_baseline'] = {
+                    'accuracy': 0.5,
+                    'f1_score': 0.5,
+                    'latency': 1.0,
+                    'error_rate': 0.1
+                }
+                self.logger.info(f"   📊 A/B test using baseline control")
+            
+            # Store A/B test configuration
+            self.model_monitoring[model_id]['ab_test'] = ab_test_config
+            
+            # Set up traffic splitting
+            self.model_monitoring[model_id]['traffic_split'] = {
+                'control': ab_test_config['control_group_percentage'],
+                'treatment': ab_test_config['treatment_group_percentage']
+            }
+            
+            # Initialize metrics collection
+            self.model_monitoring[model_id]['ab_test_metrics'] = {
+                'control_metrics': [],
+                'treatment_metrics': [],
+                'statistical_significance': None,
+                'winner': None
+            }
+            
+            # Schedule A/B test evaluation
+            self.model_monitoring[model_id]['ab_test_evaluation_time'] = datetime.now() + timedelta(hours=24)
+            
+            self.logger.info(f"   ✅ A/B testing initiated for {model_id}")
+            self.logger.info(f"   📊 Traffic split: {ab_test_config['control_group_percentage']*100:.0f}% control, {ab_test_config['treatment_group_percentage']*100:.0f}% treatment")
             return True
+            
         except Exception as e:
             self.logger.error(f"   ❌ A/B testing deployment failed: {e}")
             return False
@@ -464,10 +555,73 @@ class ModelManager:
     def _canary_deployment(self, model_id: str, model: Any, metadata: ModelMetadata) -> bool:
         """Canary deployment strategy."""
         try:
-            # Canary deployment implementation
             self.logger.info(f"   📦 Canary deployment of {model_id}")
-            # In a real implementation, this would deploy to a small subset first
+            
+            # Initialize canary deployment tracking
+            if model_id not in self.model_monitoring:
+                self.model_monitoring[model_id] = {}
+            
+            # Set up canary deployment configuration
+            canary_config = {
+                'canary_id': f"canary_{model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                'canary_percentage': 0.01,  # Start with 1% traffic
+                'canary_duration_hours': 24,  # 24 hours canary period
+                'success_threshold': 0.8,  # 80% success rate required
+                'error_rate_threshold': 0.02,  # Max 2% error rate
+                'latency_threshold': 2.0,  # Max 2 seconds latency
+                'start_time': datetime.now(),
+                'status': 'active',
+                'canary_metrics': {
+                    'total_requests': 0,
+                    'successful_requests': 0,
+                    'failed_requests': 0,
+                    'average_latency': 0.0,
+                    'error_rate': 0.0,
+                    'success_rate': 0.0
+                },
+                'promotion_criteria': {
+                    'min_requests': 100,  # Minimum requests before evaluation
+                    'success_rate_threshold': 0.8,
+                    'error_rate_threshold': 0.02,
+                    'latency_threshold': 2.0
+                }
+            }
+            
+            # Store canary configuration
+            self.model_monitoring[model_id]['canary'] = canary_config
+            
+            # Set up canary traffic routing
+            self.model_monitoring[model_id]['traffic_routing'] = {
+                'canary_percentage': canary_config['canary_percentage'],
+                'production_percentage': 1.0 - canary_config['canary_percentage'],
+                'canary_active': True
+            }
+            
+            # Initialize canary monitoring
+            self.model_monitoring[model_id]['canary_monitoring'] = {
+                'metrics_history': [],
+                'alerts': [],
+                'promotion_ready': False,
+                'rollback_triggered': False
+            }
+            
+            # Set up canary evaluation schedule
+            self.model_monitoring[model_id]['canary_evaluation_time'] = datetime.now() + timedelta(hours=6)
+            self.model_monitoring[model_id]['canary_promotion_time'] = datetime.now() + timedelta(hours=24)
+            
+            # Set up automatic rollback triggers
+            self.model_monitoring[model_id]['rollback_triggers'] = {
+                'error_rate_threshold': 0.05,  # 5% error rate triggers rollback
+                'latency_threshold': 5.0,  # 5 seconds latency triggers rollback
+                'success_rate_threshold': 0.5  # 50% success rate triggers rollback
+            }
+            
+            self.logger.info(f"   ✅ Canary deployment initiated for {model_id}")
+            self.logger.info(f"   📊 Canary traffic: {canary_config['canary_percentage']*100:.1f}%")
+            self.logger.info(f"   ⏰ Canary duration: {canary_config['canary_duration_hours']} hours")
+            self.logger.info(f"   🎯 Success threshold: {canary_config['success_threshold']*100:.0f}%")
             return True
+            
         except Exception as e:
             self.logger.error(f"   ❌ Canary deployment failed: {e}")
             return False

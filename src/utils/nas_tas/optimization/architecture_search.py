@@ -178,64 +178,106 @@ class ArchitectureSearchOptimizer:
             config: Architecture search configuration
         """
         tprint_info("🚀 Initializing Architecture Search Optimizer with comprehensive utility integration")
+        tprint_debug(f"📋 Configuration provided: {config}")
         
         self.config = config
+        tprint_debug(f"⚙️ Architecture Search config: max_iterations={config.max_iterations}, population_size={config.population_size}")
         self.logger = logging.getLogger(self.__class__.__name__)
+        tprint_debug(f"📝 Logger initialized: {self.logger.name}")
         
         # Initialize utility classes
         tprint_debug("🔧 Initializing utility classes")
         self.common_ops = CommonUtilities()
+        tprint_debug("✅ CommonUtilities initialized")
         self.math_validator = MathValidation()
+        tprint_debug("✅ MathValidation initialized")
         self.klines_manager = get_klines_manager()
+        tprint_debug("✅ KlinesParquetManager initialized")
         
         # Initialize data processing utilities
         tprint_debug("🔧 Initializing data processing utilities")
         self.data_processor = DataProcessor()
+        tprint_debug("✅ DataProcessor initialized")
         self.returns_engineer = BasicReturnsEngineer()
+        tprint_debug("✅ BasicReturnsEngineer initialized")
         self.feature_engineer = FeatureEngineer()
+        tprint_debug("✅ FeatureEngineer initialized")
         self.gap_detector = GapDetector()
+        tprint_debug("✅ GapDetector initialized")
         self.unified_data_utils = UnifiedDataUtils()
+        tprint_debug("✅ UnifiedDataUtils initialized")
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
         self.matrix_ops = MatrixOperations()
+        tprint_debug("✅ MatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
+        tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
+        tprint_debug("✅ BatchMatrixOperations initialized")
         self.vectorized_core = VectorizedCore()
+        tprint_debug("✅ VectorizedCore initialized")
         self.matrix_convenience = MatrixConvenience()
+        tprint_debug("✅ MatrixConvenience initialized")
         
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
         self.m1_integration = integrate_with_m1_optimizers()
+        tprint_debug(f"🔍 M1 integration result: {self.m1_integration}")
         if self.m1_integration['success']:
             tprint_success("✅ M1 integration successful")
             self.gpu_manager = get_m1_gpu_manager()
+            tprint_debug("✅ M1 GPU Manager initialized")
             self.memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("✅ M1 Memory Optimizer initialized")
             self.cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_debug("✅ M1 CPU Optimizer initialized")
         else:
             tprint_warning("⚠️ M1 integration failed, using fallback")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
+            tprint_debug("🔄 Using fallback configurations")
         
         # Initialize optimization components
         tprint_debug("🔧 Initializing optimization components")
         self.bayesian_optimizer = BayesianEntryTimingOptimizer()
+        tprint_debug("✅ BayesianEntryTimingOptimizer initialized")
         self.grid_optimizer = GridSearchOptimizer()
+        tprint_debug("✅ GridSearchOptimizer initialized")
         self.hpo_utils = HPOUtils()
+        tprint_debug("✅ HPOUtils initialized")
         self.hierarchical_hpo = HierarchicalHPO()
+        tprint_debug("✅ HierarchicalHPO initialized")
         self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer()
+        tprint_debug("✅ RegimeSpecificTPSLOptimizer initialized")
         
         # Initialize search engines
         self.nas_engine = None
         self.tas_engine = None
+        tprint_debug("✅ Search engines initialized (will be configured later)")
         
         # Search state
         self.search_history = []
         self.best_architecture = None
         self.best_score = -np.inf
+        tprint_debug("✅ Search state initialized")
         
         tprint_success("✅ Architecture Search Optimizer initialized successfully")
+        tprint_info(f"📊 Optimizer components: {len([attr for attr in dir(self) if not attr.startswith('_')])} public attributes")
+        tprint_structured({
+            'optimizer_type': 'ArchitectureSearch',
+            'initialization_time': time.time(),
+            'm1_integration': self.m1_integration['success'],
+            'components_initialized': {
+                'utility_classes': True,
+                'data_processing': True,
+                'matrix_operations': True,
+                'hardware_optimization': self.m1_integration['success'],
+                'optimization_components': True,
+                'search_engines': False  # Will be initialized later
+            }
+        }, LogLevel.INFO)
     
     def initialize_engines(self, unified_config: UnifiedArchitectureConfig):
         """Initialize NAS and TAS engines based on configuration.
@@ -281,34 +323,85 @@ class ArchitectureSearchOptimizer:
         try:
             # Validate and prepare data using utilities
             tprint_debug("🔍 Validating and preparing data")
-            if not validate_dataframe_columns(data, ['open', 'high', 'low', 'close', 'volume']):
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            tprint_debug(f"📋 Required columns: {required_columns}")
+            tprint_debug(f"📊 Available columns: {list(data.columns)}")
+            
+            if not validate_dataframe_columns(data, required_columns):
                 tprint_error("❌ Invalid data columns for architecture search")
+                tprint_structured({
+                    'validation_error': {
+                        'required_columns': required_columns,
+                        'available_columns': list(data.columns),
+                        'missing_columns': [col for col in required_columns if col not in data.columns]
+                    }
+                }, LogLevel.ERROR)
                 raise ValueError("Invalid data columns")
             
+            tprint_success("✅ Data validation passed for architecture search")
+            
             # Apply data quality metrics
+            tprint_debug("📊 Calculating data quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_info(f"📈 Data quality metrics: {quality_metrics}")
+            tprint_structured({
+                'data_quality': quality_metrics,
+                'data_characteristics': {
+                    'shape': data.shape,
+                    'null_counts': data.isnull().sum().to_dict(),
+                    'memory_usage': data.memory_usage(deep=True).sum()
+                }
+            }, LogLevel.INFO)
             
             # Optimize data types for memory efficiency
+            tprint_debug("🔧 Optimizing data types")
+            memory_before = data.memory_usage(deep=True).sum()
             data = optimize_dataframe_dtypes(data)
+            memory_after = data.memory_usage(deep=True).sum()
+            tprint_debug(f"💾 Memory optimization: {memory_before} -> {memory_after} bytes ({(memory_after/memory_before-1)*100:.1f}% change)")
             
             # Guard against null values
+            tprint_debug("🛡️ Applying null value guards")
+            null_counts_before = data.isnull().sum().sum()
             data = guard_dataframe_nulls(data, threshold=0.1)
+            null_counts_after = data.isnull().sum().sum()
+            tprint_debug(f"🔍 Null values: {null_counts_before} -> {null_counts_after}")
             
             # Initialize engines
+            tprint_debug("🔧 Initializing search engines")
             self.initialize_engines(unified_config)
+            tprint_success("✅ Search engines initialized successfully")
             
             # Use M1 GPU context if available
+            context_type = "GPU" if self.gpu_manager else "Memory"
+            tprint_debug(f"🔧 Using {context_type} context for architecture search")
+            
             with gpu_context("architecture_search") if self.gpu_manager else memory_checkpoint("architecture_search"):
                 
                 # Perform search based on architecture type
+                tprint_info(f"🔍 Starting search for architecture type: {unified_config.architecture_type}")
+                tprint_structured({
+                    'search_configuration': {
+                        'architecture_type': str(unified_config.architecture_type),
+                        'search_space_size': len(search_space),
+                        'search_space_keys': list(search_space.keys()) if search_space else []
+                    }
+                }, LogLevel.INFO)
+                
                 if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
-                    result = await self._search_neural_architectures(data, search_space)
+                    tprint_info("🧠 Searching neural architectures")
+                    with tprint_timer("Neural Architecture Search"):
+                        result = await self._search_neural_architectures(data, search_space)
                 elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
-                    result = await self._search_tree_architectures(data, search_space)
+                    tprint_info("🌳 Searching tree architectures")
+                    with tprint_timer("Tree Architecture Search"):
+                        result = await self._search_tree_architectures(data, search_space)
                 elif unified_config.architecture_type == ArchitectureType.HYBRID_NEURAL_TREE:
-                    result = await self._search_hybrid_architectures(data, search_space)
+                    tprint_info("🔀 Searching hybrid architectures")
+                    with tprint_timer("Hybrid Architecture Search"):
+                        result = await self._search_hybrid_architectures(data, search_space)
                 else:
+                    tprint_error(f"❌ Unsupported architecture type: {unified_config.architecture_type}")
                     raise ValueError(f"Unsupported architecture type: {unified_config.architecture_type}")
             
             # Calculate search metrics using math validation utilities
@@ -317,7 +410,10 @@ class ArchitectureSearchOptimizer:
             result.total_iterations = len(self.search_history)
             result.convergence_iteration = self._find_convergence_point()
             
+            tprint_debug(f"📊 Search metrics calculated: {search_time:.2f}s, {result.total_iterations} iterations")
+            
             # Calculate complexity and efficiency scores
+            tprint_debug("🔍 Calculating complexity and efficiency scores")
             result.complexity_score = self._calculate_complexity_score(result.best_architecture)
             result.efficiency_score = self._calculate_efficiency_score(result.best_architecture, result.best_score)
             
@@ -325,6 +421,19 @@ class ArchitectureSearchOptimizer:
             tprint_info(f"🏆 Best score: {result.best_score:.4f}")
             tprint_info(f"📊 Complexity score: {result.complexity_score:.4f}")
             tprint_info(f"⚡ Efficiency score: {result.efficiency_score:.4f}")
+            
+            # Log comprehensive search summary
+            tprint_structured({
+                'search_summary': {
+                    'architecture_type': str(unified_config.architecture_type),
+                    'total_iterations': result.total_iterations,
+                    'best_score': result.best_score,
+                    'search_time_seconds': search_time,
+                    'complexity_score': result.complexity_score,
+                    'efficiency_score': result.efficiency_score,
+                    'convergence_iteration': result.convergence_iteration
+                }
+            }, LogLevel.SUCCESS)
             
             return result
             
@@ -339,12 +448,18 @@ class ArchitectureSearchOptimizer:
         search_space: Dict[str, Any]
     ) -> ArchitectureSearchResult:
         """Search for neural architectures using NAS engine."""
-        tprint_info("Searching neural architectures")
+        tprint_info("🔍 Searching neural architectures")
+        tprint_debug(f"📊 Data shape: {data.shape}")
+        tprint_debug(f"🔧 Search space size: {len(search_space)}")
         
         if not self.nas_engine:
+            tprint_error("❌ NAS engine not initialized")
             raise ValueError("NAS engine not initialized")
         
+        tprint_debug("✅ NAS engine is available")
+        
         # Use NAS engine for architecture search
+        tprint_debug(f"🔧 Starting NAS engine search with {self.config.max_iterations} trials")
         nas_results = self.nas_engine.search_architectures(
             data=data,
             search_space=search_space,
@@ -352,7 +467,10 @@ class ArchitectureSearchOptimizer:
             n_trials=self.config.max_iterations
         )
         
-        return ArchitectureSearchResult(
+        tprint_debug(f"📊 NAS search completed: {len(nas_results.get('trials', []))} trials")
+        tprint_debug(f"🏆 Best score: {nas_results.get('best_score', 0.0)}")
+        
+        result = ArchitectureSearchResult(
             best_architecture=nas_results.get('best_architecture', {}),
             best_score=nas_results.get('best_score', 0.0),
             search_history=nas_results.get('trials', []),
@@ -365,6 +483,18 @@ class ArchitectureSearchOptimizer:
             search_timestamp=datetime.now(),
             configuration=self.config.__dict__
         )
+        
+        tprint_success("✅ Neural architecture search completed")
+        tprint_structured({
+            'neural_search_result': {
+                'best_architecture_found': bool(result.best_architecture),
+                'best_score': result.best_score,
+                'trials_completed': len(result.search_history),
+                'architecture_type': 'NEURAL_ONLY'
+            }
+        }, LogLevel.INFO)
+        
+        return result
     
     async def _search_tree_architectures(
         self,
@@ -372,12 +502,18 @@ class ArchitectureSearchOptimizer:
         search_space: Dict[str, Any]
     ) -> ArchitectureSearchResult:
         """Search for tree architectures using TAS engine."""
-        tprint_info("Searching tree architectures")
+        tprint_info("🔍 Searching tree architectures")
+        tprint_debug(f"📊 Data shape: {data.shape}")
+        tprint_debug(f"🔧 Search space size: {len(search_space)}")
         
         if not self.tas_engine:
+            tprint_error("❌ TAS engine not initialized")
             raise ValueError("TAS engine not initialized")
         
+        tprint_debug("✅ TAS engine is available")
+        
         # Use TAS engine for strategy search
+        tprint_debug(f"🔧 Starting TAS engine search with {self.config.max_iterations} trials")
         tas_results = self.tas_engine.search_strategies(
             data=data,
             search_space=search_space,
@@ -386,7 +522,10 @@ class ArchitectureSearchOptimizer:
             include_regime_specific=True
         )
         
-        return ArchitectureSearchResult(
+        tprint_debug(f"📊 TAS search completed: {len(tas_results.get('trials', []))} trials")
+        tprint_debug(f"🏆 Best score: {tas_results.get('best_score', 0.0)}")
+        
+        result = ArchitectureSearchResult(
             best_architecture=tas_results.get('best_strategy', {}),
             best_score=tas_results.get('best_score', 0.0),
             search_history=tas_results.get('trials', []),
@@ -399,6 +538,18 @@ class ArchitectureSearchOptimizer:
             search_timestamp=datetime.now(),
             configuration=self.config.__dict__
         )
+        
+        tprint_success("✅ Tree architecture search completed")
+        tprint_structured({
+            'tree_search_result': {
+                'best_architecture_found': bool(result.best_architecture),
+                'best_score': result.best_score,
+                'trials_completed': len(result.search_history),
+                'architecture_type': 'TREE_ONLY'
+            }
+        }, LogLevel.INFO)
+        
+        return result
     
     async def _search_hybrid_architectures(
         self,
@@ -406,18 +557,28 @@ class ArchitectureSearchOptimizer:
         search_space: Dict[str, Any]
     ) -> ArchitectureSearchResult:
         """Search for hybrid architectures combining neural and tree components."""
-        tprint_info("Searching hybrid architectures")
+        tprint_info("🔍 Searching hybrid architectures")
+        tprint_debug(f"📊 Data shape: {data.shape}")
+        tprint_debug(f"🔧 Search space size: {len(search_space)}")
         
         if not self.nas_engine or not self.tas_engine:
+            tprint_error("❌ Both NAS and TAS engines required for hybrid search")
+            tprint_debug(f"🔍 NAS engine available: {bool(self.nas_engine)}")
+            tprint_debug(f"🔍 TAS engine available: {bool(self.tas_engine)}")
             raise ValueError("Both NAS and TAS engines required for hybrid search")
         
+        tprint_debug("✅ Both NAS and TAS engines are available")
+        
         # Search neural architectures
+        tprint_info("🧠 Starting neural architecture search for hybrid")
         nas_results = await self._search_neural_architectures(data, search_space)
         
         # Search tree architectures
+        tprint_info("🌳 Starting tree architecture search for hybrid")
         tas_results = await self._search_tree_architectures(data, search_space)
         
         # Combine results for hybrid architecture
+        tprint_debug("🔀 Combining neural and tree results for hybrid architecture")
         hybrid_architecture = {
             'neural_config': nas_results.best_architecture,
             'tree_config': tas_results.best_architecture,
@@ -427,9 +588,11 @@ class ArchitectureSearchOptimizer:
         }
         
         # Calculate hybrid score
+        tprint_debug(f"📊 Calculating hybrid score from neural: {nas_results.best_score:.4f}, tree: {tas_results.best_score:.4f}")
         hybrid_score = (nas_results.best_score * 0.6 + tas_results.best_score * 0.4)
+        tprint_debug(f"🏆 Hybrid score: {hybrid_score:.4f}")
         
-        return ArchitectureSearchResult(
+        result = ArchitectureSearchResult(
             best_architecture=hybrid_architecture,
             best_score=hybrid_score,
             search_history=nas_results.search_history + tas_results.search_history,
@@ -442,23 +605,49 @@ class ArchitectureSearchOptimizer:
             search_timestamp=datetime.now(),
             configuration=self.config.__dict__
         )
+        
+        tprint_success("✅ Hybrid architecture search completed")
+        tprint_structured({
+            'hybrid_search_result': {
+                'neural_score': nas_results.best_score,
+                'tree_score': tas_results.best_score,
+                'hybrid_score': hybrid_score,
+                'neural_trials': len(nas_results.search_history),
+                'tree_trials': len(tas_results.search_history),
+                'total_trials': len(result.search_history),
+                'architecture_type': 'HYBRID_NEURAL_TREE'
+            }
+        }, LogLevel.INFO)
+        
+        return result
     
     def _find_convergence_point(self) -> int:
         """Find the iteration where convergence occurred."""
+        tprint_debug("🔍 Finding convergence point")
+        
         if not self.search_history:
+            tprint_debug("📊 No search history available")
             return 0
         
         # Simple convergence detection based on score improvement
         scores = [trial.get('score', 0.0) for trial in self.search_history]
+        tprint_debug(f"📊 Analyzing {len(scores)} scores for convergence")
+        
         if len(scores) < 10:
+            tprint_debug("📊 Insufficient trials for convergence analysis")
             return len(scores)
         
         # Find point where improvement becomes minimal
         for i in range(10, len(scores)):
             recent_scores = scores[i-10:i]
-            if np.std(recent_scores) < self.config.min_improvement_threshold:
+            score_std = np.std(recent_scores)
+            tprint_debug(f"🔍 Iteration {i}: score std = {score_std:.6f}, threshold = {self.config.min_improvement_threshold}")
+            
+            if score_std < self.config.min_improvement_threshold:
+                tprint_info(f"🎯 Convergence detected at iteration {i}")
                 return i
         
+        tprint_debug("📊 No convergence detected, using full iteration count")
         return len(scores)
     
     def get_search_summary(self) -> Dict[str, Any]:

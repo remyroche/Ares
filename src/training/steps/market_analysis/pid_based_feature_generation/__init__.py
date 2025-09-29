@@ -20,7 +20,7 @@ from src.utils.tprint import tprint
 tprint("🔧 Loading PID-based feature generation module...")
 
 from .interaction_feature_generator import InteractionFeatureGenerator, InteractionConfig
-from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig
+# PolynomialFeatureGenerator removed due to empty except blocks - use feature_engineering bank instead
 from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig
 from .optimized_lookback_integration import OptimizedLookbackIntegration

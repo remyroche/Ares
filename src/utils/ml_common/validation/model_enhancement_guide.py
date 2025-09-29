@@ -539,7 +539,7 @@ def objective(trial):
         'max_depth': trial.suggest_int('max_depth', 3, 15),
         'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
-        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2'])
     }
     
     model = RandomForestRegressor(**params, random_state=42)

@@ -689,7 +689,7 @@ class SequenceAwareAutoencoder:
             filters = trial.suggest_categorical('filters', [16, 32, 64])
             kernel_size = trial.suggest_int('kernel_size', 3, 7)
             dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5)
-            learning_rate = trial.suggest_float('learning_rate', 0.0001, 0.01, log = True)
+            learning_rate = trial.suggest_float('learning_rate', 0.00001, 0.01, log = True)
             encoding_dim = trial.suggest_int('encoding_dim', 8, 64)
         else:
             encoding_dim = self.config.get('autoencoder.encoding_dim', 32)
@@ -749,7 +749,7 @@ class SequenceAwareAutoencoder:
             callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
             self.logger.info('📊 Optuna pruning callback enabled')
         if trial:
-            batch_size = trial.suggest_categorical('batch_size', [32, 64, 128])
+            batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])
             self.logger.info(f'📊 Trial batch size: {batch_size}')
         else:
             batch_size = self.config.get('best_paramsf', {}).get('batch_size', 32)
@@ -1335,7 +1335,7 @@ class AutoencoderFeatureGenerator:
         n_jobs = self.config.get('training.n_jobs', 1)
         self.logger.info('🔍 Starting Optuna hyperparameter optimization')
         self.logger.info(f'📊 Optimization parameters: n_trials={n_trials}, n_jobs={n_jobs}')
-        self.logger.info('📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]')
+        self.logger.info('📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-5-1e-2], encoding_dim=[8-64], batch_size=[16,32,64,128]')
         
         best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
         self.config.config['best_params'] = best_params

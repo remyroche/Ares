@@ -1,17 +1,6 @@
-"""
-Neural Architecture Search (NAS) for ML Common
+"""Neural Architecture Search (NAS) for ML Common."""
 
-This module provides comprehensive Neural Architecture Search capabilities
-specifically designed for financial time series and trading models.
-
-Key Features:
-- Evolutionary architecture search
-- Reinforcement learning-based search
-- Multi-objective optimization (accuracy + efficiency)
-- Regime-aware architecture adaptation
-- Integration with existing ML pipeline
-"""
-
+import copy
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
@@ -79,6 +68,8 @@ class ArchitectureConfig:
     n_trials: int = 50
     timeout_seconds: int = 3600  # 1 hour
     early_stopping_patience: int = 10
+    min_early_stopping_patience: int = 5
+    max_early_stopping_patience: int = 10
     validation_split: float = 0.2
     
     # Multi-objective optimization
@@ -92,6 +83,8 @@ class ArchitectureConfig:
     # Performance
     n_jobs: int = 1
     memory_limit_gb: float = 8.0
+    max_total_params: int = 2_000_000
+    max_total_flops: int = 8_000_000
 
 
 @dataclass
@@ -102,6 +95,7 @@ class ArchitectureCandidate:
     layers: List[Dict[str, Any]]  # List of layer configurations
     total_params: int
     estimated_flops: int
+    training_config: Dict[str, Any] = field(default_factory=dict)
     
     # Performance metrics
     accuracy: float = 0.0
@@ -149,23 +143,17 @@ class ArchitectureSearchSpace:
                     units = np.random.randint(self.config.min_units, self.config.max_units + 1)
                     activation = np.random.choice(self.config.activation_functions)
                     dropout = np.random.choice(self.config.dropout_rates)
-                    
+
                     layer_config = {
                         'type': 'dense',
                         'units': units,
                         'activation': activation,
                         'dropout': dropout
                     }
-                    
-                    # Estimate parameters (simplified)
-                    if i == 0:
-                        # Input layer - assume input features
-                        layer_params = units * 100  # Simplified estimate
-                    else:
-                        # Hidden layer
-                        prev_units = layers[-1].get('units', 100)
-                        layer_params = prev_units * units
-                    
+
+                    prev_units = self._get_previous_output_size(layers, default_input=100)
+                    layer_params = prev_units * units
+
                     total_params += layer_params
                     estimated_flops += layer_params * 2  # Simplified FLOP estimate
                 
@@ -190,41 +178,152 @@ class ArchitectureSearchSpace:
                     filters = np.random.randint(32, 128)
                     kernel_size = np.random.choice([3, 5, 7])
                     activation = np.random.choice(self.config.activation_functions)
-                    
+
                     layer_config = {
                         'type': 'conv1d',
                         'filters': filters,
                         'kernel_size': kernel_size,
                         'activation': activation
                     }
-                    
-                    # Estimate parameters for Conv1D
-                    layer_params = filters * kernel_size * 32  # Simplified estimate
+
+                    prev_units = self._get_previous_output_size(layers, default_input=64)
+                    layer_params = filters * prev_units * kernel_size
                     total_params += layer_params
                     estimated_flops += layer_params * 2
                 
                 layers.append(layer_config)
             
-            # Create architecture candidate
-            candidate = ArchitectureCandidate(
-                layers=layers,
-                total_params=total_params,
-                estimated_flops=estimated_flops,
-                trial_number=trial_number
+            candidate = self._finalize_candidate(layers, total_params, estimated_flops, trial_number)
+
+            self.logger.debug(
+                "Sampled architecture with %s layers, %s parameters (patience=%s)",
+                n_layers,
+                candidate.total_params,
+                candidate.training_config.get('early_stopping_patience')
             )
-            
-            self.logger.debug(f"Sampled architecture with {n_layers} layers, {total_params} parameters")
             return candidate
             
         except Exception as e:
             self.logger.error(f"Architecture sampling failed: {e}")
-            # Return minimal architecture as fallback
-            return ArchitectureCandidate(
-                layers=[{'type': 'dense', 'units': 64, 'activation': 'relu', 'dropout': 0.0}],
-                total_params=1000,
-                estimated_flops=2000,
-                trial_number=trial_number
-            )
+            fallback_layers = [{'type': 'dense', 'units': 64, 'activation': 'relu', 'dropout': 0.1}]
+            return self._finalize_candidate(fallback_layers, 6400, 12800, trial_number)
+
+    def _get_previous_output_size(self, layers: List[Dict[str, Any]], default_input: int) -> int:
+        """Infer the previous layer's output width for parameter estimation."""
+        if not layers:
+            return default_input
+
+        prev_layer = layers[-1]
+        if prev_layer['type'] == 'dense':
+            return max(prev_layer.get('units', default_input), 16)
+        if prev_layer['type'] in {'lstm', 'gru'}:
+            return max(prev_layer.get('units', default_input), 32)
+        if prev_layer['type'] == 'conv1d':
+            return max(prev_layer.get('filters', default_input), 16)
+        return default_input
+
+    def _scale_layers(self, layers: List[Dict[str, Any]], scale_factor: float) -> List[Dict[str, Any]]:
+        """Scale layer widths while respecting minimum viable sizes."""
+        scaled_layers: List[Dict[str, Any]] = []
+        for layer in layers:
+            scaled_layer = layer.copy()
+            if layer['type'] == 'dense':
+                scaled_layer['units'] = max(self.config.min_units, int(layer['units'] * scale_factor))
+            elif layer['type'] in {'lstm', 'gru'}:
+                scaled_layer['units'] = max(32, int(layer['units'] * scale_factor))
+            elif layer['type'] == 'conv1d':
+                scaled_layer['filters'] = max(16, int(layer['filters'] * scale_factor))
+            scaled_layers.append(scaled_layer)
+        return scaled_layers
+
+    def _estimate_resources(self, layers: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """Estimate parameter and FLOP counts for sampled layers."""
+        total_params = 0
+        total_flops = 0
+        for idx, layer in enumerate(layers):
+            if layer['type'] == 'dense':
+                prev_units = self._get_previous_output_size(layers[:idx], default_input=100)
+                layer_params = prev_units * layer['units']
+                total_params += layer_params
+                total_flops += layer_params * 2
+            elif layer['type'] in {'lstm', 'gru'}:
+                units = layer['units']
+                layer_params = 4 * units * units if layer['type'] == 'lstm' else 3 * units * units
+                total_params += layer_params
+                total_flops += layer_params * 4
+            elif layer['type'] == 'conv1d':
+                prev_units = self._get_previous_output_size(layers[:idx], default_input=64)
+                layer_params = layer['filters'] * prev_units * layer.get('kernel_size', 3)
+                total_params += layer_params
+                total_flops += layer_params * 2
+        return total_params, total_flops
+
+    def _enforce_resource_budget(
+        self,
+        layers: List[Dict[str, Any]],
+        total_params: int,
+        estimated_flops: int
+    ) -> Tuple[List[Dict[str, Any]], int, int]:
+        """Ensure sampled architectures satisfy parameter/FLOP budgets."""
+        budget_params = self.config.max_total_params
+        budget_flops = self.config.max_total_flops
+
+        if total_params <= budget_params and estimated_flops <= budget_flops:
+            return layers, total_params, estimated_flops
+
+        scale_factor = 1.0
+        if total_params > budget_params:
+            scale_factor = min(scale_factor, (budget_params / max(total_params, 1)) ** 0.5)
+        if estimated_flops > budget_flops:
+            scale_factor = min(scale_factor, (budget_flops / max(estimated_flops, 1)) ** 0.5)
+
+        adjusted_layers = layers
+        adjusted_params = total_params
+        adjusted_flops = estimated_flops
+
+        if scale_factor < 1.0:
+            adjusted_layers = self._scale_layers(layers, scale_factor)
+            adjusted_params, adjusted_flops = self._estimate_resources(adjusted_layers)
+
+            shrink_attempts = 0
+            while (adjusted_params > budget_params or adjusted_flops > budget_flops) and shrink_attempts < 5:
+                scale_factor *= 0.85
+                adjusted_layers = self._scale_layers(layers, scale_factor)
+                adjusted_params, adjusted_flops = self._estimate_resources(adjusted_layers)
+                shrink_attempts += 1
+
+        return adjusted_layers, adjusted_params, adjusted_flops
+
+    def _finalize_candidate(
+        self,
+        layers: List[Dict[str, Any]],
+        total_params: int,
+        estimated_flops: int,
+        trial_number: int,
+        patience: Optional[int] = None
+    ) -> ArchitectureCandidate:
+        """Finalize candidate creation with resource budget enforcement."""
+        adjusted_layers, adjusted_params, adjusted_flops = self._enforce_resource_budget(
+            layers,
+            total_params,
+            estimated_flops
+        )
+
+        if patience is None:
+            patience = int(np.random.randint(
+                self.config.min_early_stopping_patience,
+                self.config.max_early_stopping_patience + 1
+            ))
+
+        training_config = {'early_stopping_patience': patience}
+
+        return ArchitectureCandidate(
+            layers=adjusted_layers,
+            total_params=adjusted_params,
+            estimated_flops=adjusted_flops,
+            training_config=training_config,
+            trial_number=trial_number
+        )
 
 
 class NeuralArchitectureSearch:
@@ -401,58 +500,57 @@ class NeuralArchitectureSearch:
         # Sample number of layers
         n_layers = trial.suggest_int('n_layers', self.config.min_layers, self.config.max_layers)
         
-        layers = []
-        total_params = 0
-        estimated_flops = 0
-        
-        for i in range(n_layers):
+        layers: List[Dict[str, Any]] = []
+
+        for _ in range(n_layers):
             layer_type = trial.suggest_categorical('layer_type', ['dense', 'lstm', 'gru'])
-            
+
             if layer_type == 'dense':
                 units = trial.suggest_int('units', self.config.min_units, self.config.max_units)
                 activation = trial.suggest_categorical('activation', self.config.activation_functions)
                 dropout = trial.suggest_categorical('dropout', self.config.dropout_rates)
-                
+
                 layer_config = {
                     'type': 'dense',
                     'units': units,
                     'activation': activation,
                     'dropout': dropout
                 }
-                
-                # Estimate parameters
-                if i == 0:
-                    layer_params = units * 100
-                else:
-                    prev_units = layers[-1].get('units', 100)
-                    layer_params = prev_units * units
-                
-                total_params += layer_params
-                estimated_flops += layer_params * 2
-            
             elif layer_type in ['lstm', 'gru']:
                 units = trial.suggest_int('rnn_units', 32, 256)
                 return_sequences = trial.suggest_categorical('return_sequences', [True, False])
                 dropout = trial.suggest_categorical('rnn_dropout', self.config.dropout_rates)
-                
+
                 layer_config = {
                     'type': layer_type,
                     'units': units,
                     'return_sequences': return_sequences,
                     'dropout': dropout
                 }
-                
-                layer_params = 4 * units * units if layer_type == 'lstm' else 3 * units * units
-                total_params += layer_params
-                estimated_flops += layer_params * 4
-            
+            else:
+                # Defensive fallback – keep architecture valid without adding new suggestions
+                layer_config = {
+                    'type': 'dense',
+                    'units': self.config.min_units,
+                    'activation': self.config.activation_functions[0],
+                    'dropout': 0.0
+                }
+
             layers.append(layer_config)
-        
-        return ArchitectureCandidate(
-            layers=layers,
-            total_params=total_params,
-            estimated_flops=estimated_flops,
-            trial_number=trial.number
+
+        total_params, estimated_flops = self.search_space._estimate_resources(layers)
+        patience = trial.suggest_int(
+            'early_stopping_patience',
+            self.config.min_early_stopping_patience,
+            self.config.max_early_stopping_patience
+        )
+
+        return self.search_space._finalize_candidate(
+            layers,
+            total_params,
+            estimated_flops,
+            trial.number,
+            patience
         )
     
     def _train_and_evaluate_architecture(self, 
@@ -466,11 +564,19 @@ class NeuralArchitectureSearch:
         try:
             # Create model
             if self.framework == 'pytorch':
-                model = self._create_pytorch_model(candidate, X_train.shape[1], y_train.shape[1] if len(y_train.shape) > 1 else 1)
-                performance = self._train_pytorch_model(model, X_train, y_train, X_val, y_val)
+                model = self._create_pytorch_model(
+                    candidate,
+                    X_train.shape[1],
+                    y_train.shape[1] if len(y_train.shape) > 1 else 1
+                )
+                performance = self._train_pytorch_model(model, X_train, y_train, X_val, y_val, candidate)
             else:
-                model = self._create_tensorflow_model(candidate, X_train.shape[1], y_train.shape[1] if len(y_train.shape) > 1 else 1)
-                performance = self._train_tensorflow_model(model, X_train, y_train, X_val, y_val)
+                model = self._create_tensorflow_model(
+                    candidate,
+                    X_train.shape[1],
+                    y_train.shape[1] if len(y_train.shape) > 1 else 1
+                )
+                performance = self._train_tensorflow_model(model, X_train, y_train, X_val, y_val, candidate)
             
             # Calculate multi-objective score
             overall_score = self._calculate_overall_score(performance, candidate)
@@ -570,12 +676,13 @@ class NeuralArchitectureSearch:
         model = keras.Model(inputs, outputs)
         return model
     
-    def _train_pytorch_model(self, model: nn.Module, X_train: np.ndarray, y_train: np.ndarray, 
-                           X_val: np.ndarray, y_val: np.ndarray) -> Dict[str, float]:
+    def _train_pytorch_model(self, model: nn.Module, X_train: np.ndarray, y_train: np.ndarray,
+                           X_val: np.ndarray, y_val: np.ndarray,
+                           candidate: ArchitectureCandidate) -> Dict[str, float]:
         """Train PyTorch model and return performance metrics."""
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch not available")
-        
+
         # Convert to tensors
         X_train_tensor = torch.FloatTensor(X_train)
         y_train_tensor = torch.FloatTensor(y_train)
@@ -590,8 +697,13 @@ class NeuralArchitectureSearch:
         criterion = nn.MSELoss() if len(y_train.shape) == 1 else nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         
-        # Training loop
+        # Training loop with simple early stopping
         model.train()
+        patience = candidate.training_config.get('early_stopping_patience', self.config.early_stopping_patience)
+        best_val_loss = float('inf')
+        epochs_without_improvement = 0
+        best_state = copy.deepcopy(model.state_dict())
+
         for epoch in range(50):  # Limited epochs for NAS
             for batch_X, batch_y in train_loader:
                 optimizer.zero_grad()
@@ -599,7 +711,28 @@ class NeuralArchitectureSearch:
                 loss = criterion(outputs, batch_y)
                 loss.backward()
                 optimizer.step()
-        
+
+            # Evaluate on validation split for early stopping
+            model.eval()
+            with torch.no_grad():
+                val_pred_epoch = model(X_val_tensor)
+                val_loss_epoch = criterion(val_pred_epoch, y_val_tensor).item()
+
+            if val_loss_epoch + 1e-6 < best_val_loss:
+                best_val_loss = val_loss_epoch
+                epochs_without_improvement = 0
+                best_state = copy.deepcopy(model.state_dict())
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
+                break
+
+            model.train()
+
+        # Restore best weights
+        model.load_state_dict(best_state)
+
         # Evaluation
         model.eval()
         with torch.no_grad():
@@ -620,18 +753,23 @@ class NeuralArchitectureSearch:
                 train_accuracy = (torch.argmax(train_pred, dim=1) == torch.argmax(y_train_tensor, dim=1)).float().mean().item()
                 val_accuracy = (torch.argmax(val_pred, dim=1) == torch.argmax(y_val_tensor, dim=1)).float().mean().item()
         
+        total_params = sum(p.numel() for p in model.parameters())
+        efficiency_score = 1.0 / (1.0 + total_params / max(self.config.max_total_params, 1))
+        robustness_score = 1.0 - abs(train_accuracy - val_accuracy)
+
         return {
             'accuracy': val_accuracy,
-            'efficiency_score': 1.0 / (1.0 + model.total_params / 1000000),  # Efficiency based on parameter count
-            'robustness_score': 1.0 - abs(train_accuracy - val_accuracy)  # Robustness based on generalization gap
+            'efficiency_score': efficiency_score,
+            'robustness_score': robustness_score
         }
-    
-    def _train_tensorflow_model(self, model: keras.Model, X_train: np.ndarray, y_train: np.ndarray, 
-                              X_val: np.ndarray, y_val: np.ndarray) -> Dict[str, float]:
+
+    def _train_tensorflow_model(self, model: keras.Model, X_train: np.ndarray, y_train: np.ndarray,
+                              X_val: np.ndarray, y_val: np.ndarray,
+                              candidate: ArchitectureCandidate) -> Dict[str, float]:
         """Train TensorFlow model and return performance metrics."""
         if not TF_AVAILABLE:
             raise ImportError("TensorFlow not available")
-        
+
         # Compile model
         model.compile(
             optimizer='adam',
@@ -639,22 +777,33 @@ class NeuralArchitectureSearch:
             metrics=['accuracy']
         )
         
-        # Train model
+        # Train model with early stopping to respect latency constraints
+        patience = candidate.training_config.get('early_stopping_patience', self.config.early_stopping_patience)
+        callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=patience,
+                restore_best_weights=True,
+                verbose=0
+            )
+        ]
+
         history = model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
             epochs=50,  # Limited epochs for NAS
             batch_size=32,
+            callbacks=callbacks,
             verbose=0
         )
-        
+
         # Calculate metrics
         val_accuracy = history.history['val_accuracy'][-1] if 'val_accuracy' in history.history else 0.0
         train_accuracy = history.history['accuracy'][-1] if 'accuracy' in history.history else 0.0
-        
+
         # Calculate efficiency and robustness
         total_params = model.count_params()
-        efficiency_score = 1.0 / (1.0 + total_params / 1000000)
+        efficiency_score = 1.0 / (1.0 + total_params / max(self.config.max_total_params, 1))
         robustness_score = 1.0 - abs(train_accuracy - val_accuracy)
         
         return {

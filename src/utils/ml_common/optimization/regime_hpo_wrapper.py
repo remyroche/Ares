@@ -687,19 +687,44 @@ class RegimeHPOWrapper:
     def _create_meta_feature_search_space(self) -> Dict[str, Any]:
         """Create search space for meta-feature optimization."""
         return {
-            'margin_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'entropy_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'gini_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'variance_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'disagreement_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'js_divergence_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'temporal_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'regime_persistence_weight': {'type': 'float', 'low': 0.0, 'high': 1.0}
+            'margin_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'entropy_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'gini_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'variance_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'disagreement_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'js_divergence_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'temporal_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'regime_persistence_logit': {'type': 'float', 'low': -3.0, 'high': 3.0}
         }
     
     def _create_meta_feature_factory(self, base_predictions: np.ndarray) -> Callable:
         """Create meta-feature factory."""
         def factory(**params):
+            # Convert sampled logits into a normalized weight dictionary
+            weight_pairs = [
+                ('margin_logit', 'margin_weight'),
+                ('entropy_logit', 'entropy_weight'),
+                ('gini_logit', 'gini_weight'),
+                ('variance_logit', 'variance_weight'),
+                ('disagreement_logit', 'disagreement_weight'),
+                ('js_divergence_logit', 'js_divergence_weight'),
+                ('temporal_logit', 'temporal_weight'),
+                ('regime_persistence_logit', 'regime_persistence_weight')
+            ]
+            logits = np.array([params.get(key, 0.0) for key, _ in weight_pairs], dtype=float)
+            # Stabilize exponentiation to avoid overflow
+            logits = logits - np.max(logits)
+            exp_logits = np.exp(logits)
+            denom = exp_logits.sum()
+            if denom == 0 or not np.isfinite(denom):
+                normalized = np.full_like(exp_logits, 1.0 / len(exp_logits))
+            else:
+                normalized = exp_logits / denom
+            normalized_weights = {
+                weight_key: float(weight_value)
+                for weight_value, (_, weight_key) in zip(normalized, weight_pairs)
+            }
+
             # This would create a meta-feature extractor with optimized weights
             # For now, return a placeholder
             class MetaFeatureExtractor:
@@ -716,7 +741,7 @@ class RegimeHPOWrapper:
                 def fit_transform(self, X, y):
                     return self.fit(X, y).transform(X)
             
-            return MetaFeatureExtractor(params)
+            return MetaFeatureExtractor(normalized_weights)
         return factory
     
     def _generate_base_model_predictions(self, X: np.ndarray, y: np.ndarray, base_results: Dict[str, Any]) -> np.ndarray:

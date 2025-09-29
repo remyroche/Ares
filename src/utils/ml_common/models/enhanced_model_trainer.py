@@ -416,13 +416,14 @@ class EnhancedModelTrainer:
                 # Define hyperparameter search space based on model type
                 if model_type == "lightgbm":
                     params = {
-                        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                        'max_depth': trial.suggest_int('max_depth', 3, 10),
-                        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                        'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+                        'max_depth': trial.suggest_int('max_depth', 3, 12),
+                        'num_leaves': trial.suggest_int('num_leaves', 15, 63),
+                        'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.2, log=True),
                         'subsample': trial.suggest_float('subsample', 0.6, 1.0),
                         'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-                        'reg_alpha': trial.suggest_float('reg_alpha', 0, 1),
-                        'reg_lambda': trial.suggest_float('reg_lambda', 0, 1)
+                        'reg_alpha': trial.suggest_float('reg_alpha', 0.0001, 1.0, log=True),
+                        'reg_lambda': trial.suggest_float('reg_lambda', 0.0001, 1.0, log=True)
                     }
                     model = lgb.LGBMClassifier(**params, random_state=42, verbose=-1)
                 elif model_type == "random_forest":
@@ -431,7 +432,7 @@ class EnhancedModelTrainer:
                         'max_depth': trial.suggest_int('max_depth', 3, 20),
                         'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
                         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
-                        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2'])
                     }
                     model = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
                 else:

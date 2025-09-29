@@ -562,13 +562,19 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
     @handles_errors
     def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
         """Enhanced LightGBM search space with regularization from config."""
-        base_space: dict[str, Any] = {'n_estimators': trial.suggest_int('n_estimators', 50, 500), 'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.2, log = True), 'num_leaves': trial.suggest_int('num_leaves', 20, 300), 'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.95), 'subsample': trial.suggest_float('subsample', 0.6, 0.95)}
+        base_space: dict[str, Any] = {
+            'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.1, log=True),
+            'num_leaves': trial.suggest_int('num_leaves', 20, 127),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.95),
+            'subsample': trial.suggest_float('subsample', 0.6, 0.95)
+        }
         if self.regularization_config and 'lightgbm' in self.regularization_config:
             reg_config = self.regularization_config['lightgbm']
             base_space.update({'reg_alpha': reg_config.get('reg_alpha', 0.01), 'reg_lambda': reg_config.get('reg_lambda', 0.001)})
             self.logger.info(f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}")
         else:
-            base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 10.0, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 10.0, log = True)})
+            base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 1.0, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 1.0, log = True)})
             self.logger.info('Using optuna-optimized regularization parameters')
         return base_space
 

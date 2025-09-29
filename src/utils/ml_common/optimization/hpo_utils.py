@@ -1115,8 +1115,8 @@ class HyperparameterOptimization:
                 'subsample': {'type': 'float', 'low': 0.5, 'high': 1.0},
                 'colsample_bytree': {'type': 'float', 'low': 0.5, 'high': 1.0},
                 'gamma': {'type': 'float', 'low': 0, 'high': 5},
-                'reg_alpha': {'type': 'float', 'low': 0, 'high': 10},
-                'reg_lambda': {'type': 'float', 'low': 0, 'high': 10}
+                'reg_alpha': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True}
             },
             # Regime-specific model search spaces
             'catboost_regime': {
@@ -1124,12 +1124,13 @@ class HyperparameterOptimization:
                 'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.06},
                 'l2_leaf_reg': {'type': 'float', 'low': 6, 'high': 12},
                 'iterations': {'type': 'int', 'low': 500, 'high': 1200},
-                'subsample': {'type': 'float', 'low': 0.6, 'high': 0.8},
-                'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 0.8}
+                'subsample': {'type': 'float', 'low': 0.5, 'high': 0.9},
+                'colsample_bylevel': {'type': 'float', 'low': 0.5, 'high': 0.9},
+                'bootstrap_type': {'type': 'categorical', 'choices': ['Bayesian', 'Bernoulli']}
             },
             'extratrees_regime': {
                 'n_estimators': {'type': 'int', 'low': 300, 'high': 800},
-                'max_depth': {'type': 'int', 'low': 10, 'high': 15},
+                'max_depth': {'type': 'categorical', 'choices': [None, 10, 15]},
                 'min_samples_split': {'type': 'int', 'low': 5, 'high': 20},
                 'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 10},
                 'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]}
@@ -1159,22 +1160,23 @@ class HyperparameterOptimization:
                 'max_candidates': {'type': 'int', 'low': 1000, 'high': 4000}
             },
             'lightgbm': {
-                'num_leaves': {'type': 'int', 'low': 10, 'high': 100},
+                'num_leaves': {'type': 'int', 'low': 15, 'high': 63},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
                 'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
                 'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
                 'feature_fraction': {'type': 'float', 'low': 0.5, 'high': 1.0},
                 'bagging_fraction': {'type': 'float', 'low': 0.5, 'high': 1.0},
                 'bagging_freq': {'type': 'int', 'low': 1, 'high': 10},
                 'min_child_samples': {'type': 'int', 'low': 5, 'high': 50},
-                'lambda_l1': {'type': 'float', 'low': 0, 'high': 10},
-                'lambda_l2': {'type': 'float', 'low': 0, 'high': 10}
+                'lambda_l1': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True},
+                'lambda_l2': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True}
             },
             'random_forest': {
                 'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
                 'max_depth': {'type': 'int', 'low': 5, 'high': 50},
                 'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
                 'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']},
                 'bootstrap': {'type': 'categorical', 'choices': [True, False]}
             },
             'neural_network': {
@@ -1183,7 +1185,8 @@ class HyperparameterOptimization:
                 'learning_rate': {'type': 'float', 'low': 0.0001, 'high': 0.01},
                 'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
                 'batch_size': {'type': 'int', 'low': 16, 'high': 128},
-                'epochs': {'type': 'int', 'low': 10, 'high': 100}
+                'epochs': {'type': 'int', 'low': 10, 'high': 100},
+                'use_batch_norm': {'type': 'categorical', 'choices': [True, False]}
             }
         }
 
@@ -1250,6 +1253,12 @@ class HyperparameterOptimization:
             search_space['hidden_units']['low'] = 64
         if n_samples < 1000:
             search_space['batch_size']['high'] = 64
+
+        # Constrain total parameter budget to avoid overfitting on small windows
+        param_budget = 200_000
+        if n_features > 0:
+            max_units_by_budget = max(32, param_budget // max(n_features, 1))
+            search_space['hidden_units']['high'] = min(search_space['hidden_units']['high'], max_units_by_budget)
 
         return search_space
 

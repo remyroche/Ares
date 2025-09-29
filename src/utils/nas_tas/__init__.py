@@ -23,6 +23,16 @@ from .evaluation.evaluator import ArchitectureEvaluator
 from .utils.nas_utilities import NASUtilities
 from .utils.tas_utilities import TASUtilities
 
+# Import convenience functions
+from .core.nas_engine import create_nas_engine
+from .core.tas_engine import create_tas_engine
+from .optimization.architecture_search import create_architecture_search_optimizer
+from .optimization.strategy_search import create_strategy_search_optimizer
+from .data.data_manager import create_nas_data_manager
+from .evaluation.evaluator import create_architecture_evaluator
+from .utils.nas_utilities import create_nas_utilities
+from .utils.tas_utilities import create_tas_utilities
+
 __version__ = "1.0.0"
 __author__ = "NAS/TAS Development Team"
 
@@ -34,5 +44,14 @@ __all__ = [
     "NASDataManager",
     "ArchitectureEvaluator",
     "NASUtilities",
-    "TASUtilities"
+    "TASUtilities",
+    # Convenience functions
+    "create_nas_engine",
+    "create_tas_engine",
+    "create_architecture_search_optimizer",
+    "create_strategy_search_optimizer",
+    "create_nas_data_manager",
+    "create_architecture_evaluator",
+    "create_nas_utilities",
+    "create_tas_utilities"
 ]

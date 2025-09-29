@@ -256,7 +256,59 @@ class BaseFeatureGenerator(ABC):
     @abstractmethod
     def _initialize_components(self):
         """Initialize required components. Must be implemented by subclasses."""
-        pass
+        # Initialize feature generation components using feature_engineering bank
+        try:
+            # Import feature generation system
+            from src.feature_generation import (
+                FeatureBank,
+                ReturnsFeatureGenerator,
+                MomentumFeatureGenerator,
+                VolumeFeatureGenerator,
+                VolatilityFeatureGenerator,
+                TrendFeatureGenerator,
+                InteractionFeatureGenerator,
+                CrossTimeframeFeatureGenerator,
+                PolynomialFeatureGenerator,
+                generate_features_by_category,
+                FeatureGenerationOptimizer,
+                get_feature_optimizer
+            )
+            
+            # Initialize feature bank
+            self.feature_bank = FeatureBank()
+            self.feature_optimizer = get_feature_optimizer()
+            
+            # Initialize specific feature generators
+            self.returns_generator = ReturnsFeatureGenerator()
+            self.momentum_generator = MomentumFeatureGenerator()
+            self.volume_generator = VolumeFeatureGenerator()
+            self.volatility_generator = VolatilityFeatureGenerator()
+            self.trend_generator = TrendFeatureGenerator()
+            self.interaction_generator = InteractionFeatureGenerator()
+            self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
+            self.polynomial_generator = PolynomialFeatureGenerator()
+            
+            # Set up feature generation categories
+            self.available_categories = [
+                'returns', 'momentum', 'volume', 'volatility', 'trend',
+                'interaction', 'cross_timeframe', 'polynomial'
+            ]
+            
+            self.logger.info("✅ Feature generation components initialized from feature_engineering bank")
+            
+        except ImportError as e:
+            self.logger.warning(f"Feature generation system not available: {e}")
+            # Fallback to basic components
+            self.feature_bank = None
+            self.feature_optimizer = None
+            self.available_categories = ['basic']
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize feature components: {e}")
+            # Fallback to basic components
+            self.feature_bank = None
+            self.feature_optimizer = None
+            self.available_categories = ['basic']
     
     async def _validate_input_data(
         self, 

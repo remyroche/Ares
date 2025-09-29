@@ -67,7 +67,7 @@ def main():
         ("feature_selection_mechanism.py", "Feature selection mechanism"),
         ("pid_based_feature_orchestrator.py", "Feature orchestrator"),
         ("interaction_feature_generator.py", "Interaction feature generator"),
-        ("polynomial_feature_generator.py", "Polynomial feature generator"),
+        # ("polynomial_feature_generator.py", "Polynomial feature generator"),  # Removed due to empty except blocks
         ("cross_timeframe_feature_generator.py", "Cross-timeframe feature generator"),
         ("optimized_lookback_integration.py", "Lookback integration"),
         ("__init__.py", "Package initialization")

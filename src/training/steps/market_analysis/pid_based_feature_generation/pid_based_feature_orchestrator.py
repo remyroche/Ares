@@ -58,14 +58,8 @@ except ImportError as e:
     # Fast fail - raise error immediately instead of creating placeholder classes
     raise ImportError(f"Critical dependency missing - Interaction feature generator not available: {e}")
 
-try:
-    from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
-    POLYNOMIAL_GENERATOR_AVAILABLE = True
-except ImportError as e:
-    logging.error(f"Critical dependency missing - Polynomial feature generator not available: {e}")
-    POLYNOMIAL_GENERATOR_AVAILABLE = False
-    # Fast fail - raise error immediately instead of creating placeholder classes
-    raise ImportError(f"Critical dependency missing - Polynomial feature generator not available: {e}")
+# PolynomialFeatureGenerator removed due to empty except blocks - use feature_engineering bank instead
+POLYNOMIAL_GENERATOR_AVAILABLE = False
 
 try:
     from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
@@ -449,27 +443,18 @@ class PIDBasedFeatureOrchestrator:
             if self.config.enable_interaction_features:
                 self.logger.warning("⚠️ Interaction features requested but generator not available")
         
-        # Initialize polynomial feature generator
-        if self.config.enable_polynomial_features and POLYNOMIAL_GENERATOR_AVAILABLE:
+        # Initialize polynomial feature generator using feature_engineering bank
+        if self.config.enable_polynomial_features:
             try:
-                polynomial_config = PolynomialConfig(
-                    synergy_threshold=self.config.synergy_threshold,
-                    redundancy_threshold=self.config.redundancy_threshold,
-                    unique_info_threshold=self.config.unique_info_threshold,
-                    max_polynomial_features=self.config.max_polynomial_features,
-                    enable_parallel_processing=self.config.enable_parallel_processing,
-                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-                    memory_limit_gb=self.config.memory_limit_gb
-                )
-                self.polynomial_generator = PolynomialFeatureGenerator(polynomial_config)
-                self.logger.info("✅ Polynomial Feature Generator initialized")
+                # Use feature_engineering bank for polynomial features
+                from src.feature_generation import PolynomialFeatureGenerator
+                self.polynomial_generator = PolynomialFeatureGenerator()
+                self.logger.info("✅ Polynomial Feature Generator initialized from feature_engineering bank")
             except Exception as e:
                 self.logger.error(f"❌ Failed to initialize Polynomial Feature Generator: {e}")
                 self.polynomial_generator = None
         else:
             self.polynomial_generator = None
-            if self.config.enable_polynomial_features:
-                self.logger.warning("⚠️ Polynomial features requested but generator not available")
         
         # Initialize cross-timeframe feature generator
         if self.config.enable_cross_timeframe_features and CROSS_TIMEFRAME_GENERATOR_AVAILABLE:
@@ -1500,28 +1485,40 @@ class PIDBasedFeatureOrchestrator:
         optimized_lookback_periods: Optional[Dict[str, int]], 
         target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
     ):
-        """Safe wrapper for polynomial feature generation with proper async handling."""
+        """Safe wrapper for polynomial feature generation using feature_engineering bank."""
         try:
-            if not hasattr(self.polynomial_generator, 'generate_polynomial_features'):
-                raise AttributeError("Polynomial generator missing generate_polynomial_features method")
+            if not self.polynomial_generator:
+                raise AttributeError("Polynomial generator not available")
             
-            method = self.polynomial_generator.generate_polynomial_features
+            # Use feature_engineering bank for polynomial features
+            # Convert numpy array to DataFrame for feature generation
+            import pandas as pd
+            df = pd.DataFrame(X, columns=feature_names)
             
-            # Standardize on async interface - all generators should implement async methods
-            if asyncio.iscoroutinefunction(method):
-                return await method(X, feature_names, optimized_lookback_periods, target)
+            # Generate polynomial features using feature_engineering bank
+            polynomial_features = self.polynomial_generator.generate_features(
+                data=df,
+                categories=['polynomial'],
+                lookback_optimization=True
+            )
+            
+            if polynomial_features is not None and hasattr(polynomial_features, 'features'):
+                # Convert back to numpy array
+                features_array = polynomial_features.features.values
+                feature_names = list(polynomial_features.features.columns)
+                
+                # Create result object
+                from .simple_feature_generator import SimpleFeatureResult
+                return SimpleFeatureResult(
+                    features=features_array,
+                    feature_names=feature_names,
+                    success=True,
+                    processing_time=0.0,
+                    metadata={'source': 'feature_engineering_bank'}
+                )
             else:
-                # Wrap sync method in async call for consistency
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(method, X, feature_names, optimized_lookback_periods, target)
-                    return future.result(timeout=300)  # 5 minute timeout for safety
+                raise ValueError("Polynomial feature generation returned no features")
                     
-        except _MissingGeneratorError as e:
-            tprint_error(f"Generator not available: {e}")
-            return self._create_empty_polynomial_result()
-        except concurrent.futures.TimeoutError as e:
-            tprint_error(f"Polynomial feature generation timed out: {e}")
-            return self._create_empty_polynomial_result()
         except Exception as e:
             tprint_error(f"Polynomial feature generation failed: {e}")
             # Try simple generator as fallback

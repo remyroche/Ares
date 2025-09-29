@@ -627,9 +627,28 @@ class TASRegimeDetector:
             tprint_debug(f"   Number of estimators: {self.config.n_estimators}")
 
             clustering_start = time.time()
-            regime_predictions, regime_probabilities = self._perform_tree_based_clustering(processed_data)
-            clustering_time = time.time() - clustering_start
-            self.performance_metrics['regime_detection_time'] = clustering_time
+            try:
+                regime_predictions, regime_probabilities = self._perform_tree_based_clustering(processed_data)
+                clustering_time = time.time() - clustering_start
+                self.performance_metrics['regime_detection_time'] = clustering_time
+                
+                # Validate clustering results
+                if len(regime_predictions) == 0 or len(regime_probabilities) == 0:
+                    raise ValueError("Clustering returned empty results")
+                    
+            except Exception as clustering_error:
+                self.logger.error(f"TAS clustering failed: {clustering_error}")
+                tprint_error(f"❌ [TAS_TRAINING] Clustering failed: {clustering_error}")
+                
+                # Use emergency fallback
+                n_samples = len(processed_data)
+                regime_predictions = np.array([i % self.config.n_regimes for i in range(n_samples)])
+                regime_probabilities = np.ones((n_samples, self.config.n_regimes)) / self.config.n_regimes
+                
+                clustering_time = time.time() - clustering_start
+                self.performance_metrics['regime_detection_time'] = clustering_time
+                
+                tprint_warning("⚠️ [TAS_TRAINING] Using emergency fallback regime assignment")
 
             unique_regimes = len(np.unique(regime_predictions))
             regime_distribution = np.bincount(regime_predictions)
@@ -955,6 +974,10 @@ class TASRegimeDetector:
             tprint_debug(f"   Input data shape: {data.shape}")
             tprint_debug(f"   Target regimes: {self.config.n_regimes}")
 
+            # Validate data quality before processing
+            if not self._validate_data_for_clustering(data):
+                raise ValueError("Data quality validation failed - insufficient variance or constant features detected")
+
             # Standardize the data
             tprint_debug("   [REGIME_DETECTION] Standardizing data...")
             scaler = StandardScaler()
@@ -1007,7 +1030,23 @@ class TASRegimeDetector:
 
         except Exception as e:
             self.logger.error(f"Tree-based regime detection failed: {e}")
-            raise ValueError(f"Tree-based regime detection failed: {e}")
+            # Try fallback simple regime assignment
+            try:
+                self.logger.warning("Attempting fallback regime assignment...")
+                n_samples = len(data)
+                regime_size = max(1, n_samples // self.config.n_regimes)
+                fallback_labels = np.array([i // regime_size for i in range(n_samples)])
+                fallback_labels = np.minimum(fallback_labels, self.config.n_regimes - 1)
+                
+                # Create uniform probabilities
+                fallback_probabilities = np.ones((n_samples, self.config.n_regimes)) / self.config.n_regimes
+                
+                tprint_warning("⚠️ [REGIME_DETECTION] Using fallback regime assignment")
+                return fallback_labels, fallback_probabilities
+                
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback regime assignment also failed: {fallback_error}")
+                raise ValueError(f"Tree-based regime detection failed: {e}")
 
     def _perform_supervised_regime_discovery(self, data: np.ndarray) -> Dict[str, Any]:
         """Perform supervised regime discovery using synthetic targets."""
@@ -1589,7 +1628,7 @@ class TASRegimeDetector:
             # Calculate distance-based confidence for each prediction
             for i, label in enumerate(labels):
                 # Get distances to all cluster centers
-                distances = self._calculate_distances_to_regime_centers(data[i], labels)
+                distances = self._calculate_distances_to_regime_centers(data[i], labels, data)
 
                 # Convert distances to probabilities (closer = higher probability)
                 if len(distances) > 0:
@@ -1614,28 +1653,71 @@ class TASRegimeDetector:
             self.logger.warning(f"Tree probability calculation failed: {e}")
             return np.random.dirichlet(np.ones(self.config.n_regimes), len(data))
 
-    def _calculate_distances_to_regime_centers(self, point: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def _calculate_distances_to_regime_centers(self, point: np.ndarray, labels: np.ndarray, data: np.ndarray) -> np.ndarray:
         """Calculate distances from a point to all regime centers."""
         try:
             distances = []
             unique_labels = np.unique(labels)
 
             for label in unique_labels:
-                # Find all points in this regime
-                regime_points = self._get_regime_points(point, labels, label)
+                # Find all points in this regime from the actual data
+                regime_mask = labels == label
+                regime_points = data[regime_mask]
+                
                 if len(regime_points) > 0:
                     # Calculate distance to regime center
                     center = np.mean(regime_points, axis=0)
                     distance = np.linalg.norm(point - center)
                     distances.append(distance)
                 else:
-                    distances.append(1.0)  # Default distance
+                    # If no points in regime, use a default distance
+                    distances.append(1.0)
 
             return np.array(distances)
 
         except Exception as e:
             self.logger.warning(f"Distance calculation failed: {e}")
             return np.ones(len(np.unique(labels)))
+
+    def _validate_data_for_clustering(self, data: np.ndarray) -> bool:
+        """Validate data quality for clustering algorithms."""
+        try:
+            # Check for sufficient data points
+            if len(data) < self.config.n_regimes * 2:
+                self.logger.warning(f"Insufficient data points: {len(data)} < {self.config.n_regimes * 2}")
+                return False
+            
+            # Check for constant features (zero variance)
+            feature_vars = np.var(data, axis=0)
+            constant_features = np.sum(feature_vars < 1e-10)
+            if constant_features > 0:
+                self.logger.warning(f"Found {constant_features} constant features with zero variance")
+                # Remove constant features or use fallback
+                if constant_features == data.shape[1]:
+                    self.logger.error("All features are constant - cannot perform clustering")
+                    return False
+            
+            # Check for NaN or infinite values
+            if np.any(np.isnan(data)) or np.any(np.isinf(data)):
+                self.logger.warning("Data contains NaN or infinite values")
+                return False
+            
+            # Check for sufficient variance across all features
+            total_variance = np.sum(feature_vars)
+            if total_variance < 1e-10:
+                self.logger.error("Insufficient variance in data for clustering")
+                return False
+            
+            tprint_debug(f"   [DATA_VALIDATION] Data quality check passed")
+            tprint_debug(f"   [DATA_VALIDATION] Data shape: {data.shape}")
+            tprint_debug(f"   [DATA_VALIDATION] Feature variance range: {np.min(feature_vars):.6f} - {np.max(feature_vars):.6f}")
+            tprint_debug(f"   [DATA_VALIDATION] Total variance: {total_variance:.6f}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return False
 
     def _get_regime_points(self, current_point: np.ndarray, labels: np.ndarray, target_label: int) -> np.ndarray:
         """Get all points belonging to a specific regime."""

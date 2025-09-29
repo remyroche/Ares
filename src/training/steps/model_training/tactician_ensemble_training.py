@@ -2162,6 +2162,177 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
         except Exception as e:
             tprint_error(f"❌ Failed to load TAS models: {e}")
             raise
+    
+    def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame:
+        """
+        Extract comprehensive meta-features including disagreement features for the tactician ensemble.
+        
+        Args:
+            df: Input DataFrame with features
+            is_live: Whether this is for live trading or backtesting
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            DataFrame containing meta-features including disagreement features
+        """
+        try:
+            tprint(f"🔍 [TACTICIAN_ENSEMBLE] Generating meta-features for tactician ensemble", color="cyan")
+            
+            # Initialize meta-features DataFrame
+            meta_features = pd.DataFrame(index=df.index)
+            
+            # Add basic tactician-specific meta-features
+            if 'close' in df.columns:
+                meta_features['price_momentum'] = df['close'].pct_change(5)
+                meta_features['price_acceleration'] = df['close'].pct_change(5).diff()
+                meta_features['volatility_proxy'] = df['close'].pct_change().rolling(20).std()
+            
+            if 'volume' in df.columns:
+                meta_features['volume_momentum'] = df['volume'].pct_change(5)
+                meta_features['volume_acceleration'] = df['volume'].pct_change(5).diff()
+            
+            # Add regime-specific features if available
+            if 'composite_cluster_id' in df.columns:
+                meta_features['regime_stability'] = df['composite_cluster_id'].rolling(10).std()
+                meta_features['regime_persistence'] = (df['composite_cluster_id'] == df['composite_cluster_id'].shift(1)).rolling(10).mean()
+            
+            # Add analyst integration features if available
+            analyst_features = ['analyst_confidence', 'analyst_prediction', 'analyst_ensemble_confidence']
+            for feature in analyst_features:
+                if feature in df.columns:
+                    meta_features[f'{feature}_momentum'] = df[feature].pct_change(5)
+                    meta_features[f'{feature}_stability'] = df[feature].rolling(10).std()
+            
+            # Get base model predictions for disagreement analysis
+            base_predictions = self._get_base_model_predictions(df, is_live=is_live)
+            
+            if base_predictions and len(base_predictions) > 1:
+                # Import disagreement calculator
+                try:
+                    from src.analyst.predictive_ensembles.disagreement_meta_features import DisagreementMetaFeatures
+                    disagreement_calculator = DisagreementMetaFeatures(self.logger)
+                    
+                    # Calculate disagreement meta-features
+                    disagreement_features = disagreement_calculator.calculate_disagreement_features_for_ensemble(
+                        base_predictions, is_live=is_live
+                    )
+                    
+                    # Add disagreement features to meta-features
+                    for feature_name, feature_value in disagreement_features.items():
+                        meta_features[feature_name] = feature_value
+                    
+                    tprint(f"✅ [TACTICIAN_ENSEMBLE] Added {len(disagreement_features)} disagreement features", color="green")
+                except ImportError as e:
+                    tprint(f"⚠️ [TACTICIAN_ENSEMBLE] Could not import disagreement calculator: {e}", color="yellow")
+                    # Add default disagreement features
+                    default_disagreement = {
+                        "prediction_dispersion": 0.0, "prediction_std": 0.0,
+                        "direction_conflict": 0.0, "long_ratio": 0.5, "disagreement_rate": 0.0,
+                        "confidence_gap": 0.0, "max_confidence": 0.0, "second_max_confidence": 0.0,
+                        "entropy": 0.0, "uncertainty": 0.0, "prediction_range": 0.0, "prediction_iqr": 0.0,
+                        "probability_range": 0.0, "probability_iqr": 0.0, "js_divergence": 0.0,
+                        "kl_divergence": 0.0, "avg_divergence": 0.0
+                    }
+                    for feature_name, feature_value in default_disagreement.items():
+                        meta_features[feature_name] = feature_value
+            else:
+                tprint("⚠️ [TACTICIAN_ENSEMBLE] Insufficient base model predictions for disagreement analysis", color="yellow")
+                # Add default disagreement features
+                default_disagreement = {
+                    "prediction_dispersion": 0.0, "prediction_std": 0.0,
+                    "direction_conflict": 0.0, "long_ratio": 0.5, "disagreement_rate": 0.0,
+                    "confidence_gap": 0.0, "max_confidence": 0.0, "second_max_confidence": 0.0,
+                    "entropy": 0.0, "uncertainty": 0.0, "prediction_range": 0.0, "prediction_iqr": 0.0,
+                    "probability_range": 0.0, "probability_iqr": 0.0, "js_divergence": 0.0,
+                    "kl_divergence": 0.0, "avg_divergence": 0.0
+                }
+                for feature_name, feature_value in default_disagreement.items():
+                    meta_features[feature_name] = feature_value
+            
+            # Ensure all features are numeric and handle any NaN values
+            meta_features = meta_features.fillna(0.0)
+            
+            # Convert to numeric, coercing any non-numeric values
+            for col in meta_features.columns:
+                meta_features[col] = pd.to_numeric(meta_features[col], errors='coerce').fillna(0.0)
+            
+            tprint(f"✅ [TACTICIAN_ENSEMBLE] Generated {len(meta_features.columns)} meta-features", color="green")
+            return meta_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating meta-features for tactician ensemble: {e}")
+            # Return basic meta-features as fallback
+            try:
+                meta_features = pd.DataFrame(index=df.index)
+                if 'close' in df.columns:
+                    meta_features['price_momentum'] = df['close'].pct_change(5).fillna(0)
+                return meta_features.fillna(0.0)
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback meta-feature generation also failed: {fallback_error}")
+                return pd.DataFrame(index=df.index)
+    
+    def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool = False) -> Dict[str, Any]:
+        """
+        Get predictions from all base models for disagreement analysis.
+        
+        Args:
+            df: Input DataFrame with features
+            is_live: Whether this is for live trading or backtesting
+            
+        Returns:
+            Dict containing model predictions and probabilities
+        """
+        try:
+            base_predictions = {}
+            
+            # Get predictions from ensemble models if available
+            if hasattr(self, 'tactician_ensembles') and self.tactician_ensembles:
+                for regime, ensemble in self.tactician_ensembles.items():
+                    if ensemble and hasattr(ensemble, 'predict'):
+                        try:
+                            # Get prediction from ensemble
+                            prediction = ensemble.predict(df.values) if hasattr(ensemble, 'predict') else 0.5
+                            confidence = 0.7  # Default confidence for ensemble models
+                            
+                            base_predictions[f'ensemble_{regime}'] = {
+                                'prediction': float(prediction),
+                                'probability': float(prediction),
+                                'confidence': float(confidence)
+                            }
+                        except Exception as model_error:
+                            self.logger.warning(f"Error getting prediction from ensemble {regime}: {model_error}")
+                            base_predictions[f'ensemble_{regime}'] = {
+                                'prediction': 0.5,
+                                'probability': 0.5,
+                                'confidence': 0.0
+                            }
+            
+            # Get predictions from TAS models if available
+            if hasattr(self, 'tas_models') and self.tas_models:
+                for regime, tas_model in self.tas_models.items():
+                    if tas_model and hasattr(tas_model, 'predict'):
+                        try:
+                            prediction = tas_model.predict(df.values) if hasattr(tas_model, 'predict') else 0.5
+                            confidence = 0.6  # Default confidence for TAS models
+                            
+                            base_predictions[f'tas_{regime}'] = {
+                                'prediction': float(prediction),
+                                'probability': float(prediction),
+                                'confidence': float(confidence)
+                            }
+                        except Exception as model_error:
+                            self.logger.warning(f"Error getting prediction from TAS model {regime}: {model_error}")
+                            base_predictions[f'tas_{regime}'] = {
+                                'prediction': 0.5,
+                                'probability': 0.5,
+                                'confidence': 0.0
+                            }
+            
+            return base_predictions
+            
+        except Exception as e:
+            self.logger.error(f"Error getting base model predictions: {e}")
+            return {}
 
 
 def execute_tactician_ensemble_training(

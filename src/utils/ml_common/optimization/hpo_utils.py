@@ -1118,6 +1118,41 @@ class HyperparameterOptimization:
                 'reg_alpha': {'type': 'float', 'low': 0, 'high': 10},
                 'reg_lambda': {'type': 'float', 'low': 0, 'high': 10}
             },
+            # Regime-specific model search spaces
+            'catboost_regime': {
+                'depth': {'type': 'int', 'low': 4, 'high': 6},
+                'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.06},
+                'l2_leaf_reg': {'type': 'float', 'low': 6, 'high': 12},
+                'iterations': {'type': 'int', 'low': 500, 'high': 1200},
+                'subsample': {'type': 'float', 'low': 0.6, 'high': 0.8},
+                'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 0.8}
+            },
+            'extratrees_regime': {
+                'n_estimators': {'type': 'int', 'low': 300, 'high': 800},
+                'max_depth': {'type': 'int', 'low': 10, 'high': 15},
+                'min_samples_split': {'type': 'int', 'low': 5, 'high': 20},
+                'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 10},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]}
+            },
+            'lightgbm_meta_regime': {
+                'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 5},
+                'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.05},
+                'min_data_in_leaf': {'type': 'int', 'low': 50, 'high': 150},
+                'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
+                'lambda_l1': {'type': 'float', 'low': 0, 'high': 0.1},
+                'lambda_l2': {'type': 'float', 'low': 0, 'high': 0.1},
+                'n_estimators': {'type': 'int', 'low': 200, 'high': 600}
+            },
+            'bayesian_rule_lists_regime': {
+                'max_rules': {'type': 'int', 'low': 20, 'high': 40},
+                'max_rule_length': {'type': 'int', 'low': 2, 'high': 4},
+                'n_chains': {'type': 'int', 'low': 2, 'high': 4},
+                'n_iter': {'type': 'int', 'low': 5000, 'high': 15000},
+                'min_support': {'type': 'float', 'low': 0.01, 'high': 0.05},
+                'alpha': {'type': 'float', 'low': 0.5, 'high': 2.0},
+                'beta': {'type': 'float', 'low': 0.5, 'high': 2.0}
+            },
             'lightgbm': {
                 'num_leaves': {'type': 'int', 'low': 10, 'high': 100},
                 'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},

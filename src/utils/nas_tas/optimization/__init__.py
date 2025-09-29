@@ -1,11 +1,9 @@
+"""Placeholder for NAS/TAS optimisation components.
+
+The optimisation helpers referenced by earlier iterations of this package are
+not part of the current repository layout.  To keep ``import
+src.utils.nas_tas.optimization`` working we expose an empty namespace rather
+than importing missing modules.
 """
-NAS/TAS Optimization Components
 
-This module contains optimization components for Neural Architecture Search
-and Trading Architecture Search functionality.
-"""
-
-from .architecture_search import ArchitectureSearchOptimizer
-from .strategy_search import StrategySearchOptimizer
-
-__all__ = ["ArchitectureSearchOptimizer", "StrategySearchOptimizer"]
+__all__: list[str] = []

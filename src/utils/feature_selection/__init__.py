@@ -12,6 +12,8 @@ from .framework import (
     FeatureImportanceRanker,
     StabilityAnalyzer,
 )
+from .pca_module import PCAModule, create_pca_module
+from .vif_module import VIFModule, create_vif_module
 
 __all__ = [
     'get_feature_selection_framework',
@@ -26,5 +28,10 @@ __all__ = [
     'RecursiveFeatureEliminator',
     'FeatureImportanceRanker',
     'StabilityAnalyzer',
+    # New modules for correlation handling
+    'PCAModule',
+    'create_pca_module',
+    'VIFModule',
+    'create_vif_module',
 ]
 

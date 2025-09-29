@@ -175,6 +175,45 @@ class RegimeHPOWrapper:
         # CatBoost search space
         if 'catboost' in self.regime_base_config:
             catboost_config = self.regime_base_config['catboost']
+            # Resolve bootstrap type choices
+            bootstrap_type_config = catboost_config.get('bootstrap_type', ['Bayesian', 'Bernoulli'])
+            if bootstrap_type_config is None:
+                bootstrap_type_choices = ['Bayesian', 'Bernoulli']
+            elif isinstance(bootstrap_type_config, (str, bytes)):
+                bootstrap_type_choices = [bootstrap_type_config]
+            elif isinstance(bootstrap_type_config, (list, tuple, set)):
+                bootstrap_type_choices = list(bootstrap_type_config)
+            else:
+                bootstrap_type_choices = [bootstrap_type_config]
+
+            # Resolve subsample range
+            subsample_config = catboost_config.get('subsample')
+            if isinstance(subsample_config, dict):
+                subsample_low = subsample_config.get('low', 0.5)
+                subsample_high = subsample_config.get('high', 0.9)
+            elif isinstance(subsample_config, (list, tuple, set)):
+                subsample_low = min(subsample_config)
+                subsample_high = max(subsample_config)
+            elif subsample_config is not None:
+                subsample_low = subsample_high = float(subsample_config)
+            else:
+                subsample_low = 0.5
+                subsample_high = 0.9
+
+            # Resolve column sample by level range
+            colsample_config = catboost_config.get('colsample_bylevel')
+            if isinstance(colsample_config, dict):
+                colsample_low = colsample_config.get('low', 0.5)
+                colsample_high = colsample_config.get('high', 0.9)
+            elif isinstance(colsample_config, (list, tuple, set)):
+                colsample_low = min(colsample_config)
+                colsample_high = max(colsample_config)
+            elif colsample_config is not None:
+                colsample_low = colsample_high = float(colsample_config)
+            else:
+                colsample_low = 0.5
+                colsample_high = 0.9
+
             search_spaces['catboost'] = {
                 'depth': {
                     'type': 'int',
@@ -196,15 +235,19 @@ class RegimeHPOWrapper:
                     'low': min(catboost_config.get('iterations', [500, 800, 1200])),
                     'high': max(catboost_config.get('iterations', [500, 800, 1200]))
                 },
+                'bootstrap_type': {
+                    'type': 'categorical',
+                    'choices': bootstrap_type_choices or ['Bayesian', 'Bernoulli']
+                },
                 'subsample': {
                     'type': 'float',
-                    'low': 0.6,
-                    'high': 0.8
+                    'low': subsample_low,
+                    'high': subsample_high
                 },
                 'colsample_bylevel': {
                     'type': 'float',
-                    'low': 0.6,
-                    'high': 0.8
+                    'low': colsample_low,
+                    'high': colsample_high
                 }
             }
         

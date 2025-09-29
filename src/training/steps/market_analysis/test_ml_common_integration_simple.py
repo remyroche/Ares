@@ -33,9 +33,8 @@ def test_tas_engine_integration():
     print("\n🧪 Testing TAS Engine ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine import (
-            EnhancedTASEngine, TASConfig, TreeSearchStrategy, create_enhanced_tas_engine
-        )
+        from src.utils.nas_tas.core.tas_engine import TASEngine
+        from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
         print("✅ TAS Engine imports successful")
         return True
 
@@ -48,9 +47,8 @@ def test_nas_engine_integration():
     print("\n🧪 Testing NAS Engine ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.nas_regime.core.enhanced_nas_engine import (
-            EnhancedNASEngine, NASSearchConfig, SearchStrategy, create_enhanced_nas_engine
-        )
+        from src.utils.nas_tas.core.nas_engine import NASEngine
+        from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
         print("✅ NAS Engine imports successful")
         return True
 

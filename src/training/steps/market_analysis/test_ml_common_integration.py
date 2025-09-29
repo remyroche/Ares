@@ -57,24 +57,19 @@ def test_tas_engine_integration():
     print("\n🧪 Testing TAS Engine ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine import (
-            EnhancedTASEngine, TASConfig, TreeSearchStrategy, create_enhanced_tas_engine
-        )
+        from src.utils.nas_tas.core.tas_engine import TASEngine
+        from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
 
         # Create TAS config with ML utilities enabled
-        config = TASConfig(
-            search_strategy=TreeSearchStrategy.ENHANCED_BAYESIAN,
+        config = StrategySearchConfig(
+            max_iterations=20,
             population_size=10,
-            max_generations=5,
-            max_evaluations=20,
-            enable_multi_objective=True,
-            enable_constraint_validation=True,
-            enable_performance_estimation=True,
-            parallel_evaluation=True
+            enable_parallel_processing=True
         )
 
         # Create engine
-        engine = EnhancedTASEngine(config)
+        engine = TASEngine()
+        strategy_optimizer = StrategySearchOptimizer(config)
 
         # Check that ML common components are initialized
         assert hasattr(engine, 'safeguards'), "TAS Engine missing safeguards"
@@ -96,24 +91,19 @@ def test_nas_engine_integration():
     print("\n🧪 Testing NAS Engine ML Common integration...")
 
     try:
-        from src.training.steps.market_analysis.nas_regime.core.enhanced_nas_engine import (
-            EnhancedNASEngine, NASSearchConfig, SearchStrategy, create_enhanced_nas_engine
-        )
+        from src.utils.nas_tas.core.nas_engine import NASEngine
+        from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
 
         # Create NAS config with ML utilities enabled
-        config = NASSearchConfig(
-            search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
+        config = ArchitectureSearchConfig(
+            max_iterations=20,
             population_size=10,
-            max_generations=5,
-            max_evaluations=20,
-            enable_multi_objective=True,
-            enable_constraint_validation=True,
-            enable_performance_estimation=True,
-            parallel_evaluation=True
+            enable_parallel_processing=True
         )
 
         # Create engine
-        engine = EnhancedNASEngine(config)
+        engine = NASEngine()
+        architecture_optimizer = ArchitectureSearchOptimizer(config)
 
         # Check that ML common components are initialized
         assert hasattr(engine, 'safeguards'), "NAS Engine missing safeguards"

@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 # Import all TAS components
 try:
     from .core.tas_engine import TreeArchitectureSearchEngine, TASEngineConfig
-    from .enhanced_tas_engine import EnhancedTASEngine, EnhancedTASConfig
+    from src.utils.nas_tas.core.tas_engine import TASEngine
+    from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
     from .core.tas_config import TASConfig, TASSearchConfig, TASOptimizationConfig
     TAS_CORE_AVAILABLE = True
 except ImportError as e:

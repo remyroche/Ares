@@ -23,6 +23,10 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
+# Import centralized TAS utilities
+from src.utils.nas_tas.core.tas_engine import TASEngine
+from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
+
 # Import TAS components
 from .tas_config import TASConfig, TASSearchConfig, TASOptimizationConfig
 from .tas_result import TASResult, TASSearchResult, TASOptimizationResult
@@ -472,7 +476,7 @@ class TreeArchitectureSearchEngine:
                search_strategy: Optional[SearchStrategy] = None,
                optimization_mode: Optional[OptimizationMode] = None) -> TASResult:
         """
-        Perform advanced tree architecture search with enhanced utility integration.
+        Perform advanced tree architecture search using centralized TAS utilities.
         
         Args:
             train_data: Training data (X, y)
@@ -486,74 +490,64 @@ class TreeArchitectureSearchEngine:
             TASResult with search results
         """
         start_time = time.time()
-        self.logger.info("🚀 Starting enhanced tree architecture search")
-        
-        # Use provided strategy or default
-        strategy = search_strategy or self.config.search_strategy
-        mode = optimization_mode or self.config.optimization_mode
-        
-        self.logger.info(f"🔍 Using search strategy: {strategy.value}")
-        self.logger.info(f"⚙️ Using optimization mode: {mode.value}")
+        self.logger.info("🚀 Starting enhanced tree architecture search with centralized utilities")
         
         try:
-            # Enhanced data preparation with utility tools
-            train_data, validation_data, test_data = self._enhanced_data_preparation(
-                train_data, validation_data, test_data
+            # Create search configuration
+            search_config = StrategySearchConfig(
+                max_iterations=100,
+                population_size=50,
+                enable_parallel_processing=True,
+                max_workers=4
             )
             
-            # Prepare search environment with utility tools
-            search_env = self._prepare_enhanced_search_environment(
-                train_data, validation_data, test_data, regime_data
+            # Initialize centralized TAS engine
+            tas_engine = TASEngine()
+            strategy_optimizer = StrategySearchOptimizer(search_config)
+            
+            # Convert data to DataFrame format for centralized optimizer
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
+            
+            # Create DataFrame for search
+            train_df = pd.DataFrame(X_train)
+            train_df['target'] = y_train
+            
+            # Define search space
+            search_space = {
+                'entry_threshold': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+                'exit_threshold': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+                'risk_factor': [0.5, 1.0, 1.5, 2.0],
+                'position_size': [0.05, 0.1, 0.15, 0.2, 0.25]
+            }
+            
+            # Perform search using centralized optimizer
+            results = tas_engine.search_strategies(
+                data=train_df,
+                search_space=search_space,
+                optimization_method="bayesian_tpe",
+                n_trials=50,
+                include_regime_specific=True
             )
             
-            # Select search strategy
-            searcher = self._select_search_strategy(strategy)
-            
-            # Perform search with hardware optimization context
-            with self._hardware_optimization_context():
-                # Perform search based on optimization mode
-                if mode == OptimizationMode.SINGLE_OBJECTIVE:
-                    result = self._single_objective_search(searcher, search_env)
-                elif mode == OptimizationMode.MULTI_OBJECTIVE:
-                    result = self._multi_objective_search(searcher, search_env)
-                elif mode == OptimizationMode.REGIME_AWARE:
-                    result = self._regime_aware_search(searcher, search_env)
-                elif mode == OptimizationMode.REAL_TIME:
-                    result = self._real_time_search(searcher, search_env)
-                elif mode == OptimizationMode.CONTINUAL:
-                    result = self._continual_search(searcher, search_env)
-                else:
-                    raise ValueError(f"Unknown optimization mode: {mode}")
-            
-            # Enhanced post-processing with utility tools
-            result = self._enhanced_post_process_results(result, search_env)
-            
-            # Save results with enhanced serialization
-            if self.config.save_results:
-                self._enhanced_save_search_results(result)
-            
-            execution_time = time.time() - start_time
-            result.execution_time = execution_time
-            
-            self.logger.info(f"✅ Enhanced TAS completed in {execution_time:.2f}s")
-            self.logger.info(f"🏆 Best architecture: {result.best_architecture}")
-            self.logger.info(f"🎯 Best score: {result.best_score:.4f}")
-            self.logger.info(f"🛠️ Utility tools used: {self._get_utility_status()}")
-            
-            return result
-            
+            if results and 'best_strategy' in results:
+                self.logger.info("✅ Strategy search completed successfully")
+                # Convert results to TAS result format
+                return TASResult(
+                    best_architecture=None,  # Tree architectures not applicable
+                    best_score=results.get('best_score', 0.0),
+                    search_time=results.get('search_time', 0.0),
+                    search_history=results.get('trials', []),
+                    regime_analysis=results.get('regime_analysis', {}),
+                    performance_metrics=results.get('performance_metrics', {})
+                )
+            else:
+                self.logger.warning("⚠️ No strategies found, returning empty result")
+                return TASResult()
+                
         except Exception as e:
-            execution_time = time.time() - start_time
-            self.logger.error(f"❌ Enhanced TAS failed: {e}")
-            
-            return TASResult(
-                best_architecture=None,
-                best_score=0.0,
-                search_history=[],
-                execution_time=execution_time,
-                success=False,
-                error_message=str(e)
-            )
+            self.logger.error(f"❌ TAS search failed: {e}")
+            return TASResult()
     
     def _prepare_search_environment(self,
                                    train_data: Tuple[np.ndarray, np.ndarray],

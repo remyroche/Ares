@@ -9,6 +9,7 @@ import json
 import pickle
 import numpy as np
 import pandas as pd
+import os
 from typing import Dict, List, Any, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,7 +21,8 @@ from enum import Enum
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+    tprint_success, tprint_progress, tprint_performance, tprint_timer,
+    tprint_structured, tprint_with_level, tprint_logged, LogLevel
 )
 
 from ..evaluation.financial_metrics import TradingPerformanceMetrics, RiskMetrics
@@ -521,10 +523,28 @@ class ResultManager:
         Args:
             base_directory: Base directory for storing results
         """
+        tprint_info("Initializing Result Manager")
+        
         self.base_directory = Path(base_directory)
-        self.base_directory.mkdir(parents=True, exist_ok=True)
+        tprint_debug(f"Setting up base directory: {self.base_directory}")
+        
+        with tprint_timer("directory_setup", LogLevel.DEBUG):
+            self.base_directory.mkdir(parents=True, exist_ok=True)
+        
+        tprint_success(f"Base directory created: {self.base_directory}")
         
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Log configuration
+        tprint_structured({
+            "result_manager_config": {
+                "base_directory": str(self.base_directory),
+                "directory_exists": self.base_directory.exists(),
+                "directory_writable": self.base_directory.is_dir() and os.access(self.base_directory, os.W_OK)
+            }
+        }, LogLevel.INFO)
+        
+        tprint_success("Result Manager initialized successfully")
         
         # Result storage
         self.results: Dict[str, UnifiedArchitectureResult] = {}
@@ -537,20 +557,40 @@ class ResultManager:
         
         tprint_info(f"Result manager initialized with base directory: {self.base_directory}")
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def store_result(self, result: UnifiedArchitectureResult, save_to_disk: bool = True) -> bool:
         """Store a result."""
+        tprint_info("Storing result")
+        
+        # Log result information
+        tprint_structured({
+            "result_storage": {
+                "result_id": result.result_id,
+                "search_type": result.search_type,
+                "architecture_count": result.architecture_count,
+                "execution_status": result.execution_info.status.value,
+                "execution_duration": result.execution_info.duration_seconds,
+                "save_to_disk": save_to_disk
+            }
+        }, LogLevel.INFO)
+        
         try:
             # Store in memory
+            tprint_debug("Storing result in memory")
             self.results[result.result_id] = result
             self.total_results += 1
+            tprint_success("Result stored in memory")
             
             # Update statistics
             if result.execution_info.status == ResultStatus.SUCCESS:
                 self.successful_results += 1
+                tprint_success("Result marked as successful")
             else:
                 self.failed_results += 1
+                tprint_warning("Result marked as failed")
             
             # Update index
+            tprint_debug("Updating result index")
             self.result_index[result.result_id] = {
                 'timestamp': result.result_timestamp,
                 'search_type': result.search_type,
@@ -559,37 +599,82 @@ class ResultManager:
                 'status': result.execution_info.status.value,
                 'duration': result.execution_info.duration_seconds
             }
+            tprint_success("Result index updated")
             
             # Save to disk if requested
             if save_to_disk:
+                tprint_debug("Saving result to disk")
                 filename = f"result_{result.result_id}.json"
                 filepath = self.base_directory / filename
-                result.save(filepath, format="json")
+                
+                with tprint_timer("disk_save", LogLevel.DEBUG):
+                    result.save(filepath, format="json")
+                
+                tprint_success(f"Result saved to disk: {filepath}")
+            else:
+                tprint_info("Skipping disk save (save_to_disk=False)")
             
-            tprint_success(f"Result stored: {result.result_id}")
+            # Log storage statistics
+            tprint_structured({
+                "storage_statistics": {
+                    "total_results": self.total_results,
+                    "successful_results": self.successful_results,
+                    "failed_results": self.failed_results,
+                    "success_rate": self.successful_results / self.total_results if self.total_results > 0 else 0.0
+                }
+            }, LogLevel.INFO)
+            
+            tprint_success(f"Result stored successfully: {result.result_id}")
             return True
             
         except Exception as e:
             tprint_error(f"Failed to store result: {e}")
+            tprint_structured({
+                "storage_error": {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "result_id": result.result_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            }, LogLevel.ERROR)
             return False
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True, include_result=True)
     def get_result(self, result_id: str) -> Optional[UnifiedArchitectureResult]:
         """Get a result by ID."""
+        tprint_debug(f"Retrieving result: {result_id}")
+        
         if result_id in self.results:
+            tprint_success(f"Result found in memory: {result_id}")
             return self.results[result_id]
         
         # Try to load from disk
+        tprint_debug("Result not in memory, attempting to load from disk")
         try:
             filename = f"result_{result_id}.json"
             filepath = self.base_directory / filename
             
             if filepath.exists():
-                result = UnifiedArchitectureResult.load(filepath, format="json")
+                tprint_debug(f"Loading result from disk: {filepath}")
+                with tprint_timer("disk_load", LogLevel.DEBUG):
+                    result = UnifiedArchitectureResult.load(filepath, format="json")
                 self.results[result_id] = result
+                tprint_success(f"Result loaded from disk: {result_id}")
                 return result
+            else:
+                tprint_warning(f"Result file not found: {filepath}")
         except Exception as e:
             tprint_error(f"Failed to load result {result_id}: {e}")
+            tprint_structured({
+                "load_error": {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "result_id": result_id,
+                    "filepath": str(filepath) if 'filepath' in locals() else None
+                }
+            }, LogLevel.ERROR)
         
+        tprint_warning(f"Result not found: {result_id}")
         return None
     
     def list_results(self, search_type: Optional[str] = None) -> List[Dict[str, Any]]:

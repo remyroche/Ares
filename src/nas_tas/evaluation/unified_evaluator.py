@@ -18,7 +18,8 @@ from scipy import stats
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
+    tprint_success, tprint_progress, tprint_performance, tprint_timer,
+    tprint_structured, tprint_with_level, tprint_logged, LogLevel
 )
 
 from .financial_metrics import (
@@ -455,18 +456,26 @@ class UnifiedEvaluator:
             config: Evaluation configuration
             financial_calculator: Financial metrics calculator
         """
+        tprint_info("Initializing Unified Evaluator")
+        
         self.config = config or EvaluationConfig()
         self.financial_calculator = financial_calculator or FinancialMetricsCalculator()
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Log configuration
+        tprint_structured({
+            "evaluation_config": self.config.to_dict()
+        }, LogLevel.INFO)
+        
         # Initialize evaluation strategies
+        tprint_debug("Initializing evaluation strategies")
         self.strategies = {
             'performance': PerformanceEvaluationStrategy(),
             'financial': FinancialEvaluationStrategy(self.financial_calculator),
             'regime': RegimeEvaluationStrategy()
         }
         
-        tprint_info(f"Unified evaluator initialized with {len(self.strategies)} strategies")
+        tprint_success(f"Unified evaluator initialized with {len(self.strategies)} strategies")
     
     async def evaluate_model(
         self,
@@ -492,63 +501,129 @@ class UnifiedEvaluator:
         tprint_info("Starting comprehensive model evaluation")
         start_time = datetime.now()
         
+        # Log evaluation parameters
+        tprint_structured({
+            "evaluation_parameters": {
+                "model_type": type(model).__name__,
+                "data_shape": X.shape,
+                "target_shape": y.shape,
+                "benchmark_model": type(benchmark_model).__name__ if benchmark_model else None,
+                "benchmark_data_shape": benchmark_data[0].shape if benchmark_data else None,
+                "evaluation_type": self.config.evaluation_type,
+                "enable_parallel_evaluation": self.config.enable_parallel_evaluation
+            }
+        }, LogLevel.INFO)
+        
         try:
             result = EvaluationResult()
             
             # Validate inputs
+            tprint_debug("Validating evaluation inputs")
             if len(X) != len(y):
-                raise ValueError(f"X and y must have same length: {len(X)} vs {len(y)}")
+                error_msg = f"X and y must have same length: {len(X)} vs {len(y)}"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
             
             if len(X) == 0:
-                raise ValueError("Empty dataset provided")
+                error_msg = "Empty dataset provided"
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            
+            tprint_success("Input validation passed")
             
             # Perform evaluations based on configuration
+            tprint_debug("Setting up evaluation tasks")
             evaluation_tasks = []
             
             if self.config.calculate_performance_metrics:
+                tprint_debug("Adding performance evaluation task")
                 evaluation_tasks.append(('performance', self._evaluate_performance(model, X, y)))
             
             if self.config.calculate_financial_metrics:
+                tprint_debug("Adding financial evaluation task")
                 evaluation_tasks.append(('financial', self._evaluate_financial(model, X, y)))
             
             if self.config.calculate_regime_metrics:
+                tprint_debug("Adding regime evaluation task")
                 evaluation_tasks.append(('regime', self._evaluate_regime(model, X, y)))
             
+            tprint_success(f"Configured {len(evaluation_tasks)} evaluation tasks")
+            
             # Execute evaluations
+            tprint_info("Executing evaluation tasks")
             if self.config.enable_parallel_evaluation and len(evaluation_tasks) > 1:
-                metrics_results = await self._execute_parallel_evaluations(model, X, y, evaluation_tasks)
+                tprint_debug("Using parallel evaluation")
+                with tprint_timer("parallel_evaluation", LogLevel.INFO):
+                    metrics_results = await self._execute_parallel_evaluations(model, X, y, evaluation_tasks)
+                tprint_success("Parallel evaluation completed")
             else:
-                metrics_results = await self._execute_sequential_evaluations(model, X, y, evaluation_tasks)
+                tprint_debug("Using sequential evaluation")
+                with tprint_timer("sequential_evaluation", LogLevel.INFO):
+                    metrics_results = await self._execute_sequential_evaluations(model, X, y, evaluation_tasks)
+                tprint_success("Sequential evaluation completed")
             
             # Combine metrics
+            tprint_debug("Combining evaluation metrics")
             combined_metrics = self._combine_metrics(metrics_results)
             result.metrics = combined_metrics
+            tprint_success("Metrics combined successfully")
             
             # Financial validation
             if self.config.financial_validation and self.config.calculate_financial_metrics:
-                result.financial_validation = await self._validate_financial_performance(combined_metrics)
+                tprint_debug("Performing financial validation")
+                with tprint_timer("financial_validation", LogLevel.DEBUG):
+                    result.financial_validation = await self._validate_financial_performance(combined_metrics)
+                tprint_success("Financial validation completed")
             
             # Performance validation
             if self.config.calculate_performance_metrics:
-                result.performance_validation = self._validate_performance(combined_metrics)
+                tprint_debug("Performing performance validation")
+                with tprint_timer("performance_validation", LogLevel.DEBUG):
+                    result.performance_validation = self._validate_performance(combined_metrics)
+                tprint_success("Performance validation completed")
             
             # Regime validation
             if self.config.calculate_regime_metrics:
-                result.regime_validation = self._validate_regime_performance(combined_metrics)
+                tprint_debug("Performing regime validation")
+                with tprint_timer("regime_validation", LogLevel.DEBUG):
+                    result.regime_validation = self._validate_regime_performance(combined_metrics)
+                tprint_success("Regime validation completed")
             
             # Model comparison
             if benchmark_model is not None and benchmark_data is not None:
-                result.model_comparison = await self._compare_models(model, benchmark_model, X, y, benchmark_data)
+                tprint_debug("Performing model comparison")
+                with tprint_timer("model_comparison", LogLevel.DEBUG):
+                    result.model_comparison = await self._compare_models(model, benchmark_model, X, y, benchmark_data)
+                tprint_success("Model comparison completed")
             
             # Error analysis
-            result.error_analysis = self._analyze_errors(model, X, y)
+            tprint_debug("Performing error analysis")
+            with tprint_timer("error_analysis", LogLevel.DEBUG):
+                result.error_analysis = self._analyze_errors(model, X, y)
+            tprint_success("Error analysis completed")
             
             # Generate recommendations
-            result.recommendations = self._generate_recommendations(result)
+            tprint_debug("Generating recommendations")
+            with tprint_timer("recommendations_generation", LogLevel.DEBUG):
+                result.recommendations = self._generate_recommendations(result)
+            tprint_success("Recommendations generated")
             
             # Calculate overall evaluation score
+            tprint_debug("Calculating overall evaluation score")
             result.evaluation_score = self._calculate_evaluation_score(result)
             result.evaluation_successful = result.evaluation_score >= 0.7
+            
+            tprint_structured({
+                "evaluation_results": {
+                    "evaluation_score": result.evaluation_score,
+                    "evaluation_successful": result.evaluation_successful,
+                    "metrics_count": len(combined_metrics.to_dict()) if hasattr(combined_metrics, 'to_dict') else 0,
+                    "has_financial_validation": hasattr(result, 'financial_validation') and result.financial_validation is not None,
+                    "has_performance_validation": hasattr(result, 'performance_validation') and result.performance_validation is not None,
+                    "has_regime_validation": hasattr(result, 'regime_validation') and result.regime_validation is not None,
+                    "has_model_comparison": hasattr(result, 'model_comparison') and result.model_comparison is not None
+                }
+            }, LogLevel.INFO)
             
             # Calculate duration
             result.evaluation_duration = (datetime.now() - start_time).total_seconds()
@@ -560,6 +635,14 @@ class UnifiedEvaluator:
             
         except Exception as e:
             tprint_error(f"Error during model evaluation: {e}")
+            tprint_structured({
+                "evaluation_error": {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "evaluation_duration_seconds": (datetime.now() - start_time).total_seconds(),
+                    "timestamp": datetime.now().isoformat()
+                }
+            }, LogLevel.ERROR)
             self.logger.error(f"Error during model evaluation: {e}", exc_info=True)
             
             result = EvaluationResult()

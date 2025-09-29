@@ -115,26 +115,12 @@ class PipelineEnhancementIntegration:
         """Demonstrate enhanced step capabilities."""
         self.logger.info('🛡️ Demonstrating enhanced step...')
 
-        class MockStep:
-
-            def __init__(self, config: Dict[str, Any]) -> None:
-                self.config = config
-                self.logger = system_logger.getChild('MockStep')
-
-            async def execute(self, training_input: Any, pipeline_state: Any) -> None:
-                data = pipeline_state.get('dataframe')
-                if data is not None:
-                    processed_data = data.copy()
-                    processed_data['processed'] = True
-                    return {'success': True, 'dataframe': processed_data}
-                return {'success': False, 'error': 'No data'}
+        # This method demonstrates enhanced step capabilities without mock implementations
+        # Real step implementations should be used instead of mocks
         try:
-            enhanced_step_class = enhanced_pipeline_manager.create_enhanced_step(MockStep, 'mock_step_demo')
-            enhanced_step = enhanced_step_class({'demo': True})
-            training_input = {'symbol': 'ETHUSDT'}
-            pipeline_state = {'dataframe': data}
-            result = {'success': True, 'dataframe': data.copy(), 'enhancement_metadata': {'streaming_used': False, 'validation_performed': True, 'quality_assessment_performed': True}}
-            return {'success': True, 'enhanced_step_created': True, 'enhancement_metadata': result.get('enhancement_metadata', {})}
+            # Enhanced step creation would use actual step classes here
+            # For now, return a success indicator that no mock was used
+            return {'success': True, 'enhanced_step_created': False, 'message': 'Mock implementations removed - use actual step classes'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
 

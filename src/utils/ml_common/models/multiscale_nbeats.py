@@ -734,24 +734,8 @@ def create_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRe
     )
 
 
-# Fallback implementation for when PyTorch is not available
-class FallbackMultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
-    """Fallback MultiScaleNBEATS regressor when PyTorch is not available."""
-
-    def __init__(self, **kwargs):
-        self.params = kwargs
-        self.is_fitted = False
-
-    def fit(self, X, y):
-        self.is_fitted = True
-        logger.warning("⚠️ Using fallback MultiScaleNBEATS implementation without PyTorch")
-        return self
-
-    def predict(self, X):
-        if not self.is_fitted:
-            raise ValueError("Model not fitted")
-        # Return zero predictions as fallback
-        return np.zeros((len(X[list(X.keys())[0]]), 4))
+# PyTorch is required for MultiScaleNBEATS - no fallback implementation
+# Fast fail if PyTorch is not available
 
 
 def get_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRegressor:

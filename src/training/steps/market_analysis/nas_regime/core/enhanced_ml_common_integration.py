@@ -298,27 +298,8 @@ class EnhancedMLCommonIntegration:
             if self.ensemble_utils:
                 return self.ensemble_utils.create_ensemble(models, method)
             else:
-                # Fallback ensemble (simple voting)
-                class FallbackEnsemble:
-                    def __init__(self, models):
-                        self.models = models
-                    
-                    def predict(self, X):
-                        predictions = []
-                        for model in self.models:
-                            if hasattr(model, 'predict'):
-                                pred = model.predict(X)
-                            else:
-                                pred = model(X)
-                            predictions.append(pred)
-                        
-                        # Simple voting
-                        if isinstance(predictions[0], np.ndarray):
-                            return np.mean(predictions, axis=0)
-                        else:
-                            return torch.mean(torch.stack(predictions), dim=0)
-                
-                return FallbackEnsemble(models)
+                # Fast fail - no fallback ensemble implementation
+                raise RuntimeError("ML common ensemble utilities not available - cannot create ensemble without proper implementation")
                 
         except Exception as e:
             self.logger.warning(f"Ensemble creation failed: {e}")

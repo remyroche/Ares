@@ -320,20 +320,8 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Create dummy probabilities
             regime_probabilities = np.random.dirichlet(np.ones(n_regimes), len(regime_predictions))
             
-            # Create a simple result object
-            class FallbackResult:
-                def __init__(self, predictions, probabilities):
-                    self.success = True
-                    self.regime_predictions = predictions
-                    self.regime_probabilities = probabilities
-                    self.economic_significance_scores = np.ones(len(predictions)) * 0.7
-                    self.trading_viability_scores = np.ones(len(predictions)) * 0.6
-                    self.regime_stability_scores = np.ones(len(predictions)) * 0.8
-                    self.metadata = {'architecture_type': 'Fallback', 'method': 'kmeans'}
-                    self.architecture_performance = {}
-                    self.error_message = None
-            
-            return FallbackResult(regime_predictions, regime_probabilities)
+            # Fast fail - no fallback result implementation
+            raise RuntimeError("NAS regime discovery failed - no fallback implementation available")
             
         except Exception as e:
             self.logger.error(f"Fallback regime discovery failed: {e}")

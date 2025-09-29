@@ -324,10 +324,10 @@ class EnhancedTASEngine:
                 })
             
             # Step 4: Model Ensemble Creation (if enabled)
-            ensemble_models = []
+            ensemble_results = []
             if self.config.enable_ensemble and self.model_factory is not None:
                 self.logger.info("🎭 Creating model ensemble...")
-                ensemble_models = self._create_model_ensemble(
+                ensemble_results = self._create_model_ensemble(
                     X_train, y_train, X_val, y_val, X_test, y_test
                 )
             
@@ -350,7 +350,15 @@ class EnhancedTASEngine:
             
             # Step 7: Select Best Model
             best_model, best_config, best_score = self._select_best_model(
-                automl_result, evolutionary_result, ensemble_models
+                automl_result,
+                evolutionary_result,
+                ensemble_results,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                X_test,
+                y_test
             )
             
             # Step 8: Create Comprehensive Result
@@ -482,14 +490,14 @@ class EnhancedTASEngine:
     def _create_model_ensemble(self, X_train: np.ndarray, y_train: np.ndarray,
                               X_val: np.ndarray, y_val: np.ndarray,
                               X_test: Optional[np.ndarray] = None,
-                              y_test: Optional[np.ndarray] = None) -> List[Any]:
-        """Create model ensemble."""
+                              y_test: Optional[np.ndarray] = None) -> List[TreeModelResult]:
+        """Create model ensemble and return their evaluation results."""
         try:
             if self.model_factory is None:
                 return []
-            
+
             # Create ensemble of different model types
-            ensemble_models = []
+            ensemble_models: List[TreeModelResult] = []
             for model_type in self.config.model_types:
                 try:
                     config = TreeModelConfig(model_type=model_type)
@@ -498,13 +506,13 @@ class EnhancedTASEngine:
                         model, X_train, y_train, X_val, y_val, X_test, y_test
                     )
                     if result.success:
-                        ensemble_models.append(result.model)
+                        ensemble_models.append(result)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not create {model_type} model: {e}")
                     continue
-            
+
             return ensemble_models
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Model ensemble creation failed: {e}")
             return []
@@ -556,52 +564,108 @@ class EnhancedTASEngine:
     
     def _select_best_model(self, automl_result: Optional[AutoMLResult],
                          evolutionary_result: Optional[EvolutionaryResult],
-                         ensemble_models: List[Any]) -> Tuple[Any, TreeModelConfig, float]:
-        """Select the best model from all results."""
+                         ensemble_models: List[TreeModelResult],
+                         X_train: np.ndarray, y_train: np.ndarray,
+                         X_val: np.ndarray, y_val: np.ndarray,
+                         X_test: Optional[np.ndarray] = None,
+                         y_test: Optional[np.ndarray] = None) -> Tuple[Any, TreeModelConfig, float]:
+        """Select the best model from all results using the provided datasets."""
         try:
             best_model = None
             best_config = TreeModelConfig()
             best_score = float('-inf')
-            
+            best_result: Optional[TreeModelResult] = None
+
+            def consider_result(candidate: Optional[TreeModelResult]):
+                nonlocal best_model, best_config, best_score, best_result
+                if candidate is None or not getattr(candidate, 'success', False):
+                    return
+                candidate_score = getattr(candidate, 'val_score', None)
+                if candidate_score is None:
+                    return
+                if candidate_score > best_score:
+                    best_score = candidate_score
+                    best_model = candidate.model
+                    best_config = candidate.config
+                    best_result = candidate
+
             # Check AutoML result
             if automl_result is not None and automl_result.success:
-                if automl_result.best_score > best_score:
+                if hasattr(automl_result, 'model_results'):
+                    for result in automl_result.model_results:
+                        if result.config == automl_result.best_config:
+                            consider_result(result)
+                            break
+
+                if best_result is None and self.model_evaluator is not None:
+                    try:
+                        model_to_evaluate = automl_result.best_model
+                        if model_to_evaluate is None and self.model_factory is not None:
+                            model_to_evaluate = self.model_factory.create_model(automl_result.best_config)
+                        if model_to_evaluate is not None:
+                            evaluated = self.model_evaluator.evaluate_model(
+                                model_to_evaluate,
+                                X_train,
+                                y_train,
+                                X_val,
+                                y_val,
+                                X_test,
+                                y_test
+                            )
+                            consider_result(evaluated)
+                    except Exception as eval_error:
+                        self.logger.warning(
+                            f"⚠️ Could not evaluate AutoML best model during selection: {eval_error}"
+                        )
+
+            # Check evolutionary result
+            if evolutionary_result is not None and evolutionary_result.success:
+                if getattr(evolutionary_result, 'pareto_front', None):
+                    best_individual = evolutionary_result.pareto_front[0]
+                    parameters = getattr(best_individual, 'parameters', {})
+                    try:
+                        config = TreeModelConfig(**parameters)
+                    except TypeError:
+                        config = TreeModelConfig()
+                    if self.model_factory is not None and self.model_evaluator is not None:
+                        try:
+                            model = self.model_factory.create_model(config)
+                            result = self.model_evaluator.evaluate_model(
+                                model,
+                                X_train,
+                                y_train,
+                                X_val,
+                                y_val,
+                                X_test,
+                                y_test
+                            )
+                            consider_result(result)
+                        except Exception as eval_error:
+                            self.logger.warning(
+                                f"⚠️ Could not evaluate evolutionary candidate: {eval_error}"
+                            )
+
+            # Check ensemble models
+            for ensemble_result in ensemble_models:
+                consider_result(ensemble_result)
+
+            if best_result is not None:
+                self.best_result = best_result
+            else:
+                self.best_result = None
+                if automl_result is not None and automl_result.success and best_score == float('-inf'):
                     best_score = automl_result.best_score
                     best_model = automl_result.best_model
                     best_config = automl_result.best_config
-            
-            # Check evolutionary result
-            if evolutionary_result is not None and evolutionary_result.success:
-                if evolutionary_result.pareto_front:
-                    # Use best individual from Pareto front
-                    best_individual = evolutionary_result.pareto_front[0]
-                    # Convert individual parameters to model config
-                    config = TreeModelConfig(**best_individual.parameters)
-                    if self.model_factory is not None:
-                        model = self.model_factory.create_model(config)
-                        # Evaluate model
-                        if self.model_evaluator is not None:
-                            result = self.model_evaluator.evaluate_model(
-                                model, X_train, y_train, X_val, y_val
-                            )
-                            if result.success and result.val_score > best_score:
-                                best_score = result.val_score
-                                best_model = result.model
-                                best_config = result.config
-            
-            # Check ensemble models
-            if ensemble_models:
-                # For now, use the first ensemble model
-                # In practice, you would evaluate all ensemble models
-                if best_model is None:
-                    best_model = ensemble_models[0]
-                    best_config = TreeModelConfig()
-                    best_score = 0.0
-            
+
+            if best_score == float('-inf'):
+                best_score = 0.0
+
             return best_model, best_config, best_score
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Best model selection failed: {e}")
+            self.best_result = None
             return None, TreeModelConfig(), 0.0
     
     def _get_all_model_results(self) -> List[TreeModelResult]:

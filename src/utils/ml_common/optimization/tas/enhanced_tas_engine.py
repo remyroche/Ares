@@ -36,7 +36,7 @@ except ImportError:
     AUTOML_AVAILABLE = False
 
 try:
-    from .evaluation.advanced_metrics import (
+    from ...shared_utils.advanced_metrics import (
         AdvancedEvaluator, AdvancedEvaluationResult,
         create_advanced_evaluator
     )

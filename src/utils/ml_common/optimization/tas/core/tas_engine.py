@@ -56,7 +56,7 @@ from ..automl.tree_automl import (
     TreeAutoMLManager, AutoMLConfig, AutoMLResult,
     create_tree_automl_manager
 )
-from ..evaluation.advanced_metrics import (
+from ...shared_utils.advanced_metrics import (
     AdvancedEvaluator, AdvancedEvaluationResult,
     create_advanced_evaluator
 )

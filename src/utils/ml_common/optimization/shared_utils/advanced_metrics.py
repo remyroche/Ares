@@ -1,14 +1,10 @@
 """
-Advanced Evaluation Metrics for TAS (DEPRECATED)
+Advanced Evaluation Metrics for NAS and TAS
 
-This module has been moved to shared utilities for use by both NAS and TAS systems.
-Please use: src.utils.ml_common.optimization.shared_utils.advanced_metrics
-
-This file is kept for backward compatibility but will be removed in future versions.
+This module provides comprehensive evaluation metrics that can be used by both
+NAS and TAS systems. It includes risk-adjusted returns, regime stability,
+economic significance, and trading viability metrics.
 """
-
-# Import from shared utilities
-from ...shared_utils.advanced_metrics import *
 
 import numpy as np
 import pandas as pd
@@ -434,7 +430,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                  regime_labels: np.ndarray) -> float:
         """Calculate regime prediction accuracy."""
         try:
-            # Simple accuracy calculation
             correct_predictions = np.sum(predictions == targets)
             total_predictions = len(predictions)
             return correct_predictions / total_predictions if total_predictions > 0 else 0.0
@@ -444,7 +439,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
     def _calculate_regime_stability(self, regime_labels: np.ndarray) -> float:
         """Calculate regime stability."""
         try:
-            # Calculate regime transition frequency
             transitions = np.sum(np.diff(regime_labels) != 0)
             total_periods = len(regime_labels) - 1
             stability = 1.0 - (transitions / total_periods) if total_periods > 0 else 1.0
@@ -456,13 +450,11 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                            regime_labels: np.ndarray) -> float:
         """Calculate regime transition prediction accuracy."""
         try:
-            # Find transition points
             transition_points = np.where(np.diff(regime_labels) != 0)[0]
             
             if len(transition_points) == 0:
                 return 1.0  # No transitions, perfect accuracy
             
-            # Check prediction accuracy at transition points
             transition_accuracy = []
             for point in transition_points:
                 if point < len(predictions) and point < len(targets):
@@ -476,7 +468,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                           regime_labels: np.ndarray) -> float:
         """Calculate regime duration prediction accuracy."""
         try:
-            # Calculate regime durations
             regime_durations = []
             current_regime = regime_labels[0]
             current_duration = 1
@@ -491,7 +482,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
             
             regime_durations.append(current_duration)
             
-            # Simple accuracy based on duration consistency
             if len(regime_durations) > 1:
                 duration_std = np.std(regime_durations)
                 duration_mean = np.mean(regime_durations)
@@ -506,7 +496,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                             regime_labels: np.ndarray) -> float:
         """Calculate regime volatility prediction accuracy."""
         try:
-            # Calculate volatility for each regime
             unique_regimes = np.unique(regime_labels)
             regime_volatilities = []
             
@@ -531,7 +520,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                        regime_labels: np.ndarray) -> float:
         """Calculate regime trend prediction accuracy."""
         try:
-            # Calculate trend for each regime
             unique_regimes = np.unique(regime_labels)
             regime_trends = []
             
@@ -577,7 +565,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                                     regime_labels: np.ndarray) -> float:
         """Calculate regime consistency."""
         try:
-            # Calculate consistency across regimes
             unique_regimes = np.unique(regime_labels)
             regime_consistencies = []
             
@@ -587,7 +574,6 @@ class RegimeMetricCalculator(BaseMetricCalculator):
                 regime_targets = targets[regime_mask]
                 
                 if len(regime_predictions) > 1:
-                    # Calculate consistency as inverse of variance
                     pred_variance = np.var(regime_predictions)
                     target_variance = np.var(regime_targets)
                     
@@ -654,7 +640,6 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_economic_significance(self, returns: np.ndarray) -> float:
         """Calculate economic significance."""
         try:
-            # Based on risk-adjusted returns
             mean_return = np.mean(returns)
             volatility = np.std(returns)
             
@@ -669,15 +654,12 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_trading_viability(self, returns: np.ndarray) -> float:
         """Calculate trading viability."""
         try:
-            # Based on consistency and profitability
             positive_returns = returns[returns > 0]
             win_rate = len(positive_returns) / len(returns) if len(returns) > 0 else 0.0
             
-            # Consistency factor
             consistency = 1.0 - np.std(returns) / (np.mean(returns) + 1e-8)
             consistency = max(0.0, min(1.0, consistency))
             
-            # Combine win rate and consistency
             viability = (win_rate + consistency) / 2.0
             return max(0.0, min(1.0, viability))
         except Exception:
@@ -686,11 +668,9 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_transaction_cost_impact(self, returns: np.ndarray) -> float:
         """Calculate transaction cost impact."""
         try:
-            # Simulate transaction costs (0.1% per trade)
             transaction_cost = 0.001
             net_returns = returns - transaction_cost
             
-            # Calculate impact
             original_return = np.sum(returns)
             net_return = np.sum(net_returns)
             
@@ -705,11 +685,9 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_slippage_impact(self, returns: np.ndarray) -> float:
         """Calculate slippage impact."""
         try:
-            # Simulate slippage (0.05% per trade)
             slippage = 0.0005
             net_returns = returns - slippage
             
-            # Calculate impact
             original_return = np.sum(returns)
             net_return = np.sum(net_returns)
             
@@ -724,7 +702,6 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_market_impact(self, returns: np.ndarray) -> float:
         """Calculate market impact."""
         try:
-            # Simulate market impact based on return magnitude
             large_returns = returns[np.abs(returns) > np.std(returns)]
             impact = len(large_returns) / len(returns) if len(returns) > 0 else 0.0
             return max(0.0, min(1.0, impact))
@@ -734,9 +711,8 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_liquidity_impact(self, returns: np.ndarray) -> float:
         """Calculate liquidity impact."""
         try:
-            # Simulate liquidity impact based on volatility
             volatility = np.std(returns)
-            impact = volatility / (volatility + 1.0)  # Normalize
+            impact = volatility / (volatility + 1.0)
             return max(0.0, min(1.0, impact))
         except Exception:
             return 0.0
@@ -744,9 +720,8 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_capacity_utilization(self, returns: np.ndarray) -> float:
         """Calculate capacity utilization."""
         try:
-            # Based on return magnitude and frequency
             mean_abs_return = np.mean(np.abs(returns))
-            utilization = mean_abs_return / (mean_abs_return + 1.0)  # Normalize
+            utilization = mean_abs_return / (mean_abs_return + 1.0)
             return max(0.0, min(1.0, utilization))
         except Exception:
             return 0.0
@@ -754,7 +729,6 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_risk_adjusted_capacity(self, returns: np.ndarray) -> float:
         """Calculate risk-adjusted capacity."""
         try:
-            # Combine capacity with risk adjustment
             capacity = self._calculate_capacity_utilization(returns)
             volatility = np.std(returns)
             risk_adjustment = 1.0 / (1.0 + volatility)
@@ -970,7 +944,6 @@ class AdvancedEvaluator:
                                      trading_metrics: TradingMetrics) -> float:
         """Calculate risk-adjusted score."""
         try:
-            # Combine risk and trading metrics
             risk_score = (risk_metrics.sharpe_ratio + risk_metrics.sortino_ratio) / 2.0
             trading_score = trading_metrics.win_rate
             
@@ -1015,7 +988,6 @@ class AdvancedEvaluator:
     def _calculate_model_stability(self, predictions: np.ndarray, targets: np.ndarray) -> float:
         """Calculate model stability."""
         try:
-            # Based on prediction consistency
             prediction_std = np.std(predictions)
             target_std = np.std(targets)
             
@@ -1030,7 +1002,6 @@ class AdvancedEvaluator:
     def _calculate_model_robustness(self, predictions: np.ndarray, targets: np.ndarray) -> float:
         """Calculate model robustness."""
         try:
-            # Based on error consistency
             errors = np.abs(predictions - targets)
             error_std = np.std(errors)
             error_mean = np.mean(errors)
@@ -1046,7 +1017,6 @@ class AdvancedEvaluator:
     def _calculate_model_interpretability(self, model_complexity: float) -> float:
         """Calculate model interpretability."""
         try:
-            # Inverse relationship with complexity
             interpretability = 1.0 / (1.0 + model_complexity)
             return max(0.0, min(1.0, interpretability))
         except Exception:

@@ -36,6 +36,16 @@ from .logging_standards import (
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 
+# Import unified NAS/TAS pipeline
+try:
+    from src.nas_tas.unified_pipeline import (
+        UnifiedNASPipeline, UnifiedTASPipeline, UnifiedHybridPipeline,
+        create_nas_pipeline, create_tas_pipeline, create_hybrid_pipeline
+    )
+    UNIFIED_PIPELINE_AVAILABLE = True
+except ImportError:
+    UNIFIED_PIPELINE_AVAILABLE = False
+
 # Import feature importance integration if available
 try:
     from .shared_utils.feature_importance_integration import (
@@ -90,6 +100,11 @@ class SubPipelineConfig:
     single_stage_only: bool = False  # New parameter to control single vs sequential execution
     custom_params: Dict[str, Any] = field(default_factory=dict)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    
+    # Unified pipeline configuration
+    use_unified_pipeline: bool = True  # Default to unified pipeline
+    unified_pipeline_mode: str = "hybrid"  # "nas", "tas", or "hybrid"
+    unified_pipeline_fallback: bool = True  # Fallback to legacy if unified fails
 
     # Feature importance analysis configuration
     enable_feature_importance: bool = True
@@ -321,6 +336,166 @@ class MarketAnalysisSubPipeline:
         )
         
         return sub_config
+    
+    async def _execute_unified_nas_tas_regime_discovery(self) -> SubPipelineResult:
+        """Execute NAS-TAS regime discovery using unified pipeline."""
+        try:
+            self.logger.info("🚀 Using unified NAS-TAS pipeline for regime discovery")
+            tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for regime discovery", color="cyan", bold=True)
+            
+            # Create unified pipeline based on mode
+            if self.config.unified_pipeline_mode == "nas":
+                pipeline = create_nas_pipeline()
+            elif self.config.unified_pipeline_mode == "tas":
+                pipeline = create_tas_pipeline()
+            else:  # hybrid
+                pipeline = create_hybrid_pipeline()
+            
+            # Execute unified pipeline
+            result = await pipeline.execute_regime_discovery(
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe,
+                data_dir=self.config.data_dir
+            )
+            
+            # Convert unified pipeline result to SubPipelineResult format
+            return SubPipelineResult(
+                sub_pipeline_name='nas_tas_regime_discovery',
+                status=SubPipelineStatus.COMPLETED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                artifacts={'nas_tas_regime_discovery_result': result},
+                metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Unified NAS-TAS regime discovery failed: {e}")
+            if self.config.unified_pipeline_fallback:
+                self.logger.info("🔄 Falling back to legacy regime discovery")
+                return await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
+            else:
+                raise
+    
+    async def _execute_unified_nas_tas_clustering(self) -> SubPipelineResult:
+        """Execute NAS-TAS clustering using unified pipeline."""
+        try:
+            self.logger.info("🚀 Using unified NAS-TAS pipeline for clustering")
+            tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for clustering", color="cyan", bold=True)
+            
+            # Create unified pipeline based on mode
+            if self.config.unified_pipeline_mode == "nas":
+                pipeline = create_nas_pipeline()
+            elif self.config.unified_pipeline_mode == "tas":
+                pipeline = create_tas_pipeline()
+            else:  # hybrid
+                pipeline = create_hybrid_pipeline()
+            
+            # Execute unified pipeline
+            result = await pipeline.execute_clustering(
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe,
+                data_dir=self.config.data_dir
+            )
+            
+            # Convert unified pipeline result to SubPipelineResult format
+            return SubPipelineResult(
+                sub_pipeline_name='nas_tas_clustering',
+                status=SubPipelineStatus.COMPLETED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                artifacts={'optimal_regime_clustering_result': result},
+                metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Unified NAS-TAS clustering failed: {e}")
+            if self.config.unified_pipeline_fallback:
+                self.logger.info("🔄 Falling back to legacy clustering")
+                return await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            else:
+                raise
+    
+    async def _execute_unified_nas_tas_models_training(self) -> SubPipelineResult:
+        """Execute NAS-TAS models training using unified pipeline."""
+        try:
+            self.logger.info("🚀 Using unified NAS-TAS pipeline for models training")
+            tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for models training", color="cyan", bold=True)
+            
+            # Create unified pipeline based on mode
+            if self.config.unified_pipeline_mode == "nas":
+                pipeline = create_nas_pipeline()
+            elif self.config.unified_pipeline_mode == "tas":
+                pipeline = create_tas_pipeline()
+            else:  # hybrid
+                pipeline = create_hybrid_pipeline()
+            
+            # Execute unified pipeline
+            result = await pipeline.execute_models_training(
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe,
+                data_dir=self.config.data_dir
+            )
+            
+            # Convert unified pipeline result to SubPipelineResult format
+            return SubPipelineResult(
+                sub_pipeline_name='nas_tas_models_training',
+                status=SubPipelineStatus.COMPLETED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                artifacts={'nas_tas_models_training_result': result},
+                metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Unified NAS-TAS models training failed: {e}")
+            if self.config.unified_pipeline_fallback:
+                self.logger.info("🔄 Falling back to legacy models training")
+                return await self.execute_sub_pipeline('nas_tas_models_training', self.config)
+            else:
+                raise
+    
+    async def _execute_unified_nas_tas_ensemble_training(self) -> SubPipelineResult:
+        """Execute NAS-TAS ensemble training using unified pipeline."""
+        try:
+            self.logger.info("🚀 Using unified NAS-TAS pipeline for ensemble training")
+            tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for ensemble training", color="cyan", bold=True)
+            
+            # Create unified pipeline based on mode
+            if self.config.unified_pipeline_mode == "nas":
+                pipeline = create_nas_pipeline()
+            elif self.config.unified_pipeline_mode == "tas":
+                pipeline = create_tas_pipeline()
+            else:  # hybrid
+                pipeline = create_hybrid_pipeline()
+            
+            # Execute unified pipeline
+            result = await pipeline.execute_ensemble_training(
+                symbol=self.config.symbol,
+                timeframe=self.config.timeframe,
+                data_dir=self.config.data_dir
+            )
+            
+            # Convert unified pipeline result to SubPipelineResult format
+            return SubPipelineResult(
+                sub_pipeline_name='nas_tas_ensemble_training',
+                status=SubPipelineStatus.COMPLETED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                artifacts={'nas_tas_ensemble_training_result': result},
+                metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Unified NAS-TAS ensemble training failed: {e}")
+            if self.config.unified_pipeline_fallback:
+                self.logger.info("🔄 Falling back to legacy ensemble training")
+                return await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
+            else:
+                raise
 
     async def execute_all_steps_from_start(
         self, 
@@ -486,7 +661,15 @@ class MarketAnalysisSubPipeline:
             # Stage 4: NAS-TAS Regime Discovery
             self.logger.info('🔍 Executing Stage 4: NAS-TAS Regime Discovery')
             tprint("🔍 [MARKET_ANALYSIS] Executing Stage 4: NAS-TAS Regime Discovery", color="yellow")
-            nas_tas_regime_discovery_result = await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
+            
+            # Use unified pipeline if available and enabled
+            if (UNIFIED_PIPELINE_AVAILABLE and 
+                self.config.use_unified_pipeline and 
+                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
+                nas_tas_regime_discovery_result = await self._execute_unified_nas_tas_regime_discovery()
+            else:
+                nas_tas_regime_discovery_result = await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
+            
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_regime_discovery_result, "NAS-TAS Regime Discovery")
             if not is_success:
                 return error_info
@@ -505,7 +688,15 @@ class MarketAnalysisSubPipeline:
             
             # Stage 5: NAS-TAS Clustering
             self.logger.info('🎯 Executing Stage 5: NAS-TAS Clustering')
-            nas_tas_clustering_result = await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            
+            # Use unified pipeline if available and enabled
+            if (UNIFIED_PIPELINE_AVAILABLE and 
+                self.config.use_unified_pipeline and 
+                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
+                nas_tas_clustering_result = await self._execute_unified_nas_tas_clustering()
+            else:
+                nas_tas_clustering_result = await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_clustering_result, "NAS-TAS Clustering")
             if not is_success:
                 return error_info
@@ -576,7 +767,15 @@ class MarketAnalysisSubPipeline:
             
             # Stage 6: NAS-TAS Models Training
             self.logger.info('🏋️ Executing Stage 6: NAS-TAS Models Training')
-            nas_tas_models_training_result = await self.execute_sub_pipeline('nas_tas_models_training', self.config)
+            
+            # Use unified pipeline if available and enabled
+            if (UNIFIED_PIPELINE_AVAILABLE and 
+                self.config.use_unified_pipeline and 
+                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
+                nas_tas_models_training_result = await self._execute_unified_nas_tas_models_training()
+            else:
+                nas_tas_models_training_result = await self.execute_sub_pipeline('nas_tas_models_training', self.config)
+            
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_models_training_result, "NAS-TAS Models Training")
             if not is_success:
                 return error_info
@@ -593,7 +792,15 @@ class MarketAnalysisSubPipeline:
             
             # Stage 7: NAS-TAS Ensemble Training
             self.logger.info('🎭 Executing Stage 7: NAS-TAS Ensemble Training')
-            nas_tas_ensemble_training_result = await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
+            
+            # Use unified pipeline if available and enabled
+            if (UNIFIED_PIPELINE_AVAILABLE and 
+                self.config.use_unified_pipeline and 
+                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
+                nas_tas_ensemble_training_result = await self._execute_unified_nas_tas_ensemble_training()
+            else:
+                nas_tas_ensemble_training_result = await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
+            
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_ensemble_training_result, "NAS-TAS Ensemble Training")
             if not is_success:
                 return error_info

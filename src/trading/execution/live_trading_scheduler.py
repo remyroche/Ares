@@ -4,12 +4,13 @@ Live Trading Scheduler - Coordinates HMM, Analyst, and Tactician Execution
 This module provides a comprehensive live trading scheduler that coordinates
 the execution of the three-tier model system with different frequencies:
 
-- HMM (1h timeframe): Runs every 15 minutes
+- HMM (1h timeframe): Runs every 15 minutes with partial-bar nowcasting
 - Analyst (5m timeframe): Runs every 2 minutes  
 - Tactician (1m timeframe): Runs every 30 seconds
 
 The scheduler ensures proper data flow between models and maintains
-the hierarchical decision-making process.
+the hierarchical decision-making process. Now includes partial-bar nowcasting
+to ensure regime evaluation always uses complete 1-hour bars.
 """
 
 import asyncio
@@ -28,6 +29,9 @@ from src.utils.tprint import (
     tprint_debug, tprint_progress, tprint_performance, tprint_structured,
     tprint_timer, LogLevel
 )
+
+# Import partial-bar nowcasting
+from .partial_bar_nowcasting import PartialBarNowcaster, create_partial_bar_nowcaster
 
 logger = system_logger.getChild('LiveTradingScheduler')
 
@@ -97,6 +101,14 @@ class LiveTradingScheduler:
         self.exchange = exchange
         self.logger = logger.getChild(f'{symbol}_{exchange}')
         
+        # Initialize partial-bar nowcaster for HMM
+        self.nowcaster = create_partial_bar_nowcaster(
+            base_timeframe="1h",
+            evaluation_interval=15 * 60,  # 15 minutes
+            min_bar_completion=0.25,     # 25% minimum completion
+            max_bar_completion=0.95      # 95% maximum completion
+        )
+        
         # Model configurations
         self.model_configs = {
             ModelType.HMM: ModelConfig(
@@ -107,7 +119,8 @@ class LiveTradingScheduler:
                     'n_regimes': 20,
                     'n_features': 100,
                     'base_models': ['catboost', 'elastic_net'],
-                    'meta_learner': 'xgboost'
+                    'meta_learner': 'xgboost',
+                    'use_nowcasting': True  # Enable partial-bar nowcasting
                 }
             ),
             ModelType.ANALYST: ModelConfig(
@@ -164,6 +177,9 @@ class LiveTradingScheduler:
 
         try:
             tprint_info("🚀 Starting Live Trading Scheduler...")
+            
+            # Initialize partial-bar nowcaster
+            await self.nowcaster.initialize()
             
             # Initialize models
             await self._initialize_models()
@@ -285,6 +301,14 @@ class LiveTradingScheduler:
                     if (config.enabled and 
                         config.next_execution and 
                         current_time >= config.next_execution):
+                        
+                        # For HMM, check if regime evaluation should occur based on bar completion
+                        if model_type == ModelType.HMM and config.custom_params.get('use_nowcasting', False):
+                            should_evaluate = await self.nowcaster.should_evaluate_regime(current_time)
+                            if not should_evaluate:
+                                tprint_debug("⏳ HMM evaluation skipped - insufficient bar completion")
+                                continue
+                        
                         models_to_execute.append(model_type)
                 
                 # Execute models in order of priority (HMM -> Analyst -> Tactician)
@@ -387,22 +411,52 @@ class LiveTradingScheduler:
             config.next_execution = datetime.now() + timedelta(seconds=config.execution_interval_seconds)
 
     async def _execute_hmm(self) -> Dict[str, Any]:
-        """Execute HMM model for regime detection."""
+        """Execute HMM model for regime detection with partial-bar nowcasting."""
         try:
+            tprint_info("🔮 Executing HMM with partial-bar nowcasting...")
+            
+            # Get complete hourly bars using nowcasting
+            complete_bars = await self.nowcaster.get_complete_hourly_bars(n_bars=24)
+            
+            if len(complete_bars) == 0:
+                tprint_warning("⚠️ No complete bars available for HMM evaluation")
+                return {
+                    'regime_states': [],
+                    'regime_probabilities': [],
+                    'regime_confidence': [],
+                    'n_regimes': 0,
+                    'n_features': 0,
+                    'execution_time': datetime.now().isoformat(),
+                    'error': 'No complete bars available'
+                }
+            
+            # Create bar split for this evaluation
+            bar_split = await self.nowcaster.create_bar_split()
+            
             # This would integrate with your HMM training pipeline
-            # For now, return mock data
+            # For now, return mock data with nowcasting information
             result = {
-                'regime_states': np.random.randint(0, 20, 100).tolist(),
-                'regime_probabilities': np.random.rand(100, 20).tolist(),
-                'regime_confidence': np.random.rand(100).tolist(),
+                'regime_states': np.random.randint(0, 20, len(complete_bars)).tolist(),
+                'regime_probabilities': np.random.rand(len(complete_bars), 20).tolist(),
+                'regime_confidence': np.random.rand(len(complete_bars)).tolist(),
                 'n_regimes': 20,
                 'n_features': 100,
-                'execution_time': datetime.now().isoformat()
+                'execution_time': datetime.now().isoformat(),
+                'nowcasting_info': {
+                    'bar_completion': bar_split.split_ratio,
+                    'complete_bars_count': len(complete_bars),
+                    'nowcasted_bars_count': len(complete_bars[complete_bars.get('is_nowcasted', False)]),
+                    'bar_split_time': bar_split.end_time.isoformat()
+                }
             }
             
             # Store HMM data for other models
             self.hmm_data = result
             
+            # Update evaluation time
+            await self.nowcaster.update_evaluation_time()
+            
+            tprint_success(f"✅ HMM execution completed with {len(complete_bars)} complete bars")
             return result
             
         except Exception as e:
@@ -515,6 +569,14 @@ class LiveTradingScheduler:
             },
             'execution_history_count': len(self.execution_history)
         }
+
+    async def get_nowcasting_stats(self) -> Dict[str, Any]:
+        """Get partial-bar nowcasting statistics."""
+        try:
+            return await self.nowcaster.get_nowcasting_stats()
+        except Exception as e:
+            tprint_error(f"❌ Failed to get nowcasting stats: {e}")
+            return {'error': str(e)}
 
     def get_recent_executions(self, n: int = 10) -> List[ExecutionResult]:
         """Get recent execution results."""

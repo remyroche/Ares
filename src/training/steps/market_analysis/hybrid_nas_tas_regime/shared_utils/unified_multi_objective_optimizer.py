@@ -18,6 +18,10 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 import logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from dataclasses import dataclass, field
 from enum import Enum
 import time
@@ -175,16 +179,22 @@ class NSGA2Optimizer(BaseOptimizationAlgorithm):
                  config: OptimizationConfig = None) -> OptimizationResult:
         """Perform NSGA-II optimization."""
         try:
+            tprint_info("Starting NSGA-II optimization")
+            tprint_debug(f"Configuration: {self.config}")
             start_time = time.time()
             self.logger.info("🚀 Starting NSGA-II optimization...")
             
             # Initialize population
+            tprint_info("Initializing population")
             population = self._initialize_population()
+            tprint_success(f"Population initialized with {len(population)} individuals")
             pareto_frontier = []
             convergence_history = []
             
             for iteration in range(self.config.max_iterations):
+                tprint_progress(iteration, self.config.max_iterations, "NSGA-II optimization")
                 # Evaluate population
+                tprint_debug(f"Evaluating population for iteration {iteration}")
                 evaluated_population = []
                 for individual in population:
                     try:
@@ -193,6 +203,7 @@ class NSGA2Optimizer(BaseOptimizationAlgorithm):
                         individual['weighted_score'] = self._calculate_weighted_score(scores)
                         evaluated_population.append(individual)
                     except Exception as e:
+                        tprint_warning(f"Error evaluating individual: {e}")
                         self.logger.warning(f"Objective evaluation failed: {e}")
                         continue
                 

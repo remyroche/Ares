@@ -12,6 +12,10 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 from abc import ABC, abstractmethod
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 try:
     from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
@@ -93,7 +97,10 @@ class RegimeAnalyzer(AdvancedAnalysisComponent):
             config: Analysis component configuration
         """
         super().__init__(config)
+        tprint_info("Initializing Regime Analyzer")
+        tprint_debug(f"Configuration: {config}")
         self.logger.info("✅ Regime Analyzer initialized")
+        tprint_success("Regime Analyzer initialized successfully")
     
     def analyze(self, data: np.ndarray, features: Optional[np.ndarray] = None) -> AnalysisResult:
         """Analyze market regimes.
@@ -106,46 +113,61 @@ class RegimeAnalyzer(AdvancedAnalysisComponent):
             AnalysisResult with regime analysis results
         """
         try:
+            tprint_info("Starting market regime analysis")
+            tprint_debug(f"Data shape: {data.shape}, Features available: {features is not None}")
             self.logger.info("📊 Analyzing market regimes...")
-            start_time = time.time()
             
-            # Prepare data for regime analysis
-            analysis_data = self._prepare_data_for_regime_analysis(data, features)
-            
-            # Perform regime clustering
-            clusters, cluster_centers = self._perform_regime_clustering(analysis_data)
-            
-            # Generate cluster labels
-            cluster_labels = self._generate_regime_labels(clusters, cluster_centers)
-            
-            # Evaluate regime quality
-            evaluation_metrics = self._evaluate_regime_quality(analysis_data, clusters)
-            
-            # Create analysis metadata
-            analysis_metadata = {
-                'regime_count': len(np.unique(clusters)),
-                'data_shape': data.shape,
-                'features_used': features is not None,
-                'clustering_algorithm': self.config.clustering_algorithm,
-                'analysis_timestamp': datetime.now().isoformat()
-            }
-            
-            execution_time = time.time() - start_time
-            
-            self.logger.info(f"✅ Regime analysis completed: {len(np.unique(clusters))} regimes in {execution_time:.2f}s")
-            
-            return AnalysisResult(
-                clusters=clusters,
-                cluster_centers=cluster_centers,
-                cluster_labels=cluster_labels,
-                evaluation_metrics=evaluation_metrics,
-                analysis_metadata=analysis_metadata,
-                execution_time=execution_time,
-                success=True
-            )
+            with tprint_timer("Regime Analysis"):
+                start_time = time.time()
+                
+                # Prepare data for regime analysis
+                tprint_debug("Preparing data for regime analysis")
+                analysis_data = self._prepare_data_for_regime_analysis(data, features)
+                tprint_debug(f"Analysis data shape: {analysis_data.shape}")
+                
+                # Perform regime clustering
+                tprint_info("Performing regime clustering")
+                clusters, cluster_centers = self._perform_regime_clustering(analysis_data)
+                tprint_success(f"Clustering completed: {len(np.unique(clusters))} clusters found")
+                
+                # Generate cluster labels
+                tprint_debug("Generating regime labels")
+                cluster_labels = self._generate_regime_labels(clusters, cluster_centers)
+                tprint_debug(f"Generated {len(cluster_labels)} regime labels")
+                
+                # Evaluate regime quality
+                tprint_info("Evaluating regime quality")
+                evaluation_metrics = self._evaluate_regime_quality(analysis_data, clusters)
+                tprint_debug(f"Evaluation metrics: {evaluation_metrics}")
+                
+                # Create analysis metadata
+                analysis_metadata = {
+                    'regime_count': len(np.unique(clusters)),
+                    'data_shape': data.shape,
+                    'features_used': features is not None,
+                    'clustering_algorithm': self.config.clustering_algorithm,
+                    'analysis_timestamp': datetime.now().isoformat()
+                }
+                
+                execution_time = time.time() - start_time
+                tprint_performance("Regime Analysis", execution_time)
+                
+                self.logger.info(f"✅ Regime analysis completed: {len(np.unique(clusters))} regimes in {execution_time:.2f}s")
+                
+                return AnalysisResult(
+                    clusters=clusters,
+                    cluster_centers=cluster_centers,
+                    cluster_labels=cluster_labels,
+                    evaluation_metrics=evaluation_metrics,
+                    analysis_metadata=analysis_metadata,
+                    execution_time=execution_time,
+                    success=True
+                )
             
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint_error(f"Regime analysis failed: {e}")
+            tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
             self.logger.error(f"❌ Regime analysis failed: {e}")
             return AnalysisResult(
                 clusters=np.array([]),
@@ -161,43 +183,56 @@ class RegimeAnalyzer(AdvancedAnalysisComponent):
     def _prepare_data_for_regime_analysis(self, data: np.ndarray, features: Optional[np.ndarray] = None) -> np.ndarray:
         """Prepare data for regime analysis."""
         try:
+            tprint_debug("Preparing data for regime analysis")
             if features is not None:
+                tprint_debug("Using provided features")
                 # Use provided features
                 analysis_data = features
             else:
+                tprint_debug("Extracting features from market data")
                 # Extract features from market data
                 analysis_data = self._extract_market_features(data)
+                tprint_debug(f"Extracted features shape: {analysis_data.shape}")
             
             # Apply PCA if configured
             if self.config.use_pca and SKLEARN_AVAILABLE:
+                tprint_info(f"Applying PCA with {self.config.pca_components} components")
                 pca = PCA(n_components=self.config.pca_components, random_state=self.config.random_state)
                 analysis_data = pca.fit_transform(analysis_data)
+                tprint_success(f"PCA applied: {analysis_data.shape}")
                 self.logger.info(f"📊 Applied PCA: {analysis_data.shape}")
             
             return analysis_data
             
         except Exception as e:
+            tprint_warning(f"Data preparation failed: {e}")
             self.logger.warning(f"⚠️ Data preparation failed: {e}")
             return data
     
     def _extract_market_features(self, data: np.ndarray) -> np.ndarray:
         """Extract features from market data."""
         try:
+            tprint_debug("Extracting market features")
+            tprint_debug(f"Input data shape: {data.shape}")
             features = []
             
             # Price-based features
             if data.shape[1] >= 4:  # OHLC data
+                tprint_debug("Extracting price-based features from OHLC data")
                 # Returns
                 returns = np.diff(data[:, 3]) / data[:-1, 3]  # Close price returns
                 features.append(returns)
+                tprint_debug(f"Returns feature shape: {returns.shape}")
                 
                 # Volatility
                 volatility = np.abs(returns)
                 features.append(volatility)
+                tprint_debug(f"Volatility feature shape: {volatility.shape}")
                 
                 # Price range
                 price_range = (data[:, 1] - data[:, 2]) / data[:, 3]  # (High - Low) / Close
                 features.append(price_range[1:])  # Align with returns
+                tprint_debug(f"Price range feature shape: {price_range[1:].shape}")
             
             # Volume-based features
             if data.shape[1] >= 5:  # OHLCV data

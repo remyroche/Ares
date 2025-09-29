@@ -14,6 +14,10 @@ import logging
 import time
 from datetime import datetime
 import psutil
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +165,8 @@ class BaseConstraintValidator:
             )
             
         except Exception as e:
-            tprint(f"⚠️ [CONSTRAINT] Error validating architecture: {e}", color="yellow")
+            tprint_error(f"Error validating architecture: {e}")
+            tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
             # Return a default validation result
             return ConstraintValidationResult(
                 is_valid=False,
@@ -174,27 +179,39 @@ class BaseConstraintValidator:
     def check_single_constraint(self, architecture: Any, constraint_type: ConstraintType) -> Optional[ConstraintViolation]:
         """Check a single constraint type."""
         try:
+            tprint_debug(f"Checking constraint: {constraint_type}")
             if constraint_type == ConstraintType.PARAMETER_COUNT:
+                tprint_debug("Checking parameter count constraint")
                 return self._check_parameter_count_constraint(architecture)
             elif constraint_type == ConstraintType.MEMORY_USAGE:
+                tprint_debug("Checking memory usage constraint")
                 return self._check_memory_usage_constraint(architecture)
             elif constraint_type == ConstraintType.TRAINING_TIME:
+                tprint_debug("Checking training time constraint")
                 return self._check_training_time_constraint(architecture)
             elif constraint_type == ConstraintType.INFERENCE_TIME:
+                tprint_debug("Checking inference time constraint")
                 return self._check_inference_time_constraint(architecture)
             elif constraint_type == ConstraintType.ARCHITECTURE_DEPTH:
+                tprint_debug("Checking architecture depth constraint")
                 return self._check_architecture_depth_constraint(architecture)
             elif constraint_type == ConstraintType.ARCHITECTURE_WIDTH:
+                tprint_debug("Checking architecture width constraint")
                 return self._check_architecture_width_constraint(architecture)
             elif constraint_type == ConstraintType.ACTIVATION_FUNCTION:
+                tprint_debug("Checking activation function constraint")
                 return self._check_activation_function_constraint(architecture)
             elif constraint_type == ConstraintType.OPTIMIZER:
+                tprint_debug("Checking optimizer constraint")
                 return self._check_optimizer_constraint(architecture)
             elif constraint_type == ConstraintType.LEARNING_RATE:
+                tprint_debug("Checking learning rate constraint")
                 return self._check_learning_rate_constraint(architecture)
             elif constraint_type == ConstraintType.BATCH_SIZE:
+                tprint_debug("Checking batch size constraint")
                 return self._check_batch_size_constraint(architecture)
             else:
+                tprint_warning(f"Unknown constraint type: {constraint_type}")
                 # Unknown constraint type
                 return ConstraintViolation(
                     constraint_type=constraint_type,
@@ -204,7 +221,8 @@ class BaseConstraintValidator:
                 )
                 
         except Exception as e:
-            tprint(f"⚠️ [CONSTRAINT] Error checking constraint {constraint_type}: {e}", color="yellow")
+            tprint_error(f"Error checking constraint {constraint_type}: {e}")
+            tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
             return ConstraintViolation(
                 constraint_type=constraint_type,
                 message=f"Error checking constraint: {e}",

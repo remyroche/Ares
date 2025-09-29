@@ -14,6 +14,10 @@ import time
 from datetime import datetime
 from enum import Enum
 import json
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing ml_common utilities
 try:
@@ -197,52 +201,75 @@ class HyperparameterOptimizer:
         Returns:
             HyperparameterResult with optimization results
         """
-        start_time = time.time()
+        tprint_info("Starting hyperparameter optimization")
+        tprint_debug(f"Data shape: {X.shape}")
+        tprint_debug(f"Parameter space: {len(param_space)} parameters")
+        tprint_debug(f"Method: {self.config.method.value}")
         
-        try:
-            self.logger.info("🚀 Starting hyperparameter optimization")
-            self.logger.info(f"   Data shape: {X.shape}")
-            self.logger.info(f"   Parameter space: {len(param_space)} parameters")
-            self.logger.info(f"   Method: {self.config.method.value}")
+        with tprint_timer("Hyperparameter Optimization"):
+            start_time = time.time()
             
-            # Initialize optimization
-            self._initialize_optimization()
-            
-            # Perform optimization based on method
-            if self.config.method == OptimizationMethod.GRID_SEARCH:
-                result = self._grid_search_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.RANDOM_SEARCH:
-                result = self._random_search_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.BAYESIAN:
-                result = self._bayesian_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.TPE:
-                result = self._tpe_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.EVOLUTIONARY:
-                result = self._evolutionary_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.PARETO:
-                result = self._pareto_optimization(model_func, param_space, X, y)
-            elif self.config.method == OptimizationMethod.REGIME_SPECIFIC:
-                result = self._regime_specific_optimization(model_func, param_space, X, y, additional_data)
-            else:
-                raise ValueError(f"Unknown optimization method: {self.config.method}")
-            
-            # Finalize optimization
-            processing_time = time.time() - start_time
-            result.processing_time = processing_time
-            result.hardware_optimization_applied = self.hardware_accelerator is not None
-            result.matrix_operations_used = self.matrix_ops is not None
-            
-            # Save results if requested
-            if self.config.save_results:
-                self._save_optimization_results(result)
-            
-            self.logger.info(f"✅ Hyperparameter optimization completed in {processing_time:.2f}s")
-            self.logger.info(f"   Best score: {result.best_score:.4f}")
-            self.logger.info(f"   Best params: {result.best_params}")
-            
-            return result
-            
-        except Exception as e:
+            try:
+                self.logger.info("🚀 Starting hyperparameter optimization")
+                self.logger.info(f"   Data shape: {X.shape}")
+                self.logger.info(f"   Parameter space: {len(param_space)} parameters")
+                self.logger.info(f"   Method: {self.config.method.value}")
+                
+                # Initialize optimization
+                tprint_info("Initializing optimization")
+                self._initialize_optimization()
+                tprint_success("Optimization initialized")
+                
+                # Perform optimization based on method
+                if self.config.method == OptimizationMethod.GRID_SEARCH:
+                    tprint_info("Performing grid search optimization")
+                    result = self._grid_search_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.RANDOM_SEARCH:
+                    tprint_info("Performing random search optimization")
+                    result = self._random_search_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.BAYESIAN:
+                    tprint_info("Performing Bayesian optimization")
+                    result = self._bayesian_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.TPE:
+                    tprint_info("Performing TPE optimization")
+                    result = self._tpe_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.EVOLUTIONARY:
+                    tprint_info("Performing evolutionary optimization")
+                    result = self._evolutionary_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.PARETO:
+                    tprint_info("Performing Pareto optimization")
+                    result = self._pareto_optimization(model_func, param_space, X, y)
+                elif self.config.method == OptimizationMethod.REGIME_SPECIFIC:
+                    tprint_info("Performing regime specific optimization")
+                    result = self._regime_specific_optimization(model_func, param_space, X, y, additional_data)
+                else:
+                    tprint_error(f"Unknown optimization method: {self.config.method}")
+                    raise ValueError(f"Unknown optimization method: {self.config.method}")
+                
+                # Finalize optimization
+                processing_time = time.time() - start_time
+                result.processing_time = processing_time
+                result.hardware_optimization_applied = self.hardware_accelerator is not None
+                result.matrix_operations_used = self.matrix_ops is not None
+                
+                tprint_performance("Hyperparameter Optimization", processing_time)
+                tprint_success(f"Optimization completed: Best score {result.best_score:.4f}")
+                
+                # Save results if requested
+                if self.config.save_results:
+                    tprint_info("Saving optimization results")
+                    self._save_optimization_results(result)
+                
+                self.logger.info(f"✅ Hyperparameter optimization completed in {processing_time:.2f}s")
+                self.logger.info(f"   Best score: {result.best_score:.4f}")
+                self.logger.info(f"   Best params: {result.best_params}")
+                
+                return result
+                
+            except Exception as e:
+                tprint_error(f"Hyperparameter optimization failed: {e}")
+                tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
+                processing_time = time.time() - start_time
             processing_time = time.time() - start_time
             self.logger.error(f"❌ Hyperparameter optimization failed: {e}")
             

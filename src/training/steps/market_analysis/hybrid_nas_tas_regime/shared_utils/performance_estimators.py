@@ -13,6 +13,10 @@ from enum import Enum
 import logging
 import time
 from datetime import datetime
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.svm import SVR
@@ -260,7 +264,8 @@ class BasePerformanceEstimator:
             )
             
         except Exception as e:
-            tprint(f"⚠️ [PERFORMANCE] Error predicting performance: {e}", color="yellow")
+            tprint_error(f"Error predicting performance: {e}")
+            tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
             # Return a default prediction
             return PerformancePrediction(
                 predicted_performance=0.5,
@@ -272,8 +277,10 @@ class BasePerformanceEstimator:
     def train(self, architectures: List[ArchitectureFeatures], performances: List[float]) -> Dict[str, float]:
         """Train the performance estimator."""
         try:
+            tprint_info("Training performance estimator")
+            tprint_debug(f"Training data: {len(architectures)} architectures, {len(performances)} performances")
             if len(architectures) == 0 or len(performances) == 0:
-                tprint("⚠️ [PERFORMANCE] No training data provided", color="yellow")
+                tprint_warning("No training data provided")
                 return {'error': 'No training data provided'}
             
             # Prepare training data

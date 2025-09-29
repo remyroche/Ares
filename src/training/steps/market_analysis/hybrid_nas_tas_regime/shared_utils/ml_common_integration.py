@@ -14,6 +14,10 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing ML Common utilities
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection

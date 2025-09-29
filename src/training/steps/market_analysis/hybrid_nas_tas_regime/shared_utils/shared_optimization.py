@@ -14,6 +14,10 @@ import time
 from datetime import datetime
 from enum import Enum
 import json
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing utilities
 try:
@@ -200,42 +204,59 @@ class SharedOptimizer:
         Returns:
             SharedOptimizationResult with optimization results
         """
-        start_time = time.time()
+        tprint_info("Starting shared optimization")
+        tprint_debug(f"Optimization type: {self.config.optimization_type.value}")
+        tprint_debug(f"Algorithm: {self.config.algorithm.value}")
+        tprint_debug(f"Parameter space: {len(param_space)} parameters")
         
-        try:
-            self.logger.info("🚀 Starting shared optimization")
-            self.logger.info(f"   Type: {self.config.optimization_type.value}")
-            self.logger.info(f"   Algorithm: {self.config.algorithm.value}")
-            self.logger.info(f"   Parameter space: {len(param_space)} parameters")
+        with tprint_timer("Shared Optimization"):
+            start_time = time.time()
             
-            # Perform optimization based on type and algorithm
-            if self.config.optimization_type == OptimizationType.SINGLE_OBJECTIVE:
-                result = self._single_objective_optimization(objective_func, param_space)
-            elif self.config.optimization_type == OptimizationType.MULTI_OBJECTIVE:
-                result = self._multi_objective_optimization(objective_func, param_space)
-            elif self.config.optimization_type == OptimizationType.PARETO:
-                result = self._pareto_optimization(objective_func, param_space)
-            elif self.config.optimization_type == OptimizationType.REGIME_SPECIFIC:
-                result = self._regime_specific_optimization(objective_func, param_space, additional_data)
-            elif self.config.optimization_type == OptimizationType.EVOLUTIONARY:
-                result = self._evolutionary_optimization(objective_func, param_space)
-            elif self.config.optimization_type == OptimizationType.BAYESIAN:
-                result = self._bayesian_optimization(objective_func, param_space)
-            else:
-                raise ValueError(f"Unknown optimization type: {self.config.optimization_type}")
-            
-            # Finalize optimization
-            processing_time = time.time() - start_time
-            result.processing_time = processing_time
-            result.hardware_optimization_applied = self.hardware_accelerator is not None
-            result.matrix_operations_used = self.matrix_ops is not None
-            
-            # Save results if requested
-            if self.config.save_results:
-                self._save_optimization_results(result)
-            
-            self.logger.info(f"✅ Shared optimization completed in {processing_time:.2f}s")
-            self.logger.info(f"   Best score: {result.best_score:.4f}")
+            try:
+                self.logger.info("🚀 Starting shared optimization")
+                self.logger.info(f"   Type: {self.config.optimization_type.value}")
+                self.logger.info(f"   Algorithm: {self.config.algorithm.value}")
+                self.logger.info(f"   Parameter space: {len(param_space)} parameters")
+                
+                # Perform optimization based on type and algorithm
+                if self.config.optimization_type == OptimizationType.SINGLE_OBJECTIVE:
+                    tprint_info("Performing single objective optimization")
+                    result = self._single_objective_optimization(objective_func, param_space)
+                elif self.config.optimization_type == OptimizationType.MULTI_OBJECTIVE:
+                    tprint_info("Performing multi objective optimization")
+                    result = self._multi_objective_optimization(objective_func, param_space)
+                elif self.config.optimization_type == OptimizationType.PARETO:
+                    tprint_info("Performing Pareto optimization")
+                    result = self._pareto_optimization(objective_func, param_space)
+                elif self.config.optimization_type == OptimizationType.REGIME_SPECIFIC:
+                    tprint_info("Performing regime specific optimization")
+                    result = self._regime_specific_optimization(objective_func, param_space, additional_data)
+                elif self.config.optimization_type == OptimizationType.EVOLUTIONARY:
+                    tprint_info("Performing evolutionary optimization")
+                    result = self._evolutionary_optimization(objective_func, param_space)
+                elif self.config.optimization_type == OptimizationType.BAYESIAN:
+                    tprint_info("Performing Bayesian optimization")
+                    result = self._bayesian_optimization(objective_func, param_space)
+                else:
+                    tprint_error(f"Unknown optimization type: {self.config.optimization_type}")
+                    raise ValueError(f"Unknown optimization type: {self.config.optimization_type}")
+                
+                # Finalize optimization
+                processing_time = time.time() - start_time
+                result.processing_time = processing_time
+                result.hardware_optimization_applied = self.hardware_accelerator is not None
+                result.matrix_operations_used = self.matrix_ops is not None
+                
+                tprint_performance("Shared Optimization", processing_time)
+                tprint_success(f"Optimization completed: Best score {result.best_score:.4f}")
+                
+                # Save results if requested
+                if self.config.save_results:
+                    tprint_info("Saving optimization results")
+                    self._save_optimization_results(result)
+                
+                self.logger.info(f"✅ Shared optimization completed in {processing_time:.2f}s")
+                self.logger.info(f"   Best score: {result.best_score:.4f}")
             self.logger.info(f"   Best solution: {result.best_solution}")
             
             return result

@@ -11,6 +11,10 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing utility modules
 from src.utils.common_operations import (

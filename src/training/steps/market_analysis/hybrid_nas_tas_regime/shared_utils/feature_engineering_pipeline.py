@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 from enum import Enum
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing feature generation utilities
 try:
@@ -244,44 +248,70 @@ class FeatureEngineeringPipeline:
         Returns:
             FeaturePipelineResult with engineered features
         """
-        start_time = time.time()
+        tprint_info("Starting feature engineering pipeline")
+        tprint_debug(f"Input shape: {data.shape}")
+        tprint_debug(f"Feature categories: {len(self.config.feature_categories)}")
         
-        try:
-            self.logger.info("🔧 Starting feature engineering pipeline")
-            self.logger.info(f"   Input shape: {data.shape}")
-            self.logger.info(f"   Feature categories: {len(self.config.feature_categories)}")
+        with tprint_timer("Feature Engineering Pipeline"):
+            start_time = time.time()
             
-            # Step 1: Generate base features
-            base_features = self._generate_base_features(data)
-            
-            # Step 2: Generate interaction features if enabled
-            if self.config.enable_interaction_features:
-                interaction_features = self._generate_interaction_features(base_features)
-                base_features = pd.concat([base_features, interaction_features], axis=1)
-            
-            # Step 3: Generate polynomial features if enabled
-            if self.config.enable_polynomial_features:
-                polynomial_features = self._generate_polynomial_features(base_features)
-                base_features = pd.concat([base_features, polynomial_features], axis=1)
-            
-            # Step 4: Handle outliers if enabled
-            if self.config.enable_outlier_handling:
-                base_features = self._handle_outliers(base_features)
-            
-            # Step 5: Normalize features if enabled
-            if self.config.enable_normalization:
-                base_features = self._normalize_features(base_features)
-            
-            # Step 6: Feature selection if enabled
-            selected_features = base_features
-            selection_info = {}
-            if self.config.enable_feature_selection and target is not None:
-                selected_features, selection_info = self._select_features(base_features, target)
-            
-            # Step 7: Feature validation if enabled
-            validation_scores = {}
-            if self.config.enable_feature_validation and target is not None:
-                validation_scores = self._validate_features(selected_features, target)
+            try:
+                self.logger.info("🔧 Starting feature engineering pipeline")
+                self.logger.info(f"   Input shape: {data.shape}")
+                self.logger.info(f"   Feature categories: {len(self.config.feature_categories)}")
+                
+                # Step 1: Generate base features
+                tprint_info("Step 1: Generating base features")
+                tprint_progress(1, 7, "Feature Engineering Pipeline")
+                base_features = self._generate_base_features(data)
+                tprint_success(f"Base features generated: {base_features.shape}")
+                
+                # Step 2: Generate interaction features if enabled
+                if self.config.enable_interaction_features:
+                    tprint_info("Step 2: Generating interaction features")
+                    tprint_progress(2, 7, "Feature Engineering Pipeline")
+                    interaction_features = self._generate_interaction_features(base_features)
+                    base_features = pd.concat([base_features, interaction_features], axis=1)
+                    tprint_success(f"Interaction features added: {base_features.shape}")
+                
+                # Step 3: Generate polynomial features if enabled
+                if self.config.enable_polynomial_features:
+                    tprint_info("Step 3: Generating polynomial features")
+                    tprint_progress(3, 7, "Feature Engineering Pipeline")
+                    polynomial_features = self._generate_polynomial_features(base_features)
+                    base_features = pd.concat([base_features, polynomial_features], axis=1)
+                    tprint_success(f"Polynomial features added: {base_features.shape}")
+                
+                # Step 4: Handle outliers if enabled
+                if self.config.enable_outlier_handling:
+                    tprint_info("Step 4: Handling outliers")
+                    tprint_progress(4, 7, "Feature Engineering Pipeline")
+                    base_features = self._handle_outliers(base_features)
+                    tprint_success("Outliers handled")
+                
+                # Step 5: Normalize features if enabled
+                if self.config.enable_normalization:
+                    tprint_info("Step 5: Normalizing features")
+                    tprint_progress(5, 7, "Feature Engineering Pipeline")
+                    base_features = self._normalize_features(base_features)
+                    tprint_success("Features normalized")
+                
+                # Step 6: Feature selection if enabled
+                selected_features = base_features
+                selection_info = {}
+                if self.config.enable_feature_selection and target is not None:
+                    tprint_info("Step 6: Selecting features")
+                    tprint_progress(6, 7, "Feature Engineering Pipeline")
+                    selected_features, selection_info = self._select_features(base_features, target)
+                    tprint_success(f"Features selected: {selected_features.shape}")
+                
+                # Step 7: Feature validation if enabled
+                validation_scores = {}
+                if self.config.enable_feature_validation and target is not None:
+                    tprint_info("Step 7: Validating features")
+                    tprint_progress(7, 7, "Feature Engineering Pipeline")
+                    validation_scores = self._validate_features(selected_features, target)
+                    tprint_success("Features validated")
             
             # Step 8: Calculate feature importance
             feature_importance = self._calculate_feature_importance(selected_features, target)

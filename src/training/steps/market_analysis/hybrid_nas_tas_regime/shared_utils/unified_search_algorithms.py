@@ -17,6 +17,10 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import random
 from collections import defaultdict
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 try:
     from sklearn.gaussian_process import GaussianProcessRegressor
@@ -82,11 +86,14 @@ class UnifiedSearchAlgorithm(ABC):
         Args:
             config: Configuration dictionary
         """
+        tprint_info("Initializing Unified Search Algorithm")
+        tprint_debug(f"Configuration: {config}")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.search_history = []
         self.best_solution = None
         self.best_score = -np.inf
+        tprint_success("Unified Search Algorithm initialized successfully")
     
     @abstractmethod
     def search(self, 

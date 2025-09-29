@@ -12,6 +12,10 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 from abc import ABC, abstractmethod
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 try:
     from sklearn.gaussian_process import GaussianProcessRegressor

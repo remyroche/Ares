@@ -18,6 +18,10 @@ from typing import Dict, List, Any, Optional, Union, Type
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import logging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from pathlib import Path
 import os
 

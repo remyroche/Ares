@@ -18,6 +18,10 @@ from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 import time
 from datetime import datetime
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score

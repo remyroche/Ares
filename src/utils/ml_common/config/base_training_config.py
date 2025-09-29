@@ -125,8 +125,9 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
             'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.06, 'log': True},
             'depth': {'type': 'int', 'low': 4, 'high': 6},
             'l2_leaf_reg': {'type': 'float', 'low': 6.0, 'high': 12.0},
-            'subsample': {'type': 'float', 'low': 0.6, 'high': 0.8},
-            'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 0.8}
+            'subsample': {'type': 'float', 'low': 0.5, 'high': 0.9},
+            'colsample_bylevel': {'type': 'float', 'low': 0.5, 'high': 0.9},
+            'bootstrap_type': {'type': 'categorical', 'choices': ['Bayesian', 'Bernoulli']}
         },
         'LGBMRegressor': {
             'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
@@ -142,7 +143,8 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
             'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
             'max_depth': {'type': 'int', 'low': 5, 'high': 20},
             'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
-            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10}
+            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']}
         },
         'ExtraTreesRegressor': {
             'n_estimators': {'type': 'int', 'low': 300, 'high': 800},
@@ -287,7 +289,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'max_depth': {'type': 'int', 'low': 5, 'high': 20},
             'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
             'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 4},
-            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']},
             'bootstrap': {'type': 'categorical', 'choices': [True, False]}
         },
         'CatBoostRegressor': {
@@ -306,7 +308,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'max_depth': {'type': 'int', 'low': 5, 'high': 20},
             'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
             'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 4},
-            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']},
             'bootstrap': {'type': 'categorical', 'choices': [True, False]},
             'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
         }

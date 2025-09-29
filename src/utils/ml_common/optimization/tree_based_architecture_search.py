@@ -179,39 +179,40 @@ class TreeArchitectureSearchSpace:
         """Sample parameters for specific model type."""
         if model_type == 'xgboost':
             return {
-                'n_estimators': np.random.choice([100, 200, 500, 1000, 2000]),
-                'max_depth': np.random.choice([3, 6, 9, 12, 15]),
-                'learning_rate': np.random.choice([0.01, 0.05, 0.1, 0.2]),
-                'subsample': np.random.choice([0.8, 0.9, 1.0]),
-                'colsample_bytree': np.random.choice([0.8, 0.9, 1.0]),
-                'reg_alpha': np.random.choice([0, 0.1, 1.0, 10.0]),
-                'reg_lambda': np.random.choice([0, 0.1, 1.0, 10.0])
+                'n_estimators': np.random.choice([50, 100, 200, 300]),
+                'max_depth': np.random.choice([3, 5, 7, 9, 10]),
+                'learning_rate': np.random.choice([0.01, 0.05, 0.1, 0.2, 0.3]),
+                'subsample': np.random.choice([0.6, 0.75, 0.9, 1.0]),
+                'colsample_bytree': np.random.choice([0.6, 0.75, 0.9, 1.0]),
+                'gamma': np.random.choice([0.0, 0.1, 0.5, 1.0, 2.0, 5.0]),
+                'reg_alpha': np.random.choice([0.0, 0.01, 0.1, 0.5, 1.0]),
+                'reg_lambda': np.random.choice([0.0, 0.01, 0.1, 0.5, 1.0])
             }
         elif model_type == 'lightgbm':
             return {
-                'n_estimators': np.random.choice([100, 200, 500, 1000, 2000]),
-                'max_depth': np.random.choice([3, 6, 9, 12, 15]),
-                'learning_rate': np.random.choice([0.01, 0.05, 0.1, 0.2]),
-                'subsample': np.random.choice([0.8, 0.9, 1.0]),
-                'colsample_bytree': np.random.choice([0.8, 0.9, 1.0]),
-                'reg_alpha': np.random.choice([0, 0.1, 1.0, 10.0]),
-                'reg_lambda': np.random.choice([0, 0.1, 1.0, 10.0]),
-                'num_leaves': np.random.choice([31, 63, 127, 255])
+                'n_estimators': np.random.choice([100, 200, 300, 400, 500]),
+                'max_depth': np.random.choice([3, 5, 7, 9, 12, 15]),
+                'learning_rate': np.random.choice([0.01, 0.03, 0.05, 0.1, 0.2]),
+                'subsample': np.random.choice([0.6, 0.75, 0.9, 1.0]),
+                'colsample_bytree': np.random.choice([0.6, 0.75, 0.9, 1.0]),
+                'reg_alpha': np.random.choice([0.0, 0.01, 0.1, 0.5, 1.0]),
+                'reg_lambda': np.random.choice([0.0, 0.01, 0.1, 0.5, 1.0]),
+                'num_leaves': np.random.choice([15, 31, 47, 63])
             }
         elif model_type == 'catboost':
             return {
-                'iterations': np.random.choice([100, 200, 500, 1000, 2000]),
-                'depth': np.random.choice([3, 6, 9, 12, 15]),
-                'learning_rate': np.random.choice([0.01, 0.05, 0.1, 0.2]),
-                'l2_leaf_reg': np.random.choice([1, 3, 5, 7, 9]),
-                'bootstrap_type': np.random.choice(['Bayesian', 'Bernoulli', 'MVS']),
-                'subsample': np.random.choice([0.8, 0.9, 1.0])
+                'iterations': np.random.choice([500, 700, 900, 1200]),
+                'depth': np.random.choice([4, 5, 6]),
+                'learning_rate': np.random.choice([0.03, 0.04, 0.05, 0.06]),
+                'l2_leaf_reg': np.random.choice([6, 8, 10, 12]),
+                'bootstrap_type': np.random.choice(['Bayesian', 'Bernoulli']),
+                'subsample': np.random.choice([0.5, 0.7, 0.9])
             }
         elif model_type == 'random_forest':
             return {
-                'n_estimators': np.random.choice([100, 200, 500, 1000]),
-                'max_depth': np.random.choice([3, 6, 9, 12, None]),
-                'max_features': np.random.choice(['sqrt', 'log2', 0.5, 0.8, 1.0]),
+                'n_estimators': np.random.choice([100, 200, 500, 800]),
+                'max_depth': np.random.choice([5, 10, 15, 20, None]),
+                'max_features': np.random.choice(['sqrt', 'log2', 0.3, 0.5]),
                 'min_samples_split': np.random.choice([2, 5, 10, 20]),
                 'min_samples_leaf': np.random.choice([1, 2, 4, 8]),
                 'bootstrap': np.random.choice([True, False])

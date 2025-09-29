@@ -450,7 +450,7 @@ class RandomSurvivalForestTactician:
                 'max_depth': {'type': 'int', 'low': 3, 'high': 15},
                 'min_samples_split': {'type': 'int', 'low': 2, 'high': 10},
                 'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 5},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.3, 0.5]},
                 'bootstrap': {'type': 'categorical', 'choices': [True, False]},
                 'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
             }
@@ -463,7 +463,7 @@ class RandomSurvivalForestTactician:
                     'max_depth': trial.suggest_int('max_depth', 3, 15),
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
                     'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
-                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.3, 0.5]),
                     'bootstrap': trial.suggest_categorical('bootstrap', [True, False]),
                     'max_samples': trial.suggest_float('max_samples', 0.5, 1.0),
                     'random_state': 42

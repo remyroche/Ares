@@ -455,7 +455,7 @@ class HPOWithOverfittingPrevention:
                 'max_depth': optuna.distributions.IntDistribution(5, 20),
                 'min_samples_split': optuna.distributions.IntDistribution(2, 10),
                 'min_samples_leaf': optuna.distributions.IntDistribution(1, 5),
-                'max_features': optuna.distributions.CategoricalDistribution(['sqrt', 'log2', None])
+                'max_features': optuna.distributions.CategoricalDistribution(['sqrt', 'log2'])
             }
         }
 

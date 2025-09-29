@@ -175,6 +175,45 @@ class RegimeHPOWrapper:
         # CatBoost search space
         if 'catboost' in self.regime_base_config:
             catboost_config = self.regime_base_config['catboost']
+            # Resolve bootstrap type choices
+            bootstrap_type_config = catboost_config.get('bootstrap_type', ['Bayesian', 'Bernoulli'])
+            if bootstrap_type_config is None:
+                bootstrap_type_choices = ['Bayesian', 'Bernoulli']
+            elif isinstance(bootstrap_type_config, (str, bytes)):
+                bootstrap_type_choices = [bootstrap_type_config]
+            elif isinstance(bootstrap_type_config, (list, tuple, set)):
+                bootstrap_type_choices = list(bootstrap_type_config)
+            else:
+                bootstrap_type_choices = [bootstrap_type_config]
+
+            # Resolve subsample range
+            subsample_config = catboost_config.get('subsample')
+            if isinstance(subsample_config, dict):
+                subsample_low = subsample_config.get('low', 0.5)
+                subsample_high = subsample_config.get('high', 0.9)
+            elif isinstance(subsample_config, (list, tuple, set)):
+                subsample_low = min(subsample_config)
+                subsample_high = max(subsample_config)
+            elif subsample_config is not None:
+                subsample_low = subsample_high = float(subsample_config)
+            else:
+                subsample_low = 0.5
+                subsample_high = 0.9
+
+            # Resolve column sample by level range
+            colsample_config = catboost_config.get('colsample_bylevel')
+            if isinstance(colsample_config, dict):
+                colsample_low = colsample_config.get('low', 0.5)
+                colsample_high = colsample_config.get('high', 0.9)
+            elif isinstance(colsample_config, (list, tuple, set)):
+                colsample_low = min(colsample_config)
+                colsample_high = max(colsample_config)
+            elif colsample_config is not None:
+                colsample_low = colsample_high = float(colsample_config)
+            else:
+                colsample_low = 0.5
+                colsample_high = 0.9
+
             search_spaces['catboost'] = {
                 'depth': {
                     'type': 'int',
@@ -196,15 +235,19 @@ class RegimeHPOWrapper:
                     'low': min(catboost_config.get('iterations', [500, 800, 1200])),
                     'high': max(catboost_config.get('iterations', [500, 800, 1200]))
                 },
+                'bootstrap_type': {
+                    'type': 'categorical',
+                    'choices': bootstrap_type_choices or ['Bayesian', 'Bernoulli']
+                },
                 'subsample': {
                     'type': 'float',
-                    'low': 0.6,
-                    'high': 0.8
+                    'low': subsample_low,
+                    'high': subsample_high
                 },
                 'colsample_bylevel': {
                     'type': 'float',
-                    'low': 0.6,
-                    'high': 0.8
+                    'low': colsample_low,
+                    'high': colsample_high
                 }
             }
         
@@ -218,9 +261,8 @@ class RegimeHPOWrapper:
                     'high': max(extratrees_config.get('n_estimators', [300, 500, 800]))
                 },
                 'max_depth': {
-                    'type': 'int',
-                    'low': 10,
-                    'high': 15
+                    'type': 'categorical',
+                    'choices': extratrees_config.get('max_depth', [None, 10, 15])
                 },
                 'min_samples_split': {
                     'type': 'int',
@@ -646,11 +688,20 @@ class RegimeHPOWrapper:
             raise ImportError("Scikit-learn not available")
         
         def factory(**params):
+            processed_params = params.copy()
+            max_depth = processed_params.get('max_depth')
+
+            if isinstance(max_depth, str):
+                if max_depth.strip().lower() in {'none', 'null', ''}:
+                    processed_params['max_depth'] = None
+            elif max_depth is not None and isinstance(max_depth, float) and np.isnan(max_depth):
+                processed_params['max_depth'] = None
+
             return ExtraTreesClassifier(
                 bootstrap=False,
                 criterion='gini',
                 random_state=42,
-                **params
+                **processed_params
             )
         return factory
     
@@ -687,19 +738,44 @@ class RegimeHPOWrapper:
     def _create_meta_feature_search_space(self) -> Dict[str, Any]:
         """Create search space for meta-feature optimization."""
         return {
-            'margin_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'entropy_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'gini_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'variance_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'disagreement_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'js_divergence_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'temporal_weight': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'regime_persistence_weight': {'type': 'float', 'low': 0.0, 'high': 1.0}
+            'margin_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'entropy_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'gini_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'variance_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'disagreement_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'js_divergence_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'temporal_logit': {'type': 'float', 'low': -3.0, 'high': 3.0},
+            'regime_persistence_logit': {'type': 'float', 'low': -3.0, 'high': 3.0}
         }
     
     def _create_meta_feature_factory(self, base_predictions: np.ndarray) -> Callable:
         """Create meta-feature factory."""
         def factory(**params):
+            # Convert sampled logits into a normalized weight dictionary
+            weight_pairs = [
+                ('margin_logit', 'margin_weight'),
+                ('entropy_logit', 'entropy_weight'),
+                ('gini_logit', 'gini_weight'),
+                ('variance_logit', 'variance_weight'),
+                ('disagreement_logit', 'disagreement_weight'),
+                ('js_divergence_logit', 'js_divergence_weight'),
+                ('temporal_logit', 'temporal_weight'),
+                ('regime_persistence_logit', 'regime_persistence_weight')
+            ]
+            logits = np.array([params.get(key, 0.0) for key, _ in weight_pairs], dtype=float)
+            # Stabilize exponentiation to avoid overflow
+            logits = logits - np.max(logits)
+            exp_logits = np.exp(logits)
+            denom = exp_logits.sum()
+            if denom == 0 or not np.isfinite(denom):
+                normalized = np.full_like(exp_logits, 1.0 / len(exp_logits))
+            else:
+                normalized = exp_logits / denom
+            normalized_weights = {
+                weight_key: float(weight_value)
+                for weight_value, (_, weight_key) in zip(normalized, weight_pairs)
+            }
+
             # This would create a meta-feature extractor with optimized weights
             # For now, return a placeholder
             class MetaFeatureExtractor:
@@ -716,7 +792,7 @@ class RegimeHPOWrapper:
                 def fit_transform(self, X, y):
                     return self.fit(X, y).transform(X)
             
-            return MetaFeatureExtractor(params)
+            return MetaFeatureExtractor(normalized_weights)
         return factory
     
     def _generate_base_model_predictions(self, X: np.ndarray, y: np.ndarray, base_results: Dict[str, Any]) -> np.ndarray:

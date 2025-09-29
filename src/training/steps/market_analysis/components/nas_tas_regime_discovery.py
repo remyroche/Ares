@@ -1,5 +1,5 @@
 """
-Refactored Hybrid NAS-TAS Regime Discovery Component.
+Hybrid NAS-TAS Regime Discovery Component.
 
 This component uses shared utilities to eliminate redundancy between NAS and TAS components.
 It demonstrates how to use the shared_utils package for common functionality.

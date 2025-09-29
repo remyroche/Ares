@@ -9,7 +9,7 @@ logging utilities, metrics calculation, and regime characteristics.
 from .features import prepare_market_features, FeatureConfig
 from .config import (
     validate_regime_count, normalize_weights, validate_algorithm_type,
-    create_default_config, ConfigValidator
+    create_default_config, ConfigValidator, BaseConfig, NASConfig, TASConfig, HybridConfig
 )
 from .logging_utils import (
     log_execution, log_performance, LoggingContext,
@@ -31,7 +31,7 @@ __all__ = [
     
     # Configuration
     'validate_regime_count', 'normalize_weights', 'validate_algorithm_type',
-    'create_default_config', 'ConfigValidator',
+    'create_default_config', 'ConfigValidator', 'BaseConfig', 'NASConfig', 'TASConfig', 'HybridConfig',
     
     # Logging
     'log_execution', 'log_performance', 'LoggingContext',

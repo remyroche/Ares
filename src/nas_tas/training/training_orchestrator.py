@@ -24,7 +24,7 @@ from src.utils.tprint import (
 from ..config.base_config import UnifiedArchitectureConfig, ArchitectureType
 from ..data.data_processor import UnifiedDataProcessor
 from ..evaluation.unified_evaluator import UnifiedEvaluator
-from ..results.result_manager import UnifiedArchitectureResult, ArchitectureResult, ResultManager
+from ..results.result_manager import UnifiedArchitectureResult, ArchitectureResult, ResultManager, ResultStatus
 from ..error_handling import UnifiedErrorHandler
 from ..logging import UnifiedLogger, LoggingConfig
 
@@ -278,7 +278,7 @@ class UnifiedTrainingOrchestrator:
             # Create failed result
             failed_result = UnifiedArchitectureResult()
             failed_result.execution_info.finish_execution(
-                status="failed",
+                status=ResultStatus.FAILED,
                 error_message=str(e)
             )
             failed_result.execution_info.duration_seconds = (datetime.now() - start_time).total_seconds()
@@ -333,7 +333,7 @@ class UnifiedTrainingOrchestrator:
         
         # Neural architecture
         neural_arch = ArchitectureResult(
-            architecture_type="neural",
+            architecture_type=ArchitectureType.NEURAL_ONLY,
             architecture_config={
                 "layers": [data.shape[1], 64, 32, 1] if target is not None else [data.shape[1], 64, 32],
                 "activation": "relu",
@@ -344,7 +344,7 @@ class UnifiedTrainingOrchestrator:
         
         # Tree architecture
         tree_arch = ArchitectureResult(
-            architecture_type="tree",
+            architecture_type=ArchitectureType.TREE_ONLY,
             architecture_config={
                 "max_depth": 10,
                 "n_estimators": 100,
@@ -411,31 +411,29 @@ class UnifiedTrainingOrchestrator:
         """Train models in parallel."""
         trained_models = []
         
-        with ThreadPoolExecutor(max_workers=self.config.max_parallel_models) as executor:
-            # Submit training tasks
-            future_to_arch = {
-                executor.submit(self._train_single_model, arch, data, target): arch
-                for arch in architectures[:self.config.max_models]
-            }
-            
-            # Collect results
-            for future in as_completed(future_to_arch):
-                arch = future_to_arch[future]
-                try:
-                    model = future.result()
-                    if model is not None:
-                        trained_models.append(model)
-                        self.training_status.update_progress(
-                            "model_training",
-                            len(trained_models)
-                        )
-                except Exception as e:
-                    error_msg = f"Failed to train architecture {arch.architecture_id}: {e}"
-                    self.training_status.add_error(error_msg)
-                    self.error_handler.handle_training_error(e, {
-                        "component": "single_model_training",
-                        "architecture_id": arch.architecture_id
-                    })
+        # Create tasks for parallel execution
+        tasks = []
+        for arch in architectures[:self.config.max_models]:
+            task = asyncio.create_task(self._train_single_model(arch, data, target))
+            tasks.append((task, arch))
+        
+        # Wait for all tasks to complete
+        for task, arch in tasks:
+            try:
+                model = await task
+                if model is not None:
+                    trained_models.append(model)
+                    self.training_status.update_progress(
+                        "model_training",
+                        len(trained_models)
+                    )
+            except Exception as e:
+                error_msg = f"Failed to train architecture {arch.architecture_id}: {e}"
+                self.training_status.add_error(error_msg)
+                self.error_handler.handle_training_error(e, {
+                    "component": "single_model_training",
+                    "architecture_id": arch.architecture_id
+                })
         
         return trained_models
     
@@ -481,10 +479,10 @@ class UnifiedTrainingOrchestrator:
             # In practice, you would implement the actual training logic here
             # based on the architecture type and configuration
             
-            if architecture.architecture_type == ArchitectureType.NEURAL:
+            if architecture.architecture_type == ArchitectureType.NEURAL_ONLY:
                 # Train neural network
                 model = self._train_neural_model(architecture, data, target)
-            elif architecture.architecture_type == ArchitectureType.TREE:
+            elif architecture.architecture_type == ArchitectureType.TREE_ONLY:
                 # Train tree model
                 model = self._train_tree_model(architecture, data, target)
             else:
@@ -860,7 +858,7 @@ class UnifiedTrainingOrchestrator:
         
         # Set execution info
         unified_result.execution_info.finish_execution(
-            status="success" if training_result.training_successful else "failed"
+            status=ResultStatus.SUCCESS if training_result.training_successful else ResultStatus.FAILED
         )
         unified_result.execution_info.duration_seconds = (datetime.now() - start_time).total_seconds()
         

@@ -268,14 +268,14 @@ class UnifiedHybridPipeline:
         if nas_interface:
             nas_result = await nas_interface.search(data, self.config.architecture_config)
             for arch in nas_result.architectures:
-                arch.architecture_type = ArchitectureType.NEURAL
+                arch.architecture_type = ArchitectureType.NEURAL_ONLY
                 all_architectures.append(arch)
         
         # TAS architectures
         if tas_interface:
             tas_result = await tas_interface.search(data, self.config.architecture_config)
             for arch in tas_result.architectures:
-                arch.architecture_type = ArchitectureType.TREE
+                arch.architecture_type = ArchitectureType.TREE_ONLY
                 all_architectures.append(arch)
         
         # Create hybrid architectures
@@ -305,8 +305,8 @@ class UnifiedHybridPipeline:
         hybrid_architectures = []
         
         # Find neural and tree architectures
-        neural_archs = [arch for arch in architectures if arch.architecture_type == ArchitectureType.NEURAL]
-        tree_archs = [arch for arch in architectures if arch.architecture_type == ArchitectureType.TREE]
+        neural_archs = [arch for arch in architectures if arch.architecture_type == ArchitectureType.NEURAL_ONLY]
+        tree_archs = [arch for arch in architectures if arch.architecture_type == ArchitectureType.TREE_ONLY]
         
         # Create hybrid combinations
         for neural_arch in neural_archs[:3]:  # Limit combinations

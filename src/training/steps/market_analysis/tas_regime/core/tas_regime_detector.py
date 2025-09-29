@@ -632,23 +632,18 @@ class TASRegimeDetector:
                 clustering_time = time.time() - clustering_start
                 self.performance_metrics['regime_detection_time'] = clustering_time
                 
-                # Validate clustering results
+                # Fast fail validation for clustering results
                 if len(regime_predictions) == 0 or len(regime_probabilities) == 0:
                     raise ValueError("Clustering returned empty results")
+                if np.any(np.isnan(regime_predictions)) or np.any(np.isnan(regime_probabilities)):
+                    raise ValueError("Clustering results contain NaN values")
+                if np.any(np.isinf(regime_probabilities)):
+                    raise ValueError("Clustering probabilities contain infinite values")
                     
             except Exception as clustering_error:
                 self.logger.error(f"TAS clustering failed: {clustering_error}")
-                tprint_error(f"❌ [TAS_TRAINING] Clustering failed: {clustering_error}")
-                
-                # Use emergency fallback
-                n_samples = len(processed_data)
-                regime_predictions = np.array([i % self.config.n_regimes for i in range(n_samples)])
-                regime_probabilities = np.ones((n_samples, self.config.n_regimes)) / self.config.n_regimes
-                
-                clustering_time = time.time() - clustering_start
-                self.performance_metrics['regime_detection_time'] = clustering_time
-                
-                tprint_warning("⚠️ [TAS_TRAINING] Using emergency fallback regime assignment")
+                tprint_error(f"❌ [TAS_TRAINING] TAS clustering failed - fast fail")
+                raise ValueError(f"TAS clustering failed: {clustering_error}")
 
             unique_regimes = len(np.unique(regime_predictions))
             regime_distribution = np.bincount(regime_predictions)
@@ -974,9 +969,8 @@ class TASRegimeDetector:
             tprint_debug(f"   Input data shape: {data.shape}")
             tprint_debug(f"   Target regimes: {self.config.n_regimes}")
 
-            # Validate data quality before processing
-            if not self._validate_data_for_clustering(data):
-                raise ValueError("Data quality validation failed - insufficient variance or constant features detected")
+            # Validate data quality before processing - FAST FAIL
+            self._validate_data_for_clustering(data)
 
             # Standardize the data
             tprint_debug("   [REGIME_DETECTION] Standardizing data...")
@@ -997,6 +991,17 @@ class TASRegimeDetector:
             # Train Random Forest on the synthetic targets
             tprint_debug("   [REGIME_DETECTION] Training Random Forest classifier...")
             rf_start = time.time()
+            
+            # Fast fail check for Random Forest parameters
+            if self.config.n_estimators <= 0:
+                raise ValueError(f"Invalid n_estimators: {self.config.n_estimators}")
+            if self.config.tree_depth <= 0:
+                raise ValueError(f"Invalid tree_depth: {self.config.tree_depth}")
+            if self.config.min_samples_split < 2:
+                raise ValueError(f"Invalid min_samples_split: {self.config.min_samples_split}")
+            if self.config.min_samples_leaf < 1:
+                raise ValueError(f"Invalid min_samples_leaf: {self.config.min_samples_leaf}")
+                
             rf = RandomForestClassifier(
                 n_estimators=self.config.n_estimators,
                 max_depth=self.config.tree_depth,
@@ -1014,9 +1019,21 @@ class TASRegimeDetector:
             labels = rf.predict(data_scaled)
             tprint_debug(f"   [REGIME_DETECTION] Final predictions generated: {len(np.unique(labels))} regimes")
 
+            # Fast fail validation for predictions
+            if len(labels) == 0:
+                raise ValueError("Random Forest returned empty predictions")
+            if len(np.unique(labels)) < 2:
+                raise ValueError(f"Insufficient regime diversity: only {len(np.unique(labels))} unique regimes found")
+
             # Calculate probabilities based on tree confidence
             tprint_debug("   [REGIME_DETECTION] Calculating prediction probabilities...")
             probabilities = self._calculate_tree_probabilities(data, labels)
+            
+            # Fast fail validation for probabilities
+            if probabilities.shape[0] != len(labels):
+                raise ValueError(f"Probability shape mismatch: {probabilities.shape[0]} != {len(labels)}")
+            if np.any(np.isnan(probabilities)) or np.any(np.isinf(probabilities)):
+                raise ValueError("Probabilities contain NaN or infinite values")
 
             # Calculate silhouette score for validation
             if len(set(labels)) > 1:
@@ -1030,23 +1047,8 @@ class TASRegimeDetector:
 
         except Exception as e:
             self.logger.error(f"Tree-based regime detection failed: {e}")
-            # Try fallback simple regime assignment
-            try:
-                self.logger.warning("Attempting fallback regime assignment...")
-                n_samples = len(data)
-                regime_size = max(1, n_samples // self.config.n_regimes)
-                fallback_labels = np.array([i // regime_size for i in range(n_samples)])
-                fallback_labels = np.minimum(fallback_labels, self.config.n_regimes - 1)
-                
-                # Create uniform probabilities
-                fallback_probabilities = np.ones((n_samples, self.config.n_regimes)) / self.config.n_regimes
-                
-                tprint_warning("⚠️ [REGIME_DETECTION] Using fallback regime assignment")
-                return fallback_labels, fallback_probabilities
-                
-            except Exception as fallback_error:
-                self.logger.error(f"Fallback regime assignment also failed: {fallback_error}")
-                raise ValueError(f"Tree-based regime detection failed: {e}")
+            tprint_error(f"❌ [REGIME_DETECTION] TAS clustering failed - fast fail")
+            raise ValueError(f"Tree-based regime detection failed: {e}")
 
     def _perform_supervised_regime_discovery(self, data: np.ndarray) -> Dict[str, Any]:
         """Perform supervised regime discovery using synthetic targets."""
@@ -1641,11 +1643,11 @@ class TASRegimeDetector:
                         # Ensure they sum to 1
                         probabilities[i] = probabilities[i] / np.sum(probabilities[i])
                     else:
-                        # All distances are zero, equal probability
-                        probabilities[i] = np.ones(self.config.n_regimes) / self.config.n_regimes
+                        # All distances are zero - this should not happen with proper data
+                        raise ValueError("All distances are zero - invalid clustering result")
                 else:
-                    # Fallback to uniform distribution
-                    probabilities[i] = np.ones(self.config.n_regimes) / self.config.n_regimes
+                    # No distances available - this should not happen with proper data
+                    raise ValueError("No distances available - invalid clustering result")
 
             return probabilities
 
@@ -1680,33 +1682,38 @@ class TASRegimeDetector:
             return np.ones(len(np.unique(labels)))
 
     def _validate_data_for_clustering(self, data: np.ndarray) -> bool:
-        """Validate data quality for clustering algorithms."""
+        """Validate data quality for clustering algorithms - fast fail on any issues."""
         try:
-            # Check for sufficient data points
+            # Check for sufficient data points - FAST FAIL
             if len(data) < self.config.n_regimes * 2:
-                self.logger.warning(f"Insufficient data points: {len(data)} < {self.config.n_regimes * 2}")
-                return False
+                error_msg = f"Insufficient data points: {len(data)} < {self.config.n_regimes * 2}"
+                self.logger.error(error_msg)
+                tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
+                raise ValueError(error_msg)
             
-            # Check for constant features (zero variance)
+            # Check for constant features (zero variance) - FAST FAIL
             feature_vars = np.var(data, axis=0)
             constant_features = np.sum(feature_vars < 1e-10)
             if constant_features > 0:
-                self.logger.warning(f"Found {constant_features} constant features with zero variance")
-                # Remove constant features or use fallback
-                if constant_features == data.shape[1]:
-                    self.logger.error("All features are constant - cannot perform clustering")
-                    return False
+                error_msg = f"Found {constant_features} constant features with zero variance"
+                self.logger.error(error_msg)
+                tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
+                raise ValueError(error_msg)
             
-            # Check for NaN or infinite values
+            # Check for NaN or infinite values - FAST FAIL
             if np.any(np.isnan(data)) or np.any(np.isinf(data)):
-                self.logger.warning("Data contains NaN or infinite values")
-                return False
+                error_msg = "Data contains NaN or infinite values"
+                self.logger.error(error_msg)
+                tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
+                raise ValueError(error_msg)
             
-            # Check for sufficient variance across all features
+            # Check for sufficient variance across all features - FAST FAIL
             total_variance = np.sum(feature_vars)
             if total_variance < 1e-10:
-                self.logger.error("Insufficient variance in data for clustering")
-                return False
+                error_msg = "Insufficient variance in data for clustering"
+                self.logger.error(error_msg)
+                tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
+                raise ValueError(error_msg)
             
             tprint_debug(f"   [DATA_VALIDATION] Data quality check passed")
             tprint_debug(f"   [DATA_VALIDATION] Data shape: {data.shape}")
@@ -1717,7 +1724,7 @@ class TASRegimeDetector:
             
         except Exception as e:
             self.logger.error(f"Data validation failed: {e}")
-            return False
+            raise  # Re-raise to ensure fast fail
 
     def _get_regime_points(self, current_point: np.ndarray, labels: np.ndarray, target_label: int) -> np.ndarray:
         """Get all points belonging to a specific regime."""

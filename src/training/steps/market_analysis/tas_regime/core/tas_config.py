@@ -26,8 +26,8 @@ class TreeModelType(Enum):
     XGBOOST = "xgboost"
     LIGHTGBM = "lightgbm"
     EXTRA_TREES = "extra_trees"
-    GRADIENT_BOOSTING = "gradient_boosting"
-    DECISION_TREE = "decision_tree"
+    # GRADIENT_BOOSTING = "gradient_boosting"  # Removed - use XGBoost/LightGBM/CatBoost instead
+    # DECISION_TREE = "decision_tree"  # Removed - use RandomForest instead
     ADABOOST = "adaboost"
     BAGGING = "bagging"
     # New advanced tree models

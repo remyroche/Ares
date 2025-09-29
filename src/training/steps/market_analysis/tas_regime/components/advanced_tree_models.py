@@ -25,8 +25,7 @@ warnings.filterwarnings('ignore')
 
 # Import tree-based models
 try:
-    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-    from sklearn.tree import DecisionTreeClassifier
+    from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import cross_val_score, TimeSeriesSplit
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
     SKLEARN_AVAILABLE = True
@@ -68,7 +67,7 @@ class AdvancedTreeConfig:
     """Configuration for advanced tree models."""
     
     # Model selection
-    primary_model: str = "xgboost"  # "xgboost", "lightgbm", "catboost", "random_forest", "gradient_boosting"
+    primary_model: str = "xgboost"  # "xgboost", "lightgbm", "catboost", "random_forest"
     enable_ensemble: bool = True
     ensemble_models: List[str] = field(default_factory=lambda: ["xgboost", "lightgbm", "catboost"])
     
@@ -582,19 +581,9 @@ class AdvancedTreeModelFactory:
                     max_depth=6,
                     random_state=42
                 )
-            elif model_type == "gradient_boosting" and SKLEARN_AVAILABLE:
-                return GradientBoostingClassifier(
-                    n_estimators=100,
-                    max_depth=6,
-                    learning_rate=0.1,
-                    random_state=42
-                )
             else:
-                # Fallback to decision tree
-                if SKLEARN_AVAILABLE:
-                    return DecisionTreeClassifier(max_depth=6, random_state=42)
-                else:
-                    raise ValueError(f"Model type {model_type} not available and no fallback")
+                # No fallback models - require advanced tree models
+                raise ValueError(f"Model type {model_type} not available. Only XGBoost, LightGBM, CatBoost, and Random Forest are supported.")
                     
         except Exception as e:
             self.logger.error(f"Failed to create base model {model_type}: {e}")

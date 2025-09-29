@@ -16,7 +16,7 @@ import copy
 from collections import defaultdict
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+# DecisionTreeClassifier removed - only advanced tree models supported
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 

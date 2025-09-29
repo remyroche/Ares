@@ -33,6 +33,9 @@ from ..regime_model_mapping import DataDrivenModelSelector, ModelSelectorConfig
 from ..core.hybrid_regime_detector import HybridNASTASRegimeDetector
 from ..config.hybrid_regime_config import HybridRegimeConfig
 
+# Import HPO integration
+from .regime_hpo_integration import RegimeHPOIntegration, create_regime_hpo_integration_config
+
 # Import advanced tree models
 from ...tas_regime.components.advanced_tree_models import (
     AdvancedTreeModelFactory, AdvancedTreeConfig,
@@ -57,6 +60,14 @@ class RegimeTrainingConfig:
     hyperparameter_trials: int = 50
     enable_cross_validation: bool = True
     cv_folds: int = 5
+    
+    # HPO Integration
+    enable_hpo_optimization: bool = True
+    hpo_strategy: str = 'hierarchical'  # 'hierarchical', 'staged', 'bayesian'
+    hpo_base_model_trials: int = 100
+    hpo_meta_model_trials: int = 50
+    enable_meta_feature_optimization: bool = True
+    hpo_timeout: Optional[int] = 3600  # 1 hour timeout
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
@@ -605,6 +616,22 @@ class AutomaticRegimeTrainingPipeline:
         tprint("🔧 [AUTO_PIPELINE] Setting up regime model trainer", color="blue")
         self.model_trainer = RegimeModelTrainer(training_config)
         
+        # Initialize HPO integration
+        if self.training_config.enable_hpo_optimization:
+            tprint("🔧 [AUTO_PIPELINE] Setting up HPO integration", color="blue")
+            hpo_config = create_regime_hpo_integration_config(
+                optimization_strategy=self.training_config.hpo_strategy,
+                base_model_n_trials=self.training_config.hpo_base_model_trials,
+                meta_model_n_trials=self.training_config.hpo_meta_model_trials,
+                enable_meta_feature_optimization=self.training_config.enable_meta_feature_optimization
+            )
+            self.hpo_integration = RegimeHPOIntegration(
+                regime_config=hybrid_config,
+                hpo_config=hpo_config
+            )
+        else:
+            self.hpo_integration = None
+        
         # Training state
         self.training_results: Dict[int, List[RegimeTrainingResult]] = {}
         self.deployed_models: Dict[int, str] = {}  # regime_id -> best_model_name
@@ -648,8 +675,20 @@ class AutomaticRegimeTrainingPipeline:
             unique_regimes = np.unique(hybrid_result.regime_predictions)
             tprint(f"✅ [AUTO_PIPELINE] Detected {len(unique_regimes)} regimes: {unique_regimes}", color="green")
             
-            # Step 2: Extract data for each regime
-            tprint("📊 [AUTO_PIPELINE] Step 2: Extracting regime data...", color="yellow")
+            # Step 2: Optimize hyperparameters (if enabled)
+            if self.training_config.enable_hpo_optimization and self.hpo_integration is not None:
+                tprint("🎯 [AUTO_PIPELINE] Step 2a: Optimizing hyperparameters...", color="yellow")
+                tprint("🎯 [AUTO_PIPELINE] Running HPO optimization for regime models", color="blue")
+                self.logger.info("🎯 Optimizing hyperparameters...")
+                hpo_results = self.hpo_integration.run_complete_optimization(
+                    market_data=market_data,
+                    regime_labels=hybrid_result.regime_predictions,
+                    save_results=True
+                )
+                tprint(f"✅ [AUTO_PIPELINE] HPO optimization completed in {hpo_results['total_optimization_time']:.2f}s", color="green")
+            
+            # Step 2b: Extract data for each regime
+            tprint("📊 [AUTO_PIPELINE] Step 2b: Extracting regime data...", color="yellow")
             tprint(f"📊 [AUTO_PIPELINE] Processing {len(unique_regimes)} unique regimes", color="blue")
             self.logger.info("📊 Extracting regime data...")
             regime_data_dict = {}

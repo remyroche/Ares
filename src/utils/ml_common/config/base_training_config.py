@@ -108,7 +108,8 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
+        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor", 
+        "ExtraTreesRegressor", "BayesianRuleLists"
     ])
     
     # Model-specific HPO search spaces
@@ -120,23 +121,46 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
             'learning_rate': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True}
         },
         'CatBoostRegressor': {
-            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-            'depth': {'type': 'int', 'low': 4, 'high': 10},
-            'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
+            'n_estimators': {'type': 'int', 'low': 500, 'high': 1200},
+            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.06, 'log': True},
+            'depth': {'type': 'int', 'low': 4, 'high': 6},
+            'l2_leaf_reg': {'type': 'float', 'low': 6.0, 'high': 12.0},
+            'subsample': {'type': 'float', 'low': 0.6, 'high': 0.8},
+            'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 0.8}
         },
         'LGBMRegressor': {
-            'n_estimators': {'type': 'int', 'low': 500, 'high': 2000},
-            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-            'max_depth': {'type': 'int', 'low': 4, 'high': 10},
-            'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 1.0},
-            'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 1.0}
+            'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
+            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.05, 'log': True},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 5},
+            'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
+            'min_data_in_leaf': {'type': 'int', 'low': 50, 'high': 150},
+            'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
+            'lambda_l1': {'type': 'float', 'low': 0.0, 'high': 0.1},
+            'lambda_l2': {'type': 'float', 'low': 0.0, 'high': 0.1}
         },
         'RandomForestRegressor': {
             'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
             'max_depth': {'type': 'int', 'low': 5, 'high': 20},
             'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
             'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10}
+        },
+        'ExtraTreesRegressor': {
+            'n_estimators': {'type': 'int', 'low': 300, 'high': 800},
+            'max_depth': {'type': 'categorical', 'choices': [None, 10, 15]},
+            'min_samples_split': {'type': 'int', 'low': 5, 'high': 20},
+            'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 10},
+            'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]},
+            'bootstrap': {'type': 'categorical', 'choices': [False]},
+            'criterion': {'type': 'categorical', 'choices': ['gini', 'entropy']}
+        },
+        'BayesianRuleLists': {
+            'max_rules': {'type': 'int', 'low': 20, 'high': 30},
+            'max_rule_length': {'type': 'int', 'low': 2, 'high': 3},
+            'n_chains': {'type': 'int', 'low': 2, 'high': 3},
+            'n_iter': {'type': 'int', 'low': 5000, 'high': 10000},
+            'min_support': {'type': 'float', 'low': 0.01, 'high': 0.05},
+            'alpha': {'type': 'float', 'low': 0.5, 'high': 2.0},
+            'beta': {'type': 'float', 'low': 0.5, 'high': 2.0}
         }
     })
 
@@ -173,6 +197,17 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
             'depth': {'type': 'int', 'low': 4, 'high': 10},
             'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
             'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
+        },
+        'LightGBMClassifier': {
+            'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 5},
+            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.05, 'log': True},
+            'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
+            'min_data_in_leaf': {'type': 'int', 'low': 50, 'high': 150},
+            'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
+            'bagging_fraction': {'type': 'float', 'low': 0.7, 'high': 0.9},
+            'lambda_l1': {'type': 'float', 'low': 0.0, 'high': 0.1},
+            'lambda_l2': {'type': 'float', 'low': 0.0, 'high': 0.1}
         },
         'NAS': {
             'learning_rate': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True},
@@ -269,6 +304,108 @@ class TacticianTrainingConfig(BaseTrainingConfig):
             'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
             'bootstrap': {'type': 'categorical', 'choices': [True, False]},
             'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
+        }
+    })
+
+
+@dataclass
+class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
+    """Configuration for regime meta-model training with enhanced meta-features."""
+    
+    # Meta-model configuration
+    meta_model_types: List[str] = field(default_factory=lambda: [
+        "LightGBMClassifier", "XGBoostClassifier", "CatBoostClassifier"
+    ])
+    
+    # Meta-features configuration
+    enable_meta_features: bool = True
+    meta_feature_types: Dict[str, bool] = field(default_factory=lambda: {
+        # Disagreement & uncertainty
+        'margin': True,
+        'entropy': True,
+        'gini_impurity': True,
+        'pairwise_variance': True,
+        'disagreement_rate': True,
+        'js_divergence_spread': True,
+        # Temporal dynamics
+        'probability_slope': True,
+        'momentum_confidence': True,
+        'flip_pressure': True,
+        'duration_prior': True,
+        # Calibration & reliability
+        'brier_components': True,
+        'temperature_proxy': True,
+        # Diversity & specialist detection
+        'specialist_gating_cues': True,
+        'cohens_kappa': True,
+        'diversity_metrics': True
+    })
+    
+    # Meta-feature parameters
+    meta_feature_params: Dict[str, Any] = field(default_factory=lambda: {
+        'temporal_window': 5,  # Short windows: 3-8 bars
+        'momentum_half_life': 5,  # EWMA half-life
+        'flip_pressure_window': 8,  # Rolling count window
+        'brier_validation_window': 200,  # Shadow validation stream
+        'temperature_optimization_window': 100,  # Rolling window for temperature
+        'diversity_window': 50,  # Rolling window for diversity metrics
+        'max_meta_features': 10  # Use 2-5 of the most important
+    })
+    
+    # LightGBM meta-model specific configuration
+    lightgbm_meta_config: Dict[str, Any] = field(default_factory=lambda: {
+        'objective': 'multiclass',
+        'num_leaves': [15, 23, 31],
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.03, 0.04, 0.05],
+        'min_data_in_leaf': [50, 100, 150],
+        'feature_fraction': [0.6, 0.75, 0.9],
+        'bagging_fraction': 0.8,
+        'bagging_freq': 1,
+        'lambda_l1': [0, 1e-2, 1e-1],
+        'lambda_l2': [0, 1e-2, 1e-1],
+        'n_estimators': [200, 400, 600],
+        'boosting': 'gbdt',
+        'metric': 'multi_logloss',
+        # Stable sweet spot
+        'stable_sweet_spot': {
+            'num_leaves': 23,
+            'max_depth': 4,
+            'learning_rate': 0.04,
+            'min_data_in_leaf': 100,
+            'n_estimators': 400
+        }
+    })
+    
+    # Advanced meta-model features
+    advanced_features: Dict[str, Any] = field(default_factory=lambda: {
+        'enable_uncertainty_quantification': True,
+        'uncertainty_methods': ['ensemble_variance', 'monte_carlo_dropout', 'bayesian_approximation'],
+        'enable_regime_transitions': True,
+        'transition_window': 5,
+        'transition_smoothing': True,
+        'enable_adaptive_learning': True,
+        'adaptation_rate': 0.01,
+        'adaptation_window': 100,
+        'enable_dynamic_model_selection': True,
+        'selection_criteria': ['accuracy', 'stability', 'diversity'],
+        'enable_calibration': True,
+        'calibration_method': 'platt_scaling',  # platt_scaling, isotonic_regression
+        'calibration_window': 200
+    })
+    
+    # HPO configuration for meta-models
+    meta_model_hpo_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
+        'LightGBMClassifier': {
+            'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 5},
+            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.05, 'log': True},
+            'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
+            'min_data_in_leaf': {'type': 'int', 'low': 50, 'high': 150},
+            'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
+            'bagging_fraction': {'type': 'float', 'low': 0.7, 'high': 0.9},
+            'lambda_l1': {'type': 'float', 'low': 0.0, 'high': 0.1},
+            'lambda_l2': {'type': 'float', 'low': 0.0, 'high': 0.1}
         }
     })
 

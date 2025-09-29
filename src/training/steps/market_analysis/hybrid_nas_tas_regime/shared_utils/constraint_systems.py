@@ -132,15 +132,122 @@ class BaseConstraintValidator:
 
     def validate(self, architecture: Any) -> ConstraintValidationResult:
         """Validate an architecture against all constraints."""
-        raise NotImplementedError("Subclasses must implement validate")
+        try:
+            violations = []
+            is_valid = True
+            
+            # Check all constraint types
+            for constraint_type in ConstraintType:
+                violation = self.check_single_constraint(architecture, constraint_type)
+                if violation is not None:
+                    violations.append(violation)
+                    is_valid = False
+            
+            # Calculate overall score
+            if len(violations) == 0:
+                score = 1.0
+            else:
+                # Calculate score based on severity of violations
+                total_severity = sum(v.severity for v in violations)
+                max_severity = len(violations) * 1.0  # Maximum possible severity
+                score = max(0.0, 1.0 - (total_severity / max_severity))
+            
+            return ConstraintValidationResult(
+                is_valid=is_valid,
+                score=score,
+                violations=violations,
+                total_constraints=len(ConstraintType),
+                passed_constraints=len(ConstraintType) - len(violations)
+            )
+            
+        except Exception as e:
+            tprint(f"⚠️ [CONSTRAINT] Error validating architecture: {e}", color="yellow")
+            # Return a default validation result
+            return ConstraintValidationResult(
+                is_valid=False,
+                score=0.0,
+                violations=[],
+                total_constraints=len(ConstraintType),
+                passed_constraints=0
+            )
 
     def check_single_constraint(self, architecture: Any, constraint_type: ConstraintType) -> Optional[ConstraintViolation]:
         """Check a single constraint type."""
-        raise NotImplementedError("Subclasses must implement check_single_constraint")
+        try:
+            if constraint_type == ConstraintType.PARAMETER_COUNT:
+                return self._check_parameter_count_constraint(architecture)
+            elif constraint_type == ConstraintType.MEMORY_USAGE:
+                return self._check_memory_usage_constraint(architecture)
+            elif constraint_type == ConstraintType.TRAINING_TIME:
+                return self._check_training_time_constraint(architecture)
+            elif constraint_type == ConstraintType.INFERENCE_TIME:
+                return self._check_inference_time_constraint(architecture)
+            elif constraint_type == ConstraintType.ARCHITECTURE_DEPTH:
+                return self._check_architecture_depth_constraint(architecture)
+            elif constraint_type == ConstraintType.ARCHITECTURE_WIDTH:
+                return self._check_architecture_width_constraint(architecture)
+            elif constraint_type == ConstraintType.ACTIVATION_FUNCTION:
+                return self._check_activation_function_constraint(architecture)
+            elif constraint_type == ConstraintType.OPTIMIZER:
+                return self._check_optimizer_constraint(architecture)
+            elif constraint_type == ConstraintType.LEARNING_RATE:
+                return self._check_learning_rate_constraint(architecture)
+            elif constraint_type == ConstraintType.BATCH_SIZE:
+                return self._check_batch_size_constraint(architecture)
+            else:
+                # Unknown constraint type
+                return ConstraintViolation(
+                    constraint_type=constraint_type,
+                    message=f"Unknown constraint type: {constraint_type}",
+                    severity=0.5,
+                    suggested_fix="Check constraint type definition"
+                )
+                
+        except Exception as e:
+            tprint(f"⚠️ [CONSTRAINT] Error checking constraint {constraint_type}: {e}", color="yellow")
+            return ConstraintViolation(
+                constraint_type=constraint_type,
+                message=f"Error checking constraint: {e}",
+                severity=0.8,
+                suggested_fix="Fix constraint checking logic"
+            )
 
     def get_constraint_summary(self) -> Dict[str, Any]:
         """Get a summary of all constraints."""
-        raise NotImplementedError("Subclasses must implement get_constraint_summary")
+        try:
+            summary = {
+                'total_constraints': len(ConstraintType),
+                'constraint_types': [ct.value for ct in ConstraintType],
+                'system_info': self.system_info,
+                'constraint_config': {
+                    'max_parameters': self.config.max_parameters,
+                    'max_memory_gb': self.config.max_memory_gb,
+                    'max_training_time_hours': self.config.max_training_time_hours,
+                    'max_inference_time_ms': self.config.max_inference_time_ms,
+                    'max_depth': self.config.max_depth,
+                    'max_width': self.config.max_width,
+                    'allowed_activations': self.config.allowed_activations,
+                    'allowed_optimizers': self.config.allowed_optimizers,
+                    'min_learning_rate': self.config.min_learning_rate,
+                    'max_learning_rate': self.config.max_learning_rate,
+                    'min_batch_size': self.config.min_batch_size,
+                    'max_batch_size': self.config.max_batch_size
+                },
+                'is_initialized': self.is_initialized
+            }
+            
+            return summary
+            
+        except Exception as e:
+            tprint(f"⚠️ [CONSTRAINT] Error getting constraint summary: {e}", color="yellow")
+            return {
+                'error': str(e),
+                'total_constraints': 0,
+                'constraint_types': [],
+                'system_info': {},
+                'constraint_config': {},
+                'is_initialized': False
+            }
 
     def _get_system_info(self) -> Dict[str, Any]:
         """Get system information for resource constraints."""

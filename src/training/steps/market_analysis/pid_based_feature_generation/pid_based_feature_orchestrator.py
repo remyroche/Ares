@@ -55,16 +55,8 @@ try:
 except ImportError as e:
     logging.error(f"Critical dependency missing - Interaction feature generator not available: {e}")
     INTERACTION_GENERATOR_AVAILABLE = False
-    # Create placeholder classes that raise informative errors
-    class InteractionFeatureGenerator:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("InteractionFeatureGenerator is not available due to import failure")
-    class InteractionConfig:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("InteractionConfig is not available due to import failure")
-    class InteractionResult:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("InteractionResult is not available due to import failure")
+    # Fast fail - raise error immediately instead of creating placeholder classes
+    raise ImportError(f"Critical dependency missing - Interaction feature generator not available: {e}")
 
 try:
     from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
@@ -72,16 +64,8 @@ try:
 except ImportError as e:
     logging.error(f"Critical dependency missing - Polynomial feature generator not available: {e}")
     POLYNOMIAL_GENERATOR_AVAILABLE = False
-    # Create placeholder classes that raise informative errors
-    class PolynomialFeatureGenerator:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("PolynomialFeatureGenerator is not available due to import failure")
-    class PolynomialConfig:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("PolynomialConfig is not available due to import failure")
-    class PolynomialResult:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("PolynomialResult is not available due to import failure")
+    # Fast fail - raise error immediately instead of creating placeholder classes
+    raise ImportError(f"Critical dependency missing - Polynomial feature generator not available: {e}")
 
 try:
     from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
@@ -89,16 +73,8 @@ try:
 except ImportError as e:
     logging.error(f"Critical dependency missing - Cross timeframe feature generator not available: {e}")
     CROSS_TIMEFRAME_GENERATOR_AVAILABLE = False
-    # Create placeholder classes that raise informative errors
-    class CrossTimeframeFeatureGenerator:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("CrossTimeframeFeatureGenerator is not available due to import failure")
-    class CrossTimeframeConfig:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("CrossTimeframeConfig is not available due to import failure")
-    class CrossTimeframeResult:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("CrossTimeframeResult is not available due to import failure")
+    # Fast fail - raise error immediately instead of creating placeholder classes
+    raise ImportError(f"Critical dependency missing - Cross timeframe feature generator not available: {e}")
 
 try:
     from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
@@ -106,13 +82,8 @@ try:
 except ImportError as e:
     logging.error(f"Critical dependency missing - Lookback integration not available: {e}")
     LOOKBACK_INTEGRATION_AVAILABLE = False
-    # Create placeholder classes that raise informative errors
-    class OptimizedLookbackIntegration:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("OptimizedLookbackIntegration is not available due to import failure")
-    class LookbackIntegrationResult:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("LookbackIntegrationResult is not available due to import failure")
+    # Fast fail - raise error immediately instead of creating placeholder classes
+    raise ImportError(f"Critical dependency missing - Lookback integration not available: {e}")
 
 try:
     from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, FeatureSelectionResult
@@ -120,16 +91,8 @@ try:
 except ImportError as e:
     logging.error(f"Critical dependency missing - Feature selection mechanism not available: {e}")
     FEATURE_SELECTION_AVAILABLE = False
-    # Create placeholder classes that raise informative errors
-    class FeatureSelectionMechanism:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("FeatureSelectionMechanism is not available due to import failure")
-    class FeatureSelectionConfig:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("FeatureSelectionConfig is not available due to import failure")
-    class FeatureSelectionResult:
-        def __init__(self, *args, **kwargs):
-            raise _MissingGeneratorError("FeatureSelectionResult is not available due to import failure")
+    # Fast fail - raise error immediately instead of creating placeholder classes
+    raise ImportError(f"Critical dependency missing - Feature selection mechanism not available: {e}")
 
 # Import simple feature generator as fallback - this should always be available
 try:

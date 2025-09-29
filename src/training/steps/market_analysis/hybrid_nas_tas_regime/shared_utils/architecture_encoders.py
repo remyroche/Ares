@@ -76,19 +76,341 @@ class BaseArchitectureEncoder:
 
     def encode(self, architecture: Any) -> EncodingResult:
         """Encode an architecture."""
-        raise NotImplementedError("Subclasses must implement encode")
+        try:
+            # Extract architecture features
+            features = self._extract_architecture_features(architecture)
+            
+            # Create encoding based on architecture type
+            if hasattr(architecture, 'architecture_type'):
+                arch_type = architecture.architecture_type
+            else:
+                arch_type = 'unknown'
+            
+            # Generate encoding
+            encoding = self._generate_encoding(features, arch_type)
+            
+            # Create encoding result
+            result = EncodingResult(
+                encoding=encoding,
+                encoding_type=EncodingType.ARCHITECTURE,
+                size=len(encoding),
+                features=features,
+                metadata={
+                    'architecture_type': arch_type,
+                    'encoding_method': self.__class__.__name__,
+                    'timestamp': time.time()
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error encoding architecture: {e}", color="yellow")
+            # Return empty encoding
+            return EncodingResult(
+                encoding=[],
+                encoding_type=EncodingType.ARCHITECTURE,
+                size=0,
+                features={},
+                metadata={'error': str(e)}
+            )
 
     def decode(self, encoding: Any, encoding_type: EncodingType) -> DecodingResult:
         """Decode an architecture."""
-        raise NotImplementedError("Subclasses must implement decode")
+        try:
+            # Validate encoding
+            if not self.validate_encoding(encoding, encoding_type):
+                return DecodingResult(
+                    architecture=None,
+                    success=False,
+                    error="Invalid encoding"
+                )
+            
+            # Decode based on encoding type
+            if encoding_type == EncodingType.ARCHITECTURE:
+                architecture = self._decode_architecture(encoding)
+            elif encoding_type == EncodingType.FEATURES:
+                architecture = self._decode_features(encoding)
+            else:
+                return DecodingResult(
+                    architecture=None,
+                    success=False,
+                    error=f"Unsupported encoding type: {encoding_type}"
+                )
+            
+            # Create decoding result
+            result = DecodingResult(
+                architecture=architecture,
+                success=True,
+                error=None,
+                metadata={
+                    'encoding_type': encoding_type,
+                    'decoding_method': self.__class__.__name__,
+                    'timestamp': time.time()
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error decoding architecture: {e}", color="yellow")
+            return DecodingResult(
+                architecture=None,
+                success=False,
+                error=str(e)
+            )
 
     def get_encoding_size(self, architecture: Any) -> int:
         """Get the size of the encoded representation."""
-        raise NotImplementedError("Subclasses must implement get_encoding_size")
+        try:
+            # Extract architecture features
+            features = self._extract_architecture_features(architecture)
+            
+            # Calculate encoding size based on features
+            size = 0
+            
+            # Add size for each feature
+            for key, value in features.items():
+                if isinstance(value, (int, float)):
+                    size += 1
+                elif isinstance(value, str):
+                    size += len(value)
+                elif isinstance(value, list):
+                    size += len(value)
+                elif isinstance(value, dict):
+                    size += len(value)
+            
+            return max(1, size)  # Minimum size of 1
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error getting encoding size: {e}", color="yellow")
+            return 1  # Default size
 
     def validate_encoding(self, encoding: Any, encoding_type: EncodingType) -> bool:
         """Validate an encoding."""
-        raise NotImplementedError("Subclasses must implement validate_encoding")
+        try:
+            # Check if encoding is not None
+            if encoding is None:
+                return False
+            
+            # Check if encoding is a list or array
+            if not isinstance(encoding, (list, tuple, np.ndarray)):
+                return False
+            
+            # Check if encoding has minimum size
+            if len(encoding) == 0:
+                return False
+            
+            # Check if encoding contains valid values
+            for value in encoding:
+                if not isinstance(value, (int, float, str)):
+                    return False
+                if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error validating encoding: {e}", color="yellow")
+            return False
+    
+    def _extract_architecture_features(self, architecture: Any) -> Dict[str, Any]:
+        """Extract features from an architecture."""
+        try:
+            features = {}
+            
+            # Get basic architecture properties
+            if hasattr(architecture, 'depth'):
+                features['depth'] = architecture.depth
+            elif hasattr(architecture, 'layers'):
+                features['depth'] = len(architecture.layers)
+            else:
+                features['depth'] = 1
+            
+            if hasattr(architecture, 'width'):
+                features['width'] = architecture.width
+            elif hasattr(architecture, 'hidden_size'):
+                features['width'] = architecture.hidden_size
+            else:
+                features['width'] = 64
+            
+            if hasattr(architecture, 'activation'):
+                features['activation'] = str(architecture.activation)
+            else:
+                features['activation'] = 'relu'
+            
+            if hasattr(architecture, 'optimizer'):
+                features['optimizer'] = str(architecture.optimizer)
+            else:
+                features['optimizer'] = 'adam'
+            
+            if hasattr(architecture, 'learning_rate'):
+                features['learning_rate'] = architecture.learning_rate
+            else:
+                features['learning_rate'] = 0.001
+            
+            if hasattr(architecture, 'batch_size'):
+                features['batch_size'] = architecture.batch_size
+            else:
+                features['batch_size'] = 32
+            
+            if hasattr(architecture, 'dropout'):
+                features['dropout'] = architecture.dropout
+            else:
+                features['dropout'] = 0.0
+            
+            if hasattr(architecture, 'regularization'):
+                features['regularization'] = architecture.regularization
+            else:
+                features['regularization'] = 0.0
+            
+            if hasattr(architecture, 'architecture_type'):
+                features['architecture_type'] = str(architecture.architecture_type)
+            else:
+                features['architecture_type'] = 'unknown'
+            
+            # Get parameter count if available
+            if hasattr(architecture, 'parameters'):
+                features['num_parameters'] = sum(p.numel() for p in architecture.parameters())
+            else:
+                features['num_parameters'] = 0
+            
+            return features
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error extracting features: {e}", color="yellow")
+            return {
+                'depth': 1,
+                'width': 64,
+                'activation': 'relu',
+                'optimizer': 'adam',
+                'learning_rate': 0.001,
+                'batch_size': 32,
+                'dropout': 0.0,
+                'regularization': 0.0,
+                'architecture_type': 'unknown',
+                'num_parameters': 0
+            }
+    
+    def _generate_encoding(self, features: Dict[str, Any], arch_type: str) -> List[float]:
+        """Generate encoding from features."""
+        try:
+            encoding = []
+            
+            # Add numerical features
+            encoding.append(features.get('depth', 1))
+            encoding.append(features.get('width', 64))
+            encoding.append(features.get('learning_rate', 0.001))
+            encoding.append(features.get('batch_size', 32))
+            encoding.append(features.get('dropout', 0.0))
+            encoding.append(features.get('regularization', 0.0))
+            encoding.append(features.get('num_parameters', 0))
+            
+            # Add categorical features as one-hot encoded
+            activation = features.get('activation', 'relu')
+            if activation == 'relu':
+                encoding.extend([1, 0, 0])
+            elif activation == 'sigmoid':
+                encoding.extend([0, 1, 0])
+            else:
+                encoding.extend([0, 0, 1])
+            
+            optimizer = features.get('optimizer', 'adam')
+            if optimizer == 'adam':
+                encoding.extend([1, 0, 0])
+            elif optimizer == 'sgd':
+                encoding.extend([0, 1, 0])
+            else:
+                encoding.extend([0, 0, 1])
+            
+            # Add architecture type encoding
+            if arch_type == 'neural':
+                encoding.extend([1, 0, 0])
+            elif arch_type == 'tree':
+                encoding.extend([0, 1, 0])
+            else:
+                encoding.extend([0, 0, 1])
+            
+            return encoding
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error generating encoding: {e}", color="yellow")
+            return [1, 64, 0.001, 32, 0.0, 0.0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]
+    
+    def _decode_architecture(self, encoding: List[float]) -> Dict[str, Any]:
+        """Decode architecture from encoding."""
+        try:
+            if len(encoding) < 16:
+                # Not enough values in encoding
+                return self._create_default_architecture()
+            
+            # Decode numerical features
+            architecture = {
+                'depth': int(encoding[0]),
+                'width': int(encoding[1]),
+                'learning_rate': float(encoding[2]),
+                'batch_size': int(encoding[3]),
+                'dropout': float(encoding[4]),
+                'regularization': float(encoding[5]),
+                'num_parameters': int(encoding[6])
+            }
+            
+            # Decode categorical features
+            activation_encoding = encoding[7:10]
+            if activation_encoding[0] > 0.5:
+                architecture['activation'] = 'relu'
+            elif activation_encoding[1] > 0.5:
+                architecture['activation'] = 'sigmoid'
+            else:
+                architecture['activation'] = 'tanh'
+            
+            optimizer_encoding = encoding[10:13]
+            if optimizer_encoding[0] > 0.5:
+                architecture['optimizer'] = 'adam'
+            elif optimizer_encoding[1] > 0.5:
+                architecture['optimizer'] = 'sgd'
+            else:
+                architecture['optimizer'] = 'rmsprop'
+            
+            arch_type_encoding = encoding[13:16]
+            if arch_type_encoding[0] > 0.5:
+                architecture['architecture_type'] = 'neural'
+            elif arch_type_encoding[1] > 0.5:
+                architecture['architecture_type'] = 'tree'
+            else:
+                architecture['architecture_type'] = 'hybrid'
+            
+            return architecture
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error decoding architecture: {e}", color="yellow")
+            return self._create_default_architecture()
+    
+    def _decode_features(self, encoding: List[float]) -> Dict[str, Any]:
+        """Decode features from encoding."""
+        try:
+            # This is a simplified implementation
+            # In practice, this would decode specific features
+            return self._decode_architecture(encoding)
+            
+        except Exception as e:
+            tprint(f"⚠️ [ENCODER] Error decoding features: {e}", color="yellow")
+            return self._create_default_architecture()
+    
+    def _create_default_architecture(self) -> Dict[str, Any]:
+        """Create a default architecture."""
+        return {
+            'depth': 1,
+            'width': 64,
+            'activation': 'relu',
+            'optimizer': 'adam',
+            'learning_rate': 0.001,
+            'batch_size': 32,
+            'dropout': 0.0,
+            'regularization': 0.0,
+            'architecture_type': 'neural',
+            'num_parameters': 0
+        }
 
 
 class NeuralArchitectureEncoder(BaseArchitectureEncoder):

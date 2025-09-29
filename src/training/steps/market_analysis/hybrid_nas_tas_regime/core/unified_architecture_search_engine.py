@@ -28,9 +28,11 @@ from ..shared_utils.performance_estimators import UnifiedPerformanceEstimator
 from ..shared_utils.architecture_encoders import UnifiedArchitectureEncoder
 from ..shared_utils.constraint_systems import UnifiedConstraintValidator
 
-# Import NAS and TAS engines
-from ...nas_regime.core.enhanced_nas_engine import EnhancedNASEngine, NASSearchConfig, SearchStrategy
-from ...tas_regime.core.enhanced_tas_engine import EnhancedTASEngine, TASConfig, TreeSearchStrategy
+# Import NAS and TAS engines from centralized utilities
+from src.utils.nas_tas.core.nas_engine import NASEngine
+from src.utils.nas_tas.core.tas_engine import TASEngine
+from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
+from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
 
 logger = logging.getLogger(__name__)
 
@@ -217,37 +219,13 @@ class UnifiedArchitectureSearchEngine:
 
         return strategies
 
-    def _create_nas_engine(self) -> EnhancedNASEngine:
+    def _create_nas_engine(self) -> NASEngine:
         """Create NAS engine with unified configuration."""
-        nas_config = NASSearchConfig(
-            search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
-            population_size=self.config.population_size,
-            max_generations=self.config.max_evaluations // self.config.population_size,
-            max_evaluations=self.config.max_evaluations,
-            enable_constraint_validation=self.config.enable_constraint_validation,
-            enable_performance_estimation=self.config.enable_performance_estimation,
-            enable_architecture_encoding=self.config.enable_architecture_encoding,
-            max_memory_mb=self.config.max_memory_mb,
-            max_training_time_per_arch=self.config.max_training_time_per_arch,
-            parallel_evaluation=self.config.parallel_evaluation,
-            n_workers=self.config.n_workers
-        )
-        return EnhancedNASEngine(nas_config)
+        return NASEngine()
 
-    def _create_tas_engine(self) -> EnhancedTASEngine:
+    def _create_tas_engine(self) -> TASEngine:
         """Create TAS engine with unified configuration."""
-        tas_config = TASConfig(
-            search_strategy=TreeSearchStrategy.ENHANCED_BAYESIAN,
-            population_size=self.config.population_size,
-            max_generations=self.config.max_evaluations // self.config.population_size,
-            max_evaluations=self.config.max_evaluations,
-            enable_constraint_validation=self.config.enable_constraint_validation,
-            enable_performance_estimation=self.config.enable_performance_estimation,
-            enable_architecture_encoding=self.config.enable_architecture_encoding,
-            max_memory_mb=self.config.max_memory_mb,
-            max_training_time_per_arch=self.config.max_training_time_per_arch
-        )
-        return EnhancedTASEngine(tas_config)
+        return TASEngine()
 
     def search(self,
                train_data: Tuple[np.ndarray, np.ndarray],

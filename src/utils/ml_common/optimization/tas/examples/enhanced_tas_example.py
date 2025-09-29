@@ -25,10 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Import Enhanced TAS components
 try:
-    from ..enhanced_tas_engine import (
-        EnhancedTASEngine, EnhancedTASConfig, EnhancedTASResult,
-        create_enhanced_tas_engine, quick_enhanced_tas_search
-    )
+    from src.utils.nas_tas.core.tas_engine import TASEngine
+    from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
     ENHANCED_TAS_AVAILABLE = True
 except ImportError:
     ENHANCED_TAS_AVAILABLE = False

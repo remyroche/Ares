@@ -14,9 +14,9 @@ import time
 from datetime import datetime
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 
-# Import NAS components
-from ..core.enhanced_nas_engine import EnhancedNASEngine, NASEngineConfig
-from ..core.nas_result import NASResult
+# Import NAS components from centralized utilities
+from src.utils.nas_tas.core.nas_engine import NASEngine
+from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
 
 # Import enhanced unified utilities
 from ...hybrid_nas_tas_regime.shared_utils import (
@@ -38,7 +38,7 @@ class NASUnifiedConfig:
     """Configuration for NAS unified integration."""
     
     # NAS configuration
-    nas_config: NASEngineConfig = field(default_factory=NASEngineConfig)
+    nas_config: ArchitectureSearchConfig = field(default_factory=ArchitectureSearchConfig)
     
     # Unified utilities configuration
     economic_config: EconomicEvaluationConfig = field(default_factory=EconomicEvaluationConfig)
@@ -77,7 +77,8 @@ class NASUnifiedIntegration:
         
         # Initialize NAS engine
         tprint("🧠 [NAS_UNIFIED_INTEGRATION] Initializing NAS engine", color="yellow")
-        self.nas_engine = EnhancedNASEngine(config.nas_config)
+        self.nas_engine = NASEngine()
+        self.architecture_optimizer = ArchitectureSearchOptimizer(config.nas_config)
         
         # Initialize unified utilities
         tprint("🔧 [NAS_UNIFIED_INTEGRATION] Initializing unified utilities", color="yellow")

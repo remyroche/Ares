@@ -88,10 +88,9 @@ from src.utils.serialization_utils import (
 
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
-# Import NAS Regime components
-from src.training.steps.market_analysis.nas_regime.core.enhanced_nas_engine import (
-    EnhancedNASEngine, NASSearchConfig, SearchStrategy
-)
+# Import NAS Regime components from centralized utilities
+from src.utils.nas_tas.core.nas_engine import NASEngine
+from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
 
 from src.training.steps.market_analysis.nas_regime.core.enhanced_perfect_nas_regime_detector import (
     EnhancedPerfectNASRegimeDetector, PerfectNASConfig, NeuralArchitectureType
@@ -296,22 +295,16 @@ class UtilityIntegrationExample:
             return {'error': 'Insufficient data'}
 
         # Create NAS engine configuration
-        nas_config = NASSearchConfig(
-            search_strategy=SearchStrategy.ENHANCED_BAYESIAN,
+        nas_config = ArchitectureSearchConfig(
+            max_iterations=100,
             population_size=20,
-            max_generations=30,
-            max_evaluations=100,
-            enable_multi_objective=True,
-            enable_constraint_validation=True,
-            enable_performance_estimation=True,
-            parallel_evaluation=True,
-            n_workers=4,
-            max_memory_mb=4096,
-            enable_hardware_optimization=True
+            enable_parallel_processing=True,
+            max_workers=4
         )
 
         # Create and run NAS engine
-        nas_engine = EnhancedNASEngine(nas_config)
+        nas_engine = NASEngine()
+        architecture_optimizer = ArchitectureSearchOptimizer(nas_config)
 
         # Split data for training/validation
         split_idx = int(0.8 * len(X))

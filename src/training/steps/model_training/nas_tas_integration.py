@@ -38,9 +38,8 @@ from src.training.steps.model_training.tactician_dual_training_step import Tacti
 from src.training.steps.market_analysis.nas_regime.core.perfect_nas_config import (
     PerfectNASConfig, NeuralArchitectureType
 )
-from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_engine import (
-    TASConfig, TreeSearchStrategy
-)
+from src.utils.nas_tas.core.tas_engine import TASEngine
+from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimizer, StrategySearchConfig
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error

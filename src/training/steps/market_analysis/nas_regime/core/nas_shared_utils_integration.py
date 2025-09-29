@@ -16,6 +16,10 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import centralized NAS utilities
+from src.utils.nas_tas.core.nas_engine import NASEngine
+from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
+
 # Import shared utilities
 try:
     from src.utils.ml_common.optimization.shared_utils.evolutionary_search import (
@@ -173,56 +177,58 @@ class NASSharedUtilsIntegration:
     def search_architectures(self, train_data: Tuple[np.ndarray, np.ndarray],
                            validation_data: Tuple[np.ndarray, np.ndarray],
                            test_data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> List[NASArchitecture]:
-        """Search for optimal neural architectures using shared utilities."""
+        """Search for optimal neural architectures using centralized NAS utilities."""
         try:
-            tprint_info("🔍 Starting NAS architecture search with shared utilities...")
+            tprint_info("🔍 Starting NAS architecture search with centralized utilities...")
             
-            # Prepare data with feature engineering
-            if self.config.enable_feature_engineering and SHARED_UTILS_AVAILABLE:
-                tprint_debug("🔧 Applying feature engineering to training data...")
-                X_train, y_train = train_data
-                feature_result = self.feature_engineer.engineer_features(X_train, y_train)
-                
-                if feature_result.success:
-                    # Use enhanced features
-                    enhanced_train_data = (feature_result.enhanced_features, y_train)
-                    tprint_success(f"✅ Feature engineering completed: {feature_result.original_feature_count} -> {feature_result.enhanced_feature_count} features")
-                else:
-                    tprint_warning("⚠️ Feature engineering failed, using original data")
-                    enhanced_train_data = train_data
-            else:
-                enhanced_train_data = train_data
+            # Create search configuration
+            search_config = ArchitectureSearchConfig(
+                max_iterations=100,
+                population_size=50,
+                enable_parallel_processing=True,
+                max_workers=4
+            )
             
-            # Define objective functions for evolutionary search
-            objective_functions = self._create_objective_functions(enhanced_train_data, validation_data, test_data)
+            # Initialize centralized NAS optimizer
+            nas_engine = NASEngine()
+            architecture_optimizer = ArchitectureSearchOptimizer(search_config)
             
-            # Define parameter space for neural architectures
-            parameter_space = self._create_architecture_parameter_space()
+            # Convert data to DataFrame format for centralized optimizer
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
             
-            # Run evolutionary search
-            if SHARED_UTILS_AVAILABLE:
-                tprint_debug("🧬 Running evolutionary search for architectures...")
-                evolutionary_result = self.evolutionary_manager.optimize_with_algorithm(
-                    objective_functions, parameter_space, "nsga2"
+            # Create DataFrame for search
+            train_df = pd.DataFrame(X_train)
+            train_df['target'] = y_train
+            
+            # Define search space
+            search_space = {
+                'complexity': [1.0, 1.5, 2.0, 2.5, 3.0],
+                'depth': [1, 2, 3, 4, 5],
+                'width': [8, 16, 32, 64, 128],
+                'activation': ['relu', 'tanh', 'sigmoid']
+            }
+            
+            # Perform search using centralized optimizer
+            results = nas_engine.search_architectures(
+                data=train_df,
+                search_space=search_space,
+                optimization_method="bayesian_tpe",
+                n_trials=50
+            )
+            
+            if results and 'best_architecture' in results:
+                tprint_success("✅ Architecture search completed successfully")
+                # Convert results to NAS architecture format
+                best_arch = NASArchitecture(
+                    layers=[{'type': 'dense', 'units': results['best_architecture'].get('width', 32)}],
+                    activation=results['best_architecture'].get('activation', 'relu'),
+                    complexity=results['best_architecture'].get('complexity', 1.0)
                 )
-                
-                if evolutionary_result.success:
-                    tprint_success(f"✅ Evolutionary search completed: {len(evolutionary_result.pareto_front)} Pareto-optimal solutions")
-                    
-                    # Convert evolutionary results to NAS architectures
-                    self.best_architectures = self._convert_to_nas_architectures(evolutionary_result)
-                    
-                    # Evaluate architectures with advanced metrics
-                    if self.config.enable_advanced_metrics:
-                        self._evaluate_architectures_with_advanced_metrics()
-                    
-                    return self.best_architectures
-                else:
-                    tprint_error(f"❌ Evolutionary search failed: {evolutionary_result.error_message}")
-                    return []
+                return [best_arch]
             else:
-                tprint_warning("⚠️ Shared utilities not available, using fallback search")
-                return self._fallback_architecture_search(enhanced_train_data, validation_data, test_data)
+                tprint_warning("⚠️ No architectures found, returning empty list")
+                return []
                 
         except Exception as e:
             tprint_error(f"❌ NAS architecture search failed: {e}")

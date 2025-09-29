@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import torch
 from scipy import stats
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, mean_squared_error, mean_absolute_error, r2_score

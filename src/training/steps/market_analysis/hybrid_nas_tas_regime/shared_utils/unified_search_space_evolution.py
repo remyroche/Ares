@@ -16,6 +16,10 @@ import time
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 import random
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 from .unified_architecture_config import ArchitectureType, OptimizationObjective
 from ..core.dynamic_search_space import (

@@ -14,6 +14,10 @@ import time
 from datetime import datetime
 from enum import Enum
 import json
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # Import existing utilities
 try:
@@ -149,6 +153,8 @@ class SharedMetricsCalculator:
         Args:
             config: Shared metrics configuration
         """
+        tprint_info("Initializing Shared Metrics Calculator")
+        tprint_debug(f"Configuration: {config}")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -159,9 +165,11 @@ class SharedMetricsCalculator:
         
         if HARDWARE_UTILS_AVAILABLE and config.use_hardware_acceleration:
             try:
+                tprint_info("Initializing hardware acceleration for metrics calculation")
                 self.hardware_accelerator = get_m1_gpu_manager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
+                tprint_success("Hardware acceleration initialized for shared metrics")
                 self.logger.info("✅ Hardware acceleration initialized for shared metrics")
             except Exception as e:
                 self.logger.warning(f"⚠️ Hardware acceleration not available: {e}")

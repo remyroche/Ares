@@ -14,6 +14,10 @@ from dataclasses import dataclass
 import time
 from datetime import datetime, timedelta
 import asyncio
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -81,6 +85,8 @@ class MarketDataProcessor:
         Args:
             config: Data pipeline configuration
         """
+        tprint_info("Initializing Market Data Processor")
+        tprint_debug(f"Configuration: {config}")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
@@ -91,9 +97,11 @@ class MarketDataProcessor:
         
         if HARDWARE_ACCELERATION_AVAILABLE and config.use_hardware_acceleration:
             try:
+                tprint_info("Initializing hardware acceleration")
                 self.hardware_accelerator = get_hardware_accelerator()
                 self.memory_manager = get_memory_manager()
                 self.performance_monitor = get_performance_monitor()
+                tprint_success("Hardware acceleration initialized")
                 self.logger.info("✅ Hardware acceleration initialized for data processing")
             except Exception as e:
                 self.logger.warning(f"⚠️ Hardware acceleration not available: {e}")
@@ -120,6 +128,7 @@ class MarketDataProcessor:
         Returns:
             DataPipelineResult with loaded data and metadata
         """
+        tprint_info(f"Loading market data for {self.config.symbol} {self.config.timeframe}")
         start_time = time.time()
         
         try:
@@ -127,33 +136,47 @@ class MarketDataProcessor:
             
             # Monitor performance
             if self.performance_monitor:
+                tprint_debug("Starting performance monitoring")
                 self.performance_monitor.start_monitoring("market_data_loading")
             
             # Load data using klines_parquet manager
             if KLINES_MANAGER_AVAILABLE:
+                tprint_info("Using klines manager for data loading")
                 data = await self._load_with_klines_manager()
             else:
+                tprint_warning("Klines manager not available, using fallback data loading")
                 data = await self._load_fallback_data()
             
             if data is None or data.empty:
+                tprint_error(f"No data available for {self.config.symbol} {self.config.timeframe}")
                 raise ValueError(f"No data available for {self.config.symbol} {self.config.timeframe}")
+            
+            tprint_success(f"Data loaded successfully: {data.shape}")
             
             # Validate data
             if self.config.validation_enabled:
+                tprint_info("Validating loaded data")
                 validation_results = self._validate_data(data)
                 if not validation_results['is_valid']:
+                    tprint_warning(f"Data validation issues: {validation_results['issues']}")
                     self.logger.warning(f"⚠️ Data validation issues: {validation_results['issues']}")
+                else:
+                    tprint_success("Data validation passed")
             
             # Apply hardware optimizations if available
             if self.memory_manager:
+                tprint_info("Applying memory optimizations")
                 memory_config = self._optimize_memory_usage(data)
+                tprint_success(f"Memory optimization applied: {memory_config}")
                 self.logger.info(f"💾 Memory optimization applied: {memory_config}")
             
             processing_time = time.time() - start_time
+            tprint_performance("Market Data Loading", processing_time)
             
             # Stop performance monitoring
             perf_metrics = {}
             if self.performance_monitor:
+                tprint_debug("Stopping performance monitoring")
                 perf_metrics = self.performance_monitor.stop_monitoring("market_data_loading")
             
             metadata = {

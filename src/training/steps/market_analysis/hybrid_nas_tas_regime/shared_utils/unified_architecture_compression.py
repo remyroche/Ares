@@ -17,6 +17,10 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.nn.utils.prune as prune
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import pickle

@@ -13,6 +13,10 @@ import time
 from datetime import datetime
 from abc import ABC, abstractmethod
 import random
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +73,13 @@ class EvolutionaryAlgorithm(ABC):
         Args:
             config: Evolutionary algorithm configuration
         """
+        tprint_info("Initializing Evolutionary Algorithm")
+        tprint_debug(f"Configuration: {config}")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         random.seed(config.random_state)
         np.random.seed(config.random_state)
+        tprint_success("Evolutionary Algorithm initialized successfully")
     
     @abstractmethod
     def optimize(self, objective_functions: List[Callable], parameter_space: Dict[str, Any]) -> EvolutionaryResult:
@@ -90,9 +97,13 @@ class EvolutionaryAlgorithm(ABC):
     def _initialize_population(self, parameter_space: Dict[str, Any]) -> List[Individual]:
         """Initialize random population."""
         try:
+            tprint_info(f"Initializing population of size {self.config.population_size}")
+            tprint_debug(f"Parameter space: {parameter_space}")
             population = []
             
-            for _ in range(self.config.population_size):
+            for i in range(self.config.population_size):
+                if i % 10 == 0:  # Progress every 10 individuals
+                    tprint_progress(i, self.config.population_size, "Initializing population")
                 parameters = self._generate_random_parameters(parameter_space)
                 individual = Individual(
                     parameters=parameters,

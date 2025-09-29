@@ -738,20 +738,117 @@ class TreeModelEvaluator:
             if not SKLEARN_AVAILABLE:
                 return []
             
-            # Create a temporary model for CV
-            temp_model = EnhancedTreeModelFactory.create_model(model.config)
-            
+            # Build an unfitted estimator that mirrors the requested configuration
+            estimator = self._build_sklearn_estimator(model.config)
+
+            if estimator is None:
+                self.logger.warning("⚠️ No compatible estimator available for cross-validation")
+                return []
+
             if self.task_type == "classification":
                 scoring = 'accuracy'
             else:
                 scoring = 'neg_mean_squared_error'
-            
-            scores = cross_val_score(temp_model.model, X, y, cv=cv, scoring=scoring)
+
+            scores = cross_val_score(estimator, X, y, cv=cv, scoring=scoring)
             return scores.tolist()
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Cross-validation failed: {e}")
             return []
+
+    def _build_sklearn_estimator(self, config: TreeModelConfig):
+        """Create a cloneable estimator instance for cross-validation."""
+        model_type = config.model_type.lower()
+
+        if model_type == "xgboost":
+            if not XGBOOST_AVAILABLE:
+                return None
+
+            params = {
+                'n_estimators': config.n_estimators,
+                'max_depth': config.max_depth,
+                'learning_rate': config.learning_rate,
+                'subsample': config.subsample,
+                'colsample_bytree': config.colsample_bytree,
+                'random_state': config.random_state,
+                'n_jobs': config.n_jobs,
+                'verbosity': config.verbose,
+                'booster': config.xgb_booster,
+                'gamma': config.xgb_gamma,
+                'min_child_weight': config.xgb_min_child_weight,
+                'reg_alpha': config.xgb_reg_alpha,
+                'reg_lambda': config.xgb_reg_lambda,
+            }
+
+            if config.task_type == "classification":
+                return xgb.XGBClassifier(**params)
+            return xgb.XGBRegressor(**params)
+
+        if model_type == "lightgbm":
+            if not LIGHTGBM_AVAILABLE:
+                return None
+
+            params = {
+                'n_estimators': config.n_estimators,
+                'max_depth': config.max_depth,
+                'learning_rate': config.learning_rate,
+                'subsample': config.subsample,
+                'colsample_bytree': config.colsample_bytree,
+                'random_state': config.random_state,
+                'n_jobs': config.n_jobs,
+                'verbosity': config.verbose,
+                'boosting_type': config.lgb_boosting_type,
+                'num_leaves': config.lgb_num_leaves,
+                'min_data_in_leaf': config.lgb_min_data_in_leaf,
+                'feature_fraction': config.lgb_feature_fraction,
+                'bagging_fraction': config.lgb_bagging_fraction,
+                'bagging_freq': config.lgb_bagging_freq,
+            }
+
+            if config.task_type == "classification":
+                return lgb.LGBMClassifier(**params)
+            return lgb.LGBMRegressor(**params)
+
+        if model_type == "catboost":
+            if not CATBOOST_AVAILABLE:
+                return None
+
+            params = {
+                'iterations': config.cb_iterations,
+                'depth': config.cb_depth,
+                'learning_rate': config.cb_learning_rate,
+                'l2_leaf_reg': config.cb_l2_leaf_reg,
+                'border_count': config.cb_border_count,
+                'feature_border_type': config.cb_feature_border_type,
+                'random_seed': config.random_state,
+                'verbose': config.verbose,
+            }
+
+            if config.task_type == "classification":
+                return cb.CatBoostClassifier(**params)
+            return cb.CatBoostRegressor(**params)
+
+        if model_type == "bart":
+            if not BART_AVAILABLE:
+                return None
+
+            if config.task_type == "classification":
+                return RandomForestClassifier(
+                    n_estimators=config.bart_n_trees,
+                    max_depth=config.max_depth,
+                    random_state=config.random_state,
+                    n_jobs=config.n_jobs,
+                )
+
+            return RandomForestRegressor(
+                n_estimators=config.bart_n_trees,
+                max_depth=config.max_depth,
+                random_state=config.random_state,
+                n_jobs=config.n_jobs,
+            )
+
+        return None
 
 
 # Convenience functions

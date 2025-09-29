@@ -32,6 +32,34 @@ from ..uncertainty.uncertainty_estimation import TreeUncertaintyEstimator
 from ..regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer
 from ..adaptation.real_time_adaptation import TreeRealTimeAdapter
 from ..evaluation.tree_evaluator import TreeEvaluator
+
+# Import shared utilities
+from ...shared_utils.evolutionary_search import (
+    EvolutionaryAlgorithmManager, EvolutionaryConfig, EvolutionaryResult,
+    create_evolutionary_algorithm_manager
+)
+from ...shared_utils.feature_engineering import (
+    UnifiedFeatureEngineer, FeatureConfig, FeatureEngineeringResult,
+    create_unified_feature_engineer
+)
+from ...shared_utils.evaluation_metrics import (
+    UnifiedEvaluator, UnifiedEvaluationResult,
+    create_unified_evaluator
+)
+
+# Import enhanced TAS components
+from ..models.enhanced_tree_models import (
+    EnhancedTreeModelFactory, TreeModelConfig, TreeModelResult,
+    TreeModelEvaluator, create_model_ensemble
+)
+from ..automl.tree_automl import (
+    TreeAutoMLManager, AutoMLConfig, AutoMLResult,
+    create_tree_automl_manager
+)
+from ..evaluation.advanced_metrics import (
+    AdvancedEvaluator, AdvancedEvaluationResult,
+    create_advanced_evaluator
+)
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer
@@ -75,6 +103,46 @@ class TASEngineConfig:
     enable_regime_analysis: bool = True
     enable_real_time_adaptation: bool = True
     enable_continual_learning: bool = True
+    
+    # Enhanced TAS features
+    enable_enhanced_models: bool = True
+    enable_automl: bool = True
+    enable_evolutionary_search: bool = True
+    enable_advanced_metrics: bool = True
+    enable_feature_engineering: bool = True
+    enable_ensemble: bool = True
+    
+    # Model types for enhanced TAS
+    model_types: List[str] = field(default_factory=lambda: [
+        "xgboost", "lightgbm", "catboost", "random_forest", "extra_trees"
+    ])
+    
+    # AutoML settings
+    automl_method: str = "optuna"  # "optuna", "grid", "random", "bayesian"
+    max_automl_trials: int = 100
+    automl_timeout: int = 3600
+    
+    # Evolutionary search settings
+    evolutionary_algorithm: str = "nsga2"  # "nsga2", "spea2", "ga"
+    population_size: int = 50
+    max_generations: int = 100
+    
+    # Advanced evaluation settings
+    evaluation_metrics: List[str] = field(default_factory=lambda: [
+        "risk_adjusted", "regime_aware", "economic_significance", "trading_viability"
+    ])
+    
+    # Feature engineering settings
+    feature_selection_method: str = "mutual_info"  # "mutual_info", "f_score", "rfe", "embedded"
+    max_features: int = 100
+    feature_importance_threshold: float = 0.01
+    
+    # Multi-objective optimization
+    enable_multi_objective: bool = True
+    objectives: List[str] = field(default_factory=lambda: [
+        "accuracy", "robustness", "efficiency", "interpretability"
+    ])
+    objective_weights: List[float] = field(default_factory=lambda: [0.4, 0.2, 0.2, 0.2])
     
     # Search strategy
     search_strategy: SearchStrategy = SearchStrategy.HYBRID
@@ -127,6 +195,10 @@ class TreeArchitectureSearchEngine:
         # Initialize advanced components
         tprint_info("⚡ Initializing advanced components...")
         self._initialize_advanced_components()
+        
+        # Initialize enhanced TAS components
+        tprint_info("🚀 Initializing enhanced TAS components...")
+        self._initialize_enhanced_components()
         
         # Search state
         tprint_debug("📊 Initializing search state...")
@@ -191,6 +263,77 @@ class TreeArchitectureSearchEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Advanced components initialization failed: {e}")
+            raise
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced TAS components."""
+        tprint_debug("🔧 Initializing enhanced TAS components...")
+        try:
+            # Enhanced models
+            if self.config.enable_enhanced_models:
+                tprint_debug("🌳 Initializing enhanced tree models...")
+                self.enhanced_model_factory = EnhancedTreeModelFactory()
+                self.enhanced_model_evaluator = TreeModelEvaluator()
+                tprint_success("✅ Enhanced tree models initialized")
+                self.logger.info("✅ Enhanced tree models initialized")
+            
+            # AutoML
+            if self.config.enable_automl:
+                tprint_debug("🤖 Initializing AutoML...")
+                automl_config = AutoMLConfig(
+                    optimization_method=self.config.automl_method,
+                    max_trials=self.config.max_automl_trials,
+                    timeout_seconds=self.config.automl_timeout,
+                    model_types=self.config.model_types,
+                    enable_ensemble=self.config.enable_ensemble
+                )
+                self.automl_manager = create_tree_automl_manager(automl_config)
+                tprint_success("✅ AutoML initialized")
+                self.logger.info("✅ AutoML initialized")
+            
+            # Evolutionary search
+            if self.config.enable_evolutionary_search:
+                tprint_debug("🧬 Initializing evolutionary search...")
+                evolutionary_config = EvolutionaryConfig(
+                    population_size=self.config.population_size,
+                    max_generations=self.config.max_generations,
+                    use_nsga2=self.config.evolutionary_algorithm == "nsga2",
+                    use_spea2=self.config.evolutionary_algorithm == "spea2",
+                    use_genetic_algorithm=self.config.evolutionary_algorithm == "ga"
+                )
+                self.evolutionary_manager = create_evolutionary_algorithm_manager(evolutionary_config)
+                tprint_success("✅ Evolutionary search initialized")
+                self.logger.info("✅ Evolutionary search initialized")
+            
+            # Advanced evaluation
+            if self.config.enable_advanced_metrics:
+                tprint_debug("📊 Initializing advanced evaluation...")
+                self.advanced_evaluator = create_advanced_evaluator()
+                tprint_success("✅ Advanced evaluation initialized")
+                self.logger.info("✅ Advanced evaluation initialized")
+            
+            # Feature engineering
+            if self.config.enable_feature_engineering:
+                tprint_debug("🔧 Initializing feature engineering...")
+                feature_config = FeatureConfig(
+                    enable_technical_indicators=True,
+                    enable_feature_selection=True,
+                    feature_selection_method=self.config.feature_selection_method,
+                    max_features=self.config.max_features,
+                    feature_importance_threshold=self.config.feature_importance_threshold
+                )
+                self.feature_engineer = create_unified_feature_engineer(feature_config)
+                tprint_success("✅ Feature engineering initialized")
+                self.logger.info("✅ Feature engineering initialized")
+            
+            # Unified evaluation
+            tprint_debug("📊 Initializing unified evaluation...")
+            self.unified_evaluator = create_unified_evaluator()
+            tprint_success("✅ Unified evaluation initialized")
+            self.logger.info("✅ Unified evaluation initialized")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced components initialization failed: {e}")
             raise
     
     def _initialize_search_strategies(self):
@@ -335,6 +478,26 @@ class TreeArchitectureSearchEngine:
             if self.config.enable_real_time_adaptation:
                 search_env['real_time_adapter'] = self.real_time_adapter
                 search_env['performance_monitor'] = self.performance_monitor
+            
+            # Add enhanced TAS components if enabled
+            if self.config.enable_enhanced_models:
+                search_env['enhanced_model_factory'] = self.enhanced_model_factory
+                search_env['enhanced_model_evaluator'] = self.enhanced_model_evaluator
+            
+            if self.config.enable_automl:
+                search_env['automl_manager'] = self.automl_manager
+            
+            if self.config.enable_evolutionary_search:
+                search_env['evolutionary_manager'] = self.evolutionary_manager
+            
+            if self.config.enable_advanced_metrics:
+                search_env['advanced_evaluator'] = self.advanced_evaluator
+            
+            # Add shared utilities
+            if self.config.enable_feature_engineering:
+                search_env['feature_engineer'] = self.feature_engineer
+            
+            search_env['unified_evaluator'] = self.unified_evaluator
             
             return search_env
             

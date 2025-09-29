@@ -234,12 +234,13 @@ class DataQualityFramework:
         self.logger.info('🔧 Unified Data Quality Framework initialized (singleton)')
         self._initialized = True
         
-        # Add timing information
+        # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
             from src.utils.tprint import tprint_performance
             tprint_performance("DataQualityFramework initialization", duration)
         except ImportError:
+            # Fallback to basic logging (Numba-safe)
             self.logger.info(f"⏱️ DataQualityFramework initialized in {duration:.3f}s")
 
     def validate_dataframe_quality(self, df: pd.DataFrame, context: str = '') -> QualityResult:

@@ -298,12 +298,13 @@ class DataCleaner:
         # Reduce verbosity of initialization logging
         self.logger.debug(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
         
-        # Add timing information
+        # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
             from src.utils.tprint import tprint_performance
             tprint_performance(f"DataCleaner({data_type}) initialization", duration)
         except ImportError:
+            # Fallback to basic logging (Numba-safe)
             self.logger.info(f"⏱️ DataCleaner({data_type}) initialized in {duration:.3f}s")
 
     async def handle_missing_values_intelligently(

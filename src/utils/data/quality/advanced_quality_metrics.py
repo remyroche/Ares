@@ -82,12 +82,13 @@ class AdvancedQualityMetrics:
         
         self.logger.info("📊 AdvancedQualityMetrics initialized with tolerant parameters")
         
-        # Add timing information
+        # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
             from src.utils.tprint import tprint_performance
             tprint_performance("AdvancedQualityMetrics initialization", duration)
         except ImportError:
+            # Fallback to basic logging (Numba-safe)
             self.logger.info(f"⏱️ AdvancedQualityMetrics initialized in {duration:.3f}s")
     
     def comprehensive_quality_assessment(self, 

@@ -50,12 +50,13 @@ class DataStreamingManager:
         self.logger.info(f'🚀 DataStreamingManager initialized (singleton): chunk_size={chunk_size}, memory_threshold={memory_threshold}')
         self._initialized = True
         
-        # Add timing information
+        # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
             from src.utils.tprint import tprint_performance
             tprint_performance("DataStreamingManager initialization", duration)
         except ImportError:
+            # Fallback to basic logging (Numba-safe)
             self.logger.info(f"⏱️ DataStreamingManager initialized in {duration:.3f}s")
 
 

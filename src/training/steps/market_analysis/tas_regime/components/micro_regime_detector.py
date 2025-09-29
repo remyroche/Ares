@@ -52,9 +52,21 @@ class MicroRegimeDetector:
             sensitivity: Detection sensitivity (0-1)
             detection_threshold: Minimum confidence for detection
         """
+        tprint_info("🔬 Initializing Micro Regime Detector")
+        tprint_debug(f"Sensitivity: {sensitivity}")
+        tprint_debug(f"Detection threshold: {detection_threshold}")
+        
         self.sensitivity = sensitivity
         self.detection_threshold = detection_threshold
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'detection_time': 0.0,
+            'analysis_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Detection parameters
         self.breakout_params = {

@@ -188,9 +188,22 @@ class TASRegimeDetector:
         """Initialize TAS Regime Detector with enhanced utility integration."""
         tprint_info("🚀 Initializing TAS Regime Detector")
         tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Primary architecture: {config.primary_architecture}")
+        tprint_debug(f"Number of regimes: {config.n_regimes}")
+        tprint_debug(f"Tree depth: {config.tree_depth}")
+        tprint_debug(f"Number of estimators: {config.n_estimators}")
         
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'data_preparation_time': 0.0,
+            'regime_detection_time': 0.0,
+            'evaluation_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Initialize enhanced utility tools
         tprint_info("🔧 Initializing enhanced utility tools...")
@@ -578,31 +591,59 @@ class TASRegimeDetector:
             TASRegimeResult with regime detection results
         """
         start_time = time.time()
+        tprint_info("🚀 Starting TAS regime detection")
+        tprint_debug(f"Input data type: {type(market_data)}")
+        tprint_debug(f"Data shape: {market_data.shape if hasattr(market_data, 'shape') else 'N/A'}")
+        tprint_debug(f"Optimize performance: {optimize_performance}")
+        tprint_debug(f"PatchTST enhancement: {enable_patchtst_enhancement}")
 
         try:
             self.logger.info("🚀 Starting TAS regime detection")
             tprint("🌳 [TAS_TRAINING] Starting tree-based regime detection system", color="green")
+            tprint_info(f"📊 [TAS_TRAINING] Processing {len(market_data)} data points")
+            tprint_info(f"⚙️ [TAS_TRAINING] Configuration: {self.config.n_regimes} regimes, {self.config.tree_depth} depth")
 
             # Prepare data with basic processing
             tprint("🔧 [TAS_TRAINING] Preparing data for tree-based analysis", color="cyan")
+            data_prep_start = time.time()
             processed_data, processed_timestamps = self._prepare_and_enhance_data(
                 market_data, timestamps, enable_patchtst=False
             )
+            data_prep_time = time.time() - data_prep_start
+            self.performance_metrics['data_preparation_time'] = data_prep_time
+            
             tprint(f"📊 [TAS_TRAINING] Data prepared: {processed_data.shape[0]} samples, {processed_data.shape[1]} features", color="green")
+            tprint_performance(f"Data preparation time: {data_prep_time:.3f}s", color="blue")
+            tprint_debug(f"Processed data shape: {processed_data.shape}")
+            tprint_debug(f"Data type: {processed_data.dtype}")
+            tprint_debug(f"Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
 
             # Step 1: Simple regime clustering
             self.logger.info("🎯 Performing simple regime clustering...")
             tprint("🎯 [TAS_TRAINING] Performing regime clustering", color="green")
             tprint_debug(f"   Data shape: {processed_data.shape}")
             tprint_debug(f"   Target regimes: {self.config.n_regimes}")
+            tprint_debug(f"   Tree depth: {self.config.tree_depth}")
+            tprint_debug(f"   Number of estimators: {self.config.n_estimators}")
 
             clustering_start = time.time()
             regime_predictions, regime_probabilities = self._perform_tree_based_clustering(processed_data)
             clustering_time = time.time() - clustering_start
+            self.performance_metrics['regime_detection_time'] = clustering_time
 
-            tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {len(np.unique(regime_predictions))} regimes", color="green")
+            unique_regimes = len(np.unique(regime_predictions))
+            regime_distribution = np.bincount(regime_predictions)
+            
+            tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {unique_regimes} regimes", color="green")
             tprint_performance(f"   Clustering execution time: {clustering_time:.3f}s", color="blue")
-            tprint_debug(f"   Unique regime distribution: {np.bincount(regime_predictions)}")
+            tprint_debug(f"   Unique regime distribution: {regime_distribution}")
+            tprint_debug(f"   Regime probabilities shape: {regime_probabilities.shape}")
+            tprint_debug(f"   Regime probabilities range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}")
+            
+            # Log regime statistics
+            for i, count in enumerate(regime_distribution):
+                percentage = (count / len(regime_predictions)) * 100
+                tprint_debug(f"   Regime {i}: {count} samples ({percentage:.1f}%)")
 
             # Create tree_results for simplified path
             tree_results = {
@@ -622,21 +663,30 @@ class TASRegimeDetector:
             # Step 4: Basic evaluation scores
             self.logger.info("💰 Performing basic evaluation...")
             tprint("💰 [TAS_TRAINING] Calculating economic significance and trading viability", color="green")
+            
+            eval_start = time.time()
 
             # Simple evaluation scores
             tprint_debug("   Generating economic significance scores...")
             economic_scores = np.random.uniform(0.5, 0.9, len(processed_data))
             tprint_debug(f"   Economic scores range: {np.min(economic_scores):.3f} - {np.max(economic_scores):.3f}")
+            tprint_debug(f"   Economic scores mean: {np.mean(economic_scores):.3f}")
 
             tprint_debug("   Generating trading viability scores...")
             trading_scores = np.random.uniform(0.5, 0.9, len(processed_data))
             tprint_debug(f"   Trading scores range: {np.min(trading_scores):.3f} - {np.max(trading_scores):.3f}")
+            tprint_debug(f"   Trading scores mean: {np.mean(trading_scores):.3f}")
 
             tprint_debug("   Generating regime stability scores...")
             stability_scores = np.random.uniform(0.6, 0.9, len(processed_data))
             tprint_debug(f"   Stability scores range: {np.min(stability_scores):.3f} - {np.max(stability_scores):.3f}")
+            tprint_debug(f"   Stability scores mean: {np.mean(stability_scores):.3f}")
 
+            eval_time = time.time() - eval_start
+            self.performance_metrics['evaluation_time'] = eval_time
+            
             tprint_success("✅ [TAS_TRAINING] Evaluation scores calculated", color="green")
+            tprint_performance(f"Evaluation time: {eval_time:.3f}s", color="blue")
 
             # Simple transition probabilities
             tprint_debug("   Calculating regime transition probabilities...")
@@ -644,6 +694,7 @@ class TASRegimeDetector:
             transition_probs = np.eye(n_regimes) * 0.8 + np.ones((n_regimes, n_regimes)) * 0.2 / n_regimes
             tprint_debug(f"   Transition matrix shape: {transition_probs.shape}")
             tprint_debug(f"   Self-transition probability: {np.mean(np.diag(transition_probs)):.3f}")
+            tprint_debug(f"   Cross-transition probability: {np.mean(transition_probs[~np.eye(transition_probs.shape[0], dtype=bool)]):.3f}")
 
             # Skip uncertainty and meta-learning
             uncertainty_estimates = None
@@ -652,9 +703,19 @@ class TASRegimeDetector:
             # Calculate regime count
             regime_count = len(np.unique(adapted_results['regime_predictions']))
             tprint_debug(f"   Final regime count: {regime_count}")
+            tprint_debug(f"   Regime distribution: {np.bincount(adapted_results['regime_predictions'])}")
 
             # Create result
             execution_time = time.time() - start_time
+            self.performance_metrics['total_execution_time'] = execution_time
+            
+            tprint_debug("Creating TASRegimeResult object...")
+            tprint_debug(f"   Regime predictions shape: {adapted_results['regime_predictions'].shape}")
+            tprint_debug(f"   Regime probabilities shape: {adapted_results['regime_probabilities'].shape}")
+            tprint_debug(f"   Economic scores shape: {economic_scores.shape}")
+            tprint_debug(f"   Trading scores shape: {trading_scores.shape}")
+            tprint_debug(f"   Stability scores shape: {stability_scores.shape}")
+            
             result = TASRegimeResult(
                 success=True,
                 regime_predictions=adapted_results['regime_predictions'],
@@ -679,6 +740,7 @@ class TASRegimeDetector:
                     'data_shape': processed_data.shape,
                     'optimization_enabled': optimize_performance,
                     'patchtst_enhancement': enable_patchtst_enhancement,
+                    'performance_metrics': self.performance_metrics,
                     'tool_integration': {
                         'hardware': HARDWARE_AVAILABLE,
                         'matrix_ops': MATRIX_OPS_AVAILABLE,
@@ -693,6 +755,17 @@ class TASRegimeDetector:
             tprint_success(f"🎉 [TAS_TRAINING] Regime detection completed successfully in {execution_time:.2f}s", color="green")
             tprint_info(f"📊 [TAS_TRAINING] Final results: {len(np.unique(result.regime_predictions))} regimes detected", color="blue")
             tprint_performance(f"💫 [TAS_TRAINING] Total execution time: {execution_time:.2f}s", color="cyan")
+            
+            # Log performance summary
+            tprint_info("📊 Performance Summary:")
+            tprint_info(f"   Data points processed: {len(processed_data)}")
+            tprint_info(f"   Features: {processed_data.shape[1]}")
+            tprint_info(f"   Regimes detected: {regime_count}")
+            tprint_info(f"   Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
+            tprint_info(f"   Throughput: {len(processed_data) / execution_time:.0f} points/sec")
+            tprint_performance(f"   Data preparation: {data_prep_time:.3f}s", color="blue")
+            tprint_performance(f"   Regime detection: {clustering_time:.3f}s", color="blue")
+            tprint_performance(f"   Evaluation: {eval_time:.3f}s", color="blue")
 
             self._log_tas_results_summary(result)
 
@@ -701,6 +774,17 @@ class TASRegimeDetector:
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ TAS regime detection failed: {e}")
+            tprint_error(f"❌ [TAS_TRAINING] Regime detection failed: {e}", color="red")
+            tprint_error(f"   Execution time before failure: {execution_time:.3f}s", color="red")
+            tprint_error(f"   Error type: {type(e).__name__}", color="red")
+            tprint_error(f"   Error details: {str(e)}", color="red")
+            
+            # Log performance metrics even on failure
+            if hasattr(self, 'performance_metrics'):
+                tprint_error(f"   Performance metrics: {self.performance_metrics}", color="red")
+                tprint_error(f"   Data preparation time: {self.performance_metrics.get('data_preparation_time', 0):.3f}s", color="red")
+                tprint_error(f"   Regime detection time: {self.performance_metrics.get('regime_detection_time', 0):.3f}s", color="red")
+                tprint_error(f"   Evaluation time: {self.performance_metrics.get('evaluation_time', 0):.3f}s", color="red")
 
             return TASRegimeResult(
                 success=False,

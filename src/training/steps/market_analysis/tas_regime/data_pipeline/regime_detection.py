@@ -130,20 +130,36 @@ class RegimeDetector:
         Args:
             config: Regime detection configuration
         """
+        tprint_info("🔍 Initializing Regime Detection Pipeline")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Detection method: {config.detection_method.value}")
+        tprint_debug(f"Number of regimes: {config.n_regimes}")
+        tprint_debug(f"Qualification enabled: {config.enable_regime_qualification}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'data_preparation_time': 0.0,
+            'regime_detection_time': 0.0,
+            'evaluation_time': 0.0,
+            'total_execution_time': 0.0
+        }
         
         # Initialize regime detection components
         self.regime_detector = None
         self.regime_qualifier = None
         
         # Initialize available components
+        tprint_debug("Initializing regime detection components...")
         self._initialize_components()
         
         self.logger.info("✅ Regime Detector initialized")
         self.logger.info(f"📊 Detection method: {config.detection_method.value}")
         self.logger.info(f"📊 Number of regimes: {config.n_regimes}")
         self.logger.info(f"📊 Qualification enabled: {config.enable_regime_qualification}")
+        tprint_success("✅ Regime Detection Pipeline initialized successfully")
     
     def _initialize_components(self):
         """Initialize available regime detection components."""
@@ -183,17 +199,29 @@ class RegimeDetector:
         Returns:
             Regime detection result
         """
+        tprint_info("🚀 Starting regime detection")
+        tprint_debug(f"Input data shape: {data.shape}")
+        tprint_debug(f"Features provided: {features is not None}")
+        tprint_debug(f"Detection method: {self.config.detection_method.value}")
+        tprint_debug(f"Number of regimes: {self.config.n_regimes}")
+        
         self.logger.info("🚀 Starting regime detection")
         start_time = datetime.now()
         
         try:
             # Prepare data for regime detection
+            tprint_debug("Preparing data for regime detection...")
             regime_data = self._prepare_regime_data(data, features)
+            tprint_debug(f"Regime data shape: {regime_data.shape}")
+            tprint_debug(f"Regime data type: {regime_data.dtype}")
             
             # Detect regimes
+            tprint_debug(f"Using detection method: {self.config.detection_method.value}")
             if self.config.detection_method == RegimeDetectionMethod.UNSUPERVISED and self.regime_detector:
+                tprint_debug("Using unsupervised regime detection...")
                 regime_labels, regime_centers, regime_statistics = self._detect_unsupervised_regimes(regime_data)
             else:
+                tprint_debug("Using basic regime detection...")
                 regime_labels, regime_centers, regime_statistics = self._detect_basic_regimes(regime_data)
             
             # Qualify regimes
@@ -274,29 +302,45 @@ class RegimeDetector:
     
     def _prepare_regime_data(self, data: pd.DataFrame, features: Optional[pd.DataFrame]) -> pd.DataFrame:
         """Prepare data for regime detection."""
+        tprint_debug("Preparing data for regime detection...")
+        tprint_debug(f"Data shape: {data.shape}")
+        tprint_debug(f"Features provided: {features is not None}")
+        if features is not None:
+            tprint_debug(f"Features shape: {features.shape}")
+        
+        prep_start = time.time()
+        
         try:
             if features is not None:
                 # Use provided features
+                tprint_debug("Using provided features...")
                 regime_data = features.copy()
+                tprint_debug(f"Using features shape: {regime_data.shape}")
             else:
                 # Generate basic features for regime detection
+                tprint_debug("Generating basic features for regime detection...")
                 regime_data = pd.DataFrame(index=data.index)
                 
                 # Price features
                 if 'close' in data.columns:
+                    tprint_debug("Generating price features...")
                     regime_data['price_return'] = data['close'].pct_change()
                     regime_data['price_volatility'] = data['close'].rolling(window=20).std()
                     regime_data['price_trend'] = data['close'].rolling(window=20).apply(
                         lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 20 else np.nan
                     )
+                    tprint_debug("Price features generated")
                 
                 # Volume features
                 if 'volume' in data.columns:
+                    tprint_debug("Generating volume features...")
                     regime_data['volume_return'] = data['volume'].pct_change()
                     regime_data['volume_volatility'] = data['volume'].rolling(window=20).std()
+                    tprint_debug("Volume features generated")
                 
                 # Technical indicators
                 if 'close' in data.columns:
+                    tprint_debug("Generating technical indicators...")
                     # RSI
                     delta = data['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -308,18 +352,39 @@ class RegimeDetector:
                     regime_data['sma_20'] = data['close'].rolling(window=20).mean()
                     regime_data['sma_50'] = data['close'].rolling(window=50).mean()
                     regime_data['sma_ratio'] = regime_data['sma_20'] / regime_data['sma_50']
+                    
+                    tprint_debug("Technical indicators generated")
             
             # Fill missing values
+            tprint_debug("Filling missing values...")
             regime_data = regime_data.fillna(regime_data.median())
+            tprint_debug(f"Data after filling missing values: {regime_data.shape}")
+            tprint_debug(f"Missing values: {regime_data.isnull().sum().sum()}")
+            
+            prep_time = time.time() - prep_start
+            
+            tprint_debug(f"Data preparation completed in {prep_time:.3f}s")
+            tprint_debug(f"Final regime data shape: {regime_data.shape}")
+            tprint_debug(f"Regime data columns: {list(regime_data.columns)}")
             
             return regime_data
             
         except Exception as e:
+            prep_time = time.time() - prep_start
             self.logger.warning(f"⚠️ Regime data preparation failed: {e}")
+            tprint_error(f"❌ Regime data preparation failed: {e}", color="red")
+            tprint_error(f"   Preparation time before failure: {prep_time:.3f}s", color="red")
+            tprint_error(f"   Returning original data", color="red")
+            
             return data
     
     def _detect_unsupervised_regimes(self, regime_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[int, np.ndarray], Dict[int, Dict[str, Any]]]:
         """Detect regimes using unsupervised methods."""
+        tprint_debug("Detecting regimes using unsupervised methods...")
+        tprint_debug(f"Regime data shape: {regime_data.shape}")
+        
+        detection_start = time.time()
+        
         try:
             # Use the unsupervised regime detector
             regime_result = self.regime_detector.detect_regimes(regime_data)
@@ -328,44 +393,90 @@ class RegimeDetector:
             regime_centers = regime_result.get('regime_centers', {})
             regime_statistics = regime_result.get('regime_statistics', {})
             
+            detection_time = time.time() - detection_start
+            
+            tprint_debug(f"Unsupervised regime detection completed in {detection_time:.3f}s")
+            tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+            tprint_debug(f"Regime centers: {len(regime_centers)}")
+            tprint_debug(f"Regime statistics: {len(regime_statistics)}")
+            
+            # Log detailed regime information
+            for regime_id, stats in regime_statistics.items():
+                tprint_debug(f"Regime {regime_id}: {stats}")
+            
             return regime_labels, regime_centers, regime_statistics
             
         except Exception as e:
+            detection_time = time.time() - detection_start
             self.logger.warning(f"⚠️ Unsupervised regime detection failed: {e}")
+            tprint_error(f"❌ Unsupervised regime detection failed: {e}", color="red")
+            tprint_error(f"   Detection time before failure: {detection_time:.3f}s", color="red")
+            tprint_error(f"   Falling back to basic regime detection", color="red")
+            
+            # Fallback to basic regime detection
+            tprint_debug("Attempting fallback to basic regime detection...")
             return self._detect_basic_regimes(regime_data)
     
     def _detect_basic_regimes(self, regime_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[int, np.ndarray], Dict[int, Dict[str, Any]]]:
         """Detect regimes using basic methods."""
+        tprint_debug("Detecting basic regimes using sequential assignment")
+        tprint_debug(f"Regime data shape: {regime_data.shape}")
+        tprint_debug(f"Number of regimes: {self.config.n_regimes}")
+        
+        detection_start = time.time()
+        
         try:
             # KMeans clustering removed - will be handled in subsequent step
             from sklearn.preprocessing import StandardScaler
             
             # Prepare data
+            tprint_debug("Preparing data for regime detection...")
             numeric_cols = regime_data.select_dtypes(include=[np.number]).columns
             regime_data_numeric = regime_data[numeric_cols].fillna(0)
             
+            tprint_debug(f"Numeric columns: {len(numeric_cols)}")
+            tprint_debug(f"Data shape after preparation: {regime_data_numeric.shape}")
+            
             # Scale data
+            tprint_debug("Scaling data...")
             scaler = StandardScaler()
             regime_data_scaled = scaler.fit_transform(regime_data_numeric)
+            
+            tprint_debug(f"Scaled data shape: {regime_data_scaled.shape}")
+            tprint_debug(f"Scaled data range: {np.min(regime_data_scaled):.3f} to {np.max(regime_data_scaled):.3f}")
             
             # Perform clustering
             # Simple regime assignment instead of KMeans
             n_samples = len(regime_data_numeric)
             regime_size = n_samples // self.config.n_regimes
+            
+            tprint_debug(f"Number of samples: {n_samples}")
+            tprint_debug(f"Regime size: {regime_size}")
+            
             regime_labels = np.array([i // regime_size for i in range(n_samples)])
             regime_labels = np.minimum(regime_labels, self.config.n_regimes - 1)
+            
+            tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+            tprint_debug(f"Unique regime labels: {len(np.unique(regime_labels))}")
+            tprint_debug(f"Regime label distribution: {np.bincount(regime_labels)}")
             # regime_labels already assigned above
             
             # Calculate regime centers
+            tprint_debug("Calculating regime centers...")
             regime_centers = {}
             for i in range(self.config.n_regimes):
                 regime_mask = regime_labels == i
                 if np.sum(regime_mask) > 0:
                     regime_centers[i] = np.mean(regime_data_scaled[regime_mask], axis=0)
+                    tprint_debug(f"Regime {i} center: {regime_centers[i]}")
                 else:
                     regime_centers[i] = np.zeros(regime_data_scaled.shape[1])
+                    tprint_debug(f"Regime {i} center (zero): {regime_centers[i]}")
+            
+            tprint_debug(f"Regime centers calculated for {len(regime_centers)} regimes")
             
             # Calculate regime statistics
+            tprint_debug("Calculating regime statistics...")
             regime_statistics = {}
             for i in range(self.config.n_regimes):
                 regime_mask = regime_labels == i
@@ -379,21 +490,55 @@ class RegimeDetector:
                     'min': regime_data_subset.min().to_dict(),
                     'max': regime_data_subset.max().to_dict()
                 }
+                
+                tprint_debug(f"Regime {i} statistics: count={regime_statistics[i]['count']}, percentage={regime_statistics[i]['percentage']:.3f}")
+            
+            detection_time = time.time() - detection_start
+            
+            tprint_debug(f"Basic regime detection completed in {detection_time:.3f}s")
+            tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+            tprint_debug(f"Regime centers: {len(regime_centers)}")
+            tprint_debug(f"Regime statistics: {len(regime_statistics)}")
+            
+            # Log detailed regime information
+            for regime_id, stats in regime_statistics.items():
+                tprint_debug(f"Regime {regime_id}: {stats}")
             
             return regime_labels, regime_centers, regime_statistics
             
         except Exception as e:
+            detection_time = time.time() - detection_start
             self.logger.warning(f"⚠️ Basic regime detection failed: {e}")
+            tprint_error(f"❌ Basic regime detection failed: {e}", color="red")
+            tprint_error(f"   Detection time before failure: {detection_time:.3f}s", color="red")
+            tprint_error(f"   Falling back to simple regime assignment", color="red")
+            
             # Fallback to simple regime assignment
             regime_labels = np.zeros(len(regime_data))
             regime_centers = {0: np.zeros(regime_data.shape[1])}
             regime_statistics = {0: {'count': len(regime_data), 'percentage': 1.0}}
+            
+            tprint_debug(f"Fallback regime labels shape: {regime_labels.shape}")
+            tprint_debug(f"Fallback regime centers: {len(regime_centers)}")
+            tprint_debug(f"Fallback regime statistics: {regime_statistics}")
+            
+            tprint_debug("Fallback regime assignment completed")
+            tprint_debug(f"All data points assigned to regime 0")
+            tprint_debug(f"Fallback regime center shape: {regime_centers[0].shape}")
             
             return regime_labels, regime_centers, regime_statistics
     
     def _analyze_regimes(self, regime_labels: np.ndarray, regime_centers: Dict[int, np.ndarray], 
                         regime_statistics: Dict[int, Dict[str, Any]], data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze detected regimes."""
+        tprint_debug("Analyzing detected regimes...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Regime centers: {len(regime_centers)}")
+        tprint_debug(f"Regime statistics: {len(regime_statistics)}")
+        tprint_debug(f"Data shape: {data.shape}")
+        
+        analysis_start = time.time()
+        
         try:
             analysis = {
                 'transitions': [],
@@ -405,31 +550,63 @@ class RegimeDetector:
             
             # Analyze regime transitions
             if self.config.regime_transitions:
+                tprint_debug("Analyzing regime transitions...")
                 transitions = self._analyze_regime_transitions(regime_labels)
                 analysis['transitions'] = transitions
+                tprint_debug(f"Regime transitions: {len(transitions)}")
             
             # Analyze regime stability
             if self.config.regime_stability:
+                tprint_debug("Analyzing regime stability...")
                 stability = self._analyze_regime_stability(regime_labels, regime_centers)
                 analysis['stability'] = stability
+                tprint_debug(f"Regime stability: {stability}")
             
             # Analyze regime persistence
             if self.config.regime_persistence:
+                tprint_debug("Analyzing regime persistence...")
                 persistence = self._analyze_regime_persistence(regime_labels)
                 analysis['persistence'] = persistence
+                tprint_debug(f"Regime persistence: {persistence}")
             
             # Analyze feature importance
+            tprint_debug("Analyzing feature importance...")
             feature_importance = self._analyze_feature_importance(regime_labels, data)
             analysis['feature_importance'] = feature_importance
+            tprint_debug(f"Feature importance: {feature_importance}")
             
             # Analyze feature correlations
+            tprint_debug("Analyzing feature correlations...")
             feature_correlations = self._analyze_feature_correlations(regime_labels, data)
             analysis['feature_correlations'] = feature_correlations
+            tprint_debug(f"Feature correlations shape: {feature_correlations.shape}")
+            
+            analysis_time = time.time() - analysis_start
+            
+            tprint_debug(f"Regime analysis completed in {analysis_time:.3f}s")
+            tprint_debug(f"Analysis results: {list(analysis.keys())}")
+            
+            # Log detailed analysis results
+            for key, value in analysis.items():
+                if isinstance(value, (int, float)):
+                    tprint_debug(f"Analysis {key}: {value}")
+                elif isinstance(value, dict):
+                    tprint_debug(f"Analysis {key}: {len(value)} items")
+                else:
+                    tprint_debug(f"Analysis {key}: {type(value)}")
             
             return analysis
             
         except Exception as e:
+            analysis_time = time.time() - analysis_start
             self.logger.warning(f"⚠️ Regime analysis failed: {e}")
+            tprint_error(f"❌ Regime analysis failed: {e}", color="red")
+            tprint_error(f"   Analysis time before failure: {analysis_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty analysis results", color="red")
+            
+            tprint_debug("Returning empty analysis results")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return {
                 'transitions': [],
                 'stability': {},
@@ -440,6 +617,11 @@ class RegimeDetector:
     
     def _analyze_regime_transitions(self, regime_labels: np.ndarray) -> List[Dict[str, Any]]:
         """Analyze regime transitions."""
+        tprint_debug("Analyzing regime transitions...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        
+        transition_start = time.time()
+        
         try:
             transitions = []
             
@@ -452,14 +634,40 @@ class RegimeDetector:
                         'transition_type': f"regime_{int(regime_labels[i-1])}_to_regime_{int(regime_labels[i])}"
                     })
             
+            transition_time = time.time() - transition_start
+            
+            tprint_debug(f"Regime transition analysis completed in {transition_time:.3f}s")
+            tprint_debug(f"Number of transitions: {len(transitions)}")
+            tprint_debug(f"Transitions: {transitions}")
+            
+            transition_time = time.time() - transition_start
+            
+            tprint_debug(f"Regime transition analysis completed in {transition_time:.3f}s")
+            tprint_debug(f"Number of transitions: {len(transitions)}")
+            tprint_debug(f"Transitions: {transitions}")
+            
             return transitions
             
         except Exception as e:
+            transition_time = time.time() - transition_start
             self.logger.warning(f"⚠️ Regime transition analysis failed: {e}")
+            tprint_error(f"❌ Regime transition analysis failed: {e}", color="red")
+            tprint_error(f"   Transition analysis time before failure: {transition_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty transitions list", color="red")
+            
+            tprint_debug("Returning empty transitions list")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return []
     
     def _analyze_regime_stability(self, regime_labels: np.ndarray, regime_centers: Dict[int, np.ndarray]) -> Dict[int, float]:
         """Analyze regime stability."""
+        tprint_debug("Analyzing regime stability...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Regime centers: {len(regime_centers)}")
+        
+        stability_start = time.time()
+        
         try:
             stability = {}
             
@@ -470,15 +678,38 @@ class RegimeDetector:
                 
                 # Calculate stability as ratio of regime duration to total duration
                 stability[regime_id] = regime_duration / total_duration
+                tprint_debug(f"Regime {regime_id} stability: {stability[regime_id]:.3f} (duration: {regime_duration}/{total_duration})")
+            
+            stability_time = time.time() - stability_start
+            
+            tprint_debug(f"Regime stability analysis completed in {stability_time:.3f}s")
+            tprint_debug(f"Stability results: {stability}")
+            
+            # Log detailed stability information
+            for regime_id, score in stability.items():
+                tprint_debug(f"Regime {regime_id} stability: {score:.4f}")
             
             return stability
             
         except Exception as e:
+            stability_time = time.time() - stability_start
             self.logger.warning(f"⚠️ Regime stability analysis failed: {e}")
+            tprint_error(f"❌ Regime stability analysis failed: {e}", color="red")
+            tprint_error(f"   Stability analysis time before failure: {stability_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty stability results", color="red")
+            
+            tprint_debug("Returning empty stability dictionary")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return {}
     
     def _analyze_regime_persistence(self, regime_labels: np.ndarray) -> Dict[int, float]:
         """Analyze regime persistence."""
+        tprint_debug("Analyzing regime persistence...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        
+        persistence_start = time.time()
+        
         try:
             persistence = {}
             
@@ -490,17 +721,42 @@ class RegimeDetector:
                     # Calculate average gap between regime occurrences
                     gaps = np.diff(regime_indices)
                     persistence[regime_id] = np.mean(gaps) if len(gaps) > 0 else 0
+                    tprint_debug(f"Regime {regime_id} persistence: {persistence[regime_id]:.3f} (gaps: {len(gaps)})")
                 else:
                     persistence[regime_id] = 0
+                    tprint_debug(f"Regime {regime_id} persistence: 0.0 (single occurrence)")
+            
+            persistence_time = time.time() - persistence_start
+            
+            tprint_debug(f"Regime persistence analysis completed in {persistence_time:.3f}s")
+            tprint_debug(f"Persistence results: {persistence}")
+            
+            # Log detailed persistence information
+            for regime_id, score in persistence.items():
+                tprint_debug(f"Regime {regime_id} persistence: {score:.4f}")
             
             return persistence
             
         except Exception as e:
+            persistence_time = time.time() - persistence_start
             self.logger.warning(f"⚠️ Regime persistence analysis failed: {e}")
+            tprint_error(f"❌ Regime persistence analysis failed: {e}", color="red")
+            tprint_error(f"   Persistence analysis time before failure: {persistence_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty persistence results", color="red")
+            
+            tprint_debug("Returning empty persistence dictionary")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return {}
     
     def _analyze_feature_importance(self, regime_labels: np.ndarray, data: pd.DataFrame) -> Dict[str, float]:
         """Analyze feature importance for regime detection."""
+        tprint_debug("Analyzing feature importance...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Data shape: {data.shape}")
+        
+        importance_start = time.time()
+        
         try:
             from sklearn.feature_selection import mutual_info_classification
             
@@ -508,60 +764,143 @@ class RegimeDetector:
             data_numeric = data[numeric_cols].fillna(0)
             
             # Calculate mutual information between features and regime labels
+            tprint_debug("Calculating mutual information between features and regime labels...")
             importance_scores = mutual_info_classification(data_numeric, regime_labels)
             
+            tprint_debug(f"Importance scores shape: {importance_scores.shape}")
+            tprint_debug(f"Importance scores range: {np.min(importance_scores):.3f} to {np.max(importance_scores):.3f}")
+            
             feature_importance = dict(zip(numeric_cols, importance_scores))
+            
+            importance_time = time.time() - importance_start
+            
+            tprint_debug(f"Feature importance analysis completed in {importance_time:.3f}s")
+            tprint_debug(f"Feature importance: {feature_importance}")
+            
+            # Log detailed feature importance information
+            for feature, importance in feature_importance.items():
+                tprint_debug(f"Feature {feature} importance: {importance:.4f}")
             
             return feature_importance
             
         except Exception as e:
+            importance_time = time.time() - importance_start
             self.logger.warning(f"⚠️ Feature importance analysis failed: {e}")
+            tprint_error(f"❌ Feature importance analysis failed: {e}", color="red")
+            tprint_error(f"   Importance analysis time before failure: {importance_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty importance results", color="red")
+            
+            tprint_debug("Returning empty feature importance dictionary")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return {}
     
     def _analyze_feature_correlations(self, regime_labels: np.ndarray, data: pd.DataFrame) -> pd.DataFrame:
         """Analyze feature correlations within regimes."""
+        tprint_debug("Analyzing feature correlations...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Data shape: {data.shape}")
+        
+        correlation_start = time.time()
+        
         try:
             numeric_cols = data.select_dtypes(include=[np.number]).columns
             data_numeric = data[numeric_cols].fillna(0)
             
+            tprint_debug(f"Numeric columns: {len(numeric_cols)}")
+            tprint_debug(f"Data numeric shape: {data_numeric.shape}")
+            
             # Calculate correlations
+            tprint_debug("Calculating correlation matrix...")
             correlations = data_numeric.corr()
+            
+            correlation_time = time.time() - correlation_start
+            
+            tprint_debug(f"Feature correlation analysis completed in {correlation_time:.3f}s")
+            tprint_debug(f"Correlation matrix shape: {correlations.shape}")
+            tprint_debug(f"Correlation range: {correlations.min().min():.3f} to {correlations.max().max():.3f}")
+            
+            # Log detailed correlation information
+            tprint_debug(f"Correlation matrix columns: {list(correlations.columns)}")
+            tprint_debug(f"Correlation matrix index: {list(correlations.index)}")
             
             return correlations
             
         except Exception as e:
+            correlation_time = time.time() - correlation_start
             self.logger.warning(f"⚠️ Feature correlation analysis failed: {e}")
+            tprint_error(f"❌ Feature correlation analysis failed: {e}", color="red")
+            tprint_error(f"   Correlation analysis time before failure: {correlation_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty correlation matrix", color="red")
+            
+            tprint_debug("Returning empty correlation matrix")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return pd.DataFrame()
     
     def _generate_regime_features(self, data: pd.DataFrame, regime_labels: np.ndarray, 
                                 regime_centers: Dict[int, np.ndarray]) -> pd.DataFrame:
         """Generate regime-specific features."""
+        tprint_debug("Generating regime-specific features...")
+        tprint_debug(f"Data shape: {data.shape}")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Regime centers: {len(regime_centers)}")
+        
+        feature_start = time.time()
+        
         try:
             regime_features = pd.DataFrame(index=data.index)
             
             # Add regime labels
             regime_features['regime_label'] = regime_labels
+            tprint_debug("Added regime labels as features")
             
             # Add regime-specific features
             for regime_id in np.unique(regime_labels):
                 regime_mask = regime_labels == regime_id
                 regime_features[f'regime_{regime_id}'] = regime_mask.astype(int)
+                tprint_debug(f"Added regime {regime_id} indicator features")
             
             # Add regime distance features
             if len(regime_centers) > 0:
                 for regime_id, center in regime_centers.items():
                     # Calculate distance to regime center (simplified)
                     regime_features[f'distance_to_regime_{regime_id}'] = 0.0  # Placeholder
+                    tprint_debug(f"Added regime {regime_id} distance features (placeholder)")
+            
+            feature_time = time.time() - feature_start
+            
+            tprint_debug(f"Regime feature generation completed in {feature_time:.3f}s")
+            tprint_debug(f"Final feature shape: {regime_features.shape}")
+            tprint_debug(f"Feature columns: {list(regime_features.columns)}")
+            
+            # Log detailed feature information
+            tprint_debug(f"Generated features data types: {regime_features.dtypes.to_dict()}")
             
             return regime_features
             
         except Exception as e:
+            feature_time = time.time() - feature_start
             self.logger.warning(f"⚠️ Regime feature generation failed: {e}")
+            tprint_error(f"❌ Regime feature generation failed: {e}", color="red")
+            tprint_error(f"   Feature generation time before failure: {feature_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty DataFrame", color="red")
+            
+            tprint_debug("Returning empty DataFrame as fallback")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return pd.DataFrame(index=data.index)
     
     def _calculate_regime_quality_scores(self, regime_labels: np.ndarray, regime_centers: Dict[int, np.ndarray], 
                                             regime_statistics: Dict[int, Dict[str, Any]]) -> Dict[int, float]:
         """Calculate regime quality scores."""
+        tprint_debug("Calculating regime quality scores...")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        tprint_debug(f"Regime centers: {len(regime_centers)}")
+        tprint_debug(f"Regime statistics: {len(regime_statistics)}")
+        
+        quality_start = time.time()
+        
         try:
             quality_scores = {}
             
@@ -575,15 +914,39 @@ class RegimeDetector:
                 consistency_score = 1.0  # Placeholder for consistency calculation
                 
                 quality_scores[regime_id] = (size_score + consistency_score) / 2
+                tprint_debug(f"Regime {regime_id} quality score: {quality_scores[regime_id]:.3f} (size: {regime_count}/{total_count})")
+            
+            quality_time = time.time() - quality_start
+            
+            tprint_debug(f"Regime quality score calculation completed in {quality_time:.3f}s")
+            tprint_debug(f"Quality scores: {quality_scores}")
+            
+            # Log detailed quality information
+            for regime_id, score in quality_scores.items():
+                tprint_debug(f"Regime {regime_id} quality: {score:.4f}")
             
             return quality_scores
             
         except Exception as e:
+            quality_time = time.time() - quality_start
             self.logger.warning(f"⚠️ Regime quality score calculation failed: {e}")
+            tprint_error(f"❌ Regime quality score calculation failed: {e}", color="red")
+            tprint_error(f"   Quality calculation time before failure: {quality_time:.3f}s", color="red")
+            tprint_error(f"   Returning empty quality scores", color="red")
+            
+            tprint_debug("Returning empty quality scores dictionary")
+            tprint_debug("This may indicate issues with regime detection or data quality")
+            
             return {}
     
     def _calculate_performance_metrics(self, regime_data: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, float]:
         """Calculate clustering performance metrics."""
+        tprint_debug("Calculating performance metrics...")
+        tprint_debug(f"Regime data shape: {regime_data.shape}")
+        tprint_debug(f"Regime labels shape: {regime_labels.shape}")
+        
+        metrics_start = time.time()
+        
         try:
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
@@ -592,9 +955,27 @@ class RegimeDetector:
             regime_data_numeric = regime_data[numeric_cols].fillna(0)
             
             # Calculate metrics
+            tprint_debug("Calculating silhouette score...")
             silhouette = silhouette_score(regime_data_numeric, regime_labels)
+            tprint_debug(f"Silhouette score: {silhouette:.3f}")
+            
+            tprint_debug("Calculating Calinski-Harabasz score...")
             calinski_harabasz = calinski_harabasz_score(regime_data_numeric, regime_labels)
+            tprint_debug(f"Calinski-Harabasz score: {calinski_harabasz:.3f}")
+            
+            tprint_debug("Calculating Davies-Bouldin score...")
             davies_bouldin = davies_bouldin_score(regime_data_numeric, regime_labels)
+            tprint_debug(f"Davies-Bouldin score: {davies_bouldin:.3f}")
+            
+            metrics_time = time.time() - metrics_start
+            
+            tprint_debug(f"Performance metrics calculation completed in {metrics_time:.3f}s")
+            tprint_debug(f"Metrics: silhouette={silhouette:.3f}, calinski={calinski_harabasz:.3f}, davies={davies_bouldin:.3f}")
+            
+            metrics_time = time.time() - metrics_start
+            
+            tprint_debug(f"Performance metrics calculation completed in {metrics_time:.3f}s")
+            tprint_debug(f"Metrics: silhouette={silhouette:.3f}, calinski={calinski_harabasz:.3f}, davies={davies_bouldin:.3f}")
             
             return {
                 'silhouette_score': silhouette,
@@ -603,7 +984,12 @@ class RegimeDetector:
             }
             
         except Exception as e:
+            metrics_time = time.time() - metrics_start
             self.logger.warning(f"⚠️ Performance metrics calculation failed: {e}")
+            tprint_error(f"❌ Performance metrics calculation failed: {e}", color="red")
+            tprint_error(f"   Metrics calculation time before failure: {metrics_time:.3f}s", color="red")
+            tprint_error(f"   Returning zero metrics", color="red")
+            
             return {
                 'silhouette_score': 0.0,
                 'calinski_harabasz_score': 0.0,
@@ -612,16 +998,25 @@ class RegimeDetector:
     
     def _save_regime_data(self, result: RegimeResult):
         """Save regime data to file."""
+        tprint_debug("Saving regime data to file...")
+        tprint_debug(f"Output directory: {self.config.output_directory}")
+        
+        save_start = time.time()
+        
         try:
             output_dir = Path(self.config.output_directory)
             output_dir.mkdir(parents=True, exist_ok=True)
+            
+            tprint_debug(f"Output directory created: {output_dir}")
             
             # Save regime data
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"regime_data_{timestamp}.parquet"
             filepath = output_dir / filename
             
+            tprint_debug(f"Saving regime features to {filepath}")
             result.regime_features.to_parquet(filepath)
+            tprint_debug(f"Regime features saved: {filepath.stat().st_size / 1024:.2f} KB")
             
             # Save metadata
             metadata_file = output_dir / f"regime_metadata_{timestamp}.json"
@@ -644,15 +1039,43 @@ class RegimeDetector:
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2, default=str)
             
+            save_time = time.time() - save_start
+            
+            save_time = time.time() - save_start
+            
             self.logger.info(f"📁 Regime data saved to {filepath}")
+            tprint_success(f"✅ Regime data saved to {filepath}")
+            tprint_debug(f"Save time: {save_time:.3f}s")
+            tprint_debug(f"Metadata file: {metadata_file}")
+            tprint_debug(f"Metadata file size: {metadata_file.stat().st_size / 1024:.2f} KB")
             
         except Exception as e:
+            save_time = time.time() - save_start
             self.logger.warning(f"⚠️ Failed to save regime data: {e}")
+            tprint_error(f"❌ Failed to save regime data: {e}", color="red")
+            tprint_error(f"   Save time before failure: {save_time:.3f}s", color="red")
     
     def export_regime_data(self, result: RegimeResult, filepath: str):
         """Export regime data to file."""
+        tprint_debug(f"Exporting regime data to {filepath}")
+        tprint_debug(f"Regime features shape: {result.regime_features.shape}")
+        
+        export_start = time.time()
+        
         try:
             result.regime_features.to_csv(filepath)
+            
+            export_time = time.time() - export_start
+            
+            export_time = time.time() - export_start
+            
             self.logger.info(f"📁 Regime data exported to {filepath}")
+            tprint_success(f"✅ Regime data exported to {filepath}")
+            tprint_debug(f"Export time: {export_time:.3f}s")
+            tprint_debug(f"File size: {Path(filepath).stat().st_size / 1024:.2f} KB")
+            
         except Exception as e:
+            export_time = time.time() - export_start
             self.logger.error(f"❌ Failed to export regime data: {e}")
+            tprint_error(f"❌ Failed to export regime data: {e}", color="red")
+            tprint_error(f"   Export time before failure: {export_time:.3f}s", color="red")

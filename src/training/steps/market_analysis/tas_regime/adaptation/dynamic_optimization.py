@@ -51,8 +51,21 @@ class TreeDynamicOptimizer:
         Args:
             config: TAS configuration
         """
+        tprint_info("⚡ Initializing Dynamic Optimization System")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Optimization enabled: {config.enable_dynamic_optimization}")
+        tprint_debug(f"Optimization frequency: {config.optimization_frequency}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'optimization_time': 0.0,
+            'analysis_time': 0.0,
+            'total_execution_time': 0.0
+        }
 
         # Optimization state
         self.optimization_state = OptimizationState(

@@ -103,10 +103,26 @@ class AdvancedTradingArchitectureSearch:
         Args:
             config: Advanced TAS configuration
         """
+        tprint_info("🔍 Initializing Advanced TAS Search")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Search enabled: {config.enable_advanced_search}")
+        tprint_debug(f"Search iterations: {config.search_iterations}")
+        tprint_debug(f"Micro regime sensitivity: {config.micro_regime_sensitivity}")
+        tprint_debug(f"Micro regime detection threshold: {config.micro_regime_detection_threshold}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'search_time': 0.0,
+            'evaluation_time': 0.0,
+            'total_execution_time': 0.0
+        }
+
         # Initialize components
+        tprint_debug("Initializing micro regime detector...")
         self.micro_regime_detector = MicroRegimeDetector(
             sensitivity=config.micro_regime_sensitivity,
             detection_threshold=config.micro_regime_detection_threshold

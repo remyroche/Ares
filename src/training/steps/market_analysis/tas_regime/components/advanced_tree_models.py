@@ -492,8 +492,23 @@ class AdvancedTreeModelFactory:
     
     def __init__(self, config: AdvancedTreeConfig):
         """Initialize advanced tree model factory."""
+        tprint_info("🌳 Initializing Advanced Tree Model Factory")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Primary model: {config.primary_model}")
+        tprint_debug(f"Ensemble models: {config.ensemble_models}")
+        tprint_debug(f"Meta-learning enabled: {config.enable_meta_learning}")
+        tprint_debug(f"Continual learning enabled: {config.enable_continual_learning}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'model_creation_time': 0.0,
+            'training_time': 0.0,
+            'prediction_time': 0.0,
+            'total_execution_time': 0.0
+        }
         
         # Initialize PatchTST model if enabled
         self.patchtst_model = None
@@ -546,21 +561,46 @@ class AdvancedTreeModelFactory:
         Returns:
             Advanced tree model instance
         """
+        tprint_info(f"🌳 Creating {model_type} model")
+        tprint_debug(f"Model type: {model_type}")
+        tprint_debug(f"Meta-learning enabled: {enable_meta_learning}")
+        tprint_debug(f"Continual learning enabled: {enable_continual_learning}")
+        tprint_debug(f"PatchTST enhancement enabled: {enable_patchtst_enhancement}")
+        
+        creation_start = time.time()
+        
         try:
+            tprint_debug(f"Creating base {model_type} model...")
             base_model = self._create_base_model(model_type)
+            tprint_debug(f"Base {model_type} model created successfully")
 
             # Apply PatchTST enhancement if enabled
             if enable_patchtst_enhancement and self.patchtst_model:
+                tprint_debug("Applying PatchTST enhancement...")
                 base_model = PatchTSTEnhancedTreeModel(base_model, self.patchtst_model, self.config)
                 self.logger.info(f"Created PatchTST-enhanced {model_type} model")
+                tprint_debug("PatchTST enhancement applied")
             
             # Apply meta-learning or continual learning
             if enable_meta_learning:
-                return MetaLearningTreeModel(base_model, self.config)
+                tprint_debug("Applying MetaLearningTreeModel wrapper...")
+                result = MetaLearningTreeModel(base_model, self.config)
+                tprint_debug("MetaLearningTreeModel wrapper applied")
             elif enable_continual_learning:
-                return ContinualLearningTreeModel(base_model, self.config)
+                tprint_debug("Applying ContinualLearningTreeModel wrapper...")
+                result = ContinualLearningTreeModel(base_model, self.config)
+                tprint_debug("ContinualLearningTreeModel wrapper applied")
             else:
-                return base_model
+                tprint_debug("Using base model without additional wrappers")
+                result = base_model
+            
+            creation_time = time.time() - creation_start
+            self.performance_metrics['model_creation_time'] = creation_time
+            
+            tprint_success(f"✅ {model_type} model created successfully in {creation_time:.3f}s")
+            tprint_debug(f"Final model type: {type(result)}")
+            
+            return result
                 
         except Exception as e:
             self.logger.error(f"Failed to create model {model_type}: {e}")

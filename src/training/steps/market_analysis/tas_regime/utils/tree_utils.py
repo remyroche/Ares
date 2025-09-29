@@ -35,9 +35,19 @@ class TreeUtils:
     
     def create_tree_classifier(self, config: TreeConfig = None):
         """Create a tree classifier - DecisionTreeClassifier removed, use RandomForest instead."""
+        tprint_debug("Creating tree classifier (using RandomForest as DecisionTree replacement)")
+        tprint_debug(f"Config: {config}")
+        
         config = config or self.config
+        
+        tprint_debug(f"Max depth: {config.max_depth}")
+        tprint_debug(f"Min samples split: {config.min_samples_split}")
+        tprint_debug(f"Min samples leaf: {config.min_samples_leaf}")
+        tprint_debug(f"Max features: {config.max_features}")
+        tprint_debug(f"Random state: {config.random_state}")
+        
         # Use RandomForest as replacement for DecisionTree
-        return RandomForestClassifier(
+        classifier = RandomForestClassifier(
             n_estimators=1,  # Single tree equivalent
             max_depth=config.max_depth,
             min_samples_split=config.min_samples_split,
@@ -45,12 +55,26 @@ class TreeUtils:
             max_features=config.max_features,
             random_state=config.random_state
         )
+        
+        tprint_debug(f"Tree classifier created successfully: {type(classifier)}")
+        
+        return classifier
     
     def create_tree_regressor(self, config: TreeConfig = None):
         """Create a tree regressor - DecisionTreeRegressor removed, use RandomForest instead."""
+        tprint_debug("Creating tree regressor (using RandomForest as DecisionTree replacement)")
+        tprint_debug(f"Config: {config}")
+        
         config = config or self.config
+        
+        tprint_debug(f"Max depth: {config.max_depth}")
+        tprint_debug(f"Min samples split: {config.min_samples_split}")
+        tprint_debug(f"Min samples leaf: {config.min_samples_leaf}")
+        tprint_debug(f"Max features: {config.max_features}")
+        tprint_debug(f"Random state: {config.random_state}")
+        
         # Use RandomForest as replacement for DecisionTree
-        return RandomForestRegressor(
+        regressor = RandomForestRegressor(
             n_estimators=1,  # Single tree equivalent
             max_depth=config.max_depth,
             min_samples_split=config.min_samples_split,
@@ -58,6 +82,10 @@ class TreeUtils:
             max_features=config.max_features,
             random_state=config.random_state
         )
+        
+        tprint_debug(f"Tree regressor created successfully: {type(regressor)}")
+        
+        return regressor
     
     def create_random_forest_classifier(self, n_estimators: int = 100, config: TreeConfig = None) -> RandomForestClassifier:
         """Create a random forest classifier."""

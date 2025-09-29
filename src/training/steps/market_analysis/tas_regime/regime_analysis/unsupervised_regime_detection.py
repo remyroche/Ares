@@ -102,8 +102,22 @@ class UnsupervisedRegimeDetector:
         Args:
             config: Regime detection configuration
         """
+        tprint_info("🔍 Initializing Unsupervised Regime Detection")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Detection enabled: {config.enable_unsupervised_detection}")
+        tprint_debug(f"Number of regimes: {config.n_regimes}")
+        tprint_debug(f"Detection method: {config.detection_method}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'detection_time': 0.0,
+            'analysis_time': 0.0,
+            'total_execution_time': 0.0
+        }
         
         # Detection state
         self.current_regimes = None
@@ -358,16 +372,33 @@ class UnsupervisedRegimeDetector:
     
     def _kmeans_detection(self, features: np.ndarray) -> Dict[str, Any]:
         """K-means regime detection."""
+        tprint_debug("Performing K-means regime detection (using sequential assignment)")
+        tprint_debug(f"Features shape: {features.shape}")
+        
+        detection_start = time.time()
+        
         # Determine optimal number of clusters
         n_regimes = self.config.n_regimes
         if n_regimes is None:
+            tprint_debug("Finding optimal number of clusters...")
             n_regimes = self._find_optimal_clusters(features)
+            tprint_debug(f"Optimal number of clusters: {n_regimes}")
+        
+        tprint_debug(f"Number of regimes: {n_regimes}")
         
         # Perform simple regime assignment (replacing K-means)
         n_samples = len(features)
         regime_size = n_samples // n_regimes
+        
+        tprint_debug(f"Number of samples: {n_samples}")
+        tprint_debug(f"Regime size: {regime_size}")
+        
         labels = np.array([i // regime_size for i in range(n_samples)])
         labels = np.minimum(labels, n_regimes - 1)
+        
+        tprint_debug(f"Labels shape: {labels.shape}")
+        tprint_debug(f"Unique labels: {len(np.unique(labels))}")
+        tprint_debug(f"Label distribution: {np.bincount(labels)}")
         
         # Calculate regime centers
         centers = np.zeros((n_regimes, features.shape[1]))
@@ -375,6 +406,13 @@ class UnsupervisedRegimeDetector:
             regime_mask = labels == i
             if np.sum(regime_mask) > 0:
                 centers[i] = np.mean(features[regime_mask], axis=0)
+                tprint_debug(f"Regime {i} center: {centers[i]}")
+        
+        detection_time = time.time() - detection_start
+        
+        tprint_debug(f"K-means detection completed in {detection_time:.3f}s")
+        tprint_debug(f"Centers shape: {centers.shape}")
+        tprint_debug(f"Centers range: {np.min(centers):.3f} to {np.max(centers):.3f}")
         
         return {
             'method': 'simple_assignment',

@@ -95,8 +95,22 @@ class EnhancedTASHardwareOptimizer:
     
     def __init__(self, config: TASHardwareConfig):
         """Initialize enhanced TAS hardware optimizer."""
+        tprint_info("⚡ Initializing Enhanced TAS Hardware Optimizer")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Hardware available: {HARDWARE_AVAILABLE}")
+        tprint_debug(f"Matrix ops available: {MATRIX_OPS_AVAILABLE}")
+        tprint_debug(f"Enable clustering optimization: {config.enable_clustering_optimization}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'optimization_time': 0.0,
+            'regime_assignment_time': 0.0,
+            'total_execution_time': 0.0
+        }
         
         # Initialize hardware components
         self.hardware_manager = None
@@ -108,7 +122,6 @@ class EnhancedTASHardwareOptimizer:
         self.hardware_processor = None
         
         # Performance tracking
-        self.performance_metrics = {}
         self.optimization_history = []
         self.memory_usage_history = []
         
@@ -446,11 +459,31 @@ class EnhancedTASHardwareOptimizer:
     
     def _perform_basic_regime_assignment(self, data: np.ndarray, config: Dict[str, Any]) -> np.ndarray:
         """Fallback basic regime assignment."""
+        tprint_debug("Performing basic regime assignment...")
+        tprint_debug(f"Data shape: {data.shape}")
+        tprint_debug(f"Config: {config}")
+        
+        assignment_start = time.time()
+        
         n_regimes = config.get('n_regimes', 3)
         n_samples = len(data)
         regime_size = n_samples // n_regimes
+        
+        tprint_debug(f"Number of regimes: {n_regimes}")
+        tprint_debug(f"Number of samples: {n_samples}")
+        tprint_debug(f"Regime size: {regime_size}")
+        
         labels = np.array([i // regime_size for i in range(n_samples)])
-        return np.minimum(labels, n_regimes - 1)
+        result = np.minimum(labels, n_regimes - 1)
+        
+        assignment_time = time.time() - assignment_start
+        
+        tprint_debug(f"Basic regime assignment completed in {assignment_time:.3f}s")
+        tprint_debug(f"Result shape: {result.shape}")
+        tprint_debug(f"Unique regimes: {len(np.unique(result))}")
+        tprint_debug(f"Regime distribution: {np.bincount(result)}")
+        
+        return result
     
     def _perform_basic_statistical_analysis(self, data: np.ndarray, config: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback basic statistical analysis."""

@@ -557,11 +557,27 @@ class TreeMetaLearning:
         Args:
             config: Meta-learning configuration
         """
+        tprint_info("🧠 Initializing Tree Meta-Learning System")
+        tprint_debug(f"Configuration: {config}")
+        tprint_debug(f"Meta-learning enabled: {config.enable_meta_learning}")
+        tprint_debug(f"Adaptation steps: {config.adaptation_steps}")
+        tprint_debug(f"Learning rate: {config.learning_rate}")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Initialize performance tracking
+        self.performance_metrics = {
+            'initialization_time': 0.0,
+            'training_time': 0.0,
+            'adaptation_time': 0.0,
+            'total_execution_time': 0.0
+        }
+        
         # Initialize components
+        tprint_debug("Initializing MAML component...")
         self.maml = TreeMAML(config)
+        tprint_debug("Initializing Prototypical Network component...")
         self.prototypical_network = TreePrototypicalNetwork(config)
         
         # Meta-learning state

@@ -3,6 +3,7 @@ Bayesian Optimization for Entry Timing Parameters
 
 Advanced Bayesian optimization system for optimizing entry timing parameters
 in trading models, with support for multiple objectives and constraints.
+Extensively integrated with utility modules for optimal performance.
 """
 
 import numpy as np
@@ -14,6 +15,88 @@ import json
 import logging
 from pathlib import Path
 import warnings
+
+# Extensive use of common utilities
+from ...common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    validate_finite, validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, optimize_dataframe_dtypes,
+    safe_to_parquet, safe_read_parquet, integrate_with_m1_optimizers,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, memory_checkpoint, gpu_context, optimize_memory,
+    get_memory_usage, safe_copy, safe_deepcopy, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls, timed_operation,
+    format_bytes, parallel_map, chunked_iterable, safe_rolling, safe_groupby_operation,
+    safe_apply_function as co_safe_apply_function, create_summary_statistics as co_create_summary_statistics
+)
+
+from ...common_utilities import (
+    CommonUtilities, safe_dataframe_operation as cu_safe_dataframe_operation,
+    validate_dataframe_columns as cu_validate_dataframe_columns,
+    calculate_data_quality_metrics as cu_calculate_data_quality_metrics,
+    safe_merge_dataframes as cu_safe_merge_dataframes,
+    safe_groupby_operation as cu_safe_groupby_operation,
+    safe_apply_function as cu_safe_apply_function,
+    create_summary_statistics as cu_create_summary_statistics,
+    safe_drop_columns as cu_safe_drop_columns,
+    safe_rename_columns as cu_safe_rename_columns,
+    validate_timestamp_column as cu_validate_timestamp_column,
+    safe_timestamp_conversion as cu_safe_timestamp_conversion,
+    get_dataframe_info as cu_get_dataframe_info,
+    safe_filter_dataframe as cu_safe_filter_dataframe,
+    create_data_quality_report as cu_create_data_quality_report
+)
+
+from ...math_validation import (
+    MathValidation, safe_divide as mv_safe_divide, safe_log as mv_safe_log,
+    safe_sqrt as mv_safe_sqrt, safe_power as mv_safe_power,
+    validate_finite as mv_validate_finite, validate_positive as mv_validate_positive,
+    validate_range as mv_validate_range, safe_kelly_calculation as mv_safe_kelly_calculation,
+    safe_weighted_average as mv_safe_weighted_average, safe_percentage_change as mv_safe_percentage_change,
+    safe_correlation, safe_covariance, safe_mean as mv_safe_mean, safe_std as mv_safe_std,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    validate_numeric_array
+)
+
+from ...tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_structured,
+    tprint_with_level, tprint_timer, tprint_logged, configure_tprint,
+    get_tprint_config, tprint_context, LogLevel
+)
+
+from ...data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from ...serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+# Import data processing utilities
+from ...data.processing.data_processing import DataProcessor
+from ...data.basic_returns_engineer import BasicReturnsEngineer
+from ...data.feature_engineer import FeatureEngineer
+from ...data.gap_detector import GapDetector
+from ...data.unified_data_utils import UnifiedDataUtils
+
+# Import matrix operations
+from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
+from ...matrix_operations.batch_operations import BatchMatrixOperations
+from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.convenience import MatrixConvenience
+
+# Import hardware utilities
+from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
+from ...hardware.m1_memory_optimizer import M1MemoryOptimizer
+from ...hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 # Bayesian optimization imports
 try:

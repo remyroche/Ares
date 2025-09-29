@@ -3,6 +3,7 @@ Advanced Tree Architecture Search Engine
 
 Main engine for tree-based architecture search with advanced capabilities
 including meta-learning, hardware optimization, and regime-aware search.
+Extensively integrated with utility modules for optimal performance.
 """
 
 import numpy as np
@@ -15,6 +16,88 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 from enum import Enum
+
+# Extensive use of common utilities
+from ....common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    validate_finite, validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, optimize_dataframe_dtypes,
+    safe_to_parquet, safe_read_parquet, integrate_with_m1_optimizers,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, memory_checkpoint, gpu_context, optimize_memory,
+    get_memory_usage, safe_copy, safe_deepcopy, safe_resample, align_dataframes,
+    validate_dataframe_schema, guard_dataframe_nulls, timed_operation,
+    format_bytes, parallel_map, chunked_iterable, safe_rolling, safe_groupby_operation,
+    safe_apply_function as co_safe_apply_function, create_summary_statistics as co_create_summary_statistics
+)
+
+from ....common_utilities import (
+    CommonUtilities, safe_dataframe_operation as cu_safe_dataframe_operation,
+    validate_dataframe_columns as cu_validate_dataframe_columns,
+    calculate_data_quality_metrics as cu_calculate_data_quality_metrics,
+    safe_merge_dataframes as cu_safe_merge_dataframes,
+    safe_groupby_operation as cu_safe_groupby_operation,
+    safe_apply_function as cu_safe_apply_function,
+    create_summary_statistics as cu_create_summary_statistics,
+    safe_drop_columns as cu_safe_drop_columns,
+    safe_rename_columns as cu_safe_rename_columns,
+    validate_timestamp_column as cu_validate_timestamp_column,
+    safe_timestamp_conversion as cu_safe_timestamp_conversion,
+    get_dataframe_info as cu_get_dataframe_info,
+    safe_filter_dataframe as cu_safe_filter_dataframe,
+    create_data_quality_report as cu_create_data_quality_report
+)
+
+from ....math_validation import (
+    MathValidation, safe_divide as mv_safe_divide, safe_log as mv_safe_log,
+    safe_sqrt as mv_safe_sqrt, safe_power as mv_safe_power,
+    validate_finite as mv_validate_finite, validate_positive as mv_validate_positive,
+    validate_range as mv_validate_range, safe_kelly_calculation as mv_safe_kelly_calculation,
+    safe_weighted_average as mv_safe_weighted_average, safe_percentage_change as mv_safe_percentage_change,
+    safe_correlation, safe_covariance, safe_mean as mv_safe_mean, safe_std as mv_safe_std,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse, math_safe,
+    validate_numeric_array
+)
+
+from ....tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_structured,
+    tprint_with_level, tprint_timer, tprint_logged, configure_tprint,
+    get_tprint_config, tprint_context, LogLevel
+)
+
+from ....data.klines_parquet import (
+    KlinesParquetManager, get_klines_manager, read_ethusdt_data,
+    save_klines_to_parquet, load_klines_from_parquet, validate_klines_data
+)
+
+from ....serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+)
+
+# Import data processing utilities
+from ....data.processing.data_processing import DataProcessor
+from ....data.basic_returns_engineer import BasicReturnsEngineer
+from ....data.feature_engineer import FeatureEngineer
+from ....data.gap_detector import GapDetector
+from ....data.unified_data_utils import UnifiedDataUtils
+
+# Import matrix operations
+from ....matrix_operations.unified_operations import MatrixOperations
+from ....matrix_operations.enhanced_operations import EnhancedMatrixOperations
+from ....matrix_operations.batch_operations import BatchMatrixOperations
+from ....matrix_operations.vectorized_core import VectorizedCore
+from ....matrix_operations.convenience import MatrixConvenience
+
+# Import hardware utilities
+from ....hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
+from ....hardware.m1_memory_optimizer import M1MemoryOptimizer
+from ....hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 # Import TAS components
 from .tas_config import TASConfig, TASSearchConfig, TASOptimizationConfig
@@ -171,16 +254,53 @@ class TreeArchitectureSearchEngine:
     """
     
     def __init__(self, config: TASEngineConfig):
-        """Initialize the TAS engine.
+        """Initialize the TAS engine with extensive utility integration.
         
         Args:
             config: TAS engine configuration
         """
-        tprint_info("🚀 Initializing Advanced Tree Architecture Search Engine")
+        tprint_info("🚀 Initializing Advanced Tree Architecture Search Engine with extensive utility integration")
         tprint_debug(f"Configuration: {config}")
         
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize utility classes extensively
+        tprint_debug("🔧 Initializing utility classes")
+        self.common_ops = CommonUtilities()
+        self.math_validator = MathValidation()
+        self.klines_manager = get_klines_manager()
+        self.serializer = UniversalSerializer()
+        
+        # Initialize data processing utilities
+        tprint_debug("🔧 Initializing data processing utilities")
+        self.data_processor = DataProcessor()
+        self.returns_engineer = BasicReturnsEngineer()
+        self.feature_engineer = FeatureEngineer()
+        self.gap_detector = GapDetector()
+        self.unified_data_utils = UnifiedDataUtils()
+        
+        # Initialize matrix operations
+        tprint_debug("🔧 Initializing matrix operations")
+        self.matrix_ops = MatrixOperations()
+        self.enhanced_matrix_ops = EnhancedMatrixOperations()
+        self.batch_matrix_ops = BatchMatrixOperations()
+        self.vectorized_core = VectorizedCore()
+        self.matrix_convenience = MatrixConvenience()
+        
+        # Initialize M1 hardware optimizations
+        tprint_debug("🔧 Initializing M1 hardware optimizations")
+        self.m1_integration = integrate_with_m1_optimizers()
+        if self.m1_integration['success']:
+            tprint_success("✅ M1 integration successful")
+            self.gpu_manager = get_m1_gpu_manager()
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+        else:
+            tprint_warning("⚠️ M1 integration failed, using fallback")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
         
         # Initialize core components
         tprint_info("🔧 Initializing core components...")
@@ -208,7 +328,7 @@ class TreeArchitectureSearchEngine:
         self.performance_monitor = None
         tprint_success("✅ Search state initialized")
         
-        tprint_success("✅ Advanced TAS Engine initialized")
+        tprint_success("✅ Advanced TAS Engine initialized with extensive utility integration")
         tprint_info(f"🔍 Search strategy: {config.search_strategy.value}")
         tprint_info(f"⚙️ Optimization mode: {config.optimization_mode.value}")
         tprint_info(f"🧠 Meta-learning: {config.enable_meta_learning}")
@@ -362,6 +482,7 @@ class TreeArchitectureSearchEngine:
             self.logger.error(f"❌ Search strategies initialization failed: {e}")
             raise
     
+    @tprint_timer("Tree Architecture Search")
     def search(self,
                train_data: Tuple[np.ndarray, np.ndarray],
                validation_data: Tuple[np.ndarray, np.ndarray],
@@ -370,7 +491,7 @@ class TreeArchitectureSearchEngine:
                search_strategy: Optional[SearchStrategy] = None,
                optimization_mode: Optional[OptimizationMode] = None) -> TASResult:
         """
-        Perform advanced tree architecture search.
+        Perform advanced tree architecture search with extensive utility integration.
         
         Args:
             train_data: Training data (X, y)
@@ -384,20 +505,53 @@ class TreeArchitectureSearchEngine:
             TASResult with search results
         """
         start_time = time.time()
-        self.logger.info("🚀 Starting advanced tree architecture search")
+        tprint_info("🚀 Starting advanced tree architecture search with extensive utility integration")
+        
+        # Validate input data using math validation utilities
+        try:
+            X_train, y_train = train_data
+            X_val, y_val = validation_data
+            
+            # Validate data arrays
+            X_train = validate_numeric_array(X_train, "training_features")
+            y_train = validate_numeric_array(y_train, "training_targets")
+            X_val = validate_numeric_array(X_val, "validation_features")
+            y_val = validate_numeric_array(y_val, "validation_targets")
+            
+            if test_data is not None:
+                X_test, y_test = test_data
+                X_test = validate_numeric_array(X_test, "test_features")
+                y_test = validate_numeric_array(y_test, "test_targets")
+                test_data = (X_test, y_test)
+            
+            # Update train and validation data with validated arrays
+            train_data = (X_train, y_train)
+            validation_data = (X_val, y_val)
+            
+        except Exception as e:
+            tprint_error(f"❌ Data validation failed: {e}")
+            return TASResult.create_error_result(f"Data validation failed: {e}")
         
         # Use provided strategy or default
         strategy = search_strategy or self.config.search_strategy
         mode = optimization_mode or self.config.optimization_mode
         
-        self.logger.info(f"🔍 Using search strategy: {strategy.value}")
-        self.logger.info(f"⚙️ Using optimization mode: {mode.value}")
+        tprint_info(f"🔍 Using search strategy: {strategy.value}")
+        tprint_info(f"⚙️ Using optimization mode: {mode.value}")
+        
+        # Log data quality metrics
+        tprint_debug("📊 Logging data quality metrics")
+        train_quality = self._calculate_data_quality_metrics(train_data)
+        val_quality = self._calculate_data_quality_metrics(validation_data)
+        tprint_structured({"train_quality": train_quality, "validation_quality": val_quality}, LogLevel.DEBUG)
         
         try:
-            # Prepare search environment
-            search_env = self._prepare_search_environment(
-                train_data, validation_data, test_data, regime_data
-            )
+            # Use M1 GPU context if available for search
+            with gpu_context("tree_architecture_search") if self.gpu_manager else memory_checkpoint("tree_architecture_search"):
+                # Prepare search environment with utility integration
+                search_env = self._prepare_search_environment(
+                    train_data, validation_data, test_data, regime_data
+                )
             
             # Select search strategy
             searcher = self._select_search_strategy(strategy)
@@ -703,6 +857,54 @@ class TreeArchitectureSearchEngine:
         except Exception as e:
             self.logger.error(f"❌ Architecture adaptation failed: {e}")
             return current_architecture
+    
+    def _calculate_data_quality_metrics(self, data: Tuple[np.ndarray, np.ndarray]) -> Dict[str, Any]:
+        """Calculate data quality metrics using utility functions.
+        
+        Args:
+            data: Tuple of (X, y) arrays
+            
+        Returns:
+            Dictionary with data quality metrics
+        """
+        try:
+            X, y = data
+            
+            # Calculate basic statistics using math validation utilities
+            metrics = {
+                'n_samples': len(X),
+                'n_features': X.shape[1] if len(X.shape) > 1 else 1,
+                'feature_mean': safe_mean(X.flatten()),
+                'feature_std': safe_std(X.flatten()),
+                'target_mean': safe_mean(y),
+                'target_std': safe_std(y),
+                'feature_min': np.min(X),
+                'feature_max': np.max(X),
+                'target_min': np.min(y),
+                'target_max': np.max(y),
+                'feature_nan_count': np.isnan(X).sum(),
+                'target_nan_count': np.isnan(y).sum(),
+                'feature_inf_count': np.isinf(X).sum(),
+                'target_inf_count': np.isinf(y).sum()
+            }
+            
+            # Calculate correlation if possible
+            if len(X.shape) > 1 and X.shape[1] > 1:
+                # Calculate feature correlations
+                feature_correlations = []
+                for i in range(min(5, X.shape[1])):  # Sample first 5 features
+                    for j in range(i+1, min(5, X.shape[1])):
+                        corr = safe_correlation(X[:, i], X[:, j])
+                        feature_correlations.append(corr)
+                
+                if feature_correlations:
+                    metrics['avg_feature_correlation'] = safe_mean(np.array(feature_correlations))
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating data quality metrics: {e}")
+            return {'error': str(e)}
     
     def get_search_statistics(self) -> Dict[str, Any]:
         """Get search statistics."""

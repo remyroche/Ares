@@ -12,6 +12,17 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 import asyncio
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+
+# Initialize console for tprint
+console = Console()
+
+def tprint(*args, **kwargs):
+    """Enhanced print function with rich formatting."""
+    console.print(*args, **kwargs)
 
 # Import shared utilities
 from .shared_utils import (
@@ -31,6 +42,12 @@ from .shared_utils.unified_trading_viability_evaluator import (
     UnifiedTradingViabilityEvaluator as TradingViabilityEvaluator,
     TradingViabilityConfig
 )
+
+# Import enhanced components
+from .regime_alignment_manager import RegimeAlignmentManager, AlignmentConfig
+from .enhanced_economic_evaluator import EnhancedEconomicEvaluator, EconomicEvaluationConfig
+from .consensus_validator import ConsensusValidator, ConsensusValidationConfig
+from .multi_objective_optimizer import MultiObjectiveOptimizer, MultiObjectiveConfig
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +114,24 @@ class HybridOrchestrator:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint(Panel.fit(
+            "[bold blue]🚀 Hybrid NAS-TAS Regime Discovery Orchestrator[/bold blue]\n"
+            f"Symbol: {config.symbol}\n"
+            f"Timeframe: {config.timeframe}\n"
+            f"Date Range: {config.start_date} to {config.end_date}",
+            title="Initialization",
+            border_style="blue"
+        ))
+        
         # Initialize component managers
+        tprint("[yellow]🔧 Initializing core component managers...[/yellow]")
         self._initialize_managers()
+        tprint("[green]✅ Core component managers initialized[/green]")
+        
+        # Initialize enhanced components
+        tprint("[yellow]🔧 Initializing enhanced components...[/yellow]")
+        self._initialize_enhanced_components()
+        tprint("[green]✅ Enhanced components initialized[/green]")
         
         self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized")
 
@@ -302,6 +335,94 @@ class HybridOrchestrator:
         except Exception as e:
             print(f"❌ Manager initialization failed: {e}")
             self.logger.error(f"❌ Manager initialization failed: {e}")
+            raise
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced components for advanced regime discovery."""
+        try:
+            print("🔧 Initializing enhanced components...")
+            
+            # Initialize regime alignment manager
+            print("🔄 Setting up regime alignment manager...")
+            alignment_config = AlignmentConfig(
+                method='hungarian',
+                min_overlap_threshold=0.1,
+                max_regime_distance=0.5,
+                enable_soft_alignment=True,
+                alignment_confidence_threshold=0.3
+            )
+            self.regime_aligner = RegimeAlignmentManager(alignment_config)
+            print("✅ Regime alignment manager initialized")
+            
+            # Initialize enhanced economic evaluator
+            print("💰 Setting up enhanced economic evaluator...")
+            economic_config = EconomicEvaluationConfig(
+                target_cluster_count_min=6,
+                target_cluster_count_max=15,
+                max_cluster_distribution=0.25,
+                min_cluster_distribution=0.03,
+                volatility_cv_weight=0.4,
+                returns_cv_weight=0.3,
+                volume_cv_weight=0.3,
+                momentum_cv_weight=0.1,
+                entropy_cv_weight=0.1
+            )
+            self.enhanced_economic_evaluator = EnhancedEconomicEvaluator(economic_config)
+            print("✅ Enhanced economic evaluator initialized")
+            
+            # Initialize consensus validator
+            print("🔍 Setting up consensus validator...")
+            consensus_config = ConsensusValidationConfig(
+                silhouette_weight=0.25,
+                calinski_harabasz_weight=0.20,
+                davies_bouldin_weight=0.20,
+                inertia_weight=0.15,
+                economic_significance_weight=0.30,
+                trading_viability_weight=0.25,
+                regime_stability_weight=0.25,
+                cv_optimization_weight=0.20,
+                temporal_smoothness_weight=0.30,
+                regime_duration_weight=0.25,
+                transition_consistency_weight=0.25,
+                persistence_weight=0.20,
+                min_consensus_quality=0.6,
+                enable_multi_objective=True,
+                pareto_frontier_size=20
+            )
+            self.consensus_validator = ConsensusValidator(consensus_config)
+            print("✅ Consensus validator initialized")
+            
+            # Initialize multi-objective optimizer
+            print("🎯 Setting up multi-objective optimizer...")
+            multi_objective_config = MultiObjectiveConfig(
+                target_cluster_count_min=6,
+                target_cluster_count_max=15,
+                max_cluster_distribution=0.25,
+                min_cluster_distribution=0.03,
+                volatility_cv_weight=0.4,
+                returns_cv_weight=0.3,
+                volume_cv_weight=0.3,
+                momentum_cv_weight=0.1,
+                entropy_cv_weight=0.1,
+                statistical_weight=0.25,
+                economic_weight=0.30,
+                temporal_weight=0.20,
+                cv_optimization_weight=0.25,
+                max_iterations=100,
+                population_size=50,
+                convergence_threshold=0.01,
+                enable_pareto_frontier=True,
+                pareto_frontier_size=20
+            )
+            self.multi_objective_optimizer = MultiObjectiveOptimizer(multi_objective_config)
+            print("✅ Multi-objective optimizer initialized")
+            
+            print("✅ All enhanced components initialized")
+            self.logger.info("✅ All enhanced components initialized")
+            
+        except Exception as e:
+            print(f"❌ Enhanced components initialization failed: {e}")
+            self.logger.error(f"❌ Enhanced components initialization failed: {e}")
             raise
     
     async def execute_hybrid_pipeline(self) -> ConsolidatedMetricsReport:
@@ -909,6 +1030,14 @@ class HybridOrchestrator:
                                     timeframes: Optional[List[str]] = None) -> Dict[str, Any]:
         """Orchestrate TAS and NAS regime detection."""
         try:
+            tprint(Panel.fit(
+                "[bold green]🚀 Starting TAS-NAS Orchestration[/bold green]\n"
+                f"Data shape: {market_data.shape if hasattr(market_data, 'shape') else 'Unknown'}\n"
+                f"Timeframes: {timeframes or ['1m', '5m', '15m']}",
+                title="Orchestration Start",
+                border_style="green"
+            ))
+            
             self.logger.info("🚀 Starting TAS-NAS orchestration...")
 
             # Use configured timeframes if not specified
@@ -927,42 +1056,70 @@ class HybridOrchestrator:
 
             # Run detection for each timeframe
             for timeframe in timeframes:
+                tprint(f"[cyan]🔍 Processing timeframe: {timeframe}[/cyan]")
                 self.logger.info(f"🔍 Processing timeframe: {timeframe}")
 
                 # Prepare market_data for timeframe
+                tprint(f"[yellow]📊 Preparing data for {timeframe}...[/yellow]")
                 timeframe_market_data = self._prepare_timeframe_market_data(market_data, timeframe)
+                tprint(f"[green]✅ Data prepared: {timeframe_market_data.shape if hasattr(timeframe_market_data, 'shape') else 'Unknown shape'}[/green]")
 
                 # Run TAS detection
                 if self.tas_system is not None:
+                    tprint(f"[blue]🌳 Running TAS detection for {timeframe}...[/blue]")
                     tas_result = self._run_tas_detection(timeframe_market_data, timestamps, timeframe)
                     results['tas_results'][timeframe] = tas_result
+                    if tas_result.get('success', False):
+                        tprint(f"[green]✅ TAS detection completed for {timeframe}[/green]")
+                    else:
+                        tprint(f"[red]❌ TAS detection failed for {timeframe}[/red]")
 
                 # Run NAS detection
                 if self.nas_system is not None:
+                    tprint(f"[blue]🧠 Running NAS detection for {timeframe}...[/blue]")
                     nas_result = self._run_nas_detection(timeframe_market_data, timestamps, timeframe)
                     results['nas_results'][timeframe] = nas_result
+                    if nas_result.get('success', False):
+                        tprint(f"[green]✅ NAS detection completed for {timeframe}[/green]")
+                    else:
+                        tprint(f"[red]❌ NAS detection failed for {timeframe}[/red]")
 
             # Perform hybrid analysis on primary timeframe (15m) - only if both systems succeeded
             primary_timeframe = '15m'
+            tprint(f"[magenta]🔬 Checking hybrid analysis prerequisites for {primary_timeframe}...[/magenta]")
+            
             tas_success = (primary_timeframe in results.get('tas_results', {}) and
                           results['tas_results'][primary_timeframe].get('success', False))
             nas_success = (primary_timeframe in results.get('nas_results', {}) and
                           results['nas_results'][primary_timeframe].get('success', False))
 
+            tprint(f"[cyan]TAS Success: {tas_success}[/cyan]")
+            tprint(f"[cyan]NAS Success: {nas_success}[/cyan]")
+
             if tas_success and nas_success:
+                tprint("[bold green]🎯 Starting hybrid analysis...[/bold green]")
                 hybrid_analysis = self._perform_hybrid_analysis(
                     market_data, timestamps,
                     results['tas_results'][primary_timeframe],
                     results['nas_results'][primary_timeframe]
                 )
                 results['hybrid_analysis'] = hybrid_analysis
+                tprint("[green]✅ Hybrid analysis completed[/green]")
             else:
+                tprint("[red]⚠️ Hybrid analysis skipped - one or both systems failed[/red]")
                 self.logger.warning("⚠️ Hybrid analysis skipped - one or both systems failed")
                 results['hybrid_analysis'] = {
                     'error': 'Hybrid analysis requires both TAS and NAS systems to succeed',
                     'tas_success': tas_success,
                     'nas_success': nas_success
                 }
+
+            # Generate comprehensive outcome report
+            if tas_success and nas_success:
+                tprint("[bold magenta]📊 Generating comprehensive outcome report...[/bold magenta]")
+                outcome_report = self._generate_outcome_report(results, market_data)
+                results['outcome_report'] = outcome_report
+                tprint("[green]✅ Outcome report generated[/green]")
 
             # Add clustering quality metrics (only if both systems succeeded)
             if tas_success and nas_success and self.clustering_quality_analyzer:
@@ -1049,6 +1206,349 @@ class HybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ TAS-NAS orchestration failed: {e}")
             return {'error': str(e), 'execution_time': 0.0}
+
+    def _generate_outcome_report(self, results: Dict[str, Any], market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+        """Generate comprehensive outcome report with input data info, NAS vs TAS analysis, and clear output metrics."""
+        try:
+            tprint(Panel.fit(
+                "[bold magenta]📊 Comprehensive Outcome Report[/bold magenta]",
+                title="Report Generation",
+                border_style="magenta"
+            ))
+            
+            # 1. Input Data Information
+            input_data_info = self._analyze_input_data(market_data)
+            
+            # 2. NAS vs TAS Analysis and Comparison
+            nas_tas_comparison = self._analyze_nas_tas_comparison(results)
+            
+            # 3. Output Metrics (clusters, CV, Silhouette, etc.)
+            output_metrics = self._analyze_output_metrics(results)
+            
+            # Create comprehensive report
+            outcome_report = {
+                'input_data_analysis': input_data_info,
+                'nas_tas_comparison': nas_tas_comparison,
+                'output_metrics': output_metrics,
+                'summary': self._generate_summary_table(input_data_info, nas_tas_comparison, output_metrics)
+            }
+            
+            # Display the report
+            self._display_outcome_report(outcome_report)
+            
+            return outcome_report
+            
+        except Exception as e:
+            self.logger.error(f"❌ Outcome report generation failed: {e}")
+            return {'error': str(e)}
+
+    def _analyze_input_data(self, market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+        """Analyze input data characteristics."""
+        try:
+            if isinstance(market_data, pd.DataFrame):
+                data_shape = market_data.shape
+                columns = list(market_data.columns)
+                numeric_columns = list(market_data.select_dtypes(include=[np.number]).columns)
+                
+                # Basic statistics
+                if 'close' in market_data.columns:
+                    close_stats = {
+                        'mean': float(market_data['close'].mean()),
+                        'std': float(market_data['close'].std()),
+                        'min': float(market_data['close'].min()),
+                        'max': float(market_data['close'].max())
+                    }
+                else:
+                    close_stats = None
+                
+                if 'volume' in market_data.columns:
+                    volume_stats = {
+                        'mean': float(market_data['volume'].mean()),
+                        'std': float(market_data['volume'].std()),
+                        'min': float(market_data['volume'].min()),
+                        'max': float(market_data['volume'].max())
+                    }
+                else:
+                    volume_stats = None
+                
+                return {
+                    'data_type': 'DataFrame',
+                    'shape': data_shape,
+                    'columns': columns,
+                    'numeric_columns': numeric_columns,
+                    'close_statistics': close_stats,
+                    'volume_statistics': volume_stats,
+                    'data_quality': 'Good' if not market_data.isnull().any().any() else 'Has missing values'
+                }
+            else:
+                return {
+                    'data_type': 'NumPy Array',
+                    'shape': market_data.shape if hasattr(market_data, 'shape') else 'Unknown',
+                    'dtype': str(market_data.dtype) if hasattr(market_data, 'dtype') else 'Unknown'
+                }
+                
+        except Exception as e:
+            return {'error': f"Input data analysis failed: {e}"}
+
+    def _analyze_nas_tas_comparison(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze and compare NAS vs TAS results."""
+        try:
+            primary_timeframe = '15m'
+            tas_results = results.get('tas_results', {}).get(primary_timeframe, {})
+            nas_results = results.get('nas_results', {}).get(primary_timeframe, {})
+            
+            comparison = {
+                'tas_analysis': {
+                    'success': tas_results.get('success', False),
+                    'regime_count': len(np.unique(tas_results.get('regime_predictions', []))) if tas_results.get('success') else 0,
+                    'execution_time': tas_results.get('execution_time', 0),
+                    'regime_distribution': self._calculate_regime_distribution(tas_results.get('regime_predictions', [])) if tas_results.get('success') else {}
+                },
+                'nas_analysis': {
+                    'success': nas_results.get('success', False),
+                    'regime_count': len(np.unique(nas_results.get('regime_predictions', []))) if nas_results.get('success') else 0,
+                    'execution_time': nas_results.get('execution_time', 0),
+                    'regime_distribution': self._calculate_regime_distribution(nas_results.get('regime_predictions', [])) if nas_results.get('success') else {}
+                }
+            }
+            
+            # Calculate agreement metrics
+            if comparison['tas_analysis']['success'] and comparison['nas_analysis']['success']:
+                tas_preds = np.array(tas_results.get('regime_predictions', []))
+                nas_preds = np.array(nas_results.get('regime_predictions', []))
+                
+                min_len = min(len(tas_preds), len(nas_preds))
+                if min_len > 0:
+                    tas_preds = tas_preds[:min_len]
+                    nas_preds = nas_preds[:min_len]
+                    
+                    agreement_rate = np.sum(tas_preds == nas_preds) / min_len
+                    comparison['agreement_metrics'] = {
+                        'agreement_rate': float(agreement_rate),
+                        'total_samples': min_len,
+                        'matching_samples': int(np.sum(tas_preds == nas_preds))
+                    }
+                else:
+                    comparison['agreement_metrics'] = {'error': 'No overlapping predictions'}
+            else:
+                comparison['agreement_metrics'] = {'error': 'One or both systems failed'}
+            
+            return comparison
+            
+        except Exception as e:
+            return {'error': f"NAS vs TAS comparison failed: {e}"}
+
+    def _analyze_output_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze output metrics for each cluster and on average."""
+        try:
+            hybrid_analysis = results.get('hybrid_analysis', {})
+            
+            if not hybrid_analysis.get('success', False):
+                return {'error': 'Hybrid analysis not available'}
+            
+            # Get consolidated regime predictions
+            hybrid_labels = hybrid_analysis.get('hybrid_labels', [])
+            if len(hybrid_labels) == 0:
+                return {'error': 'No hybrid labels available'}
+            
+            unique_regimes = np.unique(hybrid_labels)
+            num_regimes = len(unique_regimes)
+            
+            # Calculate metrics for each regime
+            regime_metrics = {}
+            for regime in unique_regimes:
+                regime_mask = hybrid_labels == regime
+                regime_size = np.sum(regime_mask)
+                regime_percentage = (regime_size / len(hybrid_labels)) * 100
+                
+                regime_metrics[f'regime_{regime}'] = {
+                    'size': int(regime_size),
+                    'percentage': float(regime_percentage),
+                    'is_valid_size': 3.0 <= regime_percentage <= 25.0  # 3% to 25% target
+                }
+            
+            # Overall metrics
+            overall_metrics = {
+                'total_regimes': num_regimes,
+                'target_range_met': 6 <= num_regimes <= 15,
+                'regime_distribution': self._calculate_regime_distribution(hybrid_labels),
+                'clustering_quality': hybrid_analysis.get('clustering_quality', {}),
+                'economic_evaluation': hybrid_analysis.get('economic_evaluation', {}),
+                'validation_result': hybrid_analysis.get('validation_result', {})
+            }
+            
+            # Calculate average metrics
+            if 'clustering_quality' in hybrid_analysis:
+                clustering_quality = hybrid_analysis['clustering_quality']
+                avg_metrics = {
+                    'silhouette_score': clustering_quality.get('silhouette_score', 0),
+                    'calinski_harabasz_score': clustering_quality.get('calinski_harabasz_score', 0),
+                    'davies_bouldin_score': clustering_quality.get('davies_bouldin_score', 0)
+                }
+                overall_metrics['average_clustering_metrics'] = avg_metrics
+            
+            return {
+                'regime_metrics': regime_metrics,
+                'overall_metrics': overall_metrics
+            }
+            
+        except Exception as e:
+            return {'error': f"Output metrics analysis failed: {e}"}
+
+    def _calculate_regime_distribution(self, regime_predictions: np.ndarray) -> Dict[str, float]:
+        """Calculate regime distribution percentages."""
+        try:
+            if len(regime_predictions) == 0:
+                return {}
+            
+            unique_regimes, counts = np.unique(regime_predictions, return_counts=True)
+            total_samples = len(regime_predictions)
+            
+            distribution = {}
+            for regime, count in zip(unique_regimes, counts):
+                percentage = (count / total_samples) * 100
+                distribution[f'regime_{regime}'] = float(percentage)
+            
+            return distribution
+            
+        except Exception as e:
+            return {'error': f"Distribution calculation failed: {e}"}
+
+    def _generate_summary_table(self, input_data_info: Dict, nas_tas_comparison: Dict, output_metrics: Dict) -> Dict[str, Any]:
+        """Generate a summary table of key metrics."""
+        try:
+            summary = {
+                'data_summary': {
+                    'data_shape': input_data_info.get('shape', 'Unknown'),
+                    'data_quality': input_data_info.get('data_quality', 'Unknown')
+                },
+                'detection_summary': {
+                    'tas_success': nas_tas_comparison.get('tas_analysis', {}).get('success', False),
+                    'nas_success': nas_tas_comparison.get('nas_analysis', {}).get('success', False),
+                    'tas_regimes': nas_tas_comparison.get('tas_analysis', {}).get('regime_count', 0),
+                    'nas_regimes': nas_tas_comparison.get('nas_analysis', {}).get('regime_count', 0)
+                },
+                'output_summary': {
+                    'final_regimes': output_metrics.get('overall_metrics', {}).get('total_regimes', 0),
+                    'target_range_met': output_metrics.get('overall_metrics', {}).get('target_range_met', False),
+                    'agreement_rate': nas_tas_comparison.get('agreement_metrics', {}).get('agreement_rate', 0)
+                }
+            }
+            
+            return summary
+            
+        except Exception as e:
+            return {'error': f"Summary generation failed: {e}"}
+
+    def _display_outcome_report(self, outcome_report: Dict[str, Any]) -> None:
+        """Display the comprehensive outcome report using rich formatting."""
+        try:
+            # Input Data Information
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold blue]📊 INPUT DATA ANALYSIS[/bold blue]",
+                border_style="blue"
+            ))
+            
+            input_data = outcome_report.get('input_data_analysis', {})
+            if 'error' not in input_data:
+                tprint(f"Data Type: {input_data.get('data_type', 'Unknown')}")
+                tprint(f"Shape: {input_data.get('shape', 'Unknown')}")
+                tprint(f"Columns: {len(input_data.get('columns', []))}")
+                tprint(f"Data Quality: {input_data.get('data_quality', 'Unknown')}")
+                
+                if input_data.get('close_statistics'):
+                    close_stats = input_data['close_statistics']
+                    tprint(f"Close Price - Mean: {close_stats['mean']:.2f}, Std: {close_stats['std']:.2f}")
+            else:
+                tprint(f"[red]Input data analysis error: {input_data['error']}[/red]")
+            
+            # NAS vs TAS Comparison
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold green]🔄 NAS vs TAS COMPARISON[/bold green]",
+                border_style="green"
+            ))
+            
+            comparison = outcome_report.get('nas_tas_comparison', {})
+            if 'error' not in comparison:
+                tas_analysis = comparison.get('tas_analysis', {})
+                nas_analysis = comparison.get('nas_analysis', {})
+                
+                tprint(f"TAS Success: {tas_analysis.get('success', False)}")
+                tprint(f"TAS Regimes: {tas_analysis.get('regime_count', 0)}")
+                tprint(f"TAS Execution Time: {tas_analysis.get('execution_time', 0):.2f}s")
+                
+                tprint(f"NAS Success: {nas_analysis.get('success', False)}")
+                tprint(f"NAS Regimes: {nas_analysis.get('regime_count', 0)}")
+                tprint(f"NAS Execution Time: {nas_analysis.get('execution_time', 0):.2f}s")
+                
+                agreement_metrics = comparison.get('agreement_metrics', {})
+                if 'error' not in agreement_metrics:
+                    tprint(f"Agreement Rate: {agreement_metrics.get('agreement_rate', 0):.2%}")
+                    tprint(f"Matching Samples: {agreement_metrics.get('matching_samples', 0)}")
+                else:
+                    tprint(f"[red]Agreement analysis error: {agreement_metrics['error']}[/red]")
+            else:
+                tprint(f"[red]NAS vs TAS comparison error: {comparison['error']}[/red]")
+            
+            # Output Metrics
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold magenta]📈 OUTPUT METRICS[/bold magenta]",
+                border_style="magenta"
+            ))
+            
+            output_metrics = outcome_report.get('output_metrics', {})
+            if 'error' not in output_metrics:
+                overall_metrics = output_metrics.get('overall_metrics', {})
+                regime_metrics = output_metrics.get('regime_metrics', {})
+                
+                tprint(f"Final Regime Count: {overall_metrics.get('total_regimes', 0)}")
+                tprint(f"Target Range Met (6-15): {overall_metrics.get('target_range_met', False)}")
+                
+                # Display regime-specific metrics
+                tprint("\n[bold]Regime-Specific Metrics:[/bold]")
+                for regime_key, metrics in regime_metrics.items():
+                    if 'error' not in metrics:
+                        tprint(f"{regime_key}: Size={metrics['size']}, Percentage={metrics['percentage']:.1f}%, Valid={metrics['is_valid_size']}")
+                
+                # Display clustering quality metrics
+                clustering_quality = overall_metrics.get('clustering_quality', {})
+                if clustering_quality:
+                    tprint(f"\n[bold]Clustering Quality:[/bold]")
+                    tprint(f"Silhouette Score: {clustering_quality.get('silhouette_score', 0):.3f}")
+                    tprint(f"Calinski-Harabasz Score: {clustering_quality.get('calinski_harabasz_score', 0):.3f}")
+                    tprint(f"Davies-Bouldin Score: {clustering_quality.get('davies_bouldin_score', 0):.3f}")
+            else:
+                tprint(f"[red]Output metrics error: {output_metrics['error']}[/red]")
+            
+            # Summary
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold yellow]📋 SUMMARY[/bold yellow]",
+                border_style="yellow"
+            ))
+            
+            summary = outcome_report.get('summary', {})
+            if 'error' not in summary:
+                data_summary = summary.get('data_summary', {})
+                detection_summary = summary.get('detection_summary', {})
+                output_summary = summary.get('output_summary', {})
+                
+                tprint(f"Data Shape: {data_summary.get('data_shape', 'Unknown')}")
+                tprint(f"TAS Success: {detection_summary.get('tas_success', False)}")
+                tprint(f"NAS Success: {detection_summary.get('nas_success', False)}")
+                tprint(f"Final Regimes: {output_summary.get('final_regimes', 0)}")
+                tprint(f"Target Range Met: {output_summary.get('target_range_met', False)}")
+                tprint(f"Agreement Rate: {output_summary.get('agreement_rate', 0):.2%}")
+            else:
+                tprint(f"[red]Summary error: {summary['error']}[/red]")
+            
+            tprint("\n" + "="*80)
+            
+        except Exception as e:
+            tprint(f"[red]❌ Report display failed: {e}[/red]")
 
     def _prepare_timeframe_market_data(self, market_data: Union[pd.DataFrame, np.ndarray],
                                timeframe: str) -> Union[pd.DataFrame, np.ndarray]:
@@ -1173,103 +1673,133 @@ class HybridOrchestrator:
                                 timestamps: Optional[np.ndarray],
                                 tas_result: Dict[str, Any],
                                 nas_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform hybrid analysis combining TAS and NAS results."""
+        """Perform enhanced hybrid analysis combining TAS and NAS results."""
         try:
-            # Combine TAS and NAS predictions
+            self.logger.info("🔬 Starting enhanced hybrid analysis")
+            
+            # Extract predictions
             tas_predictions = tas_result.get('regime_predictions', np.array([]))
             nas_predictions = nas_result.get('regime_predictions', np.array([]))
 
             if len(tas_predictions) == 0 or len(nas_predictions) == 0:
-                return {'error': 'Empty predictions from one or both systems'}
+                return {'error': 'Empty predictions from one or both systems', 'success': False}
 
-            # Use shared clustering utilities for hybrid analysis
-            if hasattr(self, 'clustering_manager'):
-                # Perform hybrid clustering
-                combined_features = np.column_stack([tas_predictions, nas_predictions])
-                hybrid_labels, hybrid_centers, metrics = self.clustering_manager.perform_shared_clustering(
-                    combined_features, n_clusters=8, algorithm='auto'
+            # Step 1: Regime Alignment
+            self.logger.info("🔄 Step 1: Performing regime alignment")
+            alignment_result = self.regime_aligner.align_regimes(
+                nas_predictions, tas_predictions, market_data
+            )
+            
+            # Step 2: Multi-Objective Optimization
+            self.logger.info("🎯 Step 2: Performing multi-objective optimization")
+            optimization_result = self.multi_objective_optimizer.optimize_regime_clustering(
+                nas_predictions, tas_predictions, market_data
+            )
+            
+            # Step 3: Enhanced Economic Evaluation
+            self.logger.info("💰 Step 3: Performing enhanced economic evaluation")
+            best_solution = optimization_result.get('best_solution', {})
+            consensus_predictions = best_solution.get('solution', np.array([]))
+            
+            if len(consensus_predictions) > 0:
+                economic_evaluation = self.enhanced_economic_evaluator.evaluate_regime_clustering(
+                    consensus_predictions, market_data
                 )
-
-                # Calculate clustering quality metrics if analyzer is available
-                clustering_quality = {}
-                if self.clustering_quality_analyzer:
-                    try:
-                        # Prepare features for quality analysis
-                        if isinstance(market_data, pd.DataFrame):
-                            # Use numeric columns for quality analysis
-                            numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-                            if len(numeric_columns) > 0:
-                                features = market_data[numeric_columns].values
-                            else:
-                                # Fallback to basic OHLCV columns
-                                basic_columns = ['open', 'high', 'low', 'close', 'volume']
-                                available_columns = [col for col in basic_columns if col in market_data.columns]
-                                features = market_data[available_columns].values if available_columns else market_data.values
-                        else:
-                            features = market_data
-
-                        # Calculate quality metrics for TAS, NAS, and hybrid results
-                        # Ensure features and predictions have the same length for TAS
-                        tas_features = features
-                        if len(tas_features) != len(tas_predictions):
-                            min_length = min(len(tas_features), len(tas_predictions))
-                            tas_features = tas_features[:min_length]
-                            tas_predictions = tas_predictions[:min_length]
-
-                        tas_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            tas_features, tas_predictions
-                        )
-
-                        # Ensure features and predictions have the same length for NAS
-                        nas_features = features
-                        if len(nas_features) != len(nas_predictions):
-                            min_length = min(len(nas_features), len(nas_predictions))
-                            nas_features = nas_features[:min_length]
-                            nas_predictions = nas_predictions[:min_length]
-
-                        nas_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            nas_features, nas_predictions
-                        )
-
-                        # Ensure features and predictions have the same length for hybrid
-                        hybrid_features = features
-                        if len(hybrid_features) != len(hybrid_labels):
-                            min_length = min(len(hybrid_features), len(hybrid_labels))
-                            hybrid_features = hybrid_features[:min_length]
-                            hybrid_labels = hybrid_labels[:min_length]
-
-                        hybrid_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            hybrid_features, hybrid_labels
-                        )
-
-                        clustering_quality = {
-                            'tas_quality': tas_quality,
-                            'nas_quality': nas_quality,
-                            'hybrid_quality': hybrid_quality,
-                            'comparison': {
-                                'best_silhouette': 'TAS' if tas_quality['silhouette_score'] > nas_quality['silhouette_score'] else 'NAS',
-                                'best_davies_bouldin': 'TAS' if tas_quality['davies_bouldin_index'] < nas_quality['davies_bouldin_index'] else 'NAS',
-                                'best_calinski_harabasz': 'TAS' if tas_quality['calinski_harabasz_score'] > nas_quality['calinski_harabasz_score'] else 'NAS'
-                            }
-                        }
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Clustering quality analysis failed: {e}")
-                        clustering_quality = {'error': str(e)}
-
-                return {
-                    'hybrid_labels': hybrid_labels,
-                    'hybrid_centers': hybrid_centers,
-                    'clustering_metrics': metrics,
-                    'clustering_quality': clustering_quality,
-                    'tas_contribution': tas_result,
-                    'nas_contribution': nas_result,
-                    'success': True
-                }
             else:
-                return {'error': 'Clustering manager not available', 'success': False}
+                economic_evaluation = {'error': 'No consensus predictions available'}
+            
+            # Step 4: Consensus Validation
+            self.logger.info("🔍 Step 4: Performing consensus validation")
+            validation_result = self.consensus_validator.validate_consensus(
+                consensus_predictions, nas_result, tas_result, market_data
+            )
+            
+            # Step 5: Generate final results
+            self.logger.info("📊 Step 5: Generating final hybrid results")
+            hybrid_results = {
+                'hybrid_labels': consensus_predictions,
+                'hybrid_centers': self._calculate_hybrid_centers(consensus_predictions, market_data),
+                'clustering_metrics': best_solution.get('objectives', {}),
+                'clustering_quality': validation_result.get('statistical_validation', {}),
+                'alignment_result': alignment_result,
+                'optimization_result': optimization_result,
+                'economic_evaluation': economic_evaluation,
+                'validation_result': validation_result,
+                'tas_contribution': tas_result,
+                'nas_contribution': nas_result,
+                'success': True,
+                'enhanced_analysis': True
+            }
+            
+            # Add clustering quality metrics
+            if self.clustering_quality_analyzer and len(consensus_predictions) > 0:
+                try:
+                    # Prepare features for quality analysis
+                    if isinstance(market_data, pd.DataFrame):
+                        numeric_columns = market_data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_columns) > 0:
+                            features = market_data[numeric_columns].values
+                        else:
+                            basic_columns = ['open', 'high', 'low', 'close', 'volume']
+                            available_columns = [col for col in basic_columns if col in market_data.columns]
+                            features = market_data[available_columns].values if available_columns else market_data.values
+                    else:
+                        features = market_data
+
+                    # Ensure same length
+                    min_length = min(len(features), len(consensus_predictions))
+                    features = features[:min_length]
+                    consensus_predictions = consensus_predictions[:min_length]
+
+                    # Calculate comprehensive quality metrics
+                    comprehensive_quality = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
+                        features, consensus_predictions
+                    )
+                    
+                    hybrid_results['comprehensive_quality'] = comprehensive_quality
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Comprehensive quality analysis failed: {e}")
+                    hybrid_results['comprehensive_quality'] = {'error': str(e)}
+            
+            self.logger.info("✅ Enhanced hybrid analysis completed successfully")
+            return hybrid_results
 
         except Exception as e:
+            self.logger.error(f"❌ Enhanced hybrid analysis failed: {e}")
             return {'error': str(e), 'success': False}
+    
+    def _calculate_hybrid_centers(self, consensus_predictions: np.ndarray, 
+                                market_data: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
+        """Calculate hybrid regime centers."""
+        try:
+            unique_regimes = np.unique(consensus_predictions)
+            centers = []
+            
+            for regime in unique_regimes:
+                regime_mask = consensus_predictions == regime
+                regime_data = market_data[regime_mask]
+                
+                if len(regime_data) > 0:
+                    if isinstance(regime_data, pd.DataFrame):
+                        # Calculate centroid from numeric columns
+                        numeric_columns = regime_data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_columns) > 0:
+                            centroid = regime_data[numeric_columns].mean().values
+                        else:
+                            centroid = np.zeros(5)  # Default for OHLCV
+                    else:
+                        centroid = np.mean(regime_data, axis=0)
+                    
+                    centers.append(centroid)
+                else:
+                    centers.append(np.zeros(5))  # Default center
+            
+            return np.array(centers) if centers else np.array([])
+            
+        except Exception as e:
+            self.logger.error(f"❌ Hybrid centers calculation failed: {e}")
+            return np.array([])
 
     def _get_fallback_error_result(self, error: str, timeframe: str, system: str) -> Dict[str, Any]:
         """Return error result when systems fail without fallback."""

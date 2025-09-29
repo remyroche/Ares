@@ -24,6 +24,12 @@ from collections import deque
 import gym
 from gym import spaces
 
+# Import tprint for comprehensive debugging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -249,12 +255,18 @@ class ReinforcementLearningSearch:
     """Reinforcement Learning-based Neural Architecture Search."""
     
     def __init__(self, search_space, performance_evaluator, config):
+        tprint("🤖 [RL-SEARCH] Initializing Reinforcement Learning Search", color="blue", bold=True)
+        tprint(f"📊 [RL-SEARCH] Config: max_iterations={config.max_search_iterations}, learning_rate={config.rl_learning_rate}", color="cyan")
+        
         self.search_space = search_space
         self.performance_evaluator = performance_evaluator
         self.config = config
         
         # Create environment and agent
+        tprint("🔧 [RL-SEARCH] Creating architecture environment", color="yellow")
         self.env = ArchitectureEnvironment(search_space, performance_evaluator, config)
+        
+        tprint("🔧 [RL-SEARCH] Creating DQN agent", color="yellow")
         self.agent = DQNAgent(
             self.env.observation_space.shape[0],
             self.env.action_space.n,
@@ -265,18 +277,29 @@ class ReinforcementLearningSearch:
         self.best_performance = -np.inf
         self.search_history = []
         
+        tprint_success("✅ [RL-SEARCH] Reinforcement Learning Search initialized")
+        
     def search(self, max_episodes=1000):
         """Perform RL-based architecture search."""
-        logger.info("Starting Reinforcement Learning-based architecture search")
+        tprint("🚀 [RL-SEARCH] Starting Reinforcement Learning-based architecture search", color="blue", bold=True)
+        tprint(f"📊 [RL-SEARCH] Max episodes: {max_episodes}", color="cyan")
         
         for episode in range(max_episodes):
+            tprint(f"🎮 [RL-SEARCH] Starting episode {episode+1}/{max_episodes}", color="yellow")
+            
             state = self.env.reset()
             total_reward = 0
             episode_history = []
+            step_count = 0
             
             while True:
+                step_count += 1
+                tprint(f"🔧 [RL-SEARCH] Episode {episode+1}, Step {step_count}: Choosing action", color="yellow")
+                
                 action = self.agent.act(state, training=True)
                 next_state, reward, done, info = self.env.step(action)
+                
+                tprint(f"📊 [RL-SEARCH] Episode {episode+1}, Step {step_count}: Action={action}, Reward={reward:.4f}, Performance={info['performance']:.4f}", color="cyan")
                 
                 self.agent.remember(state, action, reward, next_state, done)
                 state = next_state
@@ -288,19 +311,23 @@ class ReinforcementLearningSearch:
                 })
                 
                 if done:
+                    tprint(f"🏁 [RL-SEARCH] Episode {episode+1} completed after {step_count} steps", color="green")
                     break
             
             # Train the agent
+            tprint(f"🧠 [RL-SEARCH] Training agent after episode {episode+1}", color="yellow")
             self.agent.replay()
             
             # Update target network periodically
             if episode % self.config.rl_target_update_freq == 0:
+                tprint(f"🔄 [RL-SEARCH] Updating target network at episode {episode+1}", color="yellow")
                 self.agent.update_target_network()
             
             # Track best architecture
             if episode_history:
                 final_performance = episode_history[-1]['performance']
                 if final_performance > self.best_performance:
+                    tprint(f"🏆 [RL-SEARCH] New best performance: {final_performance:.4f} (episode {episode+1})", color="green", bold=True)
                     self.best_performance = final_performance
                     self.best_architecture = copy.deepcopy(self.env.current_architecture)
             
@@ -312,7 +339,10 @@ class ReinforcementLearningSearch:
             })
             
             if episode % 100 == 0:
-                logger.info(f"Episode {episode}: Best performance = {self.best_performance:.4f}")
+                tprint(f"📊 [RL-SEARCH] Episode {episode}: Best performance = {self.best_performance:.4f}, Total reward = {total_reward:.4f}", color="cyan")
+        
+        tprint_success("✅ [RL-SEARCH] Reinforcement Learning search completed")
+        tprint(f"🏆 [RL-SEARCH] Final best performance: {self.best_performance:.4f}", color="green", bold=True)
         
         return {
             'best_architecture': self.best_architecture,
@@ -453,6 +483,9 @@ class ProgressiveArchitectureSearch:
     """Progressive Architecture Search implementation."""
     
     def __init__(self, search_space, performance_evaluator, config):
+        tprint("📈 [PROGRESSIVE] Initializing Progressive Architecture Search", color="blue", bold=True)
+        tprint(f"📊 [PROGRESSIVE] Config: initial_ops={config.progressive_initial_ops}, max_ops={config.progressive_max_ops}", color="cyan")
+        
         self.search_space = search_space
         self.performance_evaluator = performance_evaluator
         self.config = config
@@ -461,27 +494,38 @@ class ProgressiveArchitectureSearch:
         self.best_architecture = None
         self.best_performance = -np.inf
         
+        tprint_success("✅ [PROGRESSIVE] Progressive Architecture Search initialized")
+        
     def search(self):
         """Perform progressive architecture search."""
-        logger.info("Starting Progressive Architecture Search")
+        tprint("🚀 [PROGRESSIVE] Starting Progressive Architecture Search", color="blue", bold=True)
+        tprint(f"📊 [PROGRESSIVE] Evolution rounds: {self.config.progressive_evolution_rounds}", color="cyan")
         
         current_ops = self.config.progressive_initial_ops
         population = []
         
         for round_num in range(self.config.progressive_evolution_rounds):
-            logger.info(f"Progressive round {round_num + 1}: {current_ops} operations")
+            tprint(f"📈 [PROGRESSIVE] Starting round {round_num + 1}/{self.config.progressive_evolution_rounds} with {current_ops} operations", color="yellow", bold=True)
             
             # Create initial population
             if not population:
+                tprint(f"🔧 [PROGRESSIVE] Creating initial population for round {round_num + 1}", color="yellow")
                 population = self._create_initial_population(current_ops)
+                tprint(f"📊 [PROGRESSIVE] Initial population size: {len(population)}", color="cyan")
             else:
+                tprint(f"🔧 [PROGRESSIVE] Evolving population for round {round_num + 1}", color="yellow")
                 # Evolve population
                 population = self._evolve_population(population, current_ops)
+                tprint(f"📊 [PROGRESSIVE] Evolved population size: {len(population)}", color="cyan")
             
             # Evaluate population
-            for arch in population:
+            tprint(f"🔧 [PROGRESSIVE] Evaluating population for round {round_num + 1}", color="yellow")
+            for i, arch in enumerate(population):
                 performance = self.performance_evaluator(arch)
+                tprint(f"📊 [PROGRESSIVE] Architecture {i+1}/{len(population)}: Performance = {performance:.4f}", color="cyan")
+                
                 if performance > self.best_performance:
+                    tprint(f"🏆 [PROGRESSIVE] New best performance: {performance:.4f} (round {round_num + 1})", color="green", bold=True)
                     self.best_performance = performance
                     self.best_architecture = copy.deepcopy(arch)
             
@@ -493,10 +537,15 @@ class ProgressiveArchitectureSearch:
             })
             
             # Increase complexity
+            old_ops = current_ops
             current_ops = min(
                 int(current_ops * self.config.progressive_growth_rate),
                 self.config.progressive_max_ops
             )
+            tprint(f"📈 [PROGRESSIVE] Round {round_num + 1} complete. Complexity: {old_ops} → {current_ops} operations", color="cyan")
+        
+        tprint_success("✅ [PROGRESSIVE] Progressive Architecture Search completed")
+        tprint(f"🏆 [PROGRESSIVE] Final best performance: {self.best_performance:.4f}", color="green", bold=True)
         
         return {
             'best_architecture': self.best_architecture,
@@ -581,6 +630,9 @@ class MultiObjectiveEvolutionarySearch:
     """Multi-Objective Evolutionary Search implementation."""
     
     def __init__(self, search_space, performance_evaluator, config):
+        tprint("🎯 [MO-ES] Initializing Multi-Objective Evolutionary Search", color="blue", bold=True)
+        tprint(f"📊 [MO-ES] Config: population_size={config.mo_population_size}, generations={config.mo_generations}", color="cyan")
+        
         self.search_space = search_space
         self.performance_evaluator = performance_evaluator
         self.config = config
@@ -588,38 +640,57 @@ class MultiObjectiveEvolutionarySearch:
         self.search_history = []
         self.pareto_front = []
         
+        tprint_success("✅ [MO-ES] Multi-Objective Evolutionary Search initialized")
+        
     def search(self):
         """Perform multi-objective evolutionary search."""
-        logger.info("Starting Multi-Objective Evolutionary Search")
+        tprint("🚀 [MO-ES] Starting Multi-Objective Evolutionary Search", color="blue", bold=True)
+        tprint(f"📊 [MO-ES] Generations: {self.config.mo_generations}, Population: {self.config.mo_population_size}", color="cyan")
         
         # Initialize population
+        tprint("🔧 [MO-ES] Creating initial population", color="yellow")
         population = self._create_initial_population()
+        tprint(f"📊 [MO-ES] Initial population size: {len(population)}", color="cyan")
         
         for generation in range(self.config.mo_generations):
+            tprint(f"🧬 [MO-ES] Starting generation {generation+1}/{self.config.mo_generations}", color="yellow", bold=True)
+            
             # Evaluate population
+            tprint(f"🔧 [MO-ES] Evaluating population for generation {generation+1}", color="yellow")
             evaluated_population = []
-            for arch in population:
+            for i, arch in enumerate(population):
                 objectives = self._evaluate_objectives(arch)
                 evaluated_population.append((arch, objectives))
+                tprint(f"📊 [MO-ES] Architecture {i+1}/{len(population)}: Objectives = {objectives}", color="cyan")
             
             # Non-dominated sorting
+            tprint(f"🔧 [MO-ES] Performing non-dominated sorting for generation {generation+1}", color="yellow")
             fronts = self._non_dominated_sorting(evaluated_population)
+            tprint(f"📊 [MO-ES] Found {len(fronts)} fronts", color="cyan")
             
             # Update Pareto front
             if fronts:
                 self.pareto_front = fronts[0]
+                tprint(f"📊 [MO-ES] Pareto front size: {len(self.pareto_front)}", color="cyan")
             
             # Selection
+            tprint(f"🔧 [MO-ES] Performing selection for generation {generation+1}", color="yellow")
             population = self._selection(evaluated_population, fronts)
+            tprint(f"📊 [MO-ES] Selected population size: {len(population)}", color="cyan")
             
             # Crossover and mutation
+            tprint(f"🔧 [MO-ES] Generating offspring for generation {generation+1}", color="yellow")
             offspring = self._generate_offspring(population)
+            tprint(f"📊 [MO-ES] Generated {len(offspring)} offspring", color="cyan")
             
             # Combine parent and offspring populations
             combined_population = population + offspring
+            tprint(f"📊 [MO-ES] Combined population size: {len(combined_population)}", color="cyan")
             
             # Environmental selection
+            tprint(f"🔧 [MO-ES] Performing environmental selection for generation {generation+1}", color="yellow")
             population = self._environmental_selection(combined_population)
+            tprint(f"📊 [MO-ES] Final population size: {len(population)}", color="cyan")
             
             self.search_history.append({
                 'generation': generation,
@@ -629,7 +700,10 @@ class MultiObjectiveEvolutionarySearch:
             })
             
             if generation % 20 == 0:
-                logger.info(f"Generation {generation}: Pareto front size = {len(self.pareto_front)}")
+                tprint(f"📊 [MO-ES] Generation {generation}: Pareto front size = {len(self.pareto_front)}", color="cyan")
+        
+        tprint_success("✅ [MO-ES] Multi-Objective Evolutionary Search completed")
+        tprint(f"🏆 [MO-ES] Final Pareto front size: {len(self.pareto_front)}", color="green", bold=True)
         
         return {
             'pareto_front': self.pareto_front,
@@ -781,6 +855,9 @@ class EnhancedSearchStrategyManager:
     """Manager for enhanced search strategies."""
     
     def __init__(self, search_space, performance_evaluator, config):
+        tprint("🎛️ [SEARCH-MANAGER] Initializing Enhanced Search Strategy Manager", color="blue", bold=True)
+        tprint(f"📊 [SEARCH-MANAGER] Default strategy: {config.strategy_type.value}", color="cyan")
+        
         self.search_space = search_space
         self.performance_evaluator = performance_evaluator
         self.config = config
@@ -795,23 +872,29 @@ class EnhancedSearchStrategyManager:
         self.search_history = []
         self.best_results = {}
         
+        tprint_success("✅ [SEARCH-MANAGER] Enhanced Search Strategy Manager initialized")
+        
     def search(self, strategy_type=None, **kwargs):
         """Perform architecture search using specified strategy."""
         if strategy_type is None:
             strategy_type = self.config.strategy_type
         
-        logger.info(f"Starting {strategy_type.value} search strategy")
+        tprint(f"🚀 [SEARCH-MANAGER] Starting {strategy_type.value} search strategy", color="blue", bold=True)
+        tprint(f"📊 [SEARCH-MANAGER] Strategy type: {strategy_type.value}", color="cyan")
         
         # Create search strategy
         if strategy_type in self.search_strategies:
+            tprint(f"🔧 [SEARCH-MANAGER] Creating {strategy_type.value} strategy", color="yellow")
             strategy = self.search_strategies[strategy_type](
                 self.search_space, self.performance_evaluator, self.config
             )
             
             # Perform search
+            tprint(f"🔧 [SEARCH-MANAGER] Executing {strategy_type.value} search", color="yellow")
             result = strategy.search(**kwargs)
             
             # Store results
+            tprint(f"🔧 [SEARCH-MANAGER] Storing results for {strategy_type.value}", color="yellow")
             self.best_results[strategy_type] = result
             self.search_history.append({
                 'strategy': strategy_type.value,
@@ -819,8 +902,11 @@ class EnhancedSearchStrategyManager:
                 'timestamp': datetime.now().isoformat()
             })
             
+            tprint_success(f"✅ [SEARCH-MANAGER] {strategy_type.value} search completed")
+            
             return result
         else:
+            tprint_error(f"❌ [SEARCH-MANAGER] Unsupported search strategy: {strategy_type}")
             raise ValueError(f"Unsupported search strategy: {strategy_type}")
     
     def hybrid_search(self, strategies=None, **kwargs):
@@ -832,17 +918,21 @@ class EnhancedSearchStrategyManager:
                 SearchStrategyType.MULTI_OBJECTIVE_EVOLUTIONARY
             ]
         
-        logger.info("Starting hybrid search with multiple strategies")
+        tprint("🚀 [SEARCH-MANAGER] Starting hybrid search with multiple strategies", color="blue", bold=True)
+        tprint(f"📊 [SEARCH-MANAGER] Strategies: {[s.value for s in strategies]}", color="cyan")
         
         results = {}
-        for strategy_type in strategies:
+        for i, strategy_type in enumerate(strategies):
             try:
+                tprint(f"🔧 [SEARCH-MANAGER] Executing strategy {i+1}/{len(strategies)}: {strategy_type.value}", color="yellow")
                 result = self.search(strategy_type, **kwargs)
                 results[strategy_type.value] = result
+                tprint_success(f"✅ [SEARCH-MANAGER] Strategy {strategy_type.value} completed successfully")
             except Exception as e:
-                logger.warning(f"Strategy {strategy_type.value} failed: {e}")
+                tprint_warning(f"⚠️ [SEARCH-MANAGER] Strategy {strategy_type.value} failed: {e}")
         
         # Combine results
+        tprint("🔧 [SEARCH-MANAGER] Combining results from all strategies", color="yellow")
         combined_result = self._combine_results(results)
         
         self.search_history.append({
@@ -851,6 +941,9 @@ class EnhancedSearchStrategyManager:
             'combined_result': combined_result,
             'timestamp': datetime.now().isoformat()
         })
+        
+        tprint_success("✅ [SEARCH-MANAGER] Hybrid search completed")
+        tprint(f"🏆 [SEARCH-MANAGER] Best combined performance: {combined_result.get('best_performance', 0.0):.4f}", color="green", bold=True)
         
         return combined_result
     

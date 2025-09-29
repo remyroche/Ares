@@ -15,10 +15,16 @@ from pathlib import Path
 import time
 import json
 
+# Import tprint for comprehensive debugging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 from .advanced_neural_architectures import (
     AdvancedArchitectureConfig, ArchitectureType, create_advanced_architecture,
     AdvancedArchitectureManager, TransformerRegimeDetector, GraphNeuralNetworkRegimeDetector,
-    TemporalConvolutionalRegimeDetector, HybridTransformerGNN
+    HybridTransformerGNN
 )
 
 from .enhanced_search_strategies import (
@@ -186,12 +192,22 @@ class EnhancedNASSystem:
     """Enhanced Neural Architecture Search System."""
     
     def __init__(self, config: EnhancedNASConfig):
+        tprint("🚀 [ENHANCED-NAS] Initializing Enhanced NAS System", color="blue", bold=True)
+        tprint(f"📊 [ENHANCED-NAS] Architecture: {config.architecture_config.architecture_type.value}", color="cyan")
+        tprint(f"📊 [ENHANCED-NAS] Search Strategy: {config.search_config.strategy_type.value}", color="cyan")
+        tprint(f"📊 [ENHANCED-NAS] Max Iterations: {config.max_search_iterations}", color="cyan")
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize components
+        tprint("🔧 [ENHANCED-NAS] Initializing search space", color="yellow")
         self.search_space = self._initialize_search_space()
+        
+        tprint("🔧 [ENHANCED-NAS] Initializing performance evaluator", color="yellow")
         self.performance_evaluator = PerformanceEvaluator(config)
+        
+        tprint("🔧 [ENHANCED-NAS] Initializing search manager", color="yellow")
         self.search_manager = create_enhanced_search_manager(
             self.search_space, self.performance_evaluator, config.search_config
         )
@@ -202,11 +218,11 @@ class EnhancedNASSystem:
         self.best_performance = -np.inf
         
         # Create output directory
+        tprint(f"🔧 [ENHANCED-NAS] Creating output directory: {config.output_dir}", color="yellow")
         Path(config.output_dir).mkdir(parents=True, exist_ok=True)
         
-        self.logger.info("Enhanced NAS System initialized")
-        self.logger.info(f"Search strategy: {config.search_config.strategy_type.value}")
-        self.logger.info(f"Architecture type: {config.architecture_config.architecture_type.value}")
+        tprint_success("✅ [ENHANCED-NAS] Enhanced NAS System fully initialized")
+        tprint(f"📊 [ENHANCED-NAS] Search space size: {len(self.search_space.operations)} operations", color="cyan")
     
     def _initialize_search_space(self) -> SearchSpace:
         """Initialize the search space."""
@@ -228,12 +244,16 @@ class EnhancedNASSystem:
         start_time = time.time()
         
         try:
-            self.logger.info(f"Starting Enhanced NAS search with strategy: {strategy_type or self.config.search_config.strategy_type.value}")
+            tprint("🚀 [ENHANCED-NAS] Starting Enhanced NAS search", color="blue", bold=True)
+            strategy_name = strategy_type.value if strategy_type else self.config.search_config.strategy_type.value
+            tprint(f"📊 [ENHANCED-NAS] Strategy: {strategy_name}", color="cyan")
             
             # Perform search
             if strategy_type == SearchStrategyType.HYBRID_SEARCH:
+                tprint("🔧 [ENHANCED-NAS] Executing hybrid search", color="yellow")
                 result = self.search_manager.hybrid_search(**kwargs)
             else:
+                tprint(f"🔧 [ENHANCED-NAS] Executing {strategy_name} search", color="yellow")
                 result = self.search_manager.search(strategy_type, **kwargs)
             
             # Create architecture from search result
@@ -241,13 +261,19 @@ class EnhancedNASSystem:
                 best_arch = result['best_architecture']
                 best_performance = result.get('best_performance', 0.0)
                 
+                tprint(f"📊 [ENHANCED-NAS] Search completed with performance: {best_performance:.4f}", color="cyan")
+                
                 # Create advanced architecture
+                tprint("🔧 [ENHANCED-NAS] Creating advanced architecture manager", color="yellow")
                 advanced_arch_manager = AdvancedArchitectureManager(self.config.architecture_config)
                 
                 # Update tracking
                 if best_performance > self.best_performance:
+                    tprint(f"🏆 [ENHANCED-NAS] New best performance: {best_performance:.4f}", color="green", bold=True)
                     self.best_performance = best_performance
                     self.best_architecture = best_arch
+                else:
+                    tprint(f"📊 [ENHANCED-NAS] Current performance: {best_performance:.4f} (best overall: {self.best_performance:.4f})", color="cyan")
                 
                 # Create final result
                 execution_time = time.time() - start_time
@@ -257,32 +283,38 @@ class EnhancedNASSystem:
                     best_performance=best_performance,
                     search_history=result.get('search_history', []),
                     architecture_info=advanced_arch_manager.get_architecture_info(),
-                    search_strategy_used=strategy_type.value if strategy_type else self.config.search_config.strategy_type.value,
+                    search_strategy_used=strategy_name,
                     execution_time=execution_time,
                     metadata={
                         'evaluation_count': self.performance_evaluator.evaluation_count,
                         'cache_hit_rate': len(self.performance_evaluator.evaluation_cache) / max(1, self.performance_evaluator.evaluation_count),
-                        'search_space_size': len(self.search_space.operations) ** self.config.architecture_config.num_layers
+                        'search_space_size': len(self.search_space.operations) ** self.config.architecture_config.num_layers,
+                        'search_strategy_details': {
+                            'strategy_type': strategy_name,
+                            'search_iterations': len(result.get('search_history', [])),
+                            'architecture_complexity': len(best_arch.layers) if best_arch else 0
+                        }
                     }
                 )
                 
                 # Save results if configured
                 if self.config.save_intermediate_results:
+                    tprint("🔧 [ENHANCED-NAS] Saving intermediate results", color="yellow")
                     self._save_intermediate_results(nas_result)
                 
                 self.search_results.append(nas_result)
                 
-                self.logger.info(f"Enhanced NAS search completed successfully")
-                self.logger.info(f"Best performance: {best_performance:.4f}")
-                self.logger.info(f"Execution time: {execution_time:.2f}s")
+                tprint_success("✅ [ENHANCED-NAS] Enhanced NAS search completed successfully")
+                tprint(f"📊 [ENHANCED-NAS] Final metrics: Performance={best_performance:.4f}, Time={execution_time:.2f}s", color="cyan")
                 
                 return nas_result
             else:
+                tprint_error("❌ [ENHANCED-NAS] Search did not return valid results")
                 raise ValueError("Search did not return valid results")
                 
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"Enhanced NAS search failed: {e}")
+            tprint_error(f"❌ [ENHANCED-NAS] Enhanced NAS search failed: {e}")
             
             return EnhancedNASResult(
                 success=False,
@@ -370,7 +402,139 @@ class EnhancedNASSystem:
     
     def get_search_summary(self) -> Dict[str, Any]:
         """Get summary of all search results."""
-        return self.search_manager.get_search_summary()
+        tprint("📊 [ENHANCED-NAS] Generating search summary", color="yellow")
+        summary = self.search_manager.get_search_summary()
+        tprint(f"📊 [ENHANCED-NAS] Summary generated: {len(summary.get('strategy_performance', {}))} strategies", color="cyan")
+        return summary
+    
+    def generate_comprehensive_report(self) -> Dict[str, Any]:
+        """Generate comprehensive final report with all enhanced NAS data."""
+        tprint("📋 [ENHANCED-NAS] Generating comprehensive final report", color="blue", bold=True)
+        
+        # Collect all data
+        report = {
+            'enhanced_nas_overview': {
+                'system_initialized': True,
+                'total_searches': len(self.search_results),
+                'best_overall_performance': self.best_performance,
+                'configuration': {
+                    'architecture_type': self.config.architecture_config.architecture_type.value,
+                    'search_strategy': self.config.search_config.strategy_type.value,
+                    'max_iterations': self.config.max_search_iterations,
+                    'output_directory': self.config.output_dir
+                }
+            },
+            'advanced_architectures': {
+                'available_types': [arch_type.value for arch_type in ArchitectureType],
+                'selected_architecture': self.config.architecture_config.architecture_type.value,
+                'architecture_details': {
+                    'input_dim': self.config.architecture_config.input_dim,
+                    'hidden_dim': self.config.architecture_config.hidden_dim,
+                    'num_heads': self.config.architecture_config.num_heads,
+                    'num_layers': self.config.architecture_config.num_layers,
+                    'num_regimes': self.config.architecture_config.num_regimes,
+                    'dropout': self.config.architecture_config.dropout
+                }
+            },
+            'enhanced_search_strategies': {
+                'available_strategies': [strategy.value for strategy in SearchStrategyType],
+                'selected_strategy': self.config.search_config.strategy_type.value,
+                'strategy_details': {
+                    'rl_learning_rate': self.config.search_config.rl_learning_rate,
+                    'rl_gamma': self.config.search_config.rl_gamma,
+                    'progressive_initial_ops': self.config.search_config.progressive_initial_ops,
+                    'progressive_max_ops': self.config.search_config.progressive_max_ops,
+                    'mo_population_size': self.config.search_config.mo_population_size,
+                    'mo_generations': self.config.search_config.mo_generations
+                }
+            },
+            'search_results': [],
+            'performance_metrics': {
+                'evaluation_count': self.performance_evaluator.evaluation_count,
+                'cache_hit_rate': len(self.performance_evaluator.evaluation_cache) / max(1, self.performance_evaluator.evaluation_count),
+                'search_space_size': len(self.search_space.operations) ** self.config.architecture_config.num_layers
+            },
+            'best_architecture': None,
+            'search_history_summary': {}
+        }
+        
+        # Process search results
+        for i, result in enumerate(self.search_results):
+            tprint(f"🔧 [ENHANCED-NAS] Processing search result {i+1}/{len(self.search_results)}", color="yellow")
+            
+            search_result_data = {
+                'search_index': i + 1,
+                'success': result.success,
+                'strategy_used': result.search_strategy_used,
+                'best_performance': result.best_performance,
+                'execution_time': result.execution_time,
+                'architecture_info': result.architecture_info,
+                'metadata': result.metadata,
+                'error_message': result.error_message if not result.success else None
+            }
+            
+            if result.best_architecture:
+                search_result_data['architecture_details'] = {
+                    'num_layers': len(result.best_architecture.layers),
+                    'estimated_complexity': result.best_architecture.estimated_complexity,
+                    'layer_operations': [layer.operation_name for layer in result.best_architecture.layers]
+                }
+            
+            report['search_results'].append(search_result_data)
+        
+        # Set best architecture
+        if self.best_architecture:
+            tprint("🔧 [ENHANCED-NAS] Processing best architecture details", color="yellow")
+            report['best_architecture'] = {
+                'num_layers': len(self.best_architecture.layers),
+                'estimated_complexity': self.best_architecture.estimated_complexity,
+                'layer_operations': [layer.operation_name for layer in self.best_architecture.layers],
+                'performance': self.best_performance
+            }
+        
+        # Generate search history summary
+        if self.search_results:
+            tprint("🔧 [ENHANCED-NAS] Generating search history summary", color="yellow")
+            all_histories = []
+            for result in self.search_results:
+                if result.search_history:
+                    all_histories.extend(result.search_history)
+            
+            report['search_history_summary'] = {
+                'total_iterations': len(all_histories),
+                'performance_evolution': [
+                    entry.get('best_performance', 0.0) for entry in all_histories
+                    if 'best_performance' in entry
+                ],
+                'strategy_breakdown': {}
+            }
+            
+            # Strategy breakdown
+            for result in self.search_results:
+                strategy = result.search_strategy_used
+                if strategy not in report['search_history_summary']['strategy_breakdown']:
+                    report['search_history_summary']['strategy_breakdown'][strategy] = {
+                        'count': 0,
+                        'total_performance': 0.0,
+                        'best_performance': 0.0,
+                        'total_time': 0.0
+                    }
+                
+                breakdown = report['search_history_summary']['strategy_breakdown'][strategy]
+                breakdown['count'] += 1
+                breakdown['total_performance'] += result.best_performance
+                breakdown['best_performance'] = max(breakdown['best_performance'], result.best_performance)
+                breakdown['total_time'] += result.execution_time
+            
+            # Calculate averages
+            for strategy, data in report['search_history_summary']['strategy_breakdown'].items():
+                data['average_performance'] = data['total_performance'] / data['count']
+                data['average_time'] = data['total_time'] / data['count']
+        
+        tprint_success("✅ [ENHANCED-NAS] Comprehensive final report generated")
+        tprint(f"📊 [ENHANCED-NAS] Report contains: {len(report['search_results'])} search results, {len(report['search_history_summary'].get('strategy_breakdown', {}))} strategies", color="cyan")
+        
+        return report
     
     def compare_strategies(self, strategies: List[SearchStrategyType], **kwargs) -> Dict[str, EnhancedNASResult]:
         """Compare multiple search strategies."""

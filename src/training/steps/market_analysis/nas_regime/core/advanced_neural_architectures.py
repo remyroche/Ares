@@ -18,6 +18,12 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 
+# Import tprint for comprehensive debugging
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +31,6 @@ class ArchitectureType(Enum):
     """Available advanced architecture types."""
     TRANSFORMER_REGIME = "transformer_regime"
     GRAPH_NEURAL_NETWORK = "graph_neural_network"
-    TEMPORAL_CONVOLUTIONAL = "temporal_convolutional"
     HYBRID_TRANSFORMER_GNN = "hybrid_transformer_gnn"
     MULTI_SCALE_TRANSFORMER = "multi_scale_transformer"
     ADAPTIVE_TRANSFORMER = "adaptive_transformer"
@@ -129,22 +134,30 @@ class TransformerRegimeDetector(nn.Module):
     
     def __init__(self, config: AdvancedArchitectureConfig):
         super().__init__()
+        tprint("🧠 [TRANSFORMER] Initializing Transformer Regime Detector", color="blue", bold=True)
+        tprint(f"📊 [TRANSFORMER] Config: input_dim={config.input_dim}, hidden_dim={config.hidden_dim}, num_heads={config.num_heads}", color="cyan")
+        
         self.config = config
         self.input_projection = nn.Linear(config.input_dim, config.hidden_dim)
         self.pos_encoding = PositionalEncoding(config.hidden_dim, config.max_sequence_length)
         
+        tprint("✅ [TRANSFORMER] Input projection and positional encoding initialized", color="green")
+        
         # Regime-aware attention layers
+        tprint(f"🔧 [TRANSFORMER] Creating {config.num_layers} regime attention layers", color="yellow")
         self.regime_attention_layers = nn.ModuleList([
             RegimeAttention(config.hidden_dim, config.num_heads, config.num_regimes, config.dropout)
             for _ in range(config.num_layers)
         ])
         
         # Temporal attention for time series patterns
+        tprint("🔧 [TRANSFORMER] Creating temporal attention layer", color="yellow")
         self.temporal_attention = nn.MultiheadAttention(
             config.hidden_dim, config.num_heads, dropout=config.dropout, batch_first=True
         )
         
         # Feed-forward networks
+        tprint(f"🔧 [TRANSFORMER] Creating {config.num_layers} feed-forward networks", color="yellow")
         self.ffn_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(config.hidden_dim, config.hidden_dim * 4),
@@ -156,6 +169,7 @@ class TransformerRegimeDetector(nn.Module):
         ])
         
         # Regime classification head
+        tprint(f"🔧 [TRANSFORMER] Creating regime classifier for {config.num_regimes} regimes", color="yellow")
         self.regime_classifier = nn.Sequential(
             nn.Linear(config.hidden_dim, config.hidden_dim // 2),
             nn.ReLU(),
@@ -164,6 +178,7 @@ class TransformerRegimeDetector(nn.Module):
         )
         
         # Regime transition prediction
+        tprint("🔧 [TRANSFORMER] Creating regime transition predictor", color="yellow")
         self.transition_predictor = nn.Sequential(
             nn.Linear(config.hidden_dim * 2, config.hidden_dim),
             nn.ReLU(),
@@ -175,55 +190,85 @@ class TransformerRegimeDetector(nn.Module):
             nn.LayerNorm(config.hidden_dim) for _ in range(config.num_layers)
         ])
         
+        tprint_success("✅ [TRANSFORMER] Transformer Regime Detector fully initialized")
+        
     def forward(self, x, regime_labels=None):
+        tprint("🚀 [TRANSFORMER] Starting forward pass", color="blue")
         batch_size, seq_len, input_dim = x.size()
+        tprint(f"📊 [TRANSFORMER] Input shape: batch_size={batch_size}, seq_len={seq_len}, input_dim={input_dim}", color="cyan")
         
         # Input projection and positional encoding
+        tprint("🔧 [TRANSFORMER] Applying input projection", color="yellow")
         x = self.input_projection(x)
+        tprint(f"📊 [TRANSFORMER] After projection: {x.shape}", color="cyan")
+        
         if self.config.use_positional_encoding:
+            tprint("🔧 [TRANSFORMER] Applying positional encoding", color="yellow")
             x = x.transpose(0, 1)  # (seq_len, batch_size, hidden_dim)
             x = self.pos_encoding(x)
             x = x.transpose(0, 1)  # (batch_size, seq_len, hidden_dim)
+            tprint(f"📊 [TRANSFORMER] After positional encoding: {x.shape}", color="cyan")
+        else:
+            tprint("⚠️ [TRANSFORMER] Positional encoding disabled", color="yellow")
         
         # Regime-aware transformer layers
+        tprint(f"🔧 [TRANSFORMER] Processing {len(self.regime_attention_layers)} transformer layers", color="yellow")
         attention_weights = []
         for i, (regime_attn, ffn, layer_norm) in enumerate(
             zip(self.regime_attention_layers, self.ffn_layers, self.layer_norms)
         ):
+            tprint(f"🔧 [TRANSFORMER] Processing layer {i+1}/{len(self.regime_attention_layers)}", color="yellow")
+            
             # Regime-aware attention
             if self.config.use_regime_attention:
+                tprint(f"🔧 [TRANSFORMER] Using regime-aware attention for layer {i+1}", color="yellow")
                 x_attn, attn_weights = regime_attn(x, regime_labels)
                 attention_weights.append(attn_weights)
+                tprint(f"📊 [TRANSFORMER] Layer {i+1} attention weights shape: {attn_weights.shape if attn_weights is not None else 'None'}", color="cyan")
             else:
+                tprint(f"🔧 [TRANSFORMER] Using temporal attention for layer {i+1}", color="yellow")
                 x_attn, _ = self.temporal_attention(x, x, x)
                 attention_weights.append(None)
             
             # Feed-forward network
+            tprint(f"🔧 [TRANSFORMER] Applying feed-forward network for layer {i+1}", color="yellow")
             x_ffn = ffn(x_attn)
             
             # Residual connection and layer norm
+            tprint(f"🔧 [TRANSFORMER] Applying residual connection and layer norm for layer {i+1}", color="yellow")
             x = layer_norm(x_attn + x_ffn)
+            tprint(f"📊 [TRANSFORMER] Layer {i+1} output shape: {x.shape}", color="cyan")
         
         # Regime classification
+        tprint("🔧 [TRANSFORMER] Applying regime classification", color="yellow")
         regime_logits = self.regime_classifier(x)
+        tprint(f"📊 [TRANSFORMER] Regime logits shape: {regime_logits.shape}", color="cyan")
         
         # Regime transition prediction (using consecutive hidden states)
         if seq_len > 1:
+            tprint(f"🔧 [TRANSFORMER] Computing transition probabilities for {seq_len-1} transitions", color="yellow")
             transitions = []
             for i in range(seq_len - 1):
                 transition_input = torch.cat([x[:, i], x[:, i + 1]], dim=-1)
                 transition_logits = self.transition_predictor(transition_input)
                 transitions.append(transition_logits)
             transition_logits = torch.stack(transitions, dim=1)
+            tprint(f"📊 [TRANSFORMER] Transition logits shape: {transition_logits.shape}", color="cyan")
         else:
+            tprint("⚠️ [TRANSFORMER] Sequence length too short for transition prediction", color="yellow")
             transition_logits = None
         
-        return {
+        result = {
             'regime_logits': regime_logits,
             'transition_logits': transition_logits,
             'hidden_states': x,
             'attention_weights': attention_weights
         }
+        
+        tprint_success("✅ [TRANSFORMER] Forward pass completed successfully")
+        tprint(f"📊 [TRANSFORMER] Final output shapes: regime_logits={regime_logits.shape}, hidden_states={x.shape}", color="cyan")
+        
+        return result
 
 
 class GraphNeuralNetworkRegimeDetector(nn.Module):
@@ -231,21 +276,28 @@ class GraphNeuralNetworkRegimeDetector(nn.Module):
     
     def __init__(self, config: AdvancedArchitectureConfig):
         super().__init__()
+        tprint("🌐 [GNN] Initializing Graph Neural Network Regime Detector", color="blue", bold=True)
+        tprint(f"📊 [GNN] Config: input_dim={config.input_dim}, hidden_dim={config.hidden_dim}, num_heads={config.num_heads}", color="cyan")
+        
         self.config = config
         
         # Node embedding
+        tprint("🔧 [GNN] Creating node embedding layer", color="yellow")
         self.node_embedding = nn.Linear(config.input_dim, config.hidden_dim)
         
         # Graph attention layers
+        tprint(f"🔧 [GNN] Creating {config.num_layers} graph attention layers", color="yellow")
         self.gat_layers = nn.ModuleList([
             GraphAttentionLayer(config.hidden_dim, config.hidden_dim // config.num_heads, config.num_heads)
             for _ in range(config.num_layers)
         ])
         
         # Temporal graph convolution
+        tprint("🔧 [GNN] Creating temporal graph convolution layer", color="yellow")
         self.temporal_gcn = TemporalGraphConvolution(config.hidden_dim, config.hidden_dim)
         
         # Regime classification
+        tprint(f"🔧 [GNN] Creating regime classifier for {config.num_regimes} regimes", color="yellow")
         self.regime_classifier = nn.Sequential(
             nn.Linear(config.hidden_dim, config.hidden_dim // 2),
             nn.ReLU(),
@@ -253,38 +305,62 @@ class GraphNeuralNetworkRegimeDetector(nn.Module):
             nn.Linear(config.hidden_dim // 2, config.num_regimes)
         )
         
+        tprint_success("✅ [GNN] Graph Neural Network Regime Detector fully initialized")
+        
     def forward(self, node_features, adjacency_matrix, timestamps=None):
+        tprint("🚀 [GNN] Starting forward pass", color="blue")
         batch_size, num_nodes, seq_len, input_dim = node_features.size()
+        tprint(f"📊 [GNN] Input shapes: node_features={node_features.shape}, adjacency_matrix={adjacency_matrix.shape}", color="cyan")
         
         # Node embedding
+        tprint("🔧 [GNN] Applying node embedding", color="yellow")
         node_emb = self.node_embedding(node_features.view(-1, input_dim))
         node_emb = node_emb.view(batch_size, num_nodes, seq_len, -1)
+        tprint(f"📊 [GNN] Node embeddings shape: {node_emb.shape}", color="cyan")
         
         # Process each time step
+        tprint(f"🔧 [GNN] Processing {seq_len} time steps", color="yellow")
         regime_logits_list = []
         for t in range(seq_len):
+            tprint(f"🔧 [GNN] Processing time step {t+1}/{seq_len}", color="yellow")
+            
             # Current time step node features
             current_nodes = node_emb[:, :, t, :]  # (batch_size, num_nodes, hidden_dim)
+            tprint(f"📊 [GNN] Time step {t+1} nodes shape: {current_nodes.shape}", color="cyan")
             
             # Graph attention layers
             x = current_nodes
-            for gat_layer in self.gat_layers:
+            for i, gat_layer in enumerate(self.gat_layers):
+                tprint(f"🔧 [GNN] Applying GAT layer {i+1}/{len(self.gat_layers)}", color="yellow")
                 x = gat_layer(x, adjacency_matrix)
+                tprint(f"📊 [GNN] GAT layer {i+1} output shape: {x.shape}", color="cyan")
             
             # Temporal graph convolution if timestamps available
             if timestamps is not None and t > 0:
+                tprint(f"🔧 [GNN] Applying temporal graph convolution at time {t+1}", color="yellow")
                 x = self.temporal_gcn(x, node_emb[:, :, t-1, :], timestamps[:, t])
+                tprint(f"📊 [GNN] Temporal GCN output shape: {x.shape}", color="cyan")
+            else:
+                tprint(f"⚠️ [GNN] No temporal graph convolution at time {t+1} (no timestamps or first timestep)", color="yellow")
             
             # Regime classification for this time step
+            tprint(f"🔧 [GNN] Computing regime classification for time {t+1}", color="yellow")
             regime_logits = self.regime_classifier(x.mean(dim=1))  # Global pooling
             regime_logits_list.append(regime_logits)
+            tprint(f"📊 [GNN] Time {t+1} regime logits shape: {regime_logits.shape}", color="cyan")
         
         regime_logits = torch.stack(regime_logits_list, dim=1)  # (batch_size, seq_len, num_regimes)
+        tprint(f"📊 [GNN] Final regime logits shape: {regime_logits.shape}", color="cyan")
         
-        return {
+        result = {
             'regime_logits': regime_logits,
             'node_embeddings': node_emb
         }
+        
+        tprint_success("✅ [GNN] Forward pass completed successfully")
+        tprint(f"📊 [GNN] Final output shapes: regime_logits={regime_logits.shape}, node_embeddings={node_emb.shape}", color="cyan")
+        
+        return result
 
 
 class GraphAttentionLayer(nn.Module):
@@ -372,77 +448,7 @@ class TemporalGraphConvolution(nn.Module):
         return output
 
 
-class TemporalConvolutionalRegimeDetector(nn.Module):
-    """Temporal Convolutional Network for time series regime detection."""
-    
-    def __init__(self, config: AdvancedArchitectureConfig):
-        super().__init__()
-        self.config = config
-        
-        # Multi-scale temporal convolutions
-        self.temporal_convs = nn.ModuleList([
-            nn.Conv1d(config.input_dim, config.hidden_dim, kernel_size=k, padding=k//2)
-            for k in [3, 5, 7, 9]  # Multiple temporal scales
-        ])
-        
-        # Dilated convolutions for long-range dependencies
-        self.dilated_convs = nn.ModuleList([
-            nn.Conv1d(config.hidden_dim, config.hidden_dim, kernel_size=3, 
-                     padding=2**i, dilation=2**i)
-            for i in range(4)  # Different dilation rates
-        ])
-        
-        # Attention mechanism for temporal patterns
-        self.temporal_attention = nn.MultiheadAttention(
-            config.hidden_dim, config.num_heads, dropout=config.dropout, batch_first=True
-        )
-        
-        # Regime classification
-        self.regime_classifier = nn.Sequential(
-            nn.Linear(config.hidden_dim, config.hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(config.dropout),
-            nn.Linear(config.hidden_dim // 2, config.num_regimes)
-        )
-        
-    def forward(self, x):
-        batch_size, seq_len, input_dim = x.size()
-        
-        # Transpose for conv1d: (batch_size, input_dim, seq_len)
-        x = x.transpose(1, 2)
-        
-        # Multi-scale temporal convolutions
-        conv_outputs = []
-        for conv in self.temporal_convs:
-            conv_out = F.relu(conv(x))
-            conv_outputs.append(conv_out)
-        
-        # Concatenate multi-scale features
-        x = torch.cat(conv_outputs, dim=1)  # (batch_size, hidden_dim * 4, seq_len)
-        
-        # Reduce dimensions
-        x = F.adaptive_avg_pool1d(x, seq_len)  # Ensure same length
-        
-        # Dilated convolutions
-        for dilated_conv in self.dilated_convs:
-            residual = x
-            x = F.relu(dilated_conv(x))
-            x = x + residual  # Residual connection
-        
-        # Transpose back: (batch_size, seq_len, hidden_dim)
-        x = x.transpose(1, 2)
-        
-        # Temporal attention
-        x_attn, _ = self.temporal_attention(x, x, x)
-        x = x + x_attn  # Residual connection
-        
-        # Regime classification
-        regime_logits = self.regime_classifier(x)
-        
-        return {
-            'regime_logits': regime_logits,
-            'temporal_features': x
-        }
+# Temporal Convolutional Networks removed as not necessary
 
 
 class HybridTransformerGNN(nn.Module):
@@ -450,85 +456,115 @@ class HybridTransformerGNN(nn.Module):
     
     def __init__(self, config: AdvancedArchitectureConfig):
         super().__init__()
+        tprint("🔀 [HYBRID] Initializing Hybrid Transformer-GNN Architecture", color="blue", bold=True)
+        tprint(f"📊 [HYBRID] Config: input_dim={config.input_dim}, hidden_dim={config.hidden_dim}, num_heads={config.num_heads}", color="cyan")
+        
         self.config = config
         
         # Transformer component
+        tprint("🔧 [HYBRID] Creating Transformer component", color="yellow")
         self.transformer = TransformerRegimeDetector(config)
         
         # GNN component
+        tprint("🔧 [HYBRID] Creating GNN component", color="yellow")
         self.gnn = GraphNeuralNetworkRegimeDetector(config)
         
-        # Temporal CNN component
-        self.temporal_cnn = TemporalConvolutionalRegimeDetector(config)
-        
         # Fusion mechanism
+        tprint("🔧 [HYBRID] Creating fusion attention mechanism", color="yellow")
         self.fusion_attention = nn.MultiheadAttention(
-            config.hidden_dim * 3, config.num_heads, dropout=config.dropout, batch_first=True
+            config.hidden_dim * 2, config.num_heads, dropout=config.dropout, batch_first=True
         )
         
         # Final classification
+        tprint(f"🔧 [HYBRID] Creating final classifier for {config.num_regimes} regimes", color="yellow")
         self.final_classifier = nn.Sequential(
-            nn.Linear(config.hidden_dim * 3, config.hidden_dim),
+            nn.Linear(config.hidden_dim * 2, config.hidden_dim),
             nn.ReLU(),
             nn.Dropout(config.dropout),
             nn.Linear(config.hidden_dim, config.num_regimes)
         )
         
+        tprint_success("✅ [HYBRID] Hybrid Transformer-GNN Architecture fully initialized")
+        
     def forward(self, x, adjacency_matrix=None, regime_labels=None):
+        tprint("🚀 [HYBRID] Starting hybrid forward pass", color="blue")
+        tprint(f"📊 [HYBRID] Input shape: {x.shape}, has_adjacency: {adjacency_matrix is not None}", color="cyan")
+        
         # Get outputs from each component
+        tprint("🔧 [HYBRID] Getting Transformer output", color="yellow")
         transformer_out = self.transformer(x, regime_labels)
-        temporal_out = self.temporal_cnn(x)
+        tprint(f"📊 [HYBRID] Transformer output shapes: regime_logits={transformer_out['regime_logits'].shape}, hidden_states={transformer_out['hidden_states'].shape}", color="cyan")
         
         # GNN output (if adjacency matrix provided)
         if adjacency_matrix is not None:
+            tprint("🔧 [HYBRID] Processing GNN component with adjacency matrix", color="yellow")
             # Create node features from sequence data
             node_features = x.unsqueeze(2)  # Add node dimension
+            tprint(f"📊 [HYBRID] Node features shape: {node_features.shape}", color="cyan")
             gnn_out = self.gnn(node_features, adjacency_matrix)
+            tprint(f"📊 [HYBRID] GNN output shapes: regime_logits={gnn_out['regime_logits'].shape}, node_embeddings={gnn_out['node_embeddings'].shape}", color="cyan")
         else:
+            tprint("⚠️ [HYBRID] No adjacency matrix provided, using transformer features for GNN", color="yellow")
             # Use transformer hidden states as GNN input
             gnn_out = {'regime_logits': transformer_out['regime_logits']}
         
         # Fuse representations
+        tprint("🔧 [HYBRID] Fusing representations from components", color="yellow")
         transformer_features = transformer_out['hidden_states']
-        temporal_features = temporal_out['temporal_features']
         
         # Create GNN features (use transformer features if no GNN output)
         if adjacency_matrix is not None:
             gnn_features = gnn_out['node_embeddings'].mean(dim=1)  # Global pooling
+            tprint(f"📊 [HYBRID] GNN features after global pooling: {gnn_features.shape}", color="cyan")
         else:
             gnn_features = transformer_features
+            tprint(f"📊 [HYBRID] Using transformer features as GNN features: {gnn_features.shape}", color="cyan")
         
         # Concatenate features
-        fused_features = torch.cat([transformer_features, temporal_features, gnn_features], dim=-1)
+        tprint("🔧 [HYBRID] Concatenating features from all components", color="yellow")
+        fused_features = torch.cat([transformer_features, gnn_features], dim=-1)
+        tprint(f"📊 [HYBRID] Fused features shape: {fused_features.shape}", color="cyan")
         
         # Fusion attention
+        tprint("🔧 [HYBRID] Applying fusion attention mechanism", color="yellow")
         fused_attn, _ = self.fusion_attention(fused_features, fused_features, fused_features)
+        tprint(f"📊 [HYBRID] Fusion attention output shape: {fused_attn.shape}", color="cyan")
         
         # Final classification
+        tprint("🔧 [HYBRID] Applying final classification", color="yellow")
         final_logits = self.final_classifier(fused_attn)
+        tprint(f"📊 [HYBRID] Final logits shape: {final_logits.shape}", color="cyan")
         
-        return {
+        result = {
             'regime_logits': final_logits,
             'transformer_logits': transformer_out['regime_logits'],
-            'temporal_logits': temporal_out['regime_logits'],
             'gnn_logits': gnn_out['regime_logits'] if adjacency_matrix is not None else transformer_out['regime_logits'],
             'fused_features': fused_attn,
             'attention_weights': transformer_out['attention_weights']
         }
+        
+        tprint_success("✅ [HYBRID] Hybrid forward pass completed successfully")
+        tprint(f"📊 [HYBRID] Final output shapes: regime_logits={final_logits.shape}, fused_features={fused_attn.shape}", color="cyan")
+        
+        return result
 
 
 def create_advanced_architecture(config: AdvancedArchitectureConfig) -> nn.Module:
     """Factory function to create advanced neural architectures."""
+    tprint("🏭 [FACTORY] Creating advanced neural architecture", color="blue", bold=True)
+    tprint(f"📊 [FACTORY] Architecture type: {config.architecture_type.value}", color="cyan")
     
     if config.architecture_type == ArchitectureType.TRANSFORMER_REGIME:
+        tprint("🔧 [FACTORY] Creating Transformer Regime Detector", color="yellow")
         return TransformerRegimeDetector(config)
     elif config.architecture_type == ArchitectureType.GRAPH_NEURAL_NETWORK:
+        tprint("🔧 [FACTORY] Creating Graph Neural Network Regime Detector", color="yellow")
         return GraphNeuralNetworkRegimeDetector(config)
-    elif config.architecture_type == ArchitectureType.TEMPORAL_CONVOLUTIONAL:
-        return TemporalConvolutionalRegimeDetector(config)
     elif config.architecture_type == ArchitectureType.HYBRID_TRANSFORMER_GNN:
+        tprint("🔧 [FACTORY] Creating Hybrid Transformer-GNN", color="yellow")
         return HybridTransformerGNN(config)
     else:
+        tprint_error(f"❌ [FACTORY] Unsupported architecture type: {config.architecture_type}")
         raise ValueError(f"Unsupported architecture type: {config.architecture_type}")
 
 
@@ -536,20 +572,35 @@ class AdvancedArchitectureManager:
     """Manager for advanced neural architectures."""
     
     def __init__(self, config: AdvancedArchitectureConfig):
+        tprint("🎛️ [MANAGER] Initializing Advanced Architecture Manager", color="blue", bold=True)
+        tprint(f"📊 [MANAGER] Config: {config.architecture_type.value}", color="cyan")
+        
         self.config = config
         self.architecture = create_advanced_architecture(config)
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint_success("✅ [MANAGER] Advanced Architecture Manager initialized")
+        
     def forward(self, x, **kwargs):
         """Forward pass through the architecture."""
-        return self.architecture(x, **kwargs)
+        tprint("🚀 [MANAGER] Starting forward pass through architecture", color="blue")
+        tprint(f"📊 [MANAGER] Input shape: {x.shape}", color="cyan")
+        
+        result = self.architecture(x, **kwargs)
+        
+        tprint_success("✅ [MANAGER] Forward pass completed")
+        tprint(f"📊 [MANAGER] Output keys: {list(result.keys())}", color="cyan")
+        
+        return result
     
     def get_architecture_info(self) -> Dict[str, Any]:
         """Get information about the architecture."""
+        tprint("📊 [MANAGER] Computing architecture information", color="yellow")
+        
         total_params = sum(p.numel() for p in self.architecture.parameters())
         trainable_params = sum(p.numel() for p in self.architecture.parameters() if p.requires_grad)
         
-        return {
+        info = {
             'architecture_type': self.config.architecture_type.value,
             'total_parameters': total_params,
             'trainable_parameters': trainable_params,
@@ -559,6 +610,10 @@ class AdvancedArchitectureManager:
             'num_layers': self.config.num_layers,
             'num_regimes': self.config.num_regimes
         }
+        
+        tprint(f"📊 [MANAGER] Architecture info: {total_params:,} total params, {trainable_params:,} trainable", color="cyan")
+        
+        return info
     
     def save_architecture(self, filepath: str):
         """Save the architecture to file."""

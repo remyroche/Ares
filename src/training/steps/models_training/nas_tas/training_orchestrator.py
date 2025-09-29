@@ -599,13 +599,46 @@ class TrainingOrchestrator:
                                market_data: pd.DataFrame,
                                training_result: RegimeTrainingResult,
                                timestamps: Optional[pd.Series]) -> Dict[str, float]:
-        """Orchestrate backtesting evaluation."""
+        """Orchestrate comprehensive backtesting evaluation."""
         try:
-            # Simple backtesting implementation
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+            import numpy as np
+            
+            tprint("🔄 Starting comprehensive backtesting evaluation", color="yellow")
             backtest_results = {}
+            
+            # Backtesting configuration
+            backtest_config = {
+                'n_splits': 5,  # Number of time series splits
+                'test_size': 0.2,  # 20% for testing
+                'min_train_size': 100,  # Minimum training samples
+                'step_size': 1,  # Step size for rolling window
+                'metrics': ['accuracy', 'precision', 'recall', 'f1_score'],
+                'confidence_level': 0.95
+            }
+            
+            # Initialize time series cross-validation
+            tscv = TimeSeriesSplit(
+                n_splits=backtest_config['n_splits'],
+                test_size=int(len(market_data) * backtest_config['test_size'])
+            )
+            
+            # Prepare market data for backtesting
+            if timestamps is not None:
+                # Sort by timestamps
+                sorted_indices = timestamps.argsort()
+                market_data_sorted = market_data.iloc[sorted_indices]
+            else:
+                market_data_sorted = market_data
+            
+            # Extract features and targets (assuming last column is target)
+            X = market_data_sorted.iloc[:, :-1].values
+            y = market_data_sorted.iloc[:, -1].values
             
             # Test each regime's models
             for regime_id, models in training_result.models_trained.items():
+                tprint(f"📊 Backtesting regime {regime_id}", color="blue")
                 regime_performance = {}
                 
                 for model_type, model_info in models.items():
@@ -617,28 +650,134 @@ class TrainingOrchestrator:
                     if model is None:
                         self.logger.warning(f"⚠️ No model found for {model_type} in regime {regime_id}")
                         continue
-
-                    # Get test performance
-                    test_metrics = model_info.get('test_metrics', {})
-                    if not isinstance(test_metrics, dict):
-                        test_metrics = {}
-
-                    regime_performance[model_type] = test_metrics.get('f1_score', 0.0)
+                    
+                    # Perform time series cross-validation
+                    cv_scores = []
+                    cv_metrics = {metric: [] for metric in backtest_config['metrics']}
+                    
+                    for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                        try:
+                            # Split data
+                            X_train, X_test = X[train_idx], X[test_idx]
+                            y_train, y_test = y[train_idx], y[test_idx]
+                            
+                            # Skip if insufficient data
+                            if len(X_train) < backtest_config['min_train_size']:
+                                continue
+                            
+                            # Train model on this fold
+                            model_copy = self._clone_model(model)
+                            model_copy.fit(X_train, y_train)
+                            
+                            # Make predictions
+                            y_pred = model_copy.predict(X_test)
+                            
+                            # Calculate metrics
+                            fold_metrics = {
+                                'accuracy': accuracy_score(y_test, y_pred),
+                                'precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
+                                'recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
+                                'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                            }
+                            
+                            # Store metrics
+                            for metric, value in fold_metrics.items():
+                                cv_metrics[metric].append(value)
+                            
+                            cv_scores.append(fold_metrics['f1_score'])
+                            
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Fold {fold} failed for {model_type}: {e}")
+                            continue
+                    
+                    # Calculate average performance across folds
+                    if cv_scores:
+                        regime_performance[model_type] = {
+                            'mean_f1': np.mean(cv_scores),
+                            'std_f1': np.std(cv_scores),
+                            'mean_accuracy': np.mean(cv_metrics['accuracy']),
+                            'mean_precision': np.mean(cv_metrics['precision']),
+                            'mean_recall': np.mean(cv_metrics['recall']),
+                            'n_folds': len(cv_scores),
+                            'confidence_interval': self._calculate_confidence_interval(cv_scores, backtest_config['confidence_level'])
+                        }
+                        
+                        tprint(f"   ✅ {model_type}: F1={np.mean(cv_scores):.3f}±{np.std(cv_scores):.3f}", color="green")
+                    else:
+                        regime_performance[model_type] = {
+                            'mean_f1': 0.0,
+                            'std_f1': 0.0,
+                            'mean_accuracy': 0.0,
+                            'mean_precision': 0.0,
+                            'mean_recall': 0.0,
+                            'n_folds': 0,
+                            'confidence_interval': (0.0, 0.0)
+                        }
                 
-                # Average performance for regime
+                # Calculate regime-level performance
                 if regime_performance:
-                    backtest_results[f'regime_{regime_id}'] = np.mean(list(regime_performance.values()))
+                    regime_f1_scores = [perf['mean_f1'] for perf in regime_performance.values()]
+                    backtest_results[f'regime_{regime_id}'] = {
+                        'mean_f1': np.mean(regime_f1_scores),
+                        'std_f1': np.std(regime_f1_scores),
+                        'model_count': len(regime_performance),
+                        'model_performance': regime_performance
+                    }
+                    
+                    tprint(f"   📊 Regime {regime_id} average F1: {np.mean(regime_f1_scores):.3f}±{np.std(regime_f1_scores):.3f}", color="cyan")
             
-            # Overall backtest performance
+            # Calculate overall backtest performance
             if backtest_results:
-                backtest_results['overall'] = np.mean(list(backtest_results.values()))
+                overall_f1_scores = [result['mean_f1'] for result in backtest_results.values()]
+                backtest_results['overall'] = {
+                    'mean_f1': np.mean(overall_f1_scores),
+                    'std_f1': np.std(overall_f1_scores),
+                    'regime_count': len(backtest_results),
+                    'total_models': sum(result['model_count'] for result in backtest_results.values())
+                }
+                
+                tprint(f"🎯 Overall backtest F1: {np.mean(overall_f1_scores):.3f}±{np.std(overall_f1_scores):.3f}", color="green")
             
-            self.logger.info(f"✅ Backtesting completed - Overall performance: {backtest_results.get('overall', 0):.3f}")
+            self.logger.info(f"✅ Comprehensive backtesting completed")
             return backtest_results
             
         except Exception as e:
             self.logger.error(f"❌ Backtesting orchestration failed: {e}")
-            return {'overall': 0.0}
+            return {'overall': {'mean_f1': 0.0, 'std_f1': 0.0, 'regime_count': 0, 'total_models': 0}}
+    
+    def _clone_model(self, model):
+        """Clone a model for cross-validation."""
+        try:
+            from sklearn.base import clone
+            return clone(model)
+        except Exception:
+            # Fallback: return the original model (not ideal but functional)
+            return model
+    
+    def _calculate_confidence_interval(self, scores, confidence_level):
+        """Calculate confidence interval for scores."""
+        try:
+            import scipy.stats as stats
+            n = len(scores)
+            mean = np.mean(scores)
+            std = np.std(scores)
+            se = std / np.sqrt(n)
+            
+            # Calculate t-statistic
+            alpha = 1 - confidence_level
+            t_val = stats.t.ppf(1 - alpha/2, n-1)
+            
+            # Calculate confidence interval
+            margin_error = t_val * se
+            ci_lower = mean - margin_error
+            ci_upper = mean + margin_error
+            
+            return (ci_lower, ci_upper)
+        except Exception:
+            # Fallback: simple standard error
+            mean = np.mean(scores)
+            std = np.std(scores)
+            return (mean - std, mean + std)
     
     def _save_orchestration_results(self, result: OrchestrationResult):
         """Save orchestration results."""

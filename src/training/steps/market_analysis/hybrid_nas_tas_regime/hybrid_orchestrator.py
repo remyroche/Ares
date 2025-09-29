@@ -12,6 +12,17 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 import asyncio
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+
+# Initialize console for tprint
+console = Console()
+
+def tprint(*args, **kwargs):
+    """Enhanced print function with rich formatting."""
+    console.print(*args, **kwargs)
 
 # Import shared utilities
 from .shared_utils import (
@@ -103,11 +114,24 @@ class HybridOrchestrator:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        tprint(Panel.fit(
+            "[bold blue]🚀 Hybrid NAS-TAS Regime Discovery Orchestrator[/bold blue]\n"
+            f"Symbol: {config.symbol}\n"
+            f"Timeframe: {config.timeframe}\n"
+            f"Date Range: {config.start_date} to {config.end_date}",
+            title="Initialization",
+            border_style="blue"
+        ))
+        
         # Initialize component managers
+        tprint("[yellow]🔧 Initializing core component managers...[/yellow]")
         self._initialize_managers()
+        tprint("[green]✅ Core component managers initialized[/green]")
         
         # Initialize enhanced components
+        tprint("[yellow]🔧 Initializing enhanced components...[/yellow]")
         self._initialize_enhanced_components()
+        tprint("[green]✅ Enhanced components initialized[/green]")
         
         self.logger.info("✅ Hybrid NAS-TAS Orchestrator initialized")
 
@@ -1006,6 +1030,14 @@ class HybridOrchestrator:
                                     timeframes: Optional[List[str]] = None) -> Dict[str, Any]:
         """Orchestrate TAS and NAS regime detection."""
         try:
+            tprint(Panel.fit(
+                "[bold green]🚀 Starting TAS-NAS Orchestration[/bold green]\n"
+                f"Data shape: {market_data.shape if hasattr(market_data, 'shape') else 'Unknown'}\n"
+                f"Timeframes: {timeframes or ['1m', '5m', '15m']}",
+                title="Orchestration Start",
+                border_style="green"
+            ))
+            
             self.logger.info("🚀 Starting TAS-NAS orchestration...")
 
             # Use configured timeframes if not specified
@@ -1024,42 +1056,70 @@ class HybridOrchestrator:
 
             # Run detection for each timeframe
             for timeframe in timeframes:
+                tprint(f"[cyan]🔍 Processing timeframe: {timeframe}[/cyan]")
                 self.logger.info(f"🔍 Processing timeframe: {timeframe}")
 
                 # Prepare market_data for timeframe
+                tprint(f"[yellow]📊 Preparing data for {timeframe}...[/yellow]")
                 timeframe_market_data = self._prepare_timeframe_market_data(market_data, timeframe)
+                tprint(f"[green]✅ Data prepared: {timeframe_market_data.shape if hasattr(timeframe_market_data, 'shape') else 'Unknown shape'}[/green]")
 
                 # Run TAS detection
                 if self.tas_system is not None:
+                    tprint(f"[blue]🌳 Running TAS detection for {timeframe}...[/blue]")
                     tas_result = self._run_tas_detection(timeframe_market_data, timestamps, timeframe)
                     results['tas_results'][timeframe] = tas_result
+                    if tas_result.get('success', False):
+                        tprint(f"[green]✅ TAS detection completed for {timeframe}[/green]")
+                    else:
+                        tprint(f"[red]❌ TAS detection failed for {timeframe}[/red]")
 
                 # Run NAS detection
                 if self.nas_system is not None:
+                    tprint(f"[blue]🧠 Running NAS detection for {timeframe}...[/blue]")
                     nas_result = self._run_nas_detection(timeframe_market_data, timestamps, timeframe)
                     results['nas_results'][timeframe] = nas_result
+                    if nas_result.get('success', False):
+                        tprint(f"[green]✅ NAS detection completed for {timeframe}[/green]")
+                    else:
+                        tprint(f"[red]❌ NAS detection failed for {timeframe}[/red]")
 
             # Perform hybrid analysis on primary timeframe (15m) - only if both systems succeeded
             primary_timeframe = '15m'
+            tprint(f"[magenta]🔬 Checking hybrid analysis prerequisites for {primary_timeframe}...[/magenta]")
+            
             tas_success = (primary_timeframe in results.get('tas_results', {}) and
                           results['tas_results'][primary_timeframe].get('success', False))
             nas_success = (primary_timeframe in results.get('nas_results', {}) and
                           results['nas_results'][primary_timeframe].get('success', False))
 
+            tprint(f"[cyan]TAS Success: {tas_success}[/cyan]")
+            tprint(f"[cyan]NAS Success: {nas_success}[/cyan]")
+
             if tas_success and nas_success:
+                tprint("[bold green]🎯 Starting hybrid analysis...[/bold green]")
                 hybrid_analysis = self._perform_hybrid_analysis(
                     market_data, timestamps,
                     results['tas_results'][primary_timeframe],
                     results['nas_results'][primary_timeframe]
                 )
                 results['hybrid_analysis'] = hybrid_analysis
+                tprint("[green]✅ Hybrid analysis completed[/green]")
             else:
+                tprint("[red]⚠️ Hybrid analysis skipped - one or both systems failed[/red]")
                 self.logger.warning("⚠️ Hybrid analysis skipped - one or both systems failed")
                 results['hybrid_analysis'] = {
                     'error': 'Hybrid analysis requires both TAS and NAS systems to succeed',
                     'tas_success': tas_success,
                     'nas_success': nas_success
                 }
+
+            # Generate comprehensive outcome report
+            if tas_success and nas_success:
+                tprint("[bold magenta]📊 Generating comprehensive outcome report...[/bold magenta]")
+                outcome_report = self._generate_outcome_report(results, market_data)
+                results['outcome_report'] = outcome_report
+                tprint("[green]✅ Outcome report generated[/green]")
 
             # Add clustering quality metrics (only if both systems succeeded)
             if tas_success and nas_success and self.clustering_quality_analyzer:
@@ -1146,6 +1206,349 @@ class HybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ TAS-NAS orchestration failed: {e}")
             return {'error': str(e), 'execution_time': 0.0}
+
+    def _generate_outcome_report(self, results: Dict[str, Any], market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+        """Generate comprehensive outcome report with input data info, NAS vs TAS analysis, and clear output metrics."""
+        try:
+            tprint(Panel.fit(
+                "[bold magenta]📊 Comprehensive Outcome Report[/bold magenta]",
+                title="Report Generation",
+                border_style="magenta"
+            ))
+            
+            # 1. Input Data Information
+            input_data_info = self._analyze_input_data(market_data)
+            
+            # 2. NAS vs TAS Analysis and Comparison
+            nas_tas_comparison = self._analyze_nas_tas_comparison(results)
+            
+            # 3. Output Metrics (clusters, CV, Silhouette, etc.)
+            output_metrics = self._analyze_output_metrics(results)
+            
+            # Create comprehensive report
+            outcome_report = {
+                'input_data_analysis': input_data_info,
+                'nas_tas_comparison': nas_tas_comparison,
+                'output_metrics': output_metrics,
+                'summary': self._generate_summary_table(input_data_info, nas_tas_comparison, output_metrics)
+            }
+            
+            # Display the report
+            self._display_outcome_report(outcome_report)
+            
+            return outcome_report
+            
+        except Exception as e:
+            self.logger.error(f"❌ Outcome report generation failed: {e}")
+            return {'error': str(e)}
+
+    def _analyze_input_data(self, market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+        """Analyze input data characteristics."""
+        try:
+            if isinstance(market_data, pd.DataFrame):
+                data_shape = market_data.shape
+                columns = list(market_data.columns)
+                numeric_columns = list(market_data.select_dtypes(include=[np.number]).columns)
+                
+                # Basic statistics
+                if 'close' in market_data.columns:
+                    close_stats = {
+                        'mean': float(market_data['close'].mean()),
+                        'std': float(market_data['close'].std()),
+                        'min': float(market_data['close'].min()),
+                        'max': float(market_data['close'].max())
+                    }
+                else:
+                    close_stats = None
+                
+                if 'volume' in market_data.columns:
+                    volume_stats = {
+                        'mean': float(market_data['volume'].mean()),
+                        'std': float(market_data['volume'].std()),
+                        'min': float(market_data['volume'].min()),
+                        'max': float(market_data['volume'].max())
+                    }
+                else:
+                    volume_stats = None
+                
+                return {
+                    'data_type': 'DataFrame',
+                    'shape': data_shape,
+                    'columns': columns,
+                    'numeric_columns': numeric_columns,
+                    'close_statistics': close_stats,
+                    'volume_statistics': volume_stats,
+                    'data_quality': 'Good' if not market_data.isnull().any().any() else 'Has missing values'
+                }
+            else:
+                return {
+                    'data_type': 'NumPy Array',
+                    'shape': market_data.shape if hasattr(market_data, 'shape') else 'Unknown',
+                    'dtype': str(market_data.dtype) if hasattr(market_data, 'dtype') else 'Unknown'
+                }
+                
+        except Exception as e:
+            return {'error': f"Input data analysis failed: {e}"}
+
+    def _analyze_nas_tas_comparison(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze and compare NAS vs TAS results."""
+        try:
+            primary_timeframe = '15m'
+            tas_results = results.get('tas_results', {}).get(primary_timeframe, {})
+            nas_results = results.get('nas_results', {}).get(primary_timeframe, {})
+            
+            comparison = {
+                'tas_analysis': {
+                    'success': tas_results.get('success', False),
+                    'regime_count': len(np.unique(tas_results.get('regime_predictions', []))) if tas_results.get('success') else 0,
+                    'execution_time': tas_results.get('execution_time', 0),
+                    'regime_distribution': self._calculate_regime_distribution(tas_results.get('regime_predictions', [])) if tas_results.get('success') else {}
+                },
+                'nas_analysis': {
+                    'success': nas_results.get('success', False),
+                    'regime_count': len(np.unique(nas_results.get('regime_predictions', []))) if nas_results.get('success') else 0,
+                    'execution_time': nas_results.get('execution_time', 0),
+                    'regime_distribution': self._calculate_regime_distribution(nas_results.get('regime_predictions', [])) if nas_results.get('success') else {}
+                }
+            }
+            
+            # Calculate agreement metrics
+            if comparison['tas_analysis']['success'] and comparison['nas_analysis']['success']:
+                tas_preds = np.array(tas_results.get('regime_predictions', []))
+                nas_preds = np.array(nas_results.get('regime_predictions', []))
+                
+                min_len = min(len(tas_preds), len(nas_preds))
+                if min_len > 0:
+                    tas_preds = tas_preds[:min_len]
+                    nas_preds = nas_preds[:min_len]
+                    
+                    agreement_rate = np.sum(tas_preds == nas_preds) / min_len
+                    comparison['agreement_metrics'] = {
+                        'agreement_rate': float(agreement_rate),
+                        'total_samples': min_len,
+                        'matching_samples': int(np.sum(tas_preds == nas_preds))
+                    }
+                else:
+                    comparison['agreement_metrics'] = {'error': 'No overlapping predictions'}
+            else:
+                comparison['agreement_metrics'] = {'error': 'One or both systems failed'}
+            
+            return comparison
+            
+        except Exception as e:
+            return {'error': f"NAS vs TAS comparison failed: {e}"}
+
+    def _analyze_output_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze output metrics for each cluster and on average."""
+        try:
+            hybrid_analysis = results.get('hybrid_analysis', {})
+            
+            if not hybrid_analysis.get('success', False):
+                return {'error': 'Hybrid analysis not available'}
+            
+            # Get consolidated regime predictions
+            hybrid_labels = hybrid_analysis.get('hybrid_labels', [])
+            if len(hybrid_labels) == 0:
+                return {'error': 'No hybrid labels available'}
+            
+            unique_regimes = np.unique(hybrid_labels)
+            num_regimes = len(unique_regimes)
+            
+            # Calculate metrics for each regime
+            regime_metrics = {}
+            for regime in unique_regimes:
+                regime_mask = hybrid_labels == regime
+                regime_size = np.sum(regime_mask)
+                regime_percentage = (regime_size / len(hybrid_labels)) * 100
+                
+                regime_metrics[f'regime_{regime}'] = {
+                    'size': int(regime_size),
+                    'percentage': float(regime_percentage),
+                    'is_valid_size': 3.0 <= regime_percentage <= 25.0  # 3% to 25% target
+                }
+            
+            # Overall metrics
+            overall_metrics = {
+                'total_regimes': num_regimes,
+                'target_range_met': 6 <= num_regimes <= 15,
+                'regime_distribution': self._calculate_regime_distribution(hybrid_labels),
+                'clustering_quality': hybrid_analysis.get('clustering_quality', {}),
+                'economic_evaluation': hybrid_analysis.get('economic_evaluation', {}),
+                'validation_result': hybrid_analysis.get('validation_result', {})
+            }
+            
+            # Calculate average metrics
+            if 'clustering_quality' in hybrid_analysis:
+                clustering_quality = hybrid_analysis['clustering_quality']
+                avg_metrics = {
+                    'silhouette_score': clustering_quality.get('silhouette_score', 0),
+                    'calinski_harabasz_score': clustering_quality.get('calinski_harabasz_score', 0),
+                    'davies_bouldin_score': clustering_quality.get('davies_bouldin_score', 0)
+                }
+                overall_metrics['average_clustering_metrics'] = avg_metrics
+            
+            return {
+                'regime_metrics': regime_metrics,
+                'overall_metrics': overall_metrics
+            }
+            
+        except Exception as e:
+            return {'error': f"Output metrics analysis failed: {e}"}
+
+    def _calculate_regime_distribution(self, regime_predictions: np.ndarray) -> Dict[str, float]:
+        """Calculate regime distribution percentages."""
+        try:
+            if len(regime_predictions) == 0:
+                return {}
+            
+            unique_regimes, counts = np.unique(regime_predictions, return_counts=True)
+            total_samples = len(regime_predictions)
+            
+            distribution = {}
+            for regime, count in zip(unique_regimes, counts):
+                percentage = (count / total_samples) * 100
+                distribution[f'regime_{regime}'] = float(percentage)
+            
+            return distribution
+            
+        except Exception as e:
+            return {'error': f"Distribution calculation failed: {e}"}
+
+    def _generate_summary_table(self, input_data_info: Dict, nas_tas_comparison: Dict, output_metrics: Dict) -> Dict[str, Any]:
+        """Generate a summary table of key metrics."""
+        try:
+            summary = {
+                'data_summary': {
+                    'data_shape': input_data_info.get('shape', 'Unknown'),
+                    'data_quality': input_data_info.get('data_quality', 'Unknown')
+                },
+                'detection_summary': {
+                    'tas_success': nas_tas_comparison.get('tas_analysis', {}).get('success', False),
+                    'nas_success': nas_tas_comparison.get('nas_analysis', {}).get('success', False),
+                    'tas_regimes': nas_tas_comparison.get('tas_analysis', {}).get('regime_count', 0),
+                    'nas_regimes': nas_tas_comparison.get('nas_analysis', {}).get('regime_count', 0)
+                },
+                'output_summary': {
+                    'final_regimes': output_metrics.get('overall_metrics', {}).get('total_regimes', 0),
+                    'target_range_met': output_metrics.get('overall_metrics', {}).get('target_range_met', False),
+                    'agreement_rate': nas_tas_comparison.get('agreement_metrics', {}).get('agreement_rate', 0)
+                }
+            }
+            
+            return summary
+            
+        except Exception as e:
+            return {'error': f"Summary generation failed: {e}"}
+
+    def _display_outcome_report(self, outcome_report: Dict[str, Any]) -> None:
+        """Display the comprehensive outcome report using rich formatting."""
+        try:
+            # Input Data Information
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold blue]📊 INPUT DATA ANALYSIS[/bold blue]",
+                border_style="blue"
+            ))
+            
+            input_data = outcome_report.get('input_data_analysis', {})
+            if 'error' not in input_data:
+                tprint(f"Data Type: {input_data.get('data_type', 'Unknown')}")
+                tprint(f"Shape: {input_data.get('shape', 'Unknown')}")
+                tprint(f"Columns: {len(input_data.get('columns', []))}")
+                tprint(f"Data Quality: {input_data.get('data_quality', 'Unknown')}")
+                
+                if input_data.get('close_statistics'):
+                    close_stats = input_data['close_statistics']
+                    tprint(f"Close Price - Mean: {close_stats['mean']:.2f}, Std: {close_stats['std']:.2f}")
+            else:
+                tprint(f"[red]Input data analysis error: {input_data['error']}[/red]")
+            
+            # NAS vs TAS Comparison
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold green]🔄 NAS vs TAS COMPARISON[/bold green]",
+                border_style="green"
+            ))
+            
+            comparison = outcome_report.get('nas_tas_comparison', {})
+            if 'error' not in comparison:
+                tas_analysis = comparison.get('tas_analysis', {})
+                nas_analysis = comparison.get('nas_analysis', {})
+                
+                tprint(f"TAS Success: {tas_analysis.get('success', False)}")
+                tprint(f"TAS Regimes: {tas_analysis.get('regime_count', 0)}")
+                tprint(f"TAS Execution Time: {tas_analysis.get('execution_time', 0):.2f}s")
+                
+                tprint(f"NAS Success: {nas_analysis.get('success', False)}")
+                tprint(f"NAS Regimes: {nas_analysis.get('regime_count', 0)}")
+                tprint(f"NAS Execution Time: {nas_analysis.get('execution_time', 0):.2f}s")
+                
+                agreement_metrics = comparison.get('agreement_metrics', {})
+                if 'error' not in agreement_metrics:
+                    tprint(f"Agreement Rate: {agreement_metrics.get('agreement_rate', 0):.2%}")
+                    tprint(f"Matching Samples: {agreement_metrics.get('matching_samples', 0)}")
+                else:
+                    tprint(f"[red]Agreement analysis error: {agreement_metrics['error']}[/red]")
+            else:
+                tprint(f"[red]NAS vs TAS comparison error: {comparison['error']}[/red]")
+            
+            # Output Metrics
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold magenta]📈 OUTPUT METRICS[/bold magenta]",
+                border_style="magenta"
+            ))
+            
+            output_metrics = outcome_report.get('output_metrics', {})
+            if 'error' not in output_metrics:
+                overall_metrics = output_metrics.get('overall_metrics', {})
+                regime_metrics = output_metrics.get('regime_metrics', {})
+                
+                tprint(f"Final Regime Count: {overall_metrics.get('total_regimes', 0)}")
+                tprint(f"Target Range Met (6-15): {overall_metrics.get('target_range_met', False)}")
+                
+                # Display regime-specific metrics
+                tprint("\n[bold]Regime-Specific Metrics:[/bold]")
+                for regime_key, metrics in regime_metrics.items():
+                    if 'error' not in metrics:
+                        tprint(f"{regime_key}: Size={metrics['size']}, Percentage={metrics['percentage']:.1f}%, Valid={metrics['is_valid_size']}")
+                
+                # Display clustering quality metrics
+                clustering_quality = overall_metrics.get('clustering_quality', {})
+                if clustering_quality:
+                    tprint(f"\n[bold]Clustering Quality:[/bold]")
+                    tprint(f"Silhouette Score: {clustering_quality.get('silhouette_score', 0):.3f}")
+                    tprint(f"Calinski-Harabasz Score: {clustering_quality.get('calinski_harabasz_score', 0):.3f}")
+                    tprint(f"Davies-Bouldin Score: {clustering_quality.get('davies_bouldin_score', 0):.3f}")
+            else:
+                tprint(f"[red]Output metrics error: {output_metrics['error']}[/red]")
+            
+            # Summary
+            tprint("\n" + "="*80)
+            tprint(Panel.fit(
+                "[bold yellow]📋 SUMMARY[/bold yellow]",
+                border_style="yellow"
+            ))
+            
+            summary = outcome_report.get('summary', {})
+            if 'error' not in summary:
+                data_summary = summary.get('data_summary', {})
+                detection_summary = summary.get('detection_summary', {})
+                output_summary = summary.get('output_summary', {})
+                
+                tprint(f"Data Shape: {data_summary.get('data_shape', 'Unknown')}")
+                tprint(f"TAS Success: {detection_summary.get('tas_success', False)}")
+                tprint(f"NAS Success: {detection_summary.get('nas_success', False)}")
+                tprint(f"Final Regimes: {output_summary.get('final_regimes', 0)}")
+                tprint(f"Target Range Met: {output_summary.get('target_range_met', False)}")
+                tprint(f"Agreement Rate: {output_summary.get('agreement_rate', 0):.2%}")
+            else:
+                tprint(f"[red]Summary error: {summary['error']}[/red]")
+            
+            tprint("\n" + "="*80)
+            
+        except Exception as e:
+            tprint(f"[red]❌ Report display failed: {e}[/red]")
 
     def _prepare_timeframe_market_data(self, market_data: Union[pd.DataFrame, np.ndarray],
                                timeframe: str) -> Union[pd.DataFrame, np.ndarray]:

@@ -12,6 +12,16 @@ from dataclasses import dataclass
 import logging
 from scipy import stats
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+# Initialize console for tprint
+console = Console()
+
+def tprint(*args, **kwargs):
+    """Enhanced print function with rich formatting."""
+    console.print(*args, **kwargs)
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +40,7 @@ class EconomicEvaluationConfig:
     returns_cv_weight: float = 0.3
     volume_cv_weight: float = 0.3
     
-    # Accessory CV weights (lower priority)
-    momentum_cv_weight: float = 0.1
-    entropy_cv_weight: float = 0.1
+    # Removed accessory CV weights (momentum and entropy)
     
     # Economic significance thresholds
     min_economic_significance: float = 0.5
@@ -68,19 +76,36 @@ class EnhancedEconomicEvaluator:
             Comprehensive evaluation results
         """
         try:
+            tprint(Panel.fit(
+                "[bold green]💰 Enhanced Economic Evaluator[/bold green]\n"
+                f"Regime predictions: {len(regime_predictions)} samples\n"
+                f"Market data shape: {market_data.shape if hasattr(market_data, 'shape') else 'Unknown'}\n"
+                f"Features available: {features is not None}",
+                title="Economic Evaluation Start",
+                border_style="green"
+            ))
+            
             self.logger.info("💰 Starting enhanced economic evaluation with CV optimization")
             
             # Basic regime analysis
+            tprint("[yellow]📊 Analyzing regime distribution...[/yellow]")
             regime_analysis = self._analyze_regime_distribution(regime_predictions)
+            tprint(f"[green]✅ Found {regime_analysis.get('num_regimes', 0)} regimes[/green]")
             
             # CV optimization analysis
+            tprint("[yellow]📈 Calculating CV optimization...[/yellow]")
             cv_analysis = self._calculate_cv_optimization(regime_predictions, market_data, features)
+            tprint(f"[green]✅ CV analysis completed[/green]")
             
             # Economic significance analysis
+            tprint("[yellow]💎 Calculating economic significance...[/yellow]")
             economic_analysis = self._calculate_economic_significance(regime_predictions, market_data)
+            tprint(f"[green]✅ Economic analysis completed[/green]")
             
             # Trading viability analysis
+            tprint("[yellow]📈 Calculating trading viability...[/yellow]")
             trading_analysis = self._calculate_trading_viability(regime_predictions, market_data)
+            tprint(f"[green]✅ Trading analysis completed[/green]")
             
             # Multi-objective optimization score
             optimization_score = self._calculate_multi_objective_score(
@@ -176,21 +201,7 @@ class EnhancedEconomicEvaluator:
             else:
                 volume = pd.Series([1] * len(market_data))
             
-            # Calculate momentum if features available
-            momentum = None
-            if features is not None and 'momentum' in features.columns:
-                momentum = features['momentum']
-            elif 'close' in market_data.columns:
-                # Calculate simple momentum
-                momentum = market_data['close'].pct_change(periods=5).fillna(0)
-            
-            # Calculate entropy if features available
-            entropy = None
-            if features is not None and 'entropy' in features.columns:
-                entropy = features['entropy']
-            else:
-                # Calculate simple entropy based on returns
-                entropy = self._calculate_returns_entropy(returns)
+            # Removed momentum and entropy calculations
             
             # Calculate CV for each regime
             for regime in unique_regimes:
@@ -203,33 +214,17 @@ class EnhancedEconomicEvaluator:
                 volume_cv = self._calculate_cv(regime_volume)
                 volatility_cv = self._calculate_cv(np.abs(regime_returns))  # Volatility CV
                 
-                # Accessory CV calculations
-                momentum_cv = 0.0
-                entropy_cv = 0.0
-                
-                if momentum is not None:
-                    regime_momentum = momentum[regime_mask]
-                    momentum_cv = self._calculate_cv(regime_momentum)
-                
-                if entropy is not None:
-                    regime_entropy = entropy[regime_mask]
-                    entropy_cv = self._calculate_cv(regime_entropy)
-                
-                # Weighted CV score
+                # Weighted CV score (removed momentum and entropy CV)
                 weighted_cv = (
                     self.config.volatility_cv_weight * volatility_cv +
                     self.config.returns_cv_weight * returns_cv +
-                    self.config.volume_cv_weight * volume_cv +
-                    self.config.momentum_cv_weight * momentum_cv +
-                    self.config.entropy_cv_weight * entropy_cv
+                    self.config.volume_cv_weight * volume_cv
                 )
                 
                 cv_results[regime] = {
                     'volatility_cv': volatility_cv,
                     'returns_cv': returns_cv,
                     'volume_cv': volume_cv,
-                    'momentum_cv': momentum_cv,
-                    'entropy_cv': entropy_cv,
                     'weighted_cv': weighted_cv,
                     'regime_size': np.sum(regime_mask)
                 }

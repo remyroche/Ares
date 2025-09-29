@@ -12,6 +12,16 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 import logging
 from dataclasses import dataclass
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+# Initialize console for tprint
+console = Console()
+
+def tprint(*args, **kwargs):
+    """Enhanced print function with rich formatting."""
+    console.print(*args, **kwargs)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +63,15 @@ class RegimeAlignmentManager:
             Dictionary containing alignment results
         """
         try:
+            tprint(Panel.fit(
+                "[bold blue]🔄 Regime Alignment Manager[/bold blue]\n"
+                f"NAS predictions: {len(nas_predictions)} samples\n"
+                f"TAS predictions: {len(tas_predictions)} samples\n"
+                f"Method: {self.config.method}",
+                title="Alignment Start",
+                border_style="blue"
+            ))
+            
             self.logger.info("🔄 Starting regime alignment between NAS and TAS")
             
             # Ensure same length
@@ -60,9 +79,14 @@ class RegimeAlignmentManager:
             nas_predictions = nas_predictions[:min_length]
             tas_predictions = tas_predictions[:min_length]
             
+            tprint(f"[yellow]📏 Aligned to {min_length} samples[/yellow]")
+            
             # Get unique regimes
             nas_regimes = np.unique(nas_predictions)
             tas_regimes = np.unique(tas_predictions)
+            
+            tprint(f"[cyan]📊 NAS regimes: {len(nas_regimes)} {list(nas_regimes)}[/cyan]")
+            tprint(f"[cyan]📊 TAS regimes: {len(tas_regimes)} {list(tas_regimes)}[/cyan]")
             
             self.logger.info(f"📊 NAS regimes: {len(nas_regimes)}, TAS regimes: {len(tas_regimes)}")
             

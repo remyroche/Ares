@@ -31,9 +31,7 @@ class MultiObjectiveConfig:
     returns_cv_weight: float = 0.3
     volume_cv_weight: float = 0.3
     
-    # Accessory CV weights (lower priority)
-    momentum_cv_weight: float = 0.1
-    entropy_cv_weight: float = 0.1
+    # Removed accessory CV weights (momentum and entropy)
     
     # Multi-objective weights
     statistical_weight: float = 0.25
@@ -201,9 +199,7 @@ class MultiObjectiveOptimizer:
                 characteristics['volume_mean'] = 1.0
                 characteristics['volume_std'] = 0.0
             
-            # Calculate momentum and entropy
-            characteristics['momentum'] = self._calculate_momentum(characteristics['returns'])
-            characteristics['entropy'] = self._calculate_entropy(characteristics['returns'])
+            # Removed momentum and entropy calculations
             
             return characteristics
             
@@ -561,8 +557,6 @@ class MultiObjectiveOptimizer:
             market_characteristics = prepared_data['market_characteristics']
             returns = market_characteristics.get('returns', np.zeros(len(solution)))
             volume = market_characteristics.get('volume', np.ones(len(solution)))
-            momentum = market_characteristics.get('momentum', np.zeros(len(solution)))
-            entropy = market_characteristics.get('entropy', np.zeros(len(solution)))
             
             unique_regimes = np.unique(solution)
             cv_scores = []
@@ -571,23 +565,18 @@ class MultiObjectiveOptimizer:
                 regime_mask = solution == regime
                 regime_returns = returns[regime_mask]
                 regime_volume = volume[regime_mask]
-                regime_momentum = momentum[regime_mask]
-                regime_entropy = entropy[regime_mask]
                 
                 if len(regime_returns) > 0:
-                    # Calculate CVs
+                    # Calculate CVs (removed momentum and entropy)
                     returns_cv = self._calculate_cv(regime_returns)
                     volume_cv = self._calculate_cv(regime_volume)
-                    momentum_cv = self._calculate_cv(regime_momentum)
-                    entropy_cv = self._calculate_cv(regime_entropy)
+                    volatility_cv = self._calculate_cv(np.abs(regime_returns))
                     
                     # Weighted CV score (lower is better)
                     weighted_cv = (
-                        self.config.volatility_cv_weight * returns_cv +
+                        self.config.volatility_cv_weight * volatility_cv +
                         self.config.returns_cv_weight * returns_cv +
-                        self.config.volume_cv_weight * volume_cv +
-                        self.config.momentum_cv_weight * momentum_cv +
-                        self.config.entropy_cv_weight * entropy_cv
+                        self.config.volume_cv_weight * volume_cv
                     )
                     
                     cv_scores.append(1.0 / (1.0 + weighted_cv))  # Convert to maximization

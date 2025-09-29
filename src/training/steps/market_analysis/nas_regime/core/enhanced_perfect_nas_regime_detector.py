@@ -120,21 +120,8 @@ except ImportError as e:
     logging.warning(f"ML common tools not available: {e}")
     ML_COMMON_AVAILABLE = False
 
-# Import NAS clustering components
-try:
-    from src.training.steps.market_analysis.nas_clustering.core.essential_nas_clusterer import EssentialNASClusterer
-    from src.training.steps.market_analysis.nas_clustering.core.nas_regime_optimizer import NASRegimeOptimizer
-    from src.training.steps.market_analysis.nas_clustering.core.nas_feature_extractor import NASFeatureExtractor
-    from src.training.steps.market_analysis.nas_clustering.core.nas_regime_analyzer import NASRegimeAnalyzer
-    from src.training.steps.market_analysis.nas_clustering.core.micro_regime_detector import MicroRegimeDetector
-    from src.training.steps.market_analysis.nas_clustering.core.evaluation.multi_objective import NSGAIIOptimizer, create_nas_objectives
-    NAS_CLUSTERING_AVAILABLE = True
-    logging.info("✅ NAS clustering components imported successfully")
-except ImportError as e:
-    logging.warning(f"NAS clustering components not available: {e}")
-    import traceback
-    logging.warning(f"Full traceback: {traceback.format_exc()}")
-    NAS_CLUSTERING_AVAILABLE = False
+# NAS clustering components removed - will be implemented in subsequent step
+NAS_CLUSTERING_AVAILABLE = False
 
 # Import NAS modeling components
 try:
@@ -187,7 +174,6 @@ class EnhancedPerfectNASResult:
     # Enhanced metrics
     hardware_optimization_metrics: Optional[Dict[str, Any]] = None
     matrix_operations_metrics: Optional[Dict[str, Any]] = None
-    nas_clustering_metrics: Optional[Dict[str, Any]] = None
     nas_modeling_metrics: Optional[Dict[str, Any]] = None
     ml_common_metrics: Optional[Dict[str, Any]] = None
 
@@ -232,9 +218,7 @@ class EnhancedPerfectNASRegimeDetector:
         # Initialize ML common utilities
         self._initialize_ml_common()
 
-        # Initialize NAS clustering components
-        self.logger.info(f"🔧 NAS_CLUSTERING_AVAILABLE: {NAS_CLUSTERING_AVAILABLE}")
-        self._initialize_nas_clustering()
+        # NAS clustering components removed - will be implemented in subsequent step
 
         # Initialize NAS modeling components
         self._initialize_nas_modeling()
@@ -255,7 +239,7 @@ class EnhancedPerfectNASRegimeDetector:
         self.logger.info(f"   Hardware optimization: {HARDWARE_AVAILABLE}")
         self.logger.info(f"   Matrix operations: {MATRIX_OPS_AVAILABLE}")
         self.logger.info(f"   ML common: {ML_COMMON_AVAILABLE}")
-        self.logger.info(f"   NAS clustering: {NAS_CLUSTERING_AVAILABLE}")
+        self.logger.info(f"   NAS clustering: Removed (will be implemented in subsequent step)")
         self.logger.info(f"   NAS modeling: {NAS_MODELING_AVAILABLE}")
         self.logger.info(f"   Memory optimization: {'✅ Enabled' if hasattr(self, 'memory_optimizer') else '❌ Disabled'}")
         self.logger.info(f"   Data quality validation: {'✅ Enabled' if hasattr(self, 'data_quality_validator') else '❌ Disabled'}")
@@ -346,66 +330,7 @@ class EnhancedPerfectNASRegimeDetector:
             self.ml_common_ops = None
             self.validation_framework = None
     
-    def _initialize_nas_clustering(self):
-        """Initialize NAS clustering components."""
-        if not NAS_CLUSTERING_AVAILABLE:
-            # Try to import directly as a fallback
-            try:
-                from src.training.steps.market_analysis.nas_clustering.core.nas_feature_extractor import NASFeatureExtractor
-                self.feature_extractor = NASFeatureExtractor()
-                self.logger.info("✅ Fallback: NAS feature extractor initialized successfully")
-            except Exception as e:
-                self.logger.warning(f"Fallback NAS feature extractor failed: {e}")
-                self.feature_extractor = None
-            
-            self.nas_clusterer = None
-            self.regime_optimizer = None
-            self.regime_analyzer = None
-            self.micro_regime_detector = None
-            return
-        
-        try:
-            # Initialize NAS clusterer with improved parameters for better sensitivity
-            self.nas_clusterer = EssentialNASClusterer(
-                n_clusters=getattr(self.config, 'n_regimes', 8),  # Increased to 8 for better granularity
-                clustering_method='auto',
-                search_strategy='evolutionary',
-                max_iterations=getattr(self.config, 'generations', 100),
-                device='cpu',
-                max_cluster_size_ratio=0.20,  # Reduced for better balance
-                adaptive_clustering=True,     # Enable adaptive clustering
-                concentration_threshold=0.1  # Reduced from 0.2 to 0.1 for higher sensitivity
-            )
-            
-            # Initialize other NAS components with minimal parameters
-            from src.training.steps.market_analysis.nas_clustering.core.nas_regime_optimizer import NASRegimeOptimizer
-            from src.training.steps.market_analysis.nas_clustering.core.nas_feature_extractor import NASFeatureExtractor
-            from src.training.steps.market_analysis.nas_clustering.core.nas_regime_analyzer import NASRegimeAnalyzer
-            from src.training.steps.market_analysis.nas_clustering.core.micro_regime_detector import MicroRegimeDetector
-            
-            self.regime_optimizer = NASRegimeOptimizer()
-            # Initialize with appropriate parameters for the dataset
-            # Use smaller n_components for small feature sets
-            self.feature_extractor = NASFeatureExtractor(
-                feature_dim=64,
-                n_components=min(16, 21),  # Use smaller value for small datasets
-                selection_k=min(16, 21),   # Ensure we don't select more features than available
-                device='cpu'
-            )
-            self.regime_analyzer = NASRegimeAnalyzer()
-            self.micro_regime_detector = MicroRegimeDetector()
-            
-            self.logger.info("✅ NAS clustering components initialized")
-            
-        except Exception as e:
-            self.logger.warning(f"NAS clustering initialization failed: {e}")
-            import traceback
-            self.logger.warning(f"Full traceback: {traceback.format_exc()}")
-            self.nas_clusterer = None
-            self.regime_optimizer = None
-            self.feature_extractor = None
-            self.regime_analyzer = None
-            self.micro_regime_detector = None
+    # NAS clustering initialization removed - will be implemented in subsequent step
     
     def _initialize_nas_modeling(self):
         """Initialize NAS modeling components."""
@@ -598,13 +523,11 @@ class EnhancedPerfectNASRegimeDetector:
                         'hardware': HARDWARE_AVAILABLE,
                         'matrix_ops': MATRIX_OPS_AVAILABLE,
                         'ml_common': ML_COMMON_AVAILABLE,
-                        'nas_clustering': NAS_CLUSTERING_AVAILABLE,
                         'nas_modeling': NAS_MODELING_AVAILABLE
                     }
                 },
                 hardware_optimization_metrics=tool_metrics.get('hardware'),
                 matrix_operations_metrics=tool_metrics.get('matrix_ops'),
-                nas_clustering_metrics=tool_metrics.get('nas_clustering'),
                 nas_modeling_metrics=tool_metrics.get('nas_modeling'),
                 ml_common_metrics=tool_metrics.get('ml_common')
             )
@@ -1203,13 +1126,7 @@ class EnhancedPerfectNASRegimeDetector:
                 'gpu_acceleration': True
             }
         
-        # NAS clustering metrics
-        if self.nas_clusterer:
-            metrics['nas_clustering'] = {
-                'search_completed': True,
-                'hardware_optimized': True,
-                'matrix_optimized': True
-            }
+        # NAS clustering metrics removed - will be implemented in subsequent step
         
         # NAS modeling metrics
         if self.nas_evaluator:
@@ -1245,8 +1162,7 @@ class EnhancedPerfectNASRegimeDetector:
                 self.logger.info(f"   Hardware optimization: Enabled")
             if result.matrix_operations_metrics:
                 self.logger.info(f"   Matrix operations: Optimized")
-            if result.nas_clustering_metrics:
-                self.logger.info(f"   NAS clustering: Integrated")
+            # NAS clustering metrics removed - will be implemented in subsequent step
             if result.nas_modeling_metrics:
                 self.logger.info(f"   NAS modeling: Integrated")
             if result.ml_common_metrics:

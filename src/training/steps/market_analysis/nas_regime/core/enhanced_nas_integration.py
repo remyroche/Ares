@@ -20,6 +20,7 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
+from src.utils.pipeline_results_manager import pipeline_results_manager
 
 from .advanced_neural_architectures import (
     AdvancedArchitectureConfig, ArchitectureType, create_advanced_architecture,
@@ -53,7 +54,7 @@ class EnhancedNASConfig:
     n_workers: int = 4
     
     # Output configuration
-    output_dir: str = "enhanced_nas_results"
+    output_dir: str = "outcomes"
     save_intermediate_results: bool = True
     save_final_architecture: bool = True
     
@@ -328,12 +329,8 @@ class EnhancedNASSystem:
             )
     
     def _save_intermediate_results(self, result: EnhancedNASResult):
-        """Save intermediate results."""
+        """Save intermediate results using pipeline results manager."""
         try:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f"enhanced_nas_result_{timestamp}.json"
-            filepath = Path(self.config.output_dir) / filename
-            
             # Convert result to serializable format
             result_dict = {
                 'success': result.success,
@@ -351,10 +348,18 @@ class EnhancedNASSystem:
                 }
             }
             
-            with open(filepath, 'w') as f:
-                json.dump(result_dict, f, indent=2)
+            # Use pipeline results manager to save to outcomes/ directory
+            filepath = pipeline_results_manager.save_nas_results(
+                nas_result=result_dict,
+                symbol=getattr(self, 'symbol', None),
+                timeframe=getattr(self, 'timeframe', None),
+                additional_metadata={
+                    'search_iterations': len(result.search_history),
+                    'best_architecture_type': result.architecture_info.get('architecture_type', 'unknown')
+                }
+            )
             
-            self.logger.info(f"Intermediate results saved to {filepath}")
+            self.logger.info(f"ℹ️ Intermediate results saved to {filepath}")
             
         except Exception as e:
             self.logger.warning(f"Failed to save intermediate results: {e}")

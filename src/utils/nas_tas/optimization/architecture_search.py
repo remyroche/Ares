@@ -89,10 +89,10 @@ from ...ml_common.optimization.hierarchical_hpo import HierarchicalHPO
 from ...ml_common.optimization.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
 # Matrix operations
-from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.unified_operations import UnifiedMatrixOperations
 from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
-from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 from ...matrix_operations.convenience import MatrixConvenience
 
 # Hardware utilities
@@ -209,13 +209,13 @@ class ArchitectureSearchOptimizer:
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
-        self.matrix_ops = MatrixOperations()
+        self.matrix_ops = UnifiedMatrixOperations()
         tprint_debug("✅ MatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
         tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
         tprint_debug("✅ BatchMatrixOperations initialized")
-        self.vectorized_core = VectorizedCore()
+        self.vectorized_core = VectorizedProcessingCore()
         tprint_debug("✅ VectorizedCore initialized")
         self.matrix_convenience = MatrixConvenience()
         tprint_debug("✅ MatrixConvenience initialized")

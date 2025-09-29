@@ -31,8 +31,7 @@ ML_IMPORT_ERRORS = []
 
 # Import sklearn components with detailed logging
 try:
-    from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
     from sklearn.model_selection import train_test_split, cross_val_score
     from sklearn.preprocessing import StandardScaler
@@ -43,23 +42,28 @@ except ImportError as e:
     ML_IMPORT_ERRORS.append(f"scikit-learn: {e}")
     tprint(f"❌ [NAS_TAS_MODELS] Failed to import scikit-learn: {e}", color="red")
 
-# Import XGBoost with version logging
+# Import CatBoost with version logging
 try:
-    import xgboost as xgb
-    ML_LIBRARY_VERSIONS['xgboost'] = xgb.__version__
-    tprint(f"✅ [NAS_TAS_MODELS] XGBoost imported successfully (v{xgb.__version__})", color="green")
+    import catboost as cb
+    ML_LIBRARY_VERSIONS['catboost'] = cb.__version__
+    tprint(f"✅ [NAS_TAS_MODELS] CatBoost imported successfully (v{cb.__version__})", color="green")
 except ImportError as e:
-    ML_IMPORT_ERRORS.append(f"XGBoost: {e}")
-    tprint(f"❌ [NAS_TAS_MODELS] Failed to import XGBoost: {e}", color="red")
+    ML_IMPORT_ERRORS.append(f"CatBoost: {e}")
+    tprint(f"❌ [NAS_TAS_MODELS] Failed to import CatBoost: {e}", color="red")
 
-# Import LightGBM with version logging
+# Import Bayesian Rule Lists with version logging
 try:
-    import lightgbm as lgb
-    ML_LIBRARY_VERSIONS['lightgbm'] = lgb.__version__
-    tprint(f"✅ [NAS_TAS_MODELS] LightGBM imported successfully (v{lgb.__version__})", color="green")
+    from imodels import BayesianRuleListClassifier
+    # Get actual version if available
+    try:
+        import imodels
+        ML_LIBRARY_VERSIONS['imodels'] = getattr(imodels, '__version__', "2.0.3")
+    except:
+        ML_LIBRARY_VERSIONS['imodels'] = "2.0.3"  # Known version from pip list
+    tprint(f"✅ [NAS_TAS_MODELS] Bayesian Rule Lists imported successfully", color="green")
 except ImportError as e:
-    ML_IMPORT_ERRORS.append(f"LightGBM: {e}")
-    tprint(f"❌ [NAS_TAS_MODELS] Failed to import LightGBM: {e}", color="red")
+    ML_IMPORT_ERRORS.append(f"Bayesian Rule Lists: {e}")
+    tprint(f"❌ [NAS_TAS_MODELS] Failed to import Bayesian Rule Lists: {e}", color="red")
 
 # Check overall availability
 if not ML_IMPORT_ERRORS:
@@ -436,21 +440,42 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             artifacts = pipeline_state.get('artifacts', {})
             tprint(f"📋 [NAS_TAS_MODELS] Available artifacts: {list(artifacts.keys())}", color="blue")
             
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            tprint(f"🔍 [NAS_TAS_MODELS] NAS-TAS clustering result keys: {list(nas_tas_clustering_result.keys())}", color="blue")
+            # Try to get regime labels from regime discovery result first
+            nas_tas_regime_discovery_result = artifacts.get('nas_tas_regime_discovery_result', {})
+            tprint(f"🔍 [NAS_TAS_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="blue")
             
-            regime_labels = nas_tas_clustering_result.get('regime_assignments')
+            # Extract regime labels from both TAS and NAS systems
+            tas_assignments = nas_tas_regime_discovery_result.get('tas_assignments', [])
+            nas_assignments = nas_tas_regime_discovery_result.get('nas_assignments', [])
             
-            if regime_labels is None:
-                error_msg = "No regime labels found in pipeline state artifacts"
-                tprint(f"❌ [NAS_TAS_MODELS] {error_msg}", color="red")
-                tprint(f"🔍 [NAS_TAS_MODELS] Available artifacts: {list(artifacts.keys())}", color="yellow")
-                self.logger.error(f"Missing regime labels. Available artifacts: {list(artifacts.keys())}")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
+            tprint(f"📊 [NAS_TAS_MODELS] TAS assignments: {len(tas_assignments)} samples", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] NAS assignments: {len(nas_assignments)} samples", color="blue")
+            
+            # Use TAS assignments as primary regime labels (fallback to NAS if TAS is empty)
+            if len(tas_assignments) > 0:
+                regime_labels = tas_assignments
+                tprint("✅ [NAS_TAS_MODELS] Using TAS assignments as regime labels", color="green")
+            elif len(nas_assignments) > 0:
+                regime_labels = nas_assignments
+                tprint("✅ [NAS_TAS_MODELS] Using NAS assignments as regime labels (TAS fallback)", color="green")
+            else:
+                # Fallback to clustering result if available
+                nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+                tprint(f"🔍 [NAS_TAS_MODELS] NAS-TAS clustering result keys: {list(nas_tas_clustering_result.keys())}", color="blue")
+                regime_labels = nas_tas_clustering_result.get('regime_assignments')
+                
+                if regime_labels is None:
+                    error_msg = "No regime labels found in pipeline state artifacts"
+                    tprint(f"❌ [NAS_TAS_MODELS] {error_msg}", color="red")
+                    tprint(f"🔍 [NAS_TAS_MODELS] Available artifacts: {list(artifacts.keys())}", color="yellow")
+                    self.logger.error(f"Missing regime labels. Available artifacts: {list(artifacts.keys())}")
+                    return ComponentResult(
+                        success=False,
+                        artifacts={},
+                        error_message=error_msg
+                    )
+                else:
+                    tprint("✅ [NAS_TAS_MODELS] Using clustering result regime labels as fallback", color="green")
             
             # Validate regime labels
             regime_labels = np.array(regime_labels)
@@ -468,6 +493,15 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [NAS_TAS_MODELS] Found regime labels: {len(regime_labels)} samples", color="blue")
             tprint(f"📊 [NAS_TAS_MODELS] Unique regimes: {unique_regimes} (count: {len(unique_regimes)})", color="blue")
             tprint(f"📊 [NAS_TAS_MODELS] Regime distribution: {dict(zip(*np.unique(regime_labels, return_counts=True)))}", color="blue")
+            
+            # Log additional context about the regime labels source
+            if len(tas_assignments) > 0 and len(nas_assignments) > 0:
+                tprint(f"📊 [NAS_TAS_MODELS] Both TAS ({len(tas_assignments)}) and NAS ({len(nas_assignments)}) assignments available", color="blue")
+                tprint(f"📊 [NAS_TAS_MODELS] TAS regimes: {len(set(tas_assignments))}, NAS regimes: {len(set(nas_assignments))}", color="blue")
+            elif len(tas_assignments) > 0:
+                tprint(f"📊 [NAS_TAS_MODELS] Using TAS assignments only ({len(tas_assignments)} samples)", color="blue")
+            elif len(nas_assignments) > 0:
+                tprint(f"📊 [NAS_TAS_MODELS] Using NAS assignments only ({len(nas_assignments)} samples)", color="blue")
             
             # Step 3: Prepare training data
             tprint("🔍 [NAS_TAS_MODELS] Step 3: Preparing training data", color="cyan")
@@ -615,7 +649,7 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
     
     def _prepare_training_data(self, data: pd.DataFrame, regime_labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare training data from market data and regime labels."""
-        tprint("🔧 [NAS_TAS_MODELS] Preparing training data", color="cyan")
+        tprint("🔧 [NAS_TAS_MODELS] Preparing training data", color="cyan", bold=True)
         self.logger.info("Starting data preparation process")
         
         try:
@@ -624,6 +658,8 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [NAS_TAS_MODELS] Input data columns: {list(data.columns)}", color="blue")
             tprint(f"📊 [NAS_TAS_MODELS] Input data dtypes: {data.dtypes.to_dict()}", color="blue")
             tprint(f"📊 [NAS_TAS_MODELS] Input data memory usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] Regime labels shape: {regime_labels.shape}", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] Regime labels unique values: {np.unique(regime_labels)}", color="blue")
             
             # Check for missing values
             missing_values = data.isnull().sum()
@@ -636,7 +672,7 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             features = []
             feature_names = []
             
-            tprint("🔧 [NAS_TAS_MODELS] Creating price-based features", color="cyan")
+            tprint("🔧 [NAS_TAS_MODELS] Creating price-based features", color="cyan", bold=True)
             if 'close' in data.columns:
                 # Price-based features
                 tprint("📈 [NAS_TAS_MODELS] Computing price returns", color="blue")
@@ -644,6 +680,7 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
                 features.append(returns.values)
                 feature_names.append('price_returns')
                 tprint(f"📊 [NAS_TAS_MODELS] Returns stats: mean={returns.mean():.6f}, std={returns.std():.6f}, min={returns.min():.6f}, max={returns.max():.6f}", color="blue")
+                tprint(f"📊 [NAS_TAS_MODELS] Returns distribution: {returns.describe().to_dict()}", color="blue")
                 
                 # Moving averages
                 tprint("📈 [NAS_TAS_MODELS] Computing moving averages", color="blue")
@@ -799,78 +836,86 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [NAS_TAS_MODELS] Scaled features - Test: mean={X_test_scaled.mean():.4f}, std={X_test_scaled.std():.4f}", color="blue")
             tprint(f"⏱️ [NAS_TAS_MODELS] Feature scaling completed in {scale_time:.3f} seconds", color="blue")
             
-            # Step 3: Train Random Forest with detailed logging
-            tprint("🔧 [NAS_TAS_MODELS] Step 3: Training Random Forest", color="cyan")
-            rf_start = time.time()
+            # Step 3: Train CatBoost with detailed logging
+            tprint("🔧 [NAS_TAS_MODELS] Step 3: Training CatBoost", color="cyan", bold=True)
+            cb_start = time.time()
             
-            rf_params = {
+            cb_params = {
+                'iterations': 100,
+                'depth': 6,
+                'learning_rate': 0.1,
+                'l2_leaf_reg': 3.0,
+                'random_seed': self.model_config['random_state'],
+                'thread_count': self.model_config['n_jobs'],
+                'verbose': False
+            }
+            tprint(f"🐱 [NAS_TAS_MODELS] CatBoost parameters: {cb_params}", color="blue")
+            tprint(f"🐱 [NAS_TAS_MODELS] CatBoost training data: {X_train_scaled.shape[0]} samples, {X_train_scaled.shape[1]} features", color="blue")
+            tprint(f"🐱 [NAS_TAS_MODELS] CatBoost target classes: {np.unique(y_train)}", color="blue")
+            
+            cb_model = cb.CatBoostClassifier(**cb_params)
+            tprint("🏋️ [NAS_TAS_MODELS] Starting CatBoost training...", color="yellow")
+            cb_model.fit(X_train_scaled, y_train)
+            models['catboost'] = cb_model
+            
+            cb_time = time.time() - cb_start
+            tprint(f"⏱️ [NAS_TAS_MODELS] CatBoost training completed in {cb_time:.3f} seconds", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] CatBoost feature importance: {cb_model.feature_importances_[:5]}", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] CatBoost training iterations: {cb_model.get_best_iteration()}", color="blue")
+            tprint("✅ [NAS_TAS_MODELS] CatBoost model trained successfully", color="green")
+            
+            # Step 4: Train Bayesian Rule Lists with detailed logging
+            tprint("🔧 [NAS_TAS_MODELS] Step 4: Training Bayesian Rule Lists", color="cyan", bold=True)
+            brl_start = time.time()
+            
+            brl_params = {
+                'max_rules': 12,
+                'max_rule_length': 3,
+                'n_chains': 3,
+                'n_iter': 10000
+            }
+            tprint(f"📋 [NAS_TAS_MODELS] Bayesian Rule Lists parameters: {brl_params}", color="blue")
+            tprint(f"📋 [NAS_TAS_MODELS] Bayesian Rule Lists training data: {X_train_scaled.shape[0]} samples, {X_train_scaled.shape[1]} features", color="blue")
+            tprint(f"📋 [NAS_TAS_MODELS] Bayesian Rule Lists target classes: {np.unique(y_train)}", color="blue")
+            
+            brl_model = BayesianRuleListClassifier(**brl_params)
+            tprint("🏋️ [NAS_TAS_MODELS] Starting Bayesian Rule Lists training...", color="yellow")
+            brl_model.fit(X_train_scaled, y_train)
+            models['bayesian_rule_lists'] = brl_model
+            
+            brl_time = time.time() - brl_start
+            tprint(f"⏱️ [NAS_TAS_MODELS] Bayesian Rule Lists training completed in {brl_time:.3f} seconds", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] Bayesian Rule Lists rules: {len(brl_model.rules_) if hasattr(brl_model, 'rules_') else 'N/A'}", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] Bayesian Rule Lists rule complexity: {brl_params['max_rule_length']} conditions per rule", color="blue")
+            tprint("✅ [NAS_TAS_MODELS] Bayesian Rule Lists model trained successfully", color="green")
+            
+            # Step 5: Train ExtraTrees with detailed logging
+            tprint("🔧 [NAS_TAS_MODELS] Step 5: Training ExtraTrees", color="cyan", bold=True)
+            et_start = time.time()
+            
+            et_params = {
                 'n_estimators': 100,
+                'max_depth': None,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1,
+                'max_features': 'sqrt',
                 'random_state': self.model_config['random_state'],
                 'n_jobs': self.model_config['n_jobs']
             }
-            tprint(f"🌲 [NAS_TAS_MODELS] Random Forest parameters: {rf_params}", color="blue")
+            tprint(f"🌳 [NAS_TAS_MODELS] ExtraTrees parameters: {et_params}", color="blue")
+            tprint(f"🌳 [NAS_TAS_MODELS] ExtraTrees training data: {X_train_scaled.shape[0]} samples, {X_train_scaled.shape[1]} features", color="blue")
+            tprint(f"🌳 [NAS_TAS_MODELS] ExtraTrees target classes: {np.unique(y_train)}", color="blue")
             
-            rf_model = RandomForestClassifier(**rf_params)
-            rf_model.fit(X_train_scaled, y_train)
-            models['random_forest'] = rf_model
+            et_model = ExtraTreesClassifier(**et_params)
+            tprint("🏋️ [NAS_TAS_MODELS] Starting ExtraTrees training...", color="yellow")
+            et_model.fit(X_train_scaled, y_train)
+            models['extratrees'] = et_model
             
-            rf_time = time.time() - rf_start
-            tprint(f"⏱️ [NAS_TAS_MODELS] Random Forest training completed in {rf_time:.3f} seconds", color="blue")
-            tprint(f"📊 [NAS_TAS_MODELS] Random Forest feature importance: {rf_model.feature_importances_[:5]}", color="blue")
-            
-            # Step 4: Train Logistic Regression with detailed logging
-            tprint("🔧 [NAS_TAS_MODELS] Step 4: Training Logistic Regression", color="cyan")
-            lr_start = time.time()
-            
-            lr_params = {
-                'random_state': self.model_config['random_state'],
-                'max_iter': 1000
-            }
-            tprint(f"📊 [NAS_TAS_MODELS] Logistic Regression parameters: {lr_params}", color="blue")
-            
-            lr_model = LogisticRegression(**lr_params)
-            lr_model.fit(X_train_scaled, y_train)
-            models['logistic_regression'] = lr_model
-            
-            lr_time = time.time() - lr_start
-            tprint(f"⏱️ [NAS_TAS_MODELS] Logistic Regression training completed in {lr_time:.3f} seconds", color="blue")
-            tprint(f"📊 [NAS_TAS_MODELS] Logistic Regression iterations: {lr_model.n_iter_}", color="blue")
-            
-            # Step 5: Train XGBoost with detailed logging
-            tprint("🔧 [NAS_TAS_MODELS] Step 5: Training XGBoost", color="cyan")
-            xgb_start = time.time()
-            
-            xgb_params = {
-                'random_state': self.model_config['random_state'],
-                'n_jobs': self.model_config['n_jobs']
-            }
-            tprint(f"🚀 [NAS_TAS_MODELS] XGBoost parameters: {xgb_params}", color="blue")
-            
-            xgb_model = xgb.XGBClassifier(**xgb_params)
-            xgb_model.fit(X_train_scaled, y_train)
-            models['xgboost'] = xgb_model
-            
-            xgb_time = time.time() - xgb_start
-            tprint(f"⏱️ [NAS_TAS_MODELS] XGBoost training completed in {xgb_time:.3f} seconds", color="blue")
-            tprint(f"📊 [NAS_TAS_MODELS] XGBoost feature importance: {xgb_model.feature_importances_[:5]}", color="blue")
-            
-            # Step 6: Train LightGBM with detailed logging
-            tprint("🔧 [NAS_TAS_MODELS] Step 6: Training LightGBM", color="cyan")
-            lgb_start = time.time()
-            
-            lgb_params = {
-                'random_state': self.model_config['random_state'],
-                'n_jobs': self.model_config['n_jobs']
-            }
-            tprint(f"💡 [NAS_TAS_MODELS] LightGBM parameters: {lgb_params}", color="blue")
-            
-            lgb_model = lgb.LGBMClassifier(**lgb_params)
-            lgb_model.fit(X_train_scaled, y_train)
-            models['lightgbm'] = lgb_model
-            
-            lgb_time = time.time() - lgb_start
-            tprint(f"⏱️ [NAS_TAS_MODELS] LightGBM training completed in {lgb_time:.3f} seconds", color="blue")
-            tprint(f"📊 [NAS_TAS_MODELS] LightGBM feature importance: {lgb_model.feature_importances_[:5]}", color="blue")
+            et_time = time.time() - et_start
+            tprint(f"⏱️ [NAS_TAS_MODELS] ExtraTrees training completed in {et_time:.3f} seconds", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] ExtraTrees feature importance: {et_model.feature_importances_[:5]}", color="blue")
+            tprint(f"📊 [NAS_TAS_MODELS] ExtraTrees trees trained: {et_params['n_estimators']}", color="blue")
+            tprint("✅ [NAS_TAS_MODELS] ExtraTrees model trained successfully", color="green")
             
             # Step 7: Evaluate models with comprehensive metrics
             tprint("🔧 [NAS_TAS_MODELS] Step 7: Evaluating models", color="cyan")
@@ -925,10 +970,9 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             training_history = {
                 'data_split_time': split_time,
                 'scaling_time': scale_time,
-                'random_forest_time': rf_time,
-                'logistic_regression_time': lr_time,
-                'xgboost_time': xgb_time,
-                'lightgbm_time': lgb_time,
+                'catboost_time': cb_time,
+                'bayesian_rule_lists_time': brl_time,
+                'extratrees_time': et_time,
                 'evaluation_time': eval_time,
                 'total_time': training_time
             }

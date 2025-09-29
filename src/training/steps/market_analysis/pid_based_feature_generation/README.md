@@ -44,36 +44,7 @@ generator = InteractionFeatureGenerator(config)
 result = await generator.generate_interaction_features(data, feature_names, optimized_lookback_periods, target)
 ```
 
-### 2. PolynomialFeatureGenerator
-Generates data-driven polynomial features using PID analysis to identify the most relevant polynomial transformations.
-
-**Features:**
-- Power features (x^2, x^3, etc.)
-- Cross-product features (x1 * x2)
-- Interaction features (x1 * x2^2)
-- Logarithmic features (log(x))
-- Exponential features (exp(x))
-- Square root features (sqrt(x))
-- Cubic root features (cbrt(x))
-- Reciprocal features (1/x)
-
-**Configuration:**
-```python
-from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig
-
-config = PolynomialConfig(
-    max_polynomial_features=50,
-    max_polynomial_degree=3,
-    synergy_threshold=0.1,
-    enable_parallel_processing=True,
-    enable_gpu_acceleration=True
-)
-
-generator = PolynomialFeatureGenerator(config)
-result = await generator.generate_polynomial_features(data, feature_names, optimized_lookback_periods, target)
-```
-
-### 3. CrossTimeframeFeatureGenerator
+### 2. CrossTimeframeFeatureGenerator
 Generates data-driven cross-timeframe features using PID analysis to identify the most relevant cross-timeframe relationships.
 
 **Features:**

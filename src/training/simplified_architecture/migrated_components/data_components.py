@@ -140,9 +140,83 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
 
     async def _load_from_database(self, connection_string: str, **kwargs) -> pd.DataFrame:
         """Load data from database."""
-        # This would be implemented based on the specific database
-        # For now, raise NotImplementedError
-        raise NotImplementedError("Database loading not yet implemented")
+        try:
+            import sqlalchemy as sa
+            from sqlalchemy import create_engine, text
+        except ImportError:
+            raise ImportError("sqlalchemy is required for database loading. Install with: pip install sqlalchemy")
+        
+        try:
+            # Create database engine
+            engine = create_engine(connection_string)
+            
+            # Get query parameters
+            table_name = kwargs.get('table_name', self.config.parameters.get('table_name'))
+            query = kwargs.get('query', self.config.parameters.get('query'))
+            symbol = kwargs.get('symbol', self.config.parameters.get('symbol'))
+            start_date = kwargs.get('start_date', self.config.parameters.get('start_date'))
+            end_date = kwargs.get('end_date', self.config.parameters.get('end_date'))
+            
+            if not table_name and not query:
+                raise ValueError("Either table_name or query must be specified for database loading")
+            
+            self.logger.info(f"Loading data from database: {connection_string}")
+            
+            # Build query
+            if query:
+                # Use custom query
+                if '{symbol}' in query and symbol:
+                    query = query.format(symbol=symbol)
+                if '{start_date}' in query and start_date:
+                    query = query.format(start_date=start_date)
+                if '{end_date}' in query and end_date:
+                    query = query.format(end_date=end_date)
+                
+                sql_query = text(query)
+            else:
+                # Build query from table name and filters
+                sql_query = f"SELECT * FROM {table_name}"
+                conditions = []
+                
+                if symbol:
+                    conditions.append(f"symbol = '{symbol}'")
+                if start_date:
+                    conditions.append(f"timestamp >= '{start_date}'")
+                if end_date:
+                    conditions.append(f"timestamp <= '{end_date}'")
+                
+                if conditions:
+                    sql_query += " WHERE " + " AND ".join(conditions)
+                
+                sql_query = text(sql_query)
+            
+            # Execute query and load data
+            with engine.connect() as connection:
+                data = pd.read_sql(sql_query, connection)
+            
+            # Ensure timestamp index
+            if 'timestamp' in data.columns:
+                data = data.set_index('timestamp')
+            elif 'time' in data.columns:
+                data = data.set_index('time')
+            elif 'date' in data.columns:
+                data = data.set_index('date')
+            
+            # Sort by index
+            if not data.index.is_monotonic_increasing:
+                data = data.sort_index()
+            
+            # Add metadata
+            data.attrs['source_database'] = connection_string
+            data.attrs['collection_time'] = datetime.now()
+            data.attrs['query'] = str(sql_query)
+            
+            self.logger.info(f"Successfully loaded {len(data)} rows from database")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load data from database: {e}")
+            raise ValueError(f"Database loading failed: {e}")
 
     async def validate_data(self, data: pd.DataFrame) -> bool:
         """Validate loaded data meets requirements."""

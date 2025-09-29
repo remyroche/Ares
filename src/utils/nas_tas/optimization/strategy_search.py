@@ -15,6 +15,7 @@ import logging
 from abc import ABC, abstractmethod
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 # Enhanced utility imports
 from ...common_operations import (
@@ -89,11 +90,12 @@ from ...ml_common.optimization.hierarchical_hpo import HierarchicalHPO
 from ...ml_common.optimization.regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
 # Matrix operations
-from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.unified_operations import UnifiedMatrixOperations
 from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
-from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 from ...matrix_operations.convenience import MatrixConvenience
+from src.utils.nas_tas.config.base_config import OptimizationMode
 
 # Hardware utilities
 from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
@@ -152,28 +154,26 @@ class StrategySearchConfig:
 @dataclass
 class StrategySearchResult:
     """Result from strategy search."""
-    
-    # Search results
+
+    # Search results (required fields - no defaults)
     best_strategy: Dict[str, Any]
     best_score: float
     search_history: List[Dict[str, Any]]
-    
-    # Performance metrics
-    total_iterations: int
-    convergence_iteration: int
-    search_time: float
-    
+    search_timestamp: datetime
+    configuration: Dict[str, Any]
+
+    # Performance metrics (with defaults)
+    total_iterations: int = 0
+    convergence_iteration: int = 0
+    search_time: float = 0.0
+
     # Strategy details
-    strategy_type: str
-    risk_score: float
-    complexity_score: float
+    strategy_type: str = "unknown"
+    risk_score: float = 0.0
+    complexity_score: float = 0.0
     
     # Backtesting results
     backtest_results: Dict[str, float] = field(default_factory=dict)
-    
-    # Metadata
-    search_timestamp: datetime
-    configuration: Dict[str, Any]
 
 
 @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
@@ -226,14 +226,14 @@ class StrategySearchOptimizer:
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
-        self.matrix_ops = MatrixOperations()
-        tprint_debug("✅ MatrixOperations initialized")
+        self.matrix_ops = UnifiedMatrixOperations()
+        tprint_debug("✅ UnifiedMatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
         tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
         tprint_debug("✅ BatchMatrixOperations initialized")
-        self.vectorized_core = VectorizedCore()
-        tprint_debug("✅ VectorizedCore initialized")
+        self.vectorized_core = VectorizedProcessingCore()
+        tprint_debug("✅ VectorizedProcessingCore initialized")
         self.matrix_convenience = MatrixConvenience()
         tprint_debug("✅ MatrixConvenience initialized")
         
@@ -305,12 +305,12 @@ class StrategySearchOptimizer:
         """
         try:
             # Initialize NAS engine if needed
-            if unified_config.architecture_type in [ArchitectureType.NEURAL_ONLY, ArchitectureType.HYBRID_NEURAL_TREE]:
+            if unified_config.architecture_type in [ArchitectureType.NEURAL_NETWORK, ArchitectureType.HYBRID]:
                 self.nas_engine = NASEngine(unified_config.__dict__)
                 tprint_success("NAS engine initialized for strategy search")
             
             # Initialize TAS engine if needed
-            if unified_config.architecture_type in [ArchitectureType.TREE_ONLY, ArchitectureType.HYBRID_NEURAL_TREE]:
+            if unified_config.architecture_type in [ArchitectureType.TREE_BASED, ArchitectureType.HYBRID]:
                 self.tas_engine = TASEngine(unified_config.__dict__)
                 tprint_success("TAS engine initialized for strategy search")
             
@@ -415,7 +415,7 @@ class StrategySearchOptimizer:
                     tprint_info("🌳 Searching tree strategies")
                     with tprint_timer("Tree Strategy Search"):
                         result = await self._search_tree_strategies(data, search_space)
-                elif unified_config.architecture_type == ArchitectureType.HYBRID_NEURAL_TREE:
+                elif unified_config.architecture_type == ArchitectureType.HYBRID:
                     tprint_info("🔀 Searching hybrid strategies")
                     with tprint_timer("Hybrid Strategy Search"):
                         result = await self._search_hybrid_strategies(data, search_space)
@@ -771,7 +771,7 @@ class StrategySearchOptimizer:
 async def search_optimal_strategy(
     data: pd.DataFrame,
     search_space: Dict[str, Any],
-    architecture_type: ArchitectureType = ArchitectureType.HYBRID_NEURAL_TREE,
+    architecture_type: ArchitectureType = ArchitectureType.HYBRID,
     config: Optional[StrategySearchConfig] = None
 ) -> StrategySearchResult:
     """Search for optimal strategy with default configuration.

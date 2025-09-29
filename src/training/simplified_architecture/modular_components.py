@@ -74,7 +74,57 @@ class BaseExchangeDataSource(IExchangeDataSource):
 
     def _standardize_ohlcv_data(self, raw_data: Any) -> pd.DataFrame:
         """Standardize OHLCV data format across exchanges."""
-        raise NotImplementedError('Subclasses must implement data standardization')
+        try:
+            if isinstance(raw_data, pd.DataFrame):
+                # Ensure required columns exist
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                missing_columns = [col for col in required_columns if col not in raw_data.columns]
+                
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+                
+                # Standardize column names to lowercase
+                standardized_data = raw_data.copy()
+                standardized_data.columns = standardized_data.columns.str.lower()
+                
+                # Ensure numeric types
+                for col in required_columns:
+                    if col in standardized_data.columns:
+                        standardized_data[col] = pd.to_numeric(standardized_data[col], errors='coerce')
+                
+                # Remove any rows with NaN values in required columns
+                standardized_data = standardized_data.dropna(subset=required_columns)
+                
+                # Ensure timestamp index if not already
+                if not isinstance(standardized_data.index, pd.DatetimeIndex):
+                    if 'timestamp' in standardized_data.columns:
+                        standardized_data = standardized_data.set_index('timestamp')
+                    elif 'time' in standardized_data.columns:
+                        standardized_data = standardized_data.set_index('time')
+                    else:
+                        # Create a default timestamp index
+                        standardized_data.index = pd.date_range(
+                            start='2023-01-01', 
+                            periods=len(standardized_data), 
+                            freq='1H'
+                        )
+                
+                # Sort by timestamp
+                standardized_data = standardized_data.sort_index()
+                
+                return standardized_data[required_columns]
+            
+            elif isinstance(raw_data, dict):
+                # Convert dictionary to DataFrame
+                df = pd.DataFrame(raw_data)
+                return self._standardize_ohlcv_data(df)
+            
+            else:
+                raise ValueError(f"Unsupported data type: {type(raw_data)}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to standardize OHLCV data: {e}")
+            raise ValueError(f"Data standardization failed: {e}")
 
 class ExchangeDataSource(BaseExchangeDataSource):
     """Generic exchange data source with configurable parameters."""

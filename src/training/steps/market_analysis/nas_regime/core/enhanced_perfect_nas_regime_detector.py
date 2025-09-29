@@ -255,6 +255,9 @@ class EnhancedPerfectNASRegimeDetector:
         # Initialize enhanced NAS components
         self._initialize_enhanced_nas_system()
 
+        # Initialize feature extractor (placeholder for now)
+        self.feature_extractor = None
+
         self.logger.info("✅ Enhanced Perfect NAS Regime Detector initialized with integrated utilities")
         self.logger.info(f"   Hardware optimization: {HARDWARE_AVAILABLE}")
         self.logger.info(f"   Matrix operations: {MATRIX_OPS_AVAILABLE}")

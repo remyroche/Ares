@@ -47,7 +47,6 @@ try:
         TrendFeatureGenerator,
         InteractionFeatureGenerator,
         CrossTimeframeFeatureGenerator,
-        PolynomialFeatureGenerator,
         generate_features_by_category,
         FeatureGenerationOptimizer,
         get_feature_optimizer
@@ -253,6 +252,9 @@ class BalancedFeatureExtractor:
             all_features = []
             feature_names = []
             feature_categories = {category.value: [] for category in FeatureCategory}
+            # Add temporal and micro_regime categories
+            feature_categories['temporal'] = []
+            feature_categories['micro_regime'] = []
             extraction_metadata = {}
             
             # Extract features by category
@@ -1160,21 +1162,23 @@ class BalancedFeatureExtractor:
             if self.config.enable_temporal_features:
                 # Hour of day effect (if we have timestamps)
                 if hasattr(data_df, 'index') and hasattr(data_df.index, 'hour'):
-                    hour_features = np.sin(2 * np.pi * data_df.index.hour / 24)
+                    hour_values = np.array(data_df.index.hour)
+                    hour_features = np.sin(2 * np.pi * hour_values / 24)
                     features.append(hour_features.reshape(-1, 1))
                     names.append('hour_sin')
-                    
-                    hour_features = np.cos(2 * np.pi * data_df.index.hour / 24)
+
+                    hour_features = np.cos(2 * np.pi * hour_values / 24)
                     features.append(hour_features.reshape(-1, 1))
                     names.append('hour_cos')
-                
+
                 # Day of week effect
                 if hasattr(data_df, 'index') and hasattr(data_df.index, 'dayofweek'):
-                    day_features = np.sin(2 * np.pi * data_df.index.dayofweek / 7)
+                    day_values = np.array(data_df.index.dayofweek)
+                    day_features = np.sin(2 * np.pi * day_values / 7)
                     features.append(day_features.reshape(-1, 1))
                     names.append('day_sin')
-                    
-                    day_features = np.cos(2 * np.pi * data_df.index.dayofweek / 7)
+
+                    day_features = np.cos(2 * np.pi * day_values / 7)
                     features.append(day_features.reshape(-1, 1))
                     names.append('day_cos')
                 
@@ -1184,16 +1188,14 @@ class BalancedFeatureExtractor:
                         # Rolling volatility with time weighting
                         returns = np.diff(close_price) / (close_price[:-1] + 1e-8)
                         time_weights = np.exp(-np.arange(len(returns)) * 0.01)  # Exponential decay
-                        weighted_vol = []
-                        
+                        weighted_vol = np.full(len(close_price), 0.0)  # Initialize with correct length
+
                         for i in range(period, len(returns)):
                             window_returns = returns[i-period:i]
                             window_weights = time_weights[i-period:i]
                             weighted_std = np.sqrt(np.average(window_returns**2, weights=window_weights))
-                            weighted_vol.append(weighted_std)
-                        
-                        # Pad with zeros
-                        weighted_vol = np.concatenate([np.zeros(period), weighted_vol])
+                            weighted_vol[i+1] = weighted_std  # +1 because returns[i] corresponds to close_price[i+1]
+
                         features.append(weighted_vol.reshape(-1, 1))
                         names.append(f'time_weighted_vol_{period}')
             
@@ -1223,31 +1225,28 @@ class BalancedFeatureExtractor:
                     if len(close_price) > short_period:
                         # Rolling volatility
                         returns = np.diff(close_price) / (close_price[:-1] + 1e-8)
-                        rolling_vol = []
-                        
+                        rolling_vol = np.full(len(close_price), 0.0)  # Initialize with correct length
+
                         for i in range(short_period, len(returns)):
                             vol = np.std(returns[i-short_period:i])
-                            rolling_vol.append(vol)
-                        
-                        # Pad with zeros
-                        rolling_vol = np.concatenate([np.zeros(short_period), rolling_vol])
-                        
+                            rolling_vol[i+1] = vol  # +1 because returns[i] corresponds to close_price[i+1]
+
                         # Volatility change rate (micro-regime sensitivity)
-                        vol_change = np.diff(rolling_vol)
-                        vol_change = np.concatenate([[0], vol_change])  # Pad first value
-                        
+                        vol_change = np.full(len(close_price), 0.0)  # Initialize with correct length
+                        vol_change[1:] = np.diff(rolling_vol)  # Fill from index 1 onwards
+
                         # Normalize and bound
                         vol_change = np.clip(vol_change, -self.config.max_feature_range, self.config.max_feature_range)
-                        
+
                         features.append(vol_change.reshape(-1, 1))
                         names.append(f'micro_vol_change_{short_period}')
-                        
+
                         # Volatility acceleration (second derivative)
                         if len(vol_change) > 2:
-                            vol_acceleration = np.diff(vol_change)
-                            vol_acceleration = np.concatenate([[0, 0], vol_acceleration])  # Pad first two values
+                            vol_acceleration = np.full(len(close_price), 0.0)  # Initialize with correct length
+                            vol_acceleration[2:] = np.diff(vol_change[1:])  # Fill from index 2 onwards
                             vol_acceleration = np.clip(vol_acceleration, -self.config.max_feature_range, self.config.max_feature_range)
-                            
+
                             features.append(vol_acceleration.reshape(-1, 1))
                             names.append(f'micro_vol_acceleration_{short_period}')
                 
@@ -1255,19 +1254,20 @@ class BalancedFeatureExtractor:
                 for short_period in [2, 3, 5]:
                     if len(close_price) > short_period:
                         # Short-term momentum
-                        momentum = (close_price[short_period:] - close_price[:-short_period]) / (close_price[:-short_period] + 1e-8)
-                        momentum = np.concatenate([np.zeros(short_period), momentum])  # Pad
+                        momentum = np.full(len(close_price), 0.0)  # Initialize with correct length
+                        momentum_values = (close_price[short_period:] - close_price[:-short_period]) / (close_price[:-short_period] + 1e-8)
+                        momentum[short_period:] = momentum_values  # Fill from short_period onwards
                         momentum = np.clip(momentum, -self.config.max_feature_range, self.config.max_feature_range)
-                        
+
                         features.append(momentum.reshape(-1, 1))
                         names.append(f'micro_momentum_{short_period}')
-                        
+
                         # Momentum change rate
                         if len(momentum) > 1:
-                            momentum_change = np.diff(momentum)
-                            momentum_change = np.concatenate([[0], momentum_change])  # Pad
+                            momentum_change = np.full(len(close_price), 0.0)  # Initialize with correct length
+                            momentum_change[1:] = np.diff(momentum)  # Fill from index 1 onwards
                             momentum_change = np.clip(momentum_change, -self.config.max_feature_range, self.config.max_feature_range)
-                            
+
                             features.append(momentum_change.reshape(-1, 1))
                             names.append(f'micro_momentum_change_{short_period}')
             

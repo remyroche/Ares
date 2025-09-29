@@ -709,14 +709,20 @@ class UnifiedClusteringAlgorithm:
             # Combine scores (normalize to 0-1 range)
             silhouette = metrics.get('silhouette_score', 0.0)
             ch_score = metrics.get('calinski_harabasz_score', 0.0)
+            db_score = metrics.get('davies_bouldin_score', 0.0)
             regime_balance = metrics.get('regime_balance', 0.0)
             
             # Normalize scores
             normalized_silhouette = max(0, min(1, silhouette))
             normalized_ch = min(ch_score / 1000, 1.0)
+            # Davies-Bouldin score should be minimized, so invert it
+            normalized_db = max(0, min(1, 1.0 / (1.0 + db_score)))
             
-            # Combined score
-            score = 0.4 * normalized_silhouette + 0.3 * normalized_ch + 0.3 * regime_balance
+            # Combined score with improved weighting
+            score = (0.35 * normalized_silhouette + 
+                    0.25 * normalized_ch + 
+                    0.25 * normalized_db + 
+                    0.15 * regime_balance)
             return score
             
         except Exception as e:

@@ -33,7 +33,7 @@
 1. **`FeatureSelectionMechanism`** - Data-driven feature selection using PID
 2. **`OptimizedLookbackIntegration`** - Integrates optimized lookback periods (runs FIRST)
 3. **`InteractionFeatureGenerator`** - Generates up to 100 interaction features
-4. **`PolynomialFeatureGenerator`** - Generates up to 50 polynomial features
+4. **`PolynomialFeatureGenerator`** - Removed (not used for NAS/TAS)
 5. **`CrossTimeframeFeatureGenerator`** - Generates up to 50 cross-timeframe features
 6. **`PIDBasedFeatureOrchestrator`** - Orchestrates all feature generation
 7. **`PIDBasedFeatureGenerationComponent`** - Main component replacing cross_timeframe_analysis

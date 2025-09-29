@@ -6,6 +6,7 @@ with backwards compatibility and easy access to unified functionality.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+import logging
 
 # Conditional imports for optional dependencies
 try:
@@ -41,7 +42,10 @@ from .vectorized_core import (
     get_vectorized_processing_core,
     optimize_dataframe as _optimize_dataframe,
     vectorized_rolling_features as _vectorized_rolling_features,
-    matrix_correlation_analysis as _matrix_correlation_analysis
+    matrix_correlation_analysis as _matrix_correlation_analysis,
+    OptimizedPipelineExecutor,
+    PipelineExecutionMode,
+    PipelineExecutionResult
 )
 
 from .batch_operations import (
@@ -52,6 +56,7 @@ from .batch_operations import (
 )
 
 from .enhanced_operations import (
+    OperationComplexity,
     get_enhanced_matrix_operations,
     gpu_matrix_multiply as _gpu_matrix_multiply,
     correlation_matrix_gpu as _correlation_matrix_gpu,
@@ -482,6 +487,35 @@ def m1_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
     logger = logging.getLogger(__name__)
     logger.warning("⚠️ m1_matrix_multiply() is deprecated. Use matrix_multiply() instead.")
     return matrix_multiply(A, B)
+
+class MatrixConvenience:
+    """Convenience class for common matrix operations."""
+
+    @staticmethod
+    def multiply(a: 'np.ndarray', b: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':
+        """Convenient matrix multiplication with hardware optimization."""
+        return matrix_multiply(a, b, use_gpu=use_gpu)
+
+    @staticmethod
+    def correlation(data: Union['pd.DataFrame', 'np.ndarray']) -> 'np.ndarray':
+        """Convenient correlation matrix computation."""
+        return correlation_matrix(data)
+
+    @staticmethod
+    def inverse(matrix: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':
+        """Convenient matrix inverse with hardware optimization."""
+        return matrix_inverse(matrix, use_gpu=use_gpu)
+
+    @staticmethod
+    def eigendecomposition(matrix: 'np.ndarray', use_gpu: bool = True) -> Tuple['np.ndarray', 'np.ndarray']:
+        """Convenient eigendecomposition with hardware optimization."""
+        return eigendecomposition(matrix, use_gpu=use_gpu)
+
+    @staticmethod
+    def svd(matrix: 'np.ndarray', k: Optional[int] = None, use_gpu: bool = True) -> Tuple['np.ndarray', 'np.ndarray', 'np.ndarray']:
+        """Convenient SVD with hardware optimization."""
+        return svd_decomposition(matrix, k, use_gpu=use_gpu)
+
 
 def get_enhanced_matrix_operations():
     """Legacy function for backward compatibility."""

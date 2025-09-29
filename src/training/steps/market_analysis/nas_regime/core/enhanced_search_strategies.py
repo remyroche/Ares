@@ -21,8 +21,9 @@ import random
 import copy
 import math
 from collections import deque
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
+from datetime import datetime
 
 # Import tprint for comprehensive debugging
 from src.utils.tprint import (
@@ -255,18 +256,13 @@ class ReinforcementLearningSearch:
     """Reinforcement Learning-based Neural Architecture Search."""
     
     def __init__(self, search_space, performance_evaluator, config):
-        tprint("🤖 [RL-SEARCH] Initializing Reinforcement Learning Search", color="blue", bold=True)
-        tprint(f"📊 [RL-SEARCH] Config: max_iterations={config.max_search_iterations}, learning_rate={config.rl_learning_rate}", color="cyan")
-        
         self.search_space = search_space
         self.performance_evaluator = performance_evaluator
         self.config = config
         
         # Create environment and agent
-        tprint("🔧 [RL-SEARCH] Creating architecture environment", color="yellow")
         self.env = ArchitectureEnvironment(search_space, performance_evaluator, config)
         
-        tprint("🔧 [RL-SEARCH] Creating DQN agent", color="yellow")
         self.agent = DQNAgent(
             self.env.observation_space.shape[0],
             self.env.action_space.n,
@@ -277,16 +273,9 @@ class ReinforcementLearningSearch:
         self.best_performance = -np.inf
         self.search_history = []
         
-        tprint_success("✅ [RL-SEARCH] Reinforcement Learning Search initialized")
-        
     def search(self, max_episodes=1000):
         """Perform RL-based architecture search."""
-        tprint("🚀 [RL-SEARCH] Starting Reinforcement Learning-based architecture search", color="blue", bold=True)
-        tprint(f"📊 [RL-SEARCH] Max episodes: {max_episodes}", color="cyan")
-        
         for episode in range(max_episodes):
-            tprint(f"🎮 [RL-SEARCH] Starting episode {episode+1}/{max_episodes}", color="yellow")
-            
             state = self.env.reset()
             total_reward = 0
             episode_history = []
@@ -294,12 +283,9 @@ class ReinforcementLearningSearch:
             
             while True:
                 step_count += 1
-                tprint(f"🔧 [RL-SEARCH] Episode {episode+1}, Step {step_count}: Choosing action", color="yellow")
                 
                 action = self.agent.act(state, training=True)
                 next_state, reward, done, info = self.env.step(action)
-                
-                tprint(f"📊 [RL-SEARCH] Episode {episode+1}, Step {step_count}: Action={action}, Reward={reward:.4f}, Performance={info['performance']:.4f}", color="cyan")
                 
                 self.agent.remember(state, action, reward, next_state, done)
                 state = next_state
@@ -311,23 +297,19 @@ class ReinforcementLearningSearch:
                 })
                 
                 if done:
-                    tprint(f"🏁 [RL-SEARCH] Episode {episode+1} completed after {step_count} steps", color="green")
                     break
             
             # Train the agent
-            tprint(f"🧠 [RL-SEARCH] Training agent after episode {episode+1}", color="yellow")
             self.agent.replay()
             
             # Update target network periodically
             if episode % self.config.rl_target_update_freq == 0:
-                tprint(f"🔄 [RL-SEARCH] Updating target network at episode {episode+1}", color="yellow")
                 self.agent.update_target_network()
             
             # Track best architecture
             if episode_history:
                 final_performance = episode_history[-1]['performance']
                 if final_performance > self.best_performance:
-                    tprint(f"🏆 [RL-SEARCH] New best performance: {final_performance:.4f} (episode {episode+1})", color="green", bold=True)
                     self.best_performance = final_performance
                     self.best_architecture = copy.deepcopy(self.env.current_architecture)
             
@@ -337,12 +319,6 @@ class ReinforcementLearningSearch:
                 'final_performance': episode_history[-1]['performance'] if episode_history else 0,
                 'best_performance': self.best_performance
             })
-            
-            if episode % 100 == 0:
-                tprint(f"📊 [RL-SEARCH] Episode {episode}: Best performance = {self.best_performance:.4f}, Total reward = {total_reward:.4f}", color="cyan")
-        
-        tprint_success("✅ [RL-SEARCH] Reinforcement Learning search completed")
-        tprint(f"🏆 [RL-SEARCH] Final best performance: {self.best_performance:.4f}", color="green", bold=True)
         
         return {
             'best_architecture': self.best_architecture,

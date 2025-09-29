@@ -19,13 +19,25 @@ from dataclasses import dataclass, field
 import logging
 import time
 from pathlib import Path
+from datetime import datetime
+import itertools
+from enum import Enum
+import shutil
+import json
 
 from src.utils.tprint import tprint
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
+from src.utils.math_validation import safe_divide, validate_finite
+from src.utils.common_operations import safe_dataframe_operation
 
 # Import the multi-horizon labeler
 from ..multi_horizon_profit_labeler import MultiHorizonProfitLabeler, MultiHorizonConfig
+
+# Import optimization components
+from .core.optimizer import CoreOptimizer, OptimizationMethod
+from .constants import OPTIMIZATION_CONSTANTS, PERFORMANCE_CONSTANTS
+from .dependency_manager import get_dependency
 
 @dataclass
 class MultiHorizonOptimizationConfig:
@@ -94,10 +106,6 @@ class MultiHorizonOptimizer:
         self.logger.info(f'   → Primary metric: {self.config.primary_metric}')
         self.logger.info(f'   → Max trials: {self.config.n_trials}')
     
-    @traced(span_name='optimize_multi_horizon_config')
-    @validates()
-    @handles_errors(exceptions=(Exception,), default_return={})
-    @log_execution_time()
     def optimize_time_horizons(self, 
                              data: pd.DataFrame,
                              feature_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
@@ -225,15 +233,17 @@ class MultiHorizonOptimizer:
         for horizon_name, (min_val, max_val, step) in self.config.time_horizon_ranges.items():
             horizon_ranges[horizon_name] = list(range(min_val, max_val + 1, step))
         
-        # Generate all combinations (limited to reasonable number)
-        import itertools
+        self.logger.info(f'🔧 Horizon ranges: {horizon_ranges}')
         
+        # Generate all combinations (limited to reasonable number)
         horizon_names = list(horizon_ranges.keys())
         horizon_values = [horizon_ranges[name] for name in horizon_names]
         
         # Limit combinations to avoid explosion
         max_combinations = 1000
         all_combinations = list(itertools.product(*horizon_values))
+        
+        self.logger.info(f'📊 Total combinations before filtering: {len(all_combinations)}')
         
         if len(all_combinations) > max_combinations:
             # Sample random subset
@@ -250,6 +260,7 @@ class MultiHorizonOptimizer:
             if self._is_valid_horizon_combination(horizon_dict):
                 combinations.append(horizon_dict)
         
+        self.logger.info(f'✅ Generated {len(combinations)} valid horizon combinations')
         return combinations
     
     def _is_valid_horizon_combination(self, horizons: Dict[str, int]) -> bool:
@@ -259,8 +270,19 @@ class MultiHorizonOptimizer:
         medium = horizons.get('medium', 0)
         extended = horizons.get('extended', 0)
         
-        # Ensure logical ordering
-        return immediate <= short <= medium <= extended
+        # Ensure logical ordering - only check if both values are non-zero
+        if immediate > 0 and short > 0:
+            if not (immediate <= short):
+                return False
+        if short > 0 and medium > 0:
+            if not (short <= medium):
+                return False
+        if medium > 0 and extended > 0:
+            if not (medium <= extended):
+                return False
+        
+        # At least one horizon must be positive
+        return any(horizons.values())
     
     def _generate_target_combinations(self) -> List[Dict[str, float]]:
         """Generate profit target combinations (optional)."""
@@ -271,6 +293,17 @@ class MultiHorizonOptimizer:
     def _grid_search_optimization(self, data: pd.DataFrame, param_space: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Perform grid search optimization."""
         self.logger.info(f'🔍 Running grid search optimization with {len(param_space)} configurations')
+        
+        if len(param_space) == 0:
+            self.logger.warning('⚠️ No parameter combinations to evaluate')
+            return {
+                'method': 'grid_search',
+                'best_config': None,
+                'best_score': 0.0,
+                'all_results': [],
+                'total_evaluations': 0,
+                'error': 'No parameter combinations generated'
+            }
         
         best_score = -np.inf
         best_config = None
@@ -493,13 +526,45 @@ class MultiHorizonOptimizer:
         }
         
         try:
-            # This would integrate with the existing feature lookback system
-            # For now, just return placeholder
-            integration['integration_successful'] = True
-            integration['notes'] = 'Integration placeholder - implement based on existing system'
+            self.logger.info('🔗 Integrating multi-horizon results with feature lookback optimization')
             
+            # Create backup of existing configuration
+            config_path = Path(self.config.feature_lookback_config_path)
+            if config_path.exists():
+                backup_path = config_path.with_suffix('.backup')
+                shutil.copy2(config_path, backup_path)
+                integration['backup_created'] = True
+                self.logger.info(f'💾 Created backup at {backup_path}')
+            
+            # Update configuration with optimized time horizons
+            best_config = results.get('best_configuration', {})
+            time_horizons = best_config.get('time_horizons', {})
+            
+            if time_horizons:
+                # Create updated configuration
+                updated_config = {
+                    'multi_horizon_optimization': {
+                        'enabled': True,
+                        'optimized_time_horizons': time_horizons,
+                        'optimization_timestamp': datetime.now().isoformat(),
+                        'optimization_score': results.get('optimization_summary', {}).get('best_score', 0.0)
+                    },
+                    'integration_notes': 'Auto-generated from multi-horizon optimization'
+                }
+                
+                # Save updated configuration
+                with open(config_path, 'w') as f:
+                    json.dump(updated_config, f, indent=2)
+                
+                integration['integration_successful'] = True
+                integration['updated_config_path'] = str(config_path)
+                self.logger.info(f'✅ Updated configuration saved to {config_path}')
+            else:
+                integration['error'] = 'No time horizons found in optimization results'
+                
         except Exception as e:
             integration['error'] = str(e)
+            self.logger.error(f'❌ Integration failed: {e}')
         
         return integration
     

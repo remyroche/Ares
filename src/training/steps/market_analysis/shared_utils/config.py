@@ -159,8 +159,8 @@ class ConfigValidator:
     def _validate_regime_count(self, n_regimes: int) -> List[str]:
         """Validate regime count parameter."""
         errors = []
-        if not isinstance(n_regimes, int) or n_regimes < 2 or n_regimes > 50:
-            errors.append("Number of regimes must be an integer between 2 and 50")
+        if not isinstance(n_regimes, int) or n_regimes < 5 or n_regimes > 15:
+            errors.append("Number of regimes must be an integer between 5 and 15")
         return errors
     
     def _validate_algorithm_type(self, algorithm_type: str) -> List[str]:
@@ -191,7 +191,7 @@ class ConfigValidator:
         return errors
 
 
-def validate_regime_count(n_regimes: int, min_regimes: int = 2, max_regimes: int = 50) -> bool:
+def validate_regime_count(n_regimes: int, min_regimes: int = 5, max_regimes: int = 15) -> bool:
     """
     Validate regime count parameter.
     

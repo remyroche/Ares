@@ -1,0 +1,12 @@
+{
+  "multi_horizon_optimization": {
+    "enabled": true,
+    "optimized_time_horizons": {
+      "immediate": 2,
+      "short": 4
+    },
+    "optimization_timestamp": "2025-09-29T20:54:26.131975",
+    "optimization_score": -1.0
+  },
+  "integration_notes": "Auto-generated from multi-horizon optimization"
+}

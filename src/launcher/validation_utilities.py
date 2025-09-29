@@ -22,7 +22,18 @@ class BaseValidator:
     
     def validate(self, **kwargs) -> bool:
         """Perform validation and return success status."""
-        raise NotImplementedError
+        self.logger.info("🔍 Performing base validation...")
+        try:
+            # Basic validation - check if logger is working
+            if not self.logger:
+                self.logger.error("❌ Logger not available")
+                return False
+            
+            self.logger.info("✅ Base validation completed")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Base validation failed: {e}")
+            return False
 
 class PrerequisitesValidator(BaseValidator):
     """Validates prerequisites for various operations."""

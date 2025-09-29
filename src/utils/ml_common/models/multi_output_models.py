@@ -506,9 +506,81 @@ class MultiOutputModel(ABC):
     
     def get_feature_importance(self) -> Optional[Dict[str, Any]]:
         """Get feature importance if available."""
-        # This is a placeholder implementation
-        # In practice, you would extract feature importance from the underlying models
-        return None
+        try:
+            if not self.is_fitted or not hasattr(self, 'models'):
+                return None
+            
+            feature_importance = {}
+            
+            for output_name, model in self.models.items():
+                try:
+                    if hasattr(model, 'feature_importances_'):
+                        # Tree-based models
+                        feature_importance[output_name] = {
+                            'type': 'tree_based',
+                            'importances': model.feature_importances_.tolist(),
+                            'feature_names': getattr(model, 'feature_names_in_', None)
+                        }
+                    elif hasattr(model, 'coef_'):
+                        # Linear models
+                        if len(model.coef_.shape) == 1:
+                            feature_importance[output_name] = {
+                                'type': 'linear',
+                                'coefficients': model.coef_.tolist(),
+                                'feature_names': getattr(model, 'feature_names_in_', None)
+                            }
+                        else:
+                            # Multi-class linear models
+                            feature_importance[output_name] = {
+                                'type': 'linear_multi_class',
+                                'coefficients': model.coef_.tolist(),
+                                'feature_names': getattr(model, 'feature_names_in_', None)
+                            }
+                    elif hasattr(model, 'permutation_importance_'):
+                        # Models with permutation importance
+                        feature_importance[output_name] = {
+                            'type': 'permutation',
+                            'importances': model.permutation_importance_.tolist(),
+                            'feature_names': getattr(model, 'feature_names_in_', None)
+                        }
+                    else:
+                        # Calculate permutation importance as fallback
+                        try:
+                            from sklearn.inspection import permutation_importance
+                            # Use a small sample for efficiency
+                            n_samples = min(1000, len(self.X_train) if hasattr(self, 'X_train') and self.X_train is not None else 100)
+                            if hasattr(self, 'X_train') and self.X_train is not None:
+                                X_sample = self.X_train[:n_samples]
+                                y_sample = self.y_train[:n_samples] if hasattr(self, 'y_train') and self.y_train is not None else None
+                                if y_sample is not None:
+                                    perm_importance = permutation_importance(
+                                        model, X_sample, y_sample, 
+                                        n_repeats=5, random_state=42, n_jobs=1
+                                    )
+                                    feature_importance[output_name] = {
+                                        'type': 'permutation_calculated',
+                                        'importances': perm_importance.importances_mean.tolist(),
+                                        'std': perm_importance.importances_std.tolist(),
+                                        'feature_names': getattr(model, 'feature_names_in_', None)
+                                    }
+                        except Exception as e:
+                            self.logger.debug(f"Could not calculate permutation importance for {output_name}: {e}")
+                            continue
+                            
+                except Exception as e:
+                    self.logger.warning(f"Could not extract feature importance for {output_name}: {e}")
+                    continue
+            
+            if feature_importance:
+                self.logger.info(f"✅ Extracted feature importance for {len(feature_importance)} outputs")
+                return feature_importance
+            else:
+                self.logger.warning("⚠️ No feature importance available for any output")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Feature importance extraction failed: {e}")
+            return None
     
     def save_model(self, file_path: str) -> None:
         """Save the model to disk."""
@@ -602,34 +674,99 @@ class MultiOutputStackingModel(MultiOutputModel):
         
         if len(self.base_models[output_name]) == 0:
             try:
-                from sklearn.ensemble import GradientBoostingRegressor
+                from sklearn.ensemble import GradientBoostingRegressor, ExtraTreesRegressor
+                from sklearn.linear_model import Ridge, Lasso
+                from sklearn.svm import SVR
+                from sklearn.neighbors import KNeighborsRegressor
                 
-                # Create simple base models
+                # Create diverse base models for better ensemble performance
                 default_models = {
-                    'rf': RandomForestRegressor(n_estimators=10, random_state=42),
+                    'rf': RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=1),
+                    'et': ExtraTreesRegressor(n_estimators=50, random_state=42, n_jobs=1),
                     'lr': LinearRegression(),
-                    'gbr': GradientBoostingRegressor(n_estimators=10, random_state=42)
+                    'ridge': Ridge(alpha=1.0, random_state=42),
+                    'lasso': Lasso(alpha=0.1, random_state=42, max_iter=1000),
+                    'gbr': GradientBoostingRegressor(n_estimators=50, random_state=42),
+                    'svr': SVR(kernel='rbf', C=1.0, gamma='scale'),
+                    'knn': KNeighborsRegressor(n_neighbors=5, weights='distance')
                 }
                 
+                # Only add models that can be imported successfully
+                successful_models = {}
                 for model_name, model in default_models.items():
+                    try:
+                        # Test if model can be instantiated
+                        test_model = model.__class__(**model.get_params() if hasattr(model, 'get_params') else {})
+                        successful_models[model_name] = model
+                    except Exception as e:
+                        self.logger.debug(f"Could not create {model_name} model: {e}")
+                        continue
+                
+                for model_name, model in successful_models.items():
                     self.base_models[output_name][model_name] = model
                 
-                self.logger.info(f"🔧 Created {len(default_models)} default base models for output {output_name}")
+                self.logger.info(f"🔧 Created {len(successful_models)} default base models for output {output_name}")
                 
             except ImportError as e:
                 self.logger.warning(f"⚠️ Could not create default base models for {output_name}: {e}")
+                # Fallback to minimal models
+                try:
+                    from sklearn.linear_model import LinearRegression
+                    from sklearn.ensemble import RandomForestRegressor
+                    
+                    minimal_models = {
+                        'lr': LinearRegression(),
+                        'rf': RandomForestRegressor(n_estimators=10, random_state=42)
+                    }
+                    
+                    for model_name, model in minimal_models.items():
+                        self.base_models[output_name][model_name] = model
+                    
+                    self.logger.info(f"🔧 Created {len(minimal_models)} minimal base models for output {output_name}")
+                    
+                except Exception as fallback_e:
+                    self.logger.error(f"❌ Could not create any base models for {output_name}: {fallback_e}")
     
     def _create_default_meta_model(self, output_name: str) -> None:
         """Create default meta model for an output if none exist."""
         if output_name not in self.meta_models:
             try:
+                from sklearn.ensemble import RandomForestRegressor
+                from sklearn.linear_model import Ridge
+                from sklearn.svm import SVR
                 
-                # Create simple meta model
-                self.meta_models[output_name] = LinearRegression()
-                self.logger.info(f"🔧 Created default meta model for output {output_name}")
+                # Try different meta models in order of preference
+                meta_model_candidates = [
+                    ('ridge', Ridge(alpha=1.0, random_state=42)),
+                    ('rf', RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=1)),
+                    ('svr', SVR(kernel='rbf', C=1.0, gamma='scale')),
+                    ('lr', LinearRegression())
+                ]
+                
+                for model_name, model in meta_model_candidates:
+                    try:
+                        # Test if model can be instantiated
+                        test_model = model.__class__(**model.get_params() if hasattr(model, 'get_params') else {})
+                        self.meta_models[output_name] = model
+                        self.logger.info(f"🔧 Created default meta model ({model_name}) for output {output_name}")
+                        break
+                    except Exception as e:
+                        self.logger.debug(f"Could not create {model_name} meta model: {e}")
+                        continue
+                
+                # If no model was created, create a simple fallback
+                if output_name not in self.meta_models:
+                    self.meta_models[output_name] = LinearRegression()
+                    self.logger.info(f"🔧 Created fallback meta model for output {output_name}")
                 
             except ImportError as e:
                 self.logger.warning(f"⚠️ Could not create default meta model for {output_name}: {e}")
+                # Last resort fallback
+                try:
+                    self.meta_models[output_name] = LinearRegression()
+                    self.logger.info(f"🔧 Created minimal meta model for output {output_name}")
+                except Exception as fallback_e:
+                    self.logger.error(f"❌ Could not create any meta model for {output_name}: {fallback_e}")
     
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputStackingModel':
         """Fit the multi-output stacking model with OUT-OF-FOLD stacking.

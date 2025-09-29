@@ -104,8 +104,102 @@ def build_fine_grid_around_best(search_space: Dict[str, Any], best_params: Dict[
     return [dict(c) for c in itertools.product(*combos)]
 
 
+class GridSearchOptimizer:
+    """Grid search optimizer for hyperparameter tuning."""
+
+    def __init__(self, param_grid: Dict[str, List], scoring: str = 'accuracy', cv: int = 5):
+        """Initialize grid search optimizer.
+
+        Args:
+            param_grid: Dictionary of parameter grids to search
+            scoring: Scoring metric to optimize
+            cv: Number of cross-validation folds
+        """
+        self.param_grid = param_grid
+        self.scoring = scoring
+        self.cv = cv
+        self.best_params_ = None
+        self.best_score_ = None
+        self.cv_results_ = None
+        self.grid_search_ = None
+
+    def fit(self, X, y, estimator=None):
+        """Fit the grid search optimizer.
+
+        Args:
+            X: Feature matrix
+            y: Target vector
+            estimator: Base estimator to optimize (if None, uses a simple classifier)
+        """
+        from sklearn.model_selection import GridSearchCV
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.svm import SVC
+
+        # Default estimator if none provided
+        if estimator is None:
+            estimator = RandomForestClassifier(random_state=42)
+
+        # Run grid search
+        self.grid_search_ = GridSearchCV(
+            estimator,
+            self.param_grid,
+            scoring=self.scoring,
+            cv=self.cv,
+            n_jobs=-1,  # Use all available cores
+            verbose=0
+        )
+
+        self.grid_search_.fit(X, y)
+
+        self.best_params_ = self.grid_search_.best_params_
+        self.best_score_ = self.grid_search_.best_score_
+        self.cv_results_ = self.grid_search_.cv_results_
+
+        return self
+
+    def predict(self, X):
+        """Make predictions using the best estimator found."""
+        if self.grid_search_ is None:
+            raise ValueError("GridSearchOptimizer must be fitted before making predictions")
+        return self.grid_search_.predict(X)
+
+    def predict_proba(self, X):
+        """Predict class probabilities using the best estimator found."""
+        if self.grid_search_ is None:
+            raise ValueError("GridSearchOptimizer must be fitted before making predictions")
+        if not hasattr(self.grid_search_, 'predict_proba'):
+            raise AttributeError("The best estimator does not support predict_proba")
+        return self.grid_search_.predict_proba(X)
+
+    def score(self, X, y):
+        """Return the score of the best estimator on the given test data."""
+        if self.grid_search_ is None:
+            raise ValueError("GridSearchOptimizer must be fitted before scoring")
+        return self.grid_search_.score(X, y)
+
+    def get_best_params(self):
+        """Get the best parameters found."""
+        return self.best_params_
+
+    def get_best_score(self):
+        """Get the best score achieved."""
+        return self.best_score_
+
+    def get_cv_results(self):
+        """Get the cross-validation results."""
+        return self.cv_results_
+
+    def get_best_estimator(self):
+        """Get the best estimator found."""
+        if self.grid_search_ is None:
+            raise ValueError("GridSearchOptimizer must be fitted before getting best estimator")
+        return self.grid_search_.best_estimator_
+
+
 __all__ = [
     'build_coarse_grid_from_search_space',
     'build_fine_grid_around_best',
+    'GridSearchOptimizer',
 ]
 

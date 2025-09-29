@@ -17,9 +17,11 @@ This module provides feature generators organized by category, including:
 - Entropy features (15 comprehensive entropy indicators)
 """
 
-from .returns import ReturnsFeatureGenerator
-from .momentum import MomentumFeatureGenerator
-from .volume import VolumeFeatureGenerator
+# Returns and momentum features are handled by other categories
+# Returns: handled by base calculations and other generators
+# Momentum: handled by acceleration.py and interaction.py
+# Volume: now handled by volume.py with comprehensive basic volume features
+from .volume import VolumeFeatureGenerator, create_default_volume_generators
 from .volatility import VolatilityFeatureGenerator
 from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
@@ -99,9 +101,7 @@ from .time import create_default_time_generators
 
 __all__ = [
     # Core categories
-    "ReturnsFeatureGenerator",
-    "MomentumFeatureGenerator",
-    "VolumeFeatureGenerator", 
+    "VolumeFeatureGenerator",
     "VolatilityFeatureGenerator",
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
@@ -168,6 +168,7 @@ __all__ = [
     "create_default_interaction_generators",
     
     # Other categories
+    "create_default_volume_generators",
     "create_default_microstructure_generators",
     "create_default_entropy_generators",
     "create_default_autoencoder_generators",

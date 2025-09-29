@@ -96,6 +96,11 @@ class EconomicEvaluationConfig:
         'gdp_growth', 'inflation_rate', 'interest_rate', 'unemployment_rate'
     ])
     
+    # Dynamic weighting based on market conditions
+    enable_dynamic_weighting: bool = True
+    volatility_sensitivity: float = 0.3  # How much volatility affects weights
+    trend_sensitivity: float = 0.2      # How much trend affects weights
+    
     # Position-aware analysis
     enable_position_aware_analysis: bool = True
     position_aware_config: Optional['PositionAwareConfig'] = None
@@ -104,7 +109,44 @@ class EconomicEvaluationConfig:
     enable_economic_indicators: bool = True
     enable_bootstrap_analysis: bool = True
     enable_regime_specific_analysis: bool = True
-    enable_position_aware_analysis: bool = True
+    
+    # Additional thresholds and weights
+    price_impact_threshold: float = 0.5
+    volume_threshold: float = 0.4
+    volatility_threshold: float = 0.5
+    trend_threshold: float = 0.6
+    efficiency_threshold: float = 0.5
+    economic_indicators_lookback: int = 252
+    economic_correlation_threshold: float = 0.3
+    bootstrap_iterations: int = 100
+    confidence_level: float = 0.95
+    
+    # Enhanced metrics
+    enable_enhanced_price_analysis: bool = True
+    enable_volume_pattern_analysis: bool = True
+    enable_regime_transition_analysis: bool = True
+    enable_cross_regime_correlation: bool = True
+    
+    # Regime-specific analysis
+    min_regime_samples: int = 50
+    regime_stability_threshold: float = 0.7
+    
+    # TAS-specific enhancements
+    enable_tree_based_analysis: bool = True
+    tree_importance_threshold: float = 0.1
+    tree_depth_penalty: float = 0.1
+    tree_complexity_weight: float = 0.2
+    
+    # NAS-specific enhancements
+    enable_neural_based_analysis: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.3
+    neural_architecture_complexity: float = 0.1
+    
+    # Hybrid analysis
+    enable_hybrid_analysis: bool = True
+    hybrid_weighting: float = 0.5
+    hybrid_consensus_threshold: float = 0.7
 
 @dataclass
 class TradingViabilityConfig:

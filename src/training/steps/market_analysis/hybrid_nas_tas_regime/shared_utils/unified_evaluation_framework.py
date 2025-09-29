@@ -245,7 +245,16 @@ class UnifiedEvaluationFramework:
                     volume_threshold=0.4,
                     volatility_threshold=0.5,
                     trend_threshold=0.6,
-                    efficiency_threshold=0.5
+                    efficiency_threshold=0.5,
+                    # Ensure all required attributes are set with defaults
+                    price_impact_weight=0.25,
+                    volume_significance_weight=0.15,
+                    volatility_impact_weight=0.20,
+                    trend_consistency_weight=0.15,
+                    market_efficiency_weight=0.10,
+                    economic_indicators_weight=0.10,
+                    trading_opportunity_weight=0.05,
+                    risk_adjustment_weight=0.05
                 )
                 self.economic_evaluator = UnifiedEconomicSignificanceEvaluator(economic_config)
             

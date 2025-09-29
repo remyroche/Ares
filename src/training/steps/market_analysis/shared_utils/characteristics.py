@@ -335,7 +335,11 @@ class CharacteristicsGenerator:
             
             # Add cluster-specific information
             if cluster_centers is not None:
-                cluster_characteristics['cluster_centers'] = cluster_centers.tolist()
+                # Handle both numpy arrays and lists
+                if hasattr(cluster_centers, 'tolist'):
+                    cluster_characteristics['cluster_centers'] = cluster_centers.tolist()
+                else:
+                    cluster_characteristics['cluster_centers'] = cluster_centers
                 cluster_characteristics['n_clusters'] = len(cluster_centers)
             else:
                 unique_clusters = set(cluster_assignments)

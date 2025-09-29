@@ -268,7 +268,6 @@ class BaseFeatureGenerator(ABC):
                 TrendFeatureGenerator,
                 InteractionFeatureGenerator,
                 CrossTimeframeFeatureGenerator,
-                PolynomialFeatureGenerator,
                 generate_features_by_category,
                 FeatureGenerationOptimizer,
                 get_feature_optimizer
@@ -286,12 +285,13 @@ class BaseFeatureGenerator(ABC):
             self.trend_generator = TrendFeatureGenerator()
             self.interaction_generator = InteractionFeatureGenerator()
             self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
-            self.polynomial_generator = PolynomialFeatureGenerator()
+            # Polynomial generator removed - not used for NAS/TAS
+            self.polynomial_generator = None
             
             # Set up feature generation categories
             self.available_categories = [
                 'returns', 'momentum', 'volume', 'volatility', 'trend',
-                'interaction', 'cross_timeframe', 'polynomial'
+                'interaction', 'cross_timeframe'
             ]
             
             self.logger.info("✅ Feature generation components initialized from feature_engineering bank")

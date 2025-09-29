@@ -498,6 +498,26 @@ class HyperparameterOptimization:
             _LOGGER.warning("⚠️ Search space generation failed - using default search space")
             return self._get_default_search_space(model_type)
 
+    def _get_default_search_space(self, model_type: str) -> Dict[str, Any]:
+        """Get default search space for a model type."""
+        try:
+            # Return default search space from initialized spaces
+            if model_type.lower() in self.default_search_spaces:
+                return self.default_search_spaces[model_type.lower()]
+            else:
+                # Return a generic search space
+                return self.default_search_spaces.get('xgboost', {
+                    'max_depth': {'type': 'int', 'low': 3, 'high': 10},
+                    'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+                    'n_estimators': {'type': 'int', 'low': 50, 'high': 300}
+                })
+        except Exception as e:
+            self.logger.warning(f"Failed to get default search space: {e}")
+            return {
+                'max_depth': {'type': 'int', 'low': 3, 'high': 10},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3}
+            }
+
     def multi_objective_optimization(self, model_factory: Callable,
                                   X: np.ndarray, y: np.ndarray,
                                   objectives: List[str],
@@ -2180,10 +2200,14 @@ def create_hpo_config(n_trials: int = 50,
 # Add missing import for defaultdict
 from collections import defaultdict
 
+# Create HPOUtils instance for backward compatibility
+HPOUtils = HyperparameterOptimization()
+
 # Make functions available for import
 __all__ = [
     'HyperparameterOptimization',
-    'optimize_hyperparameters', 
+    'HPOUtils',
+    'optimize_hyperparameters',
     'create_search_space',
     'validate_hpo_config',
     'create_hpo_config'

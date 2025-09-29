@@ -78,10 +78,10 @@ from ...ml_common.optimization.grid_utils import GridSearchOptimizer
 from ...ml_common.optimization.hpo_utils import HPOUtils
 from ...ml_common.optimization.hierarchical_hpo import HierarchicalHPO
 
-from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.unified_operations import UnifiedMatrixOperations
 from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
-from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 
 from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
 from ...hardware.m1_memory_optimizer import M1MemoryOptimizer
@@ -134,14 +134,14 @@ class NASEngine:
         
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
-        self.matrix_ops = MatrixOperations()
-        tprint_debug("✅ MatrixOperations initialized")
+        self.matrix_ops = UnifiedMatrixOperations()
+        tprint_debug("✅ UnifiedMatrixOperations initialized")
         self.enhanced_matrix_ops = EnhancedMatrixOperations()
         tprint_debug("✅ EnhancedMatrixOperations initialized")
         self.batch_matrix_ops = BatchMatrixOperations()
         tprint_debug("✅ BatchMatrixOperations initialized")
-        self.vectorized_core = VectorizedCore()
-        tprint_debug("✅ VectorizedCore initialized")
+        self.vectorized_core = VectorizedProcessingCore()
+        tprint_debug("✅ VectorizedProcessingCore initialized")
         
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
@@ -592,7 +592,7 @@ class NASEngine:
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
-                    'params': params,
+                    'params': trial_params,
                     'score': score,
                     'timestamp': time.time()
                 }

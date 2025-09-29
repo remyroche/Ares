@@ -258,8 +258,7 @@ polynomial_config = PolynomialConfig(
     enable_data_validation=True,
     enable_m1_optimization=True
 )
-polynomial_generator = PolynomialFeatureGenerator(polynomial_config)
-polynomial_result = await polynomial_generator.generate_polynomial_features(data, feature_names)
+# PolynomialFeatureGenerator removed - not used for NAS/TAS
 ```
 
 ## Performance Benefits

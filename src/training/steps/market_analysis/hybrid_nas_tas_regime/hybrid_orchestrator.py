@@ -45,7 +45,7 @@ from .shared_utils.unified_trading_viability_evaluator import (
 
 # Import enhanced components
 from .regime_alignment_manager import RegimeAlignmentManager, AlignmentConfig
-from .enhanced_economic_evaluator import EnhancedEconomicEvaluator, EconomicEvaluationConfig
+from .enhanced_economic_evaluator import EnhancedEconomicEvaluator, EconomicEvaluationConfig as EnhancedEconomicConfig
 from .consensus_validator import ConsensusValidator, ConsensusValidationConfig
 from .multi_objective_optimizer import MultiObjectiveOptimizer, MultiObjectiveConfig
 
@@ -356,16 +356,14 @@ class HybridOrchestrator:
             
             # Initialize enhanced economic evaluator
             print("💰 Setting up enhanced economic evaluator...")
-            economic_config = EconomicEvaluationConfig(
+            economic_config = EnhancedEconomicConfig(
                 target_cluster_count_min=6,
                 target_cluster_count_max=15,
                 max_cluster_distribution=0.25,
                 min_cluster_distribution=0.03,
                 volatility_cv_weight=0.4,
                 returns_cv_weight=0.3,
-                volume_cv_weight=0.3,
-                momentum_cv_weight=0.1,
-                entropy_cv_weight=0.1
+                volume_cv_weight=0.3
             )
             self.enhanced_economic_evaluator = EnhancedEconomicEvaluator(economic_config)
             print("✅ Enhanced economic evaluator initialized")
@@ -402,8 +400,6 @@ class HybridOrchestrator:
                 volatility_cv_weight=0.4,
                 returns_cv_weight=0.3,
                 volume_cv_weight=0.3,
-                momentum_cv_weight=0.1,
-                entropy_cv_weight=0.1,
                 statistical_weight=0.25,
                 economic_weight=0.30,
                 temporal_weight=0.20,
@@ -1106,13 +1102,11 @@ class HybridOrchestrator:
                 results['hybrid_analysis'] = hybrid_analysis
                 tprint("[green]✅ Hybrid analysis completed[/green]")
             else:
-                tprint("[red]⚠️ Hybrid analysis skipped - one or both systems failed[/red]")
-                self.logger.warning("⚠️ Hybrid analysis skipped - one or both systems failed")
-                results['hybrid_analysis'] = {
-                    'error': 'Hybrid analysis requires both TAS and NAS systems to succeed',
-                    'tas_success': tas_success,
-                    'nas_success': nas_success
-                }
+                # Fast fail - both TAS and NAS systems are required
+                error_msg = "Both TAS and NAS systems failed to initialize. Cannot perform hybrid regime discovery."
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"[red]❌ {error_msg}[/red]")
+                raise RuntimeError(error_msg)
 
             # Generate comprehensive outcome report
             if tas_success and nas_success:
@@ -1206,6 +1200,7 @@ class HybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ TAS-NAS orchestration failed: {e}")
             return {'error': str(e), 'execution_time': 0.0}
+
 
     def _generate_outcome_report(self, results: Dict[str, Any], market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
         """Generate comprehensive outcome report with input data info, NAS vs TAS analysis, and clear output metrics."""
@@ -1631,7 +1626,8 @@ class HybridOrchestrator:
             }
 
         except Exception as e:
-            return self._get_fallback_error_result(str(e), timeframe, 'TAS')
+            self.logger.error(f"❌ TAS regime detection failed: {e}")
+            raise ValueError(f"TAS regime detection failed: {e}")
 
     def _run_nas_detection(self, market_data: Union[pd.DataFrame, np.ndarray],
                           timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
@@ -1667,7 +1663,8 @@ class HybridOrchestrator:
             }
 
         except Exception as e:
-            return self._get_fallback_error_result(str(e), timeframe, 'Enhanced_NAS')
+            self.logger.error(f"❌ Enhanced NAS regime detection failed: {e}")
+            raise ValueError(f"Enhanced NAS regime detection failed: {e}")
 
     def _perform_hybrid_analysis(self, market_data: Union[pd.DataFrame, np.ndarray],
                                 timestamps: Optional[np.ndarray],
@@ -1801,16 +1798,6 @@ class HybridOrchestrator:
             self.logger.error(f"❌ Hybrid centers calculation failed: {e}")
             return np.array([])
 
-    def _get_fallback_error_result(self, error: str, timeframe: str, system: str) -> Dict[str, Any]:
-        """Return error result when systems fail without fallback."""
-        self.logger.error(f"❌ {system} regime detection failed: {error}")
-        return {
-            'success': False,
-            'error': error,
-            'timeframe': timeframe,
-            'system': system,
-            'execution_time': 0.0
-        }
 
 
 def create_hybrid_orchestrator(config: HybridOrchestratorConfig) -> HybridOrchestrator:

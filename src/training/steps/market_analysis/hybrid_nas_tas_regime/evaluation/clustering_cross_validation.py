@@ -437,12 +437,15 @@ class ClusteringCrossValidator:
             return np.zeros(len(features))
 
     def _calculate_clustering_score(self, features: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate clustering score."""
+        """Calculate clustering score using composite metrics."""
         try:
             if len(set(labels)) < 2:
                 return 0.0
             
-            if self.scoring_metric == 'silhouette':
+            if self.scoring_metric == 'composite':
+                # Use composite scoring with multiple metrics
+                return self._calculate_composite_score(features, labels)
+            elif self.scoring_metric == 'silhouette':
                 return silhouette_score(features, labels)
             elif self.scoring_metric == 'calinski_harabasz':
                 return calinski_harabasz_score(features, labels)
@@ -453,6 +456,44 @@ class ClusteringCrossValidator:
         except Exception as e:
             self.logger.warning(f"Clustering score calculation failed: {e}")
             return 0.0
+    
+    def _calculate_composite_score(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate composite clustering score using multiple metrics."""
+        try:
+            # Calculate individual metrics
+            silhouette = silhouette_score(features, labels)
+            calinski_harabasz = calinski_harabasz_score(features, labels)
+            davies_bouldin = davies_bouldin_score(features, labels)
+            
+            # Normalize metrics to 0-1 range
+            # Silhouette: already in [-1, 1], normalize to [0, 1]
+            norm_silhouette = (silhouette + 1) / 2
+            
+            # Calinski-Harabasz: normalize by dividing by 1000 and capping at 1
+            norm_ch = min(calinski_harabasz / 1000, 1.0)
+            
+            # Davies-Bouldin: lower is better, so invert and normalize
+            norm_db = max(0, 1.0 / (1.0 + davies_bouldin))
+            
+            # Calculate regime balance
+            unique_labels = set(labels)
+            regime_sizes = [np.sum(labels == label) for label in unique_labels]
+            regime_balance = 1.0 - (np.std(regime_sizes) / np.mean(regime_sizes)) if len(regime_sizes) > 1 else 0.0
+            
+            # Composite score with weighted combination
+            composite_score = (
+                0.35 * norm_silhouette +      # Silhouette score (most important)
+                0.25 * norm_ch +             # Calinski-Harabasz score
+                0.25 * norm_db +             # Davies-Bouldin score (inverted)
+                0.15 * regime_balance        # Regime balance
+            )
+            
+            return composite_score
+            
+        except Exception as e:
+            self.logger.warning(f"Composite score calculation failed: {e}")
+            # Fallback to silhouette score
+            return silhouette_score(features, labels)
 
     def _combine_optimization_results(self, n_regimes_results: Dict[str, Any], 
                                     weight_results: Dict[str, Any], 

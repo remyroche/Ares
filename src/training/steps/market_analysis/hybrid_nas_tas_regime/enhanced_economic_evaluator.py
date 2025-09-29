@@ -42,10 +42,71 @@ class EconomicEvaluationConfig:
     
     # Removed accessory CV weights (momentum and entropy)
     
+    # Dynamic weighting based on market conditions
+    enable_dynamic_weighting: bool = True
+    volatility_sensitivity: float = 0.3  # How much volatility affects weights
+    trend_sensitivity: float = 0.2      # How much trend affects weights
+    
     # Economic significance thresholds
     min_economic_significance: float = 0.5
     min_trading_viability: float = 0.5
     min_regime_duration: int = 5
+    
+    # Additional weights and thresholds for compatibility
+    price_impact_weight: float = 0.25
+    volume_significance_weight: float = 0.15
+    volatility_impact_weight: float = 0.20
+    trend_consistency_weight: float = 0.15
+    market_efficiency_weight: float = 0.10
+    economic_indicators_weight: float = 0.10
+    trading_opportunity_weight: float = 0.05
+    risk_adjustment_weight: float = 0.05
+    significance_threshold: float = 0.6
+    price_impact_threshold: float = 0.5
+    volume_threshold: float = 0.4
+    volatility_threshold: float = 0.5
+    trend_threshold: float = 0.6
+    efficiency_threshold: float = 0.5
+    economic_indicators_lookback: int = 252
+    economic_correlation_threshold: float = 0.3
+    bootstrap_iterations: int = 100
+    confidence_level: float = 0.95
+    
+    # Enhanced metrics
+    enable_enhanced_price_analysis: bool = True
+    enable_volume_pattern_analysis: bool = True
+    enable_regime_transition_analysis: bool = True
+    enable_cross_regime_correlation: bool = True
+    
+    # Regime-specific analysis
+    enable_regime_specific_analysis: bool = True
+    min_regime_samples: int = 50
+    regime_stability_threshold: float = 0.7
+    
+    # TAS-specific enhancements
+    enable_tree_based_analysis: bool = True
+    tree_importance_threshold: float = 0.1
+    tree_depth_penalty: float = 0.1
+    tree_complexity_weight: float = 0.2
+    
+    # NAS-specific enhancements
+    enable_neural_based_analysis: bool = True
+    neural_confidence_threshold: float = 0.8
+    neural_uncertainty_weight: float = 0.3
+    neural_architecture_complexity: float = 0.1
+    
+    # Hybrid analysis
+    enable_hybrid_analysis: bool = True
+    hybrid_weighting: float = 0.5
+    hybrid_consensus_threshold: float = 0.7
+    
+    # Position-aware analysis
+    enable_position_aware_analysis: bool = True
+    position_aware_config: Optional[Any] = None
+    
+    # Economic indicators
+    enable_economic_indicators: bool = True
+    enable_bootstrap_analysis: bool = True
 
 
 class EnhancedEconomicEvaluator:
@@ -192,20 +253,39 @@ class EnhancedEconomicEvaluator:
             # Calculate returns and volatility
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
+                # Align regime_predictions with returns by dropping the first element
+                # since pct_change() reduces length by 1
+                aligned_regime_predictions = regime_predictions[1:]
             else:
                 returns = pd.Series([0] * len(market_data))
+                aligned_regime_predictions = regime_predictions
             
-            # Calculate volume
+            # Calculate volume - align with returns length
             if 'volume' in market_data.columns:
-                volume = market_data['volume']
+                if len(returns) == len(market_data) - 1:
+                    # If returns was created with pct_change().dropna(), align volume too
+                    volume = market_data['volume'].iloc[1:]
+                else:
+                    volume = market_data['volume']
             else:
-                volume = pd.Series([1] * len(market_data))
+                volume = pd.Series([1] * len(returns))
+            
+            # Ensure all arrays have the same length
+            min_length = min(len(aligned_regime_predictions), len(returns), len(volume))
+            if min_length == 0:
+                self.logger.warning("⚠️ No data available for CV optimization")
+                return {'error': 'No data available', 'cv_optimization_score': 0.0}
+            
+            # Truncate all arrays to the same length
+            aligned_regime_predictions = aligned_regime_predictions[:min_length]
+            returns = returns.iloc[:min_length] if hasattr(returns, 'iloc') else returns[:min_length]
+            volume = volume.iloc[:min_length] if hasattr(volume, 'iloc') else volume[:min_length]
             
             # Removed momentum and entropy calculations
             
             # Calculate CV for each regime
             for regime in unique_regimes:
-                regime_mask = regime_predictions == regime
+                regime_mask = aligned_regime_predictions == regime
                 regime_returns = returns[regime_mask]
                 regime_volume = volume[regime_mask]
                 
@@ -307,11 +387,26 @@ class EnhancedEconomicEvaluator:
                                        market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate economic significance for each regime."""
         try:
-            unique_regimes = np.unique(regime_predictions)
+            # Align regime_predictions with market_data length
+            if len(regime_predictions) != len(market_data):
+                # If regime_predictions is longer, truncate it to match market_data
+                if len(regime_predictions) > len(market_data):
+                    aligned_regime_predictions = regime_predictions[:len(market_data)]
+                else:
+                    # If regime_predictions is shorter, pad it with the last value
+                    aligned_regime_predictions = np.pad(
+                        regime_predictions, 
+                        (0, len(market_data) - len(regime_predictions)), 
+                        mode='edge'
+                    )
+            else:
+                aligned_regime_predictions = regime_predictions
+            
+            unique_regimes = np.unique(aligned_regime_predictions)
             economic_scores = {}
             
             for regime in unique_regimes:
-                regime_mask = regime_predictions == regime
+                regime_mask = aligned_regime_predictions == regime
                 regime_data = market_data[regime_mask]
                 
                 if len(regime_data) < self.config.min_regime_duration:
@@ -373,11 +468,26 @@ class EnhancedEconomicEvaluator:
                                    market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate trading viability for each regime."""
         try:
-            unique_regimes = np.unique(regime_predictions)
+            # Align regime_predictions with market_data length
+            if len(regime_predictions) != len(market_data):
+                # If regime_predictions is longer, truncate it to match market_data
+                if len(regime_predictions) > len(market_data):
+                    aligned_regime_predictions = regime_predictions[:len(market_data)]
+                else:
+                    # If regime_predictions is shorter, pad it with the last value
+                    aligned_regime_predictions = np.pad(
+                        regime_predictions, 
+                        (0, len(market_data) - len(regime_predictions)), 
+                        mode='edge'
+                    )
+            else:
+                aligned_regime_predictions = regime_predictions
+            
+            unique_regimes = np.unique(aligned_regime_predictions)
             trading_scores = {}
             
             for regime in unique_regimes:
-                regime_mask = regime_predictions == regime
+                regime_mask = aligned_regime_predictions == regime
                 regime_data = market_data[regime_mask]
                 
                 if len(regime_data) < self.config.min_regime_duration:
@@ -388,9 +498,10 @@ class EnhancedEconomicEvaluator:
                 if 'close' in regime_data.columns:
                     returns = regime_data['close'].pct_change().dropna()
                     if len(returns) > 0:
-                        # Trading frequency (regime changes)
-                        regime_changes = np.sum(regime_predictions[1:] != regime_predictions[:-1])
-                        stability_score = 1 - (regime_changes / len(regime_predictions))
+                        # Trading frequency (regime changes) - calculate for current regime only
+                        regime_changes = np.sum(aligned_regime_predictions[1:] != aligned_regime_predictions[:-1])
+                        # Calculate stability based on regime data length instead of total predictions
+                        stability_score = 1 - (regime_changes / len(aligned_regime_predictions)) if len(aligned_regime_predictions) > 0 else 1.0
                         
                         # Return consistency
                         positive_returns = np.sum(returns > 0)

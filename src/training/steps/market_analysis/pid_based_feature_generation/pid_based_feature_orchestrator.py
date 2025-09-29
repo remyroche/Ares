@@ -61,6 +61,7 @@ except ImportError as e:
 # PolynomialFeatureGenerator removed due to empty except blocks - use feature_engineering bank instead
 POLYNOMIAL_GENERATOR_AVAILABLE = False
 
+
 try:
     from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
     CROSS_TIMEFRAME_GENERATOR_AVAILABLE = True
@@ -287,7 +288,6 @@ class OrchestratorResult:
     """Result of PID-based feature orchestration with common utilities integration."""
     # Individual Results
     interaction_result: Optional[InteractionResult] = None
-    polynomial_result: Optional[PolynomialResult] = None
     cross_timeframe_result: Optional[CrossTimeframeResult] = None
     
     # Combined Results
@@ -443,18 +443,8 @@ class PIDBasedFeatureOrchestrator:
             if self.config.enable_interaction_features:
                 self.logger.warning("⚠️ Interaction features requested but generator not available")
         
-        # Initialize polynomial feature generator using feature_engineering bank
-        if self.config.enable_polynomial_features:
-            try:
-                # Use feature_engineering bank for polynomial features
-                from src.feature_generation import PolynomialFeatureGenerator
-                self.polynomial_generator = PolynomialFeatureGenerator()
-                self.logger.info("✅ Polynomial Feature Generator initialized from feature_engineering bank")
-            except Exception as e:
-                self.logger.error(f"❌ Failed to initialize Polynomial Feature Generator: {e}")
-                self.polynomial_generator = None
-        else:
-            self.polynomial_generator = None
+        # Polynomial feature generator removed - not used for NAS/TAS
+        self.polynomial_generator = None
         
         # Initialize cross-timeframe feature generator
         if self.config.enable_cross_timeframe_features and CROSS_TIMEFRAME_GENERATOR_AVAILABLE:
@@ -649,18 +639,7 @@ class PIDBasedFeatureOrchestrator:
                     tprint_error(f"Interaction feature generation failed: {e}")
                     generation_results.append(('interaction', e))
             
-            # Polynomial features with long/short differentiation
-            if self.polynomial_generator:
-                try:
-                    tprint_info("Generating polynomial features with long/short differentiation...")
-                    polynomial_result = await self._generate_polynomial_features_with_differentiation(
-                        X, feature_names, optimized_lookback_periods, target
-                    )
-                    generation_results.append(('polynomial', polynomial_result))
-                    tprint_success("Polynomial feature generation completed")
-                except Exception as e:
-                    tprint_error(f"Polynomial feature generation failed: {e}")
-                    generation_results.append(('polynomial', e))
+            # Polynomial features removed - not used for NAS/TAS
             
             # Cross-timeframe features with long/short differentiation
             if self.cross_timeframe_generator:
@@ -1101,7 +1080,6 @@ class PIDBasedFeatureOrchestrator:
             },
             'component_availability': {
                 'interaction_generator': self.interaction_generator is not None,
-                'polynomial_generator': self.polynomial_generator is not None,
                 'cross_timeframe_generator': self.cross_timeframe_generator is not None,
                 'matrix_ops': self.matrix_ops is not None
             },
@@ -1116,8 +1094,6 @@ class PIDBasedFeatureOrchestrator:
         if self.interaction_generator:
             metrics['interaction_generator_metrics'] = self.interaction_generator.get_performance_metrics()
         
-        if self.polynomial_generator:
-            metrics['polynomial_generator_metrics'] = self.polynomial_generator.get_performance_metrics()
         
         if self.cross_timeframe_generator:
             metrics['cross_timeframe_generator_metrics'] = self.cross_timeframe_generator.get_performance_metrics()
@@ -1478,60 +1454,6 @@ class PIDBasedFeatureOrchestrator:
             # Return a minimal result to prevent pipeline failure
             return self._create_empty_interaction_result()
     
-    async def _generate_polynomial_features_safe(
-        self, 
-        X: np.ndarray, 
-        feature_names: List[str], 
-        optimized_lookback_periods: Optional[Dict[str, int]], 
-        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
-    ):
-        """Safe wrapper for polynomial feature generation using feature_engineering bank."""
-        try:
-            if not self.polynomial_generator:
-                raise AttributeError("Polynomial generator not available")
-            
-            # Use feature_engineering bank for polynomial features
-            # Convert numpy array to DataFrame for feature generation
-            import pandas as pd
-            df = pd.DataFrame(X, columns=feature_names)
-            
-            # Generate polynomial features using feature_engineering bank
-            polynomial_features = self.polynomial_generator.generate_features(
-                data=df,
-                categories=['polynomial'],
-                lookback_optimization=True
-            )
-            
-            if polynomial_features is not None and hasattr(polynomial_features, 'features'):
-                # Convert back to numpy array
-                features_array = polynomial_features.features.values
-                feature_names = list(polynomial_features.features.columns)
-                
-                # Create result object
-                from .simple_feature_generator import SimpleFeatureResult
-                return SimpleFeatureResult(
-                    features=features_array,
-                    feature_names=feature_names,
-                    success=True,
-                    processing_time=0.0,
-                    metadata={'source': 'feature_engineering_bank'}
-                )
-            else:
-                raise ValueError("Polynomial feature generation returned no features")
-                    
-        except Exception as e:
-            tprint_error(f"Polynomial feature generation failed: {e}")
-            # Try simple generator as fallback
-            if self.simple_generator and SIMPLE_GENERATOR_AVAILABLE:
-                tprint_info("Attempting fallback to simple polynomial feature generator...")
-                try:
-                    # Simple generator should also follow the same async pattern
-                    if hasattr(self.simple_generator, 'generate_polynomial_features'):
-                        return self.simple_generator.generate_polynomial_features(X, feature_names, optimized_lookback_periods, target)
-                except Exception as fallback_error:
-                    tprint_error(f"Simple generator fallback also failed: {fallback_error}")
-            # Return a minimal result to prevent pipeline failure
-            return self._create_empty_polynomial_result()
     
     async def _generate_cross_timeframe_features_safe(
         self, 
@@ -1604,31 +1526,6 @@ class PIDBasedFeatureOrchestrator:
                 'redundancy_score': 0.0
             }
     
-    def _create_empty_polynomial_result(self):
-        """Create empty polynomial result for fallback."""
-        if PolynomialResult:
-            return PolynomialResult(
-                polynomial_features={},
-                feature_names=[],
-                polynomial_scores={},
-                total_features_generated=0,
-                execution_time=0.0,
-                optimization_used=False,
-                matrix_ops_used=False,
-                feature_stability_score=0.0
-            )
-        else:
-            # Fallback dict structure
-            return {
-                'polynomial_features': {},
-                'feature_names': [],
-                'polynomial_scores': {},
-                'total_features_generated': 0,
-                'execution_time': 0.0,
-                'optimization_used': False,
-                'matrix_ops_used': False,
-                'feature_stability_score': 0.0
-            }
     
     def _create_empty_cross_timeframe_result(self):
         """Create empty cross-timeframe result for fallback."""
@@ -1700,48 +1597,6 @@ class PIDBasedFeatureOrchestrator:
                 X, feature_names, optimized_lookback_periods, target
             )
     
-    async def _generate_polynomial_features_with_differentiation(
-        self, 
-        X: np.ndarray, 
-        feature_names: List[str], 
-        optimized_lookback_periods: Optional[Dict[str, int]], 
-        target: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
-    ):
-        """Generate polynomial features with long/short differentiation."""
-        try:
-            # Check if we have differentiated targets
-            if isinstance(target, dict) and 'long' in target and 'short' in target:
-                tprint_info("Generating separate polynomial features for long and short opportunities")
-                
-                # Generate features for long targets
-                long_result = await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['long']
-                )
-                
-                # Generate features for short targets
-                short_result = await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['short']
-                )
-                
-                # Combine results with differentiated naming
-                return self._combine_long_short_results(long_result, short_result, 'polynomial')
-            
-            elif isinstance(target, dict) and 'combined' in target:
-                # Handle combined target format
-                return await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target['combined']
-                )
-            else:
-                # Handle legacy format
-                return await self._generate_polynomial_features_safe(
-                    X, feature_names, optimized_lookback_periods, target
-                )
-        except Exception as e:
-            tprint_error(f"Long/short polynomial feature generation failed: {e}")
-            # Fallback to regular generation
-            return await self._generate_polynomial_features_safe(
-                X, feature_names, optimized_lookback_periods, target
-            )
     
     async def _generate_cross_timeframe_features_with_differentiation(
         self, 

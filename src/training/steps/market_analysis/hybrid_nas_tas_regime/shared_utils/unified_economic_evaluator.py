@@ -183,10 +183,8 @@ class UnifiedEconomicSignificanceEvaluator:
         else:
             tprint_debug("🚫 Position-aware analysis disabled")
         
-        # Economic indicators (placeholder - would be loaded from external data)
-        tprint_debug("📊 Loading economic indicators...")
-        self.economic_indicators = self._load_economic_indicators()
-        tprint_success("✅ Economic indicators loaded")
+        # Economic indicators disabled - no loading needed
+        self.economic_indicators = {}
         
         tprint_success("✅ Unified Economic Significance Evaluator initialized")
         tprint_info(f"   Position-aware analysis: {config.enable_position_aware_analysis}")
@@ -197,21 +195,6 @@ class UnifiedEconomicSignificanceEvaluator:
         self.logger.info(f"   Economic indicators: {config.enable_economic_indicators}")
         self.logger.info(f"   Bootstrap analysis: {config.enable_bootstrap_analysis}")
     
-    def _load_economic_indicators(self) -> Dict[str, np.ndarray]:
-        """Load economic indicators (placeholder implementation)."""
-        if not self.config.enable_economic_indicators:
-            return {}
-        
-        # In a real implementation, this would load actual economic data
-        # For now, return placeholder data
-        return {
-            'gdp_growth': np.random.normal(0.02, 0.01, 1000),
-            'inflation_rate': np.random.normal(0.03, 0.005, 1000),
-            'interest_rate': np.random.normal(0.05, 0.01, 1000),
-            'unemployment_rate': np.random.normal(0.05, 0.01, 1000),
-            'consumer_confidence': np.random.normal(100, 10, 1000),
-            'vix': np.random.normal(20, 5, 1000)
-        }
     
     def evaluate(self, 
                  market_data: Union[pd.DataFrame, np.ndarray], 

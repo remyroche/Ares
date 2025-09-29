@@ -130,7 +130,7 @@ class PositionAwareTradingAnalyzer:
             tprint_debug("📊 Calculating position-aware win rates...")
             tprint_debug(f"Returns shape: {returns.shape}")
             tprint_debug(f"Position directions shape: {position_directions.shape}")
-            
+
             results = {
                 'overall_win_rate': 0.0,
                 'long_win_rate': 0.0,
@@ -143,6 +143,11 @@ class PositionAwareTradingAnalyzer:
             if len(returns) == 0:
                 tprint_warning("⚠️ No returns data provided")
                 return results
+
+            # Ensure arrays have the same length
+            min_length = min(len(returns), len(position_directions))
+            returns = returns[:min_length]
+            position_directions = position_directions[:min_length]
 
             # Overall win rate (any directional movement after costs)
             adjusted_returns = returns - self.config.transaction_cost
@@ -177,7 +182,7 @@ class PositionAwareTradingAnalyzer:
                 'overall_win_rate': 0.5,
                 'long_win_rate': 0.5,
                 'short_win_rate': 0.5,
-                'total_trades': len(returns),
+                'total_trades': len(returns) if 'returns' in locals() else 0,
                 'long_trades': 0,
                 'short_trades': 0
             }
@@ -213,7 +218,12 @@ class PositionAwareTradingAnalyzer:
                 # Infer positions from returns (positive = long, negative = short)
                 position_directions = np.where(returns > 0, 1, -1)
             else:
-                position_directions = position_directions[1:]  # Align with returns
+                # Ensure position_directions matches the length of returns
+                if len(position_directions) > len(returns):
+                    position_directions = position_directions[1:]  # Align with returns
+                elif len(position_directions) < len(returns):
+                    # Pad with neutral positions if needed
+                    position_directions = np.pad(position_directions, (0, len(returns) - len(position_directions)), mode='constant', constant_values=0)
 
             overall_win_rates = self.calculate_position_aware_win_rate(returns, position_directions)
             results['overall_analysis'] = overall_win_rates
@@ -231,49 +241,106 @@ class PositionAwareTradingAnalyzer:
                 # Get returns and positions for this regime
                 regime_returns = regime_data['close'].pct_change().dropna().values
 
-            # Get position directions for this regime - need to align dimensions properly
-            # regime_mask has length N, but position_directions has length N-1 after alignment
-            # So we need to create a mask of length N-1 for the aligned position_directions
-            aligned_regime_mask = regime_mask[1:]  # Align mask with position_directions
-            if len(position_directions) != len(aligned_regime_mask):
-                # Handle dimension mismatch by ensuring they have the same length
-                min_length = min(len(position_directions), len(aligned_regime_mask))
+                # Get position directions for this regime - need to align dimensions properly
+                # regime_mask has length N, but position_directions has length N-1 after alignment
+                # So we need to create a mask of length N-1 for the aligned position_directions
+                aligned_regime_mask = regime_mask[1:]  # Align mask with position_directions
+
+                # Ensure all arrays have the same length
+                min_length = min(len(position_directions), len(aligned_regime_mask), len(regime_returns))
+
+                if min_length == 0:
+                    continue
+
+                # Debug array lengths for this regime
+                self.logger.debug(f"   Regime {regime_id} array lengths - position_directions: {len(position_directions)}, "
+                                f"aligned_regime_mask: {len(aligned_regime_mask)}, regime_returns: {len(regime_returns)}, "
+                                f"min_length: {min_length}")
+
+                # Truncate all arrays to the same length
                 aligned_regime_mask = aligned_regime_mask[:min_length]
-                position_directions = position_directions[:min_length]
-            regime_positions = position_directions[aligned_regime_mask]
+                regime_positions = position_directions[:min_length][aligned_regime_mask]
+                regime_returns = regime_returns[aligned_regime_mask]
 
-            # Get aligned regime data for economic significance calculation
-            aligned_regime_data = market_data[aligned_regime_mask]
+                # Final alignment: ensure regime_returns and regime_positions have same length
+                min_regime_length = min(len(regime_returns), len(regime_positions))
+                regime_returns = regime_returns[:min_regime_length]
+                regime_positions = regime_positions[:min_regime_length]
 
-            # Calculate position-aware metrics
-            regime_win_rates = self.calculate_position_aware_win_rate(
-                regime_returns, regime_positions
-            )
+                # Get aligned regime data for economic significance calculation
+                # Use the original regime_data but slice it to match the aligned arrays
+                # regime_data has length len(regime_returns) + 1, so we slice it appropriately
+                aligned_regime_data = regime_data.iloc[1:len(regime_returns)+1]
 
-            # Add additional regime-specific analysis
-            regime_analysis = {
-                **regime_win_rates,
-                'regime_id': regime_id,
-                'regime_duration': len(regime_returns),  # Use returns length for consistency
-                'regime_volatility': np.std(regime_returns),
-                'position_bias': np.mean(regime_positions),  # >0 = long bias, <0 = short bias
-                'economic_significance': self._calculate_regime_economic_significance(
-                    aligned_regime_data, regime_positions
+                # Calculate position-aware metrics
+                regime_win_rates = self.calculate_position_aware_win_rate(
+                    regime_returns, regime_positions
                 )
-            }
 
-            results['regime_analyses'][f"regime_{regime_id}"] = regime_analysis
+                # Add additional regime-specific analysis
+                regime_analysis = {
+                    **regime_win_rates,
+                    'regime_id': regime_id,
+                    'regime_duration': len(regime_returns),  # Use returns length for consistency
+                    'regime_volatility': np.std(regime_returns),
+                    'position_bias': np.mean(regime_positions),  # >0 = long bias, <0 = short bias
+                    'economic_significance': self._calculate_regime_economic_significance(
+                        aligned_regime_data, regime_positions
+                    )
+                }
+
+                results['regime_analyses'][f"regime_{regime_id}"] = regime_analysis
 
             # Position balance analysis
             results['position_balance_analysis'] = self._analyze_position_balance(
                 position_directions, returns
             )
 
+            # Ensure all required keys are present with fallback values
+            if 'overall_analysis' not in results:
+                results['overall_analysis'] = {
+                    'overall_win_rate': 0.5,
+                    'long_win_rate': 0.5,
+                    'short_win_rate': 0.5,
+                    'total_trades': 0,
+                    'long_trades': 0,
+                    'short_trades': 0
+                }
+            
+            if 'position_balance_analysis' not in results:
+                results['position_balance_analysis'] = {
+                    'position_balance_score': 0.5,
+                    'diversification_benefit': 0.0,
+                    'long_short_correlation': 0.0,
+                    'position_stability': 0.0
+                }
+
             return results
 
         except Exception as e:
-            self.logger.error(f"Regime position performance analysis failed: {e}")
-            return {'error': str(e)}
+            self.logger.error(f"❌ Regime position performance analysis failed: {e}")
+            self.logger.error(f"   Array lengths - returns: {len(returns) if 'returns' in locals() else 'N/A'}, "
+                            f"position_directions: {len(position_directions) if 'position_directions' in locals() else 'N/A'}, "
+                            f"regime_labels: {len(regime_labels) if 'regime_labels' in locals() else 'N/A'}")
+            # Return fallback structure to prevent downstream errors
+            return {
+                'overall_analysis': {
+                    'overall_win_rate': 0.5,
+                    'long_win_rate': 0.5,
+                    'short_win_rate': 0.5,
+                    'total_trades': 0,
+                    'long_trades': 0,
+                    'short_trades': 0
+                },
+                'regime_analyses': {},
+                'position_balance_analysis': {
+                    'position_balance_score': 0.5,
+                    'diversification_benefit': 0.0,
+                    'long_short_correlation': 0.0,
+                    'position_stability': 0.0
+                },
+                'error': str(e)
+            }
 
     def _calculate_regime_economic_significance(
         self,
@@ -541,12 +608,15 @@ class PositionAwareTradingAnalyzer:
             Viability score for the position type
         """
         try:
+            # Safely get overall_analysis with fallback
+            overall_analysis = position_analysis.get('overall_analysis', {})
+            
             if position_type == 'long':
-                win_rate = position_analysis['overall_analysis'].get('long_win_rate', 0.5)
-                trade_count = position_analysis['overall_analysis'].get('long_trades', 0)
+                win_rate = overall_analysis.get('long_win_rate', 0.5)
+                trade_count = overall_analysis.get('long_trades', 0)
             else:  # short
-                win_rate = position_analysis['overall_analysis'].get('short_win_rate', 0.5)
-                trade_count = position_analysis['overall_analysis'].get('short_trades', 0)
+                win_rate = overall_analysis.get('short_win_rate', 0.5)
+                trade_count = overall_analysis.get('short_trades', 0)
 
             # Base viability on win rate
             viability = win_rate * 0.7  # 70% weight on win rate
@@ -581,8 +651,9 @@ class PositionAwareTradingAnalyzer:
             Overall viability score
         """
         try:
-            # Weight by position balance and individual viabilities
-            position_balance = position_analysis['position_balance_analysis'].get('position_balance_score', 0.5)
+            # Safely get position_balance_analysis with fallback
+            position_balance_analysis = position_analysis.get('position_balance_analysis', {})
+            position_balance = position_balance_analysis.get('position_balance_score', 0.5)
 
             # Overall viability is weighted average of long/short viabilities
             # with bonus for good position balance
@@ -595,7 +666,7 @@ class PositionAwareTradingAnalyzer:
             )
 
             # Bonus for diversification benefit
-            diversification_benefit = position_analysis['position_balance_analysis'].get('diversification_benefit', 0.0)
+            diversification_benefit = position_balance_analysis.get('diversification_benefit', 0.0)
             overall_viability += diversification_benefit * 0.1
 
             return min(overall_viability, 1.0)

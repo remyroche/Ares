@@ -253,13 +253,29 @@ class ComponentFactory:
 
     def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
         """Create an analyst component."""
-        msg = 'Analyst creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.analyst.analyst import Analyst
+            analyst_config = config or self.container.get_config('analyst', {})
+            return Analyst(analyst_config)
+        except ImportError as e:
+            self.logger.error(f"Failed to import Analyst: {e}")
+            raise NotImplementedError(f"Analyst creation failed: {e}")
+        except Exception as e:
+            self.logger.error(f"Failed to create Analyst: {e}")
+            raise
 
     def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
         """Create a strategist component."""
-        msg = 'Strategist creation not implemented'
-        raise NotImplementedError(msg)
+        try:
+            from src.strategist.strategist import Strategist
+            strategist_config = config or self.container.get_config('strategist', {})
+            return Strategist(strategist_config)
+        except ImportError as e:
+            self.logger.error(f"Failed to import Strategist: {e}")
+            raise NotImplementedError(f"Strategist creation failed: {e}")
+        except Exception as e:
+            self.logger.error(f"Failed to create Strategist: {e}")
+            raise
 
     def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""

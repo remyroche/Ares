@@ -613,7 +613,7 @@ class TASRegimeDetector:
             self.performance_metrics['data_preparation_time'] = data_prep_time
             
             tprint(f"📊 [TAS_TRAINING] Data prepared: {processed_data.shape[0]} samples, {processed_data.shape[1]} features", color="green")
-            tprint_performance(f"Data preparation time: {data_prep_time:.3f}s", color="blue")
+            tprint_performance("Data preparation", data_prep_time, color="blue")
             tprint_debug(f"Processed data shape: {processed_data.shape}")
             tprint_debug(f"Data type: {processed_data.dtype}")
             tprint_debug(f"Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
@@ -649,7 +649,7 @@ class TASRegimeDetector:
             regime_distribution = np.bincount(regime_predictions)
             
             tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {unique_regimes} regimes", color="green")
-            tprint_performance(f"   Clustering execution time: {clustering_time:.3f}s", color="blue")
+            tprint_performance("Clustering execution", clustering_time, color="blue")
             tprint_debug(f"   Unique regime distribution: {regime_distribution}")
             tprint_debug(f"   Regime probabilities shape: {regime_probabilities.shape}")
             tprint_debug(f"   Regime probabilities range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}")
@@ -700,7 +700,7 @@ class TASRegimeDetector:
             self.performance_metrics['evaluation_time'] = eval_time
             
             tprint_success("✅ [TAS_TRAINING] Evaluation scores calculated", color="green")
-            tprint_performance(f"Evaluation time: {eval_time:.3f}s", color="blue")
+            tprint_performance("Evaluation", eval_time, color="blue")
 
             # Simple transition probabilities
             tprint_debug("   Calculating regime transition probabilities...")
@@ -768,7 +768,7 @@ class TASRegimeDetector:
             self.logger.info(f"✅ TAS regime detection completed in {execution_time:.2f}s")
             tprint_success(f"🎉 [TAS_TRAINING] Regime detection completed successfully in {execution_time:.2f}s", color="green")
             tprint_info(f"📊 [TAS_TRAINING] Final results: {len(np.unique(result.regime_predictions))} regimes detected", color="blue")
-            tprint_performance(f"💫 [TAS_TRAINING] Total execution time: {execution_time:.2f}s", color="cyan")
+            tprint_performance("Total execution", execution_time, color="cyan")
             
             # Log performance summary
             tprint_info("📊 Performance Summary:")
@@ -777,9 +777,9 @@ class TASRegimeDetector:
             tprint_info(f"   Regimes detected: {regime_count}")
             tprint_info(f"   Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
             tprint_info(f"   Throughput: {len(processed_data) / execution_time:.0f} points/sec")
-            tprint_performance(f"   Data preparation: {data_prep_time:.3f}s", color="blue")
-            tprint_performance(f"   Regime detection: {clustering_time:.3f}s", color="blue")
-            tprint_performance(f"   Evaluation: {eval_time:.3f}s", color="blue")
+            tprint_performance("Data preparation", data_prep_time, color="blue")
+            tprint_performance("Regime detection", clustering_time, color="blue")
+            tprint_performance("Evaluation", eval_time, color="blue")
 
             self._log_tas_results_summary(result)
 
@@ -1350,11 +1350,10 @@ class TASRegimeDetector:
 
     def _evaluate_economic_significance(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Evaluate economic significance of detected regimes using position-aware analysis."""
+        if self.position_analyzer is None:
+            raise ValueError("Position analyzer not available. Cannot evaluate economic significance without proper ML models.")
+        
         try:
-            if self.position_analyzer is None:
-                # Fallback to original method
-                return self._evaluate_economic_significance_fallback(data, regime_results)
-
             # Use position-aware analyzer for economic significance
             labels = regime_results['regime_predictions']
 
@@ -1391,46 +1390,16 @@ class TASRegimeDetector:
             return significance_scores
 
         except Exception as e:
-            self.logger.warning(f"Position-aware economic significance evaluation failed: {e}")
-            return self._evaluate_economic_significance_fallback(data, regime_results)
+            self.logger.error(f"Position-aware economic significance evaluation failed: {e}")
+            raise ValueError(f"Economic significance evaluation failed: {e}")
 
-    def _evaluate_economic_significance_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
-        """Fallback economic significance evaluation for TAS system."""
-        try:
-            tprint_debug("   [EVALUATION] Starting fallback economic significance evaluation...")
-
-            # Simple economic significance based on price movements
-            labels = regime_results['regime_predictions']
-            returns = np.diff(data[:, 0]) / data[:-1, 0]  # Price returns
-
-            tprint_debug(f"   [EVALUATION] Processing {len(np.unique(labels))} regimes")
-            tprint_debug(f"   [EVALUATION] Returns data shape: {returns.shape}")
-
-            significance_scores = np.zeros(len(labels))
-            for i, regime in enumerate(np.unique(labels)):
-                regime_mask = labels == regime
-                if np.sum(regime_mask) > 10:
-                    regime_returns = returns[regime_mask[:-1]]
-                    mean_return = np.mean(regime_returns)
-                    std_return = np.std(regime_returns)
-                    significance = abs(mean_return) / (std_return + 1e-8)
-                    significance_scores[regime_mask] = min(significance, 1.0)
-
-                    tprint_debug(f"   [EVALUATION] Regime {regime}: mean_return={mean_return:.6f}, significance={min(significance, 1.0):.3f}")
-
-            tprint_debug(f"   [EVALUATION] Economic significance range: {np.min(significance_scores):.3f} - {np.max(significance_scores):.3f}")
-            return significance_scores
-
-        except Exception as e:
-            self.logger.warning(f"Economic significance evaluation failed: {e}")
-            return np.ones(len(data)) * self.config.economic_significance_threshold
 
     def _evaluate_trading_viability(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Evaluate trading viability of detected regimes using position-aware analysis."""
+        if self.position_analyzer is None:
+            raise ValueError("Position analyzer not available. Cannot evaluate trading viability without proper ML models.")
+        
         try:
-            if self.position_analyzer is None:
-                # Fallback to original method
-                return self._evaluate_trading_viability_fallback(data, regime_results)
 
             # Use position-aware analyzer for trading viability
             labels = regime_results['regime_predictions']
@@ -1489,42 +1458,9 @@ class TASRegimeDetector:
             return viability_scores
 
         except Exception as e:
-            self.logger.warning(f"Position-aware trading viability evaluation failed: {e}")
-            return self._evaluate_trading_viability_fallback(data, regime_results)
+            self.logger.error(f"Position-aware trading viability evaluation failed: {e}")
+            raise ValueError(f"Trading viability evaluation failed: {e}")
 
-    def _evaluate_trading_viability_fallback(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
-        """Fallback trading viability evaluation for TAS system."""
-        try:
-            tprint_debug("   [EVALUATION] Starting fallback trading viability evaluation...")
-
-            # Simple trading viability based on volume and volatility
-            labels = regime_results['regime_predictions']
-            volumes = data[:, -1] if data.shape[1] > 4 else np.ones(len(data))
-            volatility = np.std(data[:, 1:4], axis=1)  # High-Low volatility
-
-            tprint_debug(f"   [EVALUATION] Processing {len(np.unique(labels))} regimes")
-            tprint_debug(f"   [EVALUATION] Volume data shape: {volumes.shape}")
-            tprint_debug(f"   [EVALUATION] Volatility data shape: {volatility.shape}")
-
-            viability_scores = np.zeros(len(labels))
-            for i, regime in enumerate(np.unique(labels)):
-                regime_mask = labels == regime
-                if np.sum(regime_mask) > 10:
-                    regime_volumes = volumes[regime_mask]
-                    regime_volatility = volatility[regime_mask]
-                    volume_score = np.mean(regime_volumes) / np.max(volumes)
-                    volatility_score = 1.0 / (1.0 + np.mean(regime_volatility))
-                    viability = (volume_score + volatility_score) / 2.0
-                    viability_scores[regime_mask] = min(viability, 1.0)
-
-                    tprint_debug(f"   [EVALUATION] Regime {regime}: volume_score={volume_score:.3f}, volatility_score={volatility_score:.3f}, viability={viability:.3f}")
-
-            tprint_debug(f"   [EVALUATION] Trading viability range: {np.min(viability_scores):.3f} - {np.max(viability_scores):.3f}")
-            return viability_scores
-
-        except Exception as e:
-            self.logger.warning(f"Trading viability evaluation failed: {e}")
-            return np.ones(len(data)) * self.config.trading_viability_threshold
 
     def _calculate_transition_probabilities(self, regime_results: Dict[str, Any]) -> np.ndarray:
         """Calculate regime transition probabilities."""

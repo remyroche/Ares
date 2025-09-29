@@ -87,11 +87,10 @@ from ...data.gap_detector import GapDetector
 from ...data.unified_data_utils import UnifiedDataUtils
 
 # Import matrix operations
-from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.unified_operations import UnifiedMatrixOperations
 from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
-from ...matrix_operations.vectorized_core import VectorizedCore
-from ...matrix_operations.convenience import MatrixConvenience
+from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 
 # Import hardware utilities
 from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available

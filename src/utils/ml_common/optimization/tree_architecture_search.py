@@ -106,10 +106,10 @@ from ...data.gap_detector import GapDetector
 from ...data.unified_data_utils import UnifiedDataUtils
 
 # Import matrix operations
-from ...matrix_operations.unified_operations import MatrixOperations
+from ...matrix_operations.unified_operations import UnifiedMatrixOperations
 from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
-from ...matrix_operations.vectorized_core import VectorizedCore
+from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 from ...matrix_operations.convenience import MatrixConvenience
 
 # Import hardware utilities

@@ -126,9 +126,7 @@ from src.training.steps.market_analysis.pid_based_feature_generation import (
     InteractionFeatureGenerator,
     InteractionConfig,
     InteractionResult,
-    PolynomialFeatureGenerator,
-    PolynomialConfig,
-    PolynomialResult,
+    # PolynomialFeatureGenerator removed - not used for NAS/TAS
     CrossTimeframeFeatureGenerator,
     CrossTimeframeConfig,
     CrossTimeframeResult,

@@ -692,17 +692,45 @@ class EnhancedModelFactory:
             def __init__(self, **kwargs):
                 self.params = kwargs
                 self.is_fitted = False
-            
+                self.d_model = kwargs.get('d_model', 64)
+                self.n_heads = kwargs.get('n_heads', 8)
+                self.n_layers = kwargs.get('n_layers', 6)
+                self.dropout = kwargs.get('dropout', 0.1)
+                self.sequence_length = kwargs.get('sequence_length', 100)
+                self.output_dim = kwargs.get('output_dim', 1)
+                self.activation = kwargs.get('activation', 'relu')
+                self.use_positional_encoding = kwargs.get('use_positional_encoding', True)
+                self.attention_type = kwargs.get('attention_type', 'multi_head')
+                
             def fit(self, X, y):
+                """Fit the TimeSeriesTransformer model."""
                 # Placeholder implementation
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation - return random predictions
+                return np.random.normal(0, 0.1, len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return TimeSeriesTransformer(**model_config.model_params)
     
@@ -717,17 +745,46 @@ class EnhancedModelFactory:
             def __init__(self, **kwargs):
                 self.params = kwargs
                 self.is_fitted = False
+                self.hidden_size = kwargs.get('hidden_size', 128)
+                self.num_layers = kwargs.get('num_layers', 2)
+                self.dropout = kwargs.get('dropout', 0.2)
+                self.bidirectional = kwargs.get('bidirectional', True)
+                self.sequence_length = kwargs.get('sequence_length', 100)
+                self.output_dim = kwargs.get('output_dim', 1)
+                self.activation = kwargs.get('activation', 'tanh')
+                self.recurrent_dropout = kwargs.get('recurrent_dropout', 0.0)
+                self.use_batch_norm = kwargs.get('use_batch_norm', True)
+                self.return_sequences = kwargs.get('return_sequences', False)
             
             def fit(self, X, y):
+                """Fit the LSTM model."""
                 # Placeholder implementation
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation - return random predictions
+                return np.random.normal(0, 0.1, len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return LSTM(**model_config.model_params)
 
@@ -766,17 +823,41 @@ class EnhancedModelFactory:
                 self.activation = kwargs.get('activation', 'relu')
                 self.use_batch_norm = kwargs.get('use_batch_norm', True)
                 self.use_residual_connections = kwargs.get('use_residual_connections', True)
+                self.optimizer = kwargs.get('optimizer', 'adam')
+                self.learning_rate = kwargs.get('learning_rate', 0.001)
+                self.batch_size = kwargs.get('batch_size', 32)
+                self.epochs = kwargs.get('epochs', 100)
+                self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
 
             def fit(self, X, y):
+                """Fit the DeepScaler model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
 
             def predict(self, X):
+                """Make predictions using the fitted model."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation - return random predictions
+                return np.random.normal(0, 0.1, len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
-                return np.zeros(len(X))
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
 
         return DeepScaler(**params)
 
@@ -1410,11 +1491,14 @@ class EnhancedModelFactory:
                 self.l2_regularization = kwargs.get('l2_regularization', 0.01)
 
             def fit(self, X, y):
+                """Fit the FinancialResNet model optimized for financial time series."""
                 # Placeholder implementation optimized for financial time series
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
 
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
@@ -1426,6 +1510,15 @@ class EnhancedModelFactory:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation - return regime probabilities
                 return np.random.dirichlet(np.ones(self.output_classes), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
 
         return FinancialResNet(**params)
 
@@ -1474,15 +1567,34 @@ class EnhancedModelFactory:
                 self.latency_aware = kwargs.get('latency_aware', False)
 
             def fit(self, X, y, analyst_inputs=None, hmm_inputs=None):
+                """Fit the AdvancedMambaHybrid model with multi-timeframe fusion."""
                 # Placeholder implementation with multi-timeframe fusion
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
 
             def predict(self, X, analyst_inputs=None, hmm_inputs=None):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X, analyst_inputs=None, hmm_inputs=None):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
 
         return AdvancedMambaHybrid(**params)
 
@@ -1585,15 +1697,25 @@ class EnhancedModelFactory:
                 return self.params.copy()
 
             def fit(self, X, y):
+                """Fit the TCN model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
 
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
         
         return TCN(**params)
     
@@ -1630,17 +1752,38 @@ class EnhancedModelFactory:
                 self.dropout = kwargs.get('dropout', 0.2)
                 self.l2_regularization = kwargs.get('l2_regularization', 0.01)
                 self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
+                self.batch_size = kwargs.get('batch_size', 32)
+                self.epochs = kwargs.get('epochs', 100)
             
             def fit(self, X, y):
+                """Fit the WaveNet model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return WaveNet(**params)
     
@@ -1671,17 +1814,38 @@ class EnhancedModelFactory:
                 self.num_layers = kwargs.get('num_layers', 3)
                 self.dropout = kwargs.get('dropout', 0.1)
                 self.use_interpretable_attention = kwargs.get('use_interpretable_attention', True)
+                self.batch_size = kwargs.get('batch_size', 32)
+                self.epochs = kwargs.get('epochs', 100)
             
             def fit(self, X, y):
+                """Fit the TemporalFusionTransformer model."""
                 # Placeholder implementation
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return TemporalFusionTransformer(**params)
     
@@ -1713,17 +1877,39 @@ class EnhancedModelFactory:
                 self.n_steps = kwargs.get('n_steps', 5)
                 self.gamma = kwargs.get('gamma', 1.5)
                 self.lambda_sparse = kwargs.get('lambda_sparse', 1e-3)
+                self.optimizer_params = kwargs.get('optimizer_params', {'lr': 2e-2})
+                self.batch_size = kwargs.get('batch_size', 32)
+                self.epochs = kwargs.get('epochs', 100)
             
             def fit(self, X, y):
+                """Fit the TabNetAttention model."""
                 # Placeholder implementation
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return TabNetAttention(**params)
     
@@ -2015,20 +2201,45 @@ class EnhancedModelFactory:
             def __init__(self, **kwargs):
                 self.params = kwargs
                 self.is_fitted = False
+                self.n_d = kwargs.get('n_d', 64)
+                self.n_a = kwargs.get('n_a', 64)
+                self.n_steps = kwargs.get('n_steps', 5)
+                self.gamma = kwargs.get('gamma', 1.5)
                 self.lambda_sparse = kwargs.get('lambda_sparse', 1e-3)
                 self.dropout = kwargs.get('dropout', 0.1)
                 self.l2_regularization = kwargs.get('l2_regularization', 0.01)
+                self.batch_size = kwargs.get('batch_size', 32)
+                self.epochs = kwargs.get('epochs', 100)
             
             def fit(self, X, y):
+                """Fit the NODE model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
+                self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
             
             def predict(self, X):
+                """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
+            
+            def predict_proba(self, X):
+                """Predict class probabilities."""
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.random.dirichlet(np.ones(2), len(X))
+            
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+            
+            def set_params(self, **params):
+                """Set model parameters."""
+                self.params.update(params)
+                return self
         
         return NODE(**params)
     

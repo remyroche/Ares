@@ -91,6 +91,14 @@ from ....data.unified_data_utils import UnifiedDataUtils
 from ....matrix_operations.unified_operations import MatrixOperations
 from ....matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ....matrix_operations.batch_operations import BatchMatrixOperations
+try:
+    from src.utils.pipeline_results_manager import pipeline_results_manager
+except ImportError:
+    # Fallback for when the import path is not available
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent.parent.parent))
+    from src.utils.pipeline_results_manager import pipeline_results_manager
 from ....matrix_operations.vectorized_core import VectorizedCore
 from ....matrix_operations.convenience import MatrixConvenience
 
@@ -240,7 +248,7 @@ class TASEngineConfig:
     # Output settings
     save_results: bool = True
     save_models: bool = True
-    output_dir: str = "tas_results"
+    output_dir: str = "outcomes"
     verbose: bool = True
 
 
@@ -793,23 +801,38 @@ class TreeArchitectureSearchEngine:
             return result
     
     def _save_search_results(self, result: TASResult):
-        """Save search results."""
+        """Save search results using pipeline results manager."""
         try:
-            output_dir = Path(self.config.output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
+            # Convert result to dictionary format
+            result_dict = result.to_dict()
             
-            # Save result
-            result_file = output_dir / "tas_result.json"
-            with open(result_file, 'w') as f:
-                json.dump(result.to_dict(), f, indent=2, default=str)
+            # Use pipeline results manager to save to outcomes/ directory
+            filepath = pipeline_results_manager.save_tas_results(
+                tas_result=result_dict,
+                symbol=getattr(self, 'symbol', None),
+                timeframe=getattr(self, 'timeframe', None),
+                additional_metadata={
+                    'search_iterations': len(result.search_history) if hasattr(result, 'search_history') else 0,
+                    'best_architecture_type': result.best_architecture.architecture_type if result.best_architecture else 'unknown'
+                }
+            )
             
-            # Save best architecture if available
+            # Save best architecture separately if available and configured
             if result.best_architecture and self.config.save_models:
-                model_file = output_dir / "best_architecture.json"
-                with open(model_file, 'w') as f:
-                    json.dump(result.best_architecture.to_dict(), f, indent=2, default=str)
+                architecture_data = result.best_architecture.to_dict()
+                architecture_filepath = pipeline_results_manager.save_generic_results(
+                    result_data=architecture_data,
+                    result_type='tas_best_architecture',
+                    symbol=getattr(self, 'symbol', None),
+                    timeframe=getattr(self, 'timeframe', None),
+                    additional_metadata={
+                        'architecture_type': result.best_architecture.architecture_type,
+                        'performance_score': result.best_performance
+                    }
+                )
+                self.logger.info(f"💾 Best architecture saved to {architecture_filepath}")
             
-            self.logger.info(f"💾 Results saved to {output_dir}")
+            self.logger.info(f"ℹ️ TAS results saved to {filepath}")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to save search results: {e}")

@@ -423,6 +423,14 @@ class DataStorageManager:
     def _generate_cache_key(self, data_type: str, symbol: str, timeframe: str) -> str:
         """Generate cache key for data."""
         return f"{data_type}_{symbol}_{timeframe}"
+
+    def generate_cache_key(self, data_type: str, symbol: str, timeframe: str,
+                            suffix: Optional[str] = None) -> str:
+        """Generate a cache key with an optional suffix."""
+        base_key = self._generate_cache_key(data_type, symbol, timeframe)
+        if suffix:
+            return f"{base_key}_{suffix}"
+        return base_key
     
     def _write_data(self, data: pd.DataFrame, storage_path: Path) -> bool:
         """Write data to storage."""
@@ -574,25 +582,73 @@ class DataStorageManager:
             self.logger.warning(f"⚠️ Metadata loading failed: {e}")
             return {}
     
-    def _update_cache(self, cache_key: str, data: pd.DataFrame, storage_path: Path):
+    def _update_cache(self, cache_key: str, data: Any,
+                      storage_path: Optional[Path] = None,
+                      ttl_hours: Optional[float] = None):
         """Update cache with data."""
         try:
             if self.config.enable_caching:
                 # Check cache size limit
                 if len(self.cache) >= self.config.cache_size_mb:
                     self._evict_cache()
-                
+
                 # Add to cache
-                self.cache[cache_key] = data.copy()
+                if hasattr(data, 'copy'):
+                    try:
+                        self.cache[cache_key] = data.copy()
+                    except TypeError:
+                        self.cache[cache_key] = data
+                else:
+                    self.cache[cache_key] = data
                 self.cache_metadata[cache_key] = {
-                    'storage_path': str(storage_path),
+                    'storage_path': str(storage_path) if storage_path else None,
                     'created_at': datetime.now(),
-                    'ttl_hours': self.config.cache_ttl_hours
+                    'ttl_hours': ttl_hours if ttl_hours is not None else self.config.cache_ttl_hours
                 }
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Cache update failed: {e}")
-    
+
+    def set_cache_entry(self, cache_key: str, data: Any,
+                        ttl_hours: Optional[float] = None,
+                        storage_path: Optional[Path] = None):
+        """Store a cache entry with an optional TTL override."""
+        self._update_cache(cache_key, data, storage_path, ttl_hours)
+
+    def get_cache_entry(self, cache_key: str) -> Optional[Any]:
+        """Retrieve a cache entry if it hasn't expired."""
+        try:
+            if not self.config.enable_caching:
+                return None
+
+            metadata = self.cache_metadata.get(cache_key)
+            if not metadata:
+                return None
+
+            created_at = metadata.get('created_at')
+            ttl_hours = metadata.get('ttl_hours', self.config.cache_ttl_hours)
+
+            if isinstance(created_at, datetime) and ttl_hours:
+                if datetime.now() - created_at > timedelta(hours=ttl_hours):
+                    self.logger.info(f"🗑️ Cache entry expired for key: {cache_key}")
+                    self.invalidate_cache_entry(cache_key)
+                    return None
+
+            return self.cache.get(cache_key)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cache retrieval failed for {cache_key}: {e}")
+            return None
+
+    def invalidate_cache_entry(self, cache_key: str):
+        """Remove a cache entry and its metadata."""
+        try:
+            if cache_key in self.cache:
+                del self.cache[cache_key]
+            if cache_key in self.cache_metadata:
+                del self.cache_metadata[cache_key]
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cache invalidation failed for {cache_key}: {e}")
+
     def _evict_cache(self):
         """Evict data from cache based on eviction policy."""
         try:

@@ -28,10 +28,13 @@ except ImportError:
     nn = None
 import logging
 import time
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from contextlib import contextmanager
 import pickle
+from enum import Enum
 # Clustering imports removed - will be handled in subsequent step
 
 # Import tprint for comprehensive logging
@@ -152,6 +155,7 @@ except ImportError:
     ADVANCED_TREE_AVAILABLE = False
 
 from .tas_regime_config import TASRegimeConfig, TASArchitectureType
+from ..data_pipeline.data_storage import DataStorageManager, StorageConfig
 
 logger = logging.getLogger(__name__)
 
@@ -202,8 +206,16 @@ class TASRegimeDetector:
             'data_preparation_time': 0.0,
             'regime_detection_time': 0.0,
             'evaluation_time': 0.0,
-            'total_execution_time': 0.0
+            'total_execution_time': 0.0,
+            'cache_lookup_time': 0.0,
+            'cache_hit': False,
+            'cache_stored': False,
+            'cache_key': None
         }
+
+        # Initialize cache manager
+        self.cache_manager: Optional[DataStorageManager] = None
+        self._initialize_cache_manager()
 
         # Initialize enhanced utility tools
         tprint_info("🔧 Initializing enhanced utility tools...")
@@ -573,6 +585,81 @@ class TASRegimeDetector:
             self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
             self.position_analyzer = None
 
+    def _initialize_cache_manager(self):
+        """Initialize the cache manager for TAS regime detection results."""
+        if not getattr(self.config, 'enable_result_caching', False):
+            self.logger.info("🗃️ TAS regime caching disabled via configuration")
+            return
+
+        try:
+            namespace = getattr(self.config, 'cache_namespace', 'tas_regime_cache')
+            sanitized_namespace = str(namespace).replace(' ', '_').lower()
+            storage_config = StorageConfig(
+                enable_caching=True,
+                cache_ttl_hours=self.config.cache_ttl_hours,
+                cache_eviction_policy=self.config.cache_eviction_policy,
+                cache_size_mb=self.config.cache_max_entries,
+                base_directory=self.config.cache_base_directory,
+                data_directory=sanitized_namespace,
+                cache_directory=sanitized_namespace,
+                metadata_directory=sanitized_namespace
+            )
+            self.cache_manager = DataStorageManager(storage_config)
+            self.logger.info("📦 TAS regime cache manager initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ TAS regime cache manager initialization failed: {e}")
+            self.cache_manager = None
+
+    def _build_cache_context(self) -> Tuple[Optional[str], Optional[str], str, str]:
+        """Build cache key and context information for the current configuration."""
+        if not self.cache_manager or not getattr(self.config, 'enable_result_caching', False):
+            return None, None, "", ""
+
+        symbol = getattr(self.config, 'symbol', getattr(self.config, 'market_symbol', 'GLOBAL'))
+        timeframe = getattr(self.config, 'regime_detection_timeframe', getattr(self.config, 'primary_timeframe', 'GENERIC'))
+        namespace = getattr(self.config, 'cache_namespace', 'tas_regime_cache')
+
+        symbol_key = self._sanitize_cache_component(symbol, default='global')
+        timeframe_key = self._sanitize_cache_component(timeframe, default='generic')
+        namespace_key = self._sanitize_cache_component(namespace, default='tas_regime_cache')
+
+        config_hash = self._create_config_hash()
+        cache_key = self.cache_manager.generate_cache_key(namespace_key, symbol_key, timeframe_key, suffix=config_hash)
+
+        return cache_key, config_hash, str(symbol), str(timeframe)
+
+    def _sanitize_cache_component(self, value: Any, default: str) -> str:
+        """Sanitize values used for cache keys."""
+        if value in (None, ""):
+            value = default
+        value_str = str(value)
+        return value_str.replace('/', '_').replace(' ', '_').lower()
+
+    def _create_config_hash(self) -> str:
+        """Create a stable hash representation of the configuration."""
+        config_dict = asdict(self.config)
+        sanitized = self._sanitize_for_hash(config_dict)
+        serialized = json.dumps(sanitized, sort_keys=True, default=str)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    def _sanitize_for_hash(self, value: Any) -> Any:
+        """Recursively sanitize configuration values for hashing."""
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, dict):
+            return {k: self._sanitize_for_hash(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._sanitize_for_hash(v) for v in value]
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.integer):
+            return int(value)
+        if isinstance(value, np.floating):
+            return float(value)
+        if isinstance(value, Path):
+            return str(value)
+        return value
+
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
                       timestamps: Optional[np.ndarray] = None,
@@ -596,6 +683,61 @@ class TASRegimeDetector:
         tprint_debug(f"Data shape: {market_data.shape if hasattr(market_data, 'shape') else 'N/A'}")
         tprint_debug(f"Optimize performance: {optimize_performance}")
         tprint_debug(f"PatchTST enhancement: {enable_patchtst_enhancement}")
+
+        cache_key: Optional[str] = None
+        config_hash: Optional[str] = None
+        cache_symbol = str(getattr(self.config, 'symbol', getattr(self.config, 'market_symbol', 'GLOBAL')))
+        cache_timeframe = str(getattr(self.config, 'regime_detection_timeframe', getattr(self.config, 'primary_timeframe', 'GENERIC')))
+        cache_lookup_start = time.time()
+        cache_lookup_time = 0.0
+        self.performance_metrics['cache_stored'] = False
+
+        if getattr(self.config, 'enable_result_caching', False) and self.cache_manager:
+            try:
+                cache_key, config_hash, cache_symbol, cache_timeframe = self._build_cache_context()
+                self.performance_metrics['cache_key'] = cache_key
+                if cache_key:
+                    cached_payload = self.cache_manager.get_cache_entry(cache_key)
+                else:
+                    cached_payload = None
+                cache_lookup_time = time.time() - cache_lookup_start
+                self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+
+                if cached_payload and isinstance(cached_payload, dict):
+                    cached_hash = cached_payload.get('config_hash')
+                    cached_result = cached_payload.get('result')
+                    if cached_hash == config_hash and isinstance(cached_result, TASRegimeResult):
+                        self.performance_metrics['cache_hit'] = True
+                        self.performance_metrics['total_execution_time'] = cache_lookup_time
+                        if cached_result.metadata is None:
+                            cached_result.metadata = {}
+                        cached_result.metadata.update({
+                            'cache_hit': True,
+                            'cache_key': cache_key,
+                            'cache_lookup_time': cache_lookup_time,
+                            'cache_retrieved_at': time.time(),
+                            'cache_symbol': cache_symbol,
+                            'cache_timeframe': cache_timeframe
+                        })
+                        tprint_info("📦 [TAS_TRAINING] Cache hit - returning stored TAS regime result", color="cyan")
+                        tprint_performance("Cache lookup", cache_lookup_time, color="cyan")
+                        self.logger.info(f"📦 TAS regime detection cache hit for key: {cache_key}")
+                        return cached_result
+
+                self.performance_metrics['cache_hit'] = False
+                if cache_key:
+                    self.logger.info(f"📦 TAS regime detection cache miss for key: {cache_key}")
+                tprint_performance("Cache lookup", cache_lookup_time, color="cyan")
+                tprint_info("📦 [TAS_TRAINING] Cache miss - executing detection", color="yellow")
+            except Exception as cache_error:
+                cache_lookup_time = time.time() - cache_lookup_start
+                self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+                self.performance_metrics['cache_hit'] = False
+                self.logger.warning(f"⚠️ TAS regime cache lookup failed: {cache_error}")
+        else:
+            cache_lookup_time = time.time() - cache_lookup_start
+            self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+            self.performance_metrics['cache_hit'] = False
 
         try:
             self.logger.info("🚀 Starting TAS regime detection")
@@ -764,6 +906,42 @@ class TASRegimeDetector:
                     }
                 }
             )
+
+            if result.metadata is None:
+                result.metadata = {}
+
+            result.metadata.update({
+                'cache_key': cache_key,
+                'cache_hit': False,
+                'cache_ttl_hours': getattr(self.config, 'cache_ttl_hours', None),
+                'cache_symbol': cache_symbol,
+                'cache_timeframe': cache_timeframe
+            })
+
+            if (getattr(self.config, 'enable_result_caching', False) and
+                    self.cache_manager and cache_key and config_hash):
+                cache_payload = {
+                    'result': result,
+                    'metadata': result.metadata,
+                    'config_hash': config_hash,
+                    'symbol': cache_symbol,
+                    'timeframe': cache_timeframe,
+                    'stored_at': time.time()
+                }
+                try:
+                    self.cache_manager.set_cache_entry(
+                        cache_key,
+                        cache_payload,
+                        ttl_hours=self.config.cache_ttl_hours
+                    )
+                    self.performance_metrics['cache_stored'] = True
+                    tprint_info("💾 [TAS_TRAINING] Cached TAS regime detection result", color="cyan")
+                    self.logger.info(f"💾 TAS regime detection result cached under key: {cache_key}")
+                except Exception as cache_store_error:
+                    self.performance_metrics['cache_stored'] = False
+                    self.logger.warning(f"⚠️ Failed to store TAS regime result in cache: {cache_store_error}")
+            else:
+                self.performance_metrics['cache_stored'] = False
 
             self.logger.info(f"✅ TAS regime detection completed in {execution_time:.2f}s")
             tprint_success(f"🎉 [TAS_TRAINING] Regime detection completed successfully in {execution_time:.2f}s", color="green")

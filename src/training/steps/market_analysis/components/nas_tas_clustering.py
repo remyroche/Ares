@@ -1086,102 +1086,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Vectorized regime persistence calculation failed: {e}")
             return np.ones(features.shape[1]) * 0.5
     
-    def _calculate_autocorrelation(self, values: np.ndarray, lag: int = 1) -> float:
-        """Calculate autocorrelation for temporal stability."""
-        try:
-            if len(values) < 2:
-                return 0.0
-            
-            # Calculate autocorrelation
-            mean_val = np.mean(values)
-            numerator = np.sum((values[:-lag] - mean_val) * (values[lag:] - mean_val))
-            denominator = np.sum((values - mean_val) ** 2)
-            
-            if denominator == 0:
-                return 0.0
-            
-            return abs(numerator / denominator)
-            
-        except Exception as e:
-            log_warning(f"Autocorrelation calculation failed: {e}")
-            return 0.0
-    
-    def _calculate_temporal_variance(self, values: np.ndarray) -> float:
-        """Calculate temporal variance (lower = more stable)."""
-        try:
-            if len(values) < 2:
-                return 0.0
-            
-            # Calculate rolling variance
-            window_size = min(10, len(values) // 4)
-            rolling_vars = []
-            
-            for i in range(len(values) - window_size + 1):
-                window_values = values[i:i + window_size]
-                rolling_vars.append(np.var(window_values))
-            
-            return np.mean(rolling_vars) if rolling_vars else 0.0
-            
-        except Exception as e:
-            log_warning(f"Temporal variance calculation failed: {e}")
-            return 0.0
-    
-    def _calculate_trend_consistency(self, values: np.ndarray) -> float:
-        """Calculate trend consistency (higher = more consistent)."""
-        try:
-            if len(values) < 3:
-                return 0.0
-            
-            # Calculate first differences
-            diffs = np.diff(values)
-            
-            # Count consistent direction changes
-            direction_changes = np.sum(np.diff(np.sign(diffs)) != 0)
-            max_changes = len(diffs) - 1
-            
-            if max_changes == 0:
-                return 1.0
-            
-            # Consistency = 1 - (direction_changes / max_changes)
-            consistency = 1.0 - (direction_changes / max_changes)
-            return max(0.0, consistency)
-            
-        except Exception as e:
-            log_warning(f"Trend consistency calculation failed: {e}")
-            return 0.0
-    
-    def _calculate_regime_persistence(self, values: np.ndarray, market_data: pd.DataFrame) -> float:
-        """Calculate regime persistence (higher = more persistent across regimes)."""
-        try:
-            # Get regime assignments if available
-            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
-            
-            if tas_assignments is None or len(tas_assignments) != len(values):
-                return 0.5  # Neutral persistence if no regime data
-            
-            # Calculate feature stability within each regime
-            regime_stabilities = []
-            unique_regimes = np.unique(tas_assignments)
-            
-            for regime in unique_regimes:
-                regime_mask = tas_assignments == regime
-                regime_values = values[regime_mask]
-                
-                if len(regime_values) > 1:
-                    # Calculate coefficient of variation within regime
-                    regime_std = np.std(regime_values)
-                    regime_mean = np.mean(regime_values)
-                    
-                    if regime_mean != 0:
-                        cv = regime_std / abs(regime_mean)
-                        stability = 1.0 / (1.0 + cv)  # Higher stability = lower CV
-                        regime_stabilities.append(stability)
-            
-            return np.mean(regime_stabilities) if regime_stabilities else 0.5
-            
-        except Exception as e:
-            log_warning(f"Regime persistence calculation failed: {e}")
-            return 0.5
+    # REMOVED: Legacy single-feature methods replaced by vectorized versions
+    # These methods were replaced by _calculate_vectorized_* methods for better performance
     
     def _cross_validation_feature_selection(self, features: np.ndarray, labels: np.ndarray, temporal_weights: np.ndarray) -> np.ndarray:
         """Perform cross-validation feature selection for robust feature selection with M1 hardware optimization."""
@@ -2557,46 +2463,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Failed to get current features: {e}")
             return None
     
-    def _calculate_regime_change_improvement(self, features: np.ndarray, assignments: np.ndarray, 
-                                          sample_idx: int, new_regime: int) -> float:
-        """Calculate quality improvement from changing a sample's regime assignment."""
-        try:
-            # Store original assignment
-            original_regime = assignments[sample_idx]
-            
-            # Calculate baseline quality scores
-            baseline_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Try the new regime assignment
-            assignments[sample_idx] = new_regime
-            new_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Restore original assignment
-            assignments[sample_idx] = original_regime
-            
-            # Calculate improvement for each metric
-            silhouette_improvement = new_scores['silhouette'] - baseline_scores['silhouette']
-            ch_improvement = (new_scores['calinski_harabasz'] - baseline_scores['calinski_harabasz']) / 1000
-            db_improvement = baseline_scores['davies_bouldin'] - new_scores['davies_bouldin']  # Lower is better
-            balance_improvement = new_scores['regime_balance'] - baseline_scores['regime_balance']
-            
-            # Calculate temporal improvement (simplified)
-            temporal_improvement = self._calculate_temporal_improvement(assignments, sample_idx, new_regime)
-            
-            # Weighted composite improvement
-            total_improvement = (
-                0.30 * silhouette_improvement +      # Silhouette (most important)
-                0.20 * ch_improvement +              # Calinski-Harabasz
-                0.20 * db_improvement +              # Davies-Bouldin (inverted)
-                0.15 * balance_improvement +        # Regime balance
-                0.15 * temporal_improvement         # Temporal consistency
-            )
-            
-            return total_improvement
-            
-        except Exception as e:
-            log_warning(f"Regime change improvement calculation failed: {e}")
-            return 0.0
+    # REMOVED: _calculate_regime_change_improvement - replaced by multi-objective optimization
     
     def _calculate_temporal_improvement(self, assignments: np.ndarray, sample_idx: int, new_regime: int) -> float:
         """Calculate temporal consistency improvement from regime change."""

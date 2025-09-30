@@ -5475,38 +5475,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Temporal consistency score calculation failed: {e}")
             return 0.5
     
-    def _is_quality_improvement(self, old_scores: Dict[str, float], new_scores: Dict[str, float], 
-                              threshold: float) -> bool:
-        """Check if new scores represent a quality improvement without degrading any metric significantly."""
-        try:
-            # Check if any metric degraded significantly (more than threshold)
-            for metric in ['silhouette', 'calinski_harabasz', 'regime_balance', 'cv_score', 'temporal_consistency']:
-                if new_scores[metric] < old_scores[metric] - threshold:
-                    return False
-            
-            # For Davies-Bouldin, lower is better
-            if new_scores['davies_bouldin'] > old_scores['davies_bouldin'] + threshold:
-                return False
-            
-            # Check if at least one metric improved
-            improvements = 0
-            if new_scores['silhouette'] > old_scores['silhouette'] + threshold:
-                improvements += 1
-            if new_scores['calinski_harabasz'] > old_scores['calinski_harabasz'] + threshold:
-                improvements += 1
-            if new_scores['regime_balance'] > old_scores['regime_balance'] + threshold:
-                improvements += 1
-            if new_scores['davies_bouldin'] < old_scores['davies_bouldin'] - threshold:
-                improvements += 1
-            if new_scores['cv_score'] > old_scores['cv_score'] + threshold:
-                improvements += 1
-            
-            return improvements > 0
-            
-        except Exception as e:
-            tprint(f"Quality improvement check failed: {e}")
-            return False
-    
     def _calculate_regime_confidence(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for regime assignments."""
         try:
@@ -5866,60 +5834,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Flip validation failed: {e}")
             return False
-    
-    def _is_temporally_consistent(self, assignments: np.ndarray, sample_idx: int, target_regime: int, 
-                                market_data: pd.DataFrame) -> bool:
-        """Check if a regime flip maintains temporal consistency."""
-        try:
-            # Get neighboring samples (previous and next)
-            prev_idx = max(0, sample_idx - 1)
-            next_idx = min(len(assignments) - 1, sample_idx + 1)
-            
-            # Check if flip would create too many regime switches
-            current_regime = assignments[sample_idx]
-            prev_regime = assignments[prev_idx]
-            next_regime = assignments[next_idx]
-            
-            # Count current regime switches around this sample
-            current_switches = 0
-            if prev_regime != current_regime:
-                current_switches += 1
-            if next_regime != current_regime:
-                current_switches += 1
-            
-            # Count regime switches after flip
-            future_switches = 0
-            if prev_regime != target_regime:
-                future_switches += 1
-            if next_regime != target_regime:
-                future_switches += 1
-            
-            # Allow flip if it doesn't increase regime switches significantly
-            max_additional_switches = 1
-            return future_switches <= current_switches + max_additional_switches
-            
-        except Exception as e:
-            tprint(f"Temporal consistency check failed: {e}")
-            return True  # Allow flip if check fails
-    
-    def _calculate_composite_score_with_temporal_penalty(self, features: np.ndarray, assignments: np.ndarray, 
-                                                       market_data: pd.DataFrame) -> float:
-        """Calculate composite score with temporal consistency penalty."""
-        try:
-            # Calculate base composite score
-            base_score = self._calculate_composite_score(features, assignments)
-            
-            # Calculate temporal penalty
-            temporal_penalty = self._calculate_temporal_penalty(assignments)
-            
-            # Apply temporal penalty (reduce score for excessive regime switching)
-            final_score = base_score - temporal_penalty
-            
-            return max(0.0, final_score)  # Ensure non-negative score
-            
-        except Exception as e:
-            tprint(f"Temporal penalty calculation failed: {e}")
-            return self._calculate_composite_score(features, assignments)
     
     def _calculate_temporal_penalty(self, assignments: np.ndarray) -> float:
         """Calculate penalty for excessive regime switching."""

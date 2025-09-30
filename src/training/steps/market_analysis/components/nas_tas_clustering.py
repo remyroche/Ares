@@ -15,6 +15,8 @@ import traceback
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
 from hmmlearn import hmm
+from joblib import Parallel, delayed
+import os
 
 
 from src.utils.tprint import (
@@ -840,27 +842,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if max_k <= 10:
                 tprint(f"⚠ Low K cap ({max_k}) - consider wider search or more data", "WARNING")
             
-            # Scan all K up to conservative cap
-            for k in range(2, max_k + 1):
-                try:
-                    # Add covariance regularization for numerical stability
-                    gmm = GaussianMixture(
-                        n_components=k, 
-                        random_state=42, 
-                        max_iter=100,
-                        reg_covar=1e-5  # Ridge regularization to avoid singular covariances
-                    )
-                    gmm.fit(features)
-                    bic_score = gmm.bic(features)
-                    bic_scores.append(bic_score)
-                    gmm_models.append(gmm)
-                    k_values.append(k)
-                    
-                    tprint(f"K={k}: BIC={bic_score:.3f}", "INFO")
-                    
-                except Exception as e:
-                    log_warning(f"GMM with K={k} failed: {e}")
-                    break
+            # Use parallel K-grid search for efficiency
+            k_values = list(range(2, max_k + 1))
+            bic_scores, model_metadata = self._parallel_k_grid(features, k_values, 'gmm', n_jobs=-1)
+            
+            # Log results
+            for i, (k, bic) in enumerate(zip(k_values, bic_scores)):
+                tprint(f"K={k}: BIC={bic:.3f}", "INFO")
+            
+            # Check if we hit the cap
+            if max_k <= 10:
+                tprint(f"⚠ K cap reached ({max_k}) - consider widening search or more data", "WARNING")
             
             if not bic_scores:
                 raise ValueError("No valid BIC scores computed")
@@ -881,11 +873,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             optimal_k = k_values[optimal_k_idx]
             optimal_bic = bic_scores[optimal_k_idx]
-            optimal_gmm = gmm_models[optimal_k_idx]
+            
+            # Refit final model to avoid memory bloat (don't store all models)
+            tprint(f"Refitting final model for K={optimal_k}...", "INFO")
+            optimal_gmm = GaussianMixture(
+                n_components=optimal_k, 
+                random_state=42, 
+                max_iter=100,
+                reg_covar=1e-5
+            )
+            optimal_gmm.fit(features)
             
             # Validate that chosen K is at a clear minimum
             bic_curve = list(zip(k_values, bic_scores))
             is_clear_minimum = self._validate_bic_minimum(bic_curve, optimal_k_idx)
+            
+            # Edge K alerts
+            if optimal_k == max_k:
+                tprint(f"⚠ Selected K={optimal_k} is at cap ({max_k}) - consider widening search", "WARNING")
             
             tprint(f"Evidence-driven search found optimal K={optimal_k} with BIC={optimal_bic:.3f} (clear minimum: {is_clear_minimum})", "SUCCESS")
             log_success(f"Evidence-driven search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
@@ -908,6 +913,144 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Evidence-driven K search failed: {e}", "ERROR")
             # Fallback to fixed range
             return self._fixed_range_k_search(features, (2, 20))
+
+    def _parallel_k_grid(self, features: np.ndarray, k_values: List[int], 
+                        model_type: str = 'gmm', n_jobs: int = -1) -> Tuple[List[float], List[Dict]]:
+        """Parallel K-grid search for GMM/HMM models."""
+        try:
+            # Safety checks
+            if not self._verify_parallel_safety(n_jobs, len(k_values)):
+                tprint("Parallel safety check failed, falling back to serial", "WARNING")
+                return self._serial_k_grid(features, k_values, model_type)
+            
+            # Set environment variables to prevent OpenMP oversubscription
+            os.environ['OMP_NUM_THREADS'] = '1'
+            os.environ['OPENBLAS_NUM_THREADS'] = '1'
+            os.environ['MKL_NUM_THREADS'] = '1'
+            
+            tprint(f"Starting parallel K-grid search: {len(k_values)} models, n_jobs={n_jobs}", "INFO")
+            
+            # Parallel execution
+            results = Parallel(n_jobs=n_jobs, backend='threading')(
+                delayed(self._fit_single_k_model)(features, k, model_type) 
+                for k in k_values
+            )
+            
+            # Extract BIC scores and metadata
+            bic_scores = [result[0] for result in results if result[0] is not None]
+            model_metadata = [result[1] for result in results if result[1] is not None]
+            
+            tprint(f"Parallel K-grid completed: {len(bic_scores)} successful fits", "SUCCESS")
+            return bic_scores, model_metadata
+            
+        except Exception as e:
+            log_error(f"Parallel K-grid search failed: {e}")
+            tprint(f"Parallel K-grid search failed: {e}", "ERROR")
+            # Fallback to serial search
+            return self._serial_k_grid(features, k_values, model_type)
+
+    def _fit_single_k_model(self, features: np.ndarray, k: int, model_type: str) -> Tuple[Optional[float], Optional[Dict]]:
+        """Fit a single K model (worker function for parallel execution)."""
+        try:
+            if model_type == 'gmm':
+                # Fit GMM with regularization
+                model = GaussianMixture(
+                    n_components=k, 
+                    random_state=42, 
+                    max_iter=100,
+                    reg_covar=1e-5
+                )
+                model.fit(features)
+                bic_score = model.bic(features)
+                
+                # Return minimal metadata to avoid memory bloat
+                metadata = {
+                    'k': k,
+                    'bic': bic_score,
+                    'converged': model.converged_,
+                    'n_iter': model.n_iter_
+                }
+                
+            elif model_type == 'hmm':
+                # Fit HMM with regularization
+                model = hmm.GaussianHMM(
+                    n_components=k, 
+                    random_state=42, 
+                    n_iter=100,
+                    covariance_type='full'
+                )
+                model.covars_prior = 1e-5
+                model.fit(features)
+                
+                # Calculate BIC with correct parameter count
+                log_likelihood = model.score(features)
+                n_samples, n_features = features.shape
+                n_params = (k - 1) + k * (k - 1) + k * n_features + k * n_features * (n_features + 1) // 2
+                bic_score = -2 * log_likelihood + n_params * np.log(n_samples)
+                
+                metadata = {
+                    'k': k,
+                    'bic': bic_score,
+                    'converged': True,  # HMM doesn't have converged_ attribute
+                    'n_iter': 100
+                }
+            else:
+                raise ValueError(f"Unknown model_type: {model_type}")
+            
+            return bic_score, metadata
+            
+        except Exception as e:
+            log_warning(f"Model fit failed for K={k}: {e}")
+            return None, None
+
+    def _serial_k_grid(self, features: np.ndarray, k_values: List[int], model_type: str) -> Tuple[List[float], List[Dict]]:
+        """Serial fallback for K-grid search."""
+        try:
+            bic_scores = []
+            model_metadata = []
+            
+            for k in k_values:
+                result = self._fit_single_k_model(features, k, model_type)
+                if result[0] is not None:
+                    bic_scores.append(result[0])
+                    model_metadata.append(result[1])
+            
+            return bic_scores, model_metadata
+            
+        except Exception as e:
+            log_error(f"Serial K-grid search failed: {e}")
+            return [], []
+
+    def _verify_parallel_safety(self, n_jobs: int, n_models: int) -> bool:
+        """Verify parallel execution safety to prevent oversubscription."""
+        try:
+            import psutil
+            
+            # Check if we have enough CPU cores
+            n_cores = psutil.cpu_count(logical=False)
+            if n_jobs == -1:
+                n_jobs = n_cores
+            
+            # Warn if we might oversubscribe
+            if n_jobs > n_cores:
+                tprint(f"⚠ n_jobs={n_jobs} > n_cores={n_cores}, may cause oversubscription", "WARNING")
+                return False
+            
+            # Check memory usage
+            memory = psutil.virtual_memory()
+            if memory.percent > 80:
+                tprint(f"⚠ High memory usage ({memory.percent:.1f}%), consider reducing n_jobs", "WARNING")
+                return False
+            
+            tprint(f"✓ Parallel safety: n_jobs={n_jobs}, n_cores={n_cores}, memory={memory.percent:.1f}%", "INFO")
+            return True
+            
+        except ImportError:
+            tprint("⚠ psutil not available, skipping parallel safety checks", "WARNING")
+            return True
+        except Exception as e:
+            log_warning(f"Parallel safety check failed: {e}")
+            return True
 
     def _validate_bic_minimum(self, bic_curve: List[Tuple[int, float]], optimal_idx: int) -> bool:
         """Validate that the chosen K is at a clear minimum."""
@@ -1056,48 +1199,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             consecutive_increases = 0
             max_k = min(20, features.shape[0] // 20)  # Conservative upper bound for HMM
             
-            k = 2
-            while k <= max_k and consecutive_increases < 3:
-                try:
-                    # Create Gaussian HMM with covariance regularization
-                    model = hmm.GaussianHMM(
-                        n_components=k, 
-                        random_state=42, 
-                        n_iter=100,
-                        covariance_type='full'
-                    )
-                    # Add regularization to avoid singular covariances
-                    model.covars_prior = 1e-5
-                    model.fit(features)
-                    log_likelihood = model.score(features)  # Log-likelihood
-                    
-                    # Correct BIC parameter count for HMM
-                    n_samples, n_features = features.shape
-                    # Initial probs: K-1 (sum to 1)
-                    # Transitions: K*(K-1) (each row sums to 1)  
-                    # Means: K * d
-                    # Covs (full): K * d*(d+1)/2
-                    n_params = (k - 1) + k * (k - 1) + k * n_features + k * n_features * (n_features + 1) // 2
-                    bic_score = -2 * log_likelihood + n_params * np.log(n_samples)
-                    
-                    bic_scores.append(bic_score)
-                    hmm_models.append(model)
-                    k_values.append(k)
-                    
-                    tprint(f"HMM K={k}: BIC={bic_score:.3f}", "INFO")
-                    
-                    # Check if BIC increased from previous
-                    if len(bic_scores) > 1 and bic_scores[-1] > bic_scores[-2]:
-                        consecutive_increases += 1
-                        tprint(f"HMM BIC increased (consecutive: {consecutive_increases}/3)", "INFO")
-                    else:
-                        consecutive_increases = 0
-                    
-                    k += 1
-                    
-                except Exception as e:
-                    log_warning(f"HMM with K={k} failed: {e}")
-                    break
+            # Use parallel K-grid search for HMM as well
+            k_values = list(range(2, max_k + 1))
+            bic_scores, model_metadata = self._parallel_k_grid(features, k_values, 'hmm', n_jobs=-1)
+            
+            # Log results
+            for i, (k, bic) in enumerate(zip(k_values, bic_scores)):
+                tprint(f"HMM K={k}: BIC={bic:.3f}", "INFO")
             
             if not bic_scores:
                 raise ValueError("No valid HMM BIC scores computed")

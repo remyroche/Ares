@@ -2,87 +2,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Dict, Any, Optional
-import os
+from typing import Iterable, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
-# Import common operations for data quality and validation
-from src.utils.common_operations import (
-    validate_dataframe_columns,
-    calculate_data_quality_metrics,
-    create_data_quality_report,
-    safe_convert_dtypes,
-    optimize_dataframe_dtypes,
-    safe_read_parquet,
-    safe_to_parquet,
-    validate_dataframe_schema,
-    guard_dataframe_nulls,
-    get_dataframe_info,
-    safe_timestamp_conversion,
-    validate_timestamp_column,
-    create_summary_statistics,
-    safe_fillna,
-    safe_merge_dataframes,
-    safe_drop_columns,
-    safe_rename_columns,
-    optimize_dataframe_dtypes,
-    safe_resample,
-    align_dataframes,
-    validate_file_path,
-    get_file_size,
-    check_disk_space,
-    safe_copy,
-    safe_deepcopy,
-    get_memory_usage,
-    optimize_memory,
-    memory_checkpoint,
-    gpu_context
-)
-
-# Import math validation for safe operations
-from src.utils.math_validation import (
-    safe_mean,
-    safe_std,
-    safe_correlation,
-    safe_covariance,
-    validate_finite,
-    validate_positive,
-    validate_range,
-    safe_percentage_change,
-    safe_weighted_average,
-    safe_kelly_calculation
-)
-
-# Import tprint for enhanced logging
+from src.utils.common_operations import safe_read_parquet
+from src.utils.math_validation import validate_finite
 from src.utils.tprint import (
-    tprint,
     tprint_info,
-    tprint_warning,
-    tprint_error,
+    tprint_structured,
     tprint_success,
-    tprint_performance,
     tprint_timer,
-    tprint_structured
 )
-
-# Import M1 hardware optimizations
-try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-    M1_HARDWARE_AVAILABLE = True
-except ImportError:
-    M1_HARDWARE_AVAILABLE = False
-    get_m1_memory_optimizer = lambda: None
-    get_m1_cpu_optimizer = lambda: None
-    get_m1_gpu_manager = lambda: None
-
-
-DEFAULT_FEATURE_COUNT = 10
-NAS_FEATURE_OFFSET = 0.5
-TAS_FEATURE_OFFSET = 0.3
 
 
 class RegimeDataError(FileNotFoundError):
@@ -106,281 +38,169 @@ def find_latest_regime_file(clustering_dir: Path) -> Path:
 
 
 def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
-    """Load the parquet file containing regime assignments with enhanced data quality validation."""
+    """Load the parquet file containing regime assignments and cached features."""
     with tprint_timer(f"Loading regime assignments from {regime_file}"):
-        try:
-            # Comprehensive file validation
-            if not validate_file_path(regime_file):
-                raise RegimeDataError(f"Regime file not accessible: {regime_file}")
-            
-            # Check file permissions and readability
-            if not regime_file.is_file():
-                raise RegimeDataError(f"Path is not a file: {regime_file}")
-            
-            if not os.access(regime_file, os.R_OK):
-                raise RegimeDataError(f"File is not readable: {regime_file}")
-            
-            # Check disk space before loading with more accurate estimation
-            file_size_mb = get_file_size(regime_file) / (1024**2)
-            required_gb = max(1.0, file_size_mb * 3 / 1024)  # 3x file size for safety
-            disk_info = check_disk_space(regime_file, required_gb=required_gb)
-            if not disk_info['sufficient']:
-                raise RegimeDataError(f"Insufficient disk space: {disk_info['free_gb']:.2f}GB available, {required_gb:.2f}GB required")
-            
-            # Load data with single memory checkpoint and efficient processing
-            try:
-                with memory_checkpoint("regime_data_loading"):
-                    # Load with safe parquet reading
-                    df = safe_read_parquet(regime_file)
-                    if df is None:
-                        raise RegimeDataError(f"Failed to read regime assignments from {regime_file}")
-                    
-                    # Validate required columns
-                    required_columns = ['regime_id']
-                    if not validate_dataframe_columns(df, required_columns):
-                        raise RegimeDataError(f"Missing required columns in {regime_file}")
-                    
-                    # Combined data quality processing
-                    df = self._process_dataframe_efficiently(df, regime_file)
-                    
-                    tprint_success(f"Successfully loaded regime assignments: {len(df)} rows, {len(df.columns)} columns")
-                    return df
-            except Exception as checkpoint_error:
-                # Cleanup on checkpoint failure
-                memory_optimizer = get_m1_memory_optimizer()
-                if memory_optimizer:
-                    memory_optimizer.cleanup_arrays([])
-                raise checkpoint_error
-                
-        except Exception as exc:
-            tprint_error(f"Failed to load regime assignments: {exc}")
-            raise RegimeDataError(f"Failed to read regime assignments from {regime_file}") from exc
+        if not regime_file.exists():
+            raise RegimeDataError(f"Regime file not accessible: {regime_file}")
 
-    def _process_dataframe_efficiently(self, df: pd.DataFrame, regime_file: Path) -> pd.DataFrame:
-        """Process dataframe with combined operations for efficiency."""
-        try:
-            # Calculate and log data quality metrics in one pass
-            quality_metrics = calculate_data_quality_metrics(df)
-            tprint_structured({
-                "file": str(regime_file),
-                "rows": quality_metrics['total_rows'],
-                "columns": quality_metrics['total_columns'],
-                "missing_percentage": quality_metrics['missing_percentage'],
-                "duplicate_percentage": quality_metrics['duplicate_percentage']
-            })
-            
-            # Guard against excessive nulls
-            df = guard_dataframe_nulls(df, threshold=0.5)
-            
-            # Optimize data types for memory efficiency
-            df = optimize_dataframe_dtypes(df)
-            
-            # Log memory usage
-            memory_usage = get_memory_usage()
-            tprint_performance(f"Memory usage after processing: {memory_usage / (1024**2):.2f} MB")
-            
-            return df
-            
-        except Exception as e:
-            tprint_error(f"Dataframe processing failed: {e}")
-            raise
+        frame = safe_read_parquet(regime_file)
+        if frame is None:
+            raise RegimeDataError(f"Failed to read regime assignments from {regime_file}")
 
-    def _generate_synthetic_features_efficiently(self, labels: np.ndarray, seed: int, 
-                                              feature_count: int, regime_offset: float,
-                                              memory_optimizer: Optional[Any]) -> np.ndarray:
-        """Generate synthetic features efficiently with vectorized operations."""
-        try:
-            rng = np.random.default_rng(seed)
-            features = rng.standard_normal((labels.shape[0], feature_count))
-            
-            # Validate features are finite
-            features = validate_finite(features, "synthetic_features")
-            
-            # Vectorized regime offset application
-            unique_regimes = np.unique(labels)
-            for regime_id in unique_regimes:
-                mask = labels == regime_id
-                if np.any(mask):
-                    # Apply regime-specific offset using vectorized operations
-                    features[mask] += regime_id * regime_offset
-            
-            # Optimize for M1 if available
-            if M1_HARDWARE_AVAILABLE and memory_optimizer:
-                features = memory_optimizer.optimize_array_memory(features)
-            
-            # Log feature statistics
-            tprint_structured({
-                "feature_shape": features.shape,
-                "feature_mean": float(safe_mean(features.flatten())),
-                "feature_std": float(safe_std(features.flatten())),
-                "regime_count": len(unique_regimes),
-                "memory_usage_mb": features.nbytes / (1024**2)
-            })
-            
-            return features
-            
-        except Exception as e:
-            tprint_error(f"Synthetic feature generation failed: {e}")
-            raise
+        if "regime_id" not in frame.columns:
+            raise RegimeDataError("regime_id column missing from regime assignments")
+
+        # Ensure we do not carry an unexpected index level that hides the timestamp column.
+        if isinstance(frame.index, pd.MultiIndex):
+            frame = frame.copy()
+            frame.reset_index(inplace=True)
+        else:
+            frame = frame.copy()
+
+        feature_columns = {
+            "nas": _candidate_feature_columns(frame.columns, "nas"),
+            "tas": _candidate_feature_columns(frame.columns, "tas"),
+        }
+        tprint_structured(
+            {
+                "rows": len(frame),
+                "columns": list(frame.columns),
+                "feature_columns": feature_columns,
+            }
+        )
+
+        return frame
 
 
 def extract_regime_labels(regime_frame: pd.DataFrame) -> np.ndarray:
     """Extract regime labels from the cached dataframe with validation."""
-    with tprint_timer("Extracting regime labels"):
-        try:
-            if "regime_id" not in regime_frame:
-                raise KeyError("regime_id column missing from regime assignments")
-            
-            # Extract labels with validation
-            labels = regime_frame["regime_id"].to_numpy()
-            
-            # Validate labels are finite and positive
-            labels = validate_finite(labels, "regime_labels")
-            
-            # Log label statistics
-            unique_labels = np.unique(labels)
-            tprint_structured({
-                "total_labels": len(labels),
-                "unique_regimes": len(unique_labels),
-                "regime_range": f"{np.min(labels)}-{np.max(labels)}",
-                "label_distribution": {f"regime_{int(label)}": int(np.sum(labels == label)) for label in unique_labels}
-            })
-            
-            return labels
-            
-        except Exception as exc:
-            tprint_error(f"Failed to extract regime labels: {exc}")
-            raise
+    labels = regime_frame["regime_id"].to_numpy()
+    labels = validate_finite(labels, "regime_labels")
+    return labels.astype(int, copy=False)
 
 
-def create_synthetic_features(
+def _candidate_feature_columns(columns: Iterable[str], feature_set: str) -> Sequence[str]:
+    prefix = f"{feature_set}_feature_"
+    return [name for name in columns if name.startswith(prefix)]
+
+
+def _extract_feature_matrix(
+    regime_frame: pd.DataFrame,
+    feature_set: str,
+) -> Tuple[np.ndarray, Sequence[str]]:
+    """Extract a raw feature matrix for the requested feature set."""
+    prefix = f"{feature_set}_feature_"
+    array_column = f"{feature_set}_features"
+
+    direct_columns = _candidate_feature_columns(regime_frame.columns, feature_set)
+    if direct_columns:
+        feature_df = regime_frame[direct_columns].apply(pd.to_numeric, errors="coerce")
+        if feature_df.isnull().any().any():
+            raise RegimeDataError(
+                f"Non-numeric values encountered in {feature_set.upper()} feature columns"
+            )
+        matrix = feature_df.to_numpy(dtype=float)
+        return matrix, list(direct_columns)
+
+    if array_column in regime_frame.columns:
+        series = regime_frame[array_column]
+        matrix = np.asarray(series.apply(np.asarray).tolist(), dtype=float)
+        if matrix.ndim != 2:
+            raise RegimeDataError(
+                f"Expected 2D feature arrays in column '{array_column}' but found shape {matrix.shape}"
+            )
+        column_names = [f"{prefix}{idx}" for idx in range(matrix.shape[1])]
+        return matrix, column_names
+
+    raise RegimeDataError(
+        f"No cached features found for '{feature_set.upper()}' in regime assignments"
+    )
+
+
+def _standardize_features(
+    features: np.ndarray,
     labels: np.ndarray,
-    *,
-    seed: int,
-    feature_count: int,
-    regime_offset: float,
+    feature_set: str,
 ) -> np.ndarray:
-    """Create deterministic synthetic features mirroring original script behaviour with M1 optimizations."""
-    with tprint_timer(f"Creating synthetic features (count={feature_count}, offset={regime_offset})"):
-        try:
-            # Initialize M1 optimizers if available
-            memory_optimizer = get_m1_memory_optimizer()
-            cpu_optimizer = get_m1_cpu_optimizer()
-            gpu_manager = get_m1_gpu_manager()
-            
-            # Generate features efficiently with single memory checkpoint
-            try:
-                with memory_checkpoint("synthetic_feature_generation"):
-                    features = self._generate_synthetic_features_efficiently(
-                        labels, seed, feature_count, regime_offset, memory_optimizer
-                    )
-                    
-                    tprint_success(f"Generated synthetic features: {features.shape}")
-                    return features
-            except Exception as checkpoint_error:
-                # Cleanup on checkpoint failure
-                if memory_optimizer:
-                    memory_optimizer.cleanup_arrays([])
-                raise checkpoint_error
-                
-        except Exception as exc:
-            tprint_error(f"Failed to create synthetic features: {exc}")
-            raise
+    """Standardize features using observed statistics and log regime offsets."""
+    if features.ndim != 2:
+        raise ValueError("Features must be a 2D array")
+
+    mean = features.mean(axis=0)
+    std = features.std(axis=0, ddof=0)
+    std[std == 0.0] = 1.0
+
+    standardized = (features - mean) / std
+    standardized = validate_finite(standardized, f"{feature_set}_features")
+
+    regime_offsets = {}
+    for regime_id in np.unique(labels):
+        regime_mask = labels == regime_id
+        if not regime_mask.any():
+            continue
+        regime_mean = standardized[regime_mask].mean(axis=0)
+        regime_offsets[int(regime_id)] = regime_mean.round(6).tolist()
+
+    tprint_structured(
+        {
+            f"{feature_set}_feature_stats": {
+                "sample_count": int(features.shape[0]),
+                "feature_count": int(features.shape[1]),
+                "global_mean": mean.round(6).tolist(),
+                "global_std": std.round(6).tolist(),
+                "regime_offsets": regime_offsets,
+            }
+        }
+    )
+
+    return standardized
 
 
 def load_nas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-    """Load NAS regime features and labels."""
+    """Load NAS regime features and labels from the cached assignments."""
     labels = extract_regime_labels(regime_frame)
-    features = create_synthetic_features(
-        labels,
-        seed=42,
-        feature_count=DEFAULT_FEATURE_COUNT,
-        regime_offset=NAS_FEATURE_OFFSET,
-    )
-    return features, labels
+    features, _ = _extract_feature_matrix(regime_frame, "nas")
+    standardized = _standardize_features(features, labels, "nas")
+    return standardized, labels
 
 
 def load_tas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-    """Load TAS regime features and labels."""
+    """Load TAS regime features and labels from the cached assignments."""
     labels = extract_regime_labels(regime_frame)
-    features = create_synthetic_features(
-        labels,
-        seed=99,
-        feature_count=DEFAULT_FEATURE_COUNT,
-        regime_offset=TAS_FEATURE_OFFSET,
-    )
-    return features, labels
+    features, _ = _extract_feature_matrix(regime_frame, "tas")
+    standardized = _standardize_features(features, labels, "tas")
+    return standardized, labels
 
 
-def load_regime_datasets(data_cache_path: Path, symbol: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Load NAS and TAS datasets for a symbol from the cached clustering outputs with comprehensive monitoring."""
+def load_regime_datasets(
+    data_cache_path: Path,
+    symbol: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load NAS and TAS datasets for a symbol from the cached clustering outputs."""
     with tprint_timer(f"Loading regime datasets for {symbol}"):
-        try:
-            # Initialize hardware optimizers
-            memory_optimizer = get_m1_memory_optimizer()
-            cpu_optimizer = get_m1_cpu_optimizer()
-            
-            # Start memory monitoring if available
-            if memory_optimizer:
-                memory_optimizer.start_monitoring()
-            
-            # Get clustering directory with validation
-            clustering_dir = get_clustering_directory(data_cache_path, symbol)
-            tprint_info(f"Using clustering directory: {clustering_dir}")
-            
-            # Find and validate latest regime file
-            latest_file = find_latest_regime_file(clustering_dir)
-            file_size = get_file_size(latest_file)
-            tprint_info(f"Loading regime file: {latest_file} ({file_size / (1024**2):.2f} MB)")
-            
-            # Load regime assignments with quality validation
-            regime_frame = load_regime_assignments(latest_file)
-            
-            # Create comprehensive data quality report
-            quality_report = create_data_quality_report(regime_frame)
-            tprint_structured({
-                "data_quality": quality_report,
-                "file_path": str(latest_file),
-                "symbol": symbol
-            })
-            
-            # Load NAS dataset
-            tprint_info("Loading NAS dataset...")
-            nas_features, nas_labels = load_nas_dataset(regime_frame)
-            
-            # Load TAS dataset
-            tprint_info("Loading TAS dataset...")
-            tas_features, tas_labels = load_tas_dataset(regime_frame)
-            
-            # Validate dataset consistency
-            if len(nas_labels) != len(tas_labels):
-                raise ValueError(f"Label length mismatch: NAS={len(nas_labels)}, TAS={len(tas_labels)}")
-            
-            if nas_features.shape[0] != tas_features.shape[0]:
-                raise ValueError(f"Feature length mismatch: NAS={nas_features.shape[0]}, TAS={tas_features.shape[0]}")
-            
-            # Log final statistics
-            tprint_structured({
-                "nas_features_shape": nas_features.shape,
-                "nas_labels_unique": len(np.unique(nas_labels)),
-                "tas_features_shape": tas_features.shape,
-                "tas_labels_unique": len(np.unique(tas_labels)),
-                "total_samples": len(nas_labels),
-                "memory_usage_mb": get_memory_usage() / (1024**2)
-            })
-            
-            # Optimize memory if M1 available
-            if M1_HARDWARE_AVAILABLE and memory_optimizer:
-                nas_features = memory_optimizer.optimize_array_memory(nas_features)
-                tas_features = memory_optimizer.optimize_array_memory(tas_features)
-            
-            tprint_success(f"Successfully loaded regime datasets for {symbol}")
-            return nas_features, nas_labels, tas_features, tas_labels
-            
-        except Exception as exc:
-            tprint_error(f"Failed to load regime datasets for {symbol}: {exc}")
-            raise
-        finally:
-            # Stop memory monitoring
-            if memory_optimizer:
-                memory_optimizer.stop_monitoring()
+        clustering_dir = get_clustering_directory(data_cache_path, symbol)
+        tprint_info(f"Using clustering directory: {clustering_dir}")
+
+        latest_file = find_latest_regime_file(clustering_dir)
+        tprint_info(f"Loading regime file: {latest_file}")
+
+        regime_frame = load_regime_assignments(latest_file)
+
+        nas_features, nas_labels = load_nas_dataset(regime_frame)
+        tas_features, tas_labels = load_tas_dataset(regime_frame)
+
+        if len(nas_labels) != len(tas_labels):
+            raise ValueError(
+                f"Label length mismatch: NAS={len(nas_labels)}, TAS={len(tas_labels)}"
+            )
+
+        if nas_features.shape[0] != tas_features.shape[0]:
+            raise ValueError(
+                "Feature length mismatch between NAS and TAS datasets"
+            )
+
+        tprint_success(
+            f"Loaded NAS ({nas_features.shape}) and TAS ({tas_features.shape}) datasets for {symbol}"
+        )
+
+        return nas_features, nas_labels, tas_features, tas_labels

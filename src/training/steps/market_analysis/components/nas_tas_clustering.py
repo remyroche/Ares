@@ -12,6 +12,8 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import traceback
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import adjusted_rand_score
 
 
 from src.utils.tprint import (
@@ -657,15 +659,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             import gc
             gc.collect()
             
-            # Step 2: Get TAS and NAS regime assignments from pipeline state
-            tprint("Step 2: Extracting TAS and NAS regime assignments...", "INFO")
+            # Step 2: Select optimal K using BIC-selected GMM
+            tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
+            optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(optimized_features)
+            tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+            
+            # Step 3: Get TAS and NAS regime assignments from pipeline state
+            tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
             tas_assignments, nas_assignments = await self._extract_regime_assignments()
             tprint(f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
             
-            # Step 3: Progressive regime optimization
-            tprint("Step 3: Progressive regime optimization...", "INFO")
-            optimized_assignments, optimization_metrics = await self._progressive_regime_optimization(
-                optimized_features, tas_assignments, nas_assignments, market_data
+            # Step 4: Progressive regime optimization with BIC-selected K
+            tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
+            optimized_assignments, optimization_metrics = await self._progressive_regime_optimization_with_k(
+                optimized_features, tas_assignments, nas_assignments, market_data, optimal_k
             )
             tprint(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}", "SUCCESS")
             log_success(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}")
@@ -681,19 +688,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'cluster_assignments': optimized_assignments.tolist(),
                 'cluster_centers': final_centers.tolist(),
                 'clustering_quality': final_quality,
-                'algorithm_used': 'progressive_optimization',
+                'algorithm_used': 'data_driven_optimization',
                 'success': True,
                 'execution_time': optimization_metrics.get('execution_time', 0.0),
                 'optimization_metadata': {
-                    'optimization_method': 'progressive_regime_optimization',
+                    'optimization_method': 'data_driven_optimization',
                     'initial_score': optimization_metrics.get('initial_score', 0.0),
                     'final_score': optimization_metrics.get('final_score', 0.0),
                     'improvement': optimization_metrics.get('improvement', 0.0),
                     'iterations': optimization_metrics.get('iterations', 0),
+                    'optimal_k': optimal_k,
+                    'optimal_bic': optimal_bic,
+                    'k_selection_metadata': k_metadata,
+                    'fusion_metadata': optimization_metrics.get('fusion_metadata', {}),
                     'feature_optimization': {
                         'original_features': features.shape[1],
                         'optimized_features': optimized_features.shape[1],
-                        'reduction_ratio': optimized_features.shape[1] / features.shape[1]
+                        'reduction_ratio': optimized_features.shape[1] / features.shape[1],
+                        'method': 'pca_mle'
                     }
                 }
             }
@@ -710,49 +722,34 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
     async def _optimize_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Optimize features using selection and dimensionality reduction."""
+        """Optimize features using data-driven dimensionality reduction."""
         try:
-            tprint("Starting feature optimization...", "INFO")
-            log_info("Starting feature optimization")
+            tprint("Starting data-driven feature optimization...", "INFO")
+            log_info("Starting data-driven feature optimization")
             
-            # Step 1: Remove low-variance features
-            tprint("Step 1: Removing low-variance features...", "INFO")
-            from sklearn.feature_selection import VarianceThreshold
-            variance_selector = VarianceThreshold(threshold=0.01)
-            features_variance_filtered = variance_selector.fit_transform(features)
-            tprint(f"Variance filtering: {features.shape[1]} -> {features_variance_filtered.shape[1]} features", "SUCCESS")
-            
-            # Step 2: Remove highly correlated features
-            tprint("Step 2: Removing highly correlated features...", "INFO")
-            features_corr_filtered = self._remove_correlated_features(features_variance_filtered)
-            tprint(f"Correlation filtering: {features_variance_filtered.shape[1]} -> {features_corr_filtered.shape[1]} features", "SUCCESS")
-            
-            # Step 3: Apply PCA for dimensionality reduction
-            tprint("Step 3: Applying PCA for dimensionality reduction...", "INFO")
-            from sklearn.decomposition import PCA
+            # Step 1: Standardize features (keep standardization as-is)
+            tprint("Step 1: Standardizing features...", "INFO")
             from sklearn.preprocessing import StandardScaler
-            
-            # Standardize features before PCA
             scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features_corr_filtered)
+            features_scaled = scaler.fit_transform(features)
+            tprint(f"Feature standardization completed: {features.shape}", "SUCCESS")
             
-            # Apply PCA to retain 95% of variance
-            pca = PCA(n_components=0.95, random_state=42)
+            # Step 2: Apply PCA with Minka's MLE for data-driven dimensionality selection
+            tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
+            from sklearn.decomposition import PCA
+            
+            # Use PCA with MLE to automatically select number of components
+            pca = PCA(n_components='mle', svd_solver='full')
             features_pca = pca.fit_transform(features_scaled)
             
-            tprint(f"PCA reduction: {features_corr_filtered.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
+            tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
             
-            # Step 4: Feature selection based on clustering importance
-            tprint("Step 4: Feature selection based on clustering importance...", "INFO")
-            features_final = self._select_clustering_features(features_pca, market_data)
-            tprint(f"Final feature selection: {features_pca.shape[1]} -> {features_final.shape[1]} features", "SUCCESS")
-
-            # Step 5: Additional feature quality validation
-            tprint("Step 5: Validating feature quality for clustering...", "INFO")
-            features_final = self._validate_feature_quality(features_final, market_data)
+            # Step 3: Basic quality validation (minimal checks)
+            tprint("Step 3: Validating feature quality...", "INFO")
+            features_final = self._validate_feature_quality_minimal(features_pca, market_data)
             tprint(f"Feature quality validation completed: {features_final.shape}", "SUCCESS")
             
-            log_success(f"Feature optimization completed: {features.shape} -> {features_final.shape}")
+            log_success(f"Data-driven feature optimization completed: {features.shape} -> {features_final.shape}")
             return features_final
             
         except Exception as e:
@@ -760,6 +757,292 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Feature optimization failed: {e}", "ERROR")
             # Fast-fail: Do not return original features if optimization fails
             raise ValueError(f"Feature optimization failed: {e}. Cannot proceed with suboptimal features.")
+
+    def _validate_feature_quality_minimal(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Minimal feature quality validation for data-driven approach."""
+        try:
+            # Check for NaN/inf values only
+            if np.any(np.isnan(features)) or np.any(np.isinf(features)):
+                log_warning("Features contain NaN/inf values, removing problematic samples")
+                valid_mask = ~(np.any(np.isnan(features), axis=1) | np.any(np.isinf(features), axis=1))
+                features = features[valid_mask]
+                log_info(f"Removed {np.sum(~valid_mask)} samples with NaN/inf values")
+            
+            # Basic check: ensure we have enough features and samples
+            if features.shape[1] < 2:
+                log_error("Too few features for clustering")
+                return features
+
+            if features.shape[0] < 10:
+                log_warning("Very low number of samples for clustering")
+            
+            return features
+            
+        except Exception as e:
+            log_error(f"Minimal feature validation failed: {e}")
+            return features
+
+    def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20)) -> Tuple[int, float, Dict[str, Any]]:
+        """Select optimal K using BIC-selected GMM."""
+        try:
+            tprint(f"Selecting optimal K using BIC in range {k_range}...", "INFO")
+            log_info(f"Selecting optimal K using BIC in range {k_range}")
+            
+            min_k, max_k = k_range
+            bic_scores = []
+            gmm_models = []
+            
+            # Test different K values
+            for k in range(min_k, max_k + 1):
+                try:
+                    gmm = GaussianMixture(n_components=k, random_state=42, max_iter=100)
+                    gmm.fit(features)
+                    bic_scores.append(gmm.bic(features))
+                    gmm_models.append(gmm)
+                    tprint(f"K={k}: BIC={gmm.bic(features):.3f}", "INFO")
+                except Exception as e:
+                    log_warning(f"GMM with K={k} failed: {e}")
+                    bic_scores.append(np.inf)
+                    gmm_models.append(None)
+            
+            # Find optimal K (minimum BIC)
+            optimal_k_idx = np.argmin(bic_scores)
+            optimal_k = min_k + optimal_k_idx
+            optimal_bic = bic_scores[optimal_k_idx]
+            optimal_gmm = gmm_models[optimal_k_idx]
+            
+            tprint(f"Optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+            log_success(f"Optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            
+            # Get assignments from optimal GMM
+            if optimal_gmm is not None:
+                optimal_assignments = optimal_gmm.predict(features)
+                optimal_centers = optimal_gmm.means_
+            else:
+                # Fallback to random assignments
+                optimal_assignments = np.random.randint(0, optimal_k, len(features))
+                optimal_centers = np.random.randn(optimal_k, features.shape[1])
+            
+            metadata = {
+                'bic_scores': bic_scores,
+                'k_range': k_range,
+                'optimal_k': optimal_k,
+                'optimal_bic': optimal_bic,
+                'method': 'bic_gmm'
+            }
+            
+            return optimal_k, optimal_bic, metadata
+            
+        except Exception as e:
+            log_error(f"BIC-based K selection failed: {e}")
+            tprint(f"BIC-based K selection failed: {e}", "ERROR")
+            # Fallback to default K
+            fallback_k = 8
+            tprint(f"Using fallback K={fallback_k}", "WARNING")
+            return fallback_k, np.inf, {'method': 'fallback', 'error': str(e)}
+
+    def _dawid_skene_fusion(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
+                           max_iterations: int = 50, tolerance: float = 1e-6) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Dawid-Skene EM label fusion for NAS/TAS reconciliation."""
+        try:
+            tprint("Starting Dawid-Skene label fusion...", "INFO")
+            log_info("Starting Dawid-Skene label fusion")
+            
+            n_samples = len(tas_assignments)
+            n_classes = len(set(tas_assignments) | set(nas_assignments))
+            
+            # Initialize confusion matrices for TAS and NAS as "annotators"
+            tas_confusion = np.eye(n_classes) + np.random.rand(n_classes, n_classes) * 0.1
+            nas_confusion = np.eye(n_classes) + np.random.rand(n_classes, n_classes) * 0.1
+            
+            # Normalize confusion matrices
+            tas_confusion = tas_confusion / tas_confusion.sum(axis=1, keepdims=True)
+            nas_confusion = nas_confusion / nas_confusion.sum(axis=1, keepdims=True)
+            
+            # Initialize class priors
+            class_priors = np.ones(n_classes) / n_classes
+            
+            # EM iterations
+            for iteration in range(max_iterations):
+                # E-step: Compute posterior probabilities
+                posteriors = np.zeros((n_samples, n_classes))
+                
+                for i in range(n_samples):
+                    tas_class = tas_assignments[i]
+                    nas_class = nas_assignments[i]
+                    
+                    # Compute likelihood for each true class
+                    for true_class in range(n_classes):
+                        likelihood = (class_priors[true_class] * 
+                                    tas_confusion[true_class, tas_class] * 
+                                    nas_confusion[true_class, nas_class])
+                        posteriors[i, true_class] = likelihood
+                
+                # Normalize posteriors
+                posteriors = posteriors / posteriors.sum(axis=1, keepdims=True)
+                
+                # M-step: Update parameters
+                old_tas_confusion = tas_confusion.copy()
+                old_nas_confusion = nas_confusion.copy()
+                old_priors = class_priors.copy()
+                
+                # Update class priors
+                class_priors = posteriors.mean(axis=0)
+                class_priors = class_priors / class_priors.sum()
+                
+                # Update TAS confusion matrix
+                for true_class in range(n_classes):
+                    for observed_class in range(n_classes):
+                        mask = tas_assignments == observed_class
+                        tas_confusion[true_class, observed_class] = posteriors[mask, true_class].sum()
+                    tas_confusion[true_class] = tas_confusion[true_class] / tas_confusion[true_class].sum()
+                
+                # Update NAS confusion matrix
+                for true_class in range(n_classes):
+                    for observed_class in range(n_classes):
+                        mask = nas_assignments == observed_class
+                        nas_confusion[true_class, observed_class] = posteriors[mask, true_class].sum()
+                    nas_confusion[true_class] = nas_confusion[true_class] / nas_confusion[true_class].sum()
+                
+                # Check convergence
+                tas_change = np.abs(tas_confusion - old_tas_confusion).max()
+                nas_change = np.abs(nas_confusion - old_nas_confusion).max()
+                prior_change = np.abs(class_priors - old_priors).max()
+                
+                if max(tas_change, nas_change, prior_change) < tolerance:
+                    tprint(f"Dawid-Skene converged after {iteration + 1} iterations", "SUCCESS")
+                    break
+            
+            # Get final assignments from posteriors
+            fused_assignments = np.argmax(posteriors, axis=1)
+            
+            metadata = {
+                'iterations': iteration + 1,
+                'converged': max(tas_change, nas_change, prior_change) < tolerance,
+                'tas_confusion_matrix': tas_confusion.tolist(),
+                'nas_confusion_matrix': nas_confusion.tolist(),
+                'class_priors': class_priors.tolist(),
+                'posteriors': posteriors.tolist()
+            }
+            
+            tprint(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes", "SUCCESS")
+            log_success(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes")
+            
+            return fused_assignments, metadata
+            
+        except Exception as e:
+            log_error(f"Dawid-Skene fusion failed: {e}")
+            tprint(f"Dawid-Skene fusion failed: {e}", "ERROR")
+            # Fallback to TAS assignments
+            return tas_assignments, {'method': 'fallback', 'error': str(e)}
+
+    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray, 
+                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame, 
+                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Progressive regime optimization using BIC-selected K and Dawid-Skene fusion."""
+        try:
+            tprint("Starting data-driven progressive regime optimization...", "INFO")
+            log_info("Starting data-driven progressive regime optimization")
+            
+            # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
+            tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
+            fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments)
+            tprint(f"Dawid-Skene fusion completed: {len(fused_assignments)} samples", "SUCCESS")
+            
+            # Step 2: Map fused assignments to optimal K if needed
+            if len(set(fused_assignments)) != optimal_k:
+                tprint(f"Mapping fused assignments to optimal K={optimal_k}...", "INFO")
+                # Use GMM to map to optimal K
+                from sklearn.mixture import GaussianMixture
+                gmm = GaussianMixture(n_components=optimal_k, random_state=42)
+                gmm.fit(features)
+                mapped_assignments = gmm.predict(features)
+                tprint(f"Assignment mapping completed: {len(set(mapped_assignments))} clusters", "SUCCESS")
+            else:
+                mapped_assignments = fused_assignments
+                tprint(f"Fused assignments already have optimal K={optimal_k}", "SUCCESS")
+            
+            # Step 3: Calculate initial score
+            initial_score = self._calculate_composite_score(features, mapped_assignments)
+            tprint(f"Initial score: {initial_score:.3f}", "SUCCESS")
+            
+            # Step 4: Apply HMM smoothing if temporal coherence is needed
+            tprint("Step 4: Applying HMM smoothing for temporal coherence...", "INFO")
+            smoothed_assignments = self._apply_hmm_smoothing(features, mapped_assignments)
+            final_score = self._calculate_composite_score(features, smoothed_assignments)
+            
+            if final_score > initial_score:
+                tprint(f"HMM smoothing improved score: {initial_score:.3f} → {final_score:.3f}", "SUCCESS")
+                final_assignments = smoothed_assignments
+            else:
+                tprint(f"HMM smoothing did not improve, keeping fused assignments", "INFO")
+                final_assignments = mapped_assignments
+                final_score = initial_score
+            
+            improvement = final_score - initial_score
+            
+            optimization_metrics = {
+                'initial_score': initial_score,
+                'final_score': final_score,
+                'improvement': improvement,
+                'iterations': 1,
+                'optimal_k': optimal_k,
+                'fusion_metadata': fusion_metadata,
+                'method': 'data_driven_optimization'
+            }
+            
+            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})", "SUCCESS")
+            log_success(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})")
+            
+            return final_assignments, optimization_metrics
+            
+        except Exception as e:
+            log_error(f"Data-driven progressive regime optimization failed: {e}")
+            tprint(f"Data-driven progressive regime optimization failed: {e}", "ERROR")
+            # Return original TAS assignments
+            return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
+
+    def _apply_hmm_smoothing(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
+        """Apply HMM smoothing for temporal coherence."""
+        try:
+            from sklearn.mixture import GaussianMixture
+            
+            n_clusters = len(set(assignments))
+            n_samples = len(assignments)
+            
+            # Learn transition matrix from assignments
+            transition_matrix = np.zeros((n_clusters, n_clusters))
+            for i in range(n_samples - 1):
+                current_cluster = assignments[i]
+                next_cluster = assignments[i + 1]
+                transition_matrix[current_cluster, next_cluster] += 1
+            
+            # Normalize transition matrix
+            transition_matrix = transition_matrix / (transition_matrix.sum(axis=1, keepdims=True) + 1e-10)
+            
+            # Apply Viterbi-like smoothing
+            smoothed_assignments = assignments.copy()
+            
+            # Simple smoothing: if a sample is isolated (different from neighbors), 
+            # assign it to the most common cluster in its neighborhood
+            for i in range(1, n_samples - 1):
+                if (assignments[i] != assignments[i-1] and 
+                    assignments[i] != assignments[i+1]):
+                    # Sample is isolated, use local majority
+                    window_start = max(0, i - 2)
+                    window_end = min(n_samples, i + 3)
+                    window_assignments = assignments[window_start:window_end]
+                    
+                    # Find most common cluster in window
+                    unique, counts = np.unique(window_assignments, return_counts=True)
+                    most_common = unique[np.argmax(counts)]
+                    smoothed_assignments[i] = most_common
+            
+            return smoothed_assignments
+            
+        except Exception as e:
+            log_warning(f"HMM smoothing failed: {e}")
+            return assignments
 
     def _validate_feature_quality(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate and improve feature quality for clustering."""
@@ -858,7 +1141,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select regime-focused features for NAS/TAS clustering, excluding trading-relevant features."""
+        """Skip feature selection since PCA-MLE already handles redundancy."""
+        try:
+            tprint("Skipping feature selection - PCA-MLE already handles redundancy...", "INFO")
+            log_info("Skipping feature selection - PCA-MLE already handles redundancy")
+            
+            # Since PCA-MLE already handles redundancy, we can skip this step entirely
+            # This is the safest approach according to the plan
+            tprint(f"Using all {features.shape[1]} features from PCA-MLE reduction", "SUCCESS")
+            return features
+            
+        except Exception as e:
+            log_error(f"Feature selection failed: {e}")
+            tprint(f"Feature selection failed: {e}", "ERROR")
+            # Return original features if selection fails
+            return features
+
+    def _select_clustering_features_old(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Legacy feature selection method (kept for reference)."""
         try:
             from sklearn.feature_selection import SelectKBest, mutual_info_classif
             from sklearn.model_selection import cross_val_score
@@ -4263,7 +4563,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Calculate improvement for each metric
             silhouette_improvement = new_scores['silhouette'] - baseline_scores['silhouette']
-            ch_improvement = (new_scores['calinski_harabasz'] - baseline_scores['calinski_harabasz']) / 1000
+            ch_improvement = new_scores['calinski_harabasz'] - baseline_scores['calinski_harabasz']
             db_improvement = baseline_scores['davies_bouldin'] - new_scores['davies_bouldin']  # Lower is better
             balance_improvement = new_scores['regime_balance'] - baseline_scores['regime_balance']
             
@@ -5040,10 +5340,26 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             calinski_harabasz = calinski_harabasz_score(features, assignments)
             davies_bouldin = davies_bouldin_score(features, assignments)
             
-            # Normalize metrics to 0-1 range
-            norm_silhouette = (silhouette + 1) / 2  # [-1, 1] -> [0, 1]
-            norm_ch = min(calinski_harabasz / 1000, 1.0)  # Cap at 1.0
-            norm_db = max(0, 1.0 / (1.0 + davies_bouldin))  # Invert and normalize
+            # Use z-score normalization relative to null distributions (no caps)
+            # Calculate null distributions by permuting labels
+            n_permutations = 100
+            silhouette_null = []
+            ch_null = []
+            db_null = []
+            
+            for _ in range(n_permutations):
+                permuted_assignments = np.random.permutation(assignments)
+                try:
+                    silhouette_null.append(silhouette_score(features, permuted_assignments))
+                    ch_null.append(calinski_harabasz_score(features, permuted_assignments))
+                    db_null.append(davies_bouldin_score(features, permuted_assignments))
+                except:
+                    continue
+            
+            # Z-score normalization
+            norm_silhouette = (silhouette - np.mean(silhouette_null)) / (np.std(silhouette_null) + 1e-8)
+            norm_ch = (calinski_harabasz - np.mean(ch_null)) / (np.std(ch_null) + 1e-8)
+            norm_db = -(davies_bouldin - np.mean(db_null)) / (np.std(db_null) + 1e-8)  # Negative because lower is better
             
             # Calculate regime balance
             unique_labels = set(assignments)

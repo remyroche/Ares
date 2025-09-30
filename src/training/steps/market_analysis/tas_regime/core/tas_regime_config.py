@@ -86,6 +86,14 @@ class TASRegimeConfig:
     correlation_threshold: float = 0.8
     outlier_detection_enabled: bool = True
 
+    # Caching configuration
+    enable_result_caching: bool = True
+    cache_base_directory: str = "tas_regime_cache"
+    cache_namespace: str = "regime_results"
+    cache_ttl_hours: int = 6
+    cache_max_entries: int = 64
+    cache_eviction_policy: str = "lru"
+
     @classmethod
     def create_short_term_trading_config(cls) -> 'TASRegimeConfig':
         """Create configuration optimized for short-term trading (5-30m)."""
@@ -192,5 +200,12 @@ class TASRegimeConfig:
             # Normalize weights
             for obj in self.objective_weights:
                 self.objective_weights[obj] /= total_weight
+
+        if self.cache_ttl_hours <= 0:
+            raise ValueError("cache_ttl_hours must be positive")
+        if self.cache_max_entries <= 0:
+            raise ValueError("cache_max_entries must be positive")
+        if self.cache_eviction_policy not in {"lru", "lfu", "fifo"}:
+            raise ValueError("cache_eviction_policy must be one of 'lru', 'lfu', or 'fifo'")
 
         return True

@@ -32,8 +32,6 @@ from src.utils.tprint import (
 )
 
 from ..shared_utils import (
-    # Features
-    prepare_market_features,
     FeatureConfig,
 
     # Configuration
@@ -52,18 +50,15 @@ from ..shared_utils import (
     # Metrics
     calculate_consensus_metrics,
     calculate_disagreement_metrics,
-    calculate_economic_scores,
-    calculate_trading_scores,
-    calculate_stability_scores,
     MetricsCalculator,
 
     # Characteristics
     create_regime_characteristics,
-    generate_cluster_characteristics,
     CharacteristicsGenerator,
 )
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ..regime_analysis import NASTASClusteringPipeline
 
 
 # Import matrix operations and hardware utilities
@@ -384,32 +379,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
 
-    def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
-        """Extract the number of regimes to use for clustering."""
-        tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
-
-        regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
-        tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
-        nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
-
-        n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
-        n_regimes = max(5, min(15, n_regimes))
-
-        tprint(
-            f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}",
-            "INFO"
-        )
-        return n_regimes
-
-    def _validate_configuration(self) -> None:
-        """Validate configuration using shared utilities."""
-        tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
-        validation_errors = self.config_validator.validate_config(self.config)
-        if validation_errors:
-            tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
-            raise ValueError(f"Configuration validation failed: {validation_errors}")
-
-        tprint("Configuration validation passed using shared utilities", "SUCCESS")
+    def _create_pipeline(self) -> NASTASClusteringPipeline:
+        """Create a pipeline instance for orchestrating clustering stages."""
+        return NASTASClusteringPipeline(self)
 
     def _initialize_execution_metadata(self) -> None:
         """Initialize execution metadata for downstream use."""
@@ -421,52 +393,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             'component': 'refactored_nas_tas_clustering',
             'uses_shared_utilities': True
         }
-
-    def _prepare_features(self, market_data: pd.DataFrame) -> Any:
-        """Prepare market features for clustering."""
-        tprint("Step 4: Preparing features using shared utilities", "INFO")
-        features = prepare_market_features(market_data, self.feature_config, verbose=True)
-        if features is None:
-            tprint("Failed to prepare features for clustering", "ERROR")
-            raise ValueError("Failed to prepare features for clustering")
-
-        self.features = features
-        tprint(f"Features prepared: {features.shape}", "SUCCESS")
-        return features
-
-    def _generate_cluster_characteristics(
-        self,
-        market_data: pd.DataFrame,
-        clustering_result: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Generate characteristics for each cluster."""
-        tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
-        cluster_characteristics = generate_cluster_characteristics(
-            market_data,
-            clustering_result['cluster_assignments'],
-            clustering_result.get('cluster_centers'),
-            verbose=True,
-        )
-        tprint("Cluster characteristics generated", "SUCCESS")
-        return cluster_characteristics
-
-    def _build_artifacts(
-        self,
-        clustering_result: Dict[str, Any],
-        cluster_characteristics: Dict[str, Any],
-        clustering_metrics: Dict[str, Any],
-        market_data: pd.DataFrame,
-    ) -> Dict[str, Any]:
-        """Create consolidated artifacts from clustering outputs."""
-        tprint("Step 10: Creating consolidated artifacts", "INFO")
-        artifacts = self._create_consolidated_artifacts(
-            clustering_result,
-            cluster_characteristics,
-            clustering_metrics,
-            market_data,
-        )
-        tprint("Consolidated artifacts created", "SUCCESS")
-        return artifacts
 
     @log_execution('NAS-TAS-Clustering', 'NAS-TAS Clustering', verbose=True)
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
@@ -489,13 +415,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Initialize performance monitoring
             tprint("📊 Initializing performance monitoring...", "INFO")
             start_time = time.time()
-            
+
+            pipeline = self._create_pipeline()
+
             # Step 1: Extract regime count from previous step artifacts
-            n_regimes = self._extract_regime_counts(pipeline_state)
+            n_regimes = pipeline.extract_regime_counts(pipeline_state)
             self.config.n_regimes = n_regimes
 
             # Step 2: Validate inputs and configuration using shared utilities
-            self._validate_configuration()
+            pipeline.validate_configuration()
 
             # Step 3: Initialize execution metadata
             self._initialize_execution_metadata()
@@ -510,7 +438,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Market data loaded: {len(market_data)} rows", "SUCCESS")
 
             # Step 4: Prepare features using shared utilities
-            features = self._prepare_features(market_data)
+            features = pipeline.prepare_features(market_data)
 
             # Step 5: Create clustering configuration using shared utilities
             tprint("Step 5: Creating clustering configuration using shared utilities", "INFO")
@@ -519,21 +447,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 6: Perform clustering
             tprint("Step 6: Performing clustering", "INFO")
-            clustering_result = await self._perform_clustering(features, market_data)
+            clustering_result = await pipeline.perform_clustering(features, market_data)
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
 
             # Step 8: Generate cluster characteristics using shared utilities
-            cluster_characteristics = self._generate_cluster_characteristics(
+            cluster_characteristics = pipeline.generate_cluster_characteristics(
                 market_data, clustering_result
             )
 
             # Step 9: Calculate metrics using shared utilities
-            clustering_metrics = self._calculate_clustering_metrics_using_shared_utils(
+            clustering_metrics = pipeline.calculate_clustering_metrics(
                 clustering_result, cluster_characteristics
             )
 
             # Step 10: Create consolidated artifacts
-            artifacts = self._build_artifacts(
+            artifacts = pipeline.build_artifacts(
                 clustering_result, cluster_characteristics, clustering_metrics, market_data
             )
 
@@ -650,22 +578,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
             return create_default_config("clustering")
     
-    
-    async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform clustering using advanced optimization methods."""
-        try:
-            tprint("Performing advanced clustering optimization...", "INFO")
-            
-            # Use advanced clustering with progressive regime optimization
-            clustering_result = await self._perform_advanced_clustering(features, market_data)
-            tprint("Advanced clustering optimization completed", "SUCCESS")
-
-            tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
-            return clustering_result
-
-        except Exception as e:
-            tprint(f"Clustering failed: {e}", "ERROR")
-            raise ValueError(f"Clustering failed: {e}")
     
     async def _perform_advanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform advanced clustering using progressive regime optimization."""
@@ -6034,70 +5946,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return {'error': str(e)}
     
     
-    def _calculate_clustering_metrics_using_shared_utils(
-        self,
-        clustering_result: Dict[str, Any],
-        cluster_characteristics: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Calculate clustering metrics using shared utilities."""
-        try:
-            tprint("Calculating clustering metrics using shared utilities...", "INFO")
-            tprint("Calculating clustering metrics using shared utilities")
 
-            cluster_assignments = clustering_result['cluster_assignments']
-            n_clusters = clustering_result['n_clusters']
-            tprint(f"Processing {n_clusters} clusters with {len(cluster_assignments)} samples", "INFO")
-
-            # Calculate regime distribution using shared utilities
-            tprint("Calculating regime distribution...", "INFO")
-            regime_distribution = self.metrics_calculator.calculate_regime_distribution(cluster_assignments)
-            tprint(f"Regime distribution calculated: {len(regime_distribution)} regimes", "SUCCESS")
-
-            # Calculate clustering quality metrics
-            clustering_quality = clustering_result.get('clustering_quality', {})
-            tprint("Clustering quality metrics retrieved", "SUCCESS")
-
-            # Calculate economic, trading, and stability scores using shared utilities
-            tprint("Calculating economic scores...", "INFO")
-            economic_scores = calculate_economic_scores(cluster_assignments, verbose=True)
-            tprint("Economic scores calculated", "SUCCESS")
-
-            tprint("Calculating trading scores...", "INFO")
-            trading_scores = calculate_trading_scores(cluster_assignments, verbose=True)
-            tprint("Trading scores calculated", "SUCCESS")
-
-            tprint("Calculating stability scores...", "INFO")
-            stability_scores = calculate_stability_scores(cluster_assignments, verbose=True)
-            tprint("Stability scores calculated", "SUCCESS")
-            
-            tprint("Compiling final metrics...", "INFO")
-            metrics = {
-                'n_clusters': n_clusters,
-                'total_samples': len(cluster_assignments),
-                'regime_distribution': regime_distribution,
-                'clustering_quality': clustering_quality,
-                'economic_scores': economic_scores,
-                'trading_scores': trading_scores,
-                'stability_scores': stability_scores,
-                'regime_balance': 1.0 - (np.std(list(regime_distribution.values())) / np.mean(list(regime_distribution.values()))) if regime_distribution else 0.0
-            }
-            tprint("Final metrics compiled", "SUCCESS")
-
-            self._log("Clustering metrics calculated using shared utilities", "SUCCESS")
-            return metrics
-            
-        except Exception as e:
-            tprint(f"Clustering metrics calculation failed: {e}")
-            return {
-                'n_clusters': clustering_result.get('n_clusters', 0),
-                'total_samples': len(clustering_result.get('cluster_assignments', [])),
-                'regime_distribution': {},
-                'clustering_quality': {},
-                'economic_scores': [],
-                'trading_scores': [],
-                'stability_scores': []
-            }
-    
     def _create_consolidated_artifacts(
         self,
         clustering_result: Dict[str, Any],

@@ -29,6 +29,7 @@ from src.utils.tprint import (
     tprint_progress,
     tprint_performance,
     tprint_timer,
+    tprint_structured,
 )
 
 from ..shared_utils import (
@@ -116,6 +117,7 @@ except ImportError as e:
 try:
     from src.utils.hardware.m1_gpu_utils import (
         get_m1_gpu_optimizer,
+        get_m1_gpu_manager,
         get_m1_gpu_memory_manager,
         get_m1_gpu_performance_monitor
     )
@@ -136,6 +138,7 @@ except ImportError as e:
     tprint(f"M1 hardware utilities not available: {e}", "WARNING")
     # Set fallback functions
     get_m1_gpu_optimizer = lambda: None
+    get_m1_gpu_manager = lambda: None
     get_m1_gpu_memory_manager = lambda: None
     get_m1_gpu_performance_monitor = lambda: None
     get_m1_memory_optimizer = lambda: None
@@ -356,6 +359,7 @@ class NASTASClusteringConfig(BaseConfig):
     
     # Clustering parameters
     n_regimes: int = 8
+    max_regimes: int = 15
     algorithm_type: str = "adaptive_clustering"
     enable_economic_clustering: bool = True
     enable_ensemble_clustering: bool = True
@@ -393,9 +397,13 @@ class NASTASClusteringConfig(BaseConfig):
                 'regime_statistical'
             ]
         
-        # Ensure n_regimes is between 5 and 15
-        if not (5 <= self.n_regimes <= 15):
-            self.n_regimes = max(5, min(15, self.n_regimes))
+        # Ensure max_regimes has reasonable bound
+        if self.max_regimes < 5:
+            self.max_regimes = 5
+
+        # Ensure n_regimes is between 5 and configured maximum
+        if not (5 <= self.n_regimes <= self.max_regimes):
+            self.n_regimes = max(5, min(self.max_regimes, self.n_regimes))
 
 
 class NASTASClusteringComponent(BaseMarketAnalysisComponent):
@@ -525,7 +533,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.m1_gpu_optimizer = resources.m1_gpu_optimizer
             self.m1_memory_optimizer = resources.m1_memory_optimizer
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
-            
+
+            # Learned weight state for dynamic weighting
+            self.learned_weights: Dict[str, Optional[Dict[str, float]]] = {
+                'regime': None,
+                'composite': None,
+                'temporal': None
+            }
+            self.metric_weight_history: List[Dict[str, Any]] = []
+            self._last_composite_metric_summary: Optional[Dict[str, float]] = None
+            self._last_temporal_metric_summary: Optional[Dict[str, float]] = None
+            self._last_regime_metric_summary: Optional[Dict[str, float]] = None
+            self._weight_history_limit: int = 50
+
             # Initialize regime optimization service with proper label fusion service
             from ..regime_analysis.label_fusion import LabelFusionService
             label_fusion_service = LabelFusionService(logger=self._log)
@@ -900,11 +920,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Using NAS regime count: {n_regimes}", "INFO")
         else:
             # No regime discovery data available - will be determined by BIC optimization
-            tprint("No regime discovery data available - will use BIC optimization to determine K", "INFO")
-            return None  # Signal that K should be determined by BIC
+            default_regimes = getattr(self.config, 'n_regimes', 8)
+            tprint(
+                "No regime discovery data available - using configured default",
+                "INFO"
+            )
+            return default_regimes
 
         # Apply reasonable bounds based on data characteristics (not hardcoded)
-        n_regimes = max(2, min(50, n_regimes))  # Allow wider range for data-driven selection
+        max_regimes = getattr(self.config, 'max_regimes', 15)
+        max_regimes = max(2, max_regimes)
+        n_regimes = max(2, min(max_regimes, n_regimes))
 
         tprint(
             f"Final regime count: {n_regimes} (data-driven, no hardcoded heuristics)",
@@ -1171,12 +1197,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Create consolidated artifacts from clustering outputs."""
         tprint("Step 10: Creating consolidated artifacts", "INFO")
+        self._update_learned_weights(clustering_result, clustering_metrics)
         artifacts = self._create_consolidated_artifacts(
             clustering_result,
             cluster_characteristics,
             clustering_metrics,
             market_data,
         )
+
+        if isinstance(artifacts, dict):
+            optimization_metadata = artifacts.setdefault('optimization_metadata', {})
+            optimization_metadata['learned_metric_weights'] = self.learned_weights
+            optimization_metadata['metric_weight_history'] = self.metric_weight_history[-5:]
+
+            execution_metadata = artifacts.setdefault('execution_metadata', {})
+            execution_metadata['learned_metric_weights'] = self.learned_weights
+
         tprint("Consolidated artifacts created", "SUCCESS")
         return artifacts
 
@@ -1267,7 +1303,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'n_clusters': clustering_result['n_clusters'],
                     'algorithm_type': 'nas_tas_clustering',
                     'execution_successful': True,
-                    'uses_shared_utilities': True
+                    'uses_shared_utilities': True,
+                    'learned_metric_weights': self.learned_weights
                 }
             )
             
@@ -1369,13 +1406,30 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Validate weights using shared utilities
             tprint("Validating and normalizing weights...", "INFO")
-            weights_dict = {
-                'economic': clustering_config['economic_weight'],
-                'volatility_regime': clustering_config['volatility_regime_weight'],
-                'volume_regime': clustering_config['volume_regime_weight'],
-                'structural_trend': clustering_config['structural_trend_weight']
+            default_regime_weights = {
+                'economic_weight': clustering_config['economic_weight'],
+                'volatility_regime_weight': clustering_config['volatility_regime_weight'],
+                'volume_regime_weight': clustering_config['volume_regime_weight'],
+                'structural_trend_weight': clustering_config['structural_trend_weight'],
             }
-            normalized_weights = normalize_weights(weights_dict)
+
+            regime_metric_snapshot = self._last_regime_metric_summary or default_regime_weights
+            learned_regime_weights = self._get_weights('regime', regime_metric_snapshot)
+
+            if learned_regime_weights:
+                normalized_weights = normalize_weights({
+                    'economic': learned_regime_weights.get('economic_weight', default_regime_weights['economic_weight']),
+                    'volatility_regime': learned_regime_weights.get('volatility_regime_weight', default_regime_weights['volatility_regime_weight']),
+                    'volume_regime': learned_regime_weights.get('volume_regime_weight', default_regime_weights['volume_regime_weight']),
+                    'structural_trend': learned_regime_weights.get('structural_trend_weight', default_regime_weights['structural_trend_weight']),
+                })
+            else:
+                normalized_weights = normalize_weights({
+                    'economic': default_regime_weights['economic_weight'],
+                    'volatility_regime': default_regime_weights['volatility_regime_weight'],
+                    'volume_regime': default_regime_weights['volume_regime_weight'],
+                    'structural_trend': default_regime_weights['structural_trend_weight'],
+                })
 
             clustering_config.update({
                 'economic_weight': normalized_weights['economic'],
@@ -1810,6 +1864,297 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             unique_labels = np.unique(assignments)
             return np.zeros((len(unique_labels), features.shape[1]))
 
+    def _project_to_simplex(self, weights: np.ndarray) -> np.ndarray:
+        """Project a weight vector onto the probability simplex."""
+        if weights.size == 0:
+            return weights
+
+        weights = np.maximum(weights.astype(float), 0.0)
+        if weights.sum() == 0:
+            return np.ones_like(weights) / len(weights)
+
+        sorted_weights = np.sort(weights)[::-1]
+        cumulative = np.cumsum(sorted_weights)
+        rho = np.nonzero(sorted_weights + (1.0 - cumulative) / (np.arange(len(weights)) + 1) > 0)[0]
+        if rho.size == 0:
+            return np.ones_like(weights) / len(weights)
+
+        rho_index = rho[-1]
+        theta = (cumulative[rho_index] - 1.0) / (rho_index + 1)
+        projected = np.maximum(weights - theta, 0.0)
+        return projected / projected.sum() if projected.sum() else np.ones_like(projected) / len(projected)
+
+    def _historical_weight_median(self, group: str, metric_names: List[str]) -> Optional[np.ndarray]:
+        """Compute the median weight vector from historical fits for a group."""
+        historical = []
+        for entry in self.metric_weight_history:
+            fitted = entry.get('fitted_weights', {})
+            if not fitted:
+                continue
+            group_weights = fitted.get(group)
+            if not group_weights:
+                continue
+            historical.append([float(group_weights.get(name, 0.0)) for name in metric_names])
+
+        if not historical:
+            return None
+
+        historical_array = np.array(historical, dtype=float)
+        median_vector = np.median(historical_array, axis=0)
+        if np.allclose(median_vector, 0.0):
+            return None
+        return self._project_to_simplex(median_vector)
+
+    def _fallback_weight_vector(self, metric_values: Dict[str, float], group: str) -> np.ndarray:
+        """Generate a data-driven fallback weight vector."""
+        metric_names = list(metric_values.keys())
+        if not metric_names:
+            return np.array([])
+
+        historical = self._historical_weight_median(group, metric_names)
+        if historical is not None:
+            return historical
+
+        values = np.array([max(float(metric_values[name]), 0.0) for name in metric_names], dtype=float)
+        if not np.any(values > 0):
+            values = np.ones_like(values)
+        return self._project_to_simplex(values)
+
+    def _get_weights(
+        self,
+        group: str,
+        metric_values: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, float]:
+        """Retrieve learned weights with fallback handling."""
+        metric_values = metric_values or {}
+        metric_names = list(metric_values.keys())
+
+        learned = self.learned_weights.get(group)
+        if learned:
+            # Ensure ordering matches provided metric names when available
+            if metric_names:
+                ordered = np.array([float(learned.get(name, 0.0)) for name in metric_names], dtype=float)
+                projected = self._project_to_simplex(ordered)
+                return {name: float(weight) for name, weight in zip(metric_names, projected)}
+            return {key: float(value) for key, value in learned.items()}
+
+        if not metric_names:
+            return {}
+
+        vector = self._fallback_weight_vector(metric_values, group)
+        return {name: float(weight) for name, weight in zip(metric_names, vector)}
+
+    def _estimate_validation_metric(self, metric_outputs: Dict[str, Dict[str, float]]) -> float:
+        """Estimate a validation target from available metric outputs."""
+        values: List[float] = []
+        trading = metric_outputs.get('regime', {}).get('trading')
+        if trading is not None:
+            values.append(float(trading))
+        economic = metric_outputs.get('regime', {}).get('economic')
+        if economic is not None:
+            values.append(float(economic))
+        composite = metric_outputs.get('composite', {})
+        if composite:
+            values.extend(float(v) for v in composite.values())
+        if metric_outputs.get('temporal'):
+            values.extend(float(v) for v in metric_outputs['temporal'].values())
+
+        if values:
+            return float(np.mean(values))
+        return 0.0
+
+    def _collect_metric_outputs(
+        self,
+        clustering_result: Dict[str, Any],
+        clustering_metrics: Dict[str, Any]
+    ) -> Dict[str, Dict[str, float]]:
+        """Collect normalized metric outputs for weight fitting."""
+        metric_outputs: Dict[str, Dict[str, float]] = {}
+
+        # Composite metrics (silhouette, davies-bouldin, etc.)
+        composite_summary: Optional[Dict[str, float]] = self._last_composite_metric_summary
+        quality = clustering_result.get('clustering_quality', {}) if isinstance(clustering_result, dict) else {}
+        if quality and not composite_summary:
+            try:
+                silhouette = float(quality.get('silhouette_score', 0.0))
+                davies_bouldin = float(quality.get('davies_bouldin_score', 0.0))
+                calinski = float(quality.get('calinski_harabasz_score', 0.0))
+                normalized_silhouette = (silhouette + 1.0) / 2.0
+                normalized_davies = min(1.0, 1.0 / max(0.1, davies_bouldin)) if np.isfinite(davies_bouldin) else 0.0
+                normalized_calinski = min(1.0, calinski / 1000.0) if np.isfinite(calinski) else 0.0
+                stability_score = 0.0
+                consensus_score = 0.0
+                stability_metrics = clustering_metrics.get('stability_scores') if isinstance(clustering_metrics, dict) else None
+                if stability_metrics:
+                    try:
+                        stability_arr = np.array(stability_metrics, dtype=float)
+                        if stability_arr.size > 0:
+                            stability_score = float(np.clip(np.nanmean(stability_arr), 0.0, 1.0))
+                    except Exception:
+                        stability_score = 0.0
+                consensus_metrics = clustering_metrics.get('consensus_metrics') if isinstance(clustering_metrics, dict) else None
+                if isinstance(consensus_metrics, dict):
+                    consensus_score = float(consensus_metrics.get('overall_consensus', consensus_metrics.get('consensus_score', 0.0)))
+                composite_summary = {
+                    'silhouette': float(np.clip(normalized_silhouette, 0.0, 1.0)),
+                    'davies_bouldin': float(np.clip(normalized_davies, 0.0, 1.0)),
+                    'calinski_harabasz': float(np.clip(normalized_calinski, 0.0, 1.0)),
+                    'stability': float(np.clip(stability_score, 0.0, 1.0)),
+                    'consensus': float(np.clip(consensus_score, 0.0, 1.0)),
+                }
+            except Exception:
+                composite_summary = None
+
+        if composite_summary:
+            self._last_composite_metric_summary = composite_summary
+            metric_outputs['composite'] = composite_summary
+
+        # Regime-level metrics (economic/trading/stability)
+        regime_summary: Optional[Dict[str, float]] = None
+        if isinstance(clustering_metrics, dict):
+            try:
+                economic_scores = clustering_metrics.get('economic_scores')
+                trading_scores = clustering_metrics.get('trading_scores')
+                stability_scores = clustering_metrics.get('stability_scores')
+
+                def _safe_average(values: Any) -> float:
+                    try:
+                        arr = np.array(values, dtype=float)
+                        if arr.size == 0:
+                            return 0.0
+                        valid = arr[~np.isnan(arr)]
+                        if valid.size == 0:
+                            return 0.0
+                        return float(np.clip(np.mean(valid), 0.0, 1.0))
+                    except Exception:
+                        return 0.0
+
+                composite_for_regime = composite_summary or self._last_composite_metric_summary or {}
+                regime_summary = {
+                    'economic_weight': _safe_average(economic_scores),
+                    'volatility_regime_weight': float(composite_for_regime.get('silhouette', _safe_average(stability_scores))),
+                    'volume_regime_weight': _safe_average(trading_scores),
+                    'structural_trend_weight': float(composite_for_regime.get('stability', _safe_average(stability_scores))),
+                }
+            except Exception:
+                regime_summary = None
+
+        if regime_summary:
+            self._last_regime_metric_summary = regime_summary
+            metric_outputs['regime'] = regime_summary
+        elif self._last_regime_metric_summary:
+            metric_outputs['regime'] = self._last_regime_metric_summary
+
+        # Temporal metrics summary (captured during temporal importance calculation)
+        if self._last_temporal_metric_summary:
+            metric_outputs['temporal'] = self._last_temporal_metric_summary
+
+        return metric_outputs
+
+    def _derive_validation_metric(self, clustering_metrics: Dict[str, Any]) -> Optional[float]:
+        """Derive a validation metric (e.g., Sharpe) when available."""
+        try:
+            if hasattr(self, 'pipeline_state') and isinstance(self.pipeline_state, dict):
+                validation_metrics = self.pipeline_state.get('validation_metrics', {})
+                if isinstance(validation_metrics, dict):
+                    for key in ('validation_sharpe', 'sharpe_ratio', 'sharpe'):
+                        if key in validation_metrics and validation_metrics[key] is not None:
+                            return float(validation_metrics[key])
+            if isinstance(clustering_metrics, dict):
+                trading_scores = clustering_metrics.get('trading_scores')
+                if trading_scores:
+                    try:
+                        return float(np.nanmean(np.array(trading_scores, dtype=float)))
+                    except Exception:
+                        return None
+        except Exception:
+            return None
+        return None
+
+    def _fit_metric_weights(
+        self,
+        metric_outputs: Dict[str, Dict[str, float]],
+        validation_metric: Optional[float] = None,
+    ) -> Dict[str, Dict[str, float]]:
+        """Fit metric weights using constrained regression with simplex constraints."""
+        if not metric_outputs:
+            return {}
+
+        if validation_metric is None:
+            validation_metric = self._estimate_validation_metric(metric_outputs)
+
+        record = {
+            'timestamp': datetime.now().isoformat(),
+            'metrics': metric_outputs,
+            'validation_target': float(validation_metric) if validation_metric is not None else None,
+        }
+        self.metric_weight_history.append(record)
+        if len(self.metric_weight_history) > self._weight_history_limit:
+            self.metric_weight_history = self.metric_weight_history[-self._weight_history_limit:]
+
+        learned: Dict[str, Dict[str, float]] = {}
+        for group, metrics in metric_outputs.items():
+            metric_names = list(metrics.keys())
+            if not metric_names:
+                continue
+
+            X_rows: List[List[float]] = []
+            y_values: List[float] = []
+            for entry in self.metric_weight_history:
+                entry_metrics = entry.get('metrics', {}).get(group)
+                target = entry.get('validation_target')
+                if entry_metrics is None or target is None:
+                    continue
+                try:
+                    row = [float(entry_metrics.get(name, 0.0)) for name in metric_names]
+                    X_rows.append(row)
+                    y_values.append(float(target))
+                except Exception:
+                    continue
+
+            if X_rows and len(X_rows) >= len(metric_names):
+                X = np.array(X_rows, dtype=float)
+                y = np.array(y_values, dtype=float)
+                try:
+                    coeffs, *_ = np.linalg.lstsq(X, y, rcond=None)
+                    coeffs = np.maximum(coeffs, 0.0)
+                    weight_vector = self._project_to_simplex(coeffs)
+                except Exception:
+                    weight_vector = self._fallback_weight_vector(metrics, group)
+            else:
+                weight_vector = self._fallback_weight_vector(metrics, group)
+
+            group_weights = {name: float(weight) for name, weight in zip(metric_names, weight_vector)}
+            learned[group] = group_weights
+
+        self.metric_weight_history[-1]['fitted_weights'] = learned
+        for group, weights in learned.items():
+            self.learned_weights[group] = weights
+
+        return learned
+
+    def _update_learned_weights(
+        self,
+        clustering_result: Dict[str, Any],
+        clustering_metrics: Dict[str, Any],
+    ) -> None:
+        """Update learned weights using latest clustering results."""
+        try:
+            metric_outputs = self._collect_metric_outputs(clustering_result, clustering_metrics)
+            if not metric_outputs:
+                return
+
+            validation_metric = self._derive_validation_metric(clustering_metrics)
+            learned = self._fit_metric_weights(metric_outputs, validation_metric)
+            if learned:
+                tprint_structured({
+                    'metric_weight_update': True,
+                    'learned_groups': list(learned.keys()),
+                    'validation_metric': validation_metric,
+                })
+        except Exception as exc:
+            tprint_warning(f"Failed to update learned metric weights: {exc}")
+
     def _calculate_composite_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Calculate composite score for clustering quality using multiple metrics."""
         try:
@@ -1860,15 +2205,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Fallback to simple consensus calculation
                 consensus_score = self._calculate_simple_consensus(assignments)
             
-            # Weighted composite score
-            weights = {
-                'silhouette': 0.25,
-                'davies_bouldin': 0.20,
-                'calinski_harabasz': 0.20,
-                'stability': 0.20,
-                'consensus': 0.15
+            metric_summary = {
+                'silhouette': normalized_silhouette,
+                'davies_bouldin': normalized_davies_bouldin,
+                'calinski_harabasz': normalized_calinski_harabasz,
+                'stability': stability_score,
+                'consensus': consensus_score,
             }
-            
+            self._last_composite_metric_summary = metric_summary
+
+            # Weighted composite score
+            weights = self._get_weights('composite', metric_summary)
+            if not weights:
+                weights = self._fallback_weight_vector(metric_summary, 'composite')
+                weights = {name: float(weight) for name, weight in zip(metric_summary.keys(), weights)}
+
             composite_score = (
                 weights['silhouette'] * normalized_silhouette +
                 weights['davies_bouldin'] * normalized_davies_bouldin +
@@ -2661,12 +3012,27 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # 4. Vectorized regime persistence calculation for all features
             regime_persistence_weights = self._calculate_vectorized_regime_persistence(features, market_data)
             
+            inverse_variance = 1.0 / (1.0 + temporal_var_weights)
+
+            temporal_metric_summary = {
+                'autocorrelation': float(np.clip(np.nanmean(autocorr_weights), 0.0, 1.0)),
+                'inverse_variance': float(np.clip(np.nanmean(inverse_variance), 0.0, 1.0)),
+                'trend_consistency': float(np.clip(np.nanmean(trend_consistency_weights), 0.0, 1.0)),
+                'regime_persistence': float(np.clip(np.nanmean(regime_persistence_weights), 0.0, 1.0)),
+            }
+            self._last_temporal_metric_summary = temporal_metric_summary
+
+            weights = self._get_weights('temporal', temporal_metric_summary)
+            if not weights:
+                fallback_vector = self._fallback_weight_vector(temporal_metric_summary, 'temporal')
+                weights = {name: float(weight) for name, weight in zip(temporal_metric_summary.keys(), fallback_vector)}
+
             # VECTORIZED COMBINATION: Combine all metrics using matrix operations
             temporal_weights = (
-                0.3 * autocorr_weights +           # Autocorrelation importance
-                0.2 * (1.0 / (1.0 + temporal_var_weights)) +  # Inverse variance (stability)
-                0.3 * trend_consistency_weights +  # Trend consistency
-                0.2 * regime_persistence_weights   # Regime persistence
+                weights['autocorrelation'] * autocorr_weights +
+                weights['inverse_variance'] * inverse_variance +
+                weights['trend_consistency'] * trend_consistency_weights +
+                weights['regime_persistence'] * regime_persistence_weights
             )
             
             # Normalize weights to [0, 1] range

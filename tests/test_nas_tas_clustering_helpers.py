@@ -156,3 +156,82 @@ def test_build_artifacts_delegates_to_consolidated(monkeypatch):
     )
 
     assert artifacts is expected_artifacts
+
+
+def test_metric_weight_learning_updates_state():
+    component = _build_component()
+
+    metric_outputs = {
+        'composite': {
+            'silhouette': 0.8,
+            'davies_bouldin': 0.7,
+            'calinski_harabasz': 0.6,
+            'stability': 0.5,
+            'consensus': 0.9,
+        },
+        'regime': {
+            'economic_weight': 0.7,
+            'volatility_regime_weight': 0.6,
+            'volume_regime_weight': 0.5,
+            'structural_trend_weight': 0.4,
+        },
+        'temporal': {
+            'autocorrelation': 0.6,
+            'inverse_variance': 0.7,
+            'trend_consistency': 0.5,
+            'regime_persistence': 0.4,
+        },
+    }
+
+    learned = component._fit_metric_weights(metric_outputs, validation_metric=1.2)
+
+    assert set(learned.keys()) == {'composite', 'regime', 'temporal'}
+    assert sum(learned['composite'].values()) == pytest.approx(1.0)
+    assert sum(learned['regime'].values()) == pytest.approx(1.0)
+    assert sum(learned['temporal'].values()) == pytest.approx(1.0)
+    assert component.learned_weights['regime'] == learned['regime']
+
+
+def test_metric_weight_fallback_uses_historical_median():
+    component = _build_component()
+
+    component.metric_weight_history = [
+        {
+            'metrics': {},
+            'validation_target': 1.0,
+            'fitted_weights': {
+                'regime': {
+                    'economic_weight': 0.5,
+                    'volatility_regime_weight': 0.2,
+                    'volume_regime_weight': 0.2,
+                    'structural_trend_weight': 0.1,
+                }
+            },
+        },
+        {
+            'metrics': {},
+            'validation_target': 0.8,
+            'fitted_weights': {
+                'regime': {
+                    'economic_weight': 0.4,
+                    'volatility_regime_weight': 0.3,
+                    'volume_regime_weight': 0.2,
+                    'structural_trend_weight': 0.1,
+                }
+            },
+        },
+    ]
+
+    weights = component._get_weights(
+        'regime',
+        {
+            'economic_weight': 0.0,
+            'volatility_regime_weight': 0.0,
+            'volume_regime_weight': 0.0,
+            'structural_trend_weight': 0.0,
+        },
+    )
+
+    assert sum(weights.values()) == pytest.approx(1.0)
+    # Median between [0.5,0.4] etc. equals 0.45 for economic weight
+    assert weights['economic_weight'] == pytest.approx(0.45, rel=1e-6)

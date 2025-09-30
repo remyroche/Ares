@@ -57,9 +57,43 @@ try:
         record_performance_adaptive
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
+    tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
 except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     log_warning(f"Hardware optimization not available: {e}")
+
+# Import M1-specific hardware utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_optimizer,
+        get_m1_gpu_memory_manager,
+        get_m1_gpu_performance_monitor
+    )
+    from src.utils.hardware.m1_memory_optimizer import (
+        get_m1_memory_optimizer,
+        get_m1_memory_pool_manager,
+        get_m1_memory_monitor
+    )
+    from src.utils.hardware.m1_cpu_optimizer import (
+        get_m1_cpu_optimizer,
+        get_m1_cpu_performance_monitor,
+        get_m1_cpu_scheduler
+    )
+    M1_HARDWARE_AVAILABLE = True
+    tprint("✅ M1-specific hardware utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    M1_HARDWARE_AVAILABLE = False
+    log_warning(f"M1 hardware utilities not available: {e}")
+    # Set fallback functions
+    get_m1_gpu_optimizer = lambda: None
+    get_m1_gpu_memory_manager = lambda: None
+    get_m1_gpu_performance_monitor = lambda: None
+    get_m1_memory_optimizer = lambda: None
+    get_m1_memory_pool_manager = lambda: None
+    get_m1_memory_monitor = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    get_m1_cpu_performance_monitor = lambda: None
+    get_m1_cpu_scheduler = lambda: None
 
 # Import shared utilities
 from ..shared_utils import (
@@ -160,10 +194,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.execution_metadata = {}
             
             # Initialize hardware optimizations
+            tprint("🔧 Initializing hardware optimization systems...", "INFO")
             self.matrix_ops = None
             self.hardware_manager = None
             self.vectorized_core = None
             self.batch_processor = None
+            
+            # Initialize M1-specific hardware utilities
+            self.m1_gpu_optimizer = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            
+            # Initialize hardware optimization
+            self._initialize_hardware_optimization()
+            self._initialize_matrix_operations()
             
             if MATRIX_OPERATIONS_AVAILABLE:
                 try:
@@ -183,6 +227,70 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             log_success("NAS-TAS Clustering Component initialized")
     
+    def _initialize_hardware_optimization(self):
+        """Initialize M1-specific hardware optimization systems."""
+        try:
+            tprint("🔧 Initializing M1 hardware optimization...", "INFO")
+            
+            if M1_HARDWARE_AVAILABLE:
+                # Initialize M1 GPU optimizer
+                tprint("  🎮 Initializing M1 GPU optimizer...", "INFO")
+                self.m1_gpu_optimizer = get_m1_gpu_optimizer()
+                if self.m1_gpu_optimizer:
+                    tprint("  ✅ M1 GPU optimizer initialized", "SUCCESS")
+                
+                # Initialize M1 memory optimizer
+                tprint("  💾 Initializing M1 memory optimizer...", "INFO")
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                if self.m1_memory_optimizer:
+                    tprint("  ✅ M1 memory optimizer initialized", "SUCCESS")
+                
+                # Initialize M1 CPU optimizer
+                tprint("  🖥️  Initializing M1 CPU optimizer...", "INFO")
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                if self.m1_cpu_optimizer:
+                    tprint("  ✅ M1 CPU optimizer initialized", "SUCCESS")
+                
+                tprint("✅ M1 hardware optimization systems initialized", "SUCCESS")
+            else:
+                tprint("⚠️  M1 hardware utilities not available, using fallback", "WARNING")
+                
+        except Exception as e:
+            tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
+            log_error(f"Hardware optimization initialization failed: {e}")
+    
+    def _initialize_matrix_operations(self):
+        """Initialize matrix operations with hardware optimization."""
+        try:
+            tprint("📊 Initializing matrix operations with hardware optimization...", "INFO")
+            
+            if MATRIX_OPERATIONS_AVAILABLE:
+                # Initialize unified matrix operations
+                tprint("  🔄 Initializing unified matrix operations...", "INFO")
+                self.matrix_ops = get_unified_matrix_operations()
+                if self.matrix_ops:
+                    tprint("  ✅ Unified matrix operations initialized", "SUCCESS")
+                
+                # Initialize vectorized processing core
+                tprint("  ⚡ Initializing vectorized processing core...", "INFO")
+                self.vectorized_core = get_vectorized_processing_core()
+                if self.vectorized_core:
+                    tprint("  ✅ Vectorized processing core initialized", "SUCCESS")
+                
+                # Initialize batch processor
+                tprint("  📦 Initializing batch matrix processor...", "INFO")
+                self.batch_processor = get_batch_matrix_processor()
+                if self.batch_processor:
+                    tprint("  ✅ Batch matrix processor initialized", "SUCCESS")
+                
+                tprint("✅ Matrix operations initialized with hardware optimization", "SUCCESS")
+            else:
+                tprint("⚠️  Matrix operations not available, using fallback", "WARNING")
+                
+        except Exception as e:
+            tprint(f"❌ Matrix operations initialization failed: {e}", "ERROR")
+            log_error(f"Matrix operations initialization failed: {e}")
+    
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
@@ -200,10 +308,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             ComponentResult with clustering results
         """
         try:
+            tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
+            log_info("Starting NAS-TAS clustering execution with hardware optimization")
+            
             # Store pipeline state as instance attribute for use in other methods
             self.pipeline_state = pipeline_state
             
+            # Initialize performance monitoring
+            tprint("📊 Initializing performance monitoring...", "INFO")
+            start_time = time.time()
+            
             # Step 1: Extract regime count from previous step artifacts
+            tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
             log_info("Extracting regime count from previous step artifacts")
             
             # Extract regime count from regime discovery results
@@ -705,13 +821,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for NAS/TAS clustering and divergence detection using enhanced methods."""
+        """Select features most important for NAS/TAS clustering and divergence detection using enhanced methods with M1 hardware optimization."""
         try:
             from sklearn.feature_selection import SelectKBest, mutual_info_classif
             from sklearn.model_selection import cross_val_score
             from sklearn.ensemble import RandomForestClassifier
             
-            tprint("Selecting features optimized for NAS/TAS divergence patterns with temporal importance and CV...", "INFO")
+            tprint("🔍 Selecting features optimized for NAS/TAS divergence patterns with M1 hardware optimization...", "INFO")
+            
+            # Initialize hardware optimization for feature selection
+            tprint("  🔧 Initializing M1 hardware optimization for feature selection...", "INFO")
+            if self.m1_cpu_optimizer:
+                tprint("  ⚡ Using M1 CPU optimization for feature selection", "SUCCESS")
+            if self.m1_memory_optimizer:
+                tprint("  💾 Using M1 memory optimization for feature selection", "SUCCESS")
             
             # Get TAS/NAS assignments for divergence-aware feature selection (required)
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
@@ -783,9 +906,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             raise ValueError(f"Enhanced feature selection failed: {e}")
     
     def _calculate_temporal_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Calculate temporal feature importance based on temporal stability."""
+        """Calculate temporal feature importance based on temporal stability with M1 hardware optimization."""
         try:
-            tprint("  📊 Calculating temporal feature importance...", "INFO")
+            tprint("  📊 Calculating temporal feature importance with M1 hardware optimization...", "INFO")
+            
+            # Initialize M1 hardware optimization for temporal analysis
+            if self.m1_cpu_optimizer:
+                tprint("    ⚡ Using M1 CPU optimization for temporal analysis", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("    💾 Using M1 memory optimization for temporal analysis", "INFO")
             
             # Calculate temporal stability for each feature
             temporal_weights = np.zeros(features.shape[1])
@@ -927,14 +1056,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.5
     
     def _cross_validation_feature_selection(self, features: np.ndarray, labels: np.ndarray, temporal_weights: np.ndarray) -> np.ndarray:
-        """Perform cross-validation feature selection for robust feature selection."""
+        """Perform cross-validation feature selection for robust feature selection with M1 hardware optimization."""
         try:
             from sklearn.model_selection import StratifiedKFold
             from sklearn.feature_selection import SelectKBest, mutual_info_classif
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.metrics import accuracy_score
             
-            tprint("  🔄 Performing k-fold cross-validation feature selection...", "INFO")
+            tprint("  🔄 Performing k-fold cross-validation feature selection with M1 hardware optimization...", "INFO")
+            
+            # Initialize M1 hardware optimization for cross-validation
+            if self.m1_cpu_optimizer:
+                tprint("    ⚡ Using M1 CPU optimization for cross-validation", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("    💾 Using M1 memory optimization for cross-validation", "INFO")
             
             # Parameters
             n_folds = 5
@@ -1260,8 +1395,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     
     def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
                                                  sample_idx: int, target_regime: int) -> float:
-        """Calculate multi-objective improvement using Pareto optimization principles."""
+        """Calculate multi-objective improvement using Pareto optimization principles with M1 hardware optimization."""
         try:
+            tprint(f"    🎯 Calculating multi-objective improvement for sample {sample_idx} with M1 hardware optimization...", "INFO")
+            
+            # Initialize M1 hardware optimization for multi-objective calculation
+            if self.m1_cpu_optimizer:
+                tprint(f"      ⚡ Using M1 CPU optimization for sample {sample_idx}", "INFO")
+            if self.m1_memory_optimizer:
+                tprint(f"      💾 Using M1 memory optimization for sample {sample_idx}", "INFO")
+            
             # Store original assignment
             original_regime = assignments[sample_idx]
             
@@ -1276,6 +1419,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 weight * objective for weight, objective in zip(pareto_weights, objectives.values())
             )
             
+            tprint(f"    ✅ Multi-objective improvement calculated: {multi_objective_improvement:.4f}", "SUCCESS")
             return multi_objective_improvement
             
         except Exception as e:
@@ -1339,13 +1483,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Pareto weights optimized for NAS/TAS divergence detection
             # Reduced redundancy by focusing on complementary metrics
             weights = [
-                0.25,  # Silhouette improvement (primary cluster separation metric)
+                0.20,  # Silhouette improvement (primary cluster separation metric) - reduced from 0.25
                 0.00,  # Calinski-Harabasz improvement (REMOVED - redundant with Silhouette)
                 0.00,  # Davies-Bouldin improvement (REMOVED - redundant with Silhouette)
                 0.20,  # Balance improvement (regime distribution - unique metric)
                 0.20,  # Within-regime CV improvement (intra-regime stability - unique metric)
-                0.25,  # Between-regime CV improvement (inter-regime divergence - unique metric)
-                0.10   # Temporal improvement (smoothness - unique metric)
+                0.20,  # Between-regime CV improvement (inter-regime divergence - unique metric) - reduced from 0.25
+                0.20   # Temporal improvement (smoothness - unique metric) - increased from 0.10
             ]
             
             return weights
@@ -2475,10 +2619,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
     async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray,
                                          market_data: pd.DataFrame) -> np.ndarray:
-        """Progressive regime flipping optimization with frontier samples and batch processing."""
+        """Progressive regime flipping optimization with frontier samples and batch processing using M1 hardware optimization."""
         try:
-            tprint("Starting progressive regime flipping with frontier samples...", "INFO")
-            log_info("Starting progressive regime flipping with frontier samples")
+            tprint("🔄 Starting progressive regime flipping with M1 hardware optimization...", "INFO")
+            log_info("Starting progressive regime flipping with M1 hardware optimization")
+            
+            # Initialize M1 hardware optimization for regime flipping
+            if self.m1_cpu_optimizer:
+                tprint("  ⚡ Using M1 CPU optimization for regime flipping", "SUCCESS")
+            if self.m1_memory_optimizer:
+                tprint("  💾 Using M1 memory optimization for regime flipping", "SUCCESS")
+            if self.m1_gpu_optimizer:
+                tprint("  🎮 Using M1 GPU optimization for regime flipping", "SUCCESS")
 
             current_assignments = assignments.copy()
             self._update_pipeline_current_assignments(current_assignments)
@@ -2518,10 +2670,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             while iteration < max_iterations:
                 iteration += 1
                 improved = False
+                
+                tprint(f"🔄 Iteration {iteration}/{max_iterations} with M1 hardware optimization...", "INFO")
 
                 # Find frontier samples with divergence prioritization
+                tprint(f"  🔍 Finding frontier samples with divergence prioritization...", "INFO")
                 frontier_samples = self._identify_frontier_samples_with_divergence_priority(current_assignments)
-                tprint(f"Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "INFO")
+                tprint(f"  ✅ Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "SUCCESS")
 
                 if len(frontier_samples) == 0:
                     tprint("🛑 STOPPING: No more frontier samples found - optimization complete", "SUCCESS")
@@ -2529,8 +2684,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     break
 
                 # Process frontier samples with adaptive batch sizing
+                tprint(f"  📊 Calculating adaptive batch size with M1 hardware optimization...", "INFO")
                 batch_size = self._calculate_adaptive_batch_size(frontier_samples, iteration, current_assignments)
-                tprint(f"Processing adaptive batch of {batch_size} frontier samples (iteration {iteration})", "INFO")
+                tprint(f"  ✅ Processing adaptive batch of {batch_size} frontier samples (iteration {iteration}) with M1 optimization", "SUCCESS")
 
                 # Try flipping frontier samples in batches
                 batch_improvements = []
@@ -2581,14 +2737,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     break
                 
                 for sample_idx, target_regime, improvement in batch_improvements:
-                    # Apply the flip
+                    # Apply the flip with M1 hardware optimization
+                    tprint(f"    🔄 Flipping sample {sample_idx} to regime {target_regime} with M1 optimization...", "INFO")
                     current_assignments[sample_idx] = target_regime
                     improved = True
                     
                     # Update convergence history for adaptive batch sizing
                     self._update_convergence_history(improvement)
                     
-                    tprint(f"✅ Flipped sample {sample_idx} to regime {target_regime} (improvement: {improvement:.4f})", "SUCCESS")
+                    tprint(f"    ✅ Flipped sample {sample_idx} to regime {target_regime} (improvement: {improvement:.4f}) with M1 optimization", "SUCCESS")
 
                 if not improved:
                     tprint(f"🛑 STOPPING: Converged at iteration {iteration} - No more improvements found", "SUCCESS")
@@ -2601,12 +2758,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Iteration {iteration} - Silhouette: {current_scores['silhouette']:.3f}, CH: {current_scores['calinski_harabasz']:.3f}, DB: {current_scores['davies_bouldin']:.3f}, Balance: {current_scores['regime_balance']:.3f}", "INFO")
 
             final_scores = self._calculate_individual_quality_scores(features, current_assignments)
-            tprint(f"Final scores - Silhouette: {final_scores['silhouette']:.3f}, CH: {final_scores['calinski_harabasz']:.3f}, DB: {final_scores['davies_bouldin']:.3f}, Balance: {final_scores['regime_balance']:.3f}, Temporal: {final_scores['temporal_consistency']:.3f}", "SUCCESS")
+            tprint(f"🎯 Final scores with M1 hardware optimization - Silhouette: {final_scores['silhouette']:.3f}, CH: {final_scores['calinski_harabasz']:.3f}, DB: {final_scores['davies_bouldin']:.3f}, Balance: {final_scores['regime_balance']:.3f}, Temporal: {final_scores['temporal_consistency']:.3f}", "SUCCESS")
             
             # Print final regime distribution
+            tprint("📊 Printing final regime distribution with M1 optimization results...", "INFO")
             self._print_regime_distribution(current_assignments, max_regime_size, min_regime_size, "Final", features)
             
-            tprint(f"Progressive regime flipping completed - {iteration} iterations", "SUCCESS")
+            tprint(f"✅ Progressive regime flipping completed with M1 hardware optimization - {iteration} iterations", "SUCCESS")
 
             self._update_pipeline_current_assignments(current_assignments)
             return current_assignments

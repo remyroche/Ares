@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import datetime
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import traceback
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
@@ -142,6 +142,25 @@ except ImportError as e:
     get_m1_cpu_optimizer = lambda: None
     get_m1_cpu_performance_monitor = lambda: None
     get_m1_cpu_scheduler = lambda: None
+
+@dataclass
+class ClusteringContext:
+    """Lightweight context for sharing intermediate clustering artifacts."""
+
+    original_features: np.ndarray
+    market_data: pd.DataFrame
+    optimized_features: Optional[np.ndarray] = None
+    optimal_k: Optional[int] = None
+    optimal_bic: Optional[float] = None
+    k_metadata: Dict[str, Any] = field(default_factory=dict)
+    tas_assignments: Optional[np.ndarray] = None
+    nas_assignments: Optional[np.ndarray] = None
+    optimization_metrics: Dict[str, Any] = field(default_factory=dict)
+    raw_assignments: Optional[np.ndarray] = None
+    smoothed_assignments: Optional[np.ndarray] = None
+    fusion_metadata: Dict[str, Any] = field(default_factory=dict)
+    summary: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class NASTASClusteringConfig(BaseConfig):
@@ -581,120 +600,88 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Perform advanced clustering using progressive regime optimization."""
         try:
             tprint("Starting progressive regime optimization...", "INFO")
-            
+
+            context = ClusteringContext(original_features=features, market_data=market_data)
+
             # Step 1: Feature selection and dimensionality reduction
             tprint("Step 1: Feature selection and dimensionality reduction...", "INFO")
-            optimized_features = await self._optimize_features(features, market_data)
-            tprint(f"Feature optimization completed: {features.shape} -> {optimized_features.shape}", "SUCCESS")
+            await self._optimize_features(context)
 
-            # Store optimized features for frontier detection
-            self.optimized_features = optimized_features
-            
-            # Memory cleanup after feature optimization
-            import gc
-            gc.collect()
-            
             # Step 2: Select optimal K using BIC-selected GMM
-            tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
-            optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(optimized_features)
-            tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            
-            # Step 3: Get TAS and NAS regime assignments from pipeline state
-            tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
-            tas_assignments, nas_assignments = await self._extract_regime_assignments()
-            tprint(f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
-            
-            # Step 4: Progressive regime optimization with BIC-selected K
-            tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
-            optimized_assignments, optimization_metrics = await self._progressive_regime_optimization_with_k(
-                optimized_features, tas_assignments, nas_assignments, market_data, optimal_k
-            )
-            tprint(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}", "SUCCESS")
-            
-            # Step 4: Calculate final clustering centers and quality metrics
-            tprint("Step 4: Calculating final clustering metrics...", "INFO")
-            final_centers = self._calculate_cluster_centers(optimized_features, optimized_assignments)
-            final_quality = self._calculate_final_quality_metrics(optimized_features, optimized_assignments)
-            
-            # Convert to dictionary format with comprehensive optimization metadata
-            clustering_result = {
-                'n_clusters': len(set(optimized_assignments)),
-                'cluster_assignments': optimized_assignments.tolist(),
-                'cluster_centers': final_centers.tolist(),
-                'clustering_quality': final_quality,
-                'algorithm_used': 'data_driven_optimization',
-                'success': True,
-                'execution_time': optimization_metrics.get('execution_time', 0.0),
-                'optimization_metadata': {
-                    'optimization_method': 'data_driven_optimization',
-                    'initial_score': optimization_metrics.get('initial_score', 0.0),
-                    'final_score': optimization_metrics.get('final_score', 0.0),
-                    'improvement': optimization_metrics.get('improvement', 0.0),
-                    'iterations': optimization_metrics.get('iterations', 0),
-                    'optimal_k': optimal_k,
-                    'optimal_bic': optimal_bic,
-                    'log_likelihood': optimization_metrics.get('log_likelihood', 0.0),
-                    'k_grid': k_metadata.get('k_values', []),
-                    'ds_confusions': optimization_metrics.get('fusion_metadata', {}).get('tas_confusion_matrix', []),
-                    'hmm_transitions': optimization_metrics.get('hmm_transitions', []),
-                    'random_state': 42,
-                    'k_selection_metadata': k_metadata,
-                    'fusion_metadata': optimization_metrics.get('fusion_metadata', {}),
-                    'feature_optimization': {
-                        'original_features': features.shape[1],
-                        'optimized_features': optimized_features.shape[1],
-                        'reduction_ratio': optimized_features.shape[1] / features.shape[1],
-                        'method': 'pca_mle'
-                    }
-                }
-            }
-            
+            self._select_optimal_k(context)
+
+            # Step 3/4: Reconcile NAS/TAS labels and prepare optimization metrics
+            await self._reconcile_labels(context)
+
+            # Step 5: Smooth regime assignments for temporal coherence
+            self._smooth_assignments(context)
+
+            # Final summary and artifact packaging
+            clustering_result = self._summarize_results(context)
+
             tprint("Progressive regime optimization completed successfully", "SUCCESS")
             return clustering_result
-            
+
         except Exception as e:
             tprint(f"Progressive regime optimization failed: {e}", "ERROR")
             # Fast-fail: Do not fall back to basic clustering
             tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
             raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
-    async def _optimize_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+    async def _optimize_features(self, context: ClusteringContext) -> None:
         """Optimize features using data-driven dimensionality reduction."""
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
-            
+
             # Step 1: Standardize features (keep standardization as-is)
             tprint("Step 1: Standardizing features...", "INFO")
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features)
-            tprint(f"Feature standardization completed: {features.shape}", "SUCCESS")
-            
+            features_scaled = scaler.fit_transform(context.original_features)
+            tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
+
             # Step 2: Apply PCA with Minka's MLE for data-driven dimensionality selection
             tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
             from sklearn.decomposition import PCA
-            
+
             # Use PCA with MLE to automatically select number of components
             # Add fallback for small samples or rank-deficient cases
             try:
                 pca = PCA(n_components='mle', svd_solver='full')
                 features_pca = pca.fit_transform(features_scaled)
-                tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
+                tprint(
+                    f"PCA-MLE reduction: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
+                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
+                    "SUCCESS"
+                )
             except Exception as e:
                 tprint(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
                 tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
                 pca = PCA(n_components=0.99, svd_solver='full')
                 features_pca = pca.fit_transform(features_scaled)
-                tprint(f"PCA fallback: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
-            
+                tprint(
+                    f"PCA fallback: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
+                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
+                    "SUCCESS"
+                )
+
             # Step 3: Basic quality validation (minimal checks)
             tprint("Step 3: Validating feature quality...", "INFO")
-            features_final = self._validate_feature_quality_minimal(features_pca, market_data)
+            features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
             tprint(f"Feature quality validation completed: {features_final.shape}", "SUCCESS")
-            
-            tprint(f"Data-driven feature optimization completed: {features.shape} -> {features_final.shape}", "SUCCESS")
-            return features_final
-            
+
+            tprint(
+                f"Data-driven feature optimization completed: {context.original_features.shape} -> {features_final.shape}",
+                "SUCCESS"
+            )
+
+            context.optimized_features = features_final
+            self.optimized_features = features_final
+
+            # Memory cleanup after feature optimization
+            import gc
+            gc.collect()
+
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
             # Fast-fail: Do not return original features if optimization fails
@@ -723,6 +710,148 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Minimal feature validation failed: {e}", "ERROR")
             return features
+
+    def _select_optimal_k(self, context: ClusteringContext) -> None:
+        """Select the optimal number of clusters using BIC scoring."""
+        if context.optimized_features is None:
+            raise ValueError("Optimized features are required before selecting optimal K")
+
+        tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
+        optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(context.optimized_features)
+        context.optimal_k = optimal_k
+        context.optimal_bic = optimal_bic
+        context.k_metadata = k_metadata
+        tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+
+    async def _reconcile_labels(self, context: ClusteringContext) -> None:
+        """Reconcile NAS/TAS regime assignments and prepare optimization metrics."""
+        if context.optimal_k is None:
+            raise ValueError("Optimal K must be selected before label reconciliation")
+
+        tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
+        tas_assignments, nas_assignments = await self._extract_regime_assignments()
+        context.tas_assignments = tas_assignments
+        context.nas_assignments = nas_assignments
+        tprint(
+            f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}",
+            "SUCCESS"
+        )
+
+        tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
+        optimized_assignments, optimization_metrics, fusion_metadata = await self._progressive_regime_optimization_with_k(
+            context.optimized_features,
+            tas_assignments,
+            nas_assignments,
+            context.market_data,
+            context.optimal_k
+        )
+
+        context.raw_assignments = optimized_assignments
+        context.optimization_metrics = optimization_metrics
+        context.fusion_metadata = fusion_metadata or {}
+
+        pre_smoothing_score = optimization_metrics.get('initial_score', 0.0)
+        tprint(f"Progressive optimization completed - Score: {pre_smoothing_score:.3f} (pre-smoothing)", "SUCCESS")
+
+    def _smooth_assignments(self, context: ClusteringContext) -> None:
+        """Apply temporal smoothing to regime assignments when beneficial."""
+        if context.raw_assignments is None:
+            raise ValueError("Assignments must be generated before smoothing")
+
+        tprint("Step 5: Applying HMM smoothing for temporal coherence...", "INFO")
+        features = context.optimized_features
+        base_assignments = context.raw_assignments
+        metrics = context.optimization_metrics or {}
+
+        if features is None:
+            raise ValueError("Optimized features are required before smoothing")
+
+        initial_score = metrics.get('initial_score')
+        if initial_score is None and features is not None:
+            initial_score = self._calculate_composite_score(features, base_assignments)
+            metrics['initial_score'] = initial_score
+
+        smoothed_assignments = self._apply_hmm_smoothing(features, base_assignments)
+        final_score = self._calculate_composite_score(features, smoothed_assignments)
+
+        if initial_score is None or final_score > initial_score:
+            tprint(
+                f"HMM smoothing improved score: {initial_score:.3f} → {final_score:.3f}" if initial_score is not None else
+                f"HMM smoothing score: {final_score:.3f}",
+                "SUCCESS"
+            )
+            context.smoothed_assignments = smoothed_assignments
+            metrics['final_score'] = final_score
+            if initial_score is not None:
+                metrics['improvement'] = final_score - initial_score
+        else:
+            tprint("HMM smoothing did not improve, keeping fused assignments", "INFO")
+            context.smoothed_assignments = base_assignments
+            metrics.setdefault('final_score', initial_score)
+            metrics.setdefault('improvement', 0.0)
+
+        metrics.setdefault('iterations', 1)
+        metrics.setdefault('method', 'data_driven_optimization')
+        metrics.setdefault('fusion_metadata', context.fusion_metadata)
+        metrics.setdefault('hmm_transitions', [])
+        context.optimization_metrics = metrics
+
+        tprint(
+            f"Progressive optimization completed - Final score: {metrics.get('final_score', final_score):.3f}",
+            "SUCCESS"
+        )
+
+    def _summarize_results(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Create the final clustering result payload from the shared context."""
+        if context.optimized_features is None or context.smoothed_assignments is None:
+            raise ValueError("Optimized features and smoothed assignments are required for summarization")
+
+        optimized_assignments = context.smoothed_assignments
+        optimized_features = context.optimized_features
+        final_centers = self._calculate_cluster_centers(optimized_features, optimized_assignments)
+        final_quality = self._calculate_final_quality_metrics(optimized_features, optimized_assignments)
+
+        metrics = context.optimization_metrics or {}
+        metrics.setdefault('fusion_metadata', context.fusion_metadata)
+
+        optimal_k = context.optimal_k or len(set(optimized_assignments))
+        optimal_bic = context.optimal_bic if context.optimal_bic is not None else float('nan')
+        k_metadata = context.k_metadata or {}
+
+        clustering_result = {
+            'n_clusters': len(set(optimized_assignments)),
+            'cluster_assignments': np.asarray(optimized_assignments).tolist(),
+            'cluster_centers': final_centers.tolist(),
+            'clustering_quality': final_quality,
+            'algorithm_used': 'data_driven_optimization',
+            'success': True,
+            'execution_time': metrics.get('execution_time', 0.0),
+            'optimization_metadata': {
+                'optimization_method': 'data_driven_optimization',
+                'initial_score': metrics.get('initial_score', 0.0),
+                'final_score': metrics.get('final_score', 0.0),
+                'improvement': metrics.get('improvement', 0.0),
+                'iterations': metrics.get('iterations', 0),
+                'optimal_k': optimal_k,
+                'optimal_bic': optimal_bic,
+                'log_likelihood': metrics.get('log_likelihood', 0.0),
+                'k_grid': k_metadata.get('k_values', []),
+                'ds_confusions': metrics.get('fusion_metadata', {}).get('tas_confusion_matrix', []),
+                'hmm_transitions': metrics.get('hmm_transitions', []),
+                'random_state': 42,
+                'k_selection_metadata': k_metadata,
+                'fusion_metadata': metrics.get('fusion_metadata', {}),
+                'feature_optimization': {
+                    'original_features': context.original_features.shape[1],
+                    'optimized_features': optimized_features.shape[1],
+                    'reduction_ratio': optimized_features.shape[1] / context.original_features.shape[1],
+                    'method': 'pca_mle'
+                }
+            }
+        }
+
+        context.summary = clustering_result
+        return clustering_result
 
     def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20), 
                              adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
@@ -1347,19 +1476,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Fallback to TAS assignments
             return tas_assignments, {'method': 'fallback', 'error': str(e)}
 
-    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray, 
-                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame, 
-                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray,
+                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame,
+                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
         """Progressive regime optimization using BIC-selected K and Dawid-Skene fusion."""
         try:
             tprint("Starting data-driven progressive regime optimization...", "INFO")
             tprint("Starting data-driven progressive regime optimization")
-            
+
             # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
             tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
             fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments, optimal_k, features)
             tprint(f"Dawid-Skene fusion completed: {len(fused_assignments)} samples", "SUCCESS")
-            
+
             # Step 2: Map fused assignments to optimal K if needed
             if len(set(fused_assignments)) != optimal_k:
                 tprint(f"Mapping fused assignments to optimal K={optimal_k}...", "INFO")
@@ -1372,41 +1501,29 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 mapped_assignments = fused_assignments
                 tprint(f"Fused assignments already have optimal K={optimal_k}", "SUCCESS")
-            
+
             # Step 3: Calculate initial score
             initial_score = self._calculate_composite_score(features, mapped_assignments)
             tprint(f"Initial score: {initial_score:.3f}", "SUCCESS")
-            
-            # Step 4: Apply HMM smoothing if temporal coherence is needed
-            tprint("Step 4: Applying HMM smoothing for temporal coherence...", "INFO")
-            smoothed_assignments = self._apply_hmm_smoothing(features, mapped_assignments)
-            final_score = self._calculate_composite_score(features, smoothed_assignments)
-            
-            if final_score > initial_score:
-                tprint(f"HMM smoothing improved score: {initial_score:.3f} → {final_score:.3f}", "SUCCESS")
-                final_assignments = smoothed_assignments
-            else:
-                tprint(f"HMM smoothing did not improve, keeping fused assignments", "INFO")
-                final_assignments = mapped_assignments
-                final_score = initial_score
-            
-            improvement = final_score - initial_score
-            
+
             optimization_metrics = {
                 'initial_score': initial_score,
-                'final_score': final_score,
-                'improvement': improvement,
+                'final_score': initial_score,
+                'improvement': 0.0,
                 'iterations': 1,
                 'optimal_k': optimal_k,
                 'fusion_metadata': fusion_metadata,
                 'method': 'data_driven_optimization'
             }
-            
-            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})", "SUCCESS")
-            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})")
-            
-            return final_assignments, optimization_metrics
-            
+
+            tprint(
+                f"Data-driven optimization completed - Score: {initial_score:.3f} (pre-smoothing)",
+                "SUCCESS"
+            )
+            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} (pre-smoothing)")
+
+            return mapped_assignments, optimization_metrics, fusion_metadata
+
         except Exception as e:
             tprint(f"Data-driven progressive regime optimization failed: {e}")
             tprint(f"Data-driven progressive regime optimization failed: {e}", "ERROR")

@@ -8,6 +8,7 @@ It demonstrates how to use the shared_utils package for common functionality.
 import asyncio
 import json
 import logging
+import time
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -15,6 +16,56 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 import traceback
+
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+)
+
+from ..shared_utils import (
+    # Features
+    prepare_market_features,
+    FeatureConfig,
+
+    # Configuration
+    validate_regime_count,
+    normalize_weights,
+    validate_algorithm_type,
+    create_default_config,
+    ConfigValidator,
+    BaseConfig,
+
+    # Logging
+    log_execution,
+    log_performance,
+    LoggingContext,
+    get_logger,
+    log_info,
+    log_warning,
+    log_error,
+    log_success,
+    log_debug,
+
+    # Metrics
+    calculate_consensus_metrics,
+    calculate_disagreement_metrics,
+    calculate_economic_scores,
+    calculate_trading_scores,
+    calculate_stability_scores,
+    MetricsCalculator,
+
+    # Characteristics
+    create_regime_characteristics,
+    generate_cluster_characteristics,
+    CharacteristicsGenerator,
+)
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
@@ -130,7 +181,6 @@ except ImportError as e:
     get_m1_cpu_optimizer = lambda: None
     get_m1_cpu_performance_monitor = lambda: None
     get_m1_cpu_scheduler = lambda: None
-
 
 @dataclass
 class NASTASClusteringConfig(BaseConfig):

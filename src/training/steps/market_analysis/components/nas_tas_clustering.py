@@ -719,21 +719,42 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for clustering."""
+        """Select features most important for NAS/TAS clustering and divergence detection."""
         try:
-            from sklearn.feature_selection import SelectKBest, f_classif
+            from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
             from sklearn.cluster import KMeans
             
-            # Create pseudo-labels using K-means for feature selection
+            tprint("Selecting features optimized for NAS/TAS divergence patterns...", "INFO")
+            
+            # Try to get TAS/NAS assignments for divergence-aware feature selection
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
+            
+            if tas_assignments is not None and nas_assignments is not None:
+                # Use NAS/TAS disagreement as labels for feature selection
+                disagreement_mask = tas_assignments != nas_assignments
+                
+                if np.sum(disagreement_mask) > 10:  # Ensure we have enough disagreement samples
+                    tprint(f"Using NAS/TAS disagreement for feature selection ({np.sum(disagreement_mask)} disagreement samples)", "SUCCESS")
+                    
+                    # Select features that best distinguish disagreement vs agreement
+                    n_features = min(15, features.shape[1])
+                    selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
+                    features_selected = selector.fit_transform(features, disagreement_mask.astype(int))
+                    
+                    tprint(f"Selected {features_selected.shape[1]} divergence-optimized features", "SUCCESS")
+                    return features_selected
+            
+            # Fallback: Use K-means with regime-aware clustering
+            tprint("Using regime-aware K-means for feature selection (fallback)", "INFO")
             kmeans = KMeans(n_clusters=8, random_state=42, n_init=10)
             pseudo_labels = kmeans.fit_predict(features)
             
             # Select top features based on F-score
-            n_features = min(15, features.shape[1])  # Select up to 15 features
+            n_features = min(15, features.shape[1])
             selector = SelectKBest(score_func=f_classif, k=n_features)
             features_selected = selector.fit_transform(features, pseudo_labels)
             
-            tprint(f"Selected {features_selected.shape[1]} most important features for clustering", "SUCCESS")
+            tprint(f"Selected {features_selected.shape[1]} clustering-optimized features", "SUCCESS")
             return features_selected
             
         except Exception as e:
@@ -821,18 +842,42 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
     
     def _create_initial_combined_assignments(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> np.ndarray:
-        """Create initial combined assignments from TAS and NAS."""
+        """Create initial combined assignments prioritizing NAS/TAS divergence samples."""
         try:
-            # Combine TAS and NAS assignments using weighted average
-            # For now, we'll use TAS as primary and NAS as secondary
-            combined_assignments = tas_assignments.copy()
+            tprint("Creating initial assignments with divergence prioritization...", "INFO")
             
             # Find samples where TAS and NAS disagree
             disagreement_mask = tas_assignments != nas_assignments
+            disagreement_rate = np.mean(disagreement_mask)
             
-            # For disagreeing samples, use a weighted combination
-            # This is a simplified approach - in practice, you might want more sophisticated logic
-            combined_assignments[disagreement_mask] = (tas_assignments[disagreement_mask] + nas_assignments[disagreement_mask]) // 2
+            tprint(f"NAS/TAS disagreement rate: {disagreement_rate:.3f} ({np.sum(disagreement_mask)}/{len(disagreement_mask)} samples)", "INFO")
+            
+            # Start with TAS as base assignments
+            combined_assignments = tas_assignments.copy()
+            
+            if np.sum(disagreement_mask) > 0:
+                # For divergence samples, use more sophisticated assignment logic
+                disagreement_indices = np.where(disagreement_mask)[0]
+                
+                for idx in disagreement_indices:
+                    tas_regime = tas_assignments[idx]
+                    nas_regime = nas_assignments[idx]
+                    
+                    # Use the regime that appears more frequently in the local neighborhood
+                    # This helps maintain spatial consistency
+                    local_tas_regime = self._get_local_dominant_regime(tas_assignments, idx, window_size=5)
+                    local_nas_regime = self._get_local_dominant_regime(nas_assignments, idx, window_size=5)
+                    
+                    # Choose the regime that's more consistent with its local neighborhood
+                    if local_tas_regime == tas_regime:
+                        combined_assignments[idx] = tas_regime
+                    elif local_nas_regime == nas_regime:
+                        combined_assignments[idx] = nas_regime
+                    else:
+                        # If neither is locally consistent, use weighted average
+                        combined_assignments[idx] = (tas_regime + nas_regime) // 2
+                
+                tprint(f"Prioritized {len(disagreement_indices)} divergence samples in initial assignment", "SUCCESS")
             
             tprint(f"Created combined assignments: {len(combined_assignments)} samples", "SUCCESS")
             return combined_assignments
@@ -840,6 +885,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_error(f"Failed to create combined assignments: {e}")
             return tas_assignments
+    
+    def _get_local_dominant_regime(self, assignments: np.ndarray, center_idx: int, window_size: int = 5) -> int:
+        """Get the dominant regime in a local window around the center index."""
+        try:
+            start_idx = max(0, center_idx - window_size // 2)
+            end_idx = min(len(assignments), center_idx + window_size // 2 + 1)
+            
+            local_assignments = assignments[start_idx:end_idx]
+            
+            # Return the most frequent regime in the local window
+            unique, counts = np.unique(local_assignments, return_counts=True)
+            return unique[np.argmax(counts)]
+            
+        except Exception as e:
+            log_warning(f"Failed to get local dominant regime: {e}")
+            return assignments[center_idx] if center_idx < len(assignments) else 0
     
     async def _find_best_single_algorithm(self, features: np.ndarray, initial_assignments: np.ndarray, 
                                         market_data: pd.DataFrame) -> Tuple[np.ndarray, float, str]:
@@ -1319,19 +1380,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             calinski_harabasz = quality_scores.get('calinski_harabasz', 0.0)
             davies_bouldin = quality_scores.get('davies_bouldin', 0.0)
             regime_balance = quality_scores.get('regime_balance', 0.0)
+            cv_score = quality_scores.get('cv_score', 0.0)
             
             # Normalize metrics to 0-1 range
             norm_silhouette = (silhouette + 1) / 2  # [-1, 1] -> [0, 1]
             norm_ch = min(calinski_harabasz / 1000, 1.0)  # Cap at 1.0
             norm_db = max(0, 1.0 / (1.0 + davies_bouldin))  # Invert and normalize
             norm_balance = regime_balance  # Already in [0, 1]
+            norm_cv = cv_score  # Already in [0, 1] range
             
-            # Weighted composite score
+            # Weighted composite score with CV score included
             composite_score = (
-                0.35 * norm_silhouette +      # Silhouette score (most important)
-                0.25 * norm_ch +             # Calinski-Harabasz score
-                0.25 * norm_db +             # Davies-Bouldin score (inverted)
-                0.15 * norm_balance          # Regime balance
+                0.30 * norm_silhouette +      # Silhouette score (most important)
+                0.20 * norm_ch +             # Calinski-Harabasz score
+                0.20 * norm_db +             # Davies-Bouldin score (inverted)
+                0.15 * norm_balance +        # Regime balance
+                0.15 * norm_cv               # Coefficient of Variation score
             )
             
             return composite_score
@@ -1414,7 +1478,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Print initial regime distribution
             self._print_regime_distribution(current_assignments, max_regime_size, min_regime_size, "Combined", features)
             
-            # Analyze TAS/NAS disagreement
+            # Analyze TAS/NAS disagreement and prioritize divergence samples
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
             if tas_assignments is not None and nas_assignments is not None:
                 self._analyze_tas_nas_disagreement(tas_assignments, nas_assignments)
@@ -1422,6 +1486,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Print individual TAS and NAS regime distributions with detailed analysis
                 self._print_regime_distribution(tas_assignments, max_regime_size, min_regime_size, "TAS", features)
                 self._print_regime_distribution(nas_assignments, max_regime_size, min_regime_size, "NAS", features)
+                
+                # Store divergence information for prioritized processing
+                self.tas_assignments = tas_assignments
+                self.nas_assignments = nas_assignments
 
             iteration = 0
             max_iterations = 100
@@ -1431,9 +1499,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 iteration += 1
                 improved = False
 
-                # Find frontier samples (neighboring samples between different regimes)
-                frontier_samples = self._identify_frontier_samples(current_assignments)
-                tprint(f"Found {len(frontier_samples)} frontier samples for iteration {iteration}", "INFO")
+                # Find frontier samples with divergence prioritization
+                frontier_samples = self._identify_frontier_samples_with_divergence_priority(current_assignments)
+                tprint(f"Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "INFO")
 
                 if len(frontier_samples) == 0:
                     tprint("🛑 STOPPING: No more frontier samples found - optimization complete", "SUCCESS")
@@ -1732,6 +1800,73 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             log_warning(f"Frontier sample identification failed: {e}")
+            return []
+    
+    def _identify_frontier_samples_with_divergence_priority(self, assignments: np.ndarray) -> List[int]:
+        """Identify frontier samples with prioritization of NAS/TAS divergence samples."""
+        try:
+            frontier_samples = []
+            divergence_samples = []
+            other_frontier_samples = []
+            n_samples = len(assignments)
+            
+            # Get TAS and NAS assignments for regime-space analysis
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
+            
+            for i in range(n_samples):
+                current_regime = assignments[i]
+                is_frontier = False
+                is_divergence = False
+                
+                # 1. TAS/NAS disagreement (highest priority)
+                if tas_assignments is not None and nas_assignments is not None:
+                    if i < len(tas_assignments) and i < len(nas_assignments):
+                        tas_regime = tas_assignments[i]
+                        nas_regime = nas_assignments[i]
+                        
+                        # Direct disagreement
+                        if tas_regime != nas_regime:
+                            is_divergence = True
+                            is_frontier = True
+                        # Current regime differs from both TAS and NAS
+                        elif current_regime != tas_regime and current_regime != nas_regime:
+                            is_divergence = True
+                            is_frontier = True
+                        # Partial disagreement
+                        elif (current_regime == tas_regime and current_regime != nas_regime) or \
+                             (current_regime == nas_regime and current_regime != tas_regime):
+                            is_divergence = True
+                            is_frontier = True
+                
+                # 2. Feature-space neighbors (lower priority)
+                if not is_frontier:
+                    feature_frontier = self._is_feature_space_frontier(i, current_regime)
+                    if feature_frontier:
+                        is_frontier = True
+                
+                # Categorize frontier samples
+                if is_frontier:
+                    if is_divergence:
+                        divergence_samples.append(i)
+                    else:
+                        other_frontier_samples.append(i)
+            
+            # Prioritize divergence samples first, then other frontier samples
+            frontier_samples = divergence_samples + other_frontier_samples
+            
+            # Detailed analysis
+            tas_nas_count = len(divergence_samples)
+            feature_count = len(other_frontier_samples)
+            
+            tprint(f"Divergence-prioritized frontier analysis - TAS/NAS disagreement: {tas_nas_count}, Feature-space: {feature_count}, Total: {len(frontier_samples)}", "INFO")
+            
+            if len(divergence_samples) > 0:
+                tprint(f"🎯 Prioritizing {len(divergence_samples)} divergence samples for regime optimization", "SUCCESS")
+            
+            return frontier_samples
+            
+        except Exception as e:
+            log_warning(f"Divergence-prioritized frontier sample identification failed: {e}")
             return []
     
     

@@ -1263,7 +1263,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return nas_regime
 
             # Strategy 2: Use local neighborhood analysis
-            neighborhood_regime = self._get_local_neighborhood_regime(features, sample_idx)
+            working_assignments = None
+            if self.pipeline_state and isinstance(self.pipeline_state, dict):
+                working_assignments = self.pipeline_state.get('current_assignments')
+            if working_assignments is None:
+                working_assignments = tas_assignments
+
+            neighborhood_regime = self._get_local_neighborhood_regime(
+                features, working_assignments, sample_idx
+            )
             if neighborhood_regime is not None:
                 return neighborhood_regime
 
@@ -1318,10 +1326,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return 0.0
 
-    def _get_local_neighborhood_regime(self, features: np.ndarray, sample_idx: int) -> Optional[int]:
+    def _get_local_neighborhood_regime(self, features: np.ndarray, assignments: np.ndarray,
+                                       sample_idx: int) -> Optional[int]:
         """Get the most common regime in the local neighborhood."""
         try:
-            if sample_idx >= len(features):
+            if assignments is None or sample_idx >= len(features) or sample_idx >= len(assignments):
                 return None
 
             sample_features = features[sample_idx]
@@ -1341,7 +1350,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Count regime frequencies in neighborhood
             regime_counts = {}
             for idx in nearest_indices:
-                regime = self._get_regime_for_sample(idx)
+                regime = self._get_regime_for_sample(idx, assignments)
                 regime_counts[regime] = regime_counts.get(regime, 0) + 1
 
             if regime_counts:
@@ -1596,7 +1605,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Regime stability calculation failed: {e}")
             return 0.5
     
-    async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray, 
+    def _update_pipeline_current_assignments(self, assignments: np.ndarray) -> None:
+        """Ensure the pipeline state tracks the working regime assignments."""
+        try:
+            if self.pipeline_state is None:
+                self.pipeline_state = {}
+            self.pipeline_state['current_assignments'] = assignments
+        except Exception as e:
+            log_warning(f"Failed to update pipeline current assignments: {e}")
+
+    async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray,
                                          market_data: pd.DataFrame) -> np.ndarray:
         """Progressive regime flipping optimization with frontier samples and batch processing."""
         try:
@@ -1604,6 +1622,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_info("Starting progressive regime flipping with frontier samples")
 
             current_assignments = assignments.copy()
+            self._update_pipeline_current_assignments(current_assignments)
             n_samples = len(assignments)
             n_regimes = len(set(assignments))
 
@@ -1722,6 +1741,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             tprint(f"Progressive regime flipping completed - {iteration} iterations", "SUCCESS")
 
+            self._update_pipeline_current_assignments(current_assignments)
             return current_assignments
 
         except Exception as e:
@@ -1919,7 +1939,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tas_nas_frontier = self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, current_regime)
                 
                 # 2. Feature-space neighbors (samples close in feature space but different regimes)
-                feature_frontier = self._is_feature_space_frontier(i, current_regime)
+                feature_frontier = self._is_feature_space_frontier(i, current_regime, assignments)
                 
                 # Sample is frontier if it's a frontier in regime-space OR feature-space
                 if tas_nas_frontier or feature_frontier:
@@ -1929,8 +1949,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     frontier_samples.append(i)
             
             # Detailed frontier analysis
-            tas_nas_count = sum(1 for i in range(n_samples) if self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, assignments[i]))
-            feature_count = sum(1 for i in range(n_samples) if self._is_feature_space_frontier(i, assignments[i]))
+            tas_nas_count = sum(
+                1
+                for i in range(n_samples)
+                if self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, assignments[i])
+            )
+            feature_count = sum(
+                1
+                for i in range(n_samples)
+                if self._is_feature_space_frontier(i, assignments[i], assignments)
+            )
             
             tprint(f"Frontier analysis - TAS/NAS disagreement: {tas_nas_count}, Feature-space: {feature_count}, Total: {len(frontier_samples)}", "INFO")
             
@@ -1972,12 +2000,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"TAS/NAS frontier check failed: {e}")
             return False
     
-    def _is_feature_space_frontier(self, sample_idx: int, current_regime: int) -> bool:
+    def _is_feature_space_frontier(self, sample_idx: int, current_regime: int,
+                                   assignments: np.ndarray) -> bool:
         """Check if sample is on feature-space frontier using efficient nearest neighbor approach."""
         try:
             # Get current features
             features = self._get_current_features()
-            if features is None or sample_idx >= len(features):
+            if features is None or assignments is None:
+                return False
+
+            if sample_idx >= len(features) or sample_idx >= len(assignments):
+                return False
+
+            if len(assignments) != len(features):
+                log_warning(
+                    "Assignment and feature lengths differ during frontier detection; skipping sample."
+                )
                 return False
 
             current_features = features[sample_idx]
@@ -1996,7 +2034,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 other_features = features[other_sample_idx]
                 distance = np.linalg.norm(current_features - other_features)
                 distances.append(distance)
-                regimes.append(self._get_regime_for_sample(other_sample_idx))
+                regimes.append(self._get_regime_for_sample(other_sample_idx, assignments))
 
             if len(distances) < 10:  # Need minimum neighbors
                 return False
@@ -2090,14 +2128,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"   ❌ Error getting assignments: {e}", "ERROR")
             return None, None
     
-    def _get_regime_for_sample(self, sample_idx: int) -> int:
+    def _get_regime_for_sample(self, sample_idx: int, assignments: Optional[np.ndarray]) -> int:
         """Get regime assignment for a specific sample."""
         try:
-            if self.pipeline_state:
+            if assignments is not None:
+                if 0 <= sample_idx < len(assignments):
+                    return int(assignments[sample_idx])
+                raise IndexError(
+                    f"Sample index {sample_idx} out of bounds for assignments of length {len(assignments)}"
+                )
+
+            if self.pipeline_state and isinstance(self.pipeline_state, dict):
                 current_assignments = self.pipeline_state.get('current_assignments')
                 if current_assignments is not None and sample_idx < len(current_assignments):
-                    return current_assignments[sample_idx]
-            return 0  # Default regime
+                    return int(current_assignments[sample_idx])
+
+            raise ValueError("No assignments available for regime lookup")
         except Exception as e:
             log_warning(f"Failed to get regime for sample {sample_idx}: {e}")
             return 0
@@ -2794,6 +2840,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         # If improvement is significant, accept the flip
                         if new_score > current_score + improvement_threshold:
                             current_assignments = test_assignments
+                            self._update_pipeline_current_assignments(current_assignments)
                             current_score = new_score
                             improved = True
                             

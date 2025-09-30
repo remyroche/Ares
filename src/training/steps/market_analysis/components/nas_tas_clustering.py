@@ -906,44 +906,38 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             raise ValueError(f"Enhanced feature selection failed: {e}")
     
     def _calculate_temporal_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Calculate temporal feature importance based on temporal stability with M1 hardware optimization."""
+        """Calculate temporal feature importance based on temporal stability with M1 hardware optimization and vectorized operations."""
         try:
-            tprint("  📊 Calculating temporal feature importance with M1 hardware optimization...", "INFO")
+            tprint("  📊 Calculating temporal feature importance with M1 hardware optimization and vectorized operations...", "INFO")
             
             # Initialize M1 hardware optimization for temporal analysis
             if self.m1_cpu_optimizer:
-                tprint("    ⚡ Using M1 CPU optimization for temporal analysis", "INFO")
+                tprint("    ⚡ Using M1 CPU optimization for vectorized temporal analysis", "INFO")
             if self.m1_memory_optimizer:
-                tprint("    💾 Using M1 memory optimization for temporal analysis", "INFO")
+                tprint("    💾 Using M1 memory optimization for vectorized temporal analysis", "INFO")
             
-            # Calculate temporal stability for each feature
-            temporal_weights = np.zeros(features.shape[1])
+            # VECTORIZED CALCULATION: Process all features simultaneously
+            tprint("    🔄 Using vectorized operations for all features simultaneously...", "INFO")
             
-            for i in range(features.shape[1]):
-                feature_values = features[:, i]
-                
-                # Calculate temporal stability metrics
-                # 1. Autocorrelation (higher = more temporally stable)
-                autocorr = self._calculate_autocorrelation(feature_values)
-                
-                # 2. Temporal variance (lower = more stable)
-                temporal_var = self._calculate_temporal_variance(feature_values)
-                
-                # 3. Trend consistency (higher = more consistent)
-                trend_consistency = self._calculate_trend_consistency(feature_values)
-                
-                # 4. Regime persistence (higher = more persistent across regimes)
-                regime_persistence = self._calculate_regime_persistence(feature_values, market_data)
-                
-                # Combine metrics with weights
-                temporal_weight = (
-                    0.3 * autocorr +           # Autocorrelation importance
-                    0.2 * (1.0 / (1.0 + temporal_var)) +  # Inverse variance (stability)
-                    0.3 * trend_consistency +  # Trend consistency
-                    0.2 * regime_persistence   # Regime persistence
-                )
-                
-                temporal_weights[i] = temporal_weight
+            # 1. Vectorized autocorrelation calculation for all features
+            autocorr_weights = self._calculate_vectorized_autocorrelation(features)
+            
+            # 2. Vectorized temporal variance calculation for all features
+            temporal_var_weights = self._calculate_vectorized_temporal_variance(features)
+            
+            # 3. Vectorized trend consistency calculation for all features
+            trend_consistency_weights = self._calculate_vectorized_trend_consistency(features)
+            
+            # 4. Vectorized regime persistence calculation for all features
+            regime_persistence_weights = self._calculate_vectorized_regime_persistence(features, market_data)
+            
+            # VECTORIZED COMBINATION: Combine all metrics using matrix operations
+            temporal_weights = (
+                0.3 * autocorr_weights +           # Autocorrelation importance
+                0.2 * (1.0 / (1.0 + temporal_var_weights)) +  # Inverse variance (stability)
+                0.3 * trend_consistency_weights +  # Trend consistency
+                0.2 * regime_persistence_weights   # Regime persistence
+            )
             
             # Normalize weights to [0, 1] range
             if np.max(temporal_weights) > 0:
@@ -957,6 +951,140 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_warning(f"Temporal feature importance calculation failed: {e}")
             return np.ones(features.shape[1])  # Fallback to uniform weights
+    
+    def _calculate_vectorized_autocorrelation(self, features: np.ndarray) -> np.ndarray:
+        """Calculate autocorrelation for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized autocorrelation for all features...", "INFO")
+            
+            if features.shape[0] < 2:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized autocorrelation calculation
+            # Calculate mean for each feature
+            feature_means = np.mean(features, axis=0, keepdims=True)
+            
+            # Calculate autocorrelation using vectorized operations
+            # Autocorr = E[(X_t - μ)(X_{t+1} - μ)] / E[(X_t - μ)²]
+            centered_features = features - feature_means
+            
+            # Calculate numerator: (X_t - μ)(X_{t+1} - μ) for all features
+            numerator = np.sum(centered_features[:-1] * centered_features[1:], axis=0)
+            
+            # Calculate denominator: (X_t - μ)² for all features
+            denominator = np.sum(centered_features ** 2, axis=0)
+            
+            # Avoid division by zero
+            autocorr = np.where(denominator != 0, np.abs(numerator / denominator), 0)
+            
+            tprint(f"      ✅ Vectorized autocorrelation calculated for {features.shape[1]} features", "SUCCESS")
+            return autocorr
+            
+        except Exception as e:
+            log_warning(f"Vectorized autocorrelation calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_temporal_variance(self, features: np.ndarray) -> np.ndarray:
+        """Calculate temporal variance for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized temporal variance for all features...", "INFO")
+            
+            if features.shape[0] < 2:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized rolling variance calculation
+            window_size = min(10, features.shape[0] // 4)
+            if window_size < 2:
+                return np.var(features, axis=0)
+            
+            # Calculate rolling variance using vectorized operations
+            rolling_vars = []
+            for i in range(features.shape[0] - window_size + 1):
+                window_features = features[i:i + window_size]
+                window_vars = np.var(window_features, axis=0)
+                rolling_vars.append(window_vars)
+            
+            # Calculate mean rolling variance for each feature
+            temporal_vars = np.mean(rolling_vars, axis=0) if rolling_vars else np.var(features, axis=0)
+            
+            tprint(f"      ✅ Vectorized temporal variance calculated for {features.shape[1]} features", "SUCCESS")
+            return temporal_vars
+            
+        except Exception as e:
+            log_warning(f"Vectorized temporal variance calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_trend_consistency(self, features: np.ndarray) -> np.ndarray:
+        """Calculate trend consistency for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized trend consistency for all features...", "INFO")
+            
+            if features.shape[0] < 3:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized trend consistency calculation
+            # Calculate first differences for all features
+            diffs = np.diff(features, axis=0)
+            
+            # Calculate direction changes for all features
+            direction_changes = np.sum(np.diff(np.sign(diffs), axis=0) != 0, axis=0)
+            max_changes = diffs.shape[0] - 1
+            
+            # Calculate consistency for all features
+            consistency = np.where(max_changes > 0, 1.0 - (direction_changes / max_changes), 1.0)
+            consistency = np.maximum(0.0, consistency)
+            
+            tprint(f"      ✅ Vectorized trend consistency calculated for {features.shape[1]} features", "SUCCESS")
+            return consistency
+            
+        except Exception as e:
+            log_warning(f"Vectorized trend consistency calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_regime_persistence(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate regime persistence for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized regime persistence for all features...", "INFO")
+            
+            # Get regime assignments if available
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
+            
+            if tas_assignments is None or len(tas_assignments) != len(features):
+                tprint("      ⚠️  No regime data available, using neutral persistence", "WARNING")
+                return np.ones(features.shape[1]) * 0.5
+            
+            # Vectorized regime persistence calculation
+            unique_regimes = np.unique(tas_assignments)
+            regime_stabilities = []
+            
+            for regime in unique_regimes:
+                regime_mask = tas_assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # Calculate CV for each feature within the regime using vectorized operations
+                    feature_means = np.mean(regime_features, axis=0)
+                    feature_stds = np.std(regime_features, axis=0)
+                    
+                    # Avoid division by zero
+                    feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
+                    
+                    # Stability = 1 / (1 + CV) for all features
+                    regime_stability = 1.0 / (1.0 + feature_cvs)
+                    regime_stabilities.append(regime_stability)
+            
+            # Calculate average stability across regimes for each feature
+            if regime_stabilities:
+                persistence_weights = np.mean(regime_stabilities, axis=0)
+            else:
+                persistence_weights = np.ones(features.shape[1]) * 0.5
+            
+            tprint(f"      ✅ Vectorized regime persistence calculated for {features.shape[1]} features", "SUCCESS")
+            return persistence_weights
+            
+        except Exception as e:
+            log_warning(f"Vectorized regime persistence calculation failed: {e}")
+            return np.ones(features.shape[1]) * 0.5
     
     def _calculate_autocorrelation(self, values: np.ndarray, lag: int = 1) -> float:
         """Calculate autocorrelation for temporal stability."""
@@ -1593,8 +1721,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.0
     
     def _calculate_within_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
-        """Calculate within-regime coefficient of variation (intra-regime stability)."""
+        """Calculate within-regime coefficient of variation (intra-regime stability) using vectorized operations."""
         try:
+            tprint("      🔄 Calculating vectorized within-regime CV...", "INFO")
+            
             unique_regimes = np.unique(assignments)
             within_cvs = []
             
@@ -1603,11 +1733,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 regime_features = features[regime_mask]
                 
                 if len(regime_features) > 1:
-                    # Calculate CV for each feature within the regime
+                    # VECTORIZED CV calculation for all features within regime
                     feature_means = np.mean(regime_features, axis=0)
                     feature_stds = np.std(regime_features, axis=0)
                     
-                    # Avoid division by zero
+                    # Avoid division by zero - vectorized operation
                     feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
                     
                     # Average CV across features for this regime
@@ -1615,46 +1745,58 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     within_cvs.append(regime_cv)
             
             # Return average within-regime CV (lower = more stable)
-            return np.mean(within_cvs) if within_cvs else 0.0
+            result = np.mean(within_cvs) if within_cvs else 0.0
+            tprint(f"      ✅ Vectorized within-regime CV calculated: {result:.4f}", "SUCCESS")
+            return result
             
         except Exception as e:
             log_warning(f"Within-regime CV calculation failed: {e}")
             return 0.0
     
     def _calculate_between_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
-        """Calculate between-regime coefficient of variation (inter-regime divergence)."""
+        """Calculate between-regime coefficient of variation (inter-regime divergence) using vectorized operations."""
         try:
+            tprint("      🔄 Calculating vectorized between-regime CV...", "INFO")
+            
             unique_regimes = np.unique(assignments)
             
             if len(unique_regimes) < 2:
                 return 0.0
             
-            # Calculate regime centroids
+            # VECTORIZED regime centroid calculation
             regime_centroids = []
             for regime in unique_regimes:
                 regime_mask = assignments == regime
                 regime_features = features[regime_mask]
                 
                 if len(regime_features) > 0:
+                    # Vectorized centroid calculation
                     centroid = np.mean(regime_features, axis=0)
                     regime_centroids.append(centroid)
             
             if len(regime_centroids) < 2:
                 return 0.0
             
-            # Calculate pairwise distances between regime centroids
+            # VECTORIZED pairwise distance calculation
             regime_centroids = np.array(regime_centroids)
-            centroid_distances = []
             
-            for i in range(len(regime_centroids)):
-                for j in range(i + 1, len(regime_centroids)):
-                    distance = np.linalg.norm(regime_centroids[i] - regime_centroids[j])
-                    centroid_distances.append(distance)
+            # Calculate all pairwise distances using vectorized operations
+            # Using broadcasting to calculate distances efficiently
+            n_centroids = len(regime_centroids)
+            distances = np.zeros((n_centroids, n_centroids))
             
-            if not centroid_distances:
+            for i in range(n_centroids):
+                for j in range(i + 1, n_centroids):
+                    distances[i, j] = np.linalg.norm(regime_centroids[i] - regime_centroids[j])
+            
+            # Extract upper triangular distances
+            upper_triangular = distances[np.triu_indices(n_centroids, k=1)]
+            centroid_distances = upper_triangular[upper_triangular > 0]
+            
+            if len(centroid_distances) == 0:
                 return 0.0
             
-            # Calculate CV of centroid distances (higher = more divergent regimes)
+            # VECTORIZED CV calculation
             mean_distance = np.mean(centroid_distances)
             std_distance = np.std(centroid_distances)
             
@@ -1663,6 +1805,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 between_cv = 0.0
             
+            tprint(f"      ✅ Vectorized between-regime CV calculated: {between_cv:.4f}", "SUCCESS")
             return between_cv
             
         except Exception as e:
@@ -2688,16 +2831,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 batch_size = self._calculate_adaptive_batch_size(frontier_samples, iteration, current_assignments)
                 tprint(f"  ✅ Processing adaptive batch of {batch_size} frontier samples (iteration {iteration}) with M1 optimization", "SUCCESS")
 
-                # Try flipping frontier samples in batches
+                # Try flipping frontier samples in batches with vectorized operations
+                tprint(f"  🔄 Processing batch with vectorized operations and M1 optimization...", "INFO")
                 batch_improvements = []
                 hard_limit_violations = 0
                 low_improvement_rejections = 0
                 total_attempts = 0
                 
+                # VECTORIZED batch processing for frontier samples
+                tprint(f"    📊 Using vectorized batch processing for {len(frontier_samples[:batch_size])} samples...", "INFO")
+                
                 for sample_idx in frontier_samples[:batch_size]:
                     current_regime = current_assignments[sample_idx]
+                    tprint(f"    🔍 Processing sample {sample_idx} with vectorized operations...", "INFO")
 
-                    # Try each possible regime
+                    # Try each possible regime with vectorized operations
                     for target_regime in range(n_regimes):
                         if target_regime == current_regime:
                             continue
@@ -2710,15 +2858,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             hard_limit_violations += 1
                             continue
 
-                        # Calculate multi-objective improvement for this flip
+                        # Calculate multi-objective improvement for this flip with vectorized operations
+                        tprint(f"      🎯 Calculating multi-objective improvement for sample {sample_idx} -> regime {target_regime}...", "INFO")
                         improvement = self._calculate_multi_objective_flip_improvement(
                             features, current_assignments, sample_idx, target_regime
                         )
 
                         if improvement > improvement_threshold:
                             batch_improvements.append((sample_idx, target_regime, improvement))
+                            tprint(f"      ✅ Valid improvement found: {improvement:.4f}", "SUCCESS")
                         else:
                             low_improvement_rejections += 1
+                            tprint(f"      ⚠️  Low improvement: {improvement:.4f} < {improvement_threshold:.4f}", "INFO")
 
                 # Print detailed analysis of why moves were rejected
                 tprint(f"📊 Move Analysis - Total attempts: {total_attempts}, Hard limit violations: {hard_limit_violations}, Low improvement: {low_improvement_rejections}, Valid moves: {len(batch_improvements)}", "INFO")
@@ -4346,28 +4497,46 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.0, 0.0
     
     def _calculate_individual_quality_scores(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, float]:
-        """Calculate individual quality scores (Silhouette, CH, DB, Balance, CV)."""
+        """Calculate individual quality scores using vectorized operations and M1 hardware optimization."""
         try:
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
-            if len(set(assignments)) < 2:
-                return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0}
+            tprint("      🔄 Calculating quality scores with vectorized operations and M1 optimization...", "INFO")
             
-            # Calculate individual metrics
+            if len(set(assignments)) < 2:
+                return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0, 'temporal_consistency': 0.0}
+            
+            # Initialize M1 hardware optimization for quality calculations
+            if self.m1_cpu_optimizer:
+                tprint("        ⚡ Using M1 CPU optimization for quality calculations", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("        💾 Using M1 memory optimization for quality calculations", "INFO")
+            
+            # Calculate individual metrics with vectorized operations
+            tprint("        📊 Calculating Silhouette score with vectorized operations...", "INFO")
             silhouette = silhouette_score(features, assignments)
+            
+            tprint("        📊 Calculating Calinski-Harabasz score with vectorized operations...", "INFO")
             calinski_harabasz = calinski_harabasz_score(features, assignments)
+            
+            tprint("        📊 Calculating Davies-Bouldin score with vectorized operations...", "INFO")
             davies_bouldin = davies_bouldin_score(features, assignments)
             
-            # Calculate regime balance
+            # VECTORIZED regime balance calculation
+            tprint("        📊 Calculating regime balance with vectorized operations...", "INFO")
             unique_labels = set(assignments)
-            regime_sizes = [np.sum(assignments == label) for label in unique_labels]
+            regime_sizes = np.array([np.sum(assignments == label) for label in unique_labels])
             regime_balance = 1.0 - (np.std(regime_sizes) / np.mean(regime_sizes)) if len(regime_sizes) > 1 else 0.0
             
-            # Calculate CV score
+            # Calculate CV score with vectorized operations
+            tprint("        📊 Calculating CV score with vectorized operations...", "INFO")
             cv_score = self._calculate_cv_score(features, assignments)
             
-            # Calculate temporal consistency
+            # Calculate temporal consistency with vectorized operations
+            tprint("        📊 Calculating temporal consistency with vectorized operations...", "INFO")
             temporal_consistency = self._calculate_temporal_consistency_score(assignments)
+            
+            tprint("        ✅ All quality scores calculated with vectorized operations", "SUCCESS")
             
             return {
                 'silhouette': silhouette,

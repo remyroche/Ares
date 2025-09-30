@@ -179,6 +179,7 @@ class TASRegimeResult:
     execution_time: float = 0.0
     metadata: Dict[str, Any] = None
     error_message: Optional[str] = None
+    regime_persistence_summary: Optional[Dict[str, Any]] = None
 
 
 class ProcessedDataSummary:
@@ -768,112 +769,58 @@ class TASRegimeDetector:
 
             chunked_enabled = self._should_use_chunked_detection(market_data)
 
-            if chunked_enabled:
-                tprint_info("🧠 [TAS_TRAINING] Activating chunked regime detection pipeline", color="cyan")
-                chunk_context = self._detect_regimes_chunked(market_data, timestamps, optimize_performance)
-
-                processed_data = chunk_context['processed_data']
-                processed_timestamps = chunk_context.get('processed_timestamps')
-                regime_predictions = chunk_context['regime_predictions']
-                regime_probabilities = chunk_context['regime_probabilities']
-                tree_results = chunk_context['tree_results']
-                clustering_time = chunk_context['clustering_time']
-                data_prep_time = chunk_context['data_prep_time']
-                timeframe_details = chunk_context['timeframe_details']
-
-                self.performance_metrics['data_preparation_time'] = data_prep_time
+            clustering_start = time.time()
+            try:
+                clustering_output = self._perform_tree_based_clustering(processed_data)
+                regime_predictions = clustering_output['regime_predictions']
+                regime_probabilities = clustering_output['regime_probabilities']
+                base_tree_model = clustering_output.get('model')
+                scaled_features = clustering_output.get('scaled_data', processed_data)
+                synthetic_targets = clustering_output.get('synthetic_targets')
+                clustering_time = time.time() - clustering_start
                 self.performance_metrics['regime_detection_time'] = clustering_time
+                
+                # Fast fail validation for clustering results
+                if len(regime_predictions) == 0 or len(regime_probabilities) == 0:
+                    raise ValueError("Clustering returned empty results")
+                if np.any(np.isnan(regime_predictions)) or np.any(np.isnan(regime_probabilities)):
+                    raise ValueError("Clustering results contain NaN values")
+                if np.any(np.isinf(regime_probabilities)):
+                    raise ValueError("Clustering probabilities contain infinite values")
+                    
+            except Exception as clustering_error:
+                self.logger.error(f"TAS clustering failed: {clustering_error}")
+                tprint_error(f"❌ [TAS_TRAINING] TAS clustering failed - fast fail")
+                raise ValueError(f"TAS clustering failed: {clustering_error}")
 
-                unique_regimes = len(np.unique(regime_predictions)) if len(regime_predictions) > 0 else 0
-                regime_distribution = np.bincount(regime_predictions) if len(regime_predictions) > 0 else np.array([])
+            unique_regimes = len(np.unique(regime_predictions))
+            regime_distribution = np.bincount(regime_predictions)
+            
+            tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {unique_regimes} regimes", color="green")
+            tprint_performance("Clustering execution", clustering_time, color="blue")
+            tprint_debug(f"   Unique regime distribution: {regime_distribution}")
+            tprint_debug(f"   Regime probabilities shape: {regime_probabilities.shape}")
+            tprint_debug(f"   Regime probabilities range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}")
+            
+            # Log regime statistics
+            for i, count in enumerate(regime_distribution):
+                percentage = (count / len(regime_predictions)) * 100
+                tprint_debug(f"   Regime {i}: {count} samples ({percentage:.1f}%)")
 
-                tprint(f"✅ [TAS_TRAINING] Chunked clustering completed across {len(timeframe_details)} timeframes", color="green")
-                tprint_performance("Chunked clustering execution", clustering_time, color="blue")
-                tprint_debug(f"   Aggregated regime count: {unique_regimes}")
-                tprint_debug(f"   Aggregated probability shape: {regime_probabilities.shape}")
+            # Create tree_results for simplified path
+            tree_performance_metrics = clustering_output.get('performance_metrics') or {
+                'method': 'simplified_clustering'
+            }
 
-                for timeframe, details in timeframe_details.items():
-                    tprint_debug(
-                        f"   [{timeframe}] chunks={details['chunks']} samples={details['samples']}",
-                    )
+            tree_results = {
+                'regime_predictions': regime_predictions,
+                'regime_probabilities': regime_probabilities,
+                'performance_metrics': tree_performance_metrics,
+                'model': base_tree_model,
+                'scaled_features': scaled_features,
+                'synthetic_targets': synthetic_targets
+            }
 
-                if len(regime_probabilities) > 0:
-                    tprint_debug(
-                        f"   Probability range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}"
-                    )
-
-            else:
-                # Prepare data with basic processing
-                tprint("🔧 [TAS_TRAINING] Preparing data for tree-based analysis", color="cyan")
-                data_prep_start = time.time()
-                processed_data, processed_timestamps = self._prepare_and_enhance_data(
-                    market_data, timestamps, enable_patchtst=False
-                )
-                data_prep_time = time.time() - data_prep_start
-                self.performance_metrics['data_preparation_time'] = data_prep_time
-
-                tprint(
-                    f"📊 [TAS_TRAINING] Data prepared: {processed_data.shape[0]} samples, {processed_data.shape[1]} features",
-                    color="green"
-                )
-                tprint_performance("Data preparation", data_prep_time, color="blue")
-                tprint_debug(f"Processed data shape: {processed_data.shape}")
-                tprint_debug(f"Data type: {processed_data.dtype}")
-                tprint_debug(f"Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
-
-                # Step 1: Simple regime clustering
-                self.logger.info("🎯 Performing simple regime clustering...")
-                tprint("🎯 [TAS_TRAINING] Performing regime clustering", color="green")
-                tprint_debug(f"   Data shape: {processed_data.shape}")
-                tprint_debug(f"   Target regimes: {self.config.n_regimes}")
-                tprint_debug(f"   Tree depth: {self.config.tree_depth}")
-                tprint_debug(f"   Number of estimators: {self.config.n_estimators}")
-
-                clustering_start = time.time()
-                try:
-                    regime_predictions, regime_probabilities = self._perform_tree_based_clustering(processed_data)
-                    clustering_time = time.time() - clustering_start
-                    self.performance_metrics['regime_detection_time'] = clustering_time
-
-                    # Fast fail validation for clustering results
-                    if len(regime_predictions) == 0 or len(regime_probabilities) == 0:
-                        raise ValueError("Clustering returned empty results")
-                    if np.any(np.isnan(regime_predictions)) or np.any(np.isnan(regime_probabilities)):
-                        raise ValueError("Clustering results contain NaN values")
-                    if np.any(np.isinf(regime_probabilities)):
-                        raise ValueError("Clustering probabilities contain infinite values")
-
-                except Exception as clustering_error:
-                    self.logger.error(f"TAS clustering failed: {clustering_error}")
-                    tprint_error(f"❌ [TAS_TRAINING] TAS clustering failed - fast fail")
-                    raise ValueError(f"TAS clustering failed: {clustering_error}")
-
-                unique_regimes = len(np.unique(regime_predictions))
-                regime_distribution = np.bincount(regime_predictions)
-
-                tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {unique_regimes} regimes", color="green")
-                tprint_performance("Clustering execution", clustering_time, color="blue")
-                tprint_debug(f"   Unique regime distribution: {regime_distribution}")
-                tprint_debug(f"   Regime probabilities shape: {regime_probabilities.shape}")
-                tprint_debug(
-                    f"   Regime probabilities range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}"
-                )
-
-                # Log regime statistics
-                for i, count in enumerate(regime_distribution):
-                    percentage = (count / len(regime_predictions)) * 100
-                    tprint_debug(f"   Regime {i}: {count} samples ({percentage:.1f}%)")
-
-                # Create tree_results for simplified path
-                tree_results = {
-                    'regime_predictions': regime_predictions,
-                    'regime_probabilities': regime_probabilities,
-                    'performance_metrics': {
-                        'silhouette_score': 0.6,  # Default value
-                        'calinski_harabasz_score': 100.0,  # Default value
-                        'method': 'simplified_clustering'
-                    }
-                }
 
             # Skip complex validation and enhancement steps
             statistical_results = tree_results
@@ -885,35 +832,54 @@ class TASRegimeDetector:
             
             eval_start = time.time()
 
-            # Simple evaluation scores
-            tprint_debug("   Generating economic significance scores...")
-            economic_scores = np.random.uniform(0.5, 0.9, len(processed_data))
-            tprint_debug(f"   Economic scores range: {np.min(economic_scores):.3f} - {np.max(economic_scores):.3f}")
-            tprint_debug(f"   Economic scores mean: {np.mean(economic_scores):.3f}")
+            evaluation_summary = self._evaluate_regime_with_cross_validation(
+                tree_results.get('scaled_features', processed_data),
+                tree_results.get('synthetic_targets'),
+                tree_results.get('model')
+            )
 
-            tprint_debug("   Generating trading viability scores...")
-            trading_scores = np.random.uniform(0.5, 0.9, len(processed_data))
-            tprint_debug(f"   Trading scores range: {np.min(trading_scores):.3f} - {np.max(trading_scores):.3f}")
-            tprint_debug(f"   Trading scores mean: {np.mean(trading_scores):.3f}")
+            nested_cv_summary = self._run_nested_cv_with_hpo(
+                tree_results.get('scaled_features', processed_data),
+                tree_results.get('synthetic_targets'),
+                tree_results.get('model')
+            )
 
-            tprint_debug("   Generating regime stability scores...")
-            stability_scores = np.random.uniform(0.6, 0.9, len(processed_data))
-            tprint_debug(f"   Stability scores range: {np.min(stability_scores):.3f} - {np.max(stability_scores):.3f}")
-            tprint_debug(f"   Stability scores mean: {np.mean(stability_scores):.3f}")
+            oos_stability_summary = self._compare_in_sample_vs_oos_stability(
+                tree_results.get('scaled_features', processed_data),
+                tree_results.get('synthetic_targets'),
+                nested_cv_summary.get('best_params'),
+                len(np.unique(regime_predictions))
+            )
+
+            economic_scores = self._create_score_array(
+                len(processed_data),
+                evaluation_summary.get('cv_mean_accuracy', 0.0)
+            )
+
+            trading_scores = self._create_score_array(
+                len(processed_data),
+                nested_cv_summary.get('mean_test_accuracy', evaluation_summary.get('cv_mean_accuracy', 0.0))
+            )
+
+            stability_scores = self._calculate_regime_stability({
+                'regime_predictions': patchtst_results['regime_predictions']
+            })
 
             eval_time = time.time() - eval_start
             self.performance_metrics['evaluation_time'] = eval_time
-            
-            tprint_success("✅ [TAS_TRAINING] Evaluation scores calculated", color="green")
+
+            tprint_success("✅ [TAS_TRAINING] Cross-validation evaluation completed", color="green")
             tprint_performance("Evaluation", eval_time, color="blue")
 
-            # Simple transition probabilities
-            tprint_debug("   Calculating regime transition probabilities...")
-            n_regimes = len(np.unique(patchtst_results['regime_predictions']))
-            transition_probs = np.eye(n_regimes) * 0.8 + np.ones((n_regimes, n_regimes)) * 0.2 / n_regimes
-            tprint_debug(f"   Transition matrix shape: {transition_probs.shape}")
-            tprint_debug(f"   Self-transition probability: {np.mean(np.diag(transition_probs)):.3f}")
-            tprint_debug(f"   Cross-transition probability: {np.mean(transition_probs[~np.eye(transition_probs.shape[0], dtype=bool)]):.3f}")
+            transition_probs = self._calculate_transition_matrix(
+                patchtst_results['regime_predictions'],
+                len(np.unique(patchtst_results['regime_predictions']))
+            )
+
+            persistence_summary = self._compute_regime_persistence_summary(
+                patchtst_results['regime_predictions'],
+                len(np.unique(patchtst_results['regime_predictions']))
+            )
 
             # Skip uncertainty and meta-learning
             uncertainty_estimates = None
@@ -960,6 +926,10 @@ class TASRegimeDetector:
                     'optimization_enabled': optimize_performance,
                     'patchtst_enhancement': enable_patchtst_enhancement,
                     'performance_metrics': self.performance_metrics,
+                    'cross_validation': evaluation_summary,
+                    'nested_cv': nested_cv_summary,
+                    'oos_validation': oos_stability_summary,
+                    'persistence_summary': persistence_summary,
                     'tool_integration': {
                         'hardware': HARDWARE_AVAILABLE,
                         'matrix_ops': MATRIX_OPS_AVAILABLE,
@@ -967,7 +937,8 @@ class TASRegimeDetector:
                         'patchtst': PATCHTST_AVAILABLE,
                         'tree': TREE_AVAILABLE
                     }
-                }
+                },
+                regime_persistence_summary=persistence_summary
             )
 
             if result.metadata is None:
@@ -1429,15 +1400,18 @@ class TASRegimeDetector:
                 return self._perform_advanced_tree_regime_discovery(data)
 
             # Always use tree-based clustering (no fallback)
-            labels, probabilities = self._perform_tree_based_clustering(data)
+            clustering_output = self._perform_tree_based_clustering(data)
 
-            # Performance metrics
-            performance_metrics = self._calculate_tree_performance_metrics(data, labels)
+            performance_metrics = clustering_output.get('performance_metrics') or \
+                self._calculate_tree_performance_metrics(data, clustering_output['regime_predictions'])
 
             return {
-                'regime_predictions': labels,
-                'regime_probabilities': probabilities,
+                'regime_predictions': clustering_output['regime_predictions'],
+                'regime_probabilities': clustering_output['regime_probabilities'],
                 'performance_metrics': performance_metrics,
+                'model': clustering_output.get('model'),
+                'scaled_data': clustering_output.get('scaled_data'),
+                'synthetic_targets': clustering_output.get('synthetic_targets'),
                 'method': 'tree_based_clustering'
             }
 
@@ -1445,12 +1419,13 @@ class TASRegimeDetector:
             self.logger.error(f"Tree regime discovery failed: {e}")
             raise ValueError(f"Tree regime discovery failed: {e}")
 
-    def _perform_tree_based_clustering(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _perform_tree_based_clustering(self, data: np.ndarray) -> Dict[str, Any]:
         """Perform simplified tree-based regime detection without clustering."""
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.preprocessing import StandardScaler
             from sklearn.metrics import silhouette_score
+            from sklearn.base import clone
 
             tprint_debug("   [REGIME_DETECTION] Starting tree-based regime detection...")
             tprint_debug(f"   Input data shape: {data.shape}")
@@ -1515,7 +1490,7 @@ class TASRegimeDetector:
             # Calculate probabilities based on tree confidence
             tprint_debug("   [REGIME_DETECTION] Calculating prediction probabilities...")
             probabilities = self._calculate_tree_probabilities(data, labels)
-            
+
             # Fast fail validation for probabilities
             if probabilities.shape[0] != len(labels):
                 raise ValueError(f"Probability shape mismatch: {probabilities.shape[0]} != {len(labels)}")
@@ -1528,9 +1503,22 @@ class TASRegimeDetector:
                 silhouette = silhouette_score(data_scaled, labels)
                 self.logger.info(f"Tree-based regime detection silhouette score: {silhouette:.3f}")
                 tprint_debug(f"   [REGIME_DETECTION] Silhouette score: {silhouette:.3f}")
+            else:
+                silhouette = None
 
             tprint_success("✅ [REGIME_DETECTION] Tree-based regime detection completed", color="green")
-            return labels, probabilities
+            performance_metrics = self._calculate_tree_performance_metrics(data_scaled, labels)
+            if silhouette is not None:
+                performance_metrics['silhouette_score'] = float(silhouette)
+
+            return {
+                'regime_predictions': labels,
+                'regime_probabilities': probabilities,
+                'performance_metrics': performance_metrics,
+                'model': clone(rf),
+                'scaled_data': data_scaled,
+                'synthetic_targets': initial_labels
+            }
 
         except Exception as e:
             self.logger.error(f"Tree-based regime detection failed: {e}")
@@ -1885,7 +1873,7 @@ class TASRegimeDetector:
         """Evaluate trading viability of detected regimes using position-aware analysis."""
         if self.position_analyzer is None:
             raise ValueError("Position analyzer not available. Cannot evaluate trading viability without proper ML models.")
-        
+
         try:
 
             # Use position-aware analyzer for trading viability
@@ -1948,6 +1936,392 @@ class TASRegimeDetector:
             self.logger.error(f"Position-aware trading viability evaluation failed: {e}")
             raise ValueError(f"Trading viability evaluation failed: {e}")
 
+
+    def _create_score_array(self, length: int, score: float) -> np.ndarray:
+        """Create a score array with safe fallbacks."""
+        try:
+            value = float(score)
+        except Exception:
+            value = 0.0
+        try:
+            return np.ones(length) * value
+        except Exception as e:
+            self.logger.warning(f"Score array creation failed: {e}")
+            return np.zeros(length)
+
+    def _calculate_transition_matrix(self, regime_predictions: np.ndarray, n_regimes: int) -> np.ndarray:
+        """Calculate transition matrix using unified matrix operations when available."""
+        try:
+            if regime_predictions is None or len(regime_predictions) == 0 or n_regimes <= 0:
+                return np.zeros((0, 0))
+
+            if self.matrix_ops and hasattr(self.matrix_ops, 'calculate_transition_probabilities'):
+                return self.matrix_ops.calculate_transition_probabilities(regime_predictions, n_regimes)
+
+            transition_matrix = np.zeros((n_regimes, n_regimes))
+            for i in range(len(regime_predictions) - 1):
+                current_regime = int(regime_predictions[i])
+                next_regime = int(regime_predictions[i + 1])
+                if 0 <= current_regime < n_regimes and 0 <= next_regime < n_regimes:
+                    transition_matrix[current_regime, next_regime] += 1
+
+            row_sums = transition_matrix.sum(axis=1, keepdims=True) + 1e-8
+            return transition_matrix / row_sums
+        except Exception as e:
+            self.logger.warning(f"Transition matrix calculation failed: {e}")
+            if n_regimes <= 0:
+                return np.zeros((0, 0))
+            return np.ones((n_regimes, n_regimes)) / max(n_regimes, 1)
+
+    def _compute_regime_persistence_summary(self, regime_predictions: np.ndarray, n_regimes: int) -> Dict[str, Any]:
+        """Compute persistence metrics based on rolling transition matrices."""
+        try:
+            if regime_predictions is None or len(regime_predictions) == 0 or n_regimes <= 0:
+                return {}
+
+            overall_matrix = self._calculate_transition_matrix(regime_predictions, n_regimes)
+            overall_persistence = float(np.mean(np.diag(overall_matrix))) if overall_matrix.size else 0.0
+
+            window_size = max(
+                min(len(regime_predictions), max(self.config.min_regime_samples, n_regimes * 2)),
+                n_regimes
+            )
+            step_size = max(1, window_size // 2)
+
+            rolling_scores: List[float] = []
+            rolling_windows: List[Tuple[int, int]] = []
+            rolling_matrices: List[np.ndarray] = []
+
+            if len(regime_predictions) >= window_size:
+                for start in range(0, len(regime_predictions) - window_size + 1, step_size):
+                    end = start + window_size
+                    window_preds = regime_predictions[start:end]
+                    window_matrix = self._calculate_transition_matrix(window_preds, n_regimes)
+                    rolling_matrices.append(window_matrix)
+                    rolling_windows.append((start, end))
+                    if window_matrix.size:
+                        rolling_scores.append(float(np.mean(np.diag(window_matrix))))
+            else:
+                rolling_matrices.append(overall_matrix)
+                rolling_windows.append((0, len(regime_predictions)))
+                rolling_scores.append(overall_persistence)
+
+            if not rolling_scores:
+                rolling_scores = [overall_persistence]
+
+            persistence_summary = {
+                'overall_transition_matrix': overall_matrix,
+                'overall_self_transition_mean': overall_persistence,
+                'rolling_self_transition_mean': float(np.mean(rolling_scores)),
+                'rolling_self_transition_std': float(np.std(rolling_scores)),
+                'rolling_window_count': len(rolling_scores),
+                'rolling_windows': rolling_windows,
+                'window_size': window_size,
+                'step_size': step_size,
+            }
+
+            if rolling_scores:
+                persistence_summary['persistence_trend'] = float(rolling_scores[-1] - rolling_scores[0])
+                persistence_summary['max_rolling_persistence'] = float(np.max(rolling_scores))
+                persistence_summary['min_rolling_persistence'] = float(np.min(rolling_scores))
+
+            if rolling_matrices:
+                persistence_summary['rolling_transition_matrices'] = rolling_matrices
+
+            if overall_matrix.size:
+                diag = np.diag(overall_matrix)
+                persistence_summary['most_persistent_regime'] = int(np.argmax(diag))
+                persistence_summary['least_persistent_regime'] = int(np.argmin(diag))
+
+            return persistence_summary
+        except Exception as e:
+            self.logger.warning(f"Persistence summary calculation failed: {e}")
+            return {'error': str(e)}
+
+    def _default_tree_model_params(self, model: Optional[Any]) -> Dict[str, Any]:
+        """Retrieve default RandomForest parameters from the model or configuration."""
+        params = {
+            'n_estimators': self.config.n_estimators,
+            'max_depth': self.config.tree_depth,
+            'min_samples_split': self.config.min_samples_split,
+            'min_samples_leaf': self.config.min_samples_leaf,
+            'max_features': self.config.max_features,
+            'random_state': 42
+        }
+        try:
+            if model is not None and hasattr(model, 'get_params'):
+                params.update({k: v for k, v in model.get_params().items() if k in params})
+        except Exception:
+            pass
+        return params
+
+    def _merge_best_params(self, base_params: Optional[Dict[str, Any]], best_params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge best hyperparameters with base parameters."""
+        merged = dict(base_params or {})
+        if not best_params:
+            return merged
+
+        for key, value in best_params.items():
+            if value is None:
+                continue
+            if key in {'n_estimators', 'max_depth', 'min_samples_split', 'min_samples_leaf'}:
+                try:
+                    merged[key] = int(max(1, round(float(value))))
+                except Exception:
+                    continue
+            else:
+                merged[key] = value
+        return merged
+
+    def _build_random_forest_search_space(self, base_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Construct a search space for RandomForest hyperparameters."""
+        try:
+            n_estimators = int(base_params.get('n_estimators', self.config.n_estimators))
+            max_depth = int(base_params.get('max_depth', self.config.tree_depth))
+            min_split = int(base_params.get('min_samples_split', self.config.min_samples_split))
+            min_leaf = int(base_params.get('min_samples_leaf', self.config.min_samples_leaf))
+
+            return {
+                'n_estimators': {'type': 'int', 'low': max(100, n_estimators // 2), 'high': max(150, n_estimators * 2)},
+                'max_depth': {'type': 'int', 'low': max(3, max_depth - 3), 'high': max(max_depth + 3, 6)},
+                'min_samples_split': {'type': 'int', 'low': 2, 'high': max(4, min_split * 2)},
+                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': max(2, min_leaf * 2)},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.5, base_params.get('max_features', 'sqrt')]}
+            }
+        except Exception as e:
+            self.logger.warning(f"Search space construction failed: {e}")
+            return {}
+
+    def _build_random_forest_model(self, params: Dict[str, Any], base_params: Dict[str, Any]):
+        """Create a RandomForestClassifier with merged parameters."""
+        from sklearn.ensemble import RandomForestClassifier
+
+        merged_params = self._merge_best_params(base_params, params)
+        merged_params.setdefault('random_state', 42)
+        return RandomForestClassifier(**merged_params)
+
+    def _evaluate_regime_with_cross_validation(self,
+                                               data: Optional[np.ndarray],
+                                               labels: Optional[np.ndarray],
+                                               model: Optional[Any]) -> Dict[str, Any]:
+        """Evaluate regime detection quality using unified cross-validation utilities."""
+        if data is None or labels is None or model is None or len(labels) < 2:
+            return {}
+
+        try:
+            from sklearn.base import clone
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation
+
+            scoring_metrics: List[str] = ['accuracy', 'balanced_accuracy']
+            cv_folds = min(5, max(2, len(data) // max(1, self.config.min_regime_samples // 2)))
+
+            cv_model = clone(model)
+            cv_results = perform_cross_validation(
+                cv_model,
+                data,
+                labels,
+                strategy='temporal',
+                cv_folds=cv_folds,
+                scoring=scoring_metrics
+            )
+
+            mean_accuracy = 0.0
+            if 'mean_scores' in cv_results:
+                mean_accuracy = float(cv_results['mean_scores'].get('accuracy', 0.0))
+            elif 'mean' in cv_results and cv_results['mean'] is not None:
+                mean_accuracy = float(cv_results['mean'])
+
+            return {
+                'cv_results': cv_results,
+                'cv_mean_accuracy': mean_accuracy,
+                'cv_folds': cv_folds
+            }
+        except Exception as e:
+            self.logger.warning(f"Cross-validation evaluation failed: {e}")
+            return {'error': str(e), 'cv_mean_accuracy': 0.0}
+
+    def _run_bayesian_tpe_optimizer(self,
+                                    X: np.ndarray,
+                                    y: np.ndarray,
+                                    base_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run Bayesian TPE optimization using ml_common utilities."""
+        try:
+            search_space = self._build_random_forest_search_space(base_params)
+            if not search_space:
+                return {}
+
+            from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+            from sklearn.model_selection import TimeSeriesSplit
+
+            cv_splits = min(5, max(2, len(X) // max(5, self.config.min_regime_samples // 2)))
+            cv_object = TimeSeriesSplit(n_splits=cv_splits) if cv_splits >= 2 else None
+
+            hpo = HyperparameterOptimization(config={'enable_parallel': False, 'use_nonlinear_optimization': False})
+
+            result = hpo.bayesian_optimization(
+                model_factory=lambda **params: self._build_random_forest_model(params, base_params),
+                X=X,
+                y=y,
+                search_space=search_space,
+                n_trials=15,
+                scoring='balanced_accuracy',
+                cv=cv_object,
+                use_enhanced_search_space=False
+            )
+            return result
+        except Exception as e:
+            self.logger.warning(f"Bayesian TPE optimization failed: {e}")
+            return {'error': str(e), 'best_params': {}}
+
+    def _run_nested_cv_with_hpo(self,
+                                data: Optional[np.ndarray],
+                                labels: Optional[np.ndarray],
+                                model: Optional[Any]) -> Dict[str, Any]:
+        """Execute nested CV with Bayesian TPE tuning on inner folds."""
+        if data is None or labels is None or model is None or len(labels) < 4:
+            return {}
+
+        try:
+            from src.utils.ml_common.validation.cv_utils import TemporalCrossValidator
+            from sklearn.metrics import accuracy_score, balanced_accuracy_score
+
+            base_params = self._default_tree_model_params(model)
+            outer_folds = min(3, max(2, len(data) // max(5, self.config.min_regime_samples // 2)))
+            temporal_cv = TemporalCrossValidator(n_splits=outer_folds)
+
+            fold_results = []
+            best_params_collection: List[Dict[str, Any]] = []
+
+            for fold_idx, (train_idx, test_idx) in enumerate(temporal_cv.split(data, labels)):
+                if len(train_idx) == 0 or len(test_idx) == 0:
+                    continue
+
+                X_train, y_train = data[train_idx], labels[train_idx]
+                X_test, y_test = data[test_idx], labels[test_idx]
+
+                hpo_result = self._run_bayesian_tpe_optimizer(X_train, y_train, base_params)
+                best_params = self._merge_best_params(base_params, hpo_result.get('best_params'))
+                best_params_collection.append(best_params)
+
+                tuned_model = self._build_random_forest_model(best_params, base_params)
+                tuned_model.fit(X_train, y_train)
+
+                train_pred = tuned_model.predict(X_train)
+                test_pred = tuned_model.predict(X_test)
+
+                train_acc = float(accuracy_score(y_train, train_pred)) if len(y_train) else 0.0
+                test_acc = float(accuracy_score(y_test, test_pred)) if len(y_test) else 0.0
+                train_bal_acc = float(balanced_accuracy_score(y_train, train_pred)) if len(np.unique(y_train)) > 1 else train_acc
+                test_bal_acc = float(balanced_accuracy_score(y_test, test_pred)) if len(np.unique(y_test)) > 1 else test_acc
+
+                in_sample_matrix = self._calculate_transition_matrix(train_pred, len(np.unique(labels)))
+                oos_matrix = self._calculate_transition_matrix(test_pred, len(np.unique(labels)))
+                in_sample_persistence = float(np.mean(np.diag(in_sample_matrix))) if in_sample_matrix.size else 0.0
+                oos_persistence = float(np.mean(np.diag(oos_matrix))) if oos_matrix.size else 0.0
+
+                fold_results.append({
+                    'fold': fold_idx,
+                    'train_accuracy': train_acc,
+                    'test_accuracy': test_acc,
+                    'train_balanced_accuracy': train_bal_acc,
+                    'test_balanced_accuracy': test_bal_acc,
+                    'in_sample_persistence': in_sample_persistence,
+                    'oos_persistence': oos_persistence,
+                    'best_params': best_params,
+                    'hpo_result': hpo_result
+                })
+
+            if not fold_results:
+                return {'folds': [], 'best_params': base_params}
+
+            mean_test_accuracy = float(np.mean([f['test_accuracy'] for f in fold_results]))
+            mean_train_accuracy = float(np.mean([f['train_accuracy'] for f in fold_results]))
+            mean_oos_persistence = float(np.mean([f['oos_persistence'] for f in fold_results]))
+            mean_in_sample_persistence = float(np.mean([f['in_sample_persistence'] for f in fold_results]))
+
+            best_fold = max(fold_results, key=lambda item: item['test_accuracy'])
+            aggregate_best_params = best_fold['best_params'] if best_fold else base_params
+
+            return {
+                'folds': fold_results,
+                'mean_test_accuracy': mean_test_accuracy,
+                'mean_train_accuracy': mean_train_accuracy,
+                'mean_oos_persistence': mean_oos_persistence,
+                'mean_in_sample_persistence': mean_in_sample_persistence,
+                'best_params': aggregate_best_params
+            }
+        except Exception as e:
+            self.logger.warning(f"Nested CV with HPO failed: {e}")
+            return {'error': str(e)}
+
+    def _compare_in_sample_vs_oos_stability(self,
+                                            data: Optional[np.ndarray],
+                                            labels: Optional[np.ndarray],
+                                            best_params: Optional[Dict[str, Any]],
+                                            n_regimes: int) -> Dict[str, Any]:
+        """Compare in-sample vs out-of-sample stability using walk-forward splits."""
+        if data is None or labels is None or len(labels) < 4 or n_regimes <= 0:
+            return {}
+
+        try:
+            from src.utils.ml_common.validation.cv_utils import CrossValidationUtilities
+            from src.training.steps.market_analysis.tas_regime.backtesting.walk_forward_analysis import WalkForwardConfig
+
+            walk_config = WalkForwardConfig()
+            total_window = max(walk_config.training_window + walk_config.testing_window, 1)
+            cv_utils = CrossValidationUtilities({
+                'initial_train_size': min(0.8, max(0.2, walk_config.training_window / total_window)),
+                'step_size': min(0.5, max(0.05, walk_config.step_size / total_window)),
+                'min_test_size': min(0.4, max(0.1, walk_config.testing_window / total_window))
+            })
+
+            base_params = self._default_tree_model_params(None)
+            merged_params = self._merge_best_params(base_params, best_params)
+
+            splits = cv_utils.walk_forward_validation(data, labels)
+            if not splits:
+                return {}
+
+            fold_details = []
+            for fold_idx, (train_idx, test_idx) in enumerate(splits):
+                if len(train_idx) == 0 or len(test_idx) == 0:
+                    continue
+
+                model = self._build_random_forest_model(merged_params, base_params)
+                model.fit(data[train_idx], labels[train_idx])
+
+                train_pred = model.predict(data[train_idx])
+                test_pred = model.predict(data[test_idx])
+
+                in_sample_matrix = self._calculate_transition_matrix(train_pred, n_regimes)
+                oos_matrix = self._calculate_transition_matrix(test_pred, n_regimes)
+                in_sample_persistence = float(np.mean(np.diag(in_sample_matrix))) if in_sample_matrix.size else 0.0
+                oos_persistence = float(np.mean(np.diag(oos_matrix))) if oos_matrix.size else 0.0
+
+                fold_details.append({
+                    'fold': fold_idx,
+                    'train_indices': (int(train_idx[0]), int(train_idx[-1])) if len(train_idx) else None,
+                    'test_indices': (int(test_idx[0]), int(test_idx[-1])) if len(test_idx) else None,
+                    'in_sample_persistence': in_sample_persistence,
+                    'oos_persistence': oos_persistence
+                })
+
+            if not fold_details:
+                return {}
+
+            mean_in_sample = float(np.mean([f['in_sample_persistence'] for f in fold_details]))
+            mean_oos = float(np.mean([f['oos_persistence'] for f in fold_details]))
+
+            return {
+                'fold_details': fold_details,
+                'mean_in_sample_persistence': mean_in_sample,
+                'mean_oos_persistence': mean_oos,
+                'persistence_gap': mean_in_sample - mean_oos,
+                'folds': len(fold_details)
+            }
+        except Exception as e:
+            self.logger.warning(f"OOS stability comparison failed: {e}")
+            return {'error': str(e)}
 
     def _calculate_transition_probabilities(self, regime_results: Dict[str, Any]) -> np.ndarray:
         """Calculate regime transition probabilities."""

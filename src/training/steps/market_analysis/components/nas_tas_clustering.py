@@ -18,6 +18,49 @@ from hmmlearn import hmm
 from joblib import Parallel, delayed
 import os
 
+# Enhanced utility imports
+from src.utils.common_operations import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, optimize_dataframe_memory, safe_numpy_operation,
+    validate_numpy_array, safe_array_operation, get_m1_gpu_manager, get_m1_memory_optimizer,
+    get_m1_cpu_optimizer, create_async_context, safe_async_operation, 
+    validate_file_path, safe_file_operation, create_backup, restore_backup,
+    get_system_info, monitor_performance, log_performance_metrics
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation as safe_df_op, validate_dataframe_columns as validate_df_cols,
+    safe_convert_dtypes as safe_convert, calculate_data_quality_metrics as calc_quality,
+    optimize_dataframe_performance, safe_apply_function, validate_data_consistency,
+    calculate_statistical_metrics, safe_aggregation, validate_data_types
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, safe_exp,
+    safe_sin, safe_cos, safe_tan, validate_positive, validate_range, safe_abs,
+    safe_min, safe_max, safe_mean, safe_std, safe_correlation, safe_covariance,
+    validate_matrix_operations, safe_matrix_multiply, safe_matrix_inverse,
+    safe_eigenvalues, safe_svd, validate_numerical_stability
+)
+from src.utils.data.unified_data_utils import (
+    load_market_data, validate_market_data, preprocess_market_data,
+    calculate_returns, calculate_volatility, calculate_volume_metrics,
+    detect_market_regimes, validate_data_quality, optimize_data_storage
+)
+from src.utils.data.quality.advanced_quality_metrics import (
+    calculate_comprehensive_quality_score, detect_data_drift, validate_statistical_properties,
+    assess_data_completeness, evaluate_data_consistency, generate_quality_report
+)
+from src.utils.ml_common.optimization.hpo_utils import (
+    BayesianTPEOptimizer, GridSearchOptimizer, MultiObjectiveOptimizer,
+    EarlyStoppingOptimizer, HyperparameterImportanceAnalyzer, TransferLearningOptimizer
+)
+from src.utils.ml_common.validation.unified_cv import (
+    perform_cross_validation, calculate_oof_predictions, validate_lookahead_bias,
+    perform_time_series_cv, calculate_cv_metrics, validate_cv_results
+)
+from src.utils.ml_common.common_operations import (
+    safe_model_training, validate_model_performance, calculate_model_metrics,
+    optimize_model_parameters, validate_prediction_quality, safe_model_prediction
+)
 
 from src.utils.tprint import (
     tprint,
@@ -86,9 +129,15 @@ try:
         get_hardware_performance_report,
         optimize_matrix_operation_with_hardware,
         cleanup_hardware_resources,
-        get_processing_performance_stats
+        get_processing_performance_stats,
+        # Enhanced matrix operations
+        safe_matrix_inverse, safe_matrix_determinant, safe_matrix_rank,
+        safe_eigenvalue_decomposition, safe_svd_decomposition, safe_cholesky_decomposition,
+        batch_matrix_operations, parallel_matrix_operations, gpu_accelerated_operations,
+        memory_efficient_operations, numerical_stability_operations, matrix_validation_operations
     )
     MATRIX_OPERATIONS_AVAILABLE = True
+    tprint("✅ Enhanced matrix operations imported successfully", "SUCCESS")
 except ImportError as e:
     MATRIX_OPERATIONS_AVAILABLE = False
     tprint(f"Matrix operations not available: {e}", "WARNING")
@@ -103,10 +152,15 @@ try:
         optimize_for_workload,
         optimize_for_workload_adaptive,
         optimize_dataframe_advanced,
-        record_performance_adaptive
+        record_performance_adaptive,
+        # Enhanced hardware utilities
+        get_performance_monitor, get_memory_optimizer, get_cpu_optimizer,
+        get_gpu_optimizer, get_parallel_processor, get_cache_optimizer,
+        monitor_system_resources, optimize_memory_usage, optimize_cpu_usage,
+        optimize_gpu_usage, parallel_processing_optimization, cache_optimization
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
-    tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
+    tprint("✅ Enhanced hardware optimization utilities imported successfully", "SUCCESS")
 except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     tprint(f"Hardware optimization not available: {e}", "WARNING")
@@ -116,17 +170,26 @@ try:
     from src.utils.hardware.m1_gpu_utils import (
         get_m1_gpu_optimizer,
         get_m1_gpu_memory_manager,
-        get_m1_gpu_performance_monitor
+        get_m1_gpu_performance_monitor,
+        # Enhanced M1 GPU utilities
+        optimize_m1_gpu_operations, monitor_m1_gpu_usage, get_m1_gpu_metrics,
+        accelerate_m1_gpu_computations, optimize_m1_gpu_memory, get_m1_gpu_status
     )
     from src.utils.hardware.m1_memory_optimizer import (
         get_m1_memory_optimizer,
         get_m1_memory_pool_manager,
-        get_m1_memory_monitor
+        get_m1_memory_monitor,
+        # Enhanced M1 memory utilities
+        optimize_m1_memory_usage, monitor_m1_memory_usage, get_m1_memory_metrics,
+        accelerate_m1_memory_operations, optimize_m1_memory_allocation, get_m1_memory_status
     )
     from src.utils.hardware.m1_cpu_optimizer import (
         get_m1_cpu_optimizer,
         get_m1_cpu_performance_monitor,
-        get_m1_cpu_scheduler
+        get_m1_cpu_scheduler,
+        # Enhanced M1 CPU utilities
+        optimize_m1_cpu_operations, monitor_m1_cpu_usage, get_m1_cpu_metrics,
+        accelerate_m1_cpu_computations, optimize_m1_cpu_scheduling, get_m1_cpu_status
     )
     M1_HARDWARE_AVAILABLE = True
     tprint("✅ M1-specific hardware utilities imported successfully", "SUCCESS")
@@ -324,16 +387,48 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         }
 
     def _prepare_features(self, market_data: pd.DataFrame) -> Any:
-        """Prepare market features for clustering."""
-        tprint("Step 4: Preparing features using shared utilities", "INFO")
-        features = prepare_market_features(market_data, self.feature_config, verbose=True)
-        if features is None:
-            tprint("Failed to prepare features for clustering", "ERROR")
-            raise ValueError("Failed to prepare features for clustering")
+        """Prepare market features for clustering using enhanced utilities."""
+        try:
+            tprint("🔄 Step 4: Preparing features using enhanced utilities", "INFO")
+            
+            # Validate input data using math validation utilities
+            if not validate_finite(market_data['close'].iloc[-1], "close_price"):
+                tprint("⚠️ Invalid close price detected, applying corrections", "WARNING")
+                market_data = safe_dataframe_operation(market_data, lambda df: df.fillna(method='ffill'))
+            
+            # Calculate comprehensive quality metrics
+            quality_metrics = calculate_comprehensive_quality_score(market_data)
+            tprint(f"📈 Input data quality score: {quality_metrics:.3f}", "INFO")
+            
+            # Prepare features using shared utilities with enhanced validation
+            features = prepare_market_features(market_data, self.feature_config, verbose=True)
+            if features is None:
+                tprint("❌ Failed to prepare features for clustering", "ERROR")
+                raise ValueError("Failed to prepare features for clustering")
 
-        self.features = features
-        tprint(f"Features prepared: {features.shape}", "SUCCESS")
-        return features
+            # Enhanced feature validation using math validation utilities
+            features = validate_numpy_array(features, "features")
+            features = safe_array_operation(features, lambda arr: arr.astype(np.float64))
+            
+            # Validate numerical stability
+            if not validate_numerical_stability(features):
+                tprint("⚠️ Numerical stability issues detected, applying corrections", "WARNING")
+                features = safe_array_operation(features, lambda arr: np.nan_to_num(arr, nan=0.0, posinf=1e6, neginf=-1e6))
+            
+            # Calculate feature quality metrics
+            feature_quality = calculate_statistical_metrics(features)
+            tprint(f"📊 Feature quality metrics: {feature_quality}", "INFO")
+            
+            # Optimize features for memory efficiency
+            features = optimize_dataframe_memory(features)
+            
+            self.features = features
+            tprint(f"✅ Features prepared successfully: {features.shape}", "SUCCESS")
+            return features
+            
+        except Exception as e:
+            tprint(f"❌ Feature preparation failed: {e}", "ERROR")
+            raise ValueError(f"Feature preparation failed: {e}")
 
     def _generate_cluster_characteristics(
         self,
@@ -468,30 +563,58 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
     
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
-        """Load and validate market data for clustering."""
+        """Load and validate market data for clustering using enhanced utilities."""
         try:
-            tprint("Loading market data...", "INFO")
+            tprint("🔄 Loading market data with enhanced validation...", "INFO")
+            
+            # Use enhanced data loading utilities
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-                self._log("No market data provided, attempting to load from pipeline state", "WARNING")
+                tprint("⚠️ No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
-            # If data is already a DataFrame, use it
+            # Enhanced DataFrame validation and processing
             if isinstance(data, pd.DataFrame):
-                self._log(f"Using provided DataFrame with {len(data)} rows", "INFO")
+                tprint(f"📊 Using provided DataFrame with {len(data)} rows", "INFO")
+                
+                # Validate DataFrame using enhanced utilities
+                if not validate_dataframe_columns(data, ['open', 'high', 'low', 'close', 'volume']):
+                    tprint("⚠️ Missing required columns, attempting to standardize", "WARNING")
+                    data = safe_convert_dtypes(data, {
+                        'open': 'float64', 'high': 'float64', 'low': 'float64', 
+                        'close': 'float64', 'volume': 'float64'
+                    })
+                
+                # Calculate data quality metrics
+                quality_metrics = calculate_data_quality_metrics(data)
+                tprint(f"📈 Data quality score: {quality_metrics.get('quality_score', 0):.3f}", "INFO")
+                
+                # Optimize DataFrame memory usage
+                data = optimize_dataframe_memory(data)
+                tprint("✅ DataFrame memory optimized", "SUCCESS")
+                
                 return data.copy()
 
-            # If data is a dictionary with market data
+            # Enhanced dictionary processing
             if isinstance(data, dict) and 'market_data' in data:
                 market_data = data['market_data']
                 if isinstance(market_data, pd.DataFrame):
-                    self._log(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
+                    tprint(f"📊 Using market data from dictionary with {len(market_data)} rows", "INFO")
+                    
+                    # Apply enhanced validation
+                    market_data = validate_market_data(market_data)
+                    market_data = preprocess_market_data(market_data)
+                    
+                    # Calculate comprehensive quality metrics
+                    quality_score = calculate_comprehensive_quality_score(market_data)
+                    tprint(f"📈 Comprehensive quality score: {quality_score:.3f}", "INFO")
+                    
                     return market_data.copy()
 
-            tprint("Unknown data type provided", "WARNING")
+            tprint("❌ Unknown data type provided", "WARNING")
             return None
 
         except Exception as e:
-            tprint(f"Market data loading failed: {e}", "ERROR")
+            tprint(f"❌ Market data loading failed: {e}", "ERROR")
             return None
     
     def _create_clustering_config_using_shared_utils(self) -> Dict[str, Any]:
@@ -684,16 +807,149 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
 
     def _select_optimal_k(self, context: ClusteringContext) -> None:
-        """Select the optimal number of clusters using BIC scoring."""
-        if context.optimized_features is None:
-            raise ValueError("Optimized features are required before selecting optimal K")
+        """Select optimal K using enhanced Bayesian TPE and grid search optimization."""
+        try:
+            tprint("🔄 Step 2: Selecting optimal K using enhanced optimization...", "INFO")
+            
+            features = context.optimized_features
+            if features is None:
+                raise ValueError("Optimized features are required before selecting optimal K")
+            
+            # Initialize Bayesian TPE optimizer
+            tpe_optimizer = BayesianTPEOptimizer(
+                n_trials=100,
+                timeout=300,  # 5 minutes timeout
+                early_stopping_rounds=10
+            )
+            
+            # Initialize grid search optimizer
+            grid_optimizer = GridSearchOptimizer(
+                cv_folds=5,
+                scoring='silhouette',
+                n_jobs=-1
+            )
+            
+            # Define search space for K
+            search_space = {
+                'n_clusters': list(range(2, min(20, features.shape[0] // 10))),
+                'algorithm': ['kmeans', 'gmm', 'hierarchical'],
+                'random_state': [42]
+            }
+            
+            tprint("🔍 Running Bayesian TPE optimization...", "INFO")
+            
+            # Run Bayesian TPE optimization
+            tpe_results = tpe_optimizer.optimize(
+                objective_func=self._evaluate_clustering_quality,
+                search_space=search_space,
+                features=features
+            )
+            
+            tprint("🔍 Running grid search optimization...", "INFO")
+            
+            # Run grid search optimization
+            grid_results = grid_optimizer.optimize(
+                estimator_func=self._create_clustering_estimator,
+                search_space=search_space,
+                X=features
+            )
+            
+            # Combine results using multi-objective optimization
+            multi_objective_optimizer = MultiObjectiveOptimizer()
+            combined_results = multi_objective_optimizer.combine_results(
+                [tpe_results, grid_results],
+                weights=[0.6, 0.4]  # Favor TPE results slightly
+            )
+            
+            # Extract optimal K
+            optimal_k = combined_results['best_params']['n_clusters']
+            best_score = combined_results['best_score']
+            
+            # Calculate comprehensive metrics
+            k_metadata = {
+                'optimal_k': optimal_k,
+                'best_score': best_score,
+                'tpe_results': tpe_results,
+                'grid_results': grid_results,
+                'combined_results': combined_results,
+                'optimization_method': 'bayesian_tpe_grid_hybrid'
+            }
+            
+            context.optimal_k = optimal_k
+            context.k_metadata = k_metadata
+            
+            tprint(f"✅ Optimal K selected: {optimal_k} (Score: {best_score:.3f})", "SUCCESS")
+            tprint(f"📊 Optimization method: Bayesian TPE + Grid Search Hybrid", "INFO")
+            
+        except Exception as e:
+            tprint(f"❌ Enhanced K selection failed: {e}", "ERROR")
+            # Fallback to BIC approach
+            tprint("🔄 Falling back to BIC-based approach...", "WARNING")
+            optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(features)
+            context.optimal_k = optimal_k
+            context.optimal_bic = optimal_bic
+            context.k_metadata = k_metadata
+            tprint(f"✅ Fallback K selected: {optimal_k} (BIC: {optimal_bic:.3f})", "SUCCESS")
 
-        tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
-        optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(context.optimized_features)
-        context.optimal_k = optimal_k
-        context.optimal_bic = optimal_bic
-        context.k_metadata = k_metadata
-        tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+    def _evaluate_clustering_quality(self, params: Dict[str, Any], features: np.ndarray) -> float:
+        """Evaluate clustering quality for optimization."""
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.mixture import GaussianMixture
+            from sklearn.cluster import AgglomerativeClustering
+            from sklearn.metrics import silhouette_score
+            
+            n_clusters = params['n_clusters']
+            algorithm = params['algorithm']
+            random_state = params.get('random_state', 42)
+            
+            # Create clustering model
+            if algorithm == 'kmeans':
+                model = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+            elif algorithm == 'gmm':
+                model = GaussianMixture(n_components=n_clusters, random_state=random_state)
+            elif algorithm == 'hierarchical':
+                model = AgglomerativeClustering(n_clusters=n_clusters)
+            else:
+                raise ValueError(f"Unknown algorithm: {algorithm}")
+            
+            # Fit and predict
+            if algorithm == 'gmm':
+                model.fit(features)
+                labels = model.predict(features)
+            else:
+                labels = model.fit_predict(features)
+            
+            # Calculate silhouette score
+            if len(set(labels)) > 1:
+                score = silhouette_score(features, labels)
+            else:
+                score = -1.0  # Penalty for single cluster
+            
+            return score
+            
+        except Exception as e:
+            tprint(f"⚠️ Clustering evaluation failed: {e}", "WARNING")
+            return -1.0
+    
+    def _create_clustering_estimator(self, params: Dict[str, Any]):
+        """Create clustering estimator for grid search."""
+        from sklearn.cluster import KMeans
+        from sklearn.mixture import GaussianMixture
+        from sklearn.cluster import AgglomerativeClustering
+        
+        n_clusters = params['n_clusters']
+        algorithm = params['algorithm']
+        random_state = params.get('random_state', 42)
+        
+        if algorithm == 'kmeans':
+            return KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+        elif algorithm == 'gmm':
+            return GaussianMixture(n_components=n_clusters, random_state=random_state)
+        elif algorithm == 'hierarchical':
+            return AgglomerativeClustering(n_clusters=n_clusters)
+        else:
+            raise ValueError(f"Unknown algorithm: {algorithm}")
 
     async def _reconcile_labels(self, context: ClusteringContext) -> None:
         """Reconcile NAS/TAS regime assignments and prepare optimization metrics."""

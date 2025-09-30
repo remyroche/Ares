@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional
+import os
 
 import numpy as np
 import pandas as pd
@@ -108,49 +109,65 @@ def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
     """Load the parquet file containing regime assignments with enhanced data quality validation."""
     with tprint_timer(f"Loading regime assignments from {regime_file}"):
         try:
-            # Validate file exists and is accessible
+            # Comprehensive file validation
             if not validate_file_path(regime_file):
                 raise RegimeDataError(f"Regime file not accessible: {regime_file}")
             
-            # Check disk space before loading
-            disk_info = check_disk_space(regime_file, required_gb=1.0)
-            if not disk_info['sufficient']:
-                tprint_warning(f"Insufficient disk space: {disk_info['free_gb']:.2f}GB available, {disk_info['required_gb']}GB required")
+            # Check file permissions and readability
+            if not regime_file.is_file():
+                raise RegimeDataError(f"Path is not a file: {regime_file}")
             
-            # Use memory checkpoint for large files
-            with memory_checkpoint("regime_data_loading"):
-                # Load with safe parquet reading
-                df = safe_read_parquet(regime_file)
-                if df is None:
-                    raise RegimeDataError(f"Failed to read regime assignments from {regime_file}")
-                
-                # Validate required columns
-                required_columns = ['regime_id']
-                if not validate_dataframe_columns(df, required_columns):
-                    raise RegimeDataError(f"Missing required columns in {regime_file}")
-                
-                # Calculate and log data quality metrics
-                quality_metrics = calculate_data_quality_metrics(df)
-                tprint_structured({
-                    "file": str(regime_file),
-                    "rows": quality_metrics['total_rows'],
-                    "columns": quality_metrics['total_columns'],
-                    "missing_percentage": quality_metrics['missing_percentage'],
-                    "duplicate_percentage": quality_metrics['duplicate_percentage']
-                })
-                
-                # Guard against excessive nulls
-                df = guard_dataframe_nulls(df, threshold=0.5)
-                
-                # Optimize data types for memory efficiency
-                df = optimize_dataframe_dtypes(df)
-                
-                # Log memory usage
-                memory_usage = get_memory_usage()
-                tprint_performance(f"Memory usage after loading: {memory_usage / (1024**2):.2f} MB")
-                
-                tprint_success(f"Successfully loaded regime assignments: {len(df)} rows, {len(df.columns)} columns")
-                return df
+            if not os.access(regime_file, os.R_OK):
+                raise RegimeDataError(f"File is not readable: {regime_file}")
+            
+            # Check disk space before loading with more accurate estimation
+            file_size_mb = get_file_size(regime_file) / (1024**2)
+            required_gb = max(1.0, file_size_mb * 3 / 1024)  # 3x file size for safety
+            disk_info = check_disk_space(regime_file, required_gb=required_gb)
+            if not disk_info['sufficient']:
+                raise RegimeDataError(f"Insufficient disk space: {disk_info['free_gb']:.2f}GB available, {required_gb:.2f}GB required")
+            
+            # Use memory checkpoint for large files with proper cleanup
+            try:
+                with memory_checkpoint("regime_data_loading"):
+                    # Load with safe parquet reading
+                    df = safe_read_parquet(regime_file)
+                    if df is None:
+                        raise RegimeDataError(f"Failed to read regime assignments from {regime_file}")
+                    
+                    # Validate required columns
+                    required_columns = ['regime_id']
+                    if not validate_dataframe_columns(df, required_columns):
+                        raise RegimeDataError(f"Missing required columns in {regime_file}")
+                    
+                    # Calculate and log data quality metrics
+                    quality_metrics = calculate_data_quality_metrics(df)
+                    tprint_structured({
+                        "file": str(regime_file),
+                        "rows": quality_metrics['total_rows'],
+                        "columns": quality_metrics['total_columns'],
+                        "missing_percentage": quality_metrics['missing_percentage'],
+                        "duplicate_percentage": quality_metrics['duplicate_percentage']
+                    })
+                    
+                    # Guard against excessive nulls
+                    df = guard_dataframe_nulls(df, threshold=0.5)
+                    
+                    # Optimize data types for memory efficiency
+                    df = optimize_dataframe_dtypes(df)
+                    
+                    # Log memory usage
+                    memory_usage = get_memory_usage()
+                    tprint_performance(f"Memory usage after loading: {memory_usage / (1024**2):.2f} MB")
+                    
+                    tprint_success(f"Successfully loaded regime assignments: {len(df)} rows, {len(df.columns)} columns")
+                    return df
+            except Exception as checkpoint_error:
+                # Cleanup on checkpoint failure
+                memory_optimizer = get_m1_memory_optimizer()
+                if memory_optimizer:
+                    memory_optimizer.cleanup_arrays([])
+                raise checkpoint_error
                 
         except Exception as exc:
             tprint_error(f"Failed to load regime assignments: {exc}")
@@ -201,36 +218,42 @@ def create_synthetic_features(
             cpu_optimizer = get_m1_cpu_optimizer()
             gpu_manager = get_m1_gpu_manager()
             
-            # Use memory checkpoint for large feature generation
-            with memory_checkpoint("synthetic_feature_generation"):
-                rng = np.random.default_rng(seed)
-                features = rng.standard_normal((labels.shape[0], feature_count))
-                
-                # Validate features are finite
-                features = validate_finite(features, "synthetic_features")
-                
-                unique_regimes = np.unique(labels)
-                for regime_id in unique_regimes:
-                    mask = labels == regime_id
-                    if np.any(mask):
-                        # Apply regime-specific offset
-                        features[mask] += regime_id * regime_offset
-                
-                # Optimize for M1 if available
-                if M1_HARDWARE_AVAILABLE and memory_optimizer:
-                    features = memory_optimizer.optimize_array_memory(features)
-                
-                # Log feature statistics
-                tprint_structured({
-                    "feature_shape": features.shape,
-                    "feature_mean": float(safe_mean(features.flatten())),
-                    "feature_std": float(safe_std(features.flatten())),
-                    "regime_count": len(unique_regimes),
-                    "memory_usage_mb": features.nbytes / (1024**2)
-                })
-                
-                tprint_success(f"Generated synthetic features: {features.shape}")
-                return features
+            # Use memory checkpoint for large feature generation with proper cleanup
+            try:
+                with memory_checkpoint("synthetic_feature_generation"):
+                    rng = np.random.default_rng(seed)
+                    features = rng.standard_normal((labels.shape[0], feature_count))
+                    
+                    # Validate features are finite
+                    features = validate_finite(features, "synthetic_features")
+                    
+                    unique_regimes = np.unique(labels)
+                    for regime_id in unique_regimes:
+                        mask = labels == regime_id
+                        if np.any(mask):
+                            # Apply regime-specific offset
+                            features[mask] += regime_id * regime_offset
+                    
+                    # Optimize for M1 if available
+                    if M1_HARDWARE_AVAILABLE and memory_optimizer:
+                        features = memory_optimizer.optimize_array_memory(features)
+                    
+                    # Log feature statistics
+                    tprint_structured({
+                        "feature_shape": features.shape,
+                        "feature_mean": float(safe_mean(features.flatten())),
+                        "feature_std": float(safe_std(features.flatten())),
+                        "regime_count": len(unique_regimes),
+                        "memory_usage_mb": features.nbytes / (1024**2)
+                    })
+                    
+                    tprint_success(f"Generated synthetic features: {features.shape}")
+                    return features
+            except Exception as checkpoint_error:
+                # Cleanup on checkpoint failure
+                if memory_optimizer:
+                    memory_optimizer.cleanup_arrays([])
+                raise checkpoint_error
                 
         except Exception as exc:
             tprint_error(f"Failed to create synthetic features: {exc}")

@@ -80,10 +80,13 @@ try:
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
-    # Fallback functions
-    def safe_matrix_multiply(a, b): return np.dot(a, b)
-    def batch_matrix_multiply(matrices): return [np.dot(m[0], m[1]) for m in matrices]
-    def optimize_matrix_operation_with_hardware(op_name): return lambda func: func
+    # Fast fail without fallback - matrix operations are critical
+    def safe_matrix_multiply(a, b): 
+        raise ImportError("Matrix operations not available - cannot proceed without hardware optimizations")
+    def batch_matrix_multiply(matrices): 
+        raise ImportError("Matrix operations not available - cannot proceed without hardware optimizations")
+    def optimize_matrix_operation_with_hardware(op_name): 
+        raise ImportError("Matrix operations not available - cannot proceed without hardware optimizations")
 
 # Import tprint for enhanced logging
 from src.utils.tprint import (
@@ -135,15 +138,13 @@ class LabelFusionService:
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.gpu_manager = get_m1_gpu_manager()
         
-        # Initialize matrix operations
+        # Initialize matrix operations with fast fail
         if MATRIX_OPERATIONS_AVAILABLE:
             self.matrix_ops = get_unified_matrix_operations()
             self.vectorized_core = get_vectorized_processing_core()
             self.batch_processor = get_batch_matrix_processor()
         else:
-            self.matrix_ops = None
-            self.vectorized_core = None
-            self.batch_processor = None
+            raise ImportError("Matrix operations are required but not available - cannot initialize LabelFusionService")
         
         tprint_info("LabelFusionService initialized with hardware optimizations")
 
@@ -504,22 +505,24 @@ class LabelFusionService:
                             class_priors, abstain_value
                         )
                     else:
-                        # Original E-step with safe operations
+                        # Original E-step with safe operations using math_validation
                         for i in range(n_samples):
                             tas_observation = tas_mapped[i]
                             nas_observation = nas_mapped[i]
 
                             for true_class in range(n_classes):
-                                # Safe factor calculations
-                                tas_factor = (
+                                # Safe factor calculations with validation
+                                tas_factor = validate_finite(
                                     tas_confusion[true_class, tas_observation]
                                     if tas_observation < n_classes
-                                    else 1.0
+                                    else 1.0,
+                                    "tas_factor"
                                 )
-                                nas_factor = (
+                                nas_factor = validate_finite(
                                     nas_confusion[true_class, nas_observation]
                                     if nas_observation < n_classes
-                                    else 1.0
+                                    else 1.0,
+                                    "nas_factor"
                                 )
 
                                 if abstain_value is not None and (
@@ -528,20 +531,26 @@ class LabelFusionService:
                                     tas_factor = 1.0 if tas_observation == abstain_value else tas_factor
                                     nas_factor = 1.0 if nas_observation == abstain_value else nas_factor
 
-                                # Use safe multiplication
-                                posterior_value = safe_divide(
-                                    class_priors[true_class] * tas_factor * nas_factor,
+                                # Use safe multiplication with validation
+                                prior_value = validate_finite(class_priors[true_class], "class_prior")
+                                product = safe_divide(
+                                    prior_value * tas_factor * nas_factor,
                                     1.0, default=0.0
                                 )
+                                posterior_value = validate_finite(product, "posterior_value")
                                 posteriors[i, true_class] = posterior_value
 
-                    # Normalize posteriors with safe operations
+                    # Normalize posteriors with safe operations and validation
                     row_sums = safe_mean(posteriors, axis=1, keepdims=True)
+                    row_sums = validate_finite(row_sums, "row_sums")
                     row_sums = np.where(row_sums == 0.0, 1.0, row_sums)
-                    posteriors = safe_divide(posteriors, row_sums, default=0.0)
+                    row_sums = validate_positive(row_sums, "row_sums_positive")
                     
-                    # Validate final posteriors
-                    posteriors = validate_finite(posteriors, "posteriors")
+                    posteriors = safe_divide(posteriors, row_sums, default=0.0)
+                    posteriors = validate_finite(posteriors, "normalized_posteriors")
+                    
+                    # Ensure posteriors are valid probabilities
+                    posteriors = validate_range(posteriors, 0.0, 1.0, "posteriors_probability")
                     
                     tprint_success(f"E-step completed for {n_samples} samples, {n_classes} classes")
                     

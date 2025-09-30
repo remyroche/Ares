@@ -261,30 +261,69 @@ def calculate_clustering_metrics(features: np.ndarray, labels: np.ndarray, regim
 
 
 def safe_silhouette_score(features: np.ndarray, labels: np.ndarray) -> float:
-    """Safely calculate silhouette score with error handling."""
+    """Safely calculate silhouette score with error handling using math_validation."""
     try:
+        # Validate inputs using math_validation
+        features = validate_finite(features, "silhouette_features")
+        labels = validate_finite(labels, "silhouette_labels")
+        
         if len(np.unique(labels)) < 2:
             return 0.0
-        return silhouette_score(features, labels)
-    except Exception:
+        
+        # Check for sufficient samples per cluster
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        if np.any(counts < 2):
+            tprint_warning("Some clusters have less than 2 samples, returning 0.0")
+            return 0.0
+            
+        score = silhouette_score(features, labels)
+        return validate_finite(score, "silhouette_score")
+    except Exception as exc:
+        tprint_warning(f"Silhouette score calculation failed: {exc}")
         return 0.0
 
 def safe_davies_bouldin_score(features: np.ndarray, labels: np.ndarray) -> float:
-    """Safely calculate Davies-Bouldin score with error handling."""
+    """Safely calculate Davies-Bouldin score with error handling using math_validation."""
     try:
+        # Validate inputs using math_validation
+        features = validate_finite(features, "davies_bouldin_features")
+        labels = validate_finite(labels, "davies_bouldin_labels")
+        
         if len(np.unique(labels)) < 2:
             return float('inf')
-        return davies_bouldin_score(features, labels)
-    except Exception:
+        
+        # Check for sufficient samples per cluster
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        if np.any(counts < 2):
+            tprint_warning("Some clusters have less than 2 samples, returning inf")
+            return float('inf')
+            
+        score = davies_bouldin_score(features, labels)
+        return validate_finite(score, "davies_bouldin_score")
+    except Exception as exc:
+        tprint_warning(f"Davies-Bouldin score calculation failed: {exc}")
         return float('inf')
 
 def safe_calinski_harabasz_score(features: np.ndarray, labels: np.ndarray) -> float:
-    """Safely calculate Calinski-Harabasz score with error handling."""
+    """Safely calculate Calinski-Harabasz score with error handling using math_validation."""
     try:
+        # Validate inputs using math_validation
+        features = validate_finite(features, "calinski_harabasz_features")
+        labels = validate_finite(labels, "calinski_harabasz_labels")
+        
         if len(np.unique(labels)) < 2:
             return 0.0
-        return calinski_harabasz_score(features, labels)
-    except Exception:
+        
+        # Check for sufficient samples per cluster
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        if np.any(counts < 2):
+            tprint_warning("Some clusters have less than 2 samples, returning 0.0")
+            return 0.0
+            
+        score = calinski_harabasz_score(features, labels)
+        return validate_finite(score, "calinski_harabasz_score")
+    except Exception as exc:
+        tprint_warning(f"Calinski-Harabasz score calculation failed: {exc}")
         return 0.0
 
 def calculate_advanced_quality_metrics(features: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
@@ -364,10 +403,16 @@ def calculate_cv_score(features: np.ndarray, labels: np.ndarray) -> float:
             feature_cvs = []
             for feature_idx in range(cluster_features.shape[1]):
                 feature_values = cluster_features[:, feature_idx]
+                feature_values = validate_finite(feature_values, f"feature_{feature_idx}")
+                
                 std = safe_std(feature_values)
                 mean_abs = safe_mean(np.abs(feature_values))
+                
+                # Use math_validation for safe division
                 if std > 0 and mean_abs > 0:
                     cv = safe_divide(std, mean_abs, default=0.0)
+                    cv = validate_finite(cv, f"cv_feature_{feature_idx}")
+                    cv = validate_positive(cv, f"cv_positive_{feature_idx}")
                     feature_cvs.append(cv)
             
             if feature_cvs:
@@ -384,14 +429,26 @@ def calculate_cv_score(features: np.ndarray, labels: np.ndarray) -> float:
         
         if len(cluster_centers) > 1:
             cluster_centers = np.asarray(cluster_centers)
+            cluster_centers = validate_finite(cluster_centers, "cluster_centers")
+            
             between_std = safe_std(cluster_centers)
             between_mean_abs = safe_mean(np.abs(cluster_centers))
+            
+            # Use math_validation for safe division
             between_cv = safe_divide(between_std, between_mean_abs, default=0.0)
+            between_cv = validate_finite(between_cv, "between_cv")
+            between_cv = validate_positive(between_cv, "between_cv_positive")
         else:
             between_cv = 0.0
 
         within_cv = safe_mean(np.array(within_cv_scores)) if within_cv_scores else 0.0
+        within_cv = validate_finite(within_cv, "within_cv")
+        within_cv = validate_positive(within_cv, "within_cv_positive")
+        
+        # Calculate final CV score with validation
         cv_score = 0.6 * max(0.0, 1.0 - within_cv) + 0.4 * min(1.0, between_cv)
+        cv_score = validate_finite(cv_score, "final_cv_score")
+        cv_score = validate_range(cv_score, 0.0, 1.0, "cv_score_range")
         
         return float(cv_score)
         

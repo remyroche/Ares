@@ -260,7 +260,7 @@ from .hardware_setup import HardwareResources, HardwareSetup
 
 @dataclass
 class ClusteringContext:
-    """Lightweight context for sharing intermediate clustering artifacts."""
+    """Lightweight context for sharing intermediate clustering artifacts with proper memory management."""
 
     original_features: np.ndarray
     market_data: pd.DataFrame
@@ -275,6 +275,32 @@ class ClusteringContext:
     smoothed_assignments: Optional[np.ndarray] = None
     fusion_metadata: Dict[str, Any] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
+    memory_optimizer: Optional[Any] = None
+    
+    def __enter__(self):
+        """Context manager entry for memory management."""
+        if self.memory_optimizer:
+            self.memory_optimizer.start_monitoring()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with proper cleanup."""
+        if self.memory_optimizer:
+            self.memory_optimizer.stop_monitoring()
+            # Cleanup large arrays
+            arrays_to_cleanup = [
+                self.original_features, self.optimized_features,
+                self.tas_assignments, self.nas_assignments,
+                self.raw_assignments, self.smoothed_assignments
+            ]
+            valid_arrays = [arr for arr in arrays_to_cleanup if arr is not None]
+            if valid_arrays:
+                self.memory_optimizer.cleanup_arrays(valid_arrays)
+        
+        if exc_type:
+            # Additional cleanup on exception
+            import gc
+            gc.collect()
 
 
 @dataclass
@@ -447,12 +473,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 }
             })
             
-            tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
+            # Set hardware resources
             self.batch_processor = resources.batch_processor
             self.hardware_manager = resources.hardware_manager
             self.m1_gpu_optimizer = resources.m1_gpu_optimizer
             self.m1_memory_optimizer = resources.m1_memory_optimizer
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
+            
+            tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
 
     def optimize_hyperparameters_bayesian(self, features: np.ndarray, market_data: pd.DataFrame, 
                                         n_trials: int = 100) -> Dict[str, Any]:
@@ -677,13 +705,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint_warning(f"Failed to calculate validation score: {exc}")
             return 0.0
 
-            tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
-
+            # Initialize regime optimization service with proper label fusion service
+            from ..regime_analysis.label_fusion import LabelFusionService
+            label_fusion_service = LabelFusionService(logger=self._log)
             self.regime_optimization_service = RegimeOptimizationService(
-                label_fusion_service=None,  # Will be created internally by RegimeOptimizationService
+                label_fusion_service=label_fusion_service,
                 score_calculator=self._calculate_composite_score,
                 logger=self._log,
             )
+            
+            tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
 
     def _log(self, message: str, level: str = "INFO") -> None:
         """Log a message using the standard component logger."""
@@ -999,17 +1030,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Starting progressive regime optimization...", "INFO")
 
-            context = ClusteringContext(original_features=features, market_data=market_data)
+            context = ClusteringContext(
+                original_features=features, 
+                market_data=market_data,
+                memory_optimizer=self.memory_optimizer
+            )
 
             # Step 1: Feature selection and dimensionality reduction
             tprint("Step 1: Feature selection and dimensionality reduction...", "INFO")
-            await self._optimize_features(context)
+            self._optimize_features(context)
 
             # Step 2: Select optimal K using BIC-selected GMM
             self._select_optimal_k(context)
 
             # Step 3/4: Reconcile NAS/TAS labels and prepare optimization metrics
-            await self._reconcile_labels(context)
+            self._reconcile_labels(context)
 
             # Step 5: Smooth regime assignments for temporal coherence
             self._smooth_assignments(context)
@@ -1026,7 +1061,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
             raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
-    async def _optimize_features(self, context: ClusteringContext) -> None:
+    def _optimize_features(self, context: ClusteringContext) -> None:
         """Optimize features using data-driven dimensionality reduction."""
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
@@ -1076,9 +1111,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             context.optimized_features = features_final
             self.optimized_features = features_final
 
-            # Memory cleanup after feature optimization
-            import gc
-            gc.collect()
+            # Memory cleanup after feature optimization using hardware tools
+            if self.memory_optimizer:
+                self.memory_optimizer.cleanup_arrays([features_scaled, features_pca])
+                self.memory_optimizer.optimize_memory_usage()
+            else:
+                import gc
+                gc.collect()
 
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
@@ -1121,13 +1160,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         context.k_metadata = k_metadata
         tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
 
-    async def _reconcile_labels(self, context: ClusteringContext) -> None:
+    def _reconcile_labels(self, context: ClusteringContext) -> None:
         """Reconcile NAS/TAS regime assignments and prepare optimization metrics."""
         if context.optimal_k is None:
             raise ValueError("Optimal K must be selected before label reconciliation")
 
         tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
-        tas_assignments, nas_assignments = await self._extract_regime_assignments()
+        tas_assignments, nas_assignments = self._extract_regime_assignments()
         context.tas_assignments = tas_assignments
         context.nas_assignments = nas_assignments
         tprint(
@@ -1136,7 +1175,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         )
 
         tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
-        optimized_assignments, optimization_metrics, fusion_metadata = await self.regime_optimization_service.progressive_regime_optimization_with_k(
+        optimized_assignments, optimization_metrics, fusion_metadata = self.regime_optimization_service.progressive_regime_optimization_with_k(
             context.optimized_features,
             tas_assignments,
             nas_assignments,
@@ -2663,7 +2702,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Convergence history update failed: {e}")
     
-    async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
         try:
             pipeline_state = getattr(self, 'pipeline_state', {}) or {}

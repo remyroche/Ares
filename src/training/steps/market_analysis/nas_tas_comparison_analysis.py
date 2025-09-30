@@ -47,8 +47,11 @@ class NASTASComparisonAnalyzer:
                 break
         
         if clustering_dir is None:
-            tprint("⚠️ No clustering directory found, creating synthetic data for demonstration", "WARNING")
-            return self._create_synthetic_regime_data(symbol)
+            raise FileNotFoundError(
+                f"No clustering directory found for {symbol}. "
+                f"Expected directories: {[str(d) for d in possible_dirs]}. "
+                f"Please ensure regime analysis has been completed first."
+            )
         
         # Look for separate NAS and TAS regime files
         nas_files = list(clustering_dir.glob("*nas*regime*assignments*.parquet"))
@@ -80,88 +83,21 @@ class NASTASComparisonAnalyzer:
             }
         
         elif combined_files:
-            # Load combined data and create synthetic differences
-            tprint("📁 Found combined regime file, creating synthetic NAS/TAS differences", "INFO")
+            # Found combined data but no separate NAS/TAS files
             latest_file = max(combined_files, key=lambda x: x.stat().st_mtime)
-            tprint(f"📁 Using regime file: {latest_file.name}", "INFO")
-            
-            df = pd.read_parquet(latest_file)
-            tprint(f"✅ Loaded regime assignments: {len(df)} samples", "SUCCESS")
-            
-            # Create synthetic differences between NAS and TAS
-            return self._create_synthetic_differences(df, symbol)
+            raise FileNotFoundError(
+                f"Found combined regime file '{latest_file.name}' but no separate NAS and TAS files. "
+                f"Expected separate files with patterns: '*nas*regime*assignments*.parquet' and '*tas*regime*assignments*.parquet'. "
+                f"Please run separate NAS and TAS regime analysis to generate comparison data."
+            )
         
         else:
-            tprint("⚠️ No regime assignment files found, creating synthetic data", "WARNING")
-            return self._create_synthetic_regime_data(symbol)
+            raise FileNotFoundError(
+                f"No regime assignment files found in {clustering_dir}. "
+                f"Expected files with patterns: '*nas*regime*assignments*.parquet' and '*tas*regime*assignments*.parquet'. "
+                f"Please run NAS and TAS regime analysis first."
+            )
     
-    def _create_synthetic_differences(self, base_df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
-        """Create synthetic differences between NAS and TAS from base data."""
-        tprint("🔧 Creating synthetic NAS/TAS differences for demonstration", "INFO")
-        
-        base_labels = base_df['regime_id'].values
-        base_probs = base_df['regime_prob'].values if 'regime_prob' in base_df.columns else None
-        unique_regimes = sorted(np.unique(base_labels))
-        
-        # Create NAS regime assignments with slight variations
-        nas_labels = base_labels.copy()
-        tas_labels = base_labels.copy()
-        
-        # Introduce some regime shifts to simulate different approaches
-        np.random.seed(42)  # For reproducible results
-        
-        # NAS: Slightly more conservative (tendency towards lower volatility regimes)
-        nas_shift_mask = np.random.random(len(nas_labels)) < 0.15  # 15% of samples
-        nas_labels[nas_shift_mask] = np.clip(nas_labels[nas_shift_mask] - 1, 0, len(unique_regimes) - 1)
-        
-        # TAS: Slightly more aggressive (tendency towards higher volatility regimes)  
-        tas_shift_mask = np.random.random(len(tas_labels)) < 0.12  # 12% of samples
-        tas_labels[tas_shift_mask] = np.clip(tas_labels[tas_shift_mask] + 1, 0, len(unique_regimes) - 1)
-        
-        tprint("✅ Created synthetic NAS/TAS regime differences", "SUCCESS")
-        
-        return {
-            'nas_regime_labels': nas_labels,
-            'nas_regime_probs': base_probs,
-            'tas_regime_labels': tas_labels,
-            'tas_regime_probs': base_probs,
-            'nas_total_samples': len(nas_labels),
-            'tas_total_samples': len(tas_labels),
-            'nas_unique_regimes': sorted(np.unique(nas_labels)),
-            'tas_unique_regimes': sorted(np.unique(tas_labels)),
-            'has_separate_data': True
-        }
-    
-    def _create_synthetic_regime_data(self, symbol: str) -> Dict[str, Any]:
-        """Create synthetic regime data for demonstration purposes."""
-        tprint("🔧 Creating synthetic regime data for demonstration", "INFO")
-        
-        # Create synthetic regime distributions
-        np.random.seed(42)
-        n_samples = 1000
-        
-        # Create different regime distributions for NAS vs TAS
-        # NAS: More balanced distribution
-        nas_regime_probs = np.array([0.15, 0.25, 0.10, 0.08, 0.05, 0.20, 0.12, 0.05])
-        nas_labels = np.random.choice(8, size=n_samples, p=nas_regime_probs)
-        
-        # TAS: More concentrated distribution (some regimes more dominant)
-        tas_regime_probs = np.array([0.12, 0.35, 0.08, 0.06, 0.03, 0.25, 0.08, 0.03])
-        tas_labels = np.random.choice(8, size=n_samples, p=tas_regime_probs)
-        
-        tprint("✅ Created synthetic NAS/TAS regime data", "SUCCESS")
-        
-        return {
-            'nas_regime_labels': nas_labels,
-            'nas_regime_probs': None,
-            'tas_regime_labels': tas_labels,
-            'tas_regime_probs': None,
-            'nas_total_samples': len(nas_labels),
-            'tas_total_samples': len(tas_labels),
-            'nas_unique_regimes': sorted(np.unique(nas_labels)),
-            'tas_unique_regimes': sorted(np.unique(tas_labels)),
-            'has_separate_data': True
-        }
     
     def calculate_distribution_comparison(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate detailed distribution comparison between NAS and TAS."""
@@ -387,6 +323,13 @@ class NASTASComparisonAnalyzer:
             
             return comparison
             
+        except FileNotFoundError as e:
+            tprint(f"❌ Missing required data files: {e}", "ERROR")
+            tprint("💡 To fix this issue:", "INFO")
+            tprint("   1. Run separate NAS regime analysis to generate NAS regime assignments", "INFO")
+            tprint("   2. Run separate TAS regime analysis to generate TAS regime assignments", "INFO")
+            tprint("   3. Ensure files follow naming patterns: '*nas*regime*assignments*.parquet' and '*tas*regime*assignments*.parquet'", "INFO")
+            raise
         except Exception as e:
             tprint(f"❌ Comparison analysis failed: {e}", "ERROR")
             raise

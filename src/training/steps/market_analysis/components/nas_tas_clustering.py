@@ -1111,55 +1111,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Fixed range K search failed: {e}")
             raise
 
-    def _select_optimal_k_hmm_bic(self, features: np.ndarray, adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
-        """Select optimal K using BIC-selected Gaussian HMM for temporal regimes."""
-        try:
-            tprint("Selecting optimal K using HMM BIC for temporal regimes...", "INFO")
-            tprint("Selecting optimal K using HMM BIC for temporal regimes")
-            
-            bic_scores = []
-            hmm_models = []
-            k_values = []
-            consecutive_increases = 0
-            max_k = min(20, features.shape[0] // 20)  # Conservative upper bound for HMM
-            
-            # Use parallel K-grid search for HMM as well
-            k_values = list(range(2, max_k + 1))
-            bic_scores, model_metadata = self._parallel_k_grid(features, k_values, 'hmm', n_jobs=-1)
-            
-            # Log results
-            for i, (k, bic) in enumerate(zip(k_values, bic_scores)):
-                tprint(f"HMM K={k}: BIC={bic:.3f}", "INFO")
-            
-            if not bic_scores:
-                raise ValueError("No valid HMM BIC scores computed")
-            
-            # Find optimal K (minimum BIC)
-            optimal_k_idx = np.argmin(bic_scores)
-            optimal_k = k_values[optimal_k_idx]
-            optimal_bic = bic_scores[optimal_k_idx]
-            optimal_hmm = hmm_models[optimal_k_idx]
-            
-            tprint(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            tprint(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
-            
-            metadata = {
-                'bic_scores': bic_scores,
-                'k_values': k_values,
-                'optimal_k': optimal_k,
-                'optimal_bic': optimal_bic,
-                'consecutive_increases': consecutive_increases,
-                'method': 'hmm_bic'
-            }
-            
-            return optimal_k, optimal_bic, metadata
-            
-        except Exception as e:
-            tprint(f"HMM BIC selection failed: {e}")
-            tprint(f"HMM BIC selection failed: {e}, falling back to GMM", "WARNING")
-            # Fallback to GMM
-            return self._adaptive_k_search(features)
-
     def _map_labels_to_k_space(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
                                target_k: int, features: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Map NAS/TAS labels to 0..K-1 space using nearest GMM centroid."""

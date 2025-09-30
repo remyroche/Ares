@@ -267,6 +267,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self._initialize_hardware_optimization()
             self._initialize_matrix_operations()
             
+
             if MATRIX_OPERATIONS_AVAILABLE:
                 try:
                     self.matrix_ops = get_unified_matrix_operations()
@@ -283,6 +284,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 except Exception as e:
                     tprint(f"Failed to initialize hardware optimization: {e}", "ERROR")
 
+
             tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
 
     def _log(self, message: str, level: str = "INFO") -> None:
@@ -290,66 +292,93 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         tprint(message, level)
 
     def _initialize_hardware_optimization(self):
-        """Initialize M1-specific hardware optimization systems."""
-        try:
-            tprint("🔧 Initializing M1 hardware optimization...", "INFO")
-            
-            if M1_HARDWARE_AVAILABLE:
-                # Initialize M1 GPU optimizer
+        """Initialize hardware optimization systems and return created resources."""
+        resources = {
+            'hardware_manager': None,
+            'm1_gpu_optimizer': None,
+            'm1_memory_optimizer': None,
+            'm1_cpu_optimizer': None,
+        }
+
+        tprint("🔧 Initializing hardware optimization systems...", "INFO")
+
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                resources['hardware_manager'] = get_unified_hardware_manager()
+                tprint("✅ Hardware optimization initialized successfully", "SUCCESS")
+            except Exception as e:
+                tprint(f"❌ Failed to initialize unified hardware manager: {e}", "ERROR")
+        else:
+            tprint("⚠️  Hardware optimization utilities not available, using fallback", "WARNING")
+
+        if M1_HARDWARE_AVAILABLE:
+            try:
                 tprint("  🎮 Initializing M1 GPU optimizer...", "INFO")
-                self.m1_gpu_optimizer = get_m1_gpu_optimizer()
-                if self.m1_gpu_optimizer:
+                resources['m1_gpu_optimizer'] = get_m1_gpu_optimizer()
+                if resources['m1_gpu_optimizer']:
                     tprint("  ✅ M1 GPU optimizer initialized", "SUCCESS")
-                
-                # Initialize M1 memory optimizer
+
                 tprint("  💾 Initializing M1 memory optimizer...", "INFO")
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                if self.m1_memory_optimizer:
+                resources['m1_memory_optimizer'] = get_m1_memory_optimizer()
+                if resources['m1_memory_optimizer']:
                     tprint("  ✅ M1 memory optimizer initialized", "SUCCESS")
-                
-                # Initialize M1 CPU optimizer
+
                 tprint("  🖥️  Initializing M1 CPU optimizer...", "INFO")
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-                if self.m1_cpu_optimizer:
+                resources['m1_cpu_optimizer'] = get_m1_cpu_optimizer()
+                if resources['m1_cpu_optimizer']:
                     tprint("  ✅ M1 CPU optimizer initialized", "SUCCESS")
-                
+
                 tprint("✅ M1 hardware optimization systems initialized", "SUCCESS")
-            else:
-                tprint("⚠️  M1 hardware utilities not available, using fallback", "WARNING")
-                
-        except Exception as e:
-            tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
-    
+            except Exception as e:
+                tprint(f"❌ M1 hardware optimization initialization failed: {e}", "ERROR")
+        else:
+            tprint("⚠️  M1 hardware utilities not available, using fallback", "WARNING")
+
+        self.hardware_manager = resources['hardware_manager']
+        self.m1_gpu_optimizer = resources['m1_gpu_optimizer']
+        self.m1_memory_optimizer = resources['m1_memory_optimizer']
+        self.m1_cpu_optimizer = resources['m1_cpu_optimizer']
+
+        return resources
+
     def _initialize_matrix_operations(self):
-        """Initialize matrix operations with hardware optimization."""
-        try:
-            tprint("📊 Initializing matrix operations with hardware optimization...", "INFO")
-            
-            if MATRIX_OPERATIONS_AVAILABLE:
-                # Initialize unified matrix operations
+        """Initialize matrix operations with hardware optimization and return created resources."""
+        resources = {
+            'matrix_ops': None,
+            'vectorized_core': None,
+            'batch_processor': None,
+        }
+
+        tprint("📊 Initializing matrix operations with hardware optimization...", "INFO")
+
+        if MATRIX_OPERATIONS_AVAILABLE:
+            try:
                 tprint("  🔄 Initializing unified matrix operations...", "INFO")
-                self.matrix_ops = get_unified_matrix_operations()
-                if self.matrix_ops:
+                resources['matrix_ops'] = get_unified_matrix_operations()
+                if resources['matrix_ops']:
                     tprint("  ✅ Unified matrix operations initialized", "SUCCESS")
-                
-                # Initialize vectorized processing core
+
                 tprint("  ⚡ Initializing vectorized processing core...", "INFO")
-                self.vectorized_core = get_vectorized_processing_core()
-                if self.vectorized_core:
+                resources['vectorized_core'] = get_vectorized_processing_core()
+                if resources['vectorized_core']:
                     tprint("  ✅ Vectorized processing core initialized", "SUCCESS")
-                
-                # Initialize batch processor
+
                 tprint("  📦 Initializing batch matrix processor...", "INFO")
-                self.batch_processor = get_batch_matrix_processor()
-                if self.batch_processor:
+                resources['batch_processor'] = get_batch_matrix_processor()
+                if resources['batch_processor']:
                     tprint("  ✅ Batch matrix processor initialized", "SUCCESS")
-                
+
                 tprint("✅ Matrix operations initialized with hardware optimization", "SUCCESS")
-            else:
-                tprint("⚠️  Matrix operations not available, using fallback", "WARNING")
-                
-        except Exception as e:
-            tprint(f"❌ Matrix operations initialization failed: {e}", "ERROR")
+            except Exception as e:
+                tprint(f"❌ Matrix operations initialization failed: {e}", "ERROR")
+        else:
+            tprint("⚠️  Matrix operations not available, using fallback", "WARNING")
+
+        self.matrix_ops = resources['matrix_ops']
+        self.vectorized_core = resources['vectorized_core']
+        self.batch_processor = resources['batch_processor']
+
+        return resources
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""

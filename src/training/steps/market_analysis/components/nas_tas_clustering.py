@@ -45,6 +45,7 @@ from ..shared_utils import (
     BaseConfig,
 
     # Logging
+    get_logger,
     log_execution,
     log_performance,
     LoggingContext,
@@ -956,7 +957,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
-            return create_default_config("clustering")
+            # Use supported config type with necessary parameters
+            fallback_config = create_default_config(
+                config_type="hybrid",
+                symbol=getattr(self.config, 'symbol', 'BTCUSDT'),
+                timeframe=getattr(self.config, 'timeframe', '15m'),
+                n_regimes=getattr(self.config, 'n_regimes', 8)
+            )
+            # Add clustering-specific defaults
+            fallback_config.update({
+                'algorithm_type': 'adaptive_clustering',
+                'enable_economic_clustering': True,
+                'enable_ensemble_clustering': True,
+                'economic_weight': 0.25,
+                'volatility_regime_weight': 0.30,
+                'volume_regime_weight': 0.25,
+                'structural_trend_weight': 0.20,
+                'exchange': 'binance'
+            })
+            return fallback_config
     
     
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
@@ -1279,10 +1298,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Use parallel K-grid search for efficiency
             k_values = list(range(2, max_k + 1))
-            bic_scores, model_metadata = self._parallel_k_grid(features, k_values, 'gmm', n_jobs=-1)
+            bic_scores, model_metadata, fitted_models, successful_k_values = self._parallel_k_grid(features, k_values, 'gmm', n_jobs=-1)
             
             # Log results
-            for i, (k, bic) in enumerate(zip(k_values, bic_scores)):
+            for i, (k, bic) in enumerate(zip(successful_k_values, bic_scores)):
                 tprint(f"K={k}: BIC={bic:.3f}", "INFO")
             
             # Check if we hit the cap
@@ -1300,13 +1319,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if len(candidate_indices) > 1:
                 tprint(f"BIC tie detected: {len(candidate_indices)} candidates within {bic_tolerance}", "INFO")
                 # Prefer model with higher stability (bootstrap ARI) and better temporal coherence
-                best_idx = self._resolve_bic_tie(features, candidate_indices, k_values, gmm_models)
+                best_idx = self._resolve_bic_tie(features, candidate_indices, successful_k_values, fitted_models)
                 optimal_k_idx = best_idx
-                tprint(f"Tie resolved: chose K={k_values[best_idx]} based on stability", "INFO")
+                tprint(f"Tie resolved: chose K={successful_k_values[best_idx]} based on stability", "INFO")
             else:
                 optimal_k_idx = np.argmin(bic_scores)
             
-            optimal_k = k_values[optimal_k_idx]
+            optimal_k = successful_k_values[optimal_k_idx]
             optimal_bic = bic_scores[optimal_k_idx]
             
             # Refit final model to avoid memory bloat (don't store all models)
@@ -1349,7 +1368,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return self._fixed_range_k_search(features, (2, 20))
 
     def _parallel_k_grid(self, features: np.ndarray, k_values: List[int], 
-                        model_type: str = 'gmm', n_jobs: int = -1) -> Tuple[List[float], List[Dict]]:
+                        model_type: str = 'gmm', n_jobs: int = -1) -> Tuple[List[float], List[Dict], List[Any], List[int]]:
         """Parallel K-grid search for GMM/HMM models."""
         try:
             # Safety checks
@@ -1370,19 +1389,28 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 for k in k_values
             )
             
-            # Extract BIC scores and metadata
-            bic_scores = [result[0] for result in results if result[0] is not None]
-            model_metadata = [result[1] for result in results if result[1] is not None]
+            # Extract results while maintaining k_values association
+            bic_scores = []
+            model_metadata = []
+            fitted_models = []
+            successful_k_values = []
+            
+            for i, result in enumerate(results):
+                if result[0] is not None:  # Successful fit
+                    bic_scores.append(result[0])
+                    model_metadata.append(result[1])
+                    fitted_models.append(result[2])
+                    successful_k_values.append(k_values[i])
             
             tprint(f"Parallel K-grid completed: {len(bic_scores)} successful fits", "SUCCESS")
-            return bic_scores, model_metadata
+            return bic_scores, model_metadata, fitted_models, successful_k_values
             
         except Exception as e:
             self._log(f"Parallel K-grid search failed: {e}", "ERROR")
             # Fallback to serial search
             return self._serial_k_grid(features, k_values, model_type)
 
-    def _fit_single_k_model(self, features: np.ndarray, k: int, model_type: str) -> Tuple[Optional[float], Optional[Dict]]:
+    def _fit_single_k_model(self, features: np.ndarray, k: int, model_type: str) -> Tuple[Optional[float], Optional[Dict], Optional[Any]]:
         """Fit a single K model (worker function for parallel execution)."""
         try:
             if model_type == 'gmm':
@@ -1430,29 +1458,33 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 raise ValueError(f"Unknown model_type: {model_type}")
             
-            return bic_score, metadata
+            return bic_score, metadata, model
             
         except Exception as e:
             tprint(f"Model fit failed for K={k}: {e}")
-            return None, None
+            return None, None, None
 
-    def _serial_k_grid(self, features: np.ndarray, k_values: List[int], model_type: str) -> Tuple[List[float], List[Dict]]:
+    def _serial_k_grid(self, features: np.ndarray, k_values: List[int], model_type: str) -> Tuple[List[float], List[Dict], List[Any], List[int]]:
         """Serial fallback for K-grid search."""
         try:
             bic_scores = []
             model_metadata = []
+            fitted_models = []
+            successful_k_values = []
             
             for k in k_values:
                 result = self._fit_single_k_model(features, k, model_type)
                 if result[0] is not None:
                     bic_scores.append(result[0])
                     model_metadata.append(result[1])
+                    fitted_models.append(result[2])
+                    successful_k_values.append(k)
             
-            return bic_scores, model_metadata
+            return bic_scores, model_metadata, fitted_models, successful_k_values
             
         except Exception as e:
             tprint(f"Serial K-grid search failed: {e}")
-            return [], []
+            return [], [], [], []
 
     def _verify_parallel_safety(self, n_jobs: int, n_models: int) -> bool:
         """Verify parallel execution safety to prevent oversubscription."""

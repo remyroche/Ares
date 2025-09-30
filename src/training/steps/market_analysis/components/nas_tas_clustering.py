@@ -2508,115 +2508,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Temporal improvement calculation failed: {e}")
             return 0.0
     
-    def _calculate_regime_quality_scores(self, assignments: np.ndarray, sample_idx: int, regime: int, 
-                                       features: np.ndarray = None) -> Dict[str, float]:
-        """Calculate clustering quality scores for a specific regime assignment."""
-        try:
-            # Use provided features or create placeholder
-            if features is None:
-                features = np.random.randn(len(assignments), 10)
-            
-            # Temporarily assign the regime to see its impact
-            original_regime = assignments[sample_idx]
-            assignments[sample_idx] = regime
-            
-            # Calculate individual quality metrics
-            quality_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Restore original assignment
-            assignments[sample_idx] = original_regime
-            
-            return quality_scores
-            
-        except Exception as e:
-            log_warning(f"Regime quality scores calculation failed: {e}")
-            return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0}
+    # REMOVED: _calculate_regime_quality_scores - unused method
     
-    def _calculate_composite_quality_score(self, quality_scores: Dict[str, float]) -> float:
-        """Calculate composite quality score from individual metrics with fine-tuned weights."""
-        try:
-            # Normalize individual scores
-            silhouette = quality_scores.get('silhouette', 0.0)
-            calinski_harabasz = quality_scores.get('calinski_harabasz', 0.0)
-            davies_bouldin = quality_scores.get('davies_bouldin', 0.0)
-            regime_balance = quality_scores.get('regime_balance', 0.0)
-            cv_score = quality_scores.get('cv_score', 0.0)
-            temporal_consistency = quality_scores.get('temporal_consistency', 0.0)
-            
-            # Normalize metrics to 0-1 range
-            norm_silhouette = (silhouette + 1) / 2  # [-1, 1] -> [0, 1]
-            norm_ch = min(calinski_harabasz / 1000, 1.0)  # Cap at 1.0
-            norm_db = max(0, 1.0 / (1.0 + davies_bouldin))  # Invert and normalize
-            norm_balance = regime_balance  # Already in [0, 1]
-            norm_cv = cv_score  # Already in [0, 1] range
-            norm_temporal = temporal_consistency  # Already in [0, 1] range
-            
-            # Fine-tuned weighted composite score optimized for NAS/TAS divergence detection
-            # Reduced redundancy by focusing on complementary metrics
-            composite_score = (
-                0.30 * norm_silhouette +      # Silhouette score (primary cluster separation)
-                0.00 * norm_ch +             # Calinski-Harabasz score (REMOVED - redundant)
-                0.00 * norm_db +             # Davies-Bouldin score (REMOVED - redundant)
-                0.20 * norm_balance +        # Regime balance (unique metric)
-                0.30 * norm_cv +             # Coefficient of Variation score (unique metric)
-                0.20 * norm_temporal         # Temporal consistency (unique metric)
-            )
-            
-            return composite_score
+    # REMOVED: _calculate_composite_quality_score - unused method
             
         except Exception as e:
             log_warning(f"Composite quality score calculation failed: {e}")
             return 0.0
     
-    def _calculate_temporal_consistency(self, current_regime: int, prev_regime: int, next_regime: int) -> float:
-        """Calculate temporal consistency score for a regime assignment."""
-        try:
-            consistency = 0.0
-            
-            # Check consistency with previous regime
-            if prev_regime == current_regime:
-                consistency += 0.5
-            elif abs(prev_regime - current_regime) == 1:
-                consistency += 0.3  # Adjacent regimes are somewhat consistent
-            
-            # Check consistency with next regime
-            if next_regime == current_regime:
-                consistency += 0.5
-            elif abs(next_regime - current_regime) == 1:
-                consistency += 0.3  # Adjacent regimes are somewhat consistent
-            
-            return consistency
-            
-        except Exception as e:
-            log_warning(f"Temporal consistency calculation failed: {e}")
-            return 0.5
+    # REMOVED: _calculate_temporal_consistency - unused method
     
-    def _calculate_regime_stability(self, regime: int, assignments: np.ndarray) -> float:
-        """Calculate stability score for a regime based on its frequency and distribution."""
-        try:
-            # Calculate regime frequency
-            regime_count = np.sum(assignments == regime)
-            total_samples = len(assignments)
-            frequency = regime_count / total_samples
-            
-            # Calculate regime distribution (how spread out it is)
-            regime_indices = np.where(assignments == regime)[0]
-            if len(regime_indices) > 1:
-                # Calculate average gap between regime occurrences
-                gaps = np.diff(regime_indices)
-                avg_gap = np.mean(gaps)
-                max_gap = np.max(gaps)
-                
-                # Stability is higher for more frequent regimes with smaller gaps
-                stability = frequency * (1.0 - (avg_gap / (max_gap + 1e-8)))
-            else:
-                stability = frequency
-            
-            return stability
-            
-        except Exception as e:
-            log_warning(f"Regime stability calculation failed: {e}")
-            return 0.5
+    # REMOVED: _calculate_regime_stability - unused method
     
     def _update_pipeline_current_assignments(self, assignments: np.ndarray) -> None:
         """Ensure the pipeline state tracks the working regime assignments."""

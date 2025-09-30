@@ -168,12 +168,12 @@ class LabelFusionService:
             and min(tas_unique) >= 0
             and min(nas_unique) >= 0
         ):
-            self._logger("Labels already aligned with target space", "INFO")
+            tprint("Labels already aligned with target space", "INFO")
             return tas_assignments, nas_assignments, {"mapping_needed": False}
 
-        self._logger(
+        tprint(
             f"Mapping labels to shared K={target_k} space (TAS={len(tas_unique)}, NAS={len(nas_unique)})",
-            "INFO",
+            "INFO"
         )
 
         if features is not None:
@@ -197,9 +197,8 @@ class LabelFusionService:
             **mapping_details,
         }
 
-        self._logger(
-            f"Label mapping completed – TAS unique: {len(set(tas_mapped))}, NAS unique: {len(set(nas_mapped))}",
-            "SUCCESS",
+        tprint_success(
+            f"Label mapping completed – TAS unique: {len(set(tas_mapped))}, NAS unique: {len(set(nas_mapped))}"
         )
         return tas_mapped, nas_mapped, mapping_info
 
@@ -214,7 +213,7 @@ class LabelFusionService:
     ) -> LabelFusionResult:
         """Run Dawid–Skene EM to fuse NAS and TAS labels."""
 
-        self._logger(f"Starting Dawid–Skene fusion with K={target_k}", "INFO")
+        tprint(f"Starting Dawid–Skene fusion with K={target_k}", "INFO")
 
         (
             tas_mapped,
@@ -263,7 +262,7 @@ class LabelFusionService:
                 class_priors,
                 tolerance,
             ):
-                self._logger(f"Dawid–Skene converged after {iteration + 1} iterations", "SUCCESS")
+                tprint_success(f"Dawid–Skene converged after {iteration + 1} iterations")
                 break
 
         fused_assignments = np.argmax(posteriors, axis=1)
@@ -281,9 +280,8 @@ class LabelFusionService:
             "nas_row_sums": nas_confusion.sum(axis=1).tolist(),
         }
 
-        self._logger(
-            f"Dawid–Skene fusion completed: {n_samples} samples, {n_classes} classes",
-            "SUCCESS",
+        tprint_success(
+            f"Dawid–Skene fusion completed: {n_samples} samples, {n_classes} classes"
         )
 
         return LabelFusionResult(assignments=fused_assignments, metadata=metadata)
@@ -458,9 +456,9 @@ class LabelFusionService:
         tas_mapped = np.array([tas_mapping.get(label, abstain_value) for label in tas_assignments])
         nas_mapped = np.array([nas_mapping.get(label, abstain_value) for label in nas_assignments])
 
-        self._logger(
+        tprint(
             f"Abstain mapping applied – TAS unique: {len(set(tas_mapped))}, NAS unique: {len(set(nas_mapped))}",
-            "INFO",
+            "INFO"
         )
 
         return tas_mapped, nas_mapped, tas_mapping, nas_mapping, abstain_value
@@ -533,24 +531,57 @@ class LabelFusionService:
 
                                 # Use safe multiplication with validation
                                 prior_value = validate_finite(class_priors[true_class], "class_prior")
-                                product = safe_divide(
-                                    prior_value * tas_factor * nas_factor,
-                                    1.0, default=0.0
-                                )
-                                posterior_value = validate_finite(product, "posterior_value")
-                                posteriors[i, true_class] = posterior_value
+                                
+                                # Check for zero or negative values that would cause issues
+                                if prior_value <= 0:
+                                    tprint_warning(f"Invalid prior value {prior_value} for class {true_class}")
+                                    prior_value = 1e-10  # Small positive value
+                                
+                                if tas_factor <= 0:
+                                    tprint_warning(f"Invalid TAS factor {tas_factor} for class {true_class}")
+                                    tas_factor = 1e-10
+                                    
+                                if nas_factor <= 0:
+                                    tprint_warning(f"Invalid NAS factor {nas_factor} for class {true_class}")
+                                    nas_factor = 1e-10
+                                
+                                # Calculate product with proper validation
+                                product = prior_value * tas_factor * nas_factor
+                                product = validate_finite(product, "posterior_product")
+                                
+                                # Ensure product is positive
+                                if product <= 0:
+                                    tprint_warning(f"Non-positive posterior product {product} for class {true_class}")
+                                    product = 1e-10
+                                
+                                posteriors[i, true_class] = product
 
                     # Normalize posteriors with safe operations and validation - update in place
                     row_sums = posteriors.sum(axis=1, keepdims=True)
                     row_sums = validate_finite(row_sums, "row_sums")
-                    row_sums = np.where(row_sums == 0.0, 1.0, row_sums)
+                    
+                    # Handle zero sums by setting uniform distribution
+                    zero_sum_mask = (row_sums == 0.0).flatten()
+                    if np.any(zero_sum_mask):
+                        tprint_warning(f"Found {np.sum(zero_sum_mask)} samples with zero posterior sums")
+                        posteriors[zero_sum_mask] = 1.0 / n_classes  # Uniform distribution
+                        row_sums[zero_sum_mask] = 1.0
+                    
+                    # Ensure all row sums are positive
+                    row_sums = np.where(row_sums <= 0.0, 1.0, row_sums)
                     row_sums = validate_positive(row_sums, "row_sums_positive")
                     
-                    posteriors[:] = safe_divide(posteriors, row_sums, default=0.0)
+                    # Normalize with safe division
+                    posteriors[:] = safe_divide(posteriors, row_sums, default=1.0/n_classes)
                     posteriors[:] = validate_finite(posteriors, "normalized_posteriors")
                     
-                    # Ensure posteriors are valid probabilities - update in place
+                    # Ensure posteriors are valid probabilities and sum to 1
                     posteriors[:] = validate_range(posteriors, 0.0, 1.0, "posteriors_probability")
+                    
+                    # Final normalization to ensure rows sum to 1
+                    final_row_sums = posteriors.sum(axis=1, keepdims=True)
+                    final_row_sums = np.where(final_row_sums == 0.0, 1.0, final_row_sums)
+                    posteriors[:] = safe_divide(posteriors, final_row_sums, default=1.0/n_classes)
                     
                     tprint_success(f"E-step completed for {n_samples} samples, {n_classes} classes")
                     
@@ -627,7 +658,7 @@ class RegimeOptimizationService:
     ) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
         """Run Dawid–Skene fusion then score the resulting assignments."""
 
-        self._logger("Starting progressive regime optimization", "INFO")
+        tprint("Starting progressive regime optimization", "INFO")
         fusion_result = self._label_fusion_service.run_dawid_skene(
             tas_assignments,
             nas_assignments,
@@ -651,9 +682,8 @@ class RegimeOptimizationService:
             "fusion_metadata": fusion_result.metadata,
         }
 
-        self._logger(
-            f"Progressive optimization completed – Score: {initial_score:.3f}",
-            "SUCCESS",
+        tprint_success(
+            f"Progressive optimization completed – Score: {initial_score:.3f}"
         )
 
         return mapped_assignments, optimization_metrics, fusion_result.metadata
@@ -668,14 +698,13 @@ class RegimeOptimizationService:
             model.fit(features)
             smoothed_assignments = model.predict(features)
             metadata = self._build_smoothing_metadata(model, assignments, smoothed_assignments)
-            self._logger(
-                f"HMM smoothing completed – {model.n_components} clusters", "SUCCESS"
+            tprint_success(
+                f"HMM smoothing completed – {model.n_components} clusters"
             )
             return smoothed_assignments, metadata
         except Exception as exc:  # pragma: no cover - safety fallback
-            self._logger(
-                f"HMM smoothing failed ({exc}), using simple smoothing fallback",
-                "WARNING",
+            tprint_warning(
+                f"HMM smoothing failed ({exc}), using simple smoothing fallback"
             )
             smoothed = self._simple_temporal_smoothing(assignments)
             return smoothed, {"method": "simple_fallback", "error": str(exc)}
@@ -684,17 +713,16 @@ class RegimeOptimizationService:
         self, assignments: np.ndarray, features: np.ndarray, optimal_k: int
     ) -> np.ndarray:
         if len(set(assignments.tolist())) == optimal_k:
-            self._logger(
-                f"Assignments already match optimal K={optimal_k}", "SUCCESS"
+            tprint_success(
+                f"Assignments already match optimal K={optimal_k}"
             )
             return assignments
 
         gmm = GaussianMixture(n_components=optimal_k, random_state=42)
         gmm.fit(features)
         mapped = gmm.predict(features)
-        self._logger(
-            f"Assignments remapped via GMM – clusters: {len(set(mapped.tolist()))}",
-            "SUCCESS",
+        tprint_success(
+            f"Assignments remapped via GMM – clusters: {len(set(mapped.tolist()))}"
         )
         return mapped
 
@@ -760,9 +788,8 @@ class RegimeOptimizationService:
         }
 
         if low_persistence_regimes:
-            self._logger(
-                f"Low persistence regimes detected: {low_persistence_regimes}",
-                "WARNING",
+            tprint_warning(
+                f"Low persistence regimes detected: {low_persistence_regimes}"
             )
 
         return metadata

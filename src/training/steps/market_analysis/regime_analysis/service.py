@@ -144,6 +144,9 @@ class RegimeAnalysisService:
 
     def analyze(self, symbol: str = "ETHUSDT") -> Dict[str, Any]:
         """Execute the full regime analysis workflow for a symbol with comprehensive monitoring and error handling."""
+        # Input validation
+        self._validate_analysis_inputs(symbol)
+        
         # Initialize performance monitoring
         self.performance_metrics["start_time"] = time.time()
         self.performance_metrics["error_count"] = 0
@@ -221,18 +224,35 @@ class RegimeAnalysisService:
                 
             except Exception as exc:
                 self.performance_metrics["error_count"] += 1
-                tprint_error(f"Regime analysis failed for {symbol}: {exc}")
-                tprint_debug(f"Error traceback: {traceback.format_exc()}")
+                error_traceback = traceback.format_exc()
                 
-                # Log error details
-                tprint_structured({
-                    "error": str(exc),
+                # Log comprehensive error details
+                tprint_error(f"Regime analysis failed for {symbol}: {exc}")
+                tprint_debug(f"Error traceback: {error_traceback}")
+                
+                # Log structured error information
+                error_info = {
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
                     "symbol": symbol,
                     "error_count": self.performance_metrics["error_count"],
-                    "success_count": self.performance_metrics["success_count"]
-                })
+                    "success_count": self.performance_metrics["success_count"],
+                    "traceback": error_traceback
+                }
+                tprint_structured(error_info)
                 
-                raise
+                # Create detailed error result
+                return {
+                    "success": False,
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                        "traceback": error_traceback,
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat()
+                    },
+                    "performance_metrics": self.performance_metrics
+                }
             finally:
                 # Cleanup and final monitoring
                 if self.memory_optimizer:
@@ -368,6 +388,41 @@ class RegimeAnalysisService:
             "success_count": 0
         }
         tprint_info("Performance metrics reset")
+
+    def _validate_analysis_inputs(self, symbol: str) -> None:
+        """Validate inputs for analysis method."""
+        try:
+            # Validate symbol
+            if not isinstance(symbol, str):
+                raise ValueError(f"Symbol must be a string, got {type(symbol)}")
+            
+            if not symbol or symbol.strip() == "":
+                raise ValueError("Symbol cannot be empty")
+            
+            # Validate symbol format (basic check)
+            if len(symbol) < 3 or len(symbol) > 20:
+                raise ValueError(f"Symbol length invalid: {len(symbol)} (expected 3-20)")
+            
+            # Check for valid characters (alphanumeric only)
+            if not symbol.replace("USDT", "").replace("USD", "").replace("BTC", "").replace("ETH", "").isalnum():
+                raise ValueError(f"Symbol contains invalid characters: {symbol}")
+            
+            # Validate data cache path
+            if not self.data_cache_path.exists():
+                raise FileNotFoundError(f"Data cache directory not found: {self.data_cache_path}")
+            
+            if not self.data_cache_path.is_dir():
+                raise ValueError(f"Data cache path is not a directory: {self.data_cache_path}")
+            
+            # Check if we have read permissions
+            if not os.access(self.data_cache_path, os.R_OK):
+                raise PermissionError(f"No read access to data cache directory: {self.data_cache_path}")
+            
+            tprint("Analysis input validation passed", "SUCCESS")
+            
+        except Exception as e:
+            tprint_error(f"Analysis input validation failed: {e}")
+            raise ValueError(f"Analysis input validation failed: {e}") from e
 
     def __del__(self):
         """Cleanup when service is destroyed."""

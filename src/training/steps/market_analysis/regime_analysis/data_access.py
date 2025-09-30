@@ -127,7 +127,7 @@ def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
             if not disk_info['sufficient']:
                 raise RegimeDataError(f"Insufficient disk space: {disk_info['free_gb']:.2f}GB available, {required_gb:.2f}GB required")
             
-            # Use memory checkpoint for large files with proper cleanup
+            # Load data with single memory checkpoint and efficient processing
             try:
                 with memory_checkpoint("regime_data_loading"):
                     # Load with safe parquet reading
@@ -140,25 +140,8 @@ def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
                     if not validate_dataframe_columns(df, required_columns):
                         raise RegimeDataError(f"Missing required columns in {regime_file}")
                     
-                    # Calculate and log data quality metrics
-                    quality_metrics = calculate_data_quality_metrics(df)
-                    tprint_structured({
-                        "file": str(regime_file),
-                        "rows": quality_metrics['total_rows'],
-                        "columns": quality_metrics['total_columns'],
-                        "missing_percentage": quality_metrics['missing_percentage'],
-                        "duplicate_percentage": quality_metrics['duplicate_percentage']
-                    })
-                    
-                    # Guard against excessive nulls
-                    df = guard_dataframe_nulls(df, threshold=0.5)
-                    
-                    # Optimize data types for memory efficiency
-                    df = optimize_dataframe_dtypes(df)
-                    
-                    # Log memory usage
-                    memory_usage = get_memory_usage()
-                    tprint_performance(f"Memory usage after loading: {memory_usage / (1024**2):.2f} MB")
+                    # Combined data quality processing
+                    df = self._process_dataframe_efficiently(df, regime_file)
                     
                     tprint_success(f"Successfully loaded regime assignments: {len(df)} rows, {len(df.columns)} columns")
                     return df
@@ -172,6 +155,73 @@ def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
         except Exception as exc:
             tprint_error(f"Failed to load regime assignments: {exc}")
             raise RegimeDataError(f"Failed to read regime assignments from {regime_file}") from exc
+
+    def _process_dataframe_efficiently(self, df: pd.DataFrame, regime_file: Path) -> pd.DataFrame:
+        """Process dataframe with combined operations for efficiency."""
+        try:
+            # Calculate and log data quality metrics in one pass
+            quality_metrics = calculate_data_quality_metrics(df)
+            tprint_structured({
+                "file": str(regime_file),
+                "rows": quality_metrics['total_rows'],
+                "columns": quality_metrics['total_columns'],
+                "missing_percentage": quality_metrics['missing_percentage'],
+                "duplicate_percentage": quality_metrics['duplicate_percentage']
+            })
+            
+            # Guard against excessive nulls
+            df = guard_dataframe_nulls(df, threshold=0.5)
+            
+            # Optimize data types for memory efficiency
+            df = optimize_dataframe_dtypes(df)
+            
+            # Log memory usage
+            memory_usage = get_memory_usage()
+            tprint_performance(f"Memory usage after processing: {memory_usage / (1024**2):.2f} MB")
+            
+            return df
+            
+        except Exception as e:
+            tprint_error(f"Dataframe processing failed: {e}")
+            raise
+
+    def _generate_synthetic_features_efficiently(self, labels: np.ndarray, seed: int, 
+                                              feature_count: int, regime_offset: float,
+                                              memory_optimizer: Optional[Any]) -> np.ndarray:
+        """Generate synthetic features efficiently with vectorized operations."""
+        try:
+            rng = np.random.default_rng(seed)
+            features = rng.standard_normal((labels.shape[0], feature_count))
+            
+            # Validate features are finite
+            features = validate_finite(features, "synthetic_features")
+            
+            # Vectorized regime offset application
+            unique_regimes = np.unique(labels)
+            for regime_id in unique_regimes:
+                mask = labels == regime_id
+                if np.any(mask):
+                    # Apply regime-specific offset using vectorized operations
+                    features[mask] += regime_id * regime_offset
+            
+            # Optimize for M1 if available
+            if M1_HARDWARE_AVAILABLE and memory_optimizer:
+                features = memory_optimizer.optimize_array_memory(features)
+            
+            # Log feature statistics
+            tprint_structured({
+                "feature_shape": features.shape,
+                "feature_mean": float(safe_mean(features.flatten())),
+                "feature_std": float(safe_std(features.flatten())),
+                "regime_count": len(unique_regimes),
+                "memory_usage_mb": features.nbytes / (1024**2)
+            })
+            
+            return features
+            
+        except Exception as e:
+            tprint_error(f"Synthetic feature generation failed: {e}")
+            raise
 
 
 def extract_regime_labels(regime_frame: pd.DataFrame) -> np.ndarray:
@@ -218,34 +268,12 @@ def create_synthetic_features(
             cpu_optimizer = get_m1_cpu_optimizer()
             gpu_manager = get_m1_gpu_manager()
             
-            # Use memory checkpoint for large feature generation with proper cleanup
+            # Generate features efficiently with single memory checkpoint
             try:
                 with memory_checkpoint("synthetic_feature_generation"):
-                    rng = np.random.default_rng(seed)
-                    features = rng.standard_normal((labels.shape[0], feature_count))
-                    
-                    # Validate features are finite
-                    features = validate_finite(features, "synthetic_features")
-                    
-                    unique_regimes = np.unique(labels)
-                    for regime_id in unique_regimes:
-                        mask = labels == regime_id
-                        if np.any(mask):
-                            # Apply regime-specific offset
-                            features[mask] += regime_id * regime_offset
-                    
-                    # Optimize for M1 if available
-                    if M1_HARDWARE_AVAILABLE and memory_optimizer:
-                        features = memory_optimizer.optimize_array_memory(features)
-                    
-                    # Log feature statistics
-                    tprint_structured({
-                        "feature_shape": features.shape,
-                        "feature_mean": float(safe_mean(features.flatten())),
-                        "feature_std": float(safe_std(features.flatten())),
-                        "regime_count": len(unique_regimes),
-                        "memory_usage_mb": features.nbytes / (1024**2)
-                    })
+                    features = self._generate_synthetic_features_efficiently(
+                        labels, seed, feature_count, regime_offset, memory_optimizer
+                    )
                     
                     tprint_success(f"Generated synthetic features: {features.shape}")
                     return features

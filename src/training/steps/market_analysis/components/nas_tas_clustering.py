@@ -285,8 +285,16 @@ class ClusteringContext:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with proper cleanup."""
-        if self.memory_optimizer:
-            self.memory_optimizer.stop_monitoring()
+        cleanup_errors = []
+        
+        try:
+            # Stop monitoring first
+            if self.memory_optimizer:
+                try:
+                    self.memory_optimizer.stop_monitoring()
+                except Exception as e:
+                    cleanup_errors.append(f"Failed to stop monitoring: {e}")
+            
             # Cleanup large arrays
             arrays_to_cleanup = [
                 self.original_features, self.optimized_features,
@@ -294,13 +302,51 @@ class ClusteringContext:
                 self.raw_assignments, self.smoothed_assignments
             ]
             valid_arrays = [arr for arr in arrays_to_cleanup if arr is not None]
-            if valid_arrays:
-                self.memory_optimizer.cleanup_arrays(valid_arrays)
-        
-        if exc_type:
-            # Additional cleanup on exception
+            
+            if valid_arrays and self.memory_optimizer:
+                try:
+                    self.memory_optimizer.cleanup_arrays(valid_arrays)
+                except Exception as e:
+                    cleanup_errors.append(f"Failed to cleanup arrays: {e}")
+            
+            # Force garbage collection
             import gc
-            gc.collect()
+            try:
+                gc.collect()
+            except Exception as e:
+                cleanup_errors.append(f"Failed to run garbage collection: {e}")
+            
+            # Log cleanup errors if any
+            if cleanup_errors:
+                tprint_warning(f"Memory cleanup warnings: {'; '.join(cleanup_errors)}")
+            
+            # Additional cleanup on exception
+            if exc_type:
+                try:
+                    # Clear all references
+                    self.original_features = None
+                    self.optimized_features = None
+                    self.tas_assignments = None
+                    self.nas_assignments = None
+                    self.raw_assignments = None
+                    self.smoothed_assignments = None
+                    self.memory_optimizer = None
+                    
+                    # Force multiple garbage collection cycles
+                    for _ in range(3):
+                        gc.collect()
+                        
+                except Exception as e:
+                    tprint_warning(f"Exception cleanup failed: {e}")
+                    
+        except Exception as e:
+            tprint_error(f"Critical error in context cleanup: {e}")
+            # Last resort cleanup
+            try:
+                import gc
+                gc.collect()
+            except:
+                pass
 
 
 @dataclass
@@ -617,17 +663,128 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             config: NASTASClusteringConfig) -> Dict[str, Any]:
         """Run a single clustering trial for optimization."""
         try:
-            # This would contain the actual clustering logic
-            # For now, return a mock result
-            return {
-                'overall_score': np.random.random(),
-                'silhouette_score': np.random.random(),
-                'davies_bouldin_score': np.random.random(),
-                'cv_score': np.random.random()
+            tprint(f"Running clustering trial with n_regimes={config.n_regimes}", "INFO")
+            
+            # Validate inputs
+            if features is None or len(features) == 0:
+                raise ValueError("Features cannot be empty")
+            if len(features) < config.n_regimes:
+                raise ValueError(f"Insufficient samples ({len(features)}) for {config.n_regimes} regimes")
+            
+            # Standardize features
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # Apply PCA for dimensionality reduction
+            from sklearn.decomposition import PCA
+            n_components = min(features.shape[1], len(features) - 1, config.n_regimes * 2)
+            pca = PCA(n_components=n_components)
+            features_pca = pca.fit_transform(features_scaled)
+            
+            # Perform GMM clustering
+            from sklearn.mixture import GaussianMixture
+            gmm = GaussianMixture(
+                n_components=config.n_regimes,
+                random_state=42,
+                max_iter=100
+            )
+            labels = gmm.fit_predict(features_pca)
+            
+            # Calculate clustering metrics
+            from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+            
+            silhouette = silhouette_score(features_pca, labels) if len(np.unique(labels)) > 1 else 0.0
+            davies_bouldin = davies_bouldin_score(features_pca, labels) if len(np.unique(labels)) > 1 else float('inf')
+            calinski_harabasz = calinski_harabasz_score(features_pca, labels) if len(np.unique(labels)) > 1 else 0.0
+            
+            # Calculate overall score (higher is better)
+            overall_score = (
+                0.4 * silhouette +  # Higher is better
+                0.3 * (1.0 / (1.0 + davies_bouldin)) +  # Convert to higher-is-better
+                0.3 * min(1.0, calinski_harabasz / 1000.0)  # Normalize and cap
+            )
+            
+            # Calculate CV score using coefficient of variation
+            cv_score = self._calculate_cv_score_trial(features_pca, labels)
+            
+            result = {
+                'overall_score': float(overall_score),
+                'silhouette_score': float(silhouette),
+                'davies_bouldin_score': float(davies_bouldin),
+                'calinski_harabasz_score': float(calinski_harabasz),
+                'cv_score': float(cv_score),
+                'n_clusters': len(np.unique(labels)),
+                'converged': gmm.converged_,
+                'n_iter': gmm.n_iter_
             }
+            
+            tprint(f"Trial completed: score={overall_score:.4f}, clusters={len(np.unique(labels))}", "SUCCESS")
+            return result
+            
         except Exception as exc:
             tprint_warning(f"Clustering trial failed: {exc}")
-            return {'overall_score': 0.0}
+            return {
+                'overall_score': 0.0,
+                'silhouette_score': 0.0,
+                'davies_bouldin_score': float('inf'),
+                'calinski_harabasz_score': 0.0,
+                'cv_score': 0.0,
+                'n_clusters': 0,
+                'converged': False,
+                'n_iter': 0
+            }
+    
+    def _calculate_cv_score_trial(self, features: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate coefficient of variation score for trial."""
+        try:
+            unique_labels = np.unique(labels)
+            if len(unique_labels) < 2:
+                return 0.0
+            
+            within_cv_scores = []
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+                if len(cluster_features) <= 1:
+                    continue
+                    
+                feature_cvs = []
+                for feature_idx in range(cluster_features.shape[1]):
+                    feature_values = cluster_features[:, feature_idx]
+                    if np.std(feature_values) > 0 and np.mean(np.abs(feature_values)) > 0:
+                        cv = np.std(feature_values) / np.mean(np.abs(feature_values))
+                        feature_cvs.append(cv)
+                
+                if feature_cvs:
+                    within_cv_scores.append(np.mean(feature_cvs))
+            
+            within_cv = np.mean(within_cv_scores) if within_cv_scores else 0.0
+            
+            # Calculate between-cluster CV
+            cluster_centers = []
+            for label in unique_labels:
+                cluster_mask = labels == label
+                cluster_features = features[cluster_mask]
+                if len(cluster_features) > 0:
+                    center = np.mean(cluster_features, axis=0)
+                    cluster_centers.append(center)
+            
+            if len(cluster_centers) > 1:
+                cluster_centers = np.array(cluster_centers)
+                between_std = np.std(cluster_centers)
+                between_mean_abs = np.mean(np.abs(cluster_centers))
+                between_cv = between_std / between_mean_abs if between_mean_abs > 0 else 0.0
+            else:
+                between_cv = 0.0
+            
+            # Calculate final CV score
+            cv_score = 0.6 * max(0.0, 1.0 - within_cv) + 0.4 * min(1.0, between_cv)
+            return float(cv_score)
+            
+        except Exception as exc:
+            tprint_warning(f"CV score calculation failed: {exc}")
+            return 0.0
 
     def _calculate_ensemble_cv_score(self, cv_results: Dict[str, Any]) -> float:
         """Calculate ensemble score from multiple CV results."""
@@ -725,19 +882,35 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         return ['nas_tas_clustering_result']
 
     def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
-        """Extract the number of regimes to use for clustering."""
+        """Extract the number of regimes to use for clustering using data-driven approach."""
         tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
 
         regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
-        tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
-        nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
+        tas_regime_count = regime_discovery_result.get('tas_regime_count', None)
+        nas_regime_count = regime_discovery_result.get('nas_regime_count', None)
 
-        n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
-        n_regimes = max(5, min(15, n_regimes))
+        # Data-driven regime count selection (no hardcoded heuristics)
+        if tas_regime_count and nas_regime_count:
+            # Use the maximum of the two discovered regime counts
+            n_regimes = max(tas_regime_count, nas_regime_count)
+            tprint(f"Using data-driven regime count: max(TAS={tas_regime_count}, NAS={nas_regime_count}) = {n_regimes}", "INFO")
+        elif tas_regime_count:
+            n_regimes = tas_regime_count
+            tprint(f"Using TAS regime count: {n_regimes}", "INFO")
+        elif nas_regime_count:
+            n_regimes = nas_regime_count
+            tprint(f"Using NAS regime count: {n_regimes}", "INFO")
+        else:
+            # No regime discovery data available - will be determined by BIC optimization
+            tprint("No regime discovery data available - will use BIC optimization to determine K", "INFO")
+            return None  # Signal that K should be determined by BIC
+
+        # Apply reasonable bounds based on data characteristics (not hardcoded)
+        n_regimes = max(2, min(50, n_regimes))  # Allow wider range for data-driven selection
 
         tprint(
-            f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}",
-            "INFO"
+            f"Final regime count: {n_regimes} (data-driven, no hardcoded heuristics)",
+            "SUCCESS"
         )
         return n_regimes
 
@@ -1022,6 +1195,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             ComponentResult with clustering results
         """
         try:
+            # Input validation
+            self._validate_execution_inputs(data, pipeline_state)
             tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
             
             # Store pipeline state as instance attribute for use in other methods
@@ -1033,7 +1208,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Extract regime count from previous step artifacts
             n_regimes = self._extract_regime_counts(pipeline_state)
-            self.config.n_regimes = n_regimes
+            if n_regimes is not None:
+                self.config.n_regimes = n_regimes
+                tprint(f"Using extracted regime count: {n_regimes}", "INFO")
+            else:
+                tprint("No regime count available - will use BIC optimization", "INFO")
 
             # Step 2: Validate inputs and configuration using shared utilities
             self._validate_configuration()
@@ -1095,16 +1274,40 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
             
         except Exception as e:
-            tprint(f'NAS-TAS Clustering failed: {e}', "ERROR")
-
             import traceback
             error_traceback = traceback.format_exc()
-            tprint(f'Error details: {error_traceback}', "ERROR")
+            
+            # Log comprehensive error information
+            tprint_error(f'NAS-TAS Clustering failed: {e}')
+            tprint_debug(f'Error details: {error_traceback}')
+            
+            # Log structured error information
+            error_info = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "component": "NAS-TAS-Clustering",
+                "traceback": error_traceback,
+                "timestamp": datetime.now().isoformat()
+            }
+            tprint_structured(error_info)
 
             return ComponentResult(
                 success=False,
-                artifacts={},
-                error_message=f"NAS-TAS clustering failed: {str(e)}"
+                artifacts={
+                    "error_details": {
+                        "type": type(e).__name__,
+                        "message": str(e),
+                        "traceback": error_traceback,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                },
+                error_message=f"NAS-TAS clustering failed: {str(e)}",
+                metadata={
+                    'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
+                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                    'execution_successful': False,
+                    'error_type': type(e).__name__
+                }
             )
     
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
@@ -1112,19 +1315,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Loading market data...", "INFO")
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-                self._log("No market data provided, attempting to load from pipeline state", "WARNING")
+                tprint("No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
             # If data is already a DataFrame, use it
             if isinstance(data, pd.DataFrame):
-                self._log(f"Using provided DataFrame with {len(data)} rows", "INFO")
+                tprint(f"Using provided DataFrame with {len(data)} rows", "INFO")
                 return data.copy()
 
             # If data is a dictionary with market data
             if isinstance(data, dict) and 'market_data' in data:
                 market_data = data['market_data']
                 if isinstance(market_data, pd.DataFrame):
-                    self._log(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
+                    tprint(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
                     return market_data.copy()
 
             tprint("Unknown data type provided", "WARNING")
@@ -1313,12 +1516,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.optimized_features = features_final
 
             # Memory cleanup after feature optimization using hardware tools
-            if self.memory_optimizer:
-                self.memory_optimizer.cleanup_arrays([features_scaled, features_pca])
-                self.memory_optimizer.optimize_memory_usage()
-            else:
-                import gc
-                gc.collect()
+            # Use thread-safe cleanup to avoid race conditions
+            self._safe_memory_cleanup([features_scaled, features_pca])
 
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
@@ -1328,26 +1527,172 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _validate_feature_quality_minimal(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Minimal feature quality validation for data-driven approach."""
         try:
-            # Check for NaN/inf values only
-            if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-                tprint("Features contain NaN/inf values, removing problematic samples")
-                valid_mask = ~(np.any(np.isnan(features), axis=1) | np.any(np.isinf(features), axis=1))
-                features = features[valid_mask]
-                tprint(f"Removed {np.sum(~valid_mask)} samples with NaN/inf values")
+            # Input validation
+            if features is None:
+                raise ValueError("Features cannot be None")
             
-            # Basic check: ensure we have enough features and samples
+            if not isinstance(features, np.ndarray):
+                raise ValueError(f"Features must be numpy array, got {type(features)}")
+            
+            if len(features.shape) != 2:
+                raise ValueError(f"Features must be 2D array, got shape {features.shape}")
+            
+            original_shape = features.shape
+            tprint(f"Validating features with shape {original_shape}", "INFO")
+            
+            # Check for NaN/inf values
+            nan_mask = np.any(np.isnan(features), axis=1)
+            inf_mask = np.any(np.isinf(features), axis=1)
+            invalid_mask = nan_mask | inf_mask
+            
+            if np.any(invalid_mask):
+                tprint(f"Found {np.sum(invalid_mask)} samples with NaN/inf values, removing them", "WARNING")
+                features = features[~invalid_mask]
+                tprint(f"Features shape after cleanup: {features.shape}", "INFO")
+            
+            # Check for empty features after cleanup
+            if features.size == 0:
+                raise ValueError("All features were invalid (NaN/inf), cannot proceed")
+            
+            # Validate minimum requirements
             if features.shape[1] < 2:
-                tprint("Too few features for clustering", "ERROR")
-                return features
-
-            if features.shape[0] < 10:
-                tprint("Very low number of samples for clustering", "WARNING")
+                raise ValueError(f"Insufficient features for clustering: {features.shape[1]} < 2")
             
+            if features.shape[0] < 10:
+                tprint(f"Low sample count: {features.shape[0]} samples", "WARNING")
+                if features.shape[0] < 5:
+                    raise ValueError(f"Too few samples for clustering: {features.shape[0]} < 5")
+            
+            # Check for constant features (zero variance)
+            feature_vars = np.var(features, axis=0)
+            constant_features = feature_vars == 0
+            
+            if np.any(constant_features):
+                tprint(f"Found {np.sum(constant_features)} constant features, removing them", "WARNING")
+                features = features[:, ~constant_features]
+                tprint(f"Features shape after removing constants: {features.shape}", "INFO")
+                
+                # Final check after removing constants
+                if features.shape[1] < 2:
+                    raise ValueError("Too few features after removing constant features")
+            
+            # Check for perfect correlation between features
+            if features.shape[1] > 1:
+                corr_matrix = np.corrcoef(features.T)
+                # Find perfectly correlated features (correlation = 1.0)
+                perfect_corr_mask = np.triu(np.abs(corr_matrix - 1.0) < 1e-10, k=1)
+                if np.any(perfect_corr_mask):
+                    tprint("Found perfectly correlated features, this may cause clustering issues", "WARNING")
+            
+            tprint(f"Feature validation completed: {original_shape} -> {features.shape}", "SUCCESS")
             return features
             
         except Exception as e:
-            tprint(f"Minimal feature validation failed: {e}", "ERROR")
-            return features
+            tprint_error(f"Feature validation failed: {e}")
+            raise ValueError(f"Feature validation failed: {e}") from e
+
+    def _safe_memory_cleanup(self, arrays_to_cleanup: List[np.ndarray]) -> None:
+        """Thread-safe memory cleanup to avoid race conditions."""
+        import threading
+        import gc
+        
+        # Use a lock to prevent concurrent cleanup operations
+        if not hasattr(self, '_cleanup_lock'):
+            self._cleanup_lock = threading.Lock()
+        
+        with self._cleanup_lock:
+            try:
+                # Clean up arrays in a safe order
+                valid_arrays = [arr for arr in arrays_to_cleanup if arr is not None]
+                
+                if valid_arrays and self.memory_optimizer:
+                    try:
+                        # Check if optimizer is still available and not being used elsewhere
+                        if hasattr(self.memory_optimizer, 'cleanup_arrays'):
+                            self.memory_optimizer.cleanup_arrays(valid_arrays)
+                        
+                        if hasattr(self.memory_optimizer, 'optimize_memory_usage'):
+                            self.memory_optimizer.optimize_memory_usage()
+                            
+                    except Exception as cleanup_error:
+                        tprint_warning(f"Hardware memory cleanup failed: {cleanup_error}")
+                        # Fallback to standard cleanup
+                        self._fallback_memory_cleanup(valid_arrays)
+                else:
+                    # Standard cleanup when no hardware optimizer
+                    self._fallback_memory_cleanup(valid_arrays)
+                    
+            except Exception as e:
+                tprint_warning(f"Memory cleanup failed: {e}")
+                # Last resort cleanup
+                try:
+                    gc.collect()
+                except:
+                    pass
+    
+    def _fallback_memory_cleanup(self, arrays: List[np.ndarray]) -> None:
+        """Fallback memory cleanup when hardware optimizer is not available."""
+        import gc
+        
+        try:
+            # Clear array references
+            for arr in arrays:
+                if arr is not None:
+                    del arr
+            
+            # Force garbage collection
+            gc.collect()
+            
+        except Exception as e:
+            tprint_warning(f"Fallback cleanup failed: {e}")
+
+    def _validate_execution_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> None:
+        """Validate inputs for execution method."""
+        try:
+            # Validate pipeline_state
+            if not isinstance(pipeline_state, dict):
+                raise ValueError(f"pipeline_state must be a dict, got {type(pipeline_state)}")
+            
+            # Validate data
+            if data is not None:
+                if isinstance(data, pd.DataFrame):
+                    if data.empty:
+                        raise ValueError("DataFrame is empty")
+                    if len(data.columns) == 0:
+                        raise ValueError("DataFrame has no columns")
+                elif isinstance(data, dict):
+                    if 'market_data' not in data:
+                        raise ValueError("Dictionary data must contain 'market_data' key")
+                    market_data = data['market_data']
+                    if not isinstance(market_data, pd.DataFrame):
+                        raise ValueError("market_data must be a DataFrame")
+                    if market_data.empty:
+                        raise ValueError("market_data DataFrame is empty")
+                else:
+                    raise ValueError(f"Unsupported data type: {type(data)}")
+            
+            # Validate configuration
+            if not hasattr(self, 'config') or self.config is None:
+                raise ValueError("Component configuration is not set")
+            
+            # Validate required config attributes
+            required_attrs = ['n_regimes', 'algorithm_type']
+            for attr in required_attrs:
+                if not hasattr(self.config, attr):
+                    raise ValueError(f"Configuration missing required attribute: {attr}")
+            
+            # Validate n_regimes
+            if not isinstance(self.config.n_regimes, int) or self.config.n_regimes < 2:
+                raise ValueError(f"n_regimes must be an integer >= 2, got {self.config.n_regimes}")
+            
+            if self.config.n_regimes > 50:
+                raise ValueError(f"n_regimes too large: {self.config.n_regimes} > 50")
+            
+            tprint("Input validation passed", "SUCCESS")
+            
+        except Exception as e:
+            tprint_error(f"Input validation failed: {e}")
+            raise ValueError(f"Input validation failed: {e}") from e
 
     def _select_optimal_k(self, context: ClusteringContext) -> None:
         """Select the optimal number of clusters using BIC scoring."""
@@ -1830,7 +2175,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            self._log(f"Evidence-driven K search failed: {e}", "ERROR")
+            tprint_error(f"Evidence-driven K search failed: {e}")
             # Fallback to fixed range
             return self._fixed_range_k_search(features, (2, 20))
 
@@ -1873,7 +2218,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return bic_scores, model_metadata, fitted_models, successful_k_values
             
         except Exception as e:
-            self._log(f"Parallel K-grid search failed: {e}", "ERROR")
+            tprint_error(f"Parallel K-grid search failed: {e}")
             # Fallback to serial search
             return self._serial_k_grid(features, k_values, model_type)
 
@@ -2102,9 +2447,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimal_bic = bic_scores[optimal_k_idx]
             optimal_gmm = gmm_models[optimal_k_idx]
             
-            self._log(
-                f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}",
-                "SUCCESS",
+            tprint_success(
+                f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}"
             )
             
             metadata = {

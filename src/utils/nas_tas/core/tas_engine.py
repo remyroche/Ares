@@ -708,7 +708,11 @@ class TASEngine:
         try:
             # Generate grid parameters
             grid_params = self.grid_optimizer.generate_grid(search_space, max_trials=n_trials)
-            
+
+            if not grid_params:
+                tprint_warning("⚠️ Grid strategy search received an empty parameter grid; skipping")
+                return {}, -np.inf, []
+
             total_trials = len(grid_params)
             tprint_info(f"🔧 Grid search: {total_trials} parameter combinations")
             

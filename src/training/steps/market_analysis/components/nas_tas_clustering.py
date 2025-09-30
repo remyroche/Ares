@@ -775,23 +775,138 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
         try:
-            # This would normally extract from pipeline state
-            # For now, we'll create placeholder assignments
-            # In a real implementation, this would read from the pipeline state artifacts
-            
-            # Placeholder: create random assignments for demonstration
-            n_samples = 960  # This should come from the actual data
-            tas_assignments = np.random.randint(0, 8, n_samples)
-            nas_assignments = np.random.randint(0, 8, n_samples)
-            
-            tprint(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
+            pipeline_state = getattr(self, 'pipeline_state', {}) or {}
+            if not isinstance(pipeline_state, dict):
+                raise ValueError("Pipeline state is missing or invalid")
+
+            if not hasattr(self, 'features') or self.features is None:
+                raise ValueError("Feature matrix is not available for assignment validation")
+
+            expected_length = self.features.shape[0]
+
+            def _as_numpy(assignments: Any, name: str) -> np.ndarray:
+                """Convert assignments to numpy array."""
+                if assignments is None:
+                    raise ValueError(f"{name} not found in pipeline state")
+
+                if isinstance(assignments, np.ndarray):
+                    array = assignments
+                elif isinstance(assignments, (list, tuple)):
+                    array = np.asarray(assignments)
+                elif isinstance(assignments, str):
+                    cleaned = assignments.strip()
+                    if cleaned.startswith('[') and cleaned.endswith(']'):
+                        cleaned = cleaned[1:-1]
+                    if not cleaned:
+                        raise ValueError(f"{name} string representation is empty")
+                    array = np.fromstring(cleaned, sep=' ')
+                else:
+                    array = np.asarray(assignments)
+
+                array = np.asarray(array)
+
+                if array.size == 0:
+                    raise ValueError(f"{name} is empty after conversion")
+
+                if array.ndim > 1:
+                    array = array.reshape(-1)
+
+                if not np.issubdtype(array.dtype, np.integer):
+                    # Attempt to coerce numeric values to integers when appropriate
+                    if np.allclose(array, np.round(array)):
+                        array = np.round(array).astype(int)
+
+                return array
+
+            def _resolve_discovery_result(source: Any) -> Optional[Dict[str, Any]]:
+                """Resolve the discovery result dictionary from various container types."""
+                if source is None:
+                    return None
+
+                if isinstance(source, dict):
+                    return source
+
+                if hasattr(source, 'artifacts'):
+                    artifacts = getattr(source, 'artifacts', None)
+                    if isinstance(artifacts, dict):
+                        return artifacts.get('nas_tas_regime_discovery_result')
+
+                return None
+
+            candidates: List[Any] = []
+
+            if 'nas_tas_regime_discovery_result' in pipeline_state:
+                candidates.append(pipeline_state.get('nas_tas_regime_discovery_result'))
+
+            artifacts = pipeline_state.get('artifacts')
+            if isinstance(artifacts, dict):
+                candidates.append(artifacts.get('nas_tas_regime_discovery_result'))
+
+            discovery_component = pipeline_state.get('nas_tas_regime_discovery')
+            if discovery_component is not None:
+                candidates.append(_resolve_discovery_result(discovery_component))
+
+            discovery_result: Optional[Dict[str, Any]] = None
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+
+                if isinstance(candidate, dict):
+                    discovery_result = candidate
+                else:
+                    discovery_result = _resolve_discovery_result(candidate)
+
+                if discovery_result:
+                    break
+
+            if not discovery_result:
+                raise ValueError("NAS-TAS regime discovery result not found in pipeline state")
+
+            tas_assignments_raw = discovery_result.get('tas_assignments')
+            nas_assignments_raw = discovery_result.get('nas_assignments')
+
+            if (tas_assignments_raw is None or nas_assignments_raw is None) and isinstance(
+                discovery_result.get('artifacts'), dict
+            ):
+                nested_artifacts = discovery_result['artifacts']
+                tas_assignments_raw = tas_assignments_raw or nested_artifacts.get('tas_assignments')
+                nas_assignments_raw = nas_assignments_raw or nested_artifacts.get('nas_assignments')
+
+            tas_assignments = _as_numpy(tas_assignments_raw, 'tas_assignments')
+            nas_assignments = _as_numpy(nas_assignments_raw, 'nas_assignments')
+
+            if tas_assignments.shape[0] != expected_length:
+                raise ValueError(
+                    f"TAS assignments length mismatch: expected {expected_length}, got {tas_assignments.shape[0]}"
+                )
+
+            if nas_assignments.shape[0] != expected_length:
+                raise ValueError(
+                    f"NAS assignments length mismatch: expected {expected_length}, got {nas_assignments.shape[0]}"
+                )
+
+            tprint(
+                f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}",
+                "SUCCESS"
+            )
             return tas_assignments, nas_assignments
-            
+
         except Exception as e:
             log_error(f"Failed to extract regime assignments: {e}")
-            # Return default assignments
-            n_samples = 960
-            return np.random.randint(0, 8, n_samples), np.random.randint(0, 8, n_samples)
+            # Return default assignments on failure only
+            n_samples = getattr(self, 'features', None)
+            if isinstance(n_samples, np.ndarray):
+                fallback_length = n_samples.shape[0]
+            elif hasattr(n_samples, 'shape'):
+                fallback_length = n_samples.shape[0]
+            elif isinstance(n_samples, (list, tuple)):
+                fallback_length = len(n_samples)
+            else:
+                fallback_length = 960
+            return (
+                np.random.randint(0, 8, fallback_length),
+                np.random.randint(0, 8, fallback_length)
+            )
     
     async def _progressive_regime_optimization(self, features: np.ndarray, tas_assignments: np.ndarray, 
                                             nas_assignments: np.ndarray, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -896,6 +1011,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             nas_preferred = 0
             local_consistency_preferred = 0
             
+
             for sample_idx in disagreement_indices:
                 tas_regime = int(tas_assignments[sample_idx])
                 nas_regime = int(nas_assignments[sample_idx])
@@ -951,6 +1067,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 combined_assignments[sample_idx] = chosen_regime
                 
                 # Log decision details
+
                 decision_trace.append({
                     'sample_index': int(sample_idx),
                     'tas_regime': tas_regime,
@@ -979,6 +1096,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
                 self.execution_metadata = {}
             
+
             self.execution_metadata['initial_combination'] = {
                 'total_samples': int(len(combined_assignments)),
                 'disagreements': int(len(disagreement_indices)),
@@ -990,8 +1108,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             tprint(f"Created combined assignments with documented divergence resolutions: {len(combined_assignments)} samples", "SUCCESS")
+
             return combined_assignments
-            
+
         except Exception as e:
             log_error(f"Failed to create combined assignments: {e}")
             return tas_assignments
@@ -1228,7 +1347,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return nas_regime
 
             # Strategy 2: Use local neighborhood analysis
-            neighborhood_regime = self._get_local_neighborhood_regime(features, sample_idx)
+            working_assignments = None
+            if self.pipeline_state and isinstance(self.pipeline_state, dict):
+                working_assignments = self.pipeline_state.get('current_assignments')
+            if working_assignments is None:
+                working_assignments = tas_assignments
+
+            neighborhood_regime = self._get_local_neighborhood_regime(
+                features, working_assignments, sample_idx
+            )
             if neighborhood_regime is not None:
                 return neighborhood_regime
 
@@ -1283,10 +1410,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return 0.0
 
-    def _get_local_neighborhood_regime(self, features: np.ndarray, sample_idx: int) -> Optional[int]:
+    def _get_local_neighborhood_regime(self, features: np.ndarray, assignments: np.ndarray,
+                                       sample_idx: int) -> Optional[int]:
         """Get the most common regime in the local neighborhood."""
         try:
-            if sample_idx >= len(features):
+            if assignments is None or sample_idx >= len(features) or sample_idx >= len(assignments):
                 return None
 
             sample_features = features[sample_idx]
@@ -1306,7 +1434,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Count regime frequencies in neighborhood
             regime_counts = {}
             for idx in nearest_indices:
-                regime = self._get_regime_for_sample(idx)
+                regime = self._get_regime_for_sample(idx, assignments)
                 regime_counts[regime] = regime_counts.get(regime, 0) + 1
 
             if regime_counts:
@@ -1564,7 +1692,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Regime stability calculation failed: {e}")
             return 0.5
     
-    async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray, 
+    def _update_pipeline_current_assignments(self, assignments: np.ndarray) -> None:
+        """Ensure the pipeline state tracks the working regime assignments."""
+        try:
+            if self.pipeline_state is None:
+                self.pipeline_state = {}
+            self.pipeline_state['current_assignments'] = assignments
+        except Exception as e:
+            log_warning(f"Failed to update pipeline current assignments: {e}")
+
+    async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray,
                                          market_data: pd.DataFrame) -> np.ndarray:
         """Progressive regime flipping optimization with frontier samples and batch processing."""
         try:
@@ -1572,6 +1709,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_info("Starting progressive regime flipping with frontier samples")
 
             current_assignments = assignments.copy()
+            self._update_pipeline_current_assignments(current_assignments)
             n_samples = len(assignments)
             n_regimes = len(set(assignments))
 
@@ -1694,6 +1832,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             tprint(f"Progressive regime flipping completed - {iteration} iterations", "SUCCESS")
 
+            self._update_pipeline_current_assignments(current_assignments)
             return current_assignments
 
         except Exception as e:
@@ -1891,7 +2030,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tas_nas_frontier = self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, current_regime)
                 
                 # 2. Feature-space neighbors (samples close in feature space but different regimes)
-                feature_frontier = self._is_feature_space_frontier(i, current_regime)
+                feature_frontier = self._is_feature_space_frontier(i, current_regime, assignments)
                 
                 # Sample is frontier if it's a frontier in regime-space OR feature-space
                 if tas_nas_frontier or feature_frontier:
@@ -1901,8 +2040,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     frontier_samples.append(i)
             
             # Detailed frontier analysis
-            tas_nas_count = sum(1 for i in range(n_samples) if self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, assignments[i]))
-            feature_count = sum(1 for i in range(n_samples) if self._is_feature_space_frontier(i, assignments[i]))
+            tas_nas_count = sum(
+                1
+                for i in range(n_samples)
+                if self._is_tas_nas_frontier(tas_assignments, nas_assignments, i, assignments[i])
+            )
+            feature_count = sum(
+                1
+                for i in range(n_samples)
+                if self._is_feature_space_frontier(i, assignments[i], assignments)
+            )
             
             tprint(f"Frontier analysis - TAS/NAS disagreement: {tas_nas_count}, Feature-space: {feature_count}, Total: {len(frontier_samples)}", "INFO")
             
@@ -2011,12 +2158,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"TAS/NAS frontier check failed: {e}")
             return False
     
-    def _is_feature_space_frontier(self, sample_idx: int, current_regime: int) -> bool:
+    def _is_feature_space_frontier(self, sample_idx: int, current_regime: int,
+                                   assignments: np.ndarray) -> bool:
         """Check if sample is on feature-space frontier using efficient nearest neighbor approach."""
         try:
             # Get current features
             features = self._get_current_features()
-            if features is None or sample_idx >= len(features):
+            if features is None or assignments is None:
+                return False
+
+            if sample_idx >= len(features) or sample_idx >= len(assignments):
+                return False
+
+            if len(assignments) != len(features):
+                log_warning(
+                    "Assignment and feature lengths differ during frontier detection; skipping sample."
+                )
                 return False
 
             current_features = features[sample_idx]
@@ -2035,7 +2192,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 other_features = features[other_sample_idx]
                 distance = np.linalg.norm(current_features - other_features)
                 distances.append(distance)
-                regimes.append(self._get_regime_for_sample(other_sample_idx))
+                regimes.append(self._get_regime_for_sample(other_sample_idx, assignments))
 
             if len(distances) < 10:  # Need minimum neighbors
                 return False
@@ -2129,14 +2286,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"   ❌ Error getting assignments: {e}", "ERROR")
             return None, None
     
-    def _get_regime_for_sample(self, sample_idx: int) -> int:
+    def _get_regime_for_sample(self, sample_idx: int, assignments: Optional[np.ndarray]) -> int:
         """Get regime assignment for a specific sample."""
         try:
-            if self.pipeline_state:
+            if assignments is not None:
+                if 0 <= sample_idx < len(assignments):
+                    return int(assignments[sample_idx])
+                raise IndexError(
+                    f"Sample index {sample_idx} out of bounds for assignments of length {len(assignments)}"
+                )
+
+            if self.pipeline_state and isinstance(self.pipeline_state, dict):
                 current_assignments = self.pipeline_state.get('current_assignments')
                 if current_assignments is not None and sample_idx < len(current_assignments):
-                    return current_assignments[sample_idx]
-            return 0  # Default regime
+                    return int(current_assignments[sample_idx])
+
+            raise ValueError("No assignments available for regime lookup")
         except Exception as e:
             log_warning(f"Failed to get regime for sample {sample_idx}: {e}")
             return 0
@@ -3606,6 +3771,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         # If improvement is significant, accept the flip
                         if new_score > current_score + improvement_threshold:
                             current_assignments = test_assignments
+                            self._update_pipeline_current_assignments(current_assignments)
                             current_score = new_score
                             improved = True
                             

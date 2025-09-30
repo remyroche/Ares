@@ -566,23 +566,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_error(f"Progressive regime optimization failed: {e}")
             tprint(f"Progressive regime optimization failed: {e}", "ERROR")
-            # Fallback to basic clustering
-            tprint("Falling back to basic clustering...", "WARNING")
-            clustering_result_obj = self.unified_clustering.cluster_features(features, market_data)
-            
-            clustering_result = {
-                'n_clusters': len(set(clustering_result_obj.labels)),
-                'cluster_assignments': clustering_result_obj.labels.tolist(),
-                'cluster_centers': clustering_result_obj.cluster_centers.tolist(),
-                'clustering_quality': clustering_result_obj.quality_metrics,
-                'algorithm_used': clustering_result_obj.algorithm_used,
-                'success': clustering_result_obj.success,
-                'execution_time': clustering_result_obj.execution_time,
-                'optimization_metadata': {
-                    'optimization_method': 'fallback_basic'
-                }
-            }
-            return clustering_result
+            # Fast-fail: Do not fall back to basic clustering
+            tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
+            raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
     async def _optimize_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Optimize features using selection and dimensionality reduction."""
@@ -633,8 +619,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_error(f"Feature optimization failed: {e}")
             tprint(f"Feature optimization failed: {e}", "ERROR")
-            # Return original features if optimization fails
-            return features
+            # Fast-fail: Do not return original features if optimization fails
+            raise ValueError(f"Feature optimization failed: {e}. Cannot proceed with suboptimal features.")
 
     def _validate_feature_quality(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate and improve feature quality for clustering."""
@@ -719,26 +705,72 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for clustering."""
+        """Select features most important for NAS/TAS clustering and divergence detection using fast-fail approach."""
         try:
-            from sklearn.feature_selection import SelectKBest, f_classif
-            from sklearn.cluster import KMeans
+            from sklearn.feature_selection import SelectKBest, mutual_info_classif
             
-            # Create pseudo-labels using K-means for feature selection
-            kmeans = KMeans(n_clusters=8, random_state=42, n_init=10)
-            pseudo_labels = kmeans.fit_predict(features)
+            tprint("Selecting features optimized for NAS/TAS divergence patterns...", "INFO")
             
-            # Select top features based on F-score
-            n_features = min(15, features.shape[1])  # Select up to 15 features
-            selector = SelectKBest(score_func=f_classif, k=n_features)
-            features_selected = selector.fit_transform(features, pseudo_labels)
+            # Get TAS/NAS assignments for divergence-aware feature selection (required)
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
             
-            tprint(f"Selected {features_selected.shape[1]} most important features for clustering", "SUCCESS")
+            # Fast-fail: TAS/NAS assignments are mandatory for proper feature selection
+            if tas_assignments is None or nas_assignments is None:
+                raise ValueError("TAS/NAS assignments are required for divergence-aware feature selection. Cannot proceed without regime disagreement data.")
+            
+            # Perform data-driven divergence assessment
+            divergence_analysis = self._assess_data_driven_divergence(tas_assignments, nas_assignments)
+            semantic_divergence_rate = divergence_analysis['semantic_divergence_rate']
+            mapping_quality_metrics = divergence_analysis['mapping_quality']
+            overall_mapping_quality = mapping_quality_metrics.get('overall_quality', 0.0)
+            
+            # Use semantic divergence rate for validation instead of numerical disagreement
+            semantic_disagreement_count = int(semantic_divergence_rate * len(tas_assignments))
+            
+            # Fast-fail: Insufficient semantic disagreement samples indicates potential data quality issues
+            if semantic_disagreement_count < 10:
+                raise ValueError(f"Insufficient NAS/TAS semantic disagreement samples ({semantic_disagreement_count} < 10). This may indicate data quality issues or insufficient regime diversity.")
+            
+            # Validate semantic disagreement rate is reasonable
+            if semantic_divergence_rate > 0.8:
+                raise ValueError(f"Excessively high semantic disagreement rate ({semantic_divergence_rate:.3f} > 0.8). This may indicate fundamental issues with NAS/TAS regime detection.")
+            elif semantic_divergence_rate < 0.05:
+                tprint(f"Warning: Very low semantic disagreement rate ({semantic_divergence_rate:.3f} < 0.05). Consider reviewing NAS/TAS regime detection parameters.", "WARNING")
+            
+            # Report mapping quality information regardless of quality level
+            tprint(f"Mapping Quality Assessment:", "INFO")
+            tprint(f"  Overall Quality: {overall_mapping_quality:.3f}", "INFO")
+            tprint(f"  Centroid Quality: {mapping_quality_metrics.get('centroid_quality', 0.0):.3f}", "INFO")
+            tprint(f"  PCA Quality: {mapping_quality_metrics.get('pca_quality', 0.0):.3f}", "INFO")
+            tprint(f"  CV Quality: {mapping_quality_metrics.get('cv_quality', 0.0):.3f}", "INFO")
+            tprint(f"  Mapping Coverage: {mapping_quality_metrics.get('mapping_coverage', 0.0):.3f}", "INFO")
+            
+            # Create semantic disagreement mask using mapped regimes
+            if 'regime_mapping' in divergence_analysis and divergence_analysis['regime_mapping']:
+                # Use mapped NAS assignments for more accurate disagreement detection
+                mapped_nas_assignments = self._apply_regime_mapping(nas_assignments, divergence_analysis['regime_mapping'])
+                disagreement_mask = tas_assignments != mapped_nas_assignments
+                tprint(f"Using regime-mapped disagreement for feature selection (mapping quality: {overall_mapping_quality:.3f})", "SUCCESS")
+            else:
+                # Fallback to numerical disagreement
+                disagreement_mask = tas_assignments != nas_assignments
+                tprint(f"Using numerical disagreement for feature selection (no optimal mapping found)", "WARNING")
+            
+            disagreement_count = np.sum(disagreement_mask)
+            tprint(f"Data-driven feature selection: {disagreement_count} disagreement samples, semantic rate: {semantic_divergence_rate:.3f}", "SUCCESS")
+            
+            # Select features that best distinguish disagreement vs agreement using mutual information
+            n_features = min(15, features.shape[1])
+            selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
+            features_selected = selector.fit_transform(features, disagreement_mask.astype(int))
+            
+            tprint(f"Selected {features_selected.shape[1]} divergence-optimized features using mutual information", "SUCCESS")
             return features_selected
             
         except Exception as e:
-            log_warning(f"Feature selection failed: {e}")
-            return features
+            log_error(f"Feature selection failed: {e}")
+            tprint(f"Feature selection failed: {e}", "ERROR")
+            raise ValueError(f"Feature selection failed: {e}")
     
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
@@ -885,9 +917,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Create initial combined assignments
             tprint("Step 1: Creating initial combined assignments...", "INFO")
-            initial_assignments = self._create_initial_combined_assignments(
-                features, tas_assignments, nas_assignments
-            )
+            initial_assignments = self._create_initial_combined_assignments(features, tas_assignments, nas_assignments)
             initial_score = self._calculate_composite_score(features, initial_assignments)
             tprint(f"Initial combined score: {initial_score:.3f}", "SUCCESS")
             
@@ -943,109 +973,163 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         tas_assignments: np.ndarray,
         nas_assignments: np.ndarray
     ) -> np.ndarray:
-        """Create initial combined assignments from TAS and NAS using per-sample quality checks."""
+        """Create initial combined assignments prioritizing NAS/TAS divergence samples with per-sample quality checks."""
         try:
+            tprint("Creating initial assignments with divergence prioritization and quality assessment...", "INFO")
+            
+            # Find samples where TAS and NAS disagree
+            disagreement_mask = tas_assignments != nas_assignments
+            disagreement_rate = np.mean(disagreement_mask)
+            disagreement_indices = np.where(disagreement_mask)[0]
+            
+            tprint(f"NAS/TAS disagreement rate: {disagreement_rate:.3f} ({np.sum(disagreement_mask)}/{len(disagreement_mask)} samples)", "INFO")
+            
+            # Start with TAS as base assignments
             combined_assignments = tas_assignments.copy()
-
-            disagreement_indices = np.where(tas_assignments != nas_assignments)[0]
             decision_trace: List[Dict[str, Any]] = []
-
+            
             if len(disagreement_indices) == 0:
+                # No disagreements - log and return
                 if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
                     self.execution_metadata = {}
-
+                
                 self.execution_metadata['initial_combination'] = {
                     'total_samples': int(len(combined_assignments)),
                     'disagreements': 0,
                     'tas_preferred': 0,
                     'nas_preferred': 0,
+                    'local_consistency_preferred': 0,
                     'decision_trace': []
                 }
-
-                tprint(
-                    f"Created combined assignments without disagreements: {len(combined_assignments)} samples",
-                    "SUCCESS"
-                )
+                
+                tprint("No TAS/NAS disagreements detected during initial combination", "SUCCESS")
                 log_info("No TAS/NAS disagreements detected during initial combination")
                 return combined_assignments
-
+            
+            # Process divergence samples with enhanced logic
             tas_preferred = 0
             nas_preferred = 0
+            local_consistency_preferred = 0
+            
 
             for sample_idx in disagreement_indices:
                 tas_regime = int(tas_assignments[sample_idx])
                 nas_regime = int(nas_assignments[sample_idx])
                 original_regime = int(combined_assignments[sample_idx])
-
-                # Evaluate TAS regime quality
-                combined_assignments[sample_idx] = tas_regime
-                tas_score = self._calculate_composite_score(features, combined_assignments)
-
-                # Evaluate NAS regime quality
-                combined_assignments[sample_idx] = nas_regime
-                nas_score = self._calculate_composite_score(features, combined_assignments)
-
-                # Restore original assignment before applying improvements/logging
-                combined_assignments[sample_idx] = original_regime
-
-                # Calculate incremental improvement if switching to NAS for logging context
-                nas_improvement = self._calculate_single_flip_improvement(
-                    features,
-                    combined_assignments,
-                    sample_idx,
-                    nas_regime
-                )
-
-                nas_better = nas_score > tas_score
-
-                if nas_better:
-                    chosen_regime = nas_regime
-                    nas_preferred += 1
-                else:
+                
+                # Step 1: Check local consistency first (spatial coherence)
+                local_tas_regime = self._get_local_dominant_regime(tas_assignments, sample_idx, window_size=5)
+                local_nas_regime = self._get_local_dominant_regime(nas_assignments, sample_idx, window_size=5)
+                
+                local_tas_consistent = local_tas_regime == tas_regime
+                local_nas_consistent = local_nas_regime == nas_regime
+                
+                # Step 2: If one regime is locally consistent and the other isn't, prefer the consistent one
+                if local_tas_consistent and not local_nas_consistent:
                     chosen_regime = tas_regime
                     tas_preferred += 1
-
+                    decision_method = "local_consistency_tas"
+                    local_consistency_preferred += 1
+                elif local_nas_consistent and not local_tas_consistent:
+                    chosen_regime = nas_regime
+                    nas_preferred += 1
+                    decision_method = "local_consistency_nas"
+                    local_consistency_preferred += 1
+                else:
+                    # Step 3: Both or neither locally consistent - use quality-based assessment
+                    # Evaluate TAS regime quality
+                    combined_assignments[sample_idx] = tas_regime
+                    tas_score = self._calculate_composite_score(features, combined_assignments)
+                    
+                    # Evaluate NAS regime quality
+                    combined_assignments[sample_idx] = nas_regime
+                    nas_score = self._calculate_composite_score(features, combined_assignments)
+                    
+                    # Restore original assignment
+                    combined_assignments[sample_idx] = original_regime
+                    
+                    # Calculate incremental improvement for logging
+                    nas_improvement = self._calculate_single_flip_improvement(
+                        features, combined_assignments, sample_idx, nas_regime
+                    )
+                    
+                    # Choose based on quality scores
+                    if nas_score > tas_score:
+                        chosen_regime = nas_regime
+                        nas_preferred += 1
+                        decision_method = "quality_assessment_nas"
+                    else:
+                        chosen_regime = tas_regime
+                        tas_preferred += 1
+                        decision_method = "quality_assessment_tas"
+                
+                # Apply the chosen regime
                 combined_assignments[sample_idx] = chosen_regime
+                
+                # Log decision details
 
                 decision_trace.append({
                     'sample_index': int(sample_idx),
                     'tas_regime': tas_regime,
                     'nas_regime': nas_regime,
-                    'tas_score': float(tas_score),
-                    'nas_score': float(nas_score),
-                    'nas_improvement': float(nas_improvement),
                     'chosen_regime': int(chosen_regime),
-                    'decision': 'nas' if nas_better else 'tas'
+                    'decision_method': decision_method,
+                    'local_tas_consistent': local_tas_consistent,
+                    'local_nas_consistent': local_nas_consistent,
+                    'local_tas_regime': int(local_tas_regime),
+                    'local_nas_regime': int(local_nas_regime),
+                    'tas_score': float(tas_score) if 'tas_score' in locals() else None,
+                    'nas_score': float(nas_score) if 'nas_score' in locals() else None,
+                    'nas_improvement': float(nas_improvement) if 'nas_improvement' in locals() else None
                 })
-
+            
+            # Log comprehensive summary
             summary_message = (
-                f"Resolved {len(disagreement_indices)} TAS/NAS divergences before batch refinement "
-                f"(TAS retained {tas_preferred}, NAS adopted {nas_preferred})"
+                f"Resolved {len(disagreement_indices)} TAS/NAS divergences using enhanced logic: "
+                f"TAS retained {tas_preferred}, NAS adopted {nas_preferred}, "
+                f"Local consistency used {local_consistency_preferred} times"
             )
-            tprint(summary_message, "INFO")
+            tprint(summary_message, "SUCCESS")
             log_info(summary_message)
-
-            # Persist decision trace for debugging and later tuning
+            
+            # Persist decision trace for debugging and analysis
             if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
                 self.execution_metadata = {}
+            
 
             self.execution_metadata['initial_combination'] = {
                 'total_samples': int(len(combined_assignments)),
                 'disagreements': int(len(disagreement_indices)),
                 'tas_preferred': int(tas_preferred),
                 'nas_preferred': int(nas_preferred),
+                'local_consistency_preferred': int(local_consistency_preferred),
+                'disagreement_rate': float(disagreement_rate),
                 'decision_trace': decision_trace
             }
+            
+            tprint(f"Created combined assignments with documented divergence resolutions: {len(combined_assignments)} samples", "SUCCESS")
 
-            tprint(
-                f"Created combined assignments with documented divergence resolutions: {len(combined_assignments)} samples",
-                "SUCCESS"
-            )
             return combined_assignments
 
         except Exception as e:
             log_error(f"Failed to create combined assignments: {e}")
             return tas_assignments
+    
+    def _get_local_dominant_regime(self, assignments: np.ndarray, center_idx: int, window_size: int = 5) -> int:
+        """Get the dominant regime in a local window around the center index."""
+        try:
+            start_idx = max(0, center_idx - window_size // 2)
+            end_idx = min(len(assignments), center_idx + window_size // 2 + 1)
+            
+            local_assignments = assignments[start_idx:end_idx]
+            
+            # Return the most frequent regime in the local window
+            unique, counts = np.unique(local_assignments, return_counts=True)
+            return unique[np.argmax(counts)]
+            
+        except Exception as e:
+            log_warning(f"Failed to get local dominant regime: {e}")
+            return assignments[center_idx] if center_idx < len(assignments) else 0
     
     async def _find_best_single_algorithm(self, features: np.ndarray, initial_assignments: np.ndarray, 
                                         market_data: pd.DataFrame) -> Tuple[np.ndarray, float, str]:
@@ -1534,19 +1618,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             calinski_harabasz = quality_scores.get('calinski_harabasz', 0.0)
             davies_bouldin = quality_scores.get('davies_bouldin', 0.0)
             regime_balance = quality_scores.get('regime_balance', 0.0)
+            cv_score = quality_scores.get('cv_score', 0.0)
             
             # Normalize metrics to 0-1 range
             norm_silhouette = (silhouette + 1) / 2  # [-1, 1] -> [0, 1]
             norm_ch = min(calinski_harabasz / 1000, 1.0)  # Cap at 1.0
             norm_db = max(0, 1.0 / (1.0 + davies_bouldin))  # Invert and normalize
             norm_balance = regime_balance  # Already in [0, 1]
+            norm_cv = cv_score  # Already in [0, 1] range
             
-            # Weighted composite score
+            # Weighted composite score with CV score prioritized for NAS/TAS divergence
             composite_score = (
-                0.35 * norm_silhouette +      # Silhouette score (most important)
-                0.25 * norm_ch +             # Calinski-Harabasz score
-                0.25 * norm_db +             # Davies-Bouldin score (inverted)
-                0.15 * norm_balance          # Regime balance
+                0.20 * norm_silhouette +      # Silhouette score
+                0.20 * norm_ch +             # Calinski-Harabasz score
+                0.20 * norm_db +             # Davies-Bouldin score (inverted)
+                0.15 * norm_balance +        # Regime balance
+                0.25 * norm_cv               # Coefficient of Variation score (highest priority for divergence detection)
             )
             
             return composite_score
@@ -1639,7 +1726,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Print initial regime distribution
             self._print_regime_distribution(current_assignments, max_regime_size, min_regime_size, "Combined", features)
             
-            # Analyze TAS/NAS disagreement
+            # Analyze TAS/NAS disagreement and prioritize divergence samples
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
             if tas_assignments is not None and nas_assignments is not None:
                 self._analyze_tas_nas_disagreement(tas_assignments, nas_assignments)
@@ -1647,6 +1734,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Print individual TAS and NAS regime distributions with detailed analysis
                 self._print_regime_distribution(tas_assignments, max_regime_size, min_regime_size, "TAS", features)
                 self._print_regime_distribution(nas_assignments, max_regime_size, min_regime_size, "NAS", features)
+                
+                # Store divergence information for prioritized processing
+                self.tas_assignments = tas_assignments
+                self.nas_assignments = nas_assignments
 
             iteration = 0
             max_iterations = 100
@@ -1656,9 +1747,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 iteration += 1
                 improved = False
 
-                # Find frontier samples (neighboring samples between different regimes)
-                frontier_samples = self._identify_frontier_samples(current_assignments)
-                tprint(f"Found {len(frontier_samples)} frontier samples for iteration {iteration}", "INFO")
+                # Find frontier samples with divergence prioritization
+                frontier_samples = self._identify_frontier_samples_with_divergence_priority(current_assignments)
+                tprint(f"Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "INFO")
 
                 if len(frontier_samples) == 0:
                     tprint("🛑 STOPPING: No more frontier samples found - optimization complete", "SUCCESS")
@@ -1968,6 +2059,73 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Frontier sample identification failed: {e}")
             return []
     
+    def _identify_frontier_samples_with_divergence_priority(self, assignments: np.ndarray) -> List[int]:
+        """Identify frontier samples with prioritization of NAS/TAS divergence samples."""
+        try:
+            frontier_samples = []
+            divergence_samples = []
+            other_frontier_samples = []
+            n_samples = len(assignments)
+            
+            # Get TAS and NAS assignments for regime-space analysis
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
+            
+            for i in range(n_samples):
+                current_regime = assignments[i]
+                is_frontier = False
+                is_divergence = False
+                
+                # 1. TAS/NAS disagreement (highest priority)
+                if tas_assignments is not None and nas_assignments is not None:
+                    if i < len(tas_assignments) and i < len(nas_assignments):
+                        tas_regime = tas_assignments[i]
+                        nas_regime = nas_assignments[i]
+                        
+                        # Direct disagreement
+                        if tas_regime != nas_regime:
+                            is_divergence = True
+                            is_frontier = True
+                        # Current regime differs from both TAS and NAS
+                        elif current_regime != tas_regime and current_regime != nas_regime:
+                            is_divergence = True
+                            is_frontier = True
+                        # Partial disagreement
+                        elif (current_regime == tas_regime and current_regime != nas_regime) or \
+                             (current_regime == nas_regime and current_regime != tas_regime):
+                            is_divergence = True
+                            is_frontier = True
+                
+                # 2. Feature-space neighbors (lower priority)
+                if not is_frontier:
+                    feature_frontier = self._is_feature_space_frontier(i, current_regime)
+                    if feature_frontier:
+                        is_frontier = True
+                
+                # Categorize frontier samples
+                if is_frontier:
+                    if is_divergence:
+                        divergence_samples.append(i)
+                    else:
+                        other_frontier_samples.append(i)
+            
+            # Prioritize divergence samples first, then other frontier samples
+            frontier_samples = divergence_samples + other_frontier_samples
+            
+            # Detailed analysis
+            tas_nas_count = len(divergence_samples)
+            feature_count = len(other_frontier_samples)
+            
+            tprint(f"Divergence-prioritized frontier analysis - TAS/NAS disagreement: {tas_nas_count}, Feature-space: {feature_count}, Total: {len(frontier_samples)}", "INFO")
+            
+            if len(divergence_samples) > 0:
+                tprint(f"🎯 Prioritizing {len(divergence_samples)} divergence samples for regime optimization", "SUCCESS")
+            
+            return frontier_samples
+            
+        except Exception as e:
+            log_warning(f"Divergence-prioritized frontier sample identification failed: {e}")
+            return []
+    
     
     def _is_tas_nas_frontier(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
                            sample_idx: int, current_regime: int) -> bool:
@@ -2148,8 +2306,572 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Failed to get regime for sample {sample_idx}: {e}")
             return 0
     
+    def _calculate_regime_centroids(self, features: np.ndarray, assignments: np.ndarray) -> Dict[int, Dict[str, Any]]:
+        """Calculate comprehensive regime centroids with PCA-selected feature characterization."""
+        try:
+            centroids = {}
+            unique_regimes = np.unique(assignments)
+            
+            # Get PCA-selected features for regime characterization
+            pca_features, feature_importance = self._get_pca_selected_features(features)
+            
+            for regime in unique_regimes:
+                regime_mask = assignments == regime
+                regime_features = features[regime_mask]
+                regime_pca_features = pca_features[regime_mask] if pca_features is not None else regime_features
+                
+                if len(regime_features) > 0:
+                    # Calculate basic centroid
+                    centroid = np.mean(regime_features, axis=0)
+                    
+                    # Calculate PCA feature statistics for regime characterization
+                    pca_stats = self._calculate_pca_feature_stats(regime_pca_features, feature_importance)
+                    
+                    # Calculate coefficient of variation for regime stability assessment
+                    cv_stats = self._calculate_regime_cv_stats(regime_features)
+                    
+                    centroids[regime] = {
+                        'centroid': centroid,
+                        'pca_stats': pca_stats,
+                        'cv_stats': cv_stats,
+                        'sample_count': len(regime_features),
+                        'feature_importance': feature_importance
+                    }
+                else:
+                    # Handle empty regimes
+                    centroids[regime] = {
+                        'centroid': np.zeros(features.shape[1]),
+                        'pca_stats': {},
+                        'cv_stats': {},
+                        'sample_count': 0,
+                        'feature_importance': feature_importance
+                    }
+            
+            return centroids
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate regime centroids: {e}")
+            return {}
+    
+    def _get_pca_selected_features(self, features: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[Dict]]:
+        """Get PCA-selected features and their importance for regime characterization."""
+        try:
+            from sklearn.decomposition import PCA
+            from sklearn.preprocessing import StandardScaler
+            
+            # Apply PCA to select most important features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # Use PCA to retain 95% of variance
+            pca = PCA(n_components=0.95, random_state=42)
+            pca_features = pca.fit_transform(features_scaled)
+            
+            # Get feature importance (explained variance ratios)
+            feature_importance = {
+                'explained_variance_ratio': pca.explained_variance_ratio_,
+                'cumulative_variance': np.cumsum(pca.explained_variance_ratio_),
+                'n_components': pca.n_components_,
+                'total_variance_explained': pca.explained_variance_ratio_.sum()
+            }
+            
+            return pca_features, feature_importance
+            
+        except Exception as e:
+            log_warning(f"Failed to get PCA-selected features: {e}")
+            return None, None
+    
+    def _calculate_pca_feature_stats(self, regime_pca_features: np.ndarray, feature_importance: Dict) -> Dict[str, Any]:
+        """Calculate statistics for PCA-selected features in a regime."""
+        try:
+            if regime_pca_features is None or len(regime_pca_features) == 0:
+                return {}
+            
+            # Calculate average values for each PCA component
+            pca_averages = np.mean(regime_pca_features, axis=0)
+            
+            # Calculate coefficient of variation for each PCA component
+            pca_stds = np.std(regime_pca_features, axis=0)
+            pca_cvs = np.where(pca_averages != 0, pca_stds / np.abs(pca_averages), 0)
+            
+            # Weight by explained variance ratio
+            if feature_importance and 'explained_variance_ratio' in feature_importance:
+                weights = feature_importance['explained_variance_ratio']
+                
+                # Calculate weighted average CV (higher weight = more important)
+                weighted_cv = np.average(pca_cvs, weights=weights)
+                
+                # Get top 5 most important features
+                top_features_idx = np.argsort(weights)[-5:][::-1]
+                top_features = {
+                    f'component_{i}': {
+                        'average': pca_averages[i],
+                        'cv': pca_cvs[i],
+                        'explained_variance': weights[i],
+                        'importance_rank': len(weights) - np.where(np.argsort(weights)[::-1] == i)[0][0]
+                    }
+                    for i in top_features_idx
+                }
+            else:
+                weighted_cv = np.mean(pca_cvs)
+                top_features = {}
+            
+            return {
+                'weighted_cv': weighted_cv,
+                'pca_averages': pca_averages.tolist(),
+                'pca_cvs': pca_cvs.tolist(),
+                'top_features': top_features,
+                'n_components': len(pca_averages)
+            }
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate PCA feature stats: {e}")
+            return {}
+    
+    def _calculate_regime_cv_stats(self, regime_features: np.ndarray) -> Dict[str, Any]:
+        """Calculate coefficient of variation statistics for regime stability assessment."""
+        try:
+            if len(regime_features) == 0:
+                return {}
+            
+            # Calculate CV for each feature
+            feature_means = np.mean(regime_features, axis=0)
+            feature_stds = np.std(regime_features, axis=0)
+            feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
+            
+            # Overall regime stability metrics
+            avg_cv = np.mean(feature_cvs)
+            max_cv = np.max(feature_cvs)
+            min_cv = np.min(feature_cvs)
+            cv_std = np.std(feature_cvs)
+            
+            # Regime stability score (lower CV = more stable)
+            stability_score = 1.0 / (1.0 + avg_cv)
+            
+            return {
+                'avg_cv': avg_cv,
+                'max_cv': max_cv,
+                'min_cv': min_cv,
+                'cv_std': cv_std,
+                'stability_score': stability_score,
+                'feature_cvs': feature_cvs.tolist()
+            }
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate regime CV stats: {e}")
+            return {}
+    
+    def _find_optimal_regime_mapping(self, tas_centroids: Dict[int, Dict[str, Any]], nas_centroids: Dict[int, Dict[str, Any]]) -> Dict[int, int]:
+        """Find optimal mapping between TAS and NAS regimes using Hungarian algorithm with enhanced regime characterization."""
+        try:
+            from scipy.optimize import linear_sum_assignment
+            
+            tas_regimes = list(tas_centroids.keys())
+            nas_regimes = list(nas_centroids.keys())
+            
+            if len(tas_regimes) == 0 or len(nas_regimes) == 0:
+                return {}
+            
+            # Create comprehensive cost matrix based on multiple regime characteristics
+            cost_matrix = np.zeros((len(tas_regimes), len(nas_regimes)))
+            
+            for i, tas_regime in enumerate(tas_regimes):
+                for j, nas_regime in enumerate(nas_regimes):
+                    # Calculate multi-dimensional similarity score
+                    similarity_score = self._calculate_regime_similarity_score(
+                        tas_centroids[tas_regime], nas_centroids[nas_regime]
+                    )
+                    cost_matrix[i, j] = 1.0 - similarity_score  # Convert similarity to distance
+            
+            # Use Hungarian algorithm to find optimal assignment
+            tas_indices, nas_indices = linear_sum_assignment(cost_matrix)
+            
+            # Create mapping dictionary
+            mapping = {}
+            for tas_idx, nas_idx in zip(tas_indices, nas_indices):
+                mapping[tas_regimes[tas_idx]] = nas_regimes[nas_idx]
+            
+            return mapping
+            
+        except ImportError:
+            log_error("scipy.optimize.linear_sum_assignment is required for optimal regime mapping. Cannot proceed without it.")
+            raise ValueError("scipy.optimize.linear_sum_assignment is required for optimal regime mapping. Please install scipy.")
+        except Exception as e:
+            log_error(f"Failed to find optimal regime mapping: {e}")
+            raise ValueError(f"Optimal regime mapping failed: {e}")
+    
+    def _calculate_regime_similarity_score(self, tas_regime_data: Dict[str, Any], nas_regime_data: Dict[str, Any]) -> float:
+        """Calculate comprehensive regime similarity score using multiple characteristics."""
+        try:
+            # Extract centroids
+            tas_centroid = tas_regime_data.get('centroid', np.array([]))
+            nas_centroid = nas_regime_data.get('centroid', np.array([]))
+            
+            if len(tas_centroid) == 0 or len(nas_centroid) == 0:
+                return 0.0
+            
+            # 1. Centroid cosine similarity (40% weight)
+            centroid_similarity = self._calculate_cosine_similarity(tas_centroid, nas_centroid)
+            
+            # 2. PCA feature similarity (30% weight)
+            pca_similarity = self._calculate_pca_similarity(
+                tas_regime_data.get('pca_stats', {}),
+                nas_regime_data.get('pca_stats', {})
+            )
+            
+            # 3. CV stability similarity (20% weight)
+            cv_similarity = self._calculate_cv_similarity(
+                tas_regime_data.get('cv_stats', {}),
+                nas_regime_data.get('cv_stats', {})
+            )
+            
+            # 4. Sample count similarity (10% weight)
+            tas_samples = tas_regime_data.get('sample_count', 0)
+            nas_samples = nas_regime_data.get('sample_count', 0)
+            sample_similarity = self._calculate_sample_count_similarity(tas_samples, nas_samples)
+            
+            # Weighted combination
+            similarity_score = (
+                0.4 * centroid_similarity +
+                0.3 * pca_similarity +
+                0.2 * cv_similarity +
+                0.1 * sample_similarity
+            )
+            
+            return similarity_score
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate regime similarity score: {e}")
+            return 0.0
+    
+    def _calculate_cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+        """Calculate cosine similarity between two vectors."""
+        try:
+            norm1 = np.linalg.norm(vec1)
+            norm2 = np.linalg.norm(vec2)
+            
+            if norm1 > 0 and norm2 > 0:
+                return np.dot(vec1, vec2) / (norm1 * norm2)
+            else:
+                return 0.0
+                
+        except Exception as e:
+            log_warning(f"Failed to calculate cosine similarity: {e}")
+            return 0.0
+    
+    def _calculate_pca_similarity(self, tas_pca_stats: Dict, nas_pca_stats: Dict) -> float:
+        """Calculate similarity based on PCA feature characteristics."""
+        try:
+            if not tas_pca_stats or not nas_pca_stats:
+                return 0.5  # Neutral similarity if no PCA stats
+            
+            # Compare weighted CV
+            tas_weighted_cv = tas_pca_stats.get('weighted_cv', 0)
+            nas_weighted_cv = nas_pca_stats.get('weighted_cv', 0)
+            
+            # CV similarity (lower difference = higher similarity)
+            cv_diff = abs(tas_weighted_cv - nas_weighted_cv)
+            cv_similarity = 1.0 / (1.0 + cv_diff)
+            
+            # Compare top features
+            tas_top_features = tas_pca_stats.get('top_features', {})
+            nas_top_features = nas_pca_stats.get('top_features', {})
+            
+            # Feature pattern similarity
+            feature_similarity = 0.0
+            if tas_top_features and nas_top_features:
+                # Compare averages of top features
+                tas_averages = [feat.get('average', 0) for feat in tas_top_features.values()]
+                nas_averages = [feat.get('average', 0) for feat in nas_top_features.values()]
+                
+                if tas_averages and nas_averages:
+                    avg_diff = abs(np.mean(tas_averages) - np.mean(nas_averages))
+                    feature_similarity = 1.0 / (1.0 + avg_diff)
+            
+            return 0.7 * cv_similarity + 0.3 * feature_similarity
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate PCA similarity: {e}")
+            return 0.5
+    
+    def _calculate_cv_similarity(self, tas_cv_stats: Dict, nas_cv_stats: Dict) -> float:
+        """Calculate similarity based on coefficient of variation characteristics."""
+        try:
+            if not tas_cv_stats or not nas_cv_stats:
+                return 0.5  # Neutral similarity if no CV stats
+            
+            # Compare stability scores
+            tas_stability = tas_cv_stats.get('stability_score', 0.5)
+            nas_stability = nas_cv_stats.get('stability_score', 0.5)
+            
+            stability_diff = abs(tas_stability - nas_stability)
+            stability_similarity = 1.0 / (1.0 + stability_diff)
+            
+            # Compare average CV
+            tas_avg_cv = tas_cv_stats.get('avg_cv', 0)
+            nas_avg_cv = nas_cv_stats.get('avg_cv', 0)
+            
+            cv_diff = abs(tas_avg_cv - nas_avg_cv)
+            cv_similarity = 1.0 / (1.0 + cv_diff)
+            
+            return 0.6 * stability_similarity + 0.4 * cv_similarity
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate CV similarity: {e}")
+            return 0.5
+    
+    def _calculate_sample_count_similarity(self, tas_samples: int, nas_samples: int) -> float:
+        """Calculate similarity based on sample counts."""
+        try:
+            if tas_samples == 0 and nas_samples == 0:
+                return 1.0  # Both empty
+            elif tas_samples == 0 or nas_samples == 0:
+                return 0.0  # One empty, one not
+            
+            # Relative difference
+            max_samples = max(tas_samples, nas_samples)
+            min_samples = min(tas_samples, nas_samples)
+            
+            relative_diff = (max_samples - min_samples) / max_samples
+            return 1.0 - relative_diff
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate sample count similarity: {e}")
+            return 0.5
+    
+    
+    def _apply_regime_mapping(self, assignments: np.ndarray, mapping: Dict[int, int]) -> np.ndarray:
+        """Apply regime mapping to transform NAS assignments to TAS regime space."""
+        try:
+            mapped_assignments = assignments.copy()
+            
+            for nas_regime, tas_regime in mapping.items():
+                mapped_assignments[assignments == nas_regime] = tas_regime
+            
+            return mapped_assignments
+            
+        except Exception as e:
+            log_warning(f"Failed to apply regime mapping: {e}")
+            return assignments
+    
+    def _calculate_mapping_quality(self, tas_centroids: Dict[int, Dict[str, Any]], nas_centroids: Dict[int, Dict[str, Any]], mapping: Dict[int, int]) -> Dict[str, Any]:
+        """Calculate comprehensive mapping quality metrics with detailed breakdown."""
+        try:
+            if not mapping:
+                return {
+                    'overall_quality': 0.0,
+                    'centroid_quality': 0.0,
+                    'pca_quality': 0.0,
+                    'cv_quality': 0.0,
+                    'sample_quality': 0.0,
+                    'mapping_coverage': 0.0,
+                    'quality_breakdown': {}
+                }
+            
+            centroid_similarities = []
+            pca_similarities = []
+            cv_similarities = []
+            sample_similarities = []
+            quality_breakdown = {}
+            valid_mappings = 0
+            
+            for tas_regime, nas_regime in mapping.items():
+                if tas_regime in tas_centroids and nas_regime in nas_centroids:
+                    tas_data = tas_centroids[tas_regime]
+                    nas_data = nas_centroids[nas_regime]
+                    
+                    # Calculate individual similarity components
+                    centroid_sim = self._calculate_cosine_similarity(
+                        tas_data.get('centroid', np.array([])),
+                        nas_data.get('centroid', np.array([]))
+                    )
+                    
+                    pca_sim = self._calculate_pca_similarity(
+                        tas_data.get('pca_stats', {}),
+                        nas_data.get('pca_stats', {})
+                    )
+                    
+                    cv_sim = self._calculate_cv_similarity(
+                        tas_data.get('cv_stats', {}),
+                        nas_data.get('cv_stats', {})
+                    )
+                    
+                    sample_sim = self._calculate_sample_count_similarity(
+                        tas_data.get('sample_count', 0),
+                        nas_data.get('sample_count', 0)
+                    )
+                    
+                    # Store similarities
+                    centroid_similarities.append(centroid_sim)
+                    pca_similarities.append(pca_sim)
+                    cv_similarities.append(cv_sim)
+                    sample_similarities.append(sample_sim)
+                    
+                    # Store individual mapping quality
+                    quality_breakdown[f'TAS_{tas_regime}_to_NAS_{nas_regime}'] = {
+                        'centroid_similarity': centroid_sim,
+                        'pca_similarity': pca_sim,
+                        'cv_similarity': cv_sim,
+                        'sample_similarity': sample_sim,
+                        'overall_similarity': 0.4 * centroid_sim + 0.3 * pca_sim + 0.2 * cv_sim + 0.1 * sample_sim
+                    }
+                    
+                    valid_mappings += 1
+            
+            if valid_mappings == 0:
+                return {
+                    'overall_quality': 0.0,
+                    'centroid_quality': 0.0,
+                    'pca_quality': 0.0,
+                    'cv_quality': 0.0,
+                    'sample_quality': 0.0,
+                    'mapping_coverage': 0.0,
+                    'quality_breakdown': {}
+                }
+            
+            # Calculate overall quality metrics
+            centroid_quality = np.mean(centroid_similarities) if centroid_similarities else 0.0
+            pca_quality = np.mean(pca_similarities) if pca_similarities else 0.0
+            cv_quality = np.mean(cv_similarities) if cv_similarities else 0.0
+            sample_quality = np.mean(sample_similarities) if sample_similarities else 0.0
+            
+            # Overall weighted quality (same weights as similarity calculation)
+            overall_quality = (
+                0.4 * centroid_quality +
+                0.3 * pca_quality +
+                0.2 * cv_quality +
+                0.1 * sample_quality
+            )
+            
+            # Mapping coverage (percentage of regimes mapped)
+            total_tas_regimes = len(tas_centroids)
+            mapping_coverage = valid_mappings / total_tas_regimes if total_tas_regimes > 0 else 0.0
+            
+            return {
+                'overall_quality': overall_quality,
+                'centroid_quality': centroid_quality,
+                'pca_quality': pca_quality,
+                'cv_quality': cv_quality,
+                'sample_quality': sample_quality,
+                'mapping_coverage': mapping_coverage,
+                'valid_mappings': valid_mappings,
+                'total_tas_regimes': total_tas_regimes,
+                'quality_breakdown': quality_breakdown,
+                'similarity_ranges': {
+                    'centroid_range': [np.min(centroid_similarities), np.max(centroid_similarities)] if centroid_similarities else [0, 0],
+                    'pca_range': [np.min(pca_similarities), np.max(pca_similarities)] if pca_similarities else [0, 0],
+                    'cv_range': [np.min(cv_similarities), np.max(cv_similarities)] if cv_similarities else [0, 0],
+                    'sample_range': [np.min(sample_similarities), np.max(sample_similarities)] if sample_similarities else [0, 0]
+                }
+            }
+            
+        except Exception as e:
+            log_warning(f"Failed to calculate mapping quality: {e}")
+            return {
+                'overall_quality': 0.0,
+                'centroid_quality': 0.0,
+                'pca_quality': 0.0,
+                'cv_quality': 0.0,
+                'sample_quality': 0.0,
+                'mapping_coverage': 0.0,
+                'quality_breakdown': {},
+                'error': str(e)
+            }
+    
+    def _analyze_regime_similarity(self, tas_centroids: Dict[int, np.ndarray], nas_centroids: Dict[int, np.ndarray], mapping: Dict[int, int]) -> Dict[str, float]:
+        """Analyze similarity patterns between TAS and NAS regimes."""
+        try:
+            similarities = []
+            
+            for tas_regime, nas_regime in mapping.items():
+                if tas_regime in tas_centroids and nas_regime in nas_centroids:
+                    tas_centroid = tas_centroids[tas_regime]
+                    nas_centroid = nas_centroids[nas_regime]
+                    
+                    # Calculate cosine similarity
+                    tas_norm = np.linalg.norm(tas_centroid)
+                    nas_norm = np.linalg.norm(nas_centroid)
+                    
+                    if tas_norm > 0 and nas_norm > 0:
+                        cosine_similarity = np.dot(tas_centroid, nas_centroid) / (tas_norm * nas_norm)
+                        similarities.append(cosine_similarity)
+            
+            if not similarities:
+                return {'avg_similarity': 0.0, 'min_similarity': 0.0, 'max_similarity': 0.0, 'std_similarity': 0.0}
+            
+            similarities = np.array(similarities)
+            
+            return {
+                'avg_similarity': np.mean(similarities),
+                'min_similarity': np.min(similarities),
+                'max_similarity': np.max(similarities),
+                'std_similarity': np.std(similarities)
+            }
+            
+        except Exception as e:
+            log_warning(f"Failed to analyze regime similarity: {e}")
+            return {'avg_similarity': 0.0, 'min_similarity': 0.0, 'max_similarity': 0.0, 'std_similarity': 0.0}
+    
+    def _report_mapping_quality_comprehensive(self, mapping_quality_metrics: Dict[str, Any], regime_mapping: Dict[int, int]):
+        """Report comprehensive mapping quality information regardless of quality level."""
+        try:
+            overall_quality = mapping_quality_metrics.get('overall_quality', 0.0)
+            
+            tprint(f"  🗺️  Comprehensive Mapping Quality Report:", "INFO")
+            tprint(f"     Overall Quality: {overall_quality:.3f}", "INFO")
+            tprint(f"     Centroid Quality: {mapping_quality_metrics.get('centroid_quality', 0.0):.3f}", "INFO")
+            tprint(f"     PCA Quality: {mapping_quality_metrics.get('pca_quality', 0.0):.3f}", "INFO")
+            tprint(f"     CV Quality: {mapping_quality_metrics.get('cv_quality', 0.0):.3f}", "INFO")
+            tprint(f"     Sample Quality: {mapping_quality_metrics.get('sample_quality', 0.0):.3f}", "INFO")
+            tprint(f"     Mapping Coverage: {mapping_quality_metrics.get('mapping_coverage', 0.0):.3f}", "INFO")
+            tprint(f"     Valid Mappings: {mapping_quality_metrics.get('valid_mappings', 0)}/{mapping_quality_metrics.get('total_tas_regimes', 0)}", "INFO")
+            
+            # Quality interpretation
+            if overall_quality >= 0.8:
+                quality_level = "EXCELLENT"
+                quality_color = "SUCCESS"
+            elif overall_quality >= 0.6:
+                quality_level = "GOOD"
+                quality_color = "SUCCESS"
+            elif overall_quality >= 0.4:
+                quality_level = "MODERATE"
+                quality_color = "WARNING"
+            elif overall_quality >= 0.2:
+                quality_level = "POOR"
+                quality_color = "WARNING"
+            else:
+                quality_level = "VERY POOR"
+                quality_color = "ERROR"
+            
+            tprint(f"     Quality Level: {quality_level} ({overall_quality:.3f})", quality_color)
+            
+            # Detailed regime mapping information
+            if regime_mapping:
+                tprint(f"  📋 Regime Mapping Details:", "INFO")
+                quality_breakdown = mapping_quality_metrics.get('quality_breakdown', {})
+                
+                for tas_regime, nas_regime in regime_mapping.items():
+                    mapping_key = f'TAS_{tas_regime}_to_NAS_{nas_regime}'
+                    if mapping_key in quality_breakdown:
+                        breakdown = quality_breakdown[mapping_key]
+                        tprint(f"     TAS {tas_regime} → NAS {nas_regime}: Overall {breakdown['overall_similarity']:.3f} (Centroid: {breakdown['centroid_similarity']:.3f}, PCA: {breakdown['pca_similarity']:.3f}, CV: {breakdown['cv_similarity']:.3f})", "INFO")
+                    else:
+                        tprint(f"     TAS {tas_regime} → NAS {nas_regime}: No quality metrics available", "WARNING")
+            
+            # Similarity ranges
+            similarity_ranges = mapping_quality_metrics.get('similarity_ranges', {})
+            if similarity_ranges:
+                tprint(f"  📊 Similarity Ranges:", "INFO")
+                for metric, (min_val, max_val) in similarity_ranges.items():
+                    tprint(f"     {metric.replace('_', ' ').title()}: [{min_val:.3f}, {max_val:.3f}]", "INFO")
+            
+            
+        except Exception as e:
+            log_warning(f"Failed to report mapping quality comprehensively: {e}")
+    
+    
     def _analyze_tas_nas_disagreement(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
-        """Analyze TAS/NAS disagreement patterns to understand regime conflicts."""
+        """Analyze TAS/NAS disagreement patterns with comprehensive validation and enhanced detection."""
         try:
             if tas_assignments is None or nas_assignments is None:
                 tprint("❌ TAS/NAS assignments not available for disagreement analysis", "ERROR")
@@ -2163,10 +2885,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 nas_assignments = nas_assignments[:min_length]
                 tprint(f"🔧 Aligned to length: {min_length}", "INFO")
             
-            # Calculate disagreement rate
+            # Calculate disagreement rate with enhanced validation
             disagreement_mask = tas_assignments != nas_assignments
             disagreement_rate = np.mean(disagreement_mask)
+            disagreement_count = np.sum(disagreement_mask)
+            total_samples = len(disagreement_mask)
             agreement_rate = 1.0 - disagreement_rate
+            
+            # Comprehensive divergence assessment validation
+            self._validate_divergence_assessment(disagreement_rate, disagreement_count, total_samples)
+            
+            # Analyze disagreement types with enhanced detection
+            disagreement_analysis = self._analyze_disagreement_types(tas_assignments, nas_assignments)
             
             # Analyze disagreement patterns
             disagreement_samples = np.where(disagreement_mask)[0]
@@ -2223,11 +2953,212 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if regime_agreements:
                 tprint(f"   🤝 Most agreed: {analysis['most_agreed_regimes'][:3]}", "SUCCESS")
             
+            # Add enhanced validation results to analysis
+            analysis.update({
+                'disagreement_count': disagreement_count,
+                'total_samples': total_samples,
+                'assessment_valid': disagreement_rate >= 0.05 and disagreement_rate <= 0.8,
+                'disagreement_types': disagreement_analysis
+            })
+            
             return analysis
             
         except Exception as e:
             log_warning(f"TAS/NAS disagreement analysis failed: {e}")
             return {"error": str(e)}
+    
+    def _validate_divergence_assessment(self, disagreement_rate: float, disagreement_count: int, total_samples: int):
+        """Validate divergence assessment with appropriate thresholds and warnings."""
+        try:
+            tprint(f"  🔍 Divergence Assessment Validation:", "INFO")
+            tprint(f"     Disagreement rate: {disagreement_rate:.3f} ({disagreement_count}/{total_samples})", "INFO")
+            
+            # Check if disagreement rate is within reasonable bounds
+            if disagreement_rate > 0.8:
+                tprint(f"  ⚠️  HIGH DIVERGENCE WARNING: Rate {disagreement_rate:.3f} > 0.8", "WARNING")
+                tprint(f"     This suggests fundamental issues with NAS/TAS regime detection", "WARNING")
+                tprint(f"     Possible causes: inadequate features, poor regime definition, or data quality issues", "WARNING")
+            elif disagreement_rate < 0.05:
+                tprint(f"  ⚠️  LOW DIVERGENCE WARNING: Rate {disagreement_rate:.3f} < 0.05", "WARNING")
+                tprint(f"     This suggests NAS/TAS may be too similar or insufficient regime diversity", "WARNING")
+                tprint(f"     Consider reviewing regime detection parameters or feature sets", "WARNING")
+            else:
+                tprint(f"  ✅ DIVERGENCE ASSESSMENT VALID: Rate {disagreement_rate:.3f} within acceptable range [0.05, 0.8]", "SUCCESS")
+            
+            # Check sample size adequacy
+            if disagreement_count < 10:
+                tprint(f"  ⚠️  INSUFFICIENT DIVERGENCE SAMPLES: {disagreement_count} < 10", "WARNING")
+                tprint(f"     Clustering optimization may be unreliable with too few disagreement samples", "WARNING")
+            else:
+                tprint(f"  ✅ SUFFICIENT DIVERGENCE SAMPLES: {disagreement_count} samples available for optimization", "SUCCESS")
+            
+            # Check total sample adequacy
+            if total_samples < 100:
+                tprint(f"  ⚠️  SMALL DATASET WARNING: {total_samples} < 100 samples", "WARNING")
+                tprint(f"     Statistical reliability of divergence assessment may be limited", "WARNING")
+            
+        except Exception as e:
+            log_warning(f"Divergence assessment validation failed: {e}")
+    
+    def _analyze_disagreement_types(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, int]:
+        """Analyze different types of disagreement patterns with data-driven divergence assessment."""
+        try:
+            # First, perform data-driven divergence assessment
+            divergence_analysis = self._assess_data_driven_divergence(tas_assignments, nas_assignments)
+            
+            # Traditional disagreement analysis
+            disagreement_mask = tas_assignments != nas_assignments
+            disagreement_indices = np.where(disagreement_mask)[0]
+            
+            direct_disagreement = 0
+            extreme_disagreement = 0
+            adjacent_disagreement = 0
+            regime_pairs = {}
+            
+            for idx in disagreement_indices:
+                tas_regime = tas_assignments[idx]
+                nas_regime = nas_assignments[idx]
+                regime_diff = abs(tas_regime - nas_regime)
+                
+                # Track regime pairs for analysis
+                pair_key = f"{min(tas_regime, nas_regime)}_{max(tas_regime, nas_regime)}"
+                regime_pairs[pair_key] = regime_pairs.get(pair_key, 0) + 1
+                
+                if regime_diff == 1:
+                    adjacent_disagreement += 1
+                elif regime_diff >= 4:  # Large regime difference (more than half the regime range)
+                    extreme_disagreement += 1
+                else:
+                    direct_disagreement += 1
+            
+            total_disagreements = len(disagreement_indices)
+            
+            tprint(f"  🔍 Data-Driven Disagreement Analysis:", "INFO")
+            tprint(f"     Semantic disagreement rate: {divergence_analysis['semantic_divergence_rate']:.3f}", "INFO")
+            tprint(f"     Numerical disagreement rate: {total_disagreements/len(tas_assignments):.3f}", "INFO")
+            tprint(f"     Regime mapping quality: {divergence_analysis['mapping_quality']:.3f}", "INFO")
+            
+            tprint(f"  📊 Traditional Disagreement Breakdown:", "INFO")
+            tprint(f"     Direct disagreement: {direct_disagreement} ({direct_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            tprint(f"     Adjacent disagreement: {adjacent_disagreement} ({adjacent_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            tprint(f"     Extreme disagreement: {extreme_disagreement} ({extreme_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            
+            # Flag potential regime mapping issues
+            if divergence_analysis['semantic_divergence_rate'] < 0.3 and total_disagreements/len(tas_assignments) > 0.5:
+                tprint(f"  ⚠️  POTENTIAL REGIME MAPPING ISSUE: High numerical disagreement but low semantic disagreement", "WARNING")
+                tprint(f"     This suggests regimes may be semantically similar but differently labeled", "WARNING")
+                tprint(f"     Consider implementing regime alignment before clustering", "WARNING")
+            
+            # Flag excessive extreme disagreements
+            extreme_ratio = extreme_disagreement / total_disagreements if total_disagreements > 0 else 0
+            if extreme_ratio > 0.3:
+                tprint(f"  ⚠️  HIGH EXTREME DISAGREEMENT: {extreme_ratio*100:.1f}% > 30%", "WARNING")
+                tprint(f"     This may indicate fundamental regime alignment issues", "WARNING")
+                tprint(f"     Consider reviewing regime definitions or feature sets", "WARNING")
+            
+            # Show most common disagreement pairs
+            if regime_pairs:
+                sorted_pairs = sorted(regime_pairs.items(), key=lambda x: x[1], reverse=True)[:3]
+                tprint(f"  📊 Most common disagreement pairs:", "INFO")
+                for pair, count in sorted_pairs:
+                    tprint(f"     Regimes {pair}: {count} samples ({count/total_disagreements*100:.1f}%)", "INFO")
+            
+            # Show regime mapping if available
+            if 'regime_mapping' in divergence_analysis:
+                tprint(f"  🗺️  Optimal regime mapping:", "INFO")
+                for tas_regime, nas_regime in divergence_analysis['regime_mapping'].items():
+                    tprint(f"     TAS {tas_regime} → NAS {nas_regime}", "INFO")
+            
+            return {
+                'direct_disagreement': direct_disagreement,
+                'adjacent_disagreement': adjacent_disagreement,
+                'extreme_disagreement': extreme_disagreement,
+                'total_disagreements': total_disagreements,
+                'extreme_ratio': extreme_ratio,
+                'regime_pairs': regime_pairs,
+                'semantic_divergence_rate': divergence_analysis['semantic_divergence_rate'],
+                'mapping_quality': divergence_analysis['mapping_quality'],
+                'regime_mapping': divergence_analysis.get('regime_mapping', {})
+            }
+            
+        except Exception as e:
+            log_warning(f"Enhanced disagreement type analysis failed: {e}")
+            return {}
+    
+    def _assess_data_driven_divergence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Assess divergence using data-driven methods: regime similarity and feature-space analysis."""
+        try:
+            tprint("  🧠 Performing data-driven divergence assessment...", "INFO")
+            
+            # Get features for regime centroid comparison
+            features = self._get_current_features()
+            if features is None:
+                tprint("  ⚠️  No features available for data-driven assessment, using numerical comparison only", "WARNING")
+                return self._assess_numerical_divergence(tas_assignments, nas_assignments)
+            
+            # Step 1: Calculate regime centroids in feature space
+            tas_centroids = self._calculate_regime_centroids(features, tas_assignments)
+            nas_centroids = self._calculate_regime_centroids(features, nas_assignments)
+            
+            # Step 2: Find optimal regime mapping using Hungarian algorithm
+            regime_mapping = self._find_optimal_regime_mapping(tas_centroids, nas_centroids)
+            
+            # Step 3: Calculate semantic divergence using mapped regimes
+            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
+            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_divergence_rate = np.mean(semantic_disagreement_mask)
+            
+            # Step 4: Calculate comprehensive mapping quality metrics
+            mapping_quality_metrics = self._calculate_mapping_quality(tas_centroids, nas_centroids, regime_mapping)
+            
+            # Step 5: Analyze regime similarity patterns
+            similarity_analysis = self._analyze_regime_similarity(tas_centroids, nas_centroids, regime_mapping)
+            
+            # Step 6: Comprehensive reporting regardless of quality
+            self._report_mapping_quality_comprehensive(mapping_quality_metrics, regime_mapping)
+            
+            tprint(f"  📊 Data-driven assessment results:", "INFO")
+            tprint(f"     Semantic divergence rate: {semantic_divergence_rate:.3f}", "INFO")
+            tprint(f"     Overall mapping quality: {mapping_quality_metrics['overall_quality']:.3f}", "INFO")
+            tprint(f"     Mapping coverage: {mapping_quality_metrics['mapping_coverage']:.3f}", "INFO")
+            tprint(f"     Average regime similarity: {similarity_analysis['avg_similarity']:.3f}", "INFO")
+            
+            return {
+                'semantic_divergence_rate': semantic_divergence_rate,
+                'mapping_quality': mapping_quality_metrics,
+                'regime_mapping': regime_mapping,
+                'similarity_analysis': similarity_analysis,
+                'tas_centroids': tas_centroids,
+                'nas_centroids': nas_centroids
+            }
+            
+        except Exception as e:
+            log_warning(f"Data-driven divergence assessment failed: {e}")
+            return self._assess_numerical_divergence(tas_assignments, nas_assignments)
+    
+    def _assess_numerical_divergence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Fallback numerical divergence assessment when features are not available."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            numerical_divergence_rate = np.mean(disagreement_mask)
+            
+            return {
+                'semantic_divergence_rate': numerical_divergence_rate,
+                'mapping_quality': 0.5,  # Neutral quality for numerical-only assessment
+                'regime_mapping': {},
+                'similarity_analysis': {'avg_similarity': 0.5},
+                'assessment_method': 'numerical_only'
+            }
+            
+        except Exception as e:
+            log_warning(f"Numerical divergence assessment failed: {e}")
+            return {
+                'semantic_divergence_rate': 0.5,
+                'mapping_quality': 0.0,
+                'regime_mapping': {},
+                'similarity_analysis': {'avg_similarity': 0.0},
+                'assessment_method': 'failed'
+            }
     
     def _calculate_regime_stability_score(self, assignments: np.ndarray) -> float:
         """Calculate regime stability score (higher = more stable)."""

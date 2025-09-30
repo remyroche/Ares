@@ -1302,11 +1302,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Calculate original scores for comparison
             original_scores = self._calculate_individual_quality_scores(features, assignments)
             
-            # Calculate improvements for each objective
+            # Calculate improvements for each objective (reduced redundancy)
             objectives = {
                 'silhouette_improvement': quality_scores['silhouette'] - original_scores['silhouette'],
-                'ch_improvement': quality_scores['calinski_harabasz'] - original_scores['calinski_harabasz'],
-                'db_improvement': original_scores['davies_bouldin'] - quality_scores['davies_bouldin'],  # Inverted (lower is better)
+                'ch_improvement': 0.0,  # REMOVED - redundant with Silhouette
+                'db_improvement': 0.0,  # REMOVED - redundant with Silhouette
                 'balance_improvement': quality_scores['regime_balance'] - original_scores['regime_balance'],
                 'within_regime_cv_improvement': self._calculate_within_regime_cv_improvement(
                     features, assignments, sample_idx, target_regime
@@ -1334,25 +1334,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
     
     def _get_pareto_optimization_weights(self) -> List[float]:
-        """Get Pareto optimization weights for multi-objective optimization."""
+        """Get Pareto optimization weights for multi-objective optimization with reduced redundancy."""
         try:
             # Pareto weights optimized for NAS/TAS divergence detection
-            # Based on empirical analysis and multi-objective optimization principles
+            # Reduced redundancy by focusing on complementary metrics
             weights = [
-                0.20,  # Silhouette improvement (cluster separation) - reduced from 0.25
-                0.20,  # Calinski-Harabasz improvement (cluster compactness)
-                0.20,  # Davies-Bouldin improvement (cluster separation)
-                0.15,  # Balance improvement (regime distribution)
-                0.10,  # Within-regime CV improvement (intra-regime stability)
-                0.10,  # Between-regime CV improvement (inter-regime divergence)
-                0.05   # Temporal improvement (smoothness)
+                0.25,  # Silhouette improvement (primary cluster separation metric)
+                0.00,  # Calinski-Harabasz improvement (REMOVED - redundant with Silhouette)
+                0.00,  # Davies-Bouldin improvement (REMOVED - redundant with Silhouette)
+                0.20,  # Balance improvement (regime distribution - unique metric)
+                0.20,  # Within-regime CV improvement (intra-regime stability - unique metric)
+                0.25,  # Between-regime CV improvement (inter-regime divergence - unique metric)
+                0.10   # Temporal improvement (smoothness - unique metric)
             ]
             
             return weights
             
         except Exception as e:
             log_warning(f"Pareto weights calculation failed: {e}")
-            return [0.20, 0.20, 0.20, 0.15, 0.10, 0.10, 0.05]  # Default weights
+            return [0.25, 0.00, 0.00, 0.20, 0.20, 0.25, 0.10]  # Default weights
     
     def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray, 
                                                  sample_idx: int, target_regime: int) -> float:
@@ -2398,14 +2398,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             norm_temporal = temporal_consistency  # Already in [0, 1] range
             
             # Fine-tuned weighted composite score optimized for NAS/TAS divergence detection
-            # Based on empirical analysis and performance optimization
+            # Reduced redundancy by focusing on complementary metrics
             composite_score = (
-                0.20 * norm_silhouette +      # Silhouette score (corrected to 20%)
-                0.20 * norm_ch +             # Calinski-Harabasz score (maintained)
-                0.20 * norm_db +             # Davies-Bouldin score (maintained)
-                0.15 * norm_balance +        # Regime balance (maintained)
-                0.20 * norm_cv +             # Coefficient of Variation score (corrected to 20%)
-                0.05 * norm_temporal         # Temporal consistency (new addition)
+                0.30 * norm_silhouette +      # Silhouette score (primary cluster separation)
+                0.00 * norm_ch +             # Calinski-Harabasz score (REMOVED - redundant)
+                0.00 * norm_db +             # Davies-Bouldin score (REMOVED - redundant)
+                0.20 * norm_balance +        # Regime balance (unique metric)
+                0.30 * norm_cv +             # Coefficient of Variation score (unique metric)
+                0.20 * norm_temporal         # Temporal consistency (unique metric)
             )
             
             return composite_score

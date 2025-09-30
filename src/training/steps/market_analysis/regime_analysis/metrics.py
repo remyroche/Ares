@@ -116,6 +116,11 @@ def calculate_regime_distribution(labels: np.ndarray, regime_type: str) -> Dict[
                     "quality_metrics": {}
                 }
 
+                # Initialize variables to avoid UnboundLocalError
+                min_pct = 0.0
+                max_pct = 0.0
+                std_pct = 0.0
+                
                 # Calculate regime statistics with safe math operations
                 percentages = []
                 for label, count in zip(unique_labels, counts):
@@ -147,10 +152,10 @@ def calculate_regime_distribution(labels: np.ndarray, regime_type: str) -> Dict[
                         "balance_score": 0.0,
                     }
 
-                # Calculate additional quality metrics
+                # Calculate additional quality metrics using initialized variables
                 distribution["quality_metrics"] = {
                     "regime_diversity": len(unique_labels) / max(1, total_samples),
-                    "balance_ratio": safe_divide(min_pct, max_pct, default=0.0) if percentages else 0.0,
+                    "balance_ratio": safe_divide(min_pct, max_pct, default=0.0),
                     "concentration_index": safe_divide(std_pct, 100.0, default=0.0),
                     "regime_stability": 1.0 - safe_divide(std_pct, 100.0, default=1.0)
                 }

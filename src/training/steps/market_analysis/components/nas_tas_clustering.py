@@ -1308,6 +1308,116 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             "SUCCESS"
         )
 
+    def _calculate_cluster_centers(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
+        """Calculate cluster centers from optimized features and assignments."""
+        try:
+            unique_labels = np.unique(assignments)
+            centers = []
+            
+            for label in unique_labels:
+                mask = assignments == label
+                if np.any(mask):
+                    # Calculate mean for this cluster, skipping empty masks
+                    cluster_features = features[mask]
+                    center = safe_mean(cluster_features, axis=0)
+                    centers.append(center)
+                else:
+                    # Fallback for empty clusters
+                    centers.append(np.zeros(features.shape[1]))
+            
+            return np.array(centers)
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to calculate cluster centers: {exc}")
+            # Return zero centers as fallback
+            unique_labels = np.unique(assignments)
+            return np.zeros((len(unique_labels), features.shape[1]))
+
+    def _calculate_final_quality_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
+        """Calculate final quality metrics for clustering results."""
+        try:
+            # Use shared utilities for quality metrics
+            from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+            
+            # Basic clustering quality metrics
+            unique_labels = np.unique(assignments)
+            n_clusters = len(unique_labels)
+            
+            if n_clusters < 2:
+                return {
+                    "silhouette_score": 0.0,
+                    "davies_bouldin_score": float('inf'),
+                    "calinski_harabasz_score": 0.0,
+                    "intra_cluster_dispersion": 0.0,
+                    "inter_cluster_dispersion": 0.0,
+                    "cluster_compactness": 0.0
+                }
+            
+            # Import safe functions from metrics module
+            from ..regime_analysis.metrics import (
+                safe_silhouette_score, 
+                safe_davies_bouldin_score, 
+                safe_calinski_harabasz_score
+            )
+            
+            # Calculate standard clustering metrics
+            silhouette = safe_silhouette_score(features, assignments)
+            davies_bouldin = safe_davies_bouldin_score(features, assignments)
+            calinski_harabasz = safe_calinski_harabasz_score(features, assignments)
+            
+            # Calculate intra-cluster dispersion
+            intra_dispersion = 0.0
+            for label in unique_labels:
+                mask = assignments == label
+                if np.any(mask):
+                    cluster_features = features[mask]
+                    center = safe_mean(cluster_features, axis=0)
+                    distances = np.linalg.norm(cluster_features - center, axis=1)
+                    intra_dispersion += safe_mean(distances)
+            
+            intra_dispersion /= n_clusters
+            
+            # Calculate inter-cluster dispersion
+            centers = []
+            for label in unique_labels:
+                mask = assignments == label
+                if np.any(mask):
+                    center = safe_mean(features[mask], axis=0)
+                    centers.append(center)
+            
+            if len(centers) > 1:
+                centers = np.array(centers)
+                inter_dispersion = 0.0
+                for i in range(len(centers)):
+                    for j in range(i + 1, len(centers)):
+                        inter_dispersion += np.linalg.norm(centers[i] - centers[j])
+                inter_dispersion /= (len(centers) * (len(centers) - 1) / 2)
+            else:
+                inter_dispersion = 0.0
+            
+            # Calculate cluster compactness
+            compactness = safe_divide(inter_dispersion, intra_dispersion, default=0.0)
+            
+            return {
+                "silhouette_score": float(silhouette),
+                "davies_bouldin_score": float(davies_bouldin),
+                "calinski_harabasz_score": float(calinski_harabasz),
+                "intra_cluster_dispersion": float(intra_dispersion),
+                "inter_cluster_dispersion": float(inter_dispersion),
+                "cluster_compactness": float(compactness)
+            }
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to calculate final quality metrics: {exc}")
+            return {
+                "silhouette_score": 0.0,
+                "davies_bouldin_score": float('inf'),
+                "calinski_harabasz_score": 0.0,
+                "intra_cluster_dispersion": 0.0,
+                "inter_cluster_dispersion": 0.0,
+                "cluster_compactness": 0.0
+            }
+
     def _summarize_results(self, context: ClusteringContext) -> Dict[str, Any]:
         """Create the final clustering result payload from the shared context."""
         if context.optimized_features is None or context.smoothed_assignments is None:

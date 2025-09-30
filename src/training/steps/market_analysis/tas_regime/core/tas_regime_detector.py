@@ -28,10 +28,14 @@ except ImportError:
     nn = None
 import logging
 import time
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack, nullcontext
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pickle
+from enum import Enum
 # Clustering imports removed - will be handled in subsequent step
 
 # Import tprint for comprehensive logging
@@ -152,6 +156,7 @@ except ImportError:
     ADVANCED_TREE_AVAILABLE = False
 
 from .tas_regime_config import TASRegimeConfig, TASArchitectureType
+from ..data_pipeline.data_storage import DataStorageManager, StorageConfig
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +180,20 @@ class TASRegimeResult:
     metadata: Dict[str, Any] = None
     error_message: Optional[str] = None
     regime_persistence_summary: Optional[Dict[str, Any]] = None
+
+
+class ProcessedDataSummary:
+    """Lightweight summary representing processed data without storing full array."""
+
+    def __init__(self, sample_count: int, feature_count: int, dtype: Optional[np.dtype] = None):
+        self._sample_count = int(sample_count)
+        self._feature_count = int(feature_count)
+        self.dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
+        self.shape = (self._sample_count, self._feature_count)
+        self.nbytes = int(self._sample_count * self._feature_count * self.dtype.itemsize)
+
+    def __len__(self) -> int:
+        return self._sample_count
 
 
 class TASRegimeDetector:
@@ -203,8 +222,16 @@ class TASRegimeDetector:
             'data_preparation_time': 0.0,
             'regime_detection_time': 0.0,
             'evaluation_time': 0.0,
-            'total_execution_time': 0.0
+            'total_execution_time': 0.0,
+            'cache_lookup_time': 0.0,
+            'cache_hit': False,
+            'cache_stored': False,
+            'cache_key': None
         }
+
+        # Initialize cache manager
+        self.cache_manager: Optional[DataStorageManager] = None
+        self._initialize_cache_manager()
 
         # Initialize enhanced utility tools
         tprint_info("🔧 Initializing enhanced utility tools...")
@@ -574,6 +601,81 @@ class TASRegimeDetector:
             self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
             self.position_analyzer = None
 
+    def _initialize_cache_manager(self):
+        """Initialize the cache manager for TAS regime detection results."""
+        if not getattr(self.config, 'enable_result_caching', False):
+            self.logger.info("🗃️ TAS regime caching disabled via configuration")
+            return
+
+        try:
+            namespace = getattr(self.config, 'cache_namespace', 'tas_regime_cache')
+            sanitized_namespace = str(namespace).replace(' ', '_').lower()
+            storage_config = StorageConfig(
+                enable_caching=True,
+                cache_ttl_hours=self.config.cache_ttl_hours,
+                cache_eviction_policy=self.config.cache_eviction_policy,
+                cache_size_mb=self.config.cache_max_entries,
+                base_directory=self.config.cache_base_directory,
+                data_directory=sanitized_namespace,
+                cache_directory=sanitized_namespace,
+                metadata_directory=sanitized_namespace
+            )
+            self.cache_manager = DataStorageManager(storage_config)
+            self.logger.info("📦 TAS regime cache manager initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ TAS regime cache manager initialization failed: {e}")
+            self.cache_manager = None
+
+    def _build_cache_context(self) -> Tuple[Optional[str], Optional[str], str, str]:
+        """Build cache key and context information for the current configuration."""
+        if not self.cache_manager or not getattr(self.config, 'enable_result_caching', False):
+            return None, None, "", ""
+
+        symbol = getattr(self.config, 'symbol', getattr(self.config, 'market_symbol', 'GLOBAL'))
+        timeframe = getattr(self.config, 'regime_detection_timeframe', getattr(self.config, 'primary_timeframe', 'GENERIC'))
+        namespace = getattr(self.config, 'cache_namespace', 'tas_regime_cache')
+
+        symbol_key = self._sanitize_cache_component(symbol, default='global')
+        timeframe_key = self._sanitize_cache_component(timeframe, default='generic')
+        namespace_key = self._sanitize_cache_component(namespace, default='tas_regime_cache')
+
+        config_hash = self._create_config_hash()
+        cache_key = self.cache_manager.generate_cache_key(namespace_key, symbol_key, timeframe_key, suffix=config_hash)
+
+        return cache_key, config_hash, str(symbol), str(timeframe)
+
+    def _sanitize_cache_component(self, value: Any, default: str) -> str:
+        """Sanitize values used for cache keys."""
+        if value in (None, ""):
+            value = default
+        value_str = str(value)
+        return value_str.replace('/', '_').replace(' ', '_').lower()
+
+    def _create_config_hash(self) -> str:
+        """Create a stable hash representation of the configuration."""
+        config_dict = asdict(self.config)
+        sanitized = self._sanitize_for_hash(config_dict)
+        serialized = json.dumps(sanitized, sort_keys=True, default=str)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    def _sanitize_for_hash(self, value: Any) -> Any:
+        """Recursively sanitize configuration values for hashing."""
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, dict):
+            return {k: self._sanitize_for_hash(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._sanitize_for_hash(v) for v in value]
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.integer):
+            return int(value)
+        if isinstance(value, np.floating):
+            return float(value)
+        if isinstance(value, Path):
+            return str(value)
+        return value
+
     def detect_regimes(self,
                       market_data: Union[pd.DataFrame, np.ndarray],
                       timestamps: Optional[np.ndarray] = None,
@@ -598,34 +700,74 @@ class TASRegimeDetector:
         tprint_debug(f"Optimize performance: {optimize_performance}")
         tprint_debug(f"PatchTST enhancement: {enable_patchtst_enhancement}")
 
+        cache_key: Optional[str] = None
+        config_hash: Optional[str] = None
+        cache_symbol = str(getattr(self.config, 'symbol', getattr(self.config, 'market_symbol', 'GLOBAL')))
+        cache_timeframe = str(getattr(self.config, 'regime_detection_timeframe', getattr(self.config, 'primary_timeframe', 'GENERIC')))
+        cache_lookup_start = time.time()
+        cache_lookup_time = 0.0
+        self.performance_metrics['cache_stored'] = False
+
+        if getattr(self.config, 'enable_result_caching', False) and self.cache_manager:
+            try:
+                cache_key, config_hash, cache_symbol, cache_timeframe = self._build_cache_context()
+                self.performance_metrics['cache_key'] = cache_key
+                if cache_key:
+                    cached_payload = self.cache_manager.get_cache_entry(cache_key)
+                else:
+                    cached_payload = None
+                cache_lookup_time = time.time() - cache_lookup_start
+                self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+
+                if cached_payload and isinstance(cached_payload, dict):
+                    cached_hash = cached_payload.get('config_hash')
+                    cached_result = cached_payload.get('result')
+                    if cached_hash == config_hash and isinstance(cached_result, TASRegimeResult):
+                        self.performance_metrics['cache_hit'] = True
+                        self.performance_metrics['total_execution_time'] = cache_lookup_time
+                        if cached_result.metadata is None:
+                            cached_result.metadata = {}
+                        cached_result.metadata.update({
+                            'cache_hit': True,
+                            'cache_key': cache_key,
+                            'cache_lookup_time': cache_lookup_time,
+                            'cache_retrieved_at': time.time(),
+                            'cache_symbol': cache_symbol,
+                            'cache_timeframe': cache_timeframe
+                        })
+                        tprint_info("📦 [TAS_TRAINING] Cache hit - returning stored TAS regime result", color="cyan")
+                        tprint_performance("Cache lookup", cache_lookup_time, color="cyan")
+                        self.logger.info(f"📦 TAS regime detection cache hit for key: {cache_key}")
+                        return cached_result
+
+                self.performance_metrics['cache_hit'] = False
+                if cache_key:
+                    self.logger.info(f"📦 TAS regime detection cache miss for key: {cache_key}")
+                tprint_performance("Cache lookup", cache_lookup_time, color="cyan")
+                tprint_info("📦 [TAS_TRAINING] Cache miss - executing detection", color="yellow")
+            except Exception as cache_error:
+                cache_lookup_time = time.time() - cache_lookup_start
+                self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+                self.performance_metrics['cache_hit'] = False
+                self.logger.warning(f"⚠️ TAS regime cache lookup failed: {cache_error}")
+        else:
+            cache_lookup_time = time.time() - cache_lookup_start
+            self.performance_metrics['cache_lookup_time'] = cache_lookup_time
+            self.performance_metrics['cache_hit'] = False
+
         try:
             self.logger.info("🚀 Starting TAS regime detection")
             tprint("🌳 [TAS_TRAINING] Starting tree-based regime detection system", color="green")
-            tprint_info(f"📊 [TAS_TRAINING] Processing {len(market_data)} data points")
+
+            if isinstance(market_data, dict):
+                data_point_count = sum(len(df) for df in market_data.values() if hasattr(df, '__len__'))
+            else:
+                data_point_count = len(market_data) if hasattr(market_data, '__len__') else 'unknown'
+
+            tprint_info(f"📊 [TAS_TRAINING] Processing {data_point_count} data points")
             tprint_info(f"⚙️ [TAS_TRAINING] Configuration: {self.config.n_regimes} regimes, {self.config.tree_depth} depth")
 
-            # Prepare data with basic processing
-            tprint("🔧 [TAS_TRAINING] Preparing data for tree-based analysis", color="cyan")
-            data_prep_start = time.time()
-            processed_data, processed_timestamps = self._prepare_and_enhance_data(
-                market_data, timestamps, enable_patchtst=False
-            )
-            data_prep_time = time.time() - data_prep_start
-            self.performance_metrics['data_preparation_time'] = data_prep_time
-            
-            tprint(f"📊 [TAS_TRAINING] Data prepared: {processed_data.shape[0]} samples, {processed_data.shape[1]} features", color="green")
-            tprint_performance("Data preparation", data_prep_time, color="blue")
-            tprint_debug(f"Processed data shape: {processed_data.shape}")
-            tprint_debug(f"Data type: {processed_data.dtype}")
-            tprint_debug(f"Memory usage: {processed_data.nbytes / 1024 / 1024:.2f} MB")
-
-            # Step 1: Simple regime clustering
-            self.logger.info("🎯 Performing simple regime clustering...")
-            tprint("🎯 [TAS_TRAINING] Performing regime clustering", color="green")
-            tprint_debug(f"   Data shape: {processed_data.shape}")
-            tprint_debug(f"   Target regimes: {self.config.n_regimes}")
-            tprint_debug(f"   Tree depth: {self.config.tree_depth}")
-            tprint_debug(f"   Number of estimators: {self.config.n_estimators}")
+            chunked_enabled = self._should_use_chunked_detection(market_data)
 
             clustering_start = time.time()
             try:
@@ -678,6 +820,7 @@ class TASRegimeDetector:
                 'scaled_features': scaled_features,
                 'synthetic_targets': synthetic_targets
             }
+
 
             # Skip complex validation and enhancement steps
             statistical_results = tree_results
@@ -798,6 +941,42 @@ class TASRegimeDetector:
                 regime_persistence_summary=persistence_summary
             )
 
+            if result.metadata is None:
+                result.metadata = {}
+
+            result.metadata.update({
+                'cache_key': cache_key,
+                'cache_hit': False,
+                'cache_ttl_hours': getattr(self.config, 'cache_ttl_hours', None),
+                'cache_symbol': cache_symbol,
+                'cache_timeframe': cache_timeframe
+            })
+
+            if (getattr(self.config, 'enable_result_caching', False) and
+                    self.cache_manager and cache_key and config_hash):
+                cache_payload = {
+                    'result': result,
+                    'metadata': result.metadata,
+                    'config_hash': config_hash,
+                    'symbol': cache_symbol,
+                    'timeframe': cache_timeframe,
+                    'stored_at': time.time()
+                }
+                try:
+                    self.cache_manager.set_cache_entry(
+                        cache_key,
+                        cache_payload,
+                        ttl_hours=self.config.cache_ttl_hours
+                    )
+                    self.performance_metrics['cache_stored'] = True
+                    tprint_info("💾 [TAS_TRAINING] Cached TAS regime detection result", color="cyan")
+                    self.logger.info(f"💾 TAS regime detection result cached under key: {cache_key}")
+                except Exception as cache_store_error:
+                    self.performance_metrics['cache_stored'] = False
+                    self.logger.warning(f"⚠️ Failed to store TAS regime result in cache: {cache_store_error}")
+            else:
+                self.performance_metrics['cache_stored'] = False
+
             self.logger.info(f"✅ TAS regime detection completed in {execution_time:.2f}s")
             tprint_success(f"🎉 [TAS_TRAINING] Regime detection completed successfully in {execution_time:.2f}s", color="green")
             tprint_info(f"📊 [TAS_TRAINING] Final results: {len(np.unique(result.regime_predictions))} regimes detected", color="blue")
@@ -825,7 +1004,7 @@ class TASRegimeDetector:
             tprint_error(f"   Execution time before failure: {execution_time:.3f}s", color="red")
             tprint_error(f"   Error type: {type(e).__name__}", color="red")
             tprint_error(f"   Error details: {str(e)}", color="red")
-            
+
             # Log performance metrics even on failure
             if hasattr(self, 'performance_metrics'):
                 tprint_error(f"   Performance metrics: {self.performance_metrics}", color="red")
@@ -847,6 +1026,252 @@ class TASRegimeDetector:
                 error_message=str(e),
                 metadata={'error': str(e)}
             )
+
+    def _should_use_chunked_detection(self, market_data: Any) -> bool:
+        """Determine if chunked detection should be activated."""
+        if not getattr(self.config, 'enable_streaming_regime_detection', False):
+            return False
+
+        if not getattr(self.config, 'enable_memory_optimization', False):
+            return False
+
+        if isinstance(market_data, dict) and market_data:
+            return True
+
+        if isinstance(market_data, pd.DataFrame):
+            if self.config.enable_multi_timeframe_training and 'timeframe' in market_data.columns:
+                return True
+            return len(market_data) > getattr(self.config, 'streaming_chunk_size', 50000)
+
+        if isinstance(market_data, np.ndarray):
+            return len(market_data) > getattr(self.config, 'streaming_chunk_size', 50000)
+
+        try:
+            return len(market_data) > getattr(self.config, 'streaming_chunk_size', 50000)
+        except Exception:
+            return False
+
+    def _extract_timeframe_inputs(self,
+                                   market_data: Any,
+                                   timestamps: Optional[Any]) -> Dict[str, Tuple[Any, Optional[Any]]]:
+        """Normalize market data into timeframe-indexed dictionary."""
+        timeframe_inputs: Dict[str, Tuple[Any, Optional[Any]]] = {}
+
+        if isinstance(market_data, dict):
+            for timeframe, data in market_data.items():
+                tf_timestamps = None
+                if isinstance(timestamps, dict):
+                    tf_timestamps = timestamps.get(timeframe)
+                timeframe_inputs[str(timeframe)] = (data, tf_timestamps)
+            if timeframe_inputs:
+                return timeframe_inputs
+
+        if isinstance(market_data, pd.DataFrame) and self.config.enable_multi_timeframe_training:
+            if 'timeframe' in market_data.columns:
+                for timeframe, group in market_data.groupby('timeframe'):
+                    tf_data = group.drop(columns=['timeframe']).copy()
+                    if isinstance(timestamps, dict):
+                        tf_timestamps = timestamps.get(timeframe)
+                    elif isinstance(timestamps, pd.Series):
+                        tf_timestamps = timestamps.loc[group.index].values
+                    else:
+                        tf_timestamps = timestamps
+                    timeframe_inputs[str(timeframe)] = (tf_data, tf_timestamps)
+                if timeframe_inputs:
+                    return timeframe_inputs
+
+        primary_timeframe = getattr(self.config, 'primary_timeframe', 'primary')
+        timeframe_inputs[str(primary_timeframe)] = (market_data, timestamps)
+        return timeframe_inputs
+
+    def _detect_regimes_chunked(self,
+                                market_data: Any,
+                                timestamps: Optional[Any],
+                                optimize_performance: bool) -> Dict[str, Any]:
+        """Execute chunked regime detection across multiple timeframes."""
+        timeframe_inputs = self._extract_timeframe_inputs(market_data, timestamps)
+        if not timeframe_inputs:
+            raise ValueError("No timeframe data available for chunked detection")
+
+        matrix_ops = self.matrix_ops
+        if matrix_ops is None and MATRIX_OPS_AVAILABLE:
+            try:
+                matrix_ops = get_unified_matrix_operations(
+                    enable_gpu=self.config.enable_hardware_optimization and optimize_performance,
+                    enable_memory_optimization=self.config.enable_memory_optimization,
+                    enable_parallel=True
+                )
+            except Exception as matrix_error:
+                self.logger.warning(f"Matrix operations unavailable for chunked detection: {matrix_error}")
+                matrix_ops = None
+
+        m1_gpu_manager = get_m1_gpu_manager() if optimize_performance and getattr(self.config, 'enable_hardware_optimization', False) else None
+        m1_memory_optimizer = get_m1_memory_optimizer() if getattr(self.config, 'enable_memory_optimization', False) else None
+        m1_cpu_optimizer = get_m1_cpu_optimizer() if optimize_performance and getattr(self.config, 'enable_hardware_optimization', False) else None
+
+        if m1_cpu_optimizer and hasattr(m1_cpu_optimizer, 'optimize_numpy_operations'):
+            try:
+                m1_cpu_optimizer.optimize_numpy_operations()
+            except Exception as optimization_error:
+                self.logger.debug(f"CPU optimization skipped: {optimization_error}")
+
+        timeframe_order = {str(tf): idx for idx, tf in enumerate(timeframe_inputs.keys())}
+        detection_results: List[Dict[str, Any]] = []
+        detection_start = time.time()
+
+        def process_timeframe(args: Tuple[str, Tuple[Any, Optional[Any]]]) -> Dict[str, Any]:
+            timeframe, (data, ts) = args
+            prep_start = time.time()
+            processed_data, _ = self._prepare_and_enhance_data(data, ts, enable_patchtst=False)
+            prep_time = time.time() - prep_start
+
+            if not isinstance(processed_data, np.ndarray):
+                processed_data = np.asarray(processed_data)
+
+            chunk_size = getattr(self.config, 'streaming_chunk_size', 50000)
+            if matrix_ops is not None and hasattr(matrix_ops, 'chunk_size_mb'):
+                try:
+                    approx_chunk = int(
+                        (matrix_ops.chunk_size_mb * 1024 * 1024)
+                        / max(1, processed_data.shape[1])
+                        / processed_data.dtype.itemsize
+                    )
+                    if approx_chunk > 0:
+                        chunk_size = max(1, min(chunk_size, approx_chunk))
+                except Exception as chunk_error:
+                    self.logger.debug(f"Chunk size estimation failed for {timeframe}: {chunk_error}")
+
+            chunk_predictions: List[np.ndarray] = []
+            chunk_probabilities: List[np.ndarray] = []
+            chunk_count = 0
+            chunk_timer = time.time()
+
+            with memory_checkpoint(f"{timeframe}_chunk_processing"):
+                for start_idx in range(0, len(processed_data), chunk_size):
+                    end_idx = min(start_idx + chunk_size, len(processed_data))
+                    chunk = processed_data[start_idx:end_idx]
+                    if len(chunk) == 0:
+                        continue
+
+                    with memory_checkpoint(f"{timeframe}_chunk_{chunk_count}"):
+                        chunk_preds, chunk_probs = self._perform_tree_based_clustering(chunk)
+
+                    chunk_predictions.append(chunk_preds)
+                    chunk_probabilities.append(chunk_probs)
+                    chunk_count += 1
+
+                    if getattr(self.config, 'enable_memory_optimization', False):
+                        optimize_memory()
+
+            chunk_time = time.time() - chunk_timer
+
+            if chunk_predictions:
+                timeframe_predictions = np.concatenate(chunk_predictions, axis=0)
+                timeframe_probabilities = np.concatenate(chunk_probabilities, axis=0)
+            else:
+                timeframe_predictions = np.array([], dtype=int)
+                timeframe_probabilities = np.empty((0, self.config.n_regimes))
+
+            return {
+                'timeframe': str(timeframe),
+                'predictions': timeframe_predictions,
+                'probabilities': timeframe_probabilities,
+                'sample_count': len(processed_data),
+                'feature_count': processed_data.shape[1] if processed_data.ndim > 1 else 1,
+                'dtype': processed_data.dtype,
+                'prep_time': prep_time,
+                'chunk_time': chunk_time,
+                'chunk_count': chunk_count,
+            }
+
+        with ExitStack() as stack:
+            if m1_memory_optimizer and hasattr(m1_memory_optimizer, 'start_monitoring'):
+                try:
+                    m1_memory_optimizer.start_monitoring()
+                    stack.callback(lambda: m1_memory_optimizer.stop_monitoring())
+                except Exception as monitor_error:
+                    self.logger.debug(f"Memory monitoring unavailable: {monitor_error}")
+
+            cpu_context = (
+                m1_cpu_optimizer.create_m1_optimized_context()
+                if m1_cpu_optimizer and hasattr(m1_cpu_optimizer, 'create_m1_optimized_context')
+                else nullcontext()
+            )
+            stack.enter_context(cpu_context)
+
+            gpu_ctx = gpu_context('tas_regime_chunked') if m1_gpu_manager else nullcontext()
+            stack.enter_context(gpu_ctx)
+
+            if m1_cpu_optimizer and hasattr(m1_cpu_optimizer, 'get_optimal_worker_count'):
+                max_workers = m1_cpu_optimizer.get_optimal_worker_count()
+            else:
+                max_workers = len(timeframe_inputs)
+
+            if getattr(self.config, 'max_parallel_timeframes', None):
+                max_workers = min(max_workers, int(self.config.max_parallel_timeframes))
+
+            max_workers = max(1, min(len(timeframe_inputs), max_workers))
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_timeframe = {
+                    executor.submit(process_timeframe, item): timeframe
+                    for timeframe, item in timeframe_inputs.items()
+                }
+                for future in as_completed(future_to_timeframe):
+                    result = future.result()
+                    detection_results.append(result)
+
+        if not detection_results:
+            raise ValueError("Chunked detection produced no results")
+
+        detection_results.sort(key=lambda r: timeframe_order.get(r['timeframe'], 0))
+
+        total_samples = sum(result['sample_count'] for result in detection_results)
+        total_chunks = sum(result['chunk_count'] for result in detection_results)
+        total_chunk_time = sum(result['chunk_time'] for result in detection_results)
+        feature_count = detection_results[0]['feature_count']
+        dtype = detection_results[0]['dtype']
+
+        aggregated_predictions = np.concatenate([result['predictions'] for result in detection_results], axis=0)
+        aggregated_probabilities = np.concatenate([result['probabilities'] for result in detection_results], axis=0)
+
+        clustering_time = time.time() - detection_start
+        data_prep_time = sum(result['prep_time'] for result in detection_results)
+
+        timeframe_details = {
+            result['timeframe']: {
+                'chunks': result['chunk_count'],
+                'samples': result['sample_count']
+            }
+            for result in detection_results
+        }
+
+        performance_metrics = {
+            'method': 'chunked_clustering',
+            'timeframe_count': len(detection_results),
+            'total_chunks': total_chunks,
+            'average_chunk_time': total_chunk_time / max(1, total_chunks)
+        }
+
+        tree_results = {
+            'regime_predictions': aggregated_predictions,
+            'regime_probabilities': aggregated_probabilities,
+            'performance_metrics': performance_metrics,
+            'timeframe_details': timeframe_details
+        }
+
+        processed_data_summary = ProcessedDataSummary(total_samples, feature_count, dtype)
+
+        return {
+            'processed_data': processed_data_summary,
+            'processed_timestamps': None,
+            'regime_predictions': aggregated_predictions,
+            'regime_probabilities': aggregated_probabilities,
+            'tree_results': tree_results,
+            'clustering_time': clustering_time,
+            'data_prep_time': data_prep_time,
+            'timeframe_details': timeframe_details
+        }
 
     @contextmanager
     def _hardware_optimization_context(self):

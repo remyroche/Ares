@@ -59,6 +59,9 @@ class TASRegimeConfig:
     enable_matrix_optimization: bool = True
     enable_memory_optimization: bool = True
     optimization_level: TASOptimizationLevel = TASOptimizationLevel.MAXIMUM
+    enable_streaming_regime_detection: bool = False
+    streaming_chunk_size: int = 50000
+    max_parallel_timeframes: Optional[int] = None
 
     # Economic evaluation
     enable_economic_evaluation: bool = True
@@ -85,6 +88,14 @@ class TASRegimeConfig:
     feature_importance_threshold: float = 0.1
     correlation_threshold: float = 0.8
     outlier_detection_enabled: bool = True
+
+    # Caching configuration
+    enable_result_caching: bool = True
+    cache_base_directory: str = "tas_regime_cache"
+    cache_namespace: str = "regime_results"
+    cache_ttl_hours: int = 6
+    cache_max_entries: int = 64
+    cache_eviction_policy: str = "lru"
 
     @classmethod
     def create_short_term_trading_config(cls) -> 'TASRegimeConfig':
@@ -192,5 +203,12 @@ class TASRegimeConfig:
             # Normalize weights
             for obj in self.objective_weights:
                 self.objective_weights[obj] /= total_weight
+
+        if self.cache_ttl_hours <= 0:
+            raise ValueError("cache_ttl_hours must be positive")
+        if self.cache_max_entries <= 0:
+            raise ValueError("cache_max_entries must be positive")
+        if self.cache_eviction_policy not in {"lru", "lfu", "fifo"}:
+            raise ValueError("cache_eviction_policy must be one of 'lru', 'lfu', or 'fifo'")
 
         return True

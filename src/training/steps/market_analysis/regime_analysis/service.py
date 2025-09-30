@@ -327,16 +327,21 @@ class RegimeAnalysisService:
             if self.performance_metrics["start_time"] and self.performance_metrics["end_time"]:
                 total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
             
+            # Validate performance metrics using math_validation
+            success_count = validate_positive(self.performance_metrics["success_count"], "success_count")
+            error_count = validate_positive(self.performance_metrics["error_count"], "error_count")
+            total_time = validate_finite(total_time, "total_time")
+            
             performance_summary = {
-                "total_time_seconds": round(total_time, 2),
-                "success_count": self.performance_metrics["success_count"],
-                "error_count": self.performance_metrics["error_count"],
+                "total_time_seconds": round(validate_finite(total_time, "total_time_rounded"), 2),
+                "success_count": int(success_count),
+                "error_count": int(error_count),
                 "success_rate": safe_divide(
-                    self.performance_metrics["success_count"],
-                    self.performance_metrics["success_count"] + self.performance_metrics["error_count"],
+                    success_count,
+                    success_count + error_count,
                     default=0.0
                 ),
-                "memory_usage_mb": get_memory_usage() / (1024**2),
+                "memory_usage_mb": validate_finite(get_memory_usage() / (1024**2), "memory_usage_mb"),
                 "m1_optimizations_used": M1_HARDWARE_AVAILABLE
             }
             

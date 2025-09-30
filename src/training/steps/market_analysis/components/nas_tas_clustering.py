@@ -265,7 +265,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 drop_highly_correlated=True
             )
             
-            self.unified_clustering = None
             self.clustering_result = None
             self.execution_metadata = {}
             
@@ -436,8 +435,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'uses_shared_utilities': True
             }
 
-            # Step 3: Load and validate market data
-            tprint("Step 3: Loading and validating market data", "INFO")
+            # Step 4: Load and validate market data
+            tprint("Step 4: Loading and validating market data", "INFO")
             log_info("Loading and validating market data")
             market_data = await self._load_market_data(data)
             if market_data is None or market_data.empty:
@@ -465,14 +464,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             clustering_config = self._create_clustering_config_using_shared_utils()
             tprint("Clustering configuration created", "SUCCESS")
 
-            # Step 6: Initialize unified clustering
-            tprint("Step 6: Initializing unified clustering", "INFO")
-            log_info("Initializing unified clustering")
-            self._initialize_unified_clustering(clustering_config)
-            tprint("Unified clustering initialized", "SUCCESS")
-
-            # Step 7: Perform clustering
-            tprint("Step 7: Performing clustering", "INFO")
+            # Step 6: Perform clustering
+            tprint("Step 6: Performing clustering", "INFO")
             log_info("Performing clustering")
             clustering_result = await self._perform_clustering(features, market_data)
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
@@ -625,70 +618,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
             return create_default_config("clustering")
     
-    def _initialize_unified_clustering(self, clustering_config: Dict[str, Any]):
-        """Initialize unified clustering system."""
-        try:
-            tprint("Initializing unified clustering system...", "INFO")
-            log_info("Initializing unified clustering system")
-
-            # Import unified clustering components
-            tprint("Importing unified clustering components...", "INFO")
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_clustering_algorithms import (
-                UnifiedClusteringAlgorithm, ClusteringAlgorithmType
-            )
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.clustering_cross_validation import (
-                ClusteringCrossValidator, ClusteringCVResult
-            )
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.multi_objective_optimizer import (
-                MultiObjectiveOptimizer, MultiObjectiveConfig
-            )
-            tprint("Unified clustering components imported", "SUCCESS")
-
-            # Create unified clustering configuration
-            tprint("Creating unified clustering configuration...", "INFO")
-            unified_config = {
-                'n_regimes': clustering_config['n_regimes'],
-                'algorithm_type': clustering_config['algorithm_type'],
-                'enable_economic_clustering': clustering_config['enable_economic_clustering'],
-                'enable_ensemble_clustering': clustering_config['enable_ensemble_clustering'],
-                'economic_weight': clustering_config['economic_weight'],
-                'volatility_regime_weight': clustering_config['volatility_regime_weight'],
-                'volume_regime_weight': clustering_config['volume_regime_weight'],
-                'structural_trend_weight': clustering_config['structural_trend_weight']
-            }
-            tprint("Unified clustering configuration created", "SUCCESS")
-
-            # Initialize unified clustering system
-            tprint("Initializing unified clustering system...", "INFO")
-            self.unified_clustering = UnifiedClusteringAlgorithm(unified_config)
-            tprint("Unified clustering system initialized", "SUCCESS")
-
-            log_success("Unified clustering system initialized")
-
-        except ImportError:
-            log_warning("Unified clustering components not available, using fallback")
-            tprint("Unified clustering components not available, using fallback", "WARNING")
-            self.unified_clustering = None
-        except Exception as e:
-            log_error(f"Unified clustering initialization failed: {e}")
-            tprint(f"Unified clustering initialization failed: {e}", "ERROR")
-            self.unified_clustering = None
     
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform clustering using advanced optimization methods."""
         try:
-            if self.unified_clustering is not None:
-                tprint("Performing advanced clustering optimization...", "INFO")
-                log_info("Performing advanced clustering optimization")
-                
-                # Use cross-validation for hyperparameter optimization
-                clustering_result = await self._perform_advanced_clustering(features, market_data)
-                tprint("Advanced clustering optimization completed", "SUCCESS")
-            else:
-                tprint("Performing clustering using fallback method...", "INFO")
-                log_info("Performing clustering using fallback method")
-                clustering_result = await self._perform_fallback_clustering(features, market_data)
-                tprint("Clustering completed using fallback method", "SUCCESS")
+            tprint("Performing advanced clustering optimization...", "INFO")
+            log_info("Performing advanced clustering optimization")
+            
+            # Use advanced clustering with progressive regime optimization
+            clustering_result = await self._perform_advanced_clustering(features, market_data)
+            tprint("Advanced clustering optimization completed", "SUCCESS")
 
             log_success(f"Clustering completed: {clustering_result['n_clusters']} clusters")
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
@@ -713,6 +652,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Store optimized features for frontier detection
             self.optimized_features = optimized_features
+            
+            # Memory cleanup after feature optimization
+            import gc
+            gc.collect()
             
             # Step 2: Get TAS and NAS regime assignments from pipeline state
             tprint("Step 2: Extracting TAS and NAS regime assignments...", "INFO")
@@ -872,27 +815,41 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _remove_correlated_features(self, features: np.ndarray, threshold: float = 0.95) -> np.ndarray:
-        """Remove highly correlated features."""
+        """Remove highly correlated features using optimized NumPy operations."""
         try:
-            import pandas as pd
+            # Use NumPy for correlation calculation (more efficient than pandas)
+            # Standardize features first
+            features_std = (features - np.mean(features, axis=0)) / (np.std(features, axis=0) + 1e-8)
             
-            # Convert to DataFrame for easier correlation analysis
-            df = pd.DataFrame(features)
-            corr_matrix = df.corr().abs()
+            # Calculate correlation matrix using matrix multiplication
+            corr_matrix = np.corrcoef(features_std.T)
+            corr_matrix = np.abs(corr_matrix)
             
-            # Find pairs of highly correlated features
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            # Find upper triangular mask (excluding diagonal)
+            upper_tri_mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
             
-            # Find features to drop
-            to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
+            # Find highly correlated feature pairs
+            high_corr_mask = (corr_matrix > threshold) & upper_tri_mask
+            
+            # Find features to drop (those with high correlation to any other feature)
+            to_drop = set()
+            for i in range(corr_matrix.shape[0]):
+                for j in range(i + 1, corr_matrix.shape[1]):
+                    if corr_matrix[i, j] > threshold:
+                        # Drop the feature with higher index (keep the first one)
+                        to_drop.add(j)
             
             # Remove highly correlated features
             if to_drop:
-                features_filtered = df.drop(columns=to_drop).values
+                keep_indices = [i for i in range(features.shape[1]) if i not in to_drop]
+                features_filtered = features[:, keep_indices]
                 tprint(f"Removed {len(to_drop)} highly correlated features", "INFO")
             else:
                 features_filtered = features
                 tprint("No highly correlated features found", "INFO")
+            
+            # Clean up temporary arrays
+            del features_std, corr_matrix, upper_tri_mask, high_corr_mask
             
             return features_filtered
             
@@ -1188,34 +1145,42 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return np.zeros(features.shape[1])
     
     def _calculate_vectorized_temporal_variance(self, features: np.ndarray) -> np.ndarray:
-        """Calculate temporal variance for all features using vectorized operations."""
+        """Calculate temporal variance for all features using optimized vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized temporal variance for all features...", "INFO")
             
             if features.shape[0] < 2:
                 return np.zeros(features.shape[1])
             
-            # Vectorized rolling variance calculation
+            # Optimized rolling variance calculation using pandas rolling window
             window_size = min(10, features.shape[0] // 4)
             if window_size < 2:
                 return np.var(features, axis=0)
             
-            # Calculate rolling variance using vectorized operations
-            rolling_vars = []
-            for i in range(features.shape[0] - window_size + 1):
-                window_features = features[i:i + window_size]
-                window_vars = np.var(window_features, axis=0)
-                rolling_vars.append(window_vars)
+            # Use pandas rolling window for efficient computation
+            import pandas as pd
+            df_features = pd.DataFrame(features)
             
-            # Calculate mean rolling variance for each feature
-            temporal_vars = np.mean(rolling_vars, axis=0) if rolling_vars else np.var(features, axis=0)
+            # Calculate rolling variance using pandas (implemented in C)
+            rolling_vars = df_features.rolling(window=window_size, min_periods=1).var()
+            
+            # Calculate mean rolling variance for each feature, ignoring NaN values
+            temporal_vars = rolling_vars.mean(skipna=True).values
+            
+            # Handle any remaining NaN values
+            temporal_vars = np.nan_to_num(temporal_vars, nan=0.0)
             
             tprint(f"      ✅ Vectorized temporal variance calculated for {features.shape[1]} features", "SUCCESS")
+            
+            # Clean up temporary DataFrame
+            del df_features, rolling_vars
+            
             return temporal_vars
             
         except Exception as e:
             log_warning(f"Vectorized temporal variance calculation failed: {e}")
-            return np.zeros(features.shape[1])
+            # Fallback to simple variance if rolling fails
+            return np.var(features, axis=0)
     
     def _calculate_vectorized_trend_consistency(self, features: np.ndarray) -> np.ndarray:
         """Calculate trend consistency for all features using vectorized operations."""
@@ -2171,23 +2136,67 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 log_info("No TAS/NAS disagreements detected during initial combination")
                 return combined_assignments
             
-            # Process divergence samples with enhanced logic
+            # Process divergence samples with optimized logic
             tas_preferred = 0
             nas_preferred = 0
             local_consistency_preferred = 0
             
+            # Pre-calculate local consistency for all disagreement samples (vectorized)
+            local_tas_regimes = np.array([
+                self._get_local_dominant_regime(tas_assignments, idx, window_size=5) 
+                for idx in disagreement_indices
+            ])
+            local_nas_regimes = np.array([
+                self._get_local_dominant_regime(nas_assignments, idx, window_size=5) 
+                for idx in disagreement_indices
+            ])
+            
+            local_tas_consistent_mask = local_tas_regimes == tas_assignments[disagreement_indices]
+            local_nas_consistent_mask = local_nas_regimes == nas_assignments[disagreement_indices]
+            
+            # Batch process samples that need quality assessment
+            quality_assessment_needed = ~(local_tas_consistent_mask ^ local_nas_consistent_mask)  # XOR
+            quality_indices = disagreement_indices[quality_assessment_needed]
+            
+            # Calculate base composite score once
+            base_score = self._calculate_composite_score(features, combined_assignments)
+            
+            # Batch evaluate quality for samples that need it
+            quality_scores = {}
+            if len(quality_indices) > 0:
+                # Limit quality assessment to avoid performance issues
+                max_quality_samples = min(100, len(quality_indices))
+                if len(quality_indices) > max_quality_samples:
+                    # Sample randomly for large datasets
+                    quality_indices = np.random.choice(quality_indices, max_quality_samples, replace=False)
+                
+                for sample_idx in quality_indices:
+                    tas_regime = int(tas_assignments[sample_idx])
+                    nas_regime = int(nas_assignments[sample_idx])
+                    
+                    # Use incremental score calculation instead of full recomputation
+                    tas_improvement = self._calculate_single_flip_improvement(
+                        features, combined_assignments, sample_idx, tas_regime
+                    )
+                    nas_improvement = self._calculate_single_flip_improvement(
+                        features, combined_assignments, sample_idx, nas_regime
+                    )
+                    
+                    quality_scores[sample_idx] = {
+                        'tas_improvement': tas_improvement,
+                        'nas_improvement': nas_improvement
+                    }
 
-            for sample_idx in disagreement_indices:
+            # Process all disagreement samples
+            for i, sample_idx in enumerate(disagreement_indices):
                 tas_regime = int(tas_assignments[sample_idx])
                 nas_regime = int(nas_assignments[sample_idx])
                 original_regime = int(combined_assignments[sample_idx])
                 
-                # Step 1: Check local consistency first (spatial coherence)
-                local_tas_regime = self._get_local_dominant_regime(tas_assignments, sample_idx, window_size=5)
-                local_nas_regime = self._get_local_dominant_regime(nas_assignments, sample_idx, window_size=5)
-                
-                local_tas_consistent = local_tas_regime == tas_regime
-                local_nas_consistent = local_nas_regime == nas_regime
+                local_tas_consistent = local_tas_consistent_mask[i]
+                local_nas_consistent = local_nas_consistent_mask[i]
+                local_tas_regime = int(local_tas_regimes[i])
+                local_nas_regime = int(local_nas_regimes[i])
                 
                 # Step 2: If one regime is locally consistent and the other isn't, prefer the consistent one
                 if local_tas_consistent and not local_nas_consistent:
@@ -2195,44 +2204,42 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tas_preferred += 1
                     decision_method = "local_consistency_tas"
                     local_consistency_preferred += 1
+                    tas_score = nas_score = nas_improvement = None
                 elif local_nas_consistent and not local_tas_consistent:
                     chosen_regime = nas_regime
                     nas_preferred += 1
                     decision_method = "local_consistency_nas"
                     local_consistency_preferred += 1
+                    tas_score = nas_score = nas_improvement = None
                 else:
                     # Step 3: Both or neither locally consistent - use quality-based assessment
-                    # Evaluate TAS regime quality
-                    combined_assignments[sample_idx] = tas_regime
-                    tas_score = self._calculate_composite_score(features, combined_assignments)
-                    
-                    # Evaluate NAS regime quality
-                    combined_assignments[sample_idx] = nas_regime
-                    nas_score = self._calculate_composite_score(features, combined_assignments)
-                    
-                    # Restore original assignment
-                    combined_assignments[sample_idx] = original_regime
-                    
-                    # Calculate incremental improvement for logging
-                    nas_improvement = self._calculate_single_flip_improvement(
-                        features, combined_assignments, sample_idx, nas_regime
-                    )
-                    
-                    # Choose based on quality scores
-                    if nas_score > tas_score:
-                        chosen_regime = nas_regime
-                        nas_preferred += 1
-                        decision_method = "quality_assessment_nas"
+                    if sample_idx in quality_scores:
+                        tas_improvement = quality_scores[sample_idx]['tas_improvement']
+                        nas_improvement = quality_scores[sample_idx]['nas_improvement']
+                        
+                        # Choose based on improvement scores
+                        if nas_improvement > tas_improvement:
+                            chosen_regime = nas_regime
+                            nas_preferred += 1
+                            decision_method = "quality_assessment_nas"
+                        else:
+                            chosen_regime = tas_regime
+                            tas_preferred += 1
+                            decision_method = "quality_assessment_tas"
+                        
+                        tas_score = base_score + tas_improvement
+                        nas_score = base_score + nas_improvement
                     else:
+                        # Fallback to TAS if quality assessment was skipped
                         chosen_regime = tas_regime
                         tas_preferred += 1
-                        decision_method = "quality_assessment_tas"
+                        decision_method = "fallback_tas"
+                        tas_score = nas_score = nas_improvement = None
                 
                 # Apply the chosen regime
                 combined_assignments[sample_idx] = chosen_regime
                 
                 # Log decision details
-
                 decision_trace.append({
                     'sample_index': int(sample_idx),
                     'tas_regime': tas_regime,
@@ -2241,11 +2248,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'decision_method': decision_method,
                     'local_tas_consistent': local_tas_consistent,
                     'local_nas_consistent': local_nas_consistent,
-                    'local_tas_regime': int(local_tas_regime),
-                    'local_nas_regime': int(local_nas_regime),
-                    'tas_score': float(tas_score) if 'tas_score' in locals() else None,
-                    'nas_score': float(nas_score) if 'nas_score' in locals() else None,
-                    'nas_improvement': float(nas_improvement) if 'nas_improvement' in locals() else None
+                    'local_tas_regime': local_tas_regime,
+                    'local_nas_regime': local_nas_regime,
+                    'tas_score': float(tas_score) if tas_score is not None else None,
+                    'nas_score': float(nas_score) if nas_score is not None else None,
+                    'nas_improvement': float(nas_improvement) if nas_improvement is not None else None
                 })
             
             # Log comprehensive summary
@@ -4785,9 +4792,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 raise ValueError(f"Unknown clustering method: {method}")
                 
         except Exception as e:
-            log_warning(f"Clustering algorithm {method} failed: {e}")
-            # Return random assignments as fallback
-            return np.random.randint(0, params.get('n_clusters', 8), len(features))
+            log_error(f"Clustering algorithm {method} failed: {e}")
+            # Re-raise the exception instead of using random fallback
+            raise RuntimeError(f"Clustering algorithm {method} failed: {e}")
     
     def _weighted_ensemble_voting(self, ensemble_results: Dict[str, np.ndarray], 
                                 method_scores: Dict[str, float]) -> np.ndarray:
@@ -5279,52 +5286,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Final quality metrics calculation failed: {e}")
             return {'error': str(e)}
     
-    async def _perform_fallback_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform fallback clustering when unified system is not available."""
-        try:
-            tprint("Performing fallback clustering...", "INFO")
-            log_info("Performing fallback clustering")
-
-            tprint("Importing sklearn clustering components...", "INFO")
-            from sklearn.cluster import KMeans
-            from sklearn.metrics import silhouette_score
-            tprint("Sklearn clustering components imported", "SUCCESS")
-
-            n_clusters = getattr(self.config, 'n_regimes', 8)
-            tprint(f"Using {n_clusters} clusters for fallback clustering", "INFO")
-
-            # Perform K-means clustering
-            tprint("Performing K-means clustering...", "INFO")
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_assignments = kmeans.fit_predict(features)
-            cluster_centers = kmeans.cluster_centers_
-            tprint("K-means clustering completed", "SUCCESS")
-
-            # Calculate clustering quality metrics
-            tprint("Calculating clustering quality metrics...", "INFO")
-            silhouette_avg = silhouette_score(features, cluster_assignments)
-            tprint(f"Clustering quality metrics calculated (silhouette: {silhouette_avg:.3f})", "SUCCESS")
-            
-            clustering_result = {
-                'n_clusters': n_clusters,
-                'cluster_assignments': cluster_assignments.tolist(),
-                'cluster_centers': cluster_centers.tolist(),
-                'clustering_quality': {
-                    'silhouette_score': float(silhouette_avg),
-                    'inertia': float(kmeans.inertia_),
-                    'algorithm_used': 'kmeans_fallback'
-                },
-                'success': True
-            }
-
-            log_success(f"Fallback clustering completed: {n_clusters} clusters, silhouette={silhouette_avg:.3f}")
-            tprint(f"Fallback clustering completed: {n_clusters} clusters, silhouette={silhouette_avg:.3f}", "SUCCESS")
-            return clustering_result
-
-        except Exception as e:
-            log_error(f"Fallback clustering failed: {e}")
-            tprint(f"Fallback clustering failed: {e}", "ERROR")
-            raise ValueError(f"Fallback clustering failed: {e}")
     
     def _calculate_clustering_metrics_using_shared_utils(
         self,

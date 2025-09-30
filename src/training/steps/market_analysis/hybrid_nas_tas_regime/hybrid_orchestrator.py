@@ -1073,7 +1073,7 @@ class HybridOrchestrator:
                 # Run NAS detection
                 if self.nas_system is not None:
                     tprint(f"[blue]🧠 Running NAS detection for {timeframe}...[/blue]")
-                    nas_result = self._run_nas_detection(timeframe_market_data, timestamps, timeframe)
+                    nas_result = self._run_nas_detection_sync(timeframe_market_data, timestamps, timeframe)
                     results['nas_results'][timeframe] = nas_result
                     if nas_result.get('success', False):
                         tprint(f"[green]✅ NAS detection completed for {timeframe}[/green]")
@@ -1629,8 +1629,8 @@ class HybridOrchestrator:
             self.logger.error(f"❌ TAS regime detection failed: {e}")
             raise ValueError(f"TAS regime detection failed: {e}")
 
-    def _run_nas_detection(self, market_data: Union[pd.DataFrame, np.ndarray],
-                          timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
+    def _run_nas_detection_sync(self, market_data: Union[pd.DataFrame, np.ndarray],
+                                timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
         """Run NAS regime detection."""
         try:
             # Use enhanced NAS regime detection

@@ -11,7 +11,6 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import explained_variance_ratio_
 import warnings
 warnings.filterwarnings('ignore')
 

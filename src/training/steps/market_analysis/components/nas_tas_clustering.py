@@ -823,15 +823,33 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             gmm_models = []
             k_values = []
             
-            # Conservative cap derived from data
+            # Conservative cap derived from data with numerical stability guards
             n_samples, n_features = features.shape
-            max_k = min(40, n_samples // 10, n_features * 2)  # Evidence-driven cap
-            tprint(f"Evidence-driven K search with cap={max_k} (n_samples={n_samples}, n_features={n_features})", "INFO")
+            rank_X = np.linalg.matrix_rank(features)
+            max_k = min(40, n_samples // 10, n_features * 2, rank_X - 1, n_samples - 5)  # Evidence-driven cap
+            tprint(f"Evidence-driven K search with cap={max_k} (n_samples={n_samples}, n_features={n_features}, rank={rank_X})", "INFO")
+            
+            # Guard against short series vs large K
+            min_samples_per_cluster = 5
+            max_k_safe = n_samples // min_samples_per_cluster
+            if max_k > max_k_safe:
+                max_k = max_k_safe
+                tprint(f"⚠ K cap reduced to {max_k} due to short series (n_samples={n_samples})", "WARNING")
+            
+            # Warn if chosen K approaches cap (suggests wider search needed)
+            if max_k <= 10:
+                tprint(f"⚠ Low K cap ({max_k}) - consider wider search or more data", "WARNING")
             
             # Scan all K up to conservative cap
             for k in range(2, max_k + 1):
                 try:
-                    gmm = GaussianMixture(n_components=k, random_state=42, max_iter=100)
+                    # Add covariance regularization for numerical stability
+                    gmm = GaussianMixture(
+                        n_components=k, 
+                        random_state=42, 
+                        max_iter=100,
+                        reg_covar=1e-5  # Ridge regularization to avoid singular covariances
+                    )
                     gmm.fit(features)
                     bic_score = gmm.bic(features)
                     bic_scores.append(bic_score)
@@ -847,8 +865,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if not bic_scores:
                 raise ValueError("No valid BIC scores computed")
             
-            # Find optimal K (minimum BIC)
-            optimal_k_idx = np.argmin(bic_scores)
+            # Find optimal K (minimum BIC) with tie handling
+            min_bic = min(bic_scores)
+            bic_tolerance = 3.0  # BIC difference tolerance for ties
+            candidate_indices = [i for i, bic in enumerate(bic_scores) if abs(bic - min_bic) <= bic_tolerance]
+            
+            if len(candidate_indices) > 1:
+                tprint(f"BIC tie detected: {len(candidate_indices)} candidates within {bic_tolerance}", "INFO")
+                # Prefer model with higher stability (bootstrap ARI) and better temporal coherence
+                best_idx = self._resolve_bic_tie(features, candidate_indices, k_values, gmm_models)
+                optimal_k_idx = best_idx
+                tprint(f"Tie resolved: chose K={k_values[best_idx]} based on stability", "INFO")
+            else:
+                optimal_k_idx = np.argmin(bic_scores)
+            
             optimal_k = k_values[optimal_k_idx]
             optimal_bic = bic_scores[optimal_k_idx]
             optimal_gmm = gmm_models[optimal_k_idx]
@@ -909,6 +939,68 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"BIC minimum validation failed: {e}")
             return True  # Assume valid if validation fails
 
+    def _resolve_bic_tie(self, features: np.ndarray, candidate_indices: List[int], 
+                        k_values: List[int], gmm_models: List) -> int:
+        """Resolve BIC ties by preferring higher stability and temporal coherence."""
+        try:
+            from sklearn.metrics import adjusted_rand_score
+            
+            best_idx = candidate_indices[0]
+            best_score = 0.0
+            
+            for idx in candidate_indices:
+                k = k_values[idx]
+                gmm = gmm_models[idx]
+                
+                # Get assignments
+                assignments = gmm.predict(features)
+                
+                # Calculate stability (bootstrap ARI)
+                n_bootstrap = 10  # Reduced for efficiency
+                ari_scores = []
+                for _ in range(n_bootstrap):
+                    bootstrap_idx = np.random.choice(len(assignments), len(assignments), replace=True)
+                    bootstrap_assignments = assignments[bootstrap_idx]
+                    ari_scores.append(adjusted_rand_score(assignments, bootstrap_assignments))
+                
+                stability_score = np.mean(ari_scores)
+                
+                # Calculate temporal coherence (regime persistence)
+                temporal_score = self._calculate_temporal_coherence(assignments)
+                
+                # Combined score: stability + temporal coherence
+                combined_score = stability_score + temporal_score
+                
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_idx = idx
+                
+                tprint(f"  K={k}: stability={stability_score:.3f}, temporal={temporal_score:.3f}, combined={combined_score:.3f}", "INFO")
+            
+            return best_idx
+            
+        except Exception as e:
+            log_warning(f"Tie resolution failed: {e}, using first candidate")
+            return candidate_indices[0]
+
+    def _calculate_temporal_coherence(self, assignments: np.ndarray) -> float:
+        """Calculate temporal coherence score for regime persistence."""
+        try:
+            if len(assignments) < 2:
+                return 0.0
+            
+            # Calculate regime persistence (fraction of time spent in same regime)
+            persistence = 0.0
+            for i in range(len(assignments) - 1):
+                if assignments[i] == assignments[i + 1]:
+                    persistence += 1
+            
+            return persistence / (len(assignments) - 1)
+            
+        except Exception as e:
+            log_warning(f"Temporal coherence calculation failed: {e}")
+            return 0.0
+
     def _fixed_range_k_search(self, features: np.ndarray, k_range: Tuple[int, int]) -> Tuple[int, float, Dict[str, Any]]:
         """Fixed range K search for fallback."""
         try:
@@ -967,8 +1059,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             k = 2
             while k <= max_k and consecutive_increases < 3:
                 try:
-                    # Create Gaussian HMM
-                    model = hmm.GaussianHMM(n_components=k, random_state=42, n_iter=100)
+                    # Create Gaussian HMM with covariance regularization
+                    model = hmm.GaussianHMM(
+                        n_components=k, 
+                        random_state=42, 
+                        n_iter=100,
+                        covariance_type='full'
+                    )
+                    # Add regularization to avoid singular covariances
+                    model.covars_prior = 1e-5
                     model.fit(features)
                     log_likelihood = model.score(features)  # Log-likelihood
                     
@@ -1082,11 +1181,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 nas_mapped = np.array([nas_mapping.get(label, label % target_k) for label in nas_assignments])
                 
             else:
-                # Simple modulo mapping as fallback
-                tas_mapped = tas_assignments % target_k
-                nas_mapped = nas_assignments % target_k
-                tas_mapping = {label: label % target_k for label in tas_unique}
-                nas_mapping = {label: label % target_k for label in nas_unique}
+                # Use abstain column approach instead of modulo (preserves heuristics-free spirit)
+                tas_mapped, nas_mapped, tas_mapping, nas_mapping = self._create_abstain_mapping(
+                    tas_assignments, nas_assignments, target_k
+                )
             
             mapping_info = {
                 'mapping_needed': True,
@@ -1104,6 +1202,44 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tas_mapped = tas_assignments % target_k
             nas_mapped = nas_assignments % target_k
             return tas_mapped, nas_mapped, {'mapping_needed': True, 'method': 'modulo_fallback', 'error': str(e)}
+
+    def _create_abstain_mapping(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
+                                target_k: int) -> Tuple[np.ndarray, np.ndarray, Dict, Dict]:
+        """Create abstain column mapping for DS when centroid mapping fails."""
+        try:
+            tas_unique = set(tas_assignments)
+            nas_unique = set(nas_assignments)
+            
+            # Create abstain column (target_k) for labels outside 0..target_k-1
+            tas_mapping = {}
+            nas_mapping = {}
+            
+            # Map labels in range to themselves, others to abstain
+            for label in tas_unique:
+                if 0 <= label < target_k:
+                    tas_mapping[label] = label
+                else:
+                    tas_mapping[label] = target_k  # Abstain column
+            
+            for label in nas_unique:
+                if 0 <= label < target_k:
+                    nas_mapping[label] = label
+                else:
+                    nas_mapping[label] = target_k  # Abstain column
+            
+            # Apply mappings
+            tas_mapped = np.array([tas_mapping.get(label, target_k) for label in tas_assignments])
+            nas_mapped = np.array([nas_mapping.get(label, target_k) for label in nas_assignments])
+            
+            tprint(f"Abstain mapping: TAS {len(set(tas_mapped))} unique, NAS {len(set(nas_mapped))} unique", "INFO")
+            return tas_mapped, nas_mapped, tas_mapping, nas_mapping
+            
+        except Exception as e:
+            log_warning(f"Abstain mapping failed: {e}, using modulo fallback")
+            # Last resort: modulo fallback
+            tas_mapped = tas_assignments % target_k
+            nas_mapped = nas_assignments % target_k
+            return tas_mapped, nas_mapped, {}, {}
 
     def _dawid_skene_fusion(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
                            target_k: int, features: np.ndarray = None, max_iterations: int = 50, 
@@ -1124,14 +1260,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             n_classes = target_k
             
             # Initialize confusion matrices for TAS and NAS as "annotators"
-            # Initialize with uniform confusion rows for stability
-            tas_confusion = np.ones((n_classes, n_classes)) / n_classes
-            nas_confusion = np.ones((n_classes, n_classes)) / n_classes
+            # Use symmetric Dirichlet priors for class imbalance stability
+            alpha = 0.5  # Small alpha for rare regimes
+            tas_confusion = np.random.dirichlet([alpha] * n_classes, n_classes)
+            nas_confusion = np.random.dirichlet([alpha] * n_classes, n_classes)
             
-            # Add small random perturbation for breaking symmetry
-            np.random.seed(42)  # For reproducibility
-            tas_confusion += np.random.rand(n_classes, n_classes) * 0.01
-            nas_confusion += np.random.rand(n_classes, n_classes) * 0.01
+            # Set random seed for reproducibility
+            np.random.seed(42)
             
             # Normalize confusion matrices
             tas_confusion = tas_confusion / tas_confusion.sum(axis=1, keepdims=True)
@@ -1322,13 +1457,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             model.covars_ = gmm.covariances_
             model.startprob_ = np.ones(n_clusters) / n_clusters
             
-            # Learn transition matrix from assignments
-            tprint("Learning transition matrix from assignments...", "INFO")
+            # Learn transition matrix from assignments with sticky prior
+            tprint("Learning transition matrix from assignments with sticky prior...", "INFO")
             transition_matrix = np.zeros((n_clusters, n_clusters))
             for i in range(n_samples - 1):
                 current_cluster = assignments[i]
                 next_cluster = assignments[i + 1]
                 transition_matrix[current_cluster, next_cluster] += 1
+            
+            # Add sticky prior (bias to self-transitions) to prevent chattering
+            sticky_weight = 0.1
+            transition_matrix += sticky_weight * np.eye(n_clusters)
             
             # Normalize transition matrix
             transition_matrix = transition_matrix / (transition_matrix.sum(axis=1, keepdims=True) + 1e-10)
@@ -1342,7 +1481,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Applying Viterbi decoding for temporal coherence...", "INFO")
             smoothed_assignments = model.predict(features)
             
+            # Calculate and report expected durations
+            expected_durations = []
+            low_persistence_regimes = []
+            for k in range(n_clusters):
+                p_kk = model.transmat_[k, k]
+                if p_kk < 0.99:  # Avoid division by zero
+                    expected_duration = 1 / (1 - p_kk)
+                    expected_durations.append(expected_duration)
+                    if p_kk < 0.6:  # Flag low persistence
+                        low_persistence_regimes.append(k)
+                else:
+                    expected_durations.append(float('inf'))
+            
             tprint(f"HMM smoothing completed: {n_clusters} clusters, {n_samples} samples", "SUCCESS")
+            tprint(f"Expected durations: {[f'{d:.1f}' if d != float('inf') else '∞' for d in expected_durations]}", "INFO")
+            if low_persistence_regimes:
+                tprint(f"⚠ Low persistence regimes: {low_persistence_regimes} (P_kk < 0.6)", "WARNING")
+            
             return smoothed_assignments
             
         except Exception as e:
@@ -1438,17 +1594,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 }
                 tprint(f"✓ DS convergence: converged={fusion_metadata.get('converged', False)}, monotonic={is_monotonic}", "INFO")
             
-            # 5. Reconciliation sanity check
-            from sklearn.metrics import adjusted_rand_score
+            # 5. Reconciliation sanity check with agreement matrices
+            from sklearn.metrics import adjusted_rand_score, confusion_matrix
+            
             ari_vs_tas = adjusted_rand_score(assignments, tas_assignments)
             ari_vs_nas = adjusted_rand_score(assignments, nas_assignments)
+            
+            # Create agreement matrices (confusion matrices)
+            tas_agreement = confusion_matrix(assignments, tas_assignments)
+            nas_agreement = confusion_matrix(assignments, nas_assignments)
             
             checklist['reconciliation_sanity'] = {
                 'ari_vs_tas': ari_vs_tas,
                 'ari_vs_nas': ari_vs_nas,
-                'reconciliation_quality': (ari_vs_tas + ari_vs_nas) / 2
+                'reconciliation_quality': (ari_vs_tas + ari_vs_nas) / 2,
+                'tas_agreement_matrix': tas_agreement.tolist(),
+                'nas_agreement_matrix': nas_agreement.tolist()
             }
             tprint(f"✓ Reconciliation: ARI vs TAS={ari_vs_tas:.3f}, ARI vs NAS={ari_vs_nas:.3f}", "INFO")
+            tprint(f"✓ Agreement matrices: TAS {tas_agreement.shape}, NAS {nas_agreement.shape}", "INFO")
             
             # 6. Temporal coherence from HMM
             if 'hmm_transitions' in fusion_metadata:

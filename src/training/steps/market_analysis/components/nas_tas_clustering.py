@@ -566,23 +566,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_error(f"Progressive regime optimization failed: {e}")
             tprint(f"Progressive regime optimization failed: {e}", "ERROR")
-            # Fallback to basic clustering
-            tprint("Falling back to basic clustering...", "WARNING")
-            clustering_result_obj = self.unified_clustering.cluster_features(features, market_data)
-            
-            clustering_result = {
-                'n_clusters': len(set(clustering_result_obj.labels)),
-                'cluster_assignments': clustering_result_obj.labels.tolist(),
-                'cluster_centers': clustering_result_obj.cluster_centers.tolist(),
-                'clustering_quality': clustering_result_obj.quality_metrics,
-                'algorithm_used': clustering_result_obj.algorithm_used,
-                'success': clustering_result_obj.success,
-                'execution_time': clustering_result_obj.execution_time,
-                'optimization_metadata': {
-                    'optimization_method': 'fallback_basic'
-                }
-            }
-            return clustering_result
+            # Fast-fail: Do not fall back to basic clustering
+            tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
+            raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
     async def _optimize_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Optimize features using selection and dimensionality reduction."""
@@ -633,8 +619,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_error(f"Feature optimization failed: {e}")
             tprint(f"Feature optimization failed: {e}", "ERROR")
-            # Return original features if optimization fails
-            return features
+            # Fast-fail: Do not return original features if optimization fails
+            raise ValueError(f"Feature optimization failed: {e}. Cannot proceed with suboptimal features.")
 
     def _validate_feature_quality(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate and improve feature quality for clustering."""
@@ -719,47 +705,48 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for NAS/TAS clustering and divergence detection."""
+        """Select features most important for NAS/TAS clustering and divergence detection using fast-fail approach."""
         try:
-            from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
-            from sklearn.cluster import KMeans
+            from sklearn.feature_selection import SelectKBest, mutual_info_classif
             
             tprint("Selecting features optimized for NAS/TAS divergence patterns...", "INFO")
             
-            # Try to get TAS/NAS assignments for divergence-aware feature selection
+            # Get TAS/NAS assignments for divergence-aware feature selection (required)
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
             
-            if tas_assignments is not None and nas_assignments is not None:
-                # Use NAS/TAS disagreement as labels for feature selection
-                disagreement_mask = tas_assignments != nas_assignments
-                
-                if np.sum(disagreement_mask) > 10:  # Ensure we have enough disagreement samples
-                    tprint(f"Using NAS/TAS disagreement for feature selection ({np.sum(disagreement_mask)} disagreement samples)", "SUCCESS")
-                    
-                    # Select features that best distinguish disagreement vs agreement
-                    n_features = min(15, features.shape[1])
-                    selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
-                    features_selected = selector.fit_transform(features, disagreement_mask.astype(int))
-                    
-                    tprint(f"Selected {features_selected.shape[1]} divergence-optimized features", "SUCCESS")
-                    return features_selected
+            # Fast-fail: TAS/NAS assignments are mandatory for proper feature selection
+            if tas_assignments is None or nas_assignments is None:
+                raise ValueError("TAS/NAS assignments are required for divergence-aware feature selection. Cannot proceed without regime disagreement data.")
             
-            # Fallback: Use K-means with regime-aware clustering
-            tprint("Using regime-aware K-means for feature selection (fallback)", "INFO")
-            kmeans = KMeans(n_clusters=8, random_state=42, n_init=10)
-            pseudo_labels = kmeans.fit_predict(features)
+            # Validate disagreement samples
+            disagreement_mask = tas_assignments != nas_assignments
+            disagreement_count = np.sum(disagreement_mask)
             
-            # Select top features based on F-score
+            # Fast-fail: Insufficient disagreement samples indicates potential data quality issues
+            if disagreement_count < 10:
+                raise ValueError(f"Insufficient NAS/TAS disagreement samples ({disagreement_count} < 10). This may indicate data quality issues or insufficient regime diversity.")
+            
+            # Validate disagreement rate is reasonable (not too high, not too low)
+            disagreement_rate = disagreement_count / len(disagreement_mask)
+            if disagreement_rate > 0.8:
+                raise ValueError(f"Excessively high disagreement rate ({disagreement_rate:.3f} > 0.8). This may indicate fundamental issues with NAS/TAS regime detection.")
+            elif disagreement_rate < 0.05:
+                tprint(f"Warning: Very low disagreement rate ({disagreement_rate:.3f} < 0.05). Consider reviewing NAS/TAS regime detection parameters.", "WARNING")
+            
+            tprint(f"Using NAS/TAS disagreement for feature selection ({disagreement_count} disagreement samples, rate: {disagreement_rate:.3f})", "SUCCESS")
+            
+            # Select features that best distinguish disagreement vs agreement using mutual information
             n_features = min(15, features.shape[1])
-            selector = SelectKBest(score_func=f_classif, k=n_features)
-            features_selected = selector.fit_transform(features, pseudo_labels)
+            selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
+            features_selected = selector.fit_transform(features, disagreement_mask.astype(int))
             
-            tprint(f"Selected {features_selected.shape[1]} clustering-optimized features", "SUCCESS")
+            tprint(f"Selected {features_selected.shape[1]} divergence-optimized features using mutual information", "SUCCESS")
             return features_selected
             
         except Exception as e:
-            log_warning(f"Feature selection failed: {e}")
-            return features
+            log_error(f"Feature selection failed: {e}")
+            tprint(f"Feature selection failed: {e}", "ERROR")
+            raise ValueError(f"Feature selection failed: {e}")
     
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
@@ -1389,13 +1376,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             norm_balance = regime_balance  # Already in [0, 1]
             norm_cv = cv_score  # Already in [0, 1] range
             
-            # Weighted composite score with CV score included
+            # Weighted composite score with CV score prioritized for NAS/TAS divergence
             composite_score = (
-                0.30 * norm_silhouette +      # Silhouette score (most important)
+                0.20 * norm_silhouette +      # Silhouette score
                 0.20 * norm_ch +             # Calinski-Harabasz score
                 0.20 * norm_db +             # Davies-Bouldin score (inverted)
                 0.15 * norm_balance +        # Regime balance
-                0.15 * norm_cv               # Coefficient of Variation score
+                0.25 * norm_cv               # Coefficient of Variation score (highest priority for divergence detection)
             )
             
             return composite_score
@@ -2032,7 +2019,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0
     
     def _analyze_tas_nas_disagreement(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
-        """Analyze TAS/NAS disagreement patterns to understand regime conflicts."""
+        """Analyze TAS/NAS disagreement patterns with comprehensive validation and enhanced detection."""
         try:
             if tas_assignments is None or nas_assignments is None:
                 tprint("❌ TAS/NAS assignments not available for disagreement analysis", "ERROR")
@@ -2046,10 +2033,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 nas_assignments = nas_assignments[:min_length]
                 tprint(f"🔧 Aligned to length: {min_length}", "INFO")
             
-            # Calculate disagreement rate
+            # Calculate disagreement rate with enhanced validation
             disagreement_mask = tas_assignments != nas_assignments
             disagreement_rate = np.mean(disagreement_mask)
+            disagreement_count = np.sum(disagreement_mask)
+            total_samples = len(disagreement_mask)
             agreement_rate = 1.0 - disagreement_rate
+            
+            # Comprehensive divergence assessment validation
+            self._validate_divergence_assessment(disagreement_rate, disagreement_count, total_samples)
+            
+            # Analyze disagreement types with enhanced detection
+            disagreement_analysis = self._analyze_disagreement_types(tas_assignments, nas_assignments)
             
             # Analyze disagreement patterns
             disagreement_samples = np.where(disagreement_mask)[0]
@@ -2106,11 +2101,113 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if regime_agreements:
                 tprint(f"   🤝 Most agreed: {analysis['most_agreed_regimes'][:3]}", "SUCCESS")
             
+            # Add enhanced validation results to analysis
+            analysis.update({
+                'disagreement_count': disagreement_count,
+                'total_samples': total_samples,
+                'assessment_valid': disagreement_rate >= 0.05 and disagreement_rate <= 0.8,
+                'disagreement_types': disagreement_analysis
+            })
+            
             return analysis
             
         except Exception as e:
             log_warning(f"TAS/NAS disagreement analysis failed: {e}")
             return {"error": str(e)}
+    
+    def _validate_divergence_assessment(self, disagreement_rate: float, disagreement_count: int, total_samples: int):
+        """Validate divergence assessment with appropriate thresholds and warnings."""
+        try:
+            tprint(f"  🔍 Divergence Assessment Validation:", "INFO")
+            tprint(f"     Disagreement rate: {disagreement_rate:.3f} ({disagreement_count}/{total_samples})", "INFO")
+            
+            # Check if disagreement rate is within reasonable bounds
+            if disagreement_rate > 0.8:
+                tprint(f"  ⚠️  HIGH DIVERGENCE WARNING: Rate {disagreement_rate:.3f} > 0.8", "WARNING")
+                tprint(f"     This suggests fundamental issues with NAS/TAS regime detection", "WARNING")
+                tprint(f"     Possible causes: inadequate features, poor regime definition, or data quality issues", "WARNING")
+            elif disagreement_rate < 0.05:
+                tprint(f"  ⚠️  LOW DIVERGENCE WARNING: Rate {disagreement_rate:.3f} < 0.05", "WARNING")
+                tprint(f"     This suggests NAS/TAS may be too similar or insufficient regime diversity", "WARNING")
+                tprint(f"     Consider reviewing regime detection parameters or feature sets", "WARNING")
+            else:
+                tprint(f"  ✅ DIVERGENCE ASSESSMENT VALID: Rate {disagreement_rate:.3f} within acceptable range [0.05, 0.8]", "SUCCESS")
+            
+            # Check sample size adequacy
+            if disagreement_count < 10:
+                tprint(f"  ⚠️  INSUFFICIENT DIVERGENCE SAMPLES: {disagreement_count} < 10", "WARNING")
+                tprint(f"     Clustering optimization may be unreliable with too few disagreement samples", "WARNING")
+            else:
+                tprint(f"  ✅ SUFFICIENT DIVERGENCE SAMPLES: {disagreement_count} samples available for optimization", "SUCCESS")
+            
+            # Check total sample adequacy
+            if total_samples < 100:
+                tprint(f"  ⚠️  SMALL DATASET WARNING: {total_samples} < 100 samples", "WARNING")
+                tprint(f"     Statistical reliability of divergence assessment may be limited", "WARNING")
+            
+        except Exception as e:
+            log_warning(f"Divergence assessment validation failed: {e}")
+    
+    def _analyze_disagreement_types(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, int]:
+        """Analyze different types of disagreement patterns with enhanced detection."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            disagreement_indices = np.where(disagreement_mask)[0]
+            
+            direct_disagreement = 0
+            extreme_disagreement = 0
+            adjacent_disagreement = 0
+            regime_pairs = {}
+            
+            for idx in disagreement_indices:
+                tas_regime = tas_assignments[idx]
+                nas_regime = nas_assignments[idx]
+                regime_diff = abs(tas_regime - nas_regime)
+                
+                # Track regime pairs for analysis
+                pair_key = f"{min(tas_regime, nas_regime)}_{max(tas_regime, nas_regime)}"
+                regime_pairs[pair_key] = regime_pairs.get(pair_key, 0) + 1
+                
+                if regime_diff == 1:
+                    adjacent_disagreement += 1
+                elif regime_diff >= 4:  # Large regime difference (more than half the regime range)
+                    extreme_disagreement += 1
+                else:
+                    direct_disagreement += 1
+            
+            total_disagreements = len(disagreement_indices)
+            
+            tprint(f"  🔍 Enhanced Disagreement Type Analysis:", "INFO")
+            tprint(f"     Direct disagreement: {direct_disagreement} ({direct_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            tprint(f"     Adjacent disagreement: {adjacent_disagreement} ({adjacent_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            tprint(f"     Extreme disagreement: {extreme_disagreement} ({extreme_disagreement/total_disagreements*100:.1f}%)", "INFO")
+            
+            # Flag excessive extreme disagreements
+            extreme_ratio = extreme_disagreement / total_disagreements if total_disagreements > 0 else 0
+            if extreme_ratio > 0.3:
+                tprint(f"  ⚠️  HIGH EXTREME DISAGREEMENT: {extreme_ratio*100:.1f}% > 30%", "WARNING")
+                tprint(f"     This may indicate fundamental regime alignment issues", "WARNING")
+                tprint(f"     Consider reviewing regime definitions or feature sets", "WARNING")
+            
+            # Show most common disagreement pairs
+            if regime_pairs:
+                sorted_pairs = sorted(regime_pairs.items(), key=lambda x: x[1], reverse=True)[:3]
+                tprint(f"  📊 Most common disagreement pairs:", "INFO")
+                for pair, count in sorted_pairs:
+                    tprint(f"     Regimes {pair}: {count} samples ({count/total_disagreements*100:.1f}%)", "INFO")
+            
+            return {
+                'direct_disagreement': direct_disagreement,
+                'adjacent_disagreement': adjacent_disagreement,
+                'extreme_disagreement': extreme_disagreement,
+                'total_disagreements': total_disagreements,
+                'extreme_ratio': extreme_ratio,
+                'regime_pairs': regime_pairs
+            }
+            
+        except Exception as e:
+            log_warning(f"Enhanced disagreement type analysis failed: {e}")
+            return {}
     
     def _calculate_regime_stability_score(self, assignments: np.ndarray) -> float:
         """Calculate regime stability score (higher = more stable)."""

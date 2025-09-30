@@ -64,6 +64,12 @@ from ..shared_utils import (
     CharacteristicsGenerator,
 )
 
+from ..shared_utils.calibration_registry import (
+    get_current_calibration,
+    get_quality_thresholds as get_calibrated_thresholds,
+    update_quality_calibration,
+)
+
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from ..regime_analysis.label_fusion import RegimeOptimizationService
 
@@ -372,10 +378,10 @@ class NASTASClusteringConfig(BaseConfig):
     exclude_trading_features: bool = True
     use_standardized_features: bool = True
     
-    # Regime-specific feature quality thresholds
-    min_regime_persistence: float = 0.7
-    max_feature_noise_ratio: float = 0.3
-    min_temporal_stability: float = 0.6
+    # Regime-specific feature quality thresholds (calibrated dynamically)
+    min_regime_persistence: Optional[float] = None
+    max_feature_noise_ratio: Optional[float] = None
+    min_temporal_stability: Optional[float] = None
     
     # Output configuration
     output_dir: str = "data_cache"
@@ -396,6 +402,15 @@ class NASTASClusteringConfig(BaseConfig):
         # Ensure n_regimes is between 5 and 15
         if not (5 <= self.n_regimes <= 15):
             self.n_regimes = max(5, min(15, self.n_regimes))
+
+        # Apply calibrated quality thresholds if not explicitly provided
+        thresholds = get_calibrated_thresholds()
+        if self.min_regime_persistence is None:
+            self.min_regime_persistence = thresholds.get('min_regime_persistence', 0.7)
+        if self.max_feature_noise_ratio is None:
+            self.max_feature_noise_ratio = thresholds.get('max_feature_noise_ratio', 0.3)
+        if self.min_temporal_stability is None:
+            self.min_temporal_stability = thresholds.get('min_temporal_stability', 0.6)
 
 
 class NASTASClusteringComponent(BaseMarketAnalysisComponent):
@@ -925,13 +940,291 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _initialize_execution_metadata(self) -> None:
         """Initialize execution metadata for downstream use."""
         self.execution_metadata = {
-            'start_time': datetime.now(),
+            'start_time': datetime.now().isoformat(),
             'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
             'timeframe': getattr(self.config, 'timeframe', '15m'),
             'exchange': getattr(self.config, 'exchange', 'binance'),
             'component': 'refactored_nas_tas_clustering',
-            'uses_shared_utilities': True
+            'uses_shared_utilities': True,
+            'quality_calibration': get_current_calibration(),
+            'calibration_loaded_from_state': False,
         }
+
+    def _load_calibration_history(self, pipeline_state: Dict[str, Any]) -> None:
+        """Load calibration history from the pipeline state if available."""
+
+        calibration_payload = None
+        if isinstance(pipeline_state, dict):
+            previous_result = pipeline_state.get('nas_tas_clustering_result')
+            if isinstance(previous_result, dict):
+                execution_meta = previous_result.get('execution_metadata', {})
+                if isinstance(execution_meta, dict):
+                    calibration_payload = execution_meta.get('quality_calibration')
+
+            if calibration_payload is None:
+                calibration_payload = pipeline_state.get('nas_tas_clustering_calibration')
+
+        if calibration_payload:
+            update_quality_calibration(calibration_payload)
+            self.execution_metadata['quality_calibration'] = get_current_calibration()
+            self.execution_metadata['calibration_loaded_from_state'] = True
+        else:
+            update_quality_calibration(self.execution_metadata.get('quality_calibration'))
+
+        thresholds = get_calibrated_thresholds()
+        self.config.min_regime_persistence = thresholds.get('min_regime_persistence', self.config.min_regime_persistence)
+        self.config.max_feature_noise_ratio = thresholds.get('max_feature_noise_ratio', self.config.max_feature_noise_ratio)
+        self.config.min_temporal_stability = thresholds.get('min_temporal_stability', self.config.min_temporal_stability)
+
+    def _get_calibrated_quality_thresholds(self) -> Dict[str, float]:
+        """Resolve calibrated thresholds with metadata overrides."""
+
+        thresholds = get_calibrated_thresholds()
+
+        metadata_thresholds = None
+        if isinstance(self.execution_metadata, dict):
+            calibration_block = self.execution_metadata.get('quality_calibration', {})
+            if isinstance(calibration_block, dict):
+                metadata_thresholds = calibration_block.get('quality_thresholds')
+
+        if isinstance(metadata_thresholds, dict):
+            thresholds = {**thresholds, **metadata_thresholds}
+
+        return {
+            'min_regime_persistence': float(
+                thresholds.get('min_regime_persistence', getattr(self.config, 'min_regime_persistence', 0.7) or 0.7)
+            ),
+            'max_feature_noise_ratio': float(
+                thresholds.get('max_feature_noise_ratio', getattr(self.config, 'max_feature_noise_ratio', 0.3) or 0.3)
+            ),
+            'min_temporal_stability': float(
+                thresholds.get('min_temporal_stability', getattr(self.config, 'min_temporal_stability', 0.6) or 0.6)
+            ),
+        }
+
+    def _calibrate_quality_thresholds(self, context: ClusteringContext, final_quality: Dict[str, Any]) -> None:
+        """Update calibration statistics and thresholds using the latest results."""
+
+        try:
+            features = context.optimized_features if context.optimized_features is not None else context.original_features
+            assignments = context.smoothed_assignments if context.smoothed_assignments is not None else context.raw_assignments
+
+            if features is None or assignments is None or len(assignments) == 0:
+                return
+
+            features = np.asarray(features)
+            assignments = np.asarray(assignments)
+
+            calibration_state = self.execution_metadata.get('quality_calibration', get_current_calibration())
+            history_block = calibration_state.get('history', {})
+
+            def _copy_history(key: str) -> List[float]:
+                values = history_block.get(key, [])
+                return list(values) if isinstance(values, list) else []
+
+            persistence_history = _copy_history('persistence')
+            noise_history = _copy_history('noise_ratio')
+            stability_history = _copy_history('temporal_stability')
+            confidence_history = _copy_history('confidence')
+            silhouette_history = _copy_history('silhouette')
+            davies_history = _copy_history('davies_bouldin')
+            cv_history = _copy_history('cv_score')
+
+            def _extend(history: List[float], values: List[float], max_length: int = 500) -> List[float]:
+                for value in values:
+                    if value is None:
+                        continue
+                    if isinstance(value, (int, float)) and np.isfinite(value):
+                        history.append(float(value))
+                if len(history) > max_length:
+                    history = history[-max_length:]
+                return history
+
+            persistence_scores: List[float] = []
+            noise_scores: List[float] = []
+            stability_scores: List[float] = []
+
+            for idx in range(features.shape[1]):
+                column = features[:, idx]
+                try:
+                    persistence = self._calculate_feature_regime_persistence(column, context.market_data)
+                    if isinstance(persistence, (int, float)) and np.isfinite(persistence):
+                        persistence_scores.append(float(np.clip(persistence, 0.0, 1.0)))
+                except Exception:
+                    continue
+
+                try:
+                    noise_ratio = self._calculate_feature_noise_ratio(column)
+                    if isinstance(noise_ratio, (int, float)) and np.isfinite(noise_ratio):
+                        noise_scores.append(float(max(0.0, noise_ratio)))
+                except Exception:
+                    continue
+
+                try:
+                    temporal = self._calculate_feature_temporal_stability(column)
+                    if isinstance(temporal, (int, float)) and np.isfinite(temporal):
+                        stability_scores.append(float(np.clip(temporal, 0.0, 1.0)))
+                except Exception:
+                    continue
+
+            persistence_history = _extend(persistence_history, persistence_scores)
+            noise_history = _extend(noise_history, noise_scores)
+            stability_history = _extend(stability_history, stability_scores)
+
+            # Confidence metric
+            confidence_candidates: List[float] = []
+            optimization_metrics = context.optimization_metrics or {}
+            for key in ('final_score', 'overall_confidence', 'optimization_score'):
+                value = optimization_metrics.get(key)
+                if isinstance(value, (int, float)) and np.isfinite(value):
+                    confidence_candidates.append(float(np.clip(value, 0.0, 1.0)))
+
+            fusion_metadata = context.fusion_metadata or {}
+            for key in ('average_confidence', 'mean_confidence', 'confidence_score'):
+                value = fusion_metadata.get(key)
+                if isinstance(value, (int, float)) and np.isfinite(value):
+                    confidence_candidates.append(float(np.clip(value, 0.0, 1.0)))
+
+            if not confidence_candidates:
+                silhouette_value = final_quality.get('silhouette_score')
+                if isinstance(silhouette_value, (int, float)) and np.isfinite(silhouette_value):
+                    if silhouette_value > 1.0:
+                        normalized = np.clip(silhouette_value, 0.0, 1.0)
+                    else:
+                        normalized = (silhouette_value + 1.0) / 2.0
+                    confidence_candidates.append(float(np.clip(normalized, 0.0, 1.0)))
+
+            if not confidence_candidates:
+                stability_value = self._calculate_stability_score(assignments)
+                confidence_candidates.append(float(np.clip(stability_value, 0.0, 1.0)))
+
+            confidence_metric = float(np.mean(confidence_candidates)) if confidence_candidates else 0.5
+            confidence_history = _extend(confidence_history, [confidence_metric])
+
+            silhouette_value = final_quality.get('silhouette_score')
+            if isinstance(silhouette_value, (int, float)) and np.isfinite(silhouette_value):
+                silhouette_history = _extend(silhouette_history, [float(silhouette_value)])
+
+            davies_value = final_quality.get('davies_bouldin_score')
+            if isinstance(davies_value, (int, float)) and np.isfinite(davies_value):
+                davies_history = _extend(davies_history, [float(davies_value)])
+
+            cv_score_value = None
+            try:
+                from ..regime_analysis.metrics import calculate_cv_score
+
+                cv_score_value = calculate_cv_score(features, assignments)
+            except Exception:
+                cv_score_value = None
+
+            if isinstance(cv_score_value, (int, float)) and np.isfinite(cv_score_value):
+                cv_history = _extend(cv_history, [float(cv_score_value)])
+
+            def _quantiles(values: List[float]) -> Dict[str, float]:
+                if not values:
+                    return {}
+                array = np.asarray(values, dtype=float)
+                array = array[np.isfinite(array)]
+                if array.size == 0:
+                    return {}
+                return {
+                    'p10': float(np.quantile(array, 0.1)),
+                    'p25': float(np.quantile(array, 0.25)),
+                    'p50': float(np.quantile(array, 0.5)),
+                    'p75': float(np.quantile(array, 0.75)),
+                    'p90': float(np.quantile(array, 0.9)),
+                }
+
+            def _mean(values: List[float]) -> Optional[float]:
+                if not values:
+                    return None
+                array = np.asarray(values, dtype=float)
+                array = array[np.isfinite(array)]
+                if array.size == 0:
+                    return None
+                return float(np.mean(array))
+
+            quantiles_map = {
+                'persistence': _quantiles(persistence_history),
+                'noise_ratio': _quantiles(noise_history),
+                'temporal_stability': _quantiles(stability_history),
+                'confidence': _quantiles(confidence_history),
+                'silhouette': _quantiles(silhouette_history),
+                'davies_bouldin': _quantiles(davies_history),
+                'cv_score': _quantiles(cv_history),
+            }
+
+            means_map = {
+                'persistence': _mean(persistence_history),
+                'noise_ratio': _mean(noise_history),
+                'temporal_stability': _mean(stability_history),
+                'confidence': _mean(confidence_history),
+                'silhouette': _mean(silhouette_history),
+                'davies_bouldin': _mean(davies_history),
+                'cv_score': _mean(cv_history),
+            }
+
+            current_thresholds = get_calibrated_thresholds()
+
+            quality_thresholds = {
+                'min_regime_persistence': quantiles_map['persistence'].get('p50', current_thresholds.get('min_regime_persistence', 0.7)),
+                'max_feature_noise_ratio': quantiles_map['noise_ratio'].get('p75', current_thresholds.get('max_feature_noise_ratio', 0.3)),
+                'min_temporal_stability': quantiles_map['temporal_stability'].get('p50', current_thresholds.get('min_temporal_stability', 0.6)),
+            }
+
+            confidence_levels = {
+                'high': quantiles_map['confidence'].get('p75', 0.8),
+                'medium': quantiles_map['confidence'].get('p50', 0.6),
+                'low': quantiles_map['confidence'].get('p25', 0.4),
+            }
+
+            metric_thresholds = {
+                'silhouette': {
+                    'excellent': quantiles_map['silhouette'].get('p90', 0.7),
+                    'good': quantiles_map['silhouette'].get('p75', 0.5),
+                    'fair': quantiles_map['silhouette'].get('p50', 0.3),
+                },
+                'davies_bouldin': {
+                    'excellent': quantiles_map['davies_bouldin'].get('p10', 0.5),
+                    'good': quantiles_map['davies_bouldin'].get('p25', 1.0),
+                    'fair': quantiles_map['davies_bouldin'].get('p50', 2.0),
+                },
+                'cv_score': {
+                    'excellent': quantiles_map['cv_score'].get('p90', 0.8),
+                    'good': quantiles_map['cv_score'].get('p75', 0.6),
+                    'fair': quantiles_map['cv_score'].get('p50', 0.4),
+                },
+            }
+
+            calibration_payload = {
+                'history': {
+                    'persistence': persistence_history,
+                    'noise_ratio': noise_history,
+                    'temporal_stability': stability_history,
+                    'confidence': confidence_history,
+                    'silhouette': silhouette_history,
+                    'davies_bouldin': davies_history,
+                    'cv_score': cv_history,
+                },
+                'statistics': {
+                    'quantiles': quantiles_map,
+                    'means': means_map,
+                },
+                'quality_thresholds': quality_thresholds,
+                'confidence_levels': confidence_levels,
+                'metric_thresholds': metric_thresholds,
+                'last_updated': datetime.now().isoformat(),
+            }
+
+            self.execution_metadata['quality_calibration'] = calibration_payload
+            update_quality_calibration(calibration_payload)
+
+            self.config.min_regime_persistence = quality_thresholds['min_regime_persistence']
+            self.config.max_feature_noise_ratio = quality_thresholds['max_feature_noise_ratio']
+            self.config.min_temporal_stability = quality_thresholds['min_temporal_stability']
+
+        except Exception as exc:  # pragma: no cover - calibration should not block execution
+            tprint_warning(f"Quality threshold calibration failed: {exc}")
 
     def _prepare_features(self, market_data: pd.DataFrame) -> Any:
         """Prepare market features for clustering."""
@@ -1049,6 +1342,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimization_metadata = clustering_result.get('optimization_metadata', {})
             
             # Create comprehensive artifact structure
+            self.execution_metadata['end_time'] = datetime.now().isoformat()
+
+            execution_meta = {
+                'component': 'nas_tas_clustering',
+                'timestamp': datetime.now().isoformat(),
+                'uses_shared_utilities': True,
+                'm1_hardware_available': M1_HARDWARE_AVAILABLE,
+                'matrix_operations_available': MATRIX_OPERATIONS_AVAILABLE,
+            }
+
+            if isinstance(self.execution_metadata, dict):
+                for key, value in self.execution_metadata.items():
+                    if key == 'quality_calibration':
+                        execution_meta[key] = value
+                    elif isinstance(value, datetime):
+                        execution_meta[key] = value.isoformat()
+                    else:
+                        execution_meta[key] = value
+
             artifacts = {
                 # Core clustering results
                 'nas_tas_clustering_result': {
@@ -1085,15 +1397,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'timeframe': getattr(self.config, 'timeframe', 'UNKNOWN'),
                     'exchange': getattr(self.config, 'exchange', 'UNKNOWN')
                 },
-                
+
                 # Execution metadata
-                'execution_metadata': {
-                    'component': 'nas_tas_clustering',
-                    'timestamp': datetime.now().isoformat(),
-                    'uses_shared_utilities': True,
-                    'm1_hardware_available': M1_HARDWARE_AVAILABLE,
-                    'matrix_operations_available': MATRIX_OPERATIONS_AVAILABLE
-                },
+                'execution_metadata': execution_meta,
                 
                 # Performance metrics
                 'performance_metrics': {
@@ -1217,6 +1523,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 3: Initialize execution metadata
             self._initialize_execution_metadata()
+            self._load_calibration_history(pipeline_state)
 
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
@@ -2022,6 +2329,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         final_centers = self._calculate_cluster_centers(optimized_features, optimized_assignments)
         final_quality = self._calculate_final_quality_metrics(optimized_features, optimized_assignments)
 
+        self._calibrate_quality_thresholds(context, final_quality)
+
         metrics = context.optimization_metrics or {}
         metrics.setdefault('fusion_metadata', context.fusion_metadata)
 
@@ -2573,16 +2882,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             # Test 1: Regime persistence - feature should be stable within regimes
             regime_persistence = self._calculate_feature_regime_persistence(feature_values, market_data)
-            
+
             # Test 2: Low noise-to-signal ratio
             noise_ratio = self._calculate_feature_noise_ratio(feature_values)
-            
+
             # Test 3: Temporal stability
             temporal_stability = self._calculate_feature_temporal_stability(feature_values)
-            
-            return (regime_persistence > getattr(self.config, 'min_regime_persistence', 0.7) and 
-                    noise_ratio < getattr(self.config, 'max_feature_noise_ratio', 0.3) and 
-                    temporal_stability > getattr(self.config, 'min_temporal_stability', 0.6))
+
+            thresholds = self._get_calibrated_quality_thresholds()
+
+            return (
+                regime_persistence > thresholds['min_regime_persistence'] and
+                noise_ratio < thresholds['max_feature_noise_ratio'] and
+                temporal_stability > thresholds['min_temporal_stability']
+            )
         except:
             return False
     

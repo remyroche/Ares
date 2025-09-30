@@ -66,6 +66,8 @@ from src.utils.tprint import (
     tprint_structured
 )
 
+from ..shared_utils.calibration_registry import get_metric_thresholds
+
 # Import M1 hardware optimizations
 try:
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
@@ -462,34 +464,63 @@ def calculate_cv_score(features: np.ndarray, labels: np.ndarray) -> float:
         return 0.0
 
 
+def _resolve_metric_thresholds(metric: str, fallback: Dict[str, float]) -> Dict[str, float]:
+    """Merge calibrated thresholds with fallbacks for robustness."""
+
+    thresholds = get_metric_thresholds(metric)
+    if not thresholds:
+        return fallback
+
+    resolved = fallback.copy()
+    for key, value in thresholds.items():
+        if isinstance(value, (int, float)) and np.isfinite(value):
+            resolved[key] = float(value)
+    return resolved
+
+
 def interpret_silhouette(score: float) -> str:
     """Interpret silhouette score."""
-    if score >= 0.7:
+    thresholds = _resolve_metric_thresholds(
+        'silhouette',
+        {'excellent': 0.7, 'good': 0.5, 'fair': 0.3},
+    )
+
+    if score >= thresholds['excellent']:
         return "Excellent clustering"
-    if score >= 0.5:
+    if score >= thresholds['good']:
         return "Good clustering"
-    if score >= 0.3:
+    if score >= thresholds['fair']:
         return "Fair clustering"
     return "Poor clustering"
 
 
 def interpret_davies_bouldin(score: float) -> str:
     """Interpret Davies-Bouldin score (lower is better)."""
-    if score <= 0.5:
+    thresholds = _resolve_metric_thresholds(
+        'davies_bouldin',
+        {'excellent': 0.5, 'good': 1.0, 'fair': 2.0},
+    )
+
+    if score <= thresholds['excellent']:
         return "Excellent separation"
-    if score <= 1.0:
+    if score <= thresholds['good']:
         return "Good separation"
-    if score <= 2.0:
+    if score <= thresholds['fair']:
         return "Fair separation"
     return "Poor separation"
 
 
 def interpret_cv_score(score: float) -> str:
     """Interpret coefficient of variation score."""
-    if score >= 0.8:
+    thresholds = _resolve_metric_thresholds(
+        'cv_score',
+        {'excellent': 0.8, 'good': 0.6, 'fair': 0.4},
+    )
+
+    if score >= thresholds['excellent']:
         return "Excellent regime distinction"
-    if score >= 0.6:
+    if score >= thresholds['good']:
         return "Good regime distinction"
-    if score >= 0.4:
+    if score >= thresholds['fair']:
         return "Fair regime distinction"
     return "Poor regime distinction"

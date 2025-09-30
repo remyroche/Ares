@@ -1,14 +1,113 @@
-"""Services for NAS/TAS label fusion and regime optimization utilities."""
+"""Services for NAS/TAS label fusion and regime optimization utilities with enhanced matrix operations and M1 optimizations."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+import time
 
 import numpy as np
 from sklearn.mixture import GaussianMixture
 
-from src.utils.tprint import tprint
+# Import common operations for data quality and validation
+from src.utils.common_operations import (
+    validate_dataframe_columns,
+    calculate_data_quality_metrics,
+    create_data_quality_report,
+    safe_convert_dtypes,
+    optimize_dataframe_dtypes,
+    get_dataframe_info,
+    create_summary_statistics,
+    safe_fillna,
+    safe_merge_dataframes,
+    safe_drop_columns,
+    safe_rename_columns,
+    validate_timestamp_column,
+    safe_timestamp_conversion,
+    safe_resample,
+    align_dataframes,
+    validate_dataframe_schema,
+    guard_dataframe_nulls,
+    get_memory_usage,
+    optimize_memory,
+    memory_checkpoint,
+    gpu_context
+)
+
+# Import math validation for safe operations
+from src.utils.math_validation import (
+    safe_mean,
+    safe_std,
+    safe_correlation,
+    safe_covariance,
+    validate_finite,
+    validate_positive,
+    validate_range,
+    safe_percentage_change,
+    safe_weighted_average,
+    safe_kelly_calculation,
+    safe_percentile,
+    safe_matrix_inverse,
+    validate_correlation_matrix,
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_power
+)
+
+# Import matrix operations for optimization
+try:
+    from src.utils.matrix_operations import (
+        safe_matrix_multiply,
+        batch_matrix_multiply,
+        optimize_matrix_operation_with_hardware,
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_batch_matrix_processor,
+        safe_correlation_matrix,
+        gpu_matrix_multiply,
+        correlation_matrix_gpu,
+        optimize_dataframe,
+        vectorized_rolling_features,
+        matrix_correlation_analysis,
+        batch_matrix_multiply,
+        batch_feature_transformation,
+        batch_correlation_analysis,
+        get_hardware_performance_report,
+        cleanup_hardware_resources,
+        get_processing_performance_stats
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPERATIONS_AVAILABLE = False
+    # Fallback functions
+    def safe_matrix_multiply(a, b): return np.dot(a, b)
+    def batch_matrix_multiply(matrices): return [np.dot(m[0], m[1]) for m in matrices]
+    def optimize_matrix_operation_with_hardware(op_name): return lambda func: func
+
+# Import tprint for enhanced logging
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_performance,
+    tprint_timer,
+    tprint_structured
+)
+
+# Import M1 hardware optimizations
+try:
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+    get_m1_memory_optimizer = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    get_m1_gpu_manager = lambda: None
 
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
@@ -26,10 +125,27 @@ class LabelFusionResult:
 
 
 class LabelFusionService:
-    """Service responsible for aligning NAS/TAS labels and running Dawid–Skene."""
+    """Service responsible for aligning NAS/TAS labels and running Dawid–Skene with enhanced matrix operations and M1 optimizations."""
 
     def __init__(self, logger: Callable[[str, str], None] = _default_logger):
         self._logger = logger
+        
+        # Initialize hardware optimizers
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        self.gpu_manager = get_m1_gpu_manager()
+        
+        # Initialize matrix operations
+        if MATRIX_OPERATIONS_AVAILABLE:
+            self.matrix_ops = get_unified_matrix_operations()
+            self.vectorized_core = get_vectorized_processing_core()
+            self.batch_processor = get_batch_matrix_processor()
+        else:
+            self.matrix_ops = None
+            self.vectorized_core = None
+            self.batch_processor = None
+        
+        tprint_info("LabelFusionService initialized with hardware optimizations")
 
     def map_labels_to_k_space(
         self,
@@ -178,25 +294,118 @@ class LabelFusionService:
         target_k: int,
         features: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, Dict[int, int], Dict[int, int]]:
-        gmm = GaussianMixture(n_components=target_k, random_state=42)
-        gmm.fit(features)
-        centroids = gmm.means_
+        """Map labels using GMM with M1 optimizations and matrix operations."""
+        with tprint_timer(f"GMM mapping with target_k={target_k}"):
+            try:
+                # Validate input data
+                features = validate_finite(features, "gmm_features")
+                tas_assignments = validate_finite(tas_assignments, "tas_assignments")
+                nas_assignments = validate_finite(nas_assignments, "nas_assignments")
+                
+                # Use memory checkpoint for large datasets
+                with memory_checkpoint("gmm_mapping"):
+                    # Optimize GMM fitting for M1 if available
+                    if M1_HARDWARE_AVAILABLE and self.cpu_optimizer:
+                        gmm = self.cpu_optimizer.optimize_gmm_fitting(features, target_k)
+                    else:
+                        gmm = GaussianMixture(n_components=target_k, random_state=42)
+                        gmm.fit(features)
+                    
+                    centroids = gmm.means_
+                    
+                    # Validate centroids
+                    centroids = validate_finite(centroids, "gmm_centroids")
 
-        tas_mapping: Dict[int, int] = {}
-        nas_mapping: Dict[int, int] = {}
+                    tas_mapping: Dict[int, int] = {}
+                    nas_mapping: Dict[int, int] = {}
 
-        for label in set(tas_assignments.tolist()):
-            mapped_label = self._nearest_centroid_label(label, tas_assignments, features, centroids, target_k)
-            tas_mapping[label] = mapped_label
+                    # Use optimized matrix operations for distance calculations
+                    if MATRIX_OPERATIONS_AVAILABLE:
+                        # Batch process label mappings
+                        tas_labels = list(set(tas_assignments.tolist()))
+                        nas_labels = list(set(nas_assignments.tolist()))
+                        
+                        # Process TAS labels
+                        for label in tas_labels:
+                            mapped_label = self._nearest_centroid_label_optimized(
+                                label, tas_assignments, features, centroids, target_k
+                            )
+                            tas_mapping[label] = mapped_label
 
-        for label in set(nas_assignments.tolist()):
-            mapped_label = self._nearest_centroid_label(label, nas_assignments, features, centroids, target_k)
-            nas_mapping[label] = mapped_label
+                        # Process NAS labels
+                        for label in nas_labels:
+                            mapped_label = self._nearest_centroid_label_optimized(
+                                label, nas_assignments, features, centroids, target_k
+                            )
+                            nas_mapping[label] = mapped_label
+                    else:
+                        # Fallback to original method
+                        for label in set(tas_assignments.tolist()):
+                            mapped_label = self._nearest_centroid_label(label, tas_assignments, features, centroids, target_k)
+                            tas_mapping[label] = mapped_label
 
-        tas_mapped = np.array([tas_mapping.get(label, label % target_k) for label in tas_assignments])
-        nas_mapped = np.array([nas_mapping.get(label, label % target_k) for label in nas_assignments])
+                        for label in set(nas_assignments.tolist()):
+                            mapped_label = self._nearest_centroid_label(label, nas_assignments, features, centroids, target_k)
+                            nas_mapping[label] = mapped_label
 
-        return tas_mapped, nas_mapped, tas_mapping, nas_mapping
+                    # Create mapped arrays with validation
+                    tas_mapped = np.array([tas_mapping.get(label, label % target_k) for label in tas_assignments])
+                    nas_mapped = np.array([nas_mapping.get(label, label % target_k) for label in nas_assignments])
+                    
+                    # Validate results
+                    tas_mapped = validate_finite(tas_mapped, "tas_mapped")
+                    nas_mapped = validate_finite(nas_mapped, "nas_mapped")
+                    
+                    # Log mapping statistics
+                    tprint_structured({
+                        "target_k": target_k,
+                        "tas_unique_mapped": len(set(tas_mapped)),
+                        "nas_unique_mapped": len(set(nas_mapped)),
+                        "tas_mapping_size": len(tas_mapping),
+                        "nas_mapping_size": len(nas_mapping)
+                    })
+
+                    tprint_success(f"GMM mapping completed: {len(tas_mapping)} TAS, {len(nas_mapping)} NAS mappings")
+                    return tas_mapped, nas_mapped, tas_mapping, nas_mapping
+                    
+            except Exception as exc:
+                tprint_error(f"Failed to map using GMM: {exc}")
+                raise
+
+    def _nearest_centroid_label_optimized(
+        self,
+        label: int,
+        assignments: np.ndarray,
+        features: np.ndarray,
+        centroids: np.ndarray,
+        target_k: int,
+    ) -> int:
+        """Optimized nearest centroid calculation using matrix operations."""
+        try:
+            mask = assignments == label
+            if not np.any(mask):
+                return int(label % target_k)
+
+            label_features = features[mask]
+            
+            # Use optimized matrix operations if available
+            if MATRIX_OPERATIONS_AVAILABLE and self.vectorized_core:
+                # Vectorized distance calculation
+                distances = self.vectorized_core.calculate_distances_to_centroids(
+                    label_features, centroids
+                )
+            else:
+                # Fallback to standard calculation
+                distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
+            
+            # Use safe mean calculation
+            mean_distances = safe_mean(distances, axis=0)
+            return int(np.argmin(mean_distances))
+            
+        except Exception as exc:
+            tprint_warning(f"Optimized centroid calculation failed for label {label}: {exc}")
+            # Fallback to original method
+            return self._nearest_centroid_label(label, assignments, features, centroids, target_k)
 
     def _nearest_centroid_label(
         self,
@@ -206,13 +415,28 @@ class LabelFusionService:
         centroids: np.ndarray,
         target_k: int,
     ) -> int:
-        mask = assignments == label
-        if not np.any(mask):
-            return int(label % target_k)
+        """Original nearest centroid calculation with safe operations."""
+        try:
+            mask = assignments == label
+            if not np.any(mask):
+                return int(label % target_k)
 
-        label_features = features[mask]
-        distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
-        return int(np.argmin(distances.mean(axis=0)))
+            label_features = features[mask]
+            
+            # Validate features
+            label_features = validate_finite(label_features, "label_features")
+            
+            # Calculate distances with safe operations
+            distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
+            distances = validate_finite(distances, "distances")
+            
+            # Use safe mean calculation
+            mean_distances = safe_mean(distances, axis=0)
+            return int(np.argmin(mean_distances))
+            
+        except Exception as exc:
+            tprint_warning(f"Centroid calculation failed for label {label}: {exc}")
+            return int(label % target_k)
 
     def _create_abstain_mapping(
         self,
@@ -257,36 +481,73 @@ class LabelFusionService:
         posteriors: np.ndarray,
         mapping_info: Dict[str, Any],
     ) -> None:
-        n_samples, n_classes = posteriors.shape
-        abstain_value = mapping_info.get("abstain_value")
+        """Enhanced E-step with matrix operations and M1 optimizations."""
+        with tprint_timer("E-step calculation"):
+            try:
+                n_samples, n_classes = posteriors.shape
+                abstain_value = mapping_info.get("abstain_value")
 
-        for i in range(n_samples):
-            tas_observation = tas_mapped[i]
-            nas_observation = nas_mapped[i]
+                # Validate input arrays
+                tas_mapped = validate_finite(tas_mapped, "tas_mapped")
+                nas_mapped = validate_finite(nas_mapped, "nas_mapped")
+                tas_confusion = validate_finite(tas_confusion, "tas_confusion")
+                nas_confusion = validate_finite(nas_confusion, "nas_confusion")
+                class_priors = validate_finite(class_priors, "class_priors")
 
-            for true_class in range(n_classes):
-                tas_factor = (
-                    tas_confusion[true_class, tas_observation]
-                    if tas_observation < n_classes
-                    else 1.0
-                )
-                nas_factor = (
-                    nas_confusion[true_class, nas_observation]
-                    if nas_observation < n_classes
-                    else 1.0
-                )
+                # Use memory checkpoint for large datasets
+                with memory_checkpoint("e_step_calculation"):
+                    # Optimize with matrix operations if available
+                    if MATRIX_OPERATIONS_AVAILABLE and self.matrix_ops:
+                        # Vectorized E-step calculation
+                        posteriors = self.matrix_ops.vectorized_e_step(
+                            tas_mapped, nas_mapped, tas_confusion, nas_confusion,
+                            class_priors, abstain_value
+                        )
+                    else:
+                        # Original E-step with safe operations
+                        for i in range(n_samples):
+                            tas_observation = tas_mapped[i]
+                            nas_observation = nas_mapped[i]
 
-                if abstain_value is not None and (
-                    tas_observation == abstain_value or nas_observation == abstain_value
-                ):
-                    tas_factor = 1.0 if tas_observation == abstain_value else tas_factor
-                    nas_factor = 1.0 if nas_observation == abstain_value else nas_factor
+                            for true_class in range(n_classes):
+                                # Safe factor calculations
+                                tas_factor = (
+                                    tas_confusion[true_class, tas_observation]
+                                    if tas_observation < n_classes
+                                    else 1.0
+                                )
+                                nas_factor = (
+                                    nas_confusion[true_class, nas_observation]
+                                    if nas_observation < n_classes
+                                    else 1.0
+                                )
 
-                posteriors[i, true_class] = class_priors[true_class] * tas_factor * nas_factor
+                                if abstain_value is not None and (
+                                    tas_observation == abstain_value or nas_observation == abstain_value
+                                ):
+                                    tas_factor = 1.0 if tas_observation == abstain_value else tas_factor
+                                    nas_factor = 1.0 if nas_observation == abstain_value else nas_factor
 
-        row_sums = posteriors.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0.0] = 1.0
-        posteriors /= row_sums
+                                # Use safe multiplication
+                                posterior_value = safe_divide(
+                                    class_priors[true_class] * tas_factor * nas_factor,
+                                    1.0, default=0.0
+                                )
+                                posteriors[i, true_class] = posterior_value
+
+                    # Normalize posteriors with safe operations
+                    row_sums = safe_mean(posteriors, axis=1, keepdims=True)
+                    row_sums = np.where(row_sums == 0.0, 1.0, row_sums)
+                    posteriors = safe_divide(posteriors, row_sums, default=0.0)
+                    
+                    # Validate final posteriors
+                    posteriors = validate_finite(posteriors, "posteriors")
+                    
+                    tprint_success(f"E-step completed for {n_samples} samples, {n_classes} classes")
+                    
+            except Exception as exc:
+                tprint_error(f"E-step calculation failed: {exc}")
+                raise
 
     def _update_class_priors(self, posteriors: np.ndarray) -> np.ndarray:
         priors = posteriors.mean(axis=0)

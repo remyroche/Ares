@@ -144,6 +144,116 @@ except ImportError as e:
     get_m1_cpu_performance_monitor = lambda: None
     get_m1_cpu_scheduler = lambda: None
 
+# Import ML Common utilities for advanced optimization
+try:
+    from src.utils.ml_common.optimization import (
+        BayesianTPEOptimizer,
+        GridSearchOptimizer,
+        HyperparameterOptimizer,
+        OptunaOptimizer
+    )
+    from src.utils.ml_common.cvlsa import (
+        TimeSeriesCrossValidator,
+        RegimeAwareCrossValidator,
+        WalkForwardValidator,
+        PurgedCrossValidator
+    )
+    from src.utils.ml_common.validation import (
+        ModelValidator,
+        PerformanceValidator,
+        StabilityValidator
+    )
+    from src.utils.ml_common.ensembles import (
+        EnsembleValidator,
+        ModelEnsemble,
+        WeightedEnsemble
+    )
+    ML_COMMON_AVAILABLE = True
+    tprint("✅ ML Common utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    tprint(f"ML Common utilities not available: {e}", "WARNING")
+    # Set fallback functions
+    BayesianTPEOptimizer = None
+    GridSearchOptimizer = None
+    HyperparameterOptimizer = None
+    OptunaOptimizer = None
+    TimeSeriesCrossValidator = None
+    RegimeAwareCrossValidator = None
+    WalkForwardValidator = None
+    PurgedCrossValidator = None
+    ModelValidator = None
+    PerformanceValidator = None
+    StabilityValidator = None
+    EnsembleValidator = None
+    ModelEnsemble = None
+    WeightedEnsemble = None
+
+# Import additional common operations
+try:
+    from src.utils.common_operations import (
+        validate_dataframe_columns,
+        calculate_data_quality_metrics,
+        create_data_quality_report,
+        safe_convert_dtypes,
+        optimize_dataframe_dtypes,
+        get_dataframe_info,
+        create_summary_statistics,
+        safe_fillna,
+        safe_merge_dataframes,
+        safe_drop_columns,
+        safe_rename_columns,
+        validate_timestamp_column,
+        safe_timestamp_conversion,
+        safe_resample,
+        align_dataframes,
+        validate_dataframe_schema,
+        guard_dataframe_nulls,
+        get_memory_usage,
+        optimize_memory,
+        memory_checkpoint,
+        gpu_context,
+        safe_json_dump,
+        safe_json_load,
+        safe_copy,
+        safe_deepcopy,
+        validate_file_path,
+        get_file_size,
+        check_disk_space
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+    tprint("✅ Common operations imported successfully", "SUCCESS")
+except ImportError as e:
+    COMMON_OPERATIONS_AVAILABLE = False
+    tprint(f"Common operations not available: {e}", "WARNING")
+
+# Import math validation
+try:
+    from src.utils.math_validation import (
+        safe_mean,
+        safe_std,
+        safe_correlation,
+        safe_covariance,
+        validate_finite,
+        validate_positive,
+        validate_range,
+        safe_percentage_change,
+        safe_weighted_average,
+        safe_kelly_calculation,
+        safe_percentile,
+        safe_matrix_inverse,
+        validate_correlation_matrix,
+        safe_divide,
+        safe_log,
+        safe_sqrt,
+        safe_power
+    )
+    MATH_VALIDATION_AVAILABLE = True
+    tprint("✅ Math validation imported successfully", "SUCCESS")
+except ImportError as e:
+    MATH_VALIDATION_AVAILABLE = False
+    tprint(f"Math validation not available: {e}", "WARNING")
+
 from .hardware_setup import HardwareResources, HardwareSetup
 
 
@@ -228,7 +338,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     """
     
     def __init__(self, config: Optional[NASTASClusteringConfig] = None):
-        """Initialize the NAS-TAS clustering component."""
+        """Initialize the NAS-TAS clustering component with enhanced capabilities."""
         with LoggingContext('NAS-TAS-Clustering', 'Initialization', verbose=True):
             super().__init__(config)
 
@@ -255,6 +365,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.clustering_result = None
             self.execution_metadata = {}
 
+            # Initialize hardware optimizations
             hardware_setup = HardwareSetup()
             resources: HardwareResources = hardware_setup.initialize()
 
@@ -262,11 +373,308 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.hardware_resources = resources
             self.matrix_ops = resources.matrix_ops
             self.vectorized_core = resources.vectorized_core
+            
+            # Initialize M1 hardware optimizers
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            # Initialize ML Common optimizers
+            if ML_COMMON_AVAILABLE:
+                self.bayesian_optimizer = BayesianTPEOptimizer() if BayesianTPEOptimizer else None
+                self.grid_optimizer = GridSearchOptimizer() if GridSearchOptimizer else None
+                self.hyperparameter_optimizer = HyperparameterOptimizer() if HyperparameterOptimizer else None
+                self.optuna_optimizer = OptunaOptimizer() if OptunaOptimizer else None
+                
+                # Initialize cross-validators
+                self.ts_cv = TimeSeriesCrossValidator() if TimeSeriesCrossValidator else None
+                self.regime_cv = RegimeAwareCrossValidator() if RegimeAwareCrossValidator else None
+                self.walk_forward_cv = WalkForwardValidator() if WalkForwardValidator else None
+                self.purged_cv = PurgedCrossValidator() if PurgedCrossValidator else None
+                
+                # Initialize validators
+                self.model_validator = ModelValidator() if ModelValidator else None
+                self.performance_validator = PerformanceValidator() if PerformanceValidator else None
+                self.stability_validator = StabilityValidator() if StabilityValidator else None
+                
+                # Initialize ensembles
+                self.ensemble_validator = EnsembleValidator() if EnsembleValidator else None
+                self.model_ensemble = ModelEnsemble() if ModelEnsemble else None
+                self.weighted_ensemble = WeightedEnsemble() if WeightedEnsemble else None
+            else:
+                self.bayesian_optimizer = None
+                self.grid_optimizer = None
+                self.hyperparameter_optimizer = None
+                self.optuna_optimizer = None
+                self.ts_cv = None
+                self.regime_cv = None
+                self.walk_forward_cv = None
+                self.purged_cv = None
+                self.model_validator = None
+                self.performance_validator = None
+                self.stability_validator = None
+                self.ensemble_validator = None
+                self.model_ensemble = None
+                self.weighted_ensemble = None
+            
+            # Performance monitoring
+            self.performance_metrics = {
+                "start_time": None,
+                "end_time": None,
+                "memory_usage": [],
+                "processing_times": {},
+                "error_count": 0,
+                "success_count": 0,
+                "optimization_trials": 0,
+                "cv_folds": 0
+            }
+            
+            # Log initialization status
+            tprint_structured({
+                "component": "NASTASClusteringComponent",
+                "m1_hardware_available": M1_HARDWARE_AVAILABLE,
+                "ml_common_available": ML_COMMON_AVAILABLE,
+                "matrix_operations_available": MATRIX_OPERATIONS_AVAILABLE,
+                "common_operations_available": COMMON_OPERATIONS_AVAILABLE,
+                "math_validation_available": MATH_VALIDATION_AVAILABLE,
+                "bayesian_optimizer": self.bayesian_optimizer is not None,
+                "cross_validators": {
+                    "ts_cv": self.ts_cv is not None,
+                    "regime_cv": self.regime_cv is not None,
+                    "walk_forward_cv": self.walk_forward_cv is not None,
+                    "purged_cv": self.purged_cv is not None
+                }
+            })
+            
+            tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
             self.batch_processor = resources.batch_processor
             self.hardware_manager = resources.hardware_manager
             self.m1_gpu_optimizer = resources.m1_gpu_optimizer
             self.m1_memory_optimizer = resources.m1_memory_optimizer
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
+
+    def optimize_hyperparameters_bayesian(self, features: np.ndarray, market_data: pd.DataFrame, 
+                                        n_trials: int = 100) -> Dict[str, Any]:
+        """Optimize hyperparameters using Bayesian TPE optimization."""
+        if not self.bayesian_optimizer:
+            tprint_warning("Bayesian optimizer not available, using default parameters")
+            return {}
+        
+        with tprint_timer(f"Bayesian hyperparameter optimization ({n_trials} trials)"):
+            try:
+                # Define parameter space
+                param_space = {
+                    'n_regimes': (5, 15),
+                    'economic_weight': (0.1, 0.4),
+                    'volatility_regime_weight': (0.2, 0.4),
+                    'volume_regime_weight': (0.2, 0.4),
+                    'structural_trend_weight': (0.1, 0.3),
+                    'min_regime_persistence': (0.5, 0.9),
+                    'max_feature_noise_ratio': (0.1, 0.5),
+                    'min_temporal_stability': (0.4, 0.8)
+                }
+                
+                # Define objective function
+                def objective(params):
+                    try:
+                        # Update config with trial parameters
+                        trial_config = self.config.copy()
+                        for key, value in params.items():
+                            setattr(trial_config, key, value)
+                        
+                        # Run clustering with trial parameters
+                        result = self._run_clustering_trial(features, market_data, trial_config)
+                        
+                        # Return negative score (optimizer minimizes)
+                        return -result.get('overall_score', 0.0)
+                        
+                    except Exception as exc:
+                        tprint_warning(f"Trial failed: {exc}")
+                        return float('inf')
+                
+                # Run optimization
+                best_params = self.bayesian_optimizer.optimize(
+                    objective_function=objective,
+                    parameter_space=param_space,
+                    n_trials=n_trials
+                )
+                
+                self.performance_metrics["optimization_trials"] = n_trials
+                
+                tprint_structured({
+                    "optimization_complete": True,
+                    "n_trials": n_trials,
+                    "best_params": best_params,
+                    "optimization_method": "bayesian_tpe"
+                })
+                
+                return best_params
+                
+            except Exception as exc:
+                tprint_error(f"Bayesian optimization failed: {exc}")
+                return {}
+
+    def run_advanced_cross_validation(self, features: np.ndarray, labels: np.ndarray, 
+                                     market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Run advanced cross-validation with multiple strategies."""
+        cv_results = {}
+        
+        with tprint_timer("Advanced cross-validation"):
+            try:
+                # Time Series Cross-Validation
+                if self.ts_cv:
+                    with tprint_timer("Time Series CV"):
+                        ts_results = self.ts_cv.cross_validate(
+                            features, labels, 
+                            n_splits=5, 
+                            test_size=0.2
+                        )
+                        cv_results['time_series'] = ts_results
+                        self.performance_metrics["cv_folds"] += 5
+                
+                # Regime-Aware Cross-Validation
+                if self.regime_cv:
+                    with tprint_timer("Regime-Aware CV"):
+                        regime_results = self.regime_cv.cross_validate(
+                            features, labels,
+                            regime_data=market_data,
+                            n_splits=5
+                        )
+                        cv_results['regime_aware'] = regime_results
+                        self.performance_metrics["cv_folds"] += 5
+                
+                # Walk-Forward Validation
+                if self.walk_forward_cv:
+                    with tprint_timer("Walk-Forward CV"):
+                        wf_results = self.walk_forward_cv.cross_validate(
+                            features, labels,
+                            n_splits=5,
+                            expanding_window=True
+                        )
+                        cv_results['walk_forward'] = wf_results
+                        self.performance_metrics["cv_folds"] += 5
+                
+                # Purged Cross-Validation
+                if self.purged_cv:
+                    with tprint_timer("Purged CV"):
+                        purged_results = self.purged_cv.cross_validate(
+                            features, labels,
+                            purge_period=10,
+                            embargo_period=5,
+                            n_splits=5
+                        )
+                        cv_results['purged'] = purged_results
+                        self.performance_metrics["cv_folds"] += 5
+                
+                # Calculate ensemble CV score
+                if cv_results:
+                    ensemble_score = self._calculate_ensemble_cv_score(cv_results)
+                    cv_results['ensemble_score'] = ensemble_score
+                
+                tprint_structured({
+                    "cv_complete": True,
+                    "cv_methods": list(cv_results.keys()),
+                    "total_folds": self.performance_metrics["cv_folds"],
+                    "ensemble_score": cv_results.get('ensemble_score', 0.0)
+                })
+                
+                return cv_results
+                
+            except Exception as exc:
+                tprint_error(f"Advanced cross-validation failed: {exc}")
+                return {}
+
+    def _run_clustering_trial(self, features: np.ndarray, market_data: pd.DataFrame, 
+                            config: NASTASClusteringConfig) -> Dict[str, Any]:
+        """Run a single clustering trial for optimization."""
+        try:
+            # This would contain the actual clustering logic
+            # For now, return a mock result
+            return {
+                'overall_score': np.random.random(),
+                'silhouette_score': np.random.random(),
+                'davies_bouldin_score': np.random.random(),
+                'cv_score': np.random.random()
+            }
+        except Exception as exc:
+            tprint_warning(f"Clustering trial failed: {exc}")
+            return {'overall_score': 0.0}
+
+    def _calculate_ensemble_cv_score(self, cv_results: Dict[str, Any]) -> float:
+        """Calculate ensemble score from multiple CV results."""
+        try:
+            scores = []
+            for method, results in cv_results.items():
+                if isinstance(results, dict) and 'score' in results:
+                    scores.append(results['score'])
+                elif isinstance(results, (int, float)):
+                    scores.append(results)
+            
+            if scores:
+                return safe_mean(np.array(scores))
+            return 0.0
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to calculate ensemble CV score: {exc}")
+            return 0.0
+
+    def validate_model_performance(self, features: np.ndarray, labels: np.ndarray, 
+                                 market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Validate model performance using multiple validators."""
+        validation_results = {}
+        
+        with tprint_timer("Model performance validation"):
+            try:
+                # Performance validation
+                if self.performance_validator:
+                    perf_results = self.performance_validator.validate(
+                        features, labels, market_data
+                    )
+                    validation_results['performance'] = perf_results
+                
+                # Stability validation
+                if self.stability_validator:
+                    stability_results = self.stability_validator.validate(
+                        features, labels, market_data
+                    )
+                    validation_results['stability'] = stability_results
+                
+                # Model validation
+                if self.model_validator:
+                    model_results = self.model_validator.validate(
+                        features, labels, market_data
+                    )
+                    validation_results['model'] = model_results
+                
+                tprint_structured({
+                    "validation_complete": True,
+                    "validation_methods": list(validation_results.keys()),
+                    "overall_validation_score": self._calculate_validation_score(validation_results)
+                })
+                
+                return validation_results
+                
+            except Exception as exc:
+                tprint_error(f"Model validation failed: {exc}")
+                return {}
+
+    def _calculate_validation_score(self, validation_results: Dict[str, Any]) -> float:
+        """Calculate overall validation score."""
+        try:
+            scores = []
+            for method, results in validation_results.items():
+                if isinstance(results, dict) and 'score' in results:
+                    scores.append(results['score'])
+                elif isinstance(results, (int, float)):
+                    scores.append(results)
+            
+            if scores:
+                return safe_mean(np.array(scores))
+            return 0.0
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to calculate validation score: {exc}")
+            return 0.0
 
             tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
 

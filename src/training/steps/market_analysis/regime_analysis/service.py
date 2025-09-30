@@ -1,12 +1,90 @@
-"""High-level regime analysis orchestration."""
+"""High-level regime analysis orchestration with enhanced monitoring, error handling, and performance optimization."""
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
+import traceback
 
-from src.utils.tprint import tprint, tprint_success
+# Import common operations for data quality and validation
+from src.utils.common_operations import (
+    validate_dataframe_columns,
+    calculate_data_quality_metrics,
+    create_data_quality_report,
+    safe_convert_dtypes,
+    optimize_dataframe_dtypes,
+    get_dataframe_info,
+    create_summary_statistics,
+    safe_fillna,
+    safe_merge_dataframes,
+    safe_drop_columns,
+    safe_rename_columns,
+    validate_timestamp_column,
+    safe_timestamp_conversion,
+    safe_resample,
+    align_dataframes,
+    validate_dataframe_schema,
+    guard_dataframe_nulls,
+    get_memory_usage,
+    optimize_memory,
+    memory_checkpoint,
+    gpu_context,
+    safe_json_dump,
+    safe_json_load,
+    safe_copy,
+    safe_deepcopy,
+    validate_file_path,
+    get_file_size,
+    check_disk_space
+)
+
+# Import math validation for safe operations
+from src.utils.math_validation import (
+    safe_mean,
+    safe_std,
+    safe_correlation,
+    safe_covariance,
+    validate_finite,
+    validate_positive,
+    validate_range,
+    safe_percentage_change,
+    safe_weighted_average,
+    safe_kelly_calculation,
+    safe_percentile,
+    safe_matrix_inverse,
+    validate_correlation_matrix,
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_power
+)
+
+# Import tprint for enhanced logging
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_performance,
+    tprint_timer,
+    tprint_structured,
+    tprint_debug
+)
+
+# Import M1 hardware optimizations
+try:
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+    get_m1_memory_optimizer = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    get_m1_gpu_manager = lambda: None
 
 try:  # pragma: no cover - fallback retained for runtime parity
     from src.utils.logging_utils import get_logger, log_warning
@@ -25,46 +103,143 @@ from .reporting import print_detailed_metrics, print_analysis_summary
 
 
 class RegimeAnalysisService:
-    """Coordinates loading, computation, and reporting of regime metrics."""
+    """Coordinates loading, computation, and reporting of regime metrics with enhanced monitoring and error handling."""
 
     def __init__(self, data_cache_path: Path | str = "data_cache"):
         self.data_cache_path = Path(data_cache_path)
         if not self.data_cache_path.exists():
             raise FileNotFoundError(f"Data cache directory not found: {self.data_cache_path}")
+        
+        # Initialize logging
         self.logger = get_logger("RegimeAnalyzer")
-        tprint("🔍 Regime Analysis service initialized", "INFO")
+        
+        # Initialize hardware optimizers
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        self.gpu_manager = get_m1_gpu_manager()
+        
+        # Performance monitoring
+        self.performance_metrics = {
+            "start_time": None,
+            "end_time": None,
+            "memory_usage": [],
+            "processing_times": {},
+            "error_count": 0,
+            "success_count": 0
+        }
+        
+        # Start memory monitoring if available
+        if self.memory_optimizer:
+            self.memory_optimizer.start_monitoring()
+        
+        tprint_structured({
+            "service": "RegimeAnalysisService",
+            "data_cache_path": str(self.data_cache_path),
+            "m1_hardware_available": M1_HARDWARE_AVAILABLE,
+            "memory_optimizer": self.memory_optimizer is not None,
+            "cpu_optimizer": self.cpu_optimizer is not None,
+            "gpu_manager": self.gpu_manager is not None
+        })
+        tprint_success("🔍 Regime Analysis service initialized with enhanced monitoring")
 
     def analyze(self, symbol: str = "ETHUSDT") -> Dict[str, Any]:
-        """Execute the full regime analysis workflow for a symbol."""
-        tprint(f"🚀 Starting comprehensive regime analysis for {symbol}", "INFO")
-        nas_features, nas_labels, tas_features, tas_labels = self._load_datasets(symbol)
+        """Execute the full regime analysis workflow for a symbol with comprehensive monitoring and error handling."""
+        # Initialize performance monitoring
+        self.performance_metrics["start_time"] = time.time()
+        self.performance_metrics["error_count"] = 0
+        self.performance_metrics["success_count"] = 0
+        
+        with tprint_timer(f"Comprehensive regime analysis for {symbol}"):
+            try:
+                # Log analysis start
+                tprint_structured({
+                    "analysis_start": datetime.now().isoformat(),
+                    "symbol": symbol,
+                    "data_cache_path": str(self.data_cache_path),
+                    "memory_usage_start": get_memory_usage() / (1024**2)
+                })
+                
+                # Load datasets with monitoring
+                with tprint_timer("Loading datasets"):
+                    nas_features, nas_labels, tas_features, tas_labels = self._load_datasets(symbol)
+                    self.performance_metrics["success_count"] += 1
 
-        self._print_initial_overview(nas_labels, tas_labels)
+                # Print initial overview with enhanced logging
+                self._print_initial_overview(nas_labels, tas_labels)
 
-        nas_distribution = calculate_regime_distribution(nas_labels, "NAS")
-        tas_distribution = calculate_regime_distribution(tas_labels, "TAS")
+                # Calculate distributions with monitoring
+                with tprint_timer("Calculating regime distributions"):
+                    nas_distribution = calculate_regime_distribution(nas_labels, "NAS")
+                    tas_distribution = calculate_regime_distribution(tas_labels, "TAS")
+                    self.performance_metrics["success_count"] += 1
 
-        nas_metrics = calculate_clustering_metrics(nas_features, nas_labels, "NAS")
-        tas_metrics = calculate_clustering_metrics(tas_features, tas_labels, "TAS")
+                # Calculate clustering metrics with monitoring
+                with tprint_timer("Calculating clustering metrics"):
+                    nas_metrics = calculate_clustering_metrics(nas_features, nas_labels, "NAS")
+                    tas_metrics = calculate_clustering_metrics(tas_features, tas_labels, "TAS")
+                    self.performance_metrics["success_count"] += 1
 
-        print_detailed_metrics(nas_distribution, nas_metrics, "NAS")
-        print_detailed_metrics(tas_distribution, tas_metrics, "TAS")
+                # Print detailed metrics
+                print_detailed_metrics(nas_distribution, nas_metrics, "NAS")
+                print_detailed_metrics(tas_distribution, tas_metrics, "TAS")
 
-        analysis = self._compile_analysis(
-            symbol,
-            nas_distribution,
-            tas_distribution,
-            nas_metrics,
-            tas_metrics,
-            nas_labels,
-            tas_labels,
-        )
+                # Compile analysis with enhanced metadata
+                with tprint_timer("Compiling analysis"):
+                    analysis = self._compile_analysis(
+                        symbol,
+                        nas_distribution,
+                        tas_distribution,
+                        nas_metrics,
+                        tas_metrics,
+                        nas_labels,
+                        tas_labels,
+                    )
+                    self.performance_metrics["success_count"] += 1
 
-        output_path = self._save_analysis(analysis, symbol)
-        tprint_success(f"Regime analysis completed and saved to {output_path}")
+                # Save analysis with monitoring
+                with tprint_timer("Saving analysis"):
+                    output_path = self._save_analysis(analysis, symbol)
+                    self.performance_metrics["success_count"] += 1
 
-        print_analysis_summary(analysis)
-        return analysis
+                # Final performance metrics
+                self.performance_metrics["end_time"] = time.time()
+                total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
+                
+                # Log final performance
+                tprint_structured({
+                    "analysis_complete": datetime.now().isoformat(),
+                    "total_time_seconds": round(total_time, 2),
+                    "success_count": self.performance_metrics["success_count"],
+                    "error_count": self.performance_metrics["error_count"],
+                    "memory_usage_end": get_memory_usage() / (1024**2),
+                    "output_path": str(output_path)
+                })
+
+                tprint_success(f"Regime analysis completed and saved to {output_path}")
+                print_analysis_summary(analysis)
+                return analysis
+                
+            except Exception as exc:
+                self.performance_metrics["error_count"] += 1
+                tprint_error(f"Regime analysis failed for {symbol}: {exc}")
+                tprint_debug(f"Error traceback: {traceback.format_exc()}")
+                
+                # Log error details
+                tprint_structured({
+                    "error": str(exc),
+                    "symbol": symbol,
+                    "error_count": self.performance_metrics["error_count"],
+                    "success_count": self.performance_metrics["success_count"]
+                })
+                
+                raise
+            finally:
+                # Cleanup and final monitoring
+                if self.memory_optimizer:
+                    self.memory_optimizer.stop_monitoring()
+                
+                # Log final performance summary
+                self._log_performance_summary()
 
     def _load_datasets(self, symbol: str) -> Tuple[Any, ...]:
         try:
@@ -118,10 +293,81 @@ class RegimeAnalysisService:
         }
 
     def _save_analysis(self, analysis: Dict[str, Any], symbol: str) -> Path:
-        output_dir = Path("regime_analysis_results")
-        output_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = output_dir / f"{symbol}_regime_analysis_{timestamp}.json"
-        with output_path.open("w") as handle:
-            json.dump(analysis, handle, indent=2)
-        return output_path
+        """Save analysis with enhanced error handling and monitoring."""
+        try:
+            output_dir = Path("regime_analysis_results")
+            output_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = output_dir / f"{symbol}_regime_analysis_{timestamp}.json"
+            
+            # Add performance metrics to analysis
+            analysis["performance_metrics"] = {
+                "total_time_seconds": self.performance_metrics.get("end_time", 0) - self.performance_metrics.get("start_time", 0),
+                "success_count": self.performance_metrics.get("success_count", 0),
+                "error_count": self.performance_metrics.get("error_count", 0),
+                "memory_usage_mb": get_memory_usage() / (1024**2),
+                "m1_hardware_available": M1_HARDWARE_AVAILABLE
+            }
+            
+            # Use safe JSON dump
+            if safe_json_dump(analysis, output_path, indent=2):
+                tprint_success(f"Analysis saved successfully to {output_path}")
+                return output_path
+            else:
+                raise Exception("Failed to save analysis JSON")
+                
+        except Exception as exc:
+            tprint_error(f"Failed to save analysis: {exc}")
+            raise
+
+    def _log_performance_summary(self) -> None:
+        """Log comprehensive performance summary."""
+        try:
+            total_time = 0
+            if self.performance_metrics["start_time"] and self.performance_metrics["end_time"]:
+                total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
+            
+            performance_summary = {
+                "total_time_seconds": round(total_time, 2),
+                "success_count": self.performance_metrics["success_count"],
+                "error_count": self.performance_metrics["error_count"],
+                "success_rate": safe_divide(
+                    self.performance_metrics["success_count"],
+                    self.performance_metrics["success_count"] + self.performance_metrics["error_count"],
+                    default=0.0
+                ),
+                "memory_usage_mb": get_memory_usage() / (1024**2),
+                "m1_optimizations_used": M1_HARDWARE_AVAILABLE
+            }
+            
+            tprint_structured({
+                "performance_summary": performance_summary,
+                "service": "RegimeAnalysisService"
+            })
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to log performance summary: {exc}")
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get current performance metrics."""
+        return self.performance_metrics.copy()
+
+    def reset_performance_metrics(self) -> None:
+        """Reset performance metrics."""
+        self.performance_metrics = {
+            "start_time": None,
+            "end_time": None,
+            "memory_usage": [],
+            "processing_times": {},
+            "error_count": 0,
+            "success_count": 0
+        }
+        tprint_info("Performance metrics reset")
+
+    def __del__(self):
+        """Cleanup when service is destroyed."""
+        try:
+            if self.memory_optimizer:
+                self.memory_optimizer.stop_monitoring()
+        except Exception:
+            pass  # Silently handle cleanup errors

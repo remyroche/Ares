@@ -1308,7 +1308,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'ch_improvement': quality_scores['calinski_harabasz'] - original_scores['calinski_harabasz'],
                 'db_improvement': original_scores['davies_bouldin'] - quality_scores['davies_bouldin'],  # Inverted (lower is better)
                 'balance_improvement': quality_scores['regime_balance'] - original_scores['regime_balance'],
-                'cv_improvement': quality_scores.get('cv_score', 0) - original_scores.get('cv_score', 0),
+                'within_regime_cv_improvement': self._calculate_within_regime_cv_improvement(
+                    features, assignments, sample_idx, target_regime
+                ),
+                'between_regime_cv_improvement': self._calculate_between_regime_cv_improvement(
+                    features, assignments, sample_idx, target_regime
+                ),
                 'temporal_improvement': self._calculate_temporal_consistency_improvement(
                     features, assignments, sample_idx, target_regime
                 )
@@ -1323,7 +1328,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'ch_improvement': 0.0,
                 'db_improvement': 0.0,
                 'balance_improvement': 0.0,
-                'cv_improvement': 0.0,
+                'within_regime_cv_improvement': 0.0,
+                'between_regime_cv_improvement': 0.0,
                 'temporal_improvement': 0.0
             }
     
@@ -1333,11 +1339,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Pareto weights optimized for NAS/TAS divergence detection
             # Based on empirical analysis and multi-objective optimization principles
             weights = [
-                0.25,  # Silhouette improvement (cluster separation)
+                0.20,  # Silhouette improvement (cluster separation) - reduced from 0.25
                 0.20,  # Calinski-Harabasz improvement (cluster compactness)
                 0.20,  # Davies-Bouldin improvement (cluster separation)
                 0.15,  # Balance improvement (regime distribution)
-                0.15,  # CV improvement (divergence detection)
+                0.10,  # Within-regime CV improvement (intra-regime stability)
+                0.10,  # Between-regime CV improvement (inter-regime divergence)
                 0.05   # Temporal improvement (smoothness)
             ]
             
@@ -1345,7 +1352,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             log_warning(f"Pareto weights calculation failed: {e}")
-            return [0.25, 0.20, 0.20, 0.15, 0.15, 0.05]  # Default weights
+            return [0.20, 0.20, 0.20, 0.15, 0.10, 0.10, 0.05]  # Default weights
     
     def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray, 
                                                  sample_idx: int, target_regime: int) -> float:
@@ -1385,6 +1392,137 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             log_warning(f"Temporal consistency improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_within_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                             sample_idx: int, target_regime: int) -> float:
+        """Calculate within-regime CV improvement for regime flip (intra-regime stability)."""
+        try:
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Calculate within-regime CV before flip
+            original_within_cv = self._calculate_within_regime_cv(features, assignments)
+            
+            # Temporarily assign target regime
+            assignments[sample_idx] = target_regime
+            
+            # Calculate within-regime CV after flip
+            new_within_cv = self._calculate_within_regime_cv(features, assignments)
+            
+            # Restore original assignment
+            assignments[sample_idx] = original_regime
+            
+            # Return improvement (lower CV = higher stability = better)
+            improvement = original_within_cv - new_within_cv
+            return improvement
+            
+        except Exception as e:
+            log_warning(f"Within-regime CV improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_between_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                              sample_idx: int, target_regime: int) -> float:
+        """Calculate between-regime CV improvement for regime flip (inter-regime divergence)."""
+        try:
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Calculate between-regime CV before flip
+            original_between_cv = self._calculate_between_regime_cv(features, assignments)
+            
+            # Temporarily assign target regime
+            assignments[sample_idx] = target_regime
+            
+            # Calculate between-regime CV after flip
+            new_between_cv = self._calculate_between_regime_cv(features, assignments)
+            
+            # Restore original assignment
+            assignments[sample_idx] = original_regime
+            
+            # Return improvement (higher CV = higher divergence = better for NAS/TAS detection)
+            improvement = new_between_cv - original_between_cv
+            return improvement
+            
+        except Exception as e:
+            log_warning(f"Between-regime CV improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_within_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate within-regime coefficient of variation (intra-regime stability)."""
+        try:
+            unique_regimes = np.unique(assignments)
+            within_cvs = []
+            
+            for regime in unique_regimes:
+                regime_mask = assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # Calculate CV for each feature within the regime
+                    feature_means = np.mean(regime_features, axis=0)
+                    feature_stds = np.std(regime_features, axis=0)
+                    
+                    # Avoid division by zero
+                    feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
+                    
+                    # Average CV across features for this regime
+                    regime_cv = np.mean(feature_cvs)
+                    within_cvs.append(regime_cv)
+            
+            # Return average within-regime CV (lower = more stable)
+            return np.mean(within_cvs) if within_cvs else 0.0
+            
+        except Exception as e:
+            log_warning(f"Within-regime CV calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_between_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate between-regime coefficient of variation (inter-regime divergence)."""
+        try:
+            unique_regimes = np.unique(assignments)
+            
+            if len(unique_regimes) < 2:
+                return 0.0
+            
+            # Calculate regime centroids
+            regime_centroids = []
+            for regime in unique_regimes:
+                regime_mask = assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 0:
+                    centroid = np.mean(regime_features, axis=0)
+                    regime_centroids.append(centroid)
+            
+            if len(regime_centroids) < 2:
+                return 0.0
+            
+            # Calculate pairwise distances between regime centroids
+            regime_centroids = np.array(regime_centroids)
+            centroid_distances = []
+            
+            for i in range(len(regime_centroids)):
+                for j in range(i + 1, len(regime_centroids)):
+                    distance = np.linalg.norm(regime_centroids[i] - regime_centroids[j])
+                    centroid_distances.append(distance)
+            
+            if not centroid_distances:
+                return 0.0
+            
+            # Calculate CV of centroid distances (higher = more divergent regimes)
+            mean_distance = np.mean(centroid_distances)
+            std_distance = np.std(centroid_distances)
+            
+            if mean_distance != 0:
+                between_cv = std_distance / mean_distance
+            else:
+                between_cv = 0.0
+            
+            return between_cv
+            
+        except Exception as e:
+            log_warning(f"Between-regime CV calculation failed: {e}")
             return 0.0
     
     def _update_convergence_history(self, improvement: float):

@@ -62,6 +62,14 @@ NASTASClusteringComponent = nas_module.NASTASClusteringComponent
 
 
 def _build_component():
+    if not hasattr(nas_module, "get_m1_gpu_manager"):
+        nas_module.get_m1_gpu_manager = lambda: None  # type: ignore[attr-defined]
+    if not hasattr(nas_module, "get_m1_memory_optimizer"):
+        nas_module.get_m1_memory_optimizer = lambda: None  # type: ignore[attr-defined]
+    if not hasattr(nas_module, "get_m1_cpu_optimizer"):
+        nas_module.get_m1_cpu_optimizer = lambda: None  # type: ignore[attr-defined]
+    if not hasattr(nas_module, "tprint_structured"):
+        nas_module.tprint_structured = lambda *args, **kwargs: None  # type: ignore[attr-defined]
     return NASTASClusteringComponent()
 
 
@@ -77,6 +85,9 @@ def test_extract_regime_counts_prefers_max_and_bounds():
     n_regimes = component._extract_regime_counts(pipeline_state)
 
     assert n_regimes == 15  # bounded to maximum allowed value
+    assert component.config.regime_search_min == 5
+    assert component.config.regime_search_max == 15
+    assert component.config.n_regimes == 15
 
 
 def test_extract_regime_counts_defaults_when_missing():
@@ -85,6 +96,48 @@ def test_extract_regime_counts_defaults_when_missing():
     n_regimes = component._extract_regime_counts({})
 
     assert n_regimes == 8
+    assert component.config.regime_search_min == 5
+    assert component.config.regime_search_max == 15
+    assert component.config.n_regimes == 8
+
+
+def test_estimate_regime_range_uses_candidate_metrics():
+    component = _build_component()
+    pipeline_state = {
+        "nas_tas_regime_discovery_result": {
+            "regime_candidates": [
+                {"n_regimes": 6, "metrics": {"silhouette": 0.25, "bic": 1200, "aic": 1300}},
+                {"n_regimes": 10, "metrics": {"silhouette": 0.6, "bic": 900, "aic": 950}},
+                {"n_regimes": 14, "metrics": {"silhouette": 0.58, "bic": 880, "aic": 920}},
+            ]
+        }
+    }
+
+    min_bound, max_bound, suggested = component._estimate_regime_range(pipeline_state)
+
+    assert (min_bound, max_bound, suggested) == (10, 14, 14)
+
+
+def test_extract_regime_counts_uses_dynamic_bounds():
+    component = _build_component()
+    pipeline_state = {
+        "nas_tas_regime_discovery_result": {
+            "regime_candidates": [
+                {"n_regimes": 6, "metrics": {"silhouette": 0.25, "bic": 1200, "aic": 1300}},
+                {"n_regimes": 10, "metrics": {"silhouette": 0.6, "bic": 900, "aic": 950}},
+                {"n_regimes": 14, "metrics": {"silhouette": 0.58, "bic": 880, "aic": 920}},
+            ],
+            "tas_regime_count": 9,
+            "nas_regime_count": 18,
+        }
+    }
+
+    n_regimes = component._extract_regime_counts(pipeline_state)
+
+    assert n_regimes == 14
+    assert component.config.regime_search_min == 10
+    assert component.config.regime_search_max == 14
+    assert component.config.n_regimes == 14
 
 
 def test_prepare_features_uses_shared_utility(monkeypatch):

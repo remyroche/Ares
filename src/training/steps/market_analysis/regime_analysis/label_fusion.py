@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple
 import time
 
 import numpy as np
@@ -41,15 +41,13 @@ from src.utils.math_validation import (
     safe_correlation,
     safe_covariance,
     validate_finite,
-    validate_positive,
-    validate_range,
     safe_percentage_change,
     safe_weighted_average,
     safe_kelly_calculation,
     safe_percentile,
     safe_matrix_inverse,
     validate_correlation_matrix,
-    safe_divide,
+    validate_numeric_array,
     safe_log,
     safe_sqrt,
     safe_power
@@ -130,14 +128,19 @@ class LabelFusionResult:
 class LabelFusionService:
     """Service responsible for aligning NAS/TAS labels and running Dawid–Skene with enhanced matrix operations and M1 optimizations."""
 
-    def __init__(self, logger: Callable[[str, str], None] = _default_logger):
+    def __init__(
+        self,
+        logger: Callable[[str, str], None] = _default_logger,
+        historical_pairs: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None,
+        statistics_cache: Optional[Dict[str, Any]] = None,
+    ):
         self._logger = logger
-        
+
         # Initialize hardware optimizers
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.gpu_manager = get_m1_gpu_manager()
-        
+
         # Initialize matrix operations with fast fail
         if MATRIX_OPERATIONS_AVAILABLE:
             self.matrix_ops = get_unified_matrix_operations()
@@ -145,7 +148,18 @@ class LabelFusionService:
             self.batch_processor = get_batch_matrix_processor()
         else:
             raise ImportError("Matrix operations are required but not available - cannot initialize LabelFusionService")
-        
+
+        # Statistics cache for calibrated priors and persistence thresholds
+        if statistics_cache is not None:
+            self._statistics_cache = self._ensure_statistics_cache(statistics_cache)
+        else:
+            self._statistics_cache = self._compute_statistics_cache(historical_pairs)
+
+        self._calibrated_priors = self._statistics_cache.get("dirichlet_alpha", {"tas": {}, "nas": {}})
+        self._transition_regularizer = self._statistics_cache.get("transition_regularizer")
+        self._persistence_thresholds = self._statistics_cache.get("persistence_thresholds", {})
+        self._persistence_quantiles = self._statistics_cache.get("persistence_quantiles", {})
+
         tprint_info("LabelFusionService initialized with hardware optimizations")
 
     def map_labels_to_k_space(
@@ -285,6 +299,210 @@ class LabelFusionService:
         )
 
         return LabelFusionResult(assignments=fused_assignments, metadata=metadata)
+
+    def get_statistics_cache(self) -> Dict[str, Any]:
+        return self._statistics_cache
+
+    def get_calibrated_priors(self) -> Dict[str, Dict[int, np.ndarray]]:
+        return self._calibrated_priors
+
+    def get_transition_regularizer(self, default: float = 0.1) -> float:
+        value = self._transition_regularizer
+        if value is None or not np.isfinite(value) or value <= 0.0:
+            return default
+        return float(value)
+
+    def get_persistence_threshold(self, key: str, default: Optional[float] = None) -> float:
+        threshold = self._persistence_thresholds.get(key)
+        if threshold is None:
+            if default is not None:
+                return default
+            return 0.99 if key == "high" else 0.6
+        return float(threshold)
+
+    def get_persistence_quantiles(self) -> Dict[str, float]:
+        return {str(k): float(v) for k, v in self._persistence_quantiles.items()}
+
+    def _ensure_statistics_cache(self, cache: Dict[str, Any]) -> Dict[str, Any]:
+        dirichlet_alpha = cache.get("dirichlet_alpha", {})
+        tas_priors = {}
+        nas_priors = {}
+        if isinstance(dirichlet_alpha, dict):
+            tas_raw = dirichlet_alpha.get("tas", {})
+            nas_raw = dirichlet_alpha.get("nas", {})
+            if isinstance(tas_raw, dict):
+                for key, value in tas_raw.items():
+                    tas_priors[int(key)] = np.asarray(value, dtype=float)
+            if isinstance(nas_raw, dict):
+                for key, value in nas_raw.items():
+                    nas_priors[int(key)] = np.asarray(value, dtype=float)
+
+        persistence_thresholds = cache.get("persistence_thresholds", {})
+        persistence_quantiles = cache.get("persistence_quantiles", {})
+
+        normalized_thresholds: Dict[str, float] = {}
+        for key, value in persistence_thresholds.items():
+            threshold_key = str(key) if isinstance(key, float) else key
+            try:
+                normalized_thresholds[threshold_key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        try:
+            regularizer_value = float(cache.get("transition_regularizer"))
+        except (TypeError, ValueError):
+            regularizer_value = None
+
+        normalized_quantiles: Dict[str, float] = {}
+        if isinstance(persistence_quantiles, dict):
+            for key, value in persistence_quantiles.items():
+                try:
+                    normalized_quantiles[str(key)] = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+        try:
+            disagreement_rate_value = (
+                float(cache.get("disagreement_rate"))
+                if cache.get("disagreement_rate") is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            disagreement_rate_value = None
+
+        normalized_cache = {
+            "dirichlet_alpha": {"tas": tas_priors, "nas": nas_priors},
+            "transition_regularizer": regularizer_value,
+            "persistence_thresholds": normalized_thresholds,
+            "persistence_quantiles": normalized_quantiles,
+            "dwell_times": cache.get("dwell_times", []),
+            "disagreement_rate": disagreement_rate_value,
+        }
+
+        # Ensure thresholds have sensible defaults if missing
+        if "high" not in normalized_cache["persistence_thresholds"]:
+            normalized_cache["persistence_thresholds"]["high"] = 0.99
+        if "low" not in normalized_cache["persistence_thresholds"]:
+            normalized_cache["persistence_thresholds"]["low"] = 0.6
+
+        return normalized_cache
+
+    def _compute_statistics_cache(
+        self, historical_pairs: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]]
+    ) -> Dict[str, Any]:
+        if not historical_pairs:
+            return self._ensure_statistics_cache({})
+
+        tas_priors: Dict[int, np.ndarray] = {}
+        nas_priors: Dict[int, np.ndarray] = {}
+        dwell_times: List[float] = []
+        self_transition_probs: List[float] = []
+        total_pairs = 0
+        agreements = 0
+
+        for tas_seq, nas_seq in historical_pairs:
+            tas_arr = np.asarray(tas_seq, dtype=int)
+            nas_arr = np.asarray(nas_seq, dtype=int)
+            if tas_arr.size == 0 or nas_arr.size == 0:
+                continue
+            limit = min(len(tas_arr), len(nas_arr))
+            tas_arr = tas_arr[:limit]
+            nas_arr = nas_arr[:limit]
+
+            valid_mask = (tas_arr >= 0) & (nas_arr >= 0)
+            if not np.any(valid_mask):
+                continue
+            tas_arr = tas_arr[valid_mask]
+            nas_arr = nas_arr[valid_mask]
+
+            if tas_arr.size == 0:
+                continue
+
+            n_classes = int(max(int(tas_arr.max()), int(nas_arr.max())) + 1)
+            tas_counts = tas_priors.setdefault(n_classes, np.zeros((n_classes, n_classes)))
+            nas_counts = nas_priors.setdefault(n_classes, np.zeros((n_classes, n_classes)))
+
+            for tas_val, nas_val in zip(tas_arr, nas_arr):
+                if 0 <= nas_val < n_classes and 0 <= tas_val < n_classes:
+                    tas_counts[nas_val, tas_val] += 1.0
+                    nas_counts[tas_val, nas_val] += 1.0
+
+            agreements += int(np.sum(tas_arr == nas_arr))
+            total_pairs += tas_arr.size
+
+            for sequence in (tas_arr, nas_arr):
+                if sequence.size < 2:
+                    continue
+
+                # Dwell times from consecutive identical values
+                run_length = 1
+                for idx in range(1, sequence.size):
+                    if sequence[idx] == sequence[idx - 1]:
+                        run_length += 1
+                    else:
+                        dwell_times.append(float(run_length))
+                        run_length = 1
+                dwell_times.append(float(run_length))
+
+                transition_counts = np.zeros((n_classes, n_classes))
+                for current, nxt in zip(sequence[:-1], sequence[1:]):
+                    if 0 <= current < n_classes and 0 <= nxt < n_classes:
+                        transition_counts[current, nxt] += 1.0
+
+                for state in range(n_classes):
+                    row_sum = transition_counts[state].sum()
+                    if row_sum > 0:
+                        self_transition_probs.append(float(transition_counts[state, state] / row_sum))
+
+        disagreement_rate = 1.0 - (agreements / total_pairs) if total_pairs else 0.0
+        transition_regularizer = float(np.clip(disagreement_rate, 1e-3, 0.5)) if total_pairs else 0.1
+
+        for cache in (tas_priors, nas_priors):
+            for n_classes, counts in cache.items():
+                cache[n_classes] = counts + 1.0  # Laplace smoothing to keep Dirichlet positive
+
+        if self_transition_probs:
+            quantiles = {
+                0.25: float(np.quantile(self_transition_probs, 0.25)),
+                0.5: float(np.quantile(self_transition_probs, 0.5)),
+                0.95: float(np.quantile(self_transition_probs, 0.95)),
+            }
+            persistence_thresholds = {
+                "high": quantiles[0.95],
+                "low": quantiles[0.25],
+            }
+        else:
+            quantiles = {}
+            persistence_thresholds = {"high": 0.99, "low": 0.6}
+
+        statistics_cache = {
+            "dirichlet_alpha": {"tas": tas_priors, "nas": nas_priors},
+            "transition_regularizer": transition_regularizer,
+            "persistence_thresholds": persistence_thresholds,
+            "persistence_quantiles": quantiles,
+            "dwell_times": dwell_times,
+            "disagreement_rate": disagreement_rate,
+        }
+
+        return self._ensure_statistics_cache(statistics_cache)
+
+    def _get_dirichlet_alpha(self, n_classes: int, annotator: str) -> Optional[np.ndarray]:
+        priors = self._calibrated_priors.get(annotator, {})
+        if not priors:
+            return None
+
+        if n_classes in priors:
+            matrix = priors[n_classes]
+            if matrix.shape[0] >= n_classes and matrix.shape[1] >= n_classes:
+                return matrix[:n_classes, :n_classes]
+            return None
+
+        larger_sizes = sorted(size for size in priors if size >= n_classes)
+        if larger_sizes:
+            matrix = priors[larger_sizes[0]]
+            return matrix[:n_classes, :n_classes]
+
+        return None
 
     def _map_using_gmm(
         self,
@@ -465,9 +683,18 @@ class LabelFusionService:
 
     def _initialize_confusion_matrices(self, n_classes: int) -> Tuple[np.ndarray, np.ndarray]:
         rng = np.random.default_rng(42)
-        alpha = 0.5
-        tas_confusion = rng.dirichlet([alpha] * n_classes, size=n_classes)
-        nas_confusion = rng.dirichlet([alpha] * n_classes, size=n_classes)
+        tas_alpha = self._get_dirichlet_alpha(n_classes, "tas")
+        nas_alpha = self._get_dirichlet_alpha(n_classes, "nas")
+
+        if tas_alpha is not None:
+            tas_confusion = np.vstack([rng.dirichlet(row) for row in tas_alpha])
+        else:
+            tas_confusion = rng.dirichlet([0.5] * n_classes, size=n_classes)
+
+        if nas_alpha is not None:
+            nas_confusion = np.vstack([rng.dirichlet(row) for row in nas_alpha])
+        else:
+            nas_confusion = rng.dirichlet([0.5] * n_classes, size=n_classes)
         return tas_confusion, nas_confusion
 
     def _e_step(
@@ -487,16 +714,20 @@ class LabelFusionService:
                 abstain_value = mapping_info.get("abstain_value")
 
                 # Validate input arrays
-                tas_mapped = validate_finite(tas_mapped, "tas_mapped")
-                nas_mapped = validate_finite(nas_mapped, "nas_mapped")
-                tas_confusion = validate_finite(tas_confusion, "tas_confusion")
-                nas_confusion = validate_finite(nas_confusion, "nas_confusion")
-                class_priors = validate_finite(class_priors, "class_priors")
+                tas_mapped = validate_numeric_array(tas_mapped, "tas_mapped")
+                nas_mapped = validate_numeric_array(nas_mapped, "nas_mapped")
+                tas_confusion = validate_numeric_array(tas_confusion, "tas_confusion")
+                nas_confusion = validate_numeric_array(nas_confusion, "nas_confusion")
+                class_priors = validate_numeric_array(class_priors, "class_priors")
 
                 # Use memory checkpoint for large datasets
                 with memory_checkpoint("e_step_calculation"):
                     # Optimize with matrix operations if available
-                    if MATRIX_OPERATIONS_AVAILABLE and self.matrix_ops:
+                    if (
+                        MATRIX_OPERATIONS_AVAILABLE
+                        and self.matrix_ops is not None
+                        and hasattr(self.matrix_ops, "vectorized_e_step")
+                    ):
                         # Vectorized E-step calculation - update in place
                         posteriors[:] = self.matrix_ops.vectorized_e_step(
                             tas_mapped, nas_mapped, tas_confusion, nas_confusion,
@@ -558,30 +789,29 @@ class LabelFusionService:
 
                     # Normalize posteriors with safe operations and validation - update in place
                     row_sums = posteriors.sum(axis=1, keepdims=True)
-                    row_sums = validate_finite(row_sums, "row_sums")
-                    
+                    row_sums = validate_numeric_array(row_sums, "row_sums")
+
                     # Handle zero sums by setting uniform distribution
                     zero_sum_mask = (row_sums == 0.0).flatten()
                     if np.any(zero_sum_mask):
                         tprint_warning(f"Found {np.sum(zero_sum_mask)} samples with zero posterior sums")
                         posteriors[zero_sum_mask] = 1.0 / n_classes  # Uniform distribution
                         row_sums[zero_sum_mask] = 1.0
-                    
+
                     # Ensure all row sums are positive
                     row_sums = np.where(row_sums <= 0.0, 1.0, row_sums)
-                    row_sums = validate_positive(row_sums, "row_sums_positive")
-                    
-                    # Normalize with safe division
-                    posteriors[:] = safe_divide(posteriors, row_sums, default=1.0/n_classes)
-                    posteriors[:] = validate_finite(posteriors, "normalized_posteriors")
-                    
+
+                    # Normalize with safe division using numpy operations
+                    posteriors[:] = posteriors / row_sums
+                    posteriors[:] = np.nan_to_num(posteriors, nan=1.0 / n_classes, posinf=1.0 / n_classes, neginf=1.0 / n_classes)
+
                     # Ensure posteriors are valid probabilities and sum to 1
-                    posteriors[:] = validate_range(posteriors, 0.0, 1.0, "posteriors_probability")
-                    
+                    posteriors[:] = np.clip(posteriors, 0.0, 1.0)
+
                     # Final normalization to ensure rows sum to 1
                     final_row_sums = posteriors.sum(axis=1, keepdims=True)
                     final_row_sums = np.where(final_row_sums == 0.0, 1.0, final_row_sums)
-                    posteriors[:] = safe_divide(posteriors, final_row_sums, default=1.0/n_classes)
+                    posteriors[:] = posteriors / final_row_sums
                     
                     tprint_success(f"E-step completed for {n_samples} samples, {n_classes} classes")
                     
@@ -756,7 +986,8 @@ class RegimeOptimizationService:
         for current, nxt in zip(assignments[:-1], assignments[1:]):
             transition_matrix[current, nxt] += 1
 
-        transition_matrix += 0.1 * np.eye(n_clusters)
+        regularizer = self._label_fusion_service.get_transition_regularizer()
+        transition_matrix += regularizer * np.eye(n_clusters)
         row_sums = transition_matrix.sum(axis=1, keepdims=True)
         row_sums[row_sums == 0.0] = 1.0
         return transition_matrix / row_sums
@@ -767,16 +998,20 @@ class RegimeOptimizationService:
         original_assignments: np.ndarray,
         smoothed_assignments: np.ndarray,
     ) -> Dict[str, Any]:
+        high_threshold = self._label_fusion_service.get_persistence_threshold("high", default=0.99)
+        low_threshold = self._label_fusion_service.get_persistence_threshold("low", default=0.6)
+        persistence_quantiles = self._label_fusion_service.get_persistence_quantiles()
+
         expected_durations = []
         low_persistence_regimes = []
         for idx in range(model.n_components):
             p_kk = model.transmat_[idx, idx]
-            if p_kk >= 0.99:
+            if p_kk >= high_threshold:
                 expected_durations.append(float("inf"))
             else:
                 expected_duration = 1.0 / max(1e-6, (1 - p_kk))
                 expected_durations.append(expected_duration)
-                if p_kk < 0.6:
+                if p_kk < low_threshold:
                     low_persistence_regimes.append(idx)
 
         metadata = {
@@ -785,6 +1020,8 @@ class RegimeOptimizationService:
             "low_persistence_regimes": low_persistence_regimes,
             "transmat": model.transmat_.tolist(),
             "changed_points": np.nonzero(original_assignments != smoothed_assignments)[0].tolist(),
+            "persistence_thresholds": {"high": high_threshold, "low": low_threshold},
+            "persistence_quantiles": persistence_quantiles,
         }
 
         if low_persistence_regimes:

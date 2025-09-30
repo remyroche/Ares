@@ -121,6 +121,10 @@ def test_apply_hmm_smoothing_uses_model_metadata():
     assert metadata["method"] == "hmm"
     assert metadata["transmat"] == transmat.tolist()
     assert metadata["changed_points"] == [1, 3]
+    thresholds = label_service.get_statistics_cache()["persistence_thresholds"]
+    assert metadata["persistence_thresholds"]["high"] == thresholds["high"]
+    assert metadata["persistence_thresholds"]["low"] == thresholds["low"]
+    assert metadata["persistence_quantiles"] == label_service.get_persistence_quantiles()
     assert dummy_model.fit_calls == 1
 
 
@@ -136,3 +140,46 @@ def test_apply_hmm_smoothing_fallback_corrects_isolated_point():
 
     assert metadata["method"] == "simple_fallback"
     assert smoothed[2] == 0
+
+
+def test_statistics_cache_adaptive_priors_from_history():
+    historical_pairs = [
+        (
+            np.array([0, 0, 1, 1, 1, 0, 0]),
+            np.array([0, 0, 1, 0, 1, 0, 0]),
+        ),
+        (
+            np.array([1, 1, 1, 0, 0, 0, 1]),
+            np.array([1, 1, 0, 0, 0, 0, 1]),
+        ),
+    ]
+
+    service = LabelFusionService(logger=silent_logger, historical_pairs=historical_pairs)
+    priors = service.get_calibrated_priors()
+
+    assert 2 in priors["tas"]
+    tas_alpha = priors["tas"][2]
+    assert tas_alpha.shape == (2, 2)
+    # Agreement should dominate disagreements on the diagonal
+    assert tas_alpha[0, 0] > tas_alpha[0, 1]
+    assert tas_alpha[1, 1] > tas_alpha[1, 0]
+
+    regularizer = service.get_transition_regularizer()
+    assert 0.0 < regularizer <= 0.5
+
+    thresholds = service.get_statistics_cache()["persistence_thresholds"]
+    assert thresholds["low"] <= thresholds["high"] <= 1.0
+    assert service.get_statistics_cache()["dwell_times"]
+
+
+def test_statistics_cache_fallback_defaults_when_missing_history():
+    service = LabelFusionService(logger=silent_logger)
+    priors = service.get_calibrated_priors()
+
+    assert priors["tas"] == {}
+    assert priors["nas"] == {}
+    assert service.get_transition_regularizer() == 0.1
+
+    thresholds = service.get_statistics_cache()["persistence_thresholds"]
+    assert thresholds["high"] == 0.99
+    assert thresholds["low"] == 0.6

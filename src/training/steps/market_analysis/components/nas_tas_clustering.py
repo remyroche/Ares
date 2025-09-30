@@ -2137,8 +2137,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Calculate weighted average CV (higher weight = more important)
                 weighted_cv = np.average(pca_cvs, weights=weights)
                 
-                # Get top 3 most important features
-                top_features_idx = np.argsort(weights)[-3:][::-1]
+                # Get top 5 most important features
+                top_features_idx = np.argsort(weights)[-5:][::-1]
                 top_features = {
                     f'component_{i}': {
                         'average': pca_averages[i],
@@ -2601,50 +2601,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 for metric, (min_val, max_val) in similarity_ranges.items():
                     tprint(f"     {metric.replace('_', ' ').title()}: [{min_val:.3f}, {max_val:.3f}]", "INFO")
             
-            # Recommendations based on quality
-            self._provide_mapping_recommendations(overall_quality, mapping_quality_metrics)
             
         except Exception as e:
             log_warning(f"Failed to report mapping quality comprehensively: {e}")
     
-    def _provide_mapping_recommendations(self, overall_quality: float, mapping_quality_metrics: Dict[str, Any]):
-        """Provide recommendations based on mapping quality."""
-        try:
-            tprint(f"  💡 Mapping Quality Recommendations:", "INFO")
-            
-            if overall_quality >= 0.8:
-                tprint(f"     ✅ Excellent mapping quality - regimes are well-aligned", "SUCCESS")
-                tprint(f"     ✅ Semantic divergence assessment is highly reliable", "SUCCESS")
-            elif overall_quality >= 0.6:
-                tprint(f"     ✅ Good mapping quality - regimes are reasonably aligned", "SUCCESS")
-                tprint(f"     ⚠️  Consider reviewing feature sets for better alignment", "WARNING")
-            elif overall_quality >= 0.4:
-                tprint(f"     ⚠️  Moderate mapping quality - some regime alignment issues", "WARNING")
-                tprint(f"     🔍 Review regime definitions and feature selection", "WARNING")
-                tprint(f"     🔍 Consider implementing regime alignment preprocessing", "WARNING")
-            elif overall_quality >= 0.2:
-                tprint(f"     ⚠️  Poor mapping quality - significant regime misalignment", "WARNING")
-                tprint(f"     🔍 Fundamental issues with regime detection or feature sets", "WARNING")
-                tprint(f"     🔍 Consider separate clustering approaches for TAS/NAS", "WARNING")
-            else:
-                tprint(f"     ❌ Very poor mapping quality - regimes are fundamentally different", "ERROR")
-                tprint(f"     ❌ TAS and NAS may be detecting completely different market patterns", "ERROR")
-                tprint(f"     ❌ Consider independent regime detection or feature engineering", "ERROR")
-            
-            # Specific component recommendations
-            centroid_quality = mapping_quality_metrics.get('centroid_quality', 0.0)
-            pca_quality = mapping_quality_metrics.get('pca_quality', 0.0)
-            cv_quality = mapping_quality_metrics.get('cv_quality', 0.0)
-            
-            if centroid_quality < 0.5:
-                tprint(f"     🔍 Low centroid quality - review feature engineering and normalization", "WARNING")
-            if pca_quality < 0.5:
-                tprint(f"     🔍 Low PCA quality - review feature selection and dimensionality reduction", "WARNING")
-            if cv_quality < 0.5:
-                tprint(f"     🔍 Low CV quality - regimes may have different stability patterns", "WARNING")
-            
-        except Exception as e:
-            log_warning(f"Failed to provide mapping recommendations: {e}")
     
     def _analyze_tas_nas_disagreement(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
         """Analyze TAS/NAS disagreement patterns with comprehensive validation and enhanced detection."""

@@ -353,6 +353,10 @@ class ClusteringContext:
 class NASTASClusteringConfig(BaseConfig):
     """Configuration for NAS-TAS clustering component using shared utilities."""
     exchange: str = "binance"
+
+    # Empirical regime search bounds
+    regime_search_min: int = 5
+    regime_search_max: int = 15
     
     # Clustering parameters
     n_regimes: int = 8
@@ -383,6 +387,18 @@ class NASTASClusteringConfig(BaseConfig):
     
     def __post_init__(self):
         """Validate configuration after initialization."""
+        self.regime_search_min = int(max(5, min(20, self.regime_search_min)))
+        self.regime_search_max = int(max(
+            self.regime_search_min,
+            min(20, self.regime_search_max),
+        ))
+
+        if not (self.regime_search_min <= self.n_regimes <= self.regime_search_max):
+            self.n_regimes = max(
+                self.regime_search_min,
+                min(self.regime_search_max, int(self.n_regimes)),
+            )
+
         super().__post_init__()
         if self.feature_categories is None:
             # Regime-focused feature categories only
@@ -393,9 +409,12 @@ class NASTASClusteringConfig(BaseConfig):
                 'regime_statistical'
             ]
         
-        # Ensure n_regimes is between 5 and 15
-        if not (5 <= self.n_regimes <= 15):
-            self.n_regimes = max(5, min(15, self.n_regimes))
+        # Ensure n_regimes is within learned bounds
+        if not (self.regime_search_min <= self.n_regimes <= self.regime_search_max):
+            self.n_regimes = max(
+                self.regime_search_min,
+                min(self.regime_search_max, self.n_regimes),
+            )
 
 
 class NASTASClusteringComponent(BaseMarketAnalysisComponent):
@@ -547,8 +566,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         with tprint_timer(f"Bayesian hyperparameter optimization ({n_trials} trials)"):
             try:
                 # Define parameter space
+                min_regimes = getattr(self.config, 'regime_search_min', 5)
+                max_regimes = getattr(self.config, 'regime_search_max', 15)
+                if min_regimes > max_regimes:
+                    min_regimes, max_regimes = max_regimes, min_regimes
+
                 param_space = {
-                    'n_regimes': (5, 15),
+                    'n_regimes': (min_regimes, max_regimes),
                     'economic_weight': (0.1, 0.4),
                     'volatility_regime_weight': (0.2, 0.4),
                     'volume_regime_weight': (0.2, 0.4),
@@ -673,12 +697,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Run a single clustering trial for optimization."""
         try:
             tprint(f"Running clustering trial with n_regimes={config.n_regimes}", "INFO")
-            
+
             # Validate inputs
             if features is None or len(features) == 0:
                 raise ValueError("Features cannot be empty")
             if len(features) < config.n_regimes:
                 raise ValueError(f"Insufficient samples ({len(features)}) for {config.n_regimes} regimes")
+
+            validate_regime_count(
+                int(config.n_regimes),
+                getattr(self.config, 'regime_search_min', 5),
+                getattr(self.config, 'regime_search_max', 15),
+            )
             
             # Standardize features
             from sklearn.preprocessing import StandardScaler
@@ -879,9 +909,182 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
 
+    def _estimate_regime_range(
+        self,
+        pipeline_state: Dict[str, Any],
+    ) -> Tuple[int, int, int]:
+        """Estimate regime count bounds using discovery metrics."""
+
+        default_min = getattr(self.config, 'regime_search_min', 5)
+        default_max = getattr(self.config, 'regime_search_max', 15)
+        default_mode = getattr(self.config, 'n_regimes', 8)
+
+        discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {}) or {}
+
+        candidate_entries: List[Dict[str, Any]] = []
+
+        def extract_metric(metrics: Dict[str, Any], keys: List[str]) -> Optional[float]:
+            for key in keys:
+                if key in metrics:
+                    value = metrics[key]
+                    if isinstance(value, (int, float)) and not np.isnan(value):
+                        return float(value)
+            return None
+
+        def register_candidate(k_value: Any, metrics: Dict[str, Any]) -> None:
+            try:
+                k_int = int(k_value)
+            except (TypeError, ValueError):
+                return
+
+            if k_int <= 0:
+                return
+
+            candidate_entries.append({
+                'k': k_int,
+                'silhouette': extract_metric(
+                    metrics,
+                    ['silhouette', 'silhouette_score', 'silhouette_metric'],
+                ),
+                'bic': extract_metric(metrics, ['bic', 'bic_score']),
+                'aic': extract_metric(metrics, ['aic', 'aic_score']),
+            })
+
+        def parse_candidate_block(block: Any) -> None:
+            if isinstance(block, dict):
+                if 'n_regimes' in block or 'k' in block:
+                    metrics = block.get('metrics') or block.get('scores') or block
+                    register_candidate(block.get('n_regimes') or block.get('k'), metrics if isinstance(metrics, dict) else {})
+                else:
+                    for key, value in block.items():
+                        if isinstance(value, (dict, list)):
+                            parse_candidate_block(value)
+                        else:
+                            register_candidate(key, value if isinstance(value, dict) else {})
+            elif isinstance(block, list):
+                for item in block:
+                    parse_candidate_block(item)
+
+        candidate_keys = [
+            'regime_candidates',
+            'regime_quality_grid',
+            'regime_count_candidates',
+            'candidate_regime_counts',
+            'regime_grid',
+            'regime_metrics',
+        ]
+
+        for key in candidate_keys:
+            if key in discovery_result:
+                parse_candidate_block(discovery_result.get(key))
+
+        # Fallback: sometimes metrics stored directly in discovery result with numeric keys
+        parse_candidate_block({k: v for k, v in discovery_result.items() if isinstance(k, (int, str))})
+
+        if not candidate_entries:
+            return default_min, default_max, default_mode
+
+        # Deduplicate by regime count keeping best metrics seen so far
+        deduped: Dict[int, Dict[str, Any]] = {}
+        for entry in candidate_entries:
+            k = entry['k']
+            if k not in deduped:
+                deduped[k] = entry
+                continue
+
+            existing = deduped[k]
+            for metric_key in ('silhouette', 'bic', 'aic'):
+                existing_value = existing.get(metric_key)
+                new_value = entry.get(metric_key)
+                if new_value is None:
+                    continue
+                if existing_value is None:
+                    existing[metric_key] = new_value
+                    continue
+                if metric_key == 'silhouette':
+                    if new_value > existing_value:
+                        existing[metric_key] = new_value
+                else:
+                    if new_value < existing_value:
+                        existing[metric_key] = new_value
+
+        candidates = list(deduped.values())
+
+        if not candidates:
+            return default_min, default_max, default_mode
+
+        silhouettes = [c['silhouette'] for c in candidates if c.get('silhouette') is not None]
+        bics = [c['bic'] for c in candidates if c.get('bic') is not None]
+        aics = [c['aic'] for c in candidates if c.get('aic') is not None]
+
+        def normalize(value_list: List[float], value: float, reverse: bool = False) -> Optional[float]:
+            if not value_list:
+                return None
+            if len(value_list) == 1:
+                return 1.0
+            min_val = min(value_list)
+            max_val = max(value_list)
+            if np.isclose(min_val, max_val):
+                return 1.0
+            if reverse:
+                return (max_val - value) / (max_val - min_val)
+            return (value - min_val) / (max_val - min_val)
+
+        for candidate in candidates:
+            score_components: List[float] = []
+
+            silhouette = candidate.get('silhouette')
+            if silhouette is not None:
+                score = normalize(silhouettes, silhouette, reverse=False)
+                if score is not None:
+                    score_components.append(score)
+
+            bic_score = candidate.get('bic')
+            if bic_score is not None:
+                score = normalize(bics, bic_score, reverse=True)
+                if score is not None:
+                    score_components.append(score)
+
+            aic_score = candidate.get('aic')
+            if aic_score is not None:
+                score = normalize(aics, aic_score, reverse=True)
+                if score is not None:
+                    score_components.append(score)
+
+            candidate['score'] = float(np.mean(score_components)) if score_components else 0.0
+
+        best_candidate = max(candidates, key=lambda item: (item.get('score', 0.0), -item['k']))
+        best_score = best_candidate.get('score', 0.0)
+
+        if best_score <= 0:
+            candidate_bounds = [c['k'] for c in candidates]
+        else:
+            threshold = max(0.0, best_score * 0.8)
+            candidate_bounds = [
+                c['k']
+                for c in candidates
+                if c.get('score', 0.0) >= threshold
+            ]
+            if not candidate_bounds:
+                candidate_bounds = [best_candidate['k']]
+
+        min_bound = max(5, min(candidate_bounds))
+        max_bound = min(20, max(candidate_bounds))
+
+        if min_bound > max_bound:
+            min_bound, max_bound = max(5, min_bound), max(5, min_bound)
+
+        suggested = int(np.clip(best_candidate['k'], min_bound, max_bound))
+
+        return int(min_bound), int(max_bound), suggested
+
     def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
         """Extract the number of regimes to use for clustering using data-driven approach."""
         tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
+
+        min_regimes, max_regimes, default_regimes = self._estimate_regime_range(pipeline_state)
+        self.config.regime_search_min = min_regimes
+        self.config.regime_search_max = max_regimes
 
         regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
         tas_regime_count = regime_discovery_result.get('tas_regime_count', None)
@@ -899,17 +1102,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             n_regimes = nas_regime_count
             tprint(f"Using NAS regime count: {n_regimes}", "INFO")
         else:
-            # No regime discovery data available - will be determined by BIC optimization
-            tprint("No regime discovery data available - will use BIC optimization to determine K", "INFO")
-            return None  # Signal that K should be determined by BIC
+            # No regime discovery data available - fall back to suggested mode within bounds
+            tprint(
+                "No regime discovery data available - using data-driven default from discovery metrics",
+                "INFO",
+            )
+            self.config.n_regimes = default_regimes
+            return default_regimes
 
-        # Apply reasonable bounds based on data characteristics (not hardcoded)
-        n_regimes = max(2, min(50, n_regimes))  # Allow wider range for data-driven selection
+        # Apply evidence-driven bounds derived from discovery metrics
+        n_regimes = max(min_regimes, min(max_regimes, n_regimes))
 
         tprint(
             f"Final regime count: {n_regimes} (data-driven, no hardcoded heuristics)",
             "SUCCESS"
         )
+        self.config.n_regimes = n_regimes
         return n_regimes
 
     def _validate_configuration(self) -> None:
@@ -1206,11 +1414,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Extract regime count from previous step artifacts
             n_regimes = self._extract_regime_counts(pipeline_state)
-            if n_regimes is not None:
-                self.config.n_regimes = n_regimes
-                tprint(f"Using extracted regime count: {n_regimes}", "INFO")
-            else:
-                tprint("No regime count available - will use BIC optimization", "INFO")
+            self.config.n_regimes = n_regimes
+            tprint(f"Using extracted regime count: {n_regimes}", "INFO")
 
             # Step 2: Validate inputs and configuration using shared utilities
             self._validate_configuration()

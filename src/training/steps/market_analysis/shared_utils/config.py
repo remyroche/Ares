@@ -23,7 +23,9 @@ class BaseConfig:
     
     def _validate_config(self):
         """Validate the configuration parameters."""
-        validate_regime_count(self.n_regimes)
+        min_regimes = getattr(self, 'regime_search_min', 5)
+        max_regimes = getattr(self, 'regime_search_max', 15)
+        validate_regime_count(self.n_regimes, min_regimes, max_regimes)
         validate_algorithm_type(self.timeframe, ['1m', '5m', '15m', '30m', '1h', '4h', '1d'])
 
 
@@ -115,7 +117,15 @@ class ConfigValidator:
             # Validate individual parameters
             errors.extend(self._validate_symbol(config.symbol))
             errors.extend(self._validate_timeframe(config.timeframe))
-            errors.extend(self._validate_regime_count(config.n_regimes))
+            min_regimes = getattr(config, 'regime_search_min', None)
+            max_regimes = getattr(config, 'regime_search_max', None)
+            errors.extend(
+                self._validate_regime_count(
+                    config.n_regimes,
+                    min_regimes=min_regimes,
+                    max_regimes=max_regimes,
+                )
+            )
             
             # Validate algorithm-specific parameters
             if hasattr(config, 'algorithm_type'):
@@ -156,11 +166,18 @@ class ConfigValidator:
             errors.append(f"Timeframe must be one of {valid_timeframes}")
         return errors
     
-    def _validate_regime_count(self, n_regimes: int) -> List[str]:
+    def _validate_regime_count(self, n_regimes: int, *,
+                               min_regimes: Optional[int] = None,
+                               max_regimes: Optional[int] = None) -> List[str]:
         """Validate regime count parameter."""
         errors = []
-        if not isinstance(n_regimes, int) or n_regimes < 5 or n_regimes > 15:
-            errors.append("Number of regimes must be an integer between 5 and 15")
+        lower_bound = 5 if min_regimes is None else min_regimes
+        upper_bound = 15 if max_regimes is None else max_regimes
+
+        if not isinstance(n_regimes, int) or n_regimes < lower_bound or n_regimes > upper_bound:
+            errors.append(
+                f"Number of regimes must be an integer between {lower_bound} and {upper_bound}"
+            )
         return errors
     
     def _validate_algorithm_type(self, algorithm_type: str) -> List[str]:

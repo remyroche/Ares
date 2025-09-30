@@ -135,6 +135,18 @@ class UnifiedMatrixOperations:
         else:
             self.math_validator = None
 
+        # Enhanced caching system
+        self.cache = {}
+        self.cache_metadata = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.cache_expiration_hours = 24
+        
+        # M1-specific optimizations
+        self.m1_optimization_enabled = False
+        self.m1_memory_pressure_threshold = 0.8
+        self.m1_gpu_utilization_threshold = 0.9
+        
         # Performance tracking
         self.performance_stats = {
             'total_operations': 0,
@@ -142,12 +154,89 @@ class UnifiedMatrixOperations:
             'cpu_operations': 0,
             'parallel_operations': 0,
             'memory_optimized_operations': 0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'cache_hit_rate': 0.0,
             'average_execution_time': 0.0,
-            'peak_memory_usage_mb': 0.0
+            'peak_memory_usage_mb': 0.0,
+            'm1_optimization_benefits': {}
         }
 
         self.logger.info("✅ Unified Matrix Operations initialized")
         self.logger.info(f"📊 GPU: {self.enable_gpu}, Memory Opt: {self.enable_memory_optimization}, Parallel: {self.enable_parallel}")
+
+    def _generate_cache_key(self, operation: str, *args, **kwargs) -> str:
+        """Generate cache key for matrix operations."""
+        try:
+            import hashlib
+            import pickle
+            
+            # Create hash of operation and arguments
+            key_data = {
+                'operation': operation,
+                'args': [str(arg.shape) if hasattr(arg, 'shape') else str(arg) for arg in args],
+                'kwargs': kwargs
+            }
+            
+            key_string = str(key_data)
+            cache_key = hashlib.md5(key_string.encode()).hexdigest()
+            return f"{operation}_{cache_key}"
+            
+        except Exception as e:
+            self.logger.warning(f"Cache key generation failed: {e}")
+            return f"{operation}_{hash(str(args) + str(kwargs))}"
+
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cached result is still valid."""
+        try:
+            if cache_key not in self.cache_metadata:
+                return False
+                
+            import time
+            current_time = time.time()
+            cached_time = self.cache_metadata[cache_key]['timestamp']
+            age_hours = (current_time - cached_time) / 3600
+            
+            return age_hours < self.cache_expiration_hours
+            
+        except Exception as e:
+            self.logger.warning(f"Cache validation failed: {e}")
+            return False
+
+    def _get_cached_result(self, cache_key: str):
+        """Get cached result if valid."""
+        try:
+            if cache_key in self.cache and self._is_cache_valid(cache_key):
+                self.cache_hits += 1
+                self.performance_stats['cache_hits'] = self.cache_hits
+                self.logger.debug(f"Cache hit for key: {cache_key}")
+                return self.cache[cache_key]
+            else:
+                self.cache_misses += 1
+                self.performance_stats['cache_misses'] = self.cache_misses
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f"Cache retrieval failed: {e}")
+            return None
+
+    def _cache_result(self, cache_key: str, result):
+        """Cache result with metadata."""
+        try:
+            import time
+            self.cache[cache_key] = result
+            self.cache_metadata[cache_key] = {
+                'timestamp': time.time(),
+                'operation': cache_key.split('_')[0]
+            }
+            
+            # Update cache hit rate
+            total_requests = self.cache_hits + self.cache_misses
+            if total_requests > 0:
+                self.performance_stats['cache_hit_rate'] = self.cache_hits / total_requests
+                
+        except Exception as e:
+            self.logger.warning(f"Caching failed: {e}")
 
     def _initialize_components(self):
         """Initialize all required components."""

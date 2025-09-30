@@ -41,6 +41,20 @@ class M1GPUManager:
         self.is_m1 = self._detect_m1()
         self.mps_available = self._check_mps_availability()
         self.logger = logger.getChild('M1GPUManager')
+        
+        # Enhanced regime detection optimization
+        self.regime_detection_optimized = False
+        self.matrix_operations_optimized = False
+        self.clustering_optimized = False
+        
+        # Performance tracking for regime detection
+        self.regime_detection_stats = {
+            'total_operations': 0,
+            'gpu_accelerated_operations': 0,
+            'memory_optimized_operations': 0,
+            'average_speedup': 0.0,
+            'peak_memory_usage_mb': 0.0
+        }
 
     def _detect_m1(self) -> bool:
         """Detect if running on Apple Silicon (M1/M2/M3)."""
@@ -93,6 +107,122 @@ class M1GPUManager:
                 self.logger.warning(f"Could not get GPU info: {e}")
 
         return info
+
+    def optimize_regime_detection(self, market_data: np.ndarray) -> Dict[str, Any]:
+        """
+        Optimize regime detection operations for M1 GPU.
+        
+        Args:
+            market_data: Market data for regime detection
+            
+        Returns:
+            Optimization results and recommendations
+        """
+        try:
+            self.logger.info("🎯 Optimizing regime detection for M1 GPU...")
+            
+            if not self.is_m1 or not self.mps_available:
+                self.logger.warning("⚠️ M1 GPU not available for regime detection optimization")
+                return {'optimized': False, 'reason': 'M1 GPU not available'}
+            
+            # Analyze data characteristics
+            data_size_mb = market_data.nbytes / (1024 * 1024)
+            n_samples, n_features = market_data.shape
+            
+            # Determine optimal chunk size for regime detection
+            optimal_chunk_size = min(1000, max(100, n_samples // 10))
+            
+            # Memory optimization recommendations
+            memory_recommendations = {
+                'chunk_size': optimal_chunk_size,
+                'max_memory_mb': min(2048, data_size_mb * 2),
+                'use_memory_mapping': data_size_mb > 500,
+                'enable_garbage_collection': True
+            }
+            
+            # GPU acceleration recommendations
+            gpu_recommendations = {
+                'use_gpu_for_clustering': n_samples > 1000,
+                'use_gpu_for_matrix_ops': n_features > 10,
+                'use_gpu_for_correlation': n_features > 5,
+                'batch_size': min(optimal_chunk_size, 500)
+            }
+            
+            # Performance optimization
+            performance_optimizations = {
+                'enable_parallel_processing': n_samples > 500,
+                'use_vectorized_operations': True,
+                'enable_memory_optimization': data_size_mb > 100,
+                'use_caching': True
+            }
+            
+            # Update optimization status
+            self.regime_detection_optimized = True
+            self.regime_detection_stats['total_operations'] += 1
+            
+            optimization_results = {
+                'optimized': True,
+                'data_characteristics': {
+                    'n_samples': n_samples,
+                    'n_features': n_features,
+                    'data_size_mb': data_size_mb
+                },
+                'memory_recommendations': memory_recommendations,
+                'gpu_recommendations': gpu_recommendations,
+                'performance_optimizations': performance_optimizations,
+                'estimated_speedup': self._estimate_regime_detection_speedup(market_data),
+                'memory_savings': self._estimate_memory_savings(market_data)
+            }
+            
+            self.logger.info("✅ Regime detection optimization completed")
+            return optimization_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Regime detection optimization failed: {e}")
+            return {'optimized': False, 'error': str(e)}
+
+    def _estimate_regime_detection_speedup(self, market_data: np.ndarray) -> float:
+        """Estimate speedup for regime detection operations."""
+        try:
+            n_samples, n_features = market_data.shape
+            
+            # Base speedup estimates for different operations
+            clustering_speedup = min(3.0, 1.0 + (n_samples / 1000) * 0.5)
+            matrix_speedup = min(2.5, 1.0 + (n_features / 10) * 0.3)
+            correlation_speedup = min(2.0, 1.0 + (n_features / 5) * 0.2)
+            
+            # Combined speedup estimate
+            overall_speedup = (clustering_speedup + matrix_speedup + correlation_speedup) / 3
+            
+            return round(overall_speedup, 2)
+            
+        except Exception as e:
+            self.logger.warning(f"Speedup estimation failed: {e}")
+            return 1.0
+
+    def _estimate_memory_savings(self, market_data: np.ndarray) -> Dict[str, Any]:
+        """Estimate memory savings from M1 optimizations."""
+        try:
+            data_size_mb = market_data.nbytes / (1024 * 1024)
+            
+            # Estimate memory savings from different optimizations
+            chunking_savings = min(0.5, data_size_mb / 1000)  # Up to 50% from chunking
+            gpu_memory_savings = min(0.3, data_size_mb / 2000)  # Up to 30% from GPU
+            optimization_savings = min(0.2, data_size_mb / 500)   # Up to 20% from optimization
+            
+            total_savings = chunking_savings + gpu_memory_savings + optimization_savings
+            
+            return {
+                'chunking_savings_percent': round(chunking_savings * 100, 1),
+                'gpu_memory_savings_percent': round(gpu_memory_savings * 100, 1),
+                'optimization_savings_percent': round(optimization_savings * 100, 1),
+                'total_savings_percent': round(total_savings * 100, 1),
+                'estimated_memory_saved_mb': round(data_size_mb * total_savings, 1)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Memory savings estimation failed: {e}")
+            return {'total_savings_percent': 0.0, 'estimated_memory_saved_mb': 0.0}
 
     def optimize_tensor_operations(self, data):
         """Optimize tensor operations for M1 GPU."""

@@ -59,6 +59,32 @@ class TASRegimeConfig:
     enable_matrix_optimization: bool = True
     enable_memory_optimization: bool = True
     optimization_level: TASOptimizationLevel = TASOptimizationLevel.MAXIMUM
+    
+    # Performance optimizations
+    enable_parallel_processing: bool = True
+    enable_intelligent_caching: bool = True
+    cache_expiration_hours: int = 24
+    chunk_size_mb: int = 256
+    max_memory_percent: float = 0.7
+    
+    # Advanced validation
+    enable_cross_validation: bool = True
+    enable_out_of_sample_validation: bool = True
+    enable_regime_persistence_analysis: bool = True
+    cv_folds: int = 5
+    cv_test_size: float = 0.2
+    oos_test_size: float = 0.3
+    oos_walk_forward: bool = True
+    oos_step_size: float = 0.1
+    lookahead_prevention: bool = True
+    max_lookahead_periods: int = 0
+    
+    # Regime persistence analysis
+    persistence_window: int = 50
+    persistence_threshold: float = 0.7
+    min_persistence_periods: int = 10
+    significance_level: float = 0.05
+    bootstrap_iterations: int = 1000
 
     # Economic evaluation
     enable_economic_evaluation: bool = True

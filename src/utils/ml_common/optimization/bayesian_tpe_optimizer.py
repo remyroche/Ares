@@ -127,9 +127,9 @@ class BayesianTPEOptimizer:
                              objective: Callable,
                              search_space: Dict[str, Any],
                              direction: str) -> Dict[str, Any]:
-        """Optimize using Optuna TPE sampler."""
+        """Optimize using Optuna TPE sampler with enhanced TAS regime detection integration."""
         try:
-            # Create study
+            # Create study with enhanced configuration for regime detection
             self.study = optuna.create_study(
                 direction=direction,
                 sampler=optuna.samplers.TPESampler(
@@ -138,6 +138,11 @@ class BayesianTPEOptimizer:
                     gamma=self.config.gamma,
                     prior_weight=self.config.prior_weight,
                     seed=self.config.random_state
+                ),
+                pruner=optuna.pruners.MedianPruner(
+                    n_startup_trials=5,
+                    n_warmup_steps=10,
+                    interval_steps=1
                 )
             )
             
@@ -465,3 +470,82 @@ class BayesianTPEOptimizer:
         except Exception as e:
             logger.error(f"❌ Resume optimization failed: {e}")
             return self.optimize(objective, search_space, direction)
+
+    def optimize_tas_regime_detection(self, 
+                                     market_data: np.ndarray,
+                                     timestamps: Optional[np.ndarray] = None,
+                                     base_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Optimize TAS regime detection hyperparameters.
+        
+        Args:
+            market_data: Market data for optimization
+            timestamps: Optional timestamps
+            base_config: Base configuration to optimize from
+            
+        Returns:
+            Optimized parameters for TAS regime detection
+        """
+        try:
+            logger.info("🎯 Starting TAS regime detection optimization...")
+            
+            # Define TAS-specific search space
+            tas_search_space = {
+                'n_regimes': {'type': 'int', 'low': 3, 'high': 12},
+                'tree_depth': {'type': 'int', 'low': 4, 'high': 12},
+                'n_estimators': {'type': 'int', 'low': 100, 'high': 2000},
+                'min_samples_split': {'type': 'int', 'low': 5, 'high': 50},
+                'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 20},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 'auto', 0.5, 0.8]},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+                'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0}
+            }
+            
+            # Create objective function for TAS regime detection
+            def tas_objective(params):
+                try:
+                    # Import TAS detector here to avoid circular imports
+                    from src.training.steps.market_analysis.tas_regime.core.tas_regime_detector import TASRegimeDetector
+                    from src.training.steps.market_analysis.tas_regime.core.tas_regime_config import TASRegimeConfig
+                    
+                    # Create config with optimized parameters
+                    config = TASRegimeConfig(**params) if base_config else TASRegimeConfig()
+                    
+                    # Initialize detector
+                    detector = TASRegimeDetector(config)
+                    
+                    # Run regime detection
+                    result = detector.detect_regimes(
+                        market_data=market_data,
+                        timestamps=timestamps,
+                        enable_cross_validation=True,
+                        enable_out_of_sample_validation=True
+                    )
+                    
+                    if result.success:
+                        # Return negative of mean stability score for minimization
+                        stability_score = np.mean(result.regime_stability_scores)
+                        economic_score = np.mean(result.economic_significance_scores)
+                        trading_score = np.mean(result.trading_viability_scores)
+                        
+                        # Combined score (higher is better, so we return negative for minimization)
+                        combined_score = -(0.4 * stability_score + 0.3 * economic_score + 0.3 * trading_score)
+                        return combined_score
+                    else:
+                        return float('inf')
+                        
+                except Exception as e:
+                    logger.warning(f"TAS objective evaluation failed: {e}")
+                    return float('inf')
+            
+            # Run optimization
+            best_params = self.optimize(tas_objective, tas_search_space, 'minimize')
+            
+            logger.info(f"✅ TAS regime detection optimization completed")
+            logger.info(f"Best parameters: {best_params}")
+            
+            return best_params
+            
+        except Exception as e:
+            logger.error(f"❌ TAS regime detection optimization failed: {e}")
+            return {}

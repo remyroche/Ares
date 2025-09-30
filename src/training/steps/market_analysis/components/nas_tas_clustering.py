@@ -802,7 +802,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Create initial combined assignments
             tprint("Step 1: Creating initial combined assignments...", "INFO")
-            initial_assignments = self._create_initial_combined_assignments(tas_assignments, nas_assignments)
+            initial_assignments = self._create_initial_combined_assignments(features, tas_assignments, nas_assignments)
             initial_score = self._calculate_composite_score(features, initial_assignments)
             tprint(f"Initial combined score: {initial_score:.3f}", "SUCCESS")
             
@@ -852,45 +852,144 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Return original assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
     
-    def _create_initial_combined_assignments(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> np.ndarray:
-        """Create initial combined assignments prioritizing NAS/TAS divergence samples."""
+    def _create_initial_combined_assignments(
+        self,
+        features: np.ndarray,
+        tas_assignments: np.ndarray,
+        nas_assignments: np.ndarray
+    ) -> np.ndarray:
+        """Create initial combined assignments prioritizing NAS/TAS divergence samples with per-sample quality checks."""
         try:
-            tprint("Creating initial assignments with divergence prioritization...", "INFO")
+            tprint("Creating initial assignments with divergence prioritization and quality assessment...", "INFO")
             
             # Find samples where TAS and NAS disagree
             disagreement_mask = tas_assignments != nas_assignments
             disagreement_rate = np.mean(disagreement_mask)
+            disagreement_indices = np.where(disagreement_mask)[0]
             
             tprint(f"NAS/TAS disagreement rate: {disagreement_rate:.3f} ({np.sum(disagreement_mask)}/{len(disagreement_mask)} samples)", "INFO")
             
             # Start with TAS as base assignments
             combined_assignments = tas_assignments.copy()
+            decision_trace: List[Dict[str, Any]] = []
             
-            if np.sum(disagreement_mask) > 0:
-                # For divergence samples, use more sophisticated assignment logic
-                disagreement_indices = np.where(disagreement_mask)[0]
+            if len(disagreement_indices) == 0:
+                # No disagreements - log and return
+                if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
+                    self.execution_metadata = {}
                 
-                for idx in disagreement_indices:
-                    tas_regime = tas_assignments[idx]
-                    nas_regime = nas_assignments[idx]
+                self.execution_metadata['initial_combination'] = {
+                    'total_samples': int(len(combined_assignments)),
+                    'disagreements': 0,
+                    'tas_preferred': 0,
+                    'nas_preferred': 0,
+                    'local_consistency_preferred': 0,
+                    'decision_trace': []
+                }
+                
+                tprint("No TAS/NAS disagreements detected during initial combination", "SUCCESS")
+                log_info("No TAS/NAS disagreements detected during initial combination")
+                return combined_assignments
+            
+            # Process divergence samples with enhanced logic
+            tas_preferred = 0
+            nas_preferred = 0
+            local_consistency_preferred = 0
+            
+            for sample_idx in disagreement_indices:
+                tas_regime = int(tas_assignments[sample_idx])
+                nas_regime = int(nas_assignments[sample_idx])
+                original_regime = int(combined_assignments[sample_idx])
+                
+                # Step 1: Check local consistency first (spatial coherence)
+                local_tas_regime = self._get_local_dominant_regime(tas_assignments, sample_idx, window_size=5)
+                local_nas_regime = self._get_local_dominant_regime(nas_assignments, sample_idx, window_size=5)
+                
+                local_tas_consistent = local_tas_regime == tas_regime
+                local_nas_consistent = local_nas_regime == nas_regime
+                
+                # Step 2: If one regime is locally consistent and the other isn't, prefer the consistent one
+                if local_tas_consistent and not local_nas_consistent:
+                    chosen_regime = tas_regime
+                    tas_preferred += 1
+                    decision_method = "local_consistency_tas"
+                    local_consistency_preferred += 1
+                elif local_nas_consistent and not local_tas_consistent:
+                    chosen_regime = nas_regime
+                    nas_preferred += 1
+                    decision_method = "local_consistency_nas"
+                    local_consistency_preferred += 1
+                else:
+                    # Step 3: Both or neither locally consistent - use quality-based assessment
+                    # Evaluate TAS regime quality
+                    combined_assignments[sample_idx] = tas_regime
+                    tas_score = self._calculate_composite_score(features, combined_assignments)
                     
-                    # Use the regime that appears more frequently in the local neighborhood
-                    # This helps maintain spatial consistency
-                    local_tas_regime = self._get_local_dominant_regime(tas_assignments, idx, window_size=5)
-                    local_nas_regime = self._get_local_dominant_regime(nas_assignments, idx, window_size=5)
+                    # Evaluate NAS regime quality
+                    combined_assignments[sample_idx] = nas_regime
+                    nas_score = self._calculate_composite_score(features, combined_assignments)
                     
-                    # Choose the regime that's more consistent with its local neighborhood
-                    if local_tas_regime == tas_regime:
-                        combined_assignments[idx] = tas_regime
-                    elif local_nas_regime == nas_regime:
-                        combined_assignments[idx] = nas_regime
+                    # Restore original assignment
+                    combined_assignments[sample_idx] = original_regime
+                    
+                    # Calculate incremental improvement for logging
+                    nas_improvement = self._calculate_single_flip_improvement(
+                        features, combined_assignments, sample_idx, nas_regime
+                    )
+                    
+                    # Choose based on quality scores
+                    if nas_score > tas_score:
+                        chosen_regime = nas_regime
+                        nas_preferred += 1
+                        decision_method = "quality_assessment_nas"
                     else:
-                        # If neither is locally consistent, use weighted average
-                        combined_assignments[idx] = (tas_regime + nas_regime) // 2
+                        chosen_regime = tas_regime
+                        tas_preferred += 1
+                        decision_method = "quality_assessment_tas"
                 
-                tprint(f"Prioritized {len(disagreement_indices)} divergence samples in initial assignment", "SUCCESS")
+                # Apply the chosen regime
+                combined_assignments[sample_idx] = chosen_regime
+                
+                # Log decision details
+                decision_trace.append({
+                    'sample_index': int(sample_idx),
+                    'tas_regime': tas_regime,
+                    'nas_regime': nas_regime,
+                    'chosen_regime': int(chosen_regime),
+                    'decision_method': decision_method,
+                    'local_tas_consistent': local_tas_consistent,
+                    'local_nas_consistent': local_nas_consistent,
+                    'local_tas_regime': int(local_tas_regime),
+                    'local_nas_regime': int(local_nas_regime),
+                    'tas_score': float(tas_score) if 'tas_score' in locals() else None,
+                    'nas_score': float(nas_score) if 'nas_score' in locals() else None,
+                    'nas_improvement': float(nas_improvement) if 'nas_improvement' in locals() else None
+                })
             
-            tprint(f"Created combined assignments: {len(combined_assignments)} samples", "SUCCESS")
+            # Log comprehensive summary
+            summary_message = (
+                f"Resolved {len(disagreement_indices)} TAS/NAS divergences using enhanced logic: "
+                f"TAS retained {tas_preferred}, NAS adopted {nas_preferred}, "
+                f"Local consistency used {local_consistency_preferred} times"
+            )
+            tprint(summary_message, "SUCCESS")
+            log_info(summary_message)
+            
+            # Persist decision trace for debugging and analysis
+            if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
+                self.execution_metadata = {}
+            
+            self.execution_metadata['initial_combination'] = {
+                'total_samples': int(len(combined_assignments)),
+                'disagreements': int(len(disagreement_indices)),
+                'tas_preferred': int(tas_preferred),
+                'nas_preferred': int(nas_preferred),
+                'local_consistency_preferred': int(local_consistency_preferred),
+                'disagreement_rate': float(disagreement_rate),
+                'decision_trace': decision_trace
+            }
+            
+            tprint(f"Created combined assignments with documented divergence resolutions: {len(combined_assignments)} samples", "SUCCESS")
             return combined_assignments
             
         except Exception as e:

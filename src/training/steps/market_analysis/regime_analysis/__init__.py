@@ -1,5 +1,8 @@
-"""Utilities for NAS/TAS regime analysis."""
+"""Regime analysis services and utilities."""
 
 from .service import RegimeAnalysisService
 
-__all__ = ["RegimeAnalysisService"]
+__all__ = [
+    "label_fusion",
+    "RegimeAnalysisService"
+]

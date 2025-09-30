@@ -64,7 +64,88 @@ from ..shared_utils import (
 )
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ..regime_analysis.label_fusion import LabelFusionService, RegimeOptimizationService
+
+
+# Import matrix operations and hardware utilities
+try:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_batch_matrix_processor,
+        safe_matrix_multiply,
+        safe_correlation_matrix,
+        gpu_matrix_multiply,
+        correlation_matrix_gpu,
+        optimize_dataframe,
+        vectorized_rolling_features,
+        matrix_correlation_analysis,
+        batch_matrix_multiply,
+        batch_feature_transformation,
+        batch_correlation_analysis,
+        get_hardware_performance_report,
+        optimize_matrix_operation_with_hardware,
+        cleanup_hardware_resources,
+        get_processing_performance_stats
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPERATIONS_AVAILABLE = False
+    tprint(f"Matrix operations not available: {e}", "WARNING")
+
+try:
+    from src.utils.hardware import (
+        get_unified_hardware_manager,
+        get_advanced_cpu_optimizer,
+        get_enhanced_gpu_manager,
+        get_advanced_memory_optimizer,
+        get_adaptive_optimization_engine,
+        optimize_for_workload,
+        optimize_for_workload_adaptive,
+        optimize_dataframe_advanced,
+        record_performance_adaptive
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+    tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    tprint(f"Hardware optimization not available: {e}", "WARNING")
+
+# Import M1-specific hardware utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_optimizer,
+        get_m1_gpu_memory_manager,
+        get_m1_gpu_performance_monitor
+    )
+    from src.utils.hardware.m1_memory_optimizer import (
+        get_m1_memory_optimizer,
+        get_m1_memory_pool_manager,
+        get_m1_memory_monitor
+    )
+    from src.utils.hardware.m1_cpu_optimizer import (
+        get_m1_cpu_optimizer,
+        get_m1_cpu_performance_monitor,
+        get_m1_cpu_scheduler
+    )
+    M1_HARDWARE_AVAILABLE = True
+    tprint("✅ M1-specific hardware utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    M1_HARDWARE_AVAILABLE = False
+    tprint(f"M1 hardware utilities not available: {e}", "WARNING")
+    # Set fallback functions
+    get_m1_gpu_optimizer = lambda: None
+    get_m1_gpu_memory_manager = lambda: None
+    get_m1_gpu_performance_monitor = lambda: None
+    get_m1_memory_optimizer = lambda: None
+    get_m1_memory_pool_manager = lambda: None
+    get_m1_memory_monitor = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    get_m1_cpu_performance_monitor = lambda: None
+    get_m1_cpu_scheduler = lambda: None
+
 from .hardware_setup import HardwareResources, HardwareSetup
+
 
 @dataclass
 class ClusteringContext:
@@ -188,6 +269,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
 
             tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
+
+            self.label_fusion_service = LabelFusionService(logger=self._log)
+            self.regime_optimization_service = RegimeOptimizationService(
+                label_fusion_service=self.label_fusion_service,
+                score_calculator=self._calculate_composite_score,
+                logger=self._log,
+            )
 
     def _log(self, message: str, level: str = "INFO") -> None:
         """Log a message using the standard component logger."""
@@ -622,7 +710,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         )
 
         tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
-        optimized_assignments, optimization_metrics, fusion_metadata = await self._progressive_regime_optimization_with_k(
+        optimized_assignments, optimization_metrics, fusion_metadata = await self.regime_optimization_service.progressive_regime_optimization_with_k(
             context.optimized_features,
             tas_assignments,
             nas_assignments,
@@ -655,7 +743,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             initial_score = self._calculate_composite_score(features, base_assignments)
             metrics['initial_score'] = initial_score
 
-        smoothed_assignments = self._apply_hmm_smoothing(features, base_assignments)
+        smoothed_assignments, smoothing_metadata = self.regime_optimization_service.apply_hmm_smoothing(
+            features, base_assignments
+        )
         final_score = self._calculate_composite_score(features, smoothed_assignments)
 
         if initial_score is None or final_score > initial_score:
@@ -677,7 +767,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         metrics.setdefault('iterations', 1)
         metrics.setdefault('method', 'data_driven_optimization')
         metrics.setdefault('fusion_metadata', context.fusion_metadata)
-        metrics.setdefault('hmm_transitions', [])
+        metrics['hmm_transitions'] = smoothing_metadata.get('transmat', [])
+        metrics['smoothing_metadata'] = smoothing_metadata
         context.optimization_metrics = metrics
 
         tprint(
@@ -1123,399 +1214,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Fixed range K search failed: {e}")
             raise
-
-    def _map_labels_to_k_space(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
-                               target_k: int, features: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-        """Map NAS/TAS labels to 0..K-1 space using nearest GMM centroid."""
-        try:
-            tas_unique = set(tas_assignments)
-            nas_unique = set(nas_assignments)
-            
-            # Check if mapping is needed
-            if (max(tas_unique) < target_k and max(nas_unique) < target_k and 
-                min(tas_unique) >= 0 and min(nas_unique) >= 0):
-                tprint("Labels already in 0..K-1 space, no mapping needed", "INFO")
-                return tas_assignments, nas_assignments, {'mapping_needed': False}
-            
-            tprint(f"Mapping labels to K={target_k} space (TAS: {len(tas_unique)}, NAS: {len(nas_unique)})", "INFO")
-            
-            if features is not None:
-                # Use GMM centroid mapping for soft assignment
-                from sklearn.mixture import GaussianMixture
-                gmm = GaussianMixture(n_components=target_k, random_state=42)
-                gmm.fit(features)
-                centroids = gmm.means_
-                
-                # Map each unique label to nearest centroid
-                tas_mapping = {}
-                nas_mapping = {}
-                
-                for label in tas_unique:
-                    # Find nearest centroid for this label's samples
-                    label_mask = tas_assignments == label
-                    if np.any(label_mask) and features is not None:
-                        label_features = features[label_mask]
-                        distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
-                        nearest_centroid = np.argmin(distances.mean(axis=0))
-                        tas_mapping[label] = nearest_centroid
-                    else:
-                        tas_mapping[label] = label % target_k  # Fallback
-                
-                for label in nas_unique:
-                    if label in nas_assignments:
-                        label_mask = nas_assignments == label
-                        if np.any(label_mask) and features is not None:
-                            label_features = features[label_mask]
-                            distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
-                            nearest_centroid = np.argmin(distances.mean(axis=0))
-                            nas_mapping[label] = nearest_centroid
-                        else:
-                            nas_mapping[label] = label % target_k  # Fallback
-                
-                # Apply mappings
-                tas_mapped = np.array([tas_mapping.get(label, label % target_k) for label in tas_assignments])
-                nas_mapped = np.array([nas_mapping.get(label, label % target_k) for label in nas_assignments])
-                
-            else:
-                # Use abstain column approach instead of modulo (preserves heuristics-free spirit)
-                tas_mapped, nas_mapped, tas_mapping, nas_mapping = self._create_abstain_mapping(
-                    tas_assignments, nas_assignments, target_k
-                )
-            
-            mapping_info = {
-                'mapping_needed': True,
-                'tas_mapping': tas_mapping,
-                'nas_mapping': nas_mapping,
-                'method': 'gmm_centroid' if features is not None else 'modulo'
-            }
-            
-            tprint(f"Label mapping completed: TAS {len(set(tas_mapped))} unique, NAS {len(set(nas_mapped))} unique", "SUCCESS")
-            return tas_mapped, nas_mapped, mapping_info
-            
-        except Exception as e:
-            tprint(f"Label mapping failed: {e}, using modulo fallback")
-            # Fallback to simple modulo mapping
-            tas_mapped = tas_assignments % target_k
-            nas_mapped = nas_assignments % target_k
-            return tas_mapped, nas_mapped, {'mapping_needed': True, 'method': 'modulo_fallback', 'error': str(e)}
-
-    def _create_abstain_mapping(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
-                                target_k: int) -> Tuple[np.ndarray, np.ndarray, Dict, Dict]:
-        """Create abstain column mapping for DS when centroid mapping fails."""
-        try:
-            tas_unique = set(tas_assignments)
-            nas_unique = set(nas_assignments)
-            
-            # Create abstain column (target_k) for labels outside 0..target_k-1
-            tas_mapping = {}
-            nas_mapping = {}
-            
-            # Map labels in range to themselves, others to abstain
-            for label in tas_unique:
-                if 0 <= label < target_k:
-                    tas_mapping[label] = label
-                else:
-                    tas_mapping[label] = target_k  # Abstain column
-            
-            for label in nas_unique:
-                if 0 <= label < target_k:
-                    nas_mapping[label] = label
-                else:
-                    nas_mapping[label] = target_k  # Abstain column
-            
-            # Apply mappings
-            tas_mapped = np.array([tas_mapping.get(label, target_k) for label in tas_assignments])
-            nas_mapped = np.array([nas_mapping.get(label, target_k) for label in nas_assignments])
-            
-            tprint(f"Abstain mapping: TAS {len(set(tas_mapped))} unique, NAS {len(set(nas_mapped))} unique", "INFO")
-            return tas_mapped, nas_mapped, tas_mapping, nas_mapping
-            
-        except Exception as e:
-            tprint(f"Abstain mapping failed: {e}, using modulo fallback")
-            # Last resort: modulo fallback
-            tas_mapped = tas_assignments % target_k
-            nas_mapped = nas_assignments % target_k
-            return tas_mapped, nas_mapped, {}, {}
-
-    def _dawid_skene_fusion(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
-                           target_k: int, features: np.ndarray = None, max_iterations: int = 50, 
-                           tolerance: float = 1e-6) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Dawid-Skene EM label fusion for NAS/TAS reconciliation with common label space K."""
-        try:
-            tprint(f"Starting Dawid-Skene label fusion with K={target_k}...", "INFO")
-            tprint(f"Starting Dawid-Skene label fusion with K={target_k}")
-            
-            n_samples = len(tas_assignments)
-            
-            # Map NAS/TAS labels to 0..K-1 if they're outside this range
-            tas_mapped, nas_mapped, mapping_info = self._map_labels_to_k_space(
-                tas_assignments, nas_assignments, target_k, features
-            )
-            
-            # Use target K as common label space
-            n_classes = target_k
-            
-            # Initialize confusion matrices for TAS and NAS as "annotators"
-            # Use symmetric Dirichlet priors for class imbalance stability
-            alpha = 0.5  # Small alpha for rare regimes
-            tas_confusion = np.random.dirichlet([alpha] * n_classes, n_classes)
-            nas_confusion = np.random.dirichlet([alpha] * n_classes, n_classes)
-            
-            # Set random seed for reproducibility
-            np.random.seed(42)
-            
-            # Normalize confusion matrices
-            tas_confusion = tas_confusion / tas_confusion.sum(axis=1, keepdims=True)
-            nas_confusion = nas_confusion / nas_confusion.sum(axis=1, keepdims=True)
-            
-            # Initialize class priors uniformly
-            class_priors = np.ones(n_classes) / n_classes
-            
-            # EM iterations with convergence tracking
-            log_likelihoods = []
-            for iteration in range(max_iterations):
-                # E-step: Compute posterior probabilities
-                posteriors = np.zeros((n_samples, n_classes))
-                
-                for i in range(n_samples):
-                    tas_class = tas_mapped[i]
-                    nas_class = nas_mapped[i]
-                    
-                    # Compute likelihood for each true class
-                    for true_class in range(n_classes):
-                        likelihood = (class_priors[true_class] * 
-                                    tas_confusion[true_class, tas_class] * 
-                                    nas_confusion[true_class, nas_class])
-                        posteriors[i, true_class] = likelihood
-                
-                # Normalize posteriors
-                posteriors = posteriors / posteriors.sum(axis=1, keepdims=True)
-                
-                # M-step: Update parameters
-                old_tas_confusion = tas_confusion.copy()
-                old_nas_confusion = nas_confusion.copy()
-                old_priors = class_priors.copy()
-                
-                # Update class priors
-                class_priors = posteriors.mean(axis=0)
-                class_priors = class_priors / class_priors.sum()
-                
-                # Update TAS confusion matrix using mapped labels
-                for true_class in range(n_classes):
-                    for observed_class in range(n_classes):
-                        mask = tas_mapped == observed_class
-                        tas_confusion[true_class, observed_class] = posteriors[mask, true_class].sum()
-                    tas_confusion[true_class] = tas_confusion[true_class] / (tas_confusion[true_class].sum() + 1e-10)
-                
-                # Update NAS confusion matrix using mapped labels
-                for true_class in range(n_classes):
-                    for observed_class in range(n_classes):
-                        mask = nas_mapped == observed_class
-                        nas_confusion[true_class, observed_class] = posteriors[mask, true_class].sum()
-                    nas_confusion[true_class] = nas_confusion[true_class] / (nas_confusion[true_class].sum() + 1e-10)
-                
-                # Track log-likelihood for convergence
-                current_ll = np.sum(np.log(posteriors.sum(axis=1) + 1e-10))
-                log_likelihoods.append(current_ll)
-                
-                # Check convergence
-                tas_change = np.abs(tas_confusion - old_tas_confusion).max()
-                nas_change = np.abs(nas_confusion - old_nas_confusion).max()
-                prior_change = np.abs(class_priors - old_priors).max()
-                
-                if max(tas_change, nas_change, prior_change) < tolerance:
-                    tprint(f"Dawid-Skene converged after {iteration + 1} iterations", "SUCCESS")
-                    break
-            
-            # Get final assignments from posteriors
-            fused_assignments = np.argmax(posteriors, axis=1)
-            
-            # Validate confusion matrices are stochastic (rows sum to 1)
-            tas_row_sums = tas_confusion.sum(axis=1)
-            nas_row_sums = nas_confusion.sum(axis=1)
-            is_stochastic = (np.allclose(tas_row_sums, 1.0) and np.allclose(nas_row_sums, 1.0))
-            
-            metadata = {
-                'iterations': iteration + 1,
-                'converged': max(tas_change, nas_change, prior_change) < tolerance,
-                'log_likelihoods': log_likelihoods,
-                'tas_confusion_matrix': tas_confusion.tolist(),
-                'nas_confusion_matrix': nas_confusion.tolist(),
-                'class_priors': class_priors.tolist(),
-                'posteriors': posteriors.tolist(),
-                'mapping_info': mapping_info,
-                'is_stochastic': is_stochastic,
-                'tas_row_sums': tas_row_sums.tolist(),
-                'nas_row_sums': nas_row_sums.tolist()
-            }
-            
-            self._log(
-                f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes",
-                "SUCCESS",
-            )
-
-            return fused_assignments, metadata
-
-        except Exception as e:
-            self._log(f"Dawid-Skene fusion failed: {e}", "ERROR")
-            # Fallback to TAS assignments
-            return tas_assignments, {'method': 'fallback', 'error': str(e)}
-
-    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray,
-                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame,
-                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
-        """Progressive regime optimization using BIC-selected K and Dawid-Skene fusion."""
-        try:
-            tprint("Starting data-driven progressive regime optimization...", "INFO")
-            tprint("Starting data-driven progressive regime optimization")
-
-            # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
-            tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
-            fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments, optimal_k, features)
-            tprint(f"Dawid-Skene fusion completed: {len(fused_assignments)} samples", "SUCCESS")
-
-            # Step 2: Map fused assignments to optimal K if needed
-            if len(set(fused_assignments)) != optimal_k:
-                tprint(f"Mapping fused assignments to optimal K={optimal_k}...", "INFO")
-                # Use GMM to map to optimal K
-                from sklearn.mixture import GaussianMixture
-                gmm = GaussianMixture(n_components=optimal_k, random_state=42)
-                gmm.fit(features)
-                mapped_assignments = gmm.predict(features)
-                tprint(f"Assignment mapping completed: {len(set(mapped_assignments))} clusters", "SUCCESS")
-            else:
-                mapped_assignments = fused_assignments
-                tprint(f"Fused assignments already have optimal K={optimal_k}", "SUCCESS")
-
-            # Step 3: Calculate initial score
-            initial_score = self._calculate_composite_score(features, mapped_assignments)
-            tprint(f"Initial score: {initial_score:.3f}", "SUCCESS")
-
-            optimization_metrics = {
-                'initial_score': initial_score,
-                'final_score': initial_score,
-                'improvement': 0.0,
-                'iterations': 1,
-                'optimal_k': optimal_k,
-                'fusion_metadata': fusion_metadata,
-                'method': 'data_driven_optimization'
-            }
-            
-            tprint(
-                f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})",
-                "SUCCESS",
-            )
-            
-            return final_assignments, optimization_metrics
-            
-        except Exception as e:
-            self._log(f"Data-driven progressive regime optimization failed: {e}", "ERROR")
-            # Return original TAS assignments
-            return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
-
-    def _apply_hmm_smoothing(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
-        """Apply HMM smoothing for temporal coherence using learned transitions."""
-        try:
-            from sklearn.mixture import GaussianMixture
-            from hmmlearn import hmm
-            
-            n_clusters = len(set(assignments))
-            n_samples = len(assignments)
-            
-            # Initialize HMM emissions from BIC-best GMM for stability
-            tprint("Initializing HMM emissions from BIC-best GMM...", "INFO")
-            gmm = GaussianMixture(n_components=n_clusters, random_state=42)
-            gmm.fit(features)
-            
-            # Create HMM with emissions initialized from GMM
-            model = hmm.GaussianHMM(
-                n_components=n_clusters,
-                random_state=42,
-                n_iter=50,  # Fewer iterations for smoothing
-                init_params='stmc'  # Initialize startprob, transmat, means, covars
-            )
-            
-            # Initialize with GMM parameters
-            model.means_ = gmm.means_
-            model.covars_ = gmm.covariances_
-            model.startprob_ = np.ones(n_clusters) / n_clusters
-            
-            # Learn transition matrix from assignments with sticky prior
-            tprint("Learning transition matrix from assignments with sticky prior...", "INFO")
-            transition_matrix = np.zeros((n_clusters, n_clusters))
-            for i in range(n_samples - 1):
-                current_cluster = assignments[i]
-                next_cluster = assignments[i + 1]
-                transition_matrix[current_cluster, next_cluster] += 1
-            
-            # Add sticky prior (bias to self-transitions) to prevent chattering
-            sticky_weight = 0.1
-            transition_matrix += sticky_weight * np.eye(n_clusters)
-            
-            # Normalize transition matrix
-            transition_matrix = transition_matrix / (transition_matrix.sum(axis=1, keepdims=True) + 1e-10)
-            model.transmat_ = transition_matrix
-            
-            # Fit HMM to learn better parameters
-            tprint("Fitting HMM to learn better parameters...", "INFO")
-            model.fit(features)
-            
-            # Decode with Viterbi for temporal coherence
-            tprint("Applying Viterbi decoding for temporal coherence...", "INFO")
-            smoothed_assignments = model.predict(features)
-            
-            # Calculate and report expected durations
-            expected_durations = []
-            low_persistence_regimes = []
-            for k in range(n_clusters):
-                p_kk = model.transmat_[k, k]
-                if p_kk < 0.99:  # Avoid division by zero
-                    expected_duration = 1 / (1 - p_kk)
-                    expected_durations.append(expected_duration)
-                    if p_kk < 0.6:  # Flag low persistence
-                        low_persistence_regimes.append(k)
-                else:
-                    expected_durations.append(float('inf'))
-            
-            tprint(f"HMM smoothing completed: {n_clusters} clusters, {n_samples} samples", "SUCCESS")
-            tprint(f"Expected durations: {[f'{d:.1f}' if d != float('inf') else '∞' for d in expected_durations]}", "INFO")
-            if low_persistence_regimes:
-                tprint(f"⚠ Low persistence regimes: {low_persistence_regimes} (P_kk < 0.6)", "WARNING")
-            
-            return smoothed_assignments
-            
-        except Exception as e:
-            tprint(f"HMM smoothing failed: {e}, using simple smoothing")
-            tprint(f"HMM smoothing failed: {e}, using simple temporal smoothing fallback", "WARNING")
-            # Fallback to simple smoothing
-            return self._simple_temporal_smoothing(assignments)
-
-    def _simple_temporal_smoothing(self, assignments: np.ndarray) -> np.ndarray:
-        """Simple temporal smoothing fallback."""
-        try:
-            n_samples = len(assignments)
-            smoothed_assignments = assignments.copy()
-            
-            # Simple smoothing: if a sample is isolated (different from neighbors), 
-            # assign it to the most common cluster in its neighborhood
-            for i in range(1, n_samples - 1):
-                if (assignments[i] != assignments[i-1] and 
-                    assignments[i] != assignments[i+1]):
-                    # Sample is isolated, use local majority
-                    window_start = max(0, i - 2)
-                    window_end = min(n_samples, i + 3)
-                    window_assignments = assignments[window_start:window_end]
-                    
-                    # Find most common cluster in window
-                    unique, counts = np.unique(window_assignments, return_counts=True)
-                    most_common = unique[np.argmax(counts)]
-                    smoothed_assignments[i] = most_common
-            
-            return smoothed_assignments
-            
-        except Exception as e:
-            tprint(f"Simple temporal smoothing failed: {e}")
-            return assignments
 
     def _validate_feature_quality(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate and improve feature quality for clustering."""

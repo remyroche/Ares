@@ -156,3 +156,128 @@ def test_build_artifacts_delegates_to_consolidated(monkeypatch):
     )
 
     assert artifacts is expected_artifacts
+
+
+def test_fit_metric_weights_uses_regression_when_history_available():
+    component = _build_component()
+
+    component.metric_weight_history = [
+        {
+            "metrics": {"composite": {"silhouette": 1.0, "davies_bouldin": 0.0}},
+            "validation_target": 1.0,
+        },
+        {
+            "metrics": {"composite": {"silhouette": 0.0, "davies_bouldin": 1.0}},
+            "validation_target": 2.0,
+        },
+    ]
+
+    metric_outputs = {"composite": {"silhouette": 0.6, "davies_bouldin": 0.4}}
+    learned = component._fit_metric_weights(metric_outputs, validation_metric=1.4)
+
+    assert "composite" in learned
+    assert learned["composite"] == pytest.approx(
+        {"silhouette": 1 / 3, "davies_bouldin": 2 / 3}, rel=1e-6
+    )
+    assert component.learned_weights["composite"] == pytest.approx(
+        {"silhouette": 1 / 3, "davies_bouldin": 2 / 3}, rel=1e-6
+    )
+    assert component.metric_weight_history[-1]["fitted_weights"]["composite"] == pytest.approx(
+        {"silhouette": 1 / 3, "davies_bouldin": 2 / 3}, rel=1e-6
+    )
+
+
+def test_fit_metric_weights_falls_back_to_median_when_insufficient_history(monkeypatch):
+    component = _build_component()
+    component.metric_weight_history = [
+        {
+            "metrics": {"composite": {"silhouette": 0.5, "davies_bouldin": 0.5}},
+            "validation_target": 1.0,
+            "fitted_weights": {
+                "composite": {"silhouette": 0.7, "davies_bouldin": 0.3}
+            },
+        }
+    ]
+
+    monkeypatch.setattr(component, "_estimate_validation_metric", lambda *_: None)
+
+    learned = component._fit_metric_weights(
+        {"composite": {"silhouette": 0.4, "davies_bouldin": 0.6}},
+        validation_metric=None,
+    )
+
+    assert learned["composite"] == pytest.approx(
+        {"silhouette": 0.7, "davies_bouldin": 0.3}, rel=1e-6
+    )
+
+
+def test_create_consolidated_artifacts_persists_learned_weights():
+    component = _build_component()
+    component.learned_weights = {
+        "regime": {
+            "economic": 0.2,
+            "volatility": 0.3,
+            "volume": 0.25,
+            "structural_trend": 0.25,
+        }
+    }
+    component.metric_weight_history = [
+        {
+            "timestamp": "2024-01-01T00:00:00",
+            "metrics": {"regime": {"economic": 0.2}},
+            "validation_target": 1.0,
+            "fitted_weights": {
+                "regime": {
+                    "economic": 0.2,
+                    "volatility": 0.3,
+                    "volume": 0.25,
+                    "structural_trend": 0.25,
+                }
+            },
+        }
+    ]
+
+    clustering_result = {
+        "cluster_assignments": [0, 1],
+        "cluster_centers": [[0.0], [1.0]],
+        "n_clusters": 2,
+        "algorithm_used": "test",
+        "success": True,
+        "execution_time": 1.0,
+    }
+    cluster_characteristics = {}
+    clustering_metrics = {}
+    market_data = pd.DataFrame({"close": [1.0, 2.0]})
+
+    artifacts = component._create_consolidated_artifacts(
+        clustering_result, cluster_characteristics, clustering_metrics, market_data
+    )
+
+    metadata = artifacts["execution_metadata"]
+    assert metadata["learned_metric_weights"]["regime"] == pytest.approx(
+        {
+            "economic": 0.2,
+            "volatility": 0.3,
+            "volume": 0.25,
+            "structural_trend": 0.25,
+        },
+        rel=1e-6,
+    )
+    assert metadata["metric_weight_history"]
+
+
+def test_clustering_config_uses_learned_regime_weights():
+    component = _build_component()
+    component.learned_weights["regime"] = {
+        "economic": 0.1,
+        "volatility": 0.2,
+        "volume": 0.3,
+        "structural_trend": 0.4,
+    }
+
+    config = component._create_clustering_config_using_shared_utils()
+
+    assert config["economic_weight"] == pytest.approx(0.1)
+    assert config["volatility_regime_weight"] == pytest.approx(0.2)
+    assert config["volume_regime_weight"] == pytest.approx(0.3)
+    assert config["structural_trend_weight"] == pytest.approx(0.4)

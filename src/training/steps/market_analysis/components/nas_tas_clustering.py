@@ -526,6 +526,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.m1_memory_optimizer = resources.m1_memory_optimizer
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
             
+            # Initialize regime optimization service with proper label fusion service
+            from ..regime_analysis.label_fusion import LabelFusionService
+            label_fusion_service = LabelFusionService(logger=self._log)
+            self.regime_optimization_service = RegimeOptimizationService(
+                label_fusion_service=label_fusion_service,
+                score_calculator=self._calculate_composite_score,
+                logger=self._log,
+            )
+            
             tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
 
     def optimize_hyperparameters_bayesian(self, features: np.ndarray, market_data: pd.DataFrame, 
@@ -861,17 +870,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as exc:
             tprint_warning(f"Failed to calculate validation score: {exc}")
             return 0.0
-
-            # Initialize regime optimization service with proper label fusion service
-            from ..regime_analysis.label_fusion import LabelFusionService
-            label_fusion_service = LabelFusionService(logger=self._log)
-            self.regime_optimization_service = RegimeOptimizationService(
-                label_fusion_service=label_fusion_service,
-                score_calculator=self._calculate_composite_score,
-                logger=self._log,
-            )
-            
-            tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
 
     def _log(self, message: str, level: str = "INFO") -> None:
         """Log a message using the standard component logger."""

@@ -1540,9 +1540,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             window_size = 3
             start_idx = max(0, sample_idx - window_size)
             end_idx = min(len(assignments), sample_idx + window_size + 1)
-            
+
             # Calculate temporal consistency before flip
             original_consistency = 0.0
+            original_regime = assignments[sample_idx]
             for i in range(start_idx, end_idx):
                 if i != sample_idx:
                     # Check consistency with neighbors
@@ -1561,10 +1562,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         new_consistency += 0.5
                     if i < len(assignments) - 1 and assignments[i] == assignments[i+1]:
                         new_consistency += 0.5
-            
+
             # Restore original assignment
-            assignments[sample_idx] = assignments[sample_idx]  # This will be restored by caller
-            
+            assignments[sample_idx] = original_regime
+
             # Return improvement
             return new_consistency - original_consistency
             

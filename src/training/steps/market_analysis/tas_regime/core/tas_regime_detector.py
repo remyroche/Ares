@@ -103,6 +103,26 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Import ML common utilities for optimization and validation
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, BayesianTPEConfig
+    from src.utils.ml_common.optimization.grid_utils import GridSearchOptimizer, generate_grid
+    from src.utils.ml_common.validation.time_series_splitter import TimeSeriesSplitter
+    from src.utils.ml_common.validation.out_of_sample_validator import OutOfSampleValidator
+    from src.utils.ml_common.validation.regime_persistence_analyzer import RegimePersistenceAnalyzer
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+
+# Import M1 hardware optimization tools
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+
 # Import ML common utilities
 try:
     from src.utils.ml_common.common_operations import get_ml_common_operations
@@ -208,6 +228,12 @@ class TASRegimeDetector:
         # Initialize enhanced utility tools
         tprint_info("🔧 Initializing enhanced utility tools...")
         self._initialize_enhanced_utility_tools()
+        
+        # Initialize optimization and validation tools
+        tprint_info("⚙️ Initializing optimization and validation tools...")
+        self._initialize_optimization_tools()
+        self._initialize_validation_tools()
+        self._initialize_m1_hardware_tools()
         
         # Initialize tool integrations
         tprint_info("🛠️ Initializing tool integrations...")
@@ -573,6 +599,118 @@ class TASRegimeDetector:
             self.logger.warning(f"Position-aware analyzer initialization failed: {e}")
             self.position_analyzer = None
 
+    def _initialize_optimization_tools(self):
+        """Initialize optimization tools (Bayesian TPE, Grid Search)."""
+        try:
+            tprint_debug("🔬 Initializing optimization tools...")
+            
+            # Initialize Bayesian TPE optimizer
+            if ML_COMMON_AVAILABLE:
+                self.bayesian_optimizer = BayesianTPEOptimizer(
+                    n_trials=getattr(self.config, 'hpo_max_evals', 100),
+                    random_state=getattr(self.config, 'random_state', 42),
+                    verbose=getattr(self.config, 'verbose', False)
+                )
+                tprint_success("✅ Bayesian TPE Optimizer initialized")
+            else:
+                self.bayesian_optimizer = None
+                tprint_warning("⚠️ Bayesian TPE Optimizer not available")
+            
+            # Initialize Grid Search optimizer
+            if ML_COMMON_AVAILABLE:
+                self.grid_optimizer = GridSearchOptimizer(
+                    scoring='silhouette_score',
+                    cv=getattr(self.config, 'cv_folds', 5)
+                )
+                tprint_success("✅ Grid Search Optimizer initialized")
+            else:
+                self.grid_optimizer = None
+                tprint_warning("⚠️ Grid Search Optimizer not available")
+                
+        except Exception as e:
+            self.logger.warning(f"Optimization tools initialization failed: {e}")
+            tprint_warning(f"⚠️ Optimization tools not available: {e}")
+
+    def _initialize_validation_tools(self):
+        """Initialize validation tools (Cross-validation, Out-of-sample, Persistence)."""
+        try:
+            tprint_debug("📊 Initializing validation tools...")
+            
+            # Initialize Time Series Cross-Validation
+            if ML_COMMON_AVAILABLE:
+                self.time_series_splitter = TimeSeriesSplitter(
+                    n_splits=getattr(self.config, 'cv_folds', 5),
+                    test_size=getattr(self.config, 'cv_test_size', 0.2)
+                )
+                tprint_success("✅ Time Series Cross-Validation initialized")
+            else:
+                self.time_series_splitter = None
+                tprint_warning("⚠️ Time Series Cross-Validation not available")
+            
+            # Initialize Out-of-Sample Validator
+            if ML_COMMON_AVAILABLE:
+                self.oos_validator = OutOfSampleValidator(
+                    test_size=getattr(self.config, 'oos_test_size', 0.3),
+                    walk_forward=getattr(self.config, 'oos_walk_forward', True),
+                    step_size=getattr(self.config, 'oos_step_size', 0.1),
+                    lookahead_prevention=getattr(self.config, 'lookahead_prevention', True)
+                )
+                tprint_success("✅ Out-of-Sample Validator initialized")
+            else:
+                self.oos_validator = None
+                tprint_warning("⚠️ Out-of-Sample Validator not available")
+            
+            # Initialize Regime Persistence Analyzer
+            if ML_COMMON_AVAILABLE:
+                self.persistence_analyzer = RegimePersistenceAnalyzer(
+                    persistence_window=getattr(self.config, 'persistence_window', 50),
+                    persistence_threshold=getattr(self.config, 'persistence_threshold', 0.7),
+                    min_persistence_periods=getattr(self.config, 'min_persistence_periods', 10),
+                    significance_level=getattr(self.config, 'significance_level', 0.05),
+                    bootstrap_iterations=getattr(self.config, 'bootstrap_iterations', 1000)
+                )
+                tprint_success("✅ Regime Persistence Analyzer initialized")
+            else:
+                self.persistence_analyzer = None
+                tprint_warning("⚠️ Regime Persistence Analyzer not available")
+                
+        except Exception as e:
+            self.logger.warning(f"Validation tools initialization failed: {e}")
+            tprint_warning(f"⚠️ Validation tools not available: {e}")
+
+    def _initialize_m1_hardware_tools(self):
+        """Initialize M1 hardware optimization tools."""
+        try:
+            tprint_debug("⚡ Initializing M1 hardware tools...")
+            
+            # Initialize M1 GPU Manager
+            if M1_HARDWARE_AVAILABLE:
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                tprint_success("✅ M1 GPU Manager initialized")
+            else:
+                self.m1_gpu_manager = None
+                tprint_warning("⚠️ M1 GPU Manager not available")
+            
+            # Initialize M1 Memory Optimizer
+            if M1_HARDWARE_AVAILABLE:
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                tprint_success("✅ M1 Memory Optimizer initialized")
+            else:
+                self.m1_memory_optimizer = None
+                tprint_warning("⚠️ M1 Memory Optimizer not available")
+            
+            # Initialize M1 CPU Optimizer
+            if M1_HARDWARE_AVAILABLE:
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                tprint_success("✅ M1 CPU Optimizer initialized")
+            else:
+                self.m1_cpu_optimizer = None
+                tprint_warning("⚠️ M1 CPU Optimizer not available")
+                
+        except Exception as e:
+            self.logger.warning(f"M1 hardware tools initialization failed: {e}")
+            tprint_warning(f"⚠️ M1 hardware tools not available: {e}")
+
     def _initialize_enhanced_optimizations(self, enable_memory_optimization: bool, 
                                          enable_parallel_processing: bool,
                                          enable_intelligent_caching: bool,
@@ -814,6 +952,11 @@ class TASRegimeDetector:
             enable_intelligent_caching, enable_cross_validation,
             enable_out_of_sample_validation, enable_regime_persistence_analysis
         )
+        
+        # Initialize new optimization and validation tools
+        self._initialize_optimization_tools()
+        self._initialize_validation_tools()
+        self._initialize_m1_hardware_tools()
 
         try:
             self.logger.info("🚀 Starting TAS regime detection")
@@ -2225,6 +2368,11 @@ class TASRegimeDetector:
         try:
             tprint_debug("🔄 Performing cross-validation analysis...")
             
+            # Use new TimeSeriesSplitter if available
+            if hasattr(self, 'time_series_splitter') and self.time_series_splitter:
+                return self.time_series_splitter.perform_cv(data, regime_predictions)
+            
+            # Fallback to existing implementation
             if not hasattr(self, 'cv_folds'):
                 return {}
             
@@ -2329,6 +2477,11 @@ class TASRegimeDetector:
         try:
             tprint_debug("📊 Performing out-of-sample validation...")
             
+            # Use new OutOfSampleValidator if available
+            if hasattr(self, 'oos_validator') and self.oos_validator:
+                return self.oos_validator.validate(data, regime_predictions)
+            
+            # Fallback to existing implementation
             if not hasattr(self, 'oos_test_size'):
                 return {}
             
@@ -2462,6 +2615,10 @@ class TASRegimeDetector:
         """Perform regime persistence analysis over time."""
         try:
             tprint_debug("📈 Performing regime persistence analysis...")
+            
+            # Use new RegimePersistenceAnalyzer if available
+            if hasattr(self, 'persistence_analyzer') and self.persistence_analyzer:
+                return self.persistence_analyzer.analyze(regime_predictions, timestamps)
             
             if not hasattr(self, 'persistence_window'):
                 return {}
@@ -2664,6 +2821,90 @@ class TASRegimeDetector:
         except Exception as e:
             self.logger.warning(f"Persistence significance testing failed: {e}")
             return {}
+
+    def optimize_hyperparameters(self, market_data: Union[pd.DataFrame, np.ndarray], 
+                                 timestamps: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Optimize hyperparameters using Bayesian TPE optimization.
+        
+        Args:
+            market_data: Market data for optimization
+            timestamps: Optional timestamps
+            
+        Returns:
+            Optimization results with best parameters
+        """
+        try:
+            tprint_info("🔬 Starting hyperparameter optimization...")
+            
+            if not hasattr(self, 'bayesian_optimizer') or not self.bayesian_optimizer:
+                tprint_warning("⚠️ Bayesian optimizer not available")
+                return {}
+            
+            # Define search space for TAS regime detection
+            search_space = {
+                'n_regimes': {'type': 'int', 'low': 3, 'high': 12},
+                'tree_depth': {'type': 'int', 'low': 4, 'high': 12},
+                'n_estimators': {'type': 'int', 'low': 100, 'high': 2000},
+                'min_samples_split': {'type': 'int', 'low': 5, 'high': 50},
+                'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 20},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 'auto', 0.5, 0.8]}
+            }
+            
+            # Create objective function
+            def objective(params):
+                try:
+                    # Create temporary config with optimized parameters
+                    temp_config = TASRegimeConfig(
+                        n_regimes=params['n_regimes'],
+                        tree_depth=params['tree_depth'],
+                        n_estimators=params['n_estimators'],
+                        min_samples_split=params['min_samples_split'],
+                        min_samples_leaf=params['min_samples_leaf'],
+                        max_features=params['max_features']
+                    )
+                    
+                    # Create temporary detector
+                    temp_detector = TASRegimeDetector(temp_config)
+                    
+                    # Run regime detection
+                    result = temp_detector.detect_regimes(
+                        market_data=market_data,
+                        timestamps=timestamps,
+                        enable_cross_validation=True,
+                        enable_out_of_sample_validation=True
+                    )
+                    
+                    if result.success:
+                        # Return negative of combined score for minimization
+                        stability_score = np.mean(result.regime_stability_scores)
+                        economic_score = np.mean(result.economic_significance_scores)
+                        trading_score = np.mean(result.trading_viability_scores)
+                        
+                        combined_score = -(0.4 * stability_score + 0.3 * economic_score + 0.3 * trading_score)
+                        return combined_score
+                    else:
+                        return float('inf')
+                        
+                except Exception as e:
+                    self.logger.warning(f"Objective evaluation failed: {e}")
+                    return float('inf')
+            
+            # Run optimization
+            best_params = self.bayesian_optimizer.optimize(objective, search_space, 'minimize')
+            
+            tprint_success(f"✅ Hyperparameter optimization completed")
+            tprint_info(f"Best parameters: {best_params}")
+            
+            return {
+                'success': True,
+                'best_params': best_params,
+                'optimizer_type': 'Bayesian TPE'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Hyperparameter optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
 
     def _normal_cdf(self, x: float) -> float:
         """Calculate cumulative distribution function of standard normal distribution."""

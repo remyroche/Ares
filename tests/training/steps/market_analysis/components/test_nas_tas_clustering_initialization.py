@@ -45,15 +45,6 @@ def fresh_component_module(monkeypatch):
     """Provide a fresh view of the clustering module with clean state for each test."""
     module = load_clustering_module()
 
-    # Ensure defaults before each test
-    monkeypatch.setattr(module, 'matrix_ops', None, raising=False)
-    monkeypatch.setattr(module, 'vectorized_core', None, raising=False)
-    monkeypatch.setattr(module, 'batch_processor', None, raising=False)
-    monkeypatch.setattr(module, 'hardware_manager', None, raising=False)
-    monkeypatch.setattr(module, 'm1_gpu_optimizer', None, raising=False)
-    monkeypatch.setattr(module, 'm1_memory_optimizer', None, raising=False)
-    monkeypatch.setattr(module, 'm1_cpu_optimizer', None, raising=False)
-
     if 'get_logger' not in module.__dict__:
         class _DummyLogger:
             def __getattr__(self, _):  # pragma: no cover - simple no-op logger
@@ -67,58 +58,63 @@ def fresh_component_module(monkeypatch):
 def test_initialization_with_available_resources(monkeypatch, fresh_component_module):
     module = fresh_component_module
 
-    matrix_ops = object()
-    vectorized_core = object()
-    batch_processor = object()
-    hardware_manager = object()
-    m1_gpu_optimizer = object()
-    m1_memory_optimizer = object()
-    m1_cpu_optimizer = object()
+    resources = types.SimpleNamespace(
+        matrix_ops=object(),
+        vectorized_core=object(),
+        batch_processor=object(),
+        hardware_manager=object(),
+        m1_gpu_optimizer=object(),
+        m1_memory_optimizer=object(),
+        m1_cpu_optimizer=object(),
+    )
 
-    monkeypatch.setattr(module, 'MATRIX_OPERATIONS_AVAILABLE', True, raising=False)
-    monkeypatch.setattr(module, 'HARDWARE_OPTIMIZATION_AVAILABLE', True, raising=False)
-    monkeypatch.setattr(module, 'M1_HARDWARE_AVAILABLE', True, raising=False)
+    class _DummySetup:
+        def __init__(self):
+            self.initialize_called = False
 
-    monkeypatch.setattr(module, 'get_unified_matrix_operations', lambda: matrix_ops, raising=False)
-    monkeypatch.setattr(module, 'get_vectorized_processing_core', lambda: vectorized_core, raising=False)
-    monkeypatch.setattr(module, 'get_batch_matrix_processor', lambda: batch_processor, raising=False)
+        def initialize(self):
+            self.initialize_called = True
+            return resources
 
-    monkeypatch.setattr(module, 'get_unified_hardware_manager', lambda: hardware_manager, raising=False)
-    monkeypatch.setattr(module, 'get_m1_gpu_optimizer', lambda: m1_gpu_optimizer, raising=False)
-    monkeypatch.setattr(module, 'get_m1_memory_optimizer', lambda: m1_memory_optimizer, raising=False)
-    monkeypatch.setattr(module, 'get_m1_cpu_optimizer', lambda: m1_cpu_optimizer, raising=False)
+    dummy_setup = _DummySetup()
+    monkeypatch.setattr(module, 'HardwareSetup', lambda: dummy_setup, raising=False)
 
     component = module.NASTASClusteringComponent()
 
-    assert component.matrix_ops is matrix_ops
-    assert component.vectorized_core is vectorized_core
-    assert component.batch_processor is batch_processor
-    assert component.hardware_manager is hardware_manager
-    assert component.m1_gpu_optimizer is m1_gpu_optimizer
-    assert component.m1_memory_optimizer is m1_memory_optimizer
-    assert component.m1_cpu_optimizer is m1_cpu_optimizer
+    assert dummy_setup.initialize_called is True
+    assert component.hardware_setup is dummy_setup
+    assert component.hardware_resources is resources
+    assert component.matrix_ops is resources.matrix_ops
+    assert component.vectorized_core is resources.vectorized_core
+    assert component.batch_processor is resources.batch_processor
+    assert component.hardware_manager is resources.hardware_manager
+    assert component.m1_gpu_optimizer is resources.m1_gpu_optimizer
+    assert component.m1_memory_optimizer is resources.m1_memory_optimizer
+    assert component.m1_cpu_optimizer is resources.m1_cpu_optimizer
 
 
 def test_initialization_without_available_resources(monkeypatch, fresh_component_module):
     module = fresh_component_module
 
-    monkeypatch.setattr(module, 'MATRIX_OPERATIONS_AVAILABLE', False, raising=False)
-    monkeypatch.setattr(module, 'HARDWARE_OPTIMIZATION_AVAILABLE', False, raising=False)
-    monkeypatch.setattr(module, 'M1_HARDWARE_AVAILABLE', False, raising=False)
+    resources = types.SimpleNamespace(
+        matrix_ops=None,
+        vectorized_core=None,
+        batch_processor=None,
+        hardware_manager=None,
+        m1_gpu_optimizer=None,
+        m1_memory_optimizer=None,
+        m1_cpu_optimizer=None,
+    )
 
-    def _should_not_be_called(*args, **kwargs):  # pragma: no cover - safety net
-        raise AssertionError('Resource initializer should not be called when unavailable')
+    class _DummySetup:
+        def initialize(self):
+            return resources
 
-    monkeypatch.setattr(module, 'get_unified_matrix_operations', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_vectorized_processing_core', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_batch_matrix_processor', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_unified_hardware_manager', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_m1_gpu_optimizer', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_m1_memory_optimizer', _should_not_be_called, raising=False)
-    monkeypatch.setattr(module, 'get_m1_cpu_optimizer', _should_not_be_called, raising=False)
+    monkeypatch.setattr(module, 'HardwareSetup', lambda: _DummySetup(), raising=False)
 
     component = module.NASTASClusteringComponent()
 
+    assert component.hardware_resources is resources
     assert component.matrix_ops is None
     assert component.vectorized_core is None
     assert component.batch_processor is None

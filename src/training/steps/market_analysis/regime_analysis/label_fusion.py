@@ -499,8 +499,8 @@ class LabelFusionService:
                 with memory_checkpoint("e_step_calculation"):
                     # Optimize with matrix operations if available
                     if MATRIX_OPERATIONS_AVAILABLE and self.matrix_ops:
-                        # Vectorized E-step calculation
-                        posteriors = self.matrix_ops.vectorized_e_step(
+                        # Vectorized E-step calculation - update in place
+                        posteriors[:] = self.matrix_ops.vectorized_e_step(
                             tas_mapped, nas_mapped, tas_confusion, nas_confusion,
                             class_priors, abstain_value
                         )
@@ -540,17 +540,17 @@ class LabelFusionService:
                                 posterior_value = validate_finite(product, "posterior_value")
                                 posteriors[i, true_class] = posterior_value
 
-                    # Normalize posteriors with safe operations and validation
-                    row_sums = safe_mean(posteriors, axis=1, keepdims=True)
+                    # Normalize posteriors with safe operations and validation - update in place
+                    row_sums = posteriors.sum(axis=1, keepdims=True)
                     row_sums = validate_finite(row_sums, "row_sums")
                     row_sums = np.where(row_sums == 0.0, 1.0, row_sums)
                     row_sums = validate_positive(row_sums, "row_sums_positive")
                     
-                    posteriors = safe_divide(posteriors, row_sums, default=0.0)
-                    posteriors = validate_finite(posteriors, "normalized_posteriors")
+                    posteriors[:] = safe_divide(posteriors, row_sums, default=0.0)
+                    posteriors[:] = validate_finite(posteriors, "normalized_posteriors")
                     
-                    # Ensure posteriors are valid probabilities
-                    posteriors = validate_range(posteriors, 0.0, 1.0, "posteriors_probability")
+                    # Ensure posteriors are valid probabilities - update in place
+                    posteriors[:] = validate_range(posteriors, 0.0, 1.0, "posteriors_probability")
                     
                     tprint_success(f"E-step completed for {n_samples} samples, {n_classes} classes")
                     
@@ -604,15 +604,20 @@ class RegimeOptimizationService:
 
     def __init__(
         self,
-        label_fusion_service: LabelFusionService,
+        label_fusion_service: Optional[LabelFusionService],
         score_calculator: Callable[[np.ndarray, np.ndarray], float],
         logger: Callable[[str, str], None] = _default_logger,
     ) -> None:
-        self._label_fusion_service = label_fusion_service
+        # Create LabelFusionService if None provided
+        if label_fusion_service is None:
+            self._label_fusion_service = LabelFusionService(logger=logger)
+        else:
+            self._label_fusion_service = label_fusion_service
+            
         self._score_calculator = score_calculator
         self._logger = logger
 
-    async def progressive_regime_optimization_with_k(
+    def progressive_regime_optimization_with_k(
         self,
         features: np.ndarray,
         tas_assignments: np.ndarray,

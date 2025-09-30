@@ -790,6 +790,73 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         tprint("Cluster characteristics generated", "SUCCESS")
         return cluster_characteristics
 
+    def _calculate_clustering_metrics_using_shared_utils(
+        self,
+        clustering_result: Dict[str, Any],
+        cluster_characteristics: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Calculate clustering metrics using shared utilities with defensive error handling."""
+        try:
+            tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
+            
+            # Extract assignments and other needed data
+            cluster_assignments = clustering_result.get('cluster_assignments', [])
+            cluster_centers = clustering_result.get('cluster_centers', [])
+            
+            if not cluster_assignments:
+                tprint_warning("No cluster assignments found in clustering result")
+                return {"error": "no_assignments"}
+            
+            # Convert to numpy array for processing
+            assignments_array = np.array(cluster_assignments)
+            
+            # Use shared metrics calculator
+            consensus_metrics = self.metrics_calculator.calculate_consensus_metrics(
+                assignments_array, verbose=True
+            )
+            disagreement_metrics = self.metrics_calculator.calculate_disagreement_metrics(
+                assignments_array, verbose=True
+            )
+            economic_scores = self.metrics_calculator.calculate_economic_scores(
+                assignments_array, verbose=True
+            )
+            trading_scores = self.metrics_calculator.calculate_trading_scores(
+                assignments_array, verbose=True
+            )
+            stability_scores = self.metrics_calculator.calculate_stability_scores(
+                assignments_array, verbose=True
+            )
+            
+            # Compile metrics dictionary
+            clustering_metrics = {
+                "consensus_metrics": consensus_metrics,
+                "disagreement_metrics": disagreement_metrics,
+                "economic_scores": economic_scores,
+                "trading_scores": trading_scores,
+                "stability_scores": stability_scores,
+                "cluster_centers": cluster_centers,
+                "n_clusters": len(set(cluster_assignments)),
+                "total_assignments": len(cluster_assignments)
+            }
+            
+            tprint("Clustering metrics calculated using shared utilities", "SUCCESS")
+            return clustering_metrics
+            
+        except Exception as exc:
+            tprint_error(f"Failed to calculate clustering metrics: {exc}")
+            # Return fallback metrics
+            return {
+                "error": str(exc),
+                "consensus_metrics": {},
+                "disagreement_metrics": {},
+                "economic_scores": {},
+                "trading_scores": {},
+                "stability_scores": {},
+                "cluster_centers": clustering_result.get('cluster_centers', []),
+                "n_clusters": clustering_result.get('n_clusters', 0),
+                "total_assignments": len(clustering_result.get('cluster_assignments', []))
+            }
+
     def _build_artifacts(
         self,
         clustering_result: Dict[str, Any],

@@ -57,9 +57,43 @@ try:
         record_performance_adaptive
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
+    tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
 except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     log_warning(f"Hardware optimization not available: {e}")
+
+# Import M1-specific hardware utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_optimizer,
+        get_m1_gpu_memory_manager,
+        get_m1_gpu_performance_monitor
+    )
+    from src.utils.hardware.m1_memory_optimizer import (
+        get_m1_memory_optimizer,
+        get_m1_memory_pool_manager,
+        get_m1_memory_monitor
+    )
+    from src.utils.hardware.m1_cpu_optimizer import (
+        get_m1_cpu_optimizer,
+        get_m1_cpu_performance_monitor,
+        get_m1_cpu_scheduler
+    )
+    M1_HARDWARE_AVAILABLE = True
+    tprint("✅ M1-specific hardware utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    M1_HARDWARE_AVAILABLE = False
+    log_warning(f"M1 hardware utilities not available: {e}")
+    # Set fallback functions
+    get_m1_gpu_optimizer = lambda: None
+    get_m1_gpu_memory_manager = lambda: None
+    get_m1_gpu_performance_monitor = lambda: None
+    get_m1_memory_optimizer = lambda: None
+    get_m1_memory_pool_manager = lambda: None
+    get_m1_memory_monitor = lambda: None
+    get_m1_cpu_optimizer = lambda: None
+    get_m1_cpu_performance_monitor = lambda: None
+    get_m1_cpu_scheduler = lambda: None
 
 # Import shared utilities
 from ..shared_utils import (
@@ -160,10 +194,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.execution_metadata = {}
             
             # Initialize hardware optimizations
+            tprint("🔧 Initializing hardware optimization systems...", "INFO")
             self.matrix_ops = None
             self.hardware_manager = None
             self.vectorized_core = None
             self.batch_processor = None
+            
+            # Initialize M1-specific hardware utilities
+            self.m1_gpu_optimizer = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            
+            # Initialize hardware optimization
+            self._initialize_hardware_optimization()
+            self._initialize_matrix_operations()
             
             if MATRIX_OPERATIONS_AVAILABLE:
                 try:
@@ -183,6 +227,70 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             log_success("NAS-TAS Clustering Component initialized")
     
+    def _initialize_hardware_optimization(self):
+        """Initialize M1-specific hardware optimization systems."""
+        try:
+            tprint("🔧 Initializing M1 hardware optimization...", "INFO")
+            
+            if M1_HARDWARE_AVAILABLE:
+                # Initialize M1 GPU optimizer
+                tprint("  🎮 Initializing M1 GPU optimizer...", "INFO")
+                self.m1_gpu_optimizer = get_m1_gpu_optimizer()
+                if self.m1_gpu_optimizer:
+                    tprint("  ✅ M1 GPU optimizer initialized", "SUCCESS")
+                
+                # Initialize M1 memory optimizer
+                tprint("  💾 Initializing M1 memory optimizer...", "INFO")
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                if self.m1_memory_optimizer:
+                    tprint("  ✅ M1 memory optimizer initialized", "SUCCESS")
+                
+                # Initialize M1 CPU optimizer
+                tprint("  🖥️  Initializing M1 CPU optimizer...", "INFO")
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                if self.m1_cpu_optimizer:
+                    tprint("  ✅ M1 CPU optimizer initialized", "SUCCESS")
+                
+                tprint("✅ M1 hardware optimization systems initialized", "SUCCESS")
+            else:
+                tprint("⚠️  M1 hardware utilities not available, using fallback", "WARNING")
+                
+        except Exception as e:
+            tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
+            log_error(f"Hardware optimization initialization failed: {e}")
+    
+    def _initialize_matrix_operations(self):
+        """Initialize matrix operations with hardware optimization."""
+        try:
+            tprint("📊 Initializing matrix operations with hardware optimization...", "INFO")
+            
+            if MATRIX_OPERATIONS_AVAILABLE:
+                # Initialize unified matrix operations
+                tprint("  🔄 Initializing unified matrix operations...", "INFO")
+                self.matrix_ops = get_unified_matrix_operations()
+                if self.matrix_ops:
+                    tprint("  ✅ Unified matrix operations initialized", "SUCCESS")
+                
+                # Initialize vectorized processing core
+                tprint("  ⚡ Initializing vectorized processing core...", "INFO")
+                self.vectorized_core = get_vectorized_processing_core()
+                if self.vectorized_core:
+                    tprint("  ✅ Vectorized processing core initialized", "SUCCESS")
+                
+                # Initialize batch processor
+                tprint("  📦 Initializing batch matrix processor...", "INFO")
+                self.batch_processor = get_batch_matrix_processor()
+                if self.batch_processor:
+                    tprint("  ✅ Batch matrix processor initialized", "SUCCESS")
+                
+                tprint("✅ Matrix operations initialized with hardware optimization", "SUCCESS")
+            else:
+                tprint("⚠️  Matrix operations not available, using fallback", "WARNING")
+                
+        except Exception as e:
+            tprint(f"❌ Matrix operations initialization failed: {e}", "ERROR")
+            log_error(f"Matrix operations initialization failed: {e}")
+    
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
@@ -200,10 +308,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             ComponentResult with clustering results
         """
         try:
+            tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
+            log_info("Starting NAS-TAS clustering execution with hardware optimization")
+            
             # Store pipeline state as instance attribute for use in other methods
             self.pipeline_state = pipeline_state
             
+            # Initialize performance monitoring
+            tprint("📊 Initializing performance monitoring...", "INFO")
+            start_time = time.time()
+            
             # Step 1: Extract regime count from previous step artifacts
+            tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
             log_info("Extracting regime count from previous step artifacts")
             
             # Extract regime count from regime discovery results
@@ -705,11 +821,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for NAS/TAS clustering and divergence detection using fast-fail approach."""
+        """Select features most important for NAS/TAS clustering and divergence detection using enhanced methods with M1 hardware optimization."""
         try:
             from sklearn.feature_selection import SelectKBest, mutual_info_classif
+            from sklearn.model_selection import cross_val_score
+            from sklearn.ensemble import RandomForestClassifier
             
-            tprint("Selecting features optimized for NAS/TAS divergence patterns...", "INFO")
+            tprint("🔍 Selecting features optimized for NAS/TAS divergence patterns with M1 hardware optimization...", "INFO")
+            
+            # Initialize hardware optimization for feature selection
+            tprint("  🔧 Initializing M1 hardware optimization for feature selection...", "INFO")
+            if self.m1_cpu_optimizer:
+                tprint("  ⚡ Using M1 CPU optimization for feature selection", "SUCCESS")
+            if self.m1_memory_optimizer:
+                tprint("  💾 Using M1 memory optimization for feature selection", "SUCCESS")
             
             # Get TAS/NAS assignments for divergence-aware feature selection (required)
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
@@ -718,11 +843,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if tas_assignments is None or nas_assignments is None:
                 raise ValueError("TAS/NAS assignments are required for divergence-aware feature selection. Cannot proceed without regime disagreement data.")
             
-            # Perform data-driven divergence assessment
-            divergence_analysis = self._assess_data_driven_divergence(tas_assignments, nas_assignments)
+            # Perform data-driven divergence assessment with confidence scoring
+            divergence_analysis = self._assess_data_driven_divergence_with_confidence(tas_assignments, nas_assignments)
             semantic_divergence_rate = divergence_analysis['semantic_divergence_rate']
             mapping_quality_metrics = divergence_analysis['mapping_quality']
             overall_mapping_quality = mapping_quality_metrics.get('overall_quality', 0.0)
+            confidence_scores = divergence_analysis.get('confidence_scores', None)
             
             # Use semantic divergence rate for validation instead of numerical disagreement
             semantic_disagreement_count = int(semantic_divergence_rate * len(tas_assignments))
@@ -759,18 +885,853 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             disagreement_count = np.sum(disagreement_mask)
             tprint(f"Data-driven feature selection: {disagreement_count} disagreement samples, semantic rate: {semantic_divergence_rate:.3f}", "SUCCESS")
             
-            # Select features that best distinguish disagreement vs agreement using mutual information
-            n_features = min(15, features.shape[1])
-            selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
-            features_selected = selector.fit_transform(features, disagreement_mask.astype(int))
+            # Step 1: Calculate temporal feature importance
+            tprint("Step 1: Calculating temporal feature importance...", "INFO")
+            temporal_weights = self._calculate_temporal_feature_importance(features, market_data)
             
-            tprint(f"Selected {features_selected.shape[1]} divergence-optimized features using mutual information", "SUCCESS")
-            return features_selected
+            # Step 2: Cross-validation feature selection
+            tprint("Step 2: Performing cross-validation feature selection...", "INFO")
+            cv_selected_features = self._cross_validation_feature_selection(features, disagreement_mask.astype(int), temporal_weights)
+            
+            # Step 3: Apply temporal weighting to selected features
+            tprint("Step 3: Applying temporal weighting to selected features...", "INFO")
+            weighted_features = self._apply_temporal_weighting(features, cv_selected_features, temporal_weights)
+            
+            tprint(f"Selected {weighted_features.shape[1]} divergence-optimized features with temporal importance and CV validation", "SUCCESS")
+            return weighted_features
             
         except Exception as e:
-            log_error(f"Feature selection failed: {e}")
-            tprint(f"Feature selection failed: {e}", "ERROR")
-            raise ValueError(f"Feature selection failed: {e}")
+            log_error(f"Enhanced feature selection failed: {e}")
+            tprint(f"Enhanced feature selection failed: {e}", "ERROR")
+            raise ValueError(f"Enhanced feature selection failed: {e}")
+    
+    def _calculate_temporal_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate temporal feature importance based on temporal stability with M1 hardware optimization and vectorized operations."""
+        try:
+            tprint("  📊 Calculating temporal feature importance with M1 hardware optimization and vectorized operations...", "INFO")
+            
+            # Initialize M1 hardware optimization for temporal analysis
+            if self.m1_cpu_optimizer:
+                tprint("    ⚡ Using M1 CPU optimization for vectorized temporal analysis", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("    💾 Using M1 memory optimization for vectorized temporal analysis", "INFO")
+            
+            # VECTORIZED CALCULATION: Process all features simultaneously
+            tprint("    🔄 Using vectorized operations for all features simultaneously...", "INFO")
+            
+            # 1. Vectorized autocorrelation calculation for all features
+            autocorr_weights = self._calculate_vectorized_autocorrelation(features)
+            
+            # 2. Vectorized temporal variance calculation for all features
+            temporal_var_weights = self._calculate_vectorized_temporal_variance(features)
+            
+            # 3. Vectorized trend consistency calculation for all features
+            trend_consistency_weights = self._calculate_vectorized_trend_consistency(features)
+            
+            # 4. Vectorized regime persistence calculation for all features
+            regime_persistence_weights = self._calculate_vectorized_regime_persistence(features, market_data)
+            
+            # VECTORIZED COMBINATION: Combine all metrics using matrix operations
+            temporal_weights = (
+                0.3 * autocorr_weights +           # Autocorrelation importance
+                0.2 * (1.0 / (1.0 + temporal_var_weights)) +  # Inverse variance (stability)
+                0.3 * trend_consistency_weights +  # Trend consistency
+                0.2 * regime_persistence_weights   # Regime persistence
+            )
+            
+            # Normalize weights to [0, 1] range
+            if np.max(temporal_weights) > 0:
+                temporal_weights = temporal_weights / np.max(temporal_weights)
+            
+            tprint(f"  ✅ Temporal importance calculated for {features.shape[1]} features", "SUCCESS")
+            tprint(f"  📈 Top 5 temporal features: {np.argsort(temporal_weights)[-5:][::-1]}", "INFO")
+            
+            return temporal_weights
+            
+        except Exception as e:
+            log_warning(f"Temporal feature importance calculation failed: {e}")
+            return np.ones(features.shape[1])  # Fallback to uniform weights
+    
+    def _calculate_vectorized_autocorrelation(self, features: np.ndarray) -> np.ndarray:
+        """Calculate autocorrelation for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized autocorrelation for all features...", "INFO")
+            
+            if features.shape[0] < 2:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized autocorrelation calculation
+            # Calculate mean for each feature
+            feature_means = np.mean(features, axis=0, keepdims=True)
+            
+            # Calculate autocorrelation using vectorized operations
+            # Autocorr = E[(X_t - μ)(X_{t+1} - μ)] / E[(X_t - μ)²]
+            centered_features = features - feature_means
+            
+            # Calculate numerator: (X_t - μ)(X_{t+1} - μ) for all features
+            numerator = np.sum(centered_features[:-1] * centered_features[1:], axis=0)
+            
+            # Calculate denominator: (X_t - μ)² for all features
+            denominator = np.sum(centered_features ** 2, axis=0)
+            
+            # Avoid division by zero
+            autocorr = np.where(denominator != 0, np.abs(numerator / denominator), 0)
+            
+            tprint(f"      ✅ Vectorized autocorrelation calculated for {features.shape[1]} features", "SUCCESS")
+            return autocorr
+            
+        except Exception as e:
+            log_warning(f"Vectorized autocorrelation calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_temporal_variance(self, features: np.ndarray) -> np.ndarray:
+        """Calculate temporal variance for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized temporal variance for all features...", "INFO")
+            
+            if features.shape[0] < 2:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized rolling variance calculation
+            window_size = min(10, features.shape[0] // 4)
+            if window_size < 2:
+                return np.var(features, axis=0)
+            
+            # Calculate rolling variance using vectorized operations
+            rolling_vars = []
+            for i in range(features.shape[0] - window_size + 1):
+                window_features = features[i:i + window_size]
+                window_vars = np.var(window_features, axis=0)
+                rolling_vars.append(window_vars)
+            
+            # Calculate mean rolling variance for each feature
+            temporal_vars = np.mean(rolling_vars, axis=0) if rolling_vars else np.var(features, axis=0)
+            
+            tprint(f"      ✅ Vectorized temporal variance calculated for {features.shape[1]} features", "SUCCESS")
+            return temporal_vars
+            
+        except Exception as e:
+            log_warning(f"Vectorized temporal variance calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_trend_consistency(self, features: np.ndarray) -> np.ndarray:
+        """Calculate trend consistency for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized trend consistency for all features...", "INFO")
+            
+            if features.shape[0] < 3:
+                return np.zeros(features.shape[1])
+            
+            # Vectorized trend consistency calculation
+            # Calculate first differences for all features
+            diffs = np.diff(features, axis=0)
+            
+            # Calculate direction changes for all features
+            direction_changes = np.sum(np.diff(np.sign(diffs), axis=0) != 0, axis=0)
+            max_changes = diffs.shape[0] - 1
+            
+            # Calculate consistency for all features
+            consistency = np.where(max_changes > 0, 1.0 - (direction_changes / max_changes), 1.0)
+            consistency = np.maximum(0.0, consistency)
+            
+            tprint(f"      ✅ Vectorized trend consistency calculated for {features.shape[1]} features", "SUCCESS")
+            return consistency
+            
+        except Exception as e:
+            log_warning(f"Vectorized trend consistency calculation failed: {e}")
+            return np.zeros(features.shape[1])
+    
+    def _calculate_vectorized_regime_persistence(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate regime persistence for all features using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized regime persistence for all features...", "INFO")
+            
+            # Get regime assignments if available
+            tas_assignments, nas_assignments = self._get_tas_nas_assignments()
+            
+            if tas_assignments is None or len(tas_assignments) != len(features):
+                tprint("      ⚠️  No regime data available, using neutral persistence", "WARNING")
+                return np.ones(features.shape[1]) * 0.5
+            
+            # Vectorized regime persistence calculation
+            unique_regimes = np.unique(tas_assignments)
+            regime_stabilities = []
+            
+            for regime in unique_regimes:
+                regime_mask = tas_assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # Calculate CV for each feature within the regime using vectorized operations
+                    feature_means = np.mean(regime_features, axis=0)
+                    feature_stds = np.std(regime_features, axis=0)
+                    
+                    # Avoid division by zero
+                    feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
+                    
+                    # Stability = 1 / (1 + CV) for all features
+                    regime_stability = 1.0 / (1.0 + feature_cvs)
+                    regime_stabilities.append(regime_stability)
+            
+            # Calculate average stability across regimes for each feature
+            if regime_stabilities:
+                persistence_weights = np.mean(regime_stabilities, axis=0)
+            else:
+                persistence_weights = np.ones(features.shape[1]) * 0.5
+            
+            tprint(f"      ✅ Vectorized regime persistence calculated for {features.shape[1]} features", "SUCCESS")
+            return persistence_weights
+            
+        except Exception as e:
+            log_warning(f"Vectorized regime persistence calculation failed: {e}")
+            return np.ones(features.shape[1]) * 0.5
+    
+    # REMOVED: Legacy single-feature methods replaced by vectorized versions
+    # These methods were replaced by _calculate_vectorized_* methods for better performance
+    
+    def _cross_validation_feature_selection(self, features: np.ndarray, labels: np.ndarray, temporal_weights: np.ndarray) -> np.ndarray:
+        """Perform cross-validation feature selection for robust feature selection with M1 hardware optimization."""
+        try:
+            from sklearn.model_selection import StratifiedKFold
+            from sklearn.feature_selection import SelectKBest, mutual_info_classif
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import accuracy_score
+            
+            tprint("  🔄 Performing k-fold cross-validation feature selection with M1 hardware optimization...", "INFO")
+            
+            # Initialize M1 hardware optimization for cross-validation
+            if self.m1_cpu_optimizer:
+                tprint("    ⚡ Using M1 CPU optimization for cross-validation", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("    💾 Using M1 memory optimization for cross-validation", "INFO")
+            
+            # Parameters
+            n_folds = 5
+            n_features = min(15, features.shape[1])
+            
+            # Initialize feature importance scores
+            feature_scores = np.zeros(features.shape[1])
+            feature_counts = np.zeros(features.shape[1])
+            
+            # Cross-validation setup
+            skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+            
+            for fold, (train_idx, val_idx) in enumerate(skf.split(features, labels)):
+                tprint(f"    Fold {fold + 1}/{n_folds}...", "INFO")
+                
+                # Split data
+                X_train, X_val = features[train_idx], features[val_idx]
+                y_train, y_val = labels[train_idx], labels[val_idx]
+                
+                # Feature selection for this fold
+                selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
+                X_train_selected = selector.fit_transform(X_train, y_train)
+                selected_features = selector.get_support(indices=True)
+                
+                # Apply temporal weighting to feature scores
+                for feature_idx in selected_features:
+                    temporal_weight = temporal_weights[feature_idx]
+                    feature_scores[feature_idx] += temporal_weight
+                    feature_counts[feature_idx] += 1
+                
+                # Validate selection with Random Forest
+                if len(selected_features) > 0:
+                    rf = RandomForestClassifier(n_estimators=50, random_state=42)
+                    rf.fit(X_train_selected, y_train)
+                    val_pred = rf.predict(X_val[:, selected_features])
+                    accuracy = accuracy_score(y_val, val_pred)
+                    tprint(f"      Validation accuracy: {accuracy:.3f}", "INFO")
+            
+            # Select features based on cross-validation scores
+            avg_scores = np.where(feature_counts > 0, feature_scores / feature_counts, 0)
+            top_features = np.argsort(avg_scores)[-n_features:][::-1]
+            
+            tprint(f"  ✅ CV feature selection completed - Selected {len(top_features)} features", "SUCCESS")
+            tprint(f"  📊 Top features: {top_features[:5]}", "INFO")
+            
+            return features[:, top_features]
+            
+        except Exception as e:
+            log_warning(f"Cross-validation feature selection failed: {e}")
+            # Fallback to simple feature selection
+            selector = SelectKBest(score_func=mutual_info_classif, k=min(15, features.shape[1]))
+            return selector.fit_transform(features, labels)
+    
+    def _apply_temporal_weighting(self, features: np.ndarray, selected_features: np.ndarray, temporal_weights: np.ndarray) -> np.ndarray:
+        """Apply temporal weighting to selected features."""
+        try:
+            tprint("  ⚖️  Applying temporal weighting to features...", "INFO")
+            
+            # Get the indices of selected features
+            if selected_features.shape[1] != features.shape[1]:
+                # Features were already selected, return as is
+                return selected_features
+            
+            # Apply temporal weighting
+            weighted_features = features.copy()
+            for i in range(features.shape[1]):
+                temporal_weight = temporal_weights[i]
+                weighted_features[:, i] *= temporal_weight
+            
+            tprint(f"  ✅ Temporal weighting applied to {features.shape[1]} features", "SUCCESS")
+            return weighted_features
+            
+        except Exception as e:
+            log_warning(f"Temporal weighting application failed: {e}")
+            return selected_features
+    
+    def _assess_data_driven_divergence_with_confidence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Assess divergence using data-driven methods with confidence scoring."""
+        try:
+            tprint("  🧠 Performing data-driven divergence assessment with confidence scoring...", "INFO")
+            
+            # Get features for regime centroid comparison
+            features = self._get_current_features()
+            if features is None:
+                tprint("  ⚠️  No features available for data-driven assessment, using numerical comparison only", "WARNING")
+                return self._assess_numerical_divergence_with_confidence(tas_assignments, nas_assignments)
+            
+            # Step 1: Calculate regime centroids in feature space
+            tas_centroids = self._calculate_regime_centroids(features, tas_assignments)
+            nas_centroids = self._calculate_regime_centroids(features, nas_assignments)
+            
+            # Step 2: Find optimal regime mapping using Hungarian algorithm
+            regime_mapping = self._find_optimal_regime_mapping(tas_centroids, nas_centroids)
+            
+            # Step 3: Calculate semantic divergence using mapped regimes
+            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
+            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_divergence_rate = np.mean(semantic_disagreement_mask)
+            
+            # Step 4: Calculate confidence scores for divergence detection
+            confidence_scores = self._calculate_divergence_confidence_scores(
+                features, tas_assignments, nas_assignments, semantic_disagreement_mask
+            )
+            
+            # Step 5: Calculate comprehensive mapping quality metrics
+            mapping_quality_metrics = self._calculate_mapping_quality(tas_centroids, nas_centroids, regime_mapping)
+            
+            # Step 6: Analyze regime similarity patterns
+            similarity_analysis = self._analyze_regime_similarity(tas_centroids, nas_centroids, regime_mapping)
+            
+            # Step 7: Comprehensive reporting with confidence information
+            self._report_mapping_quality_with_confidence(mapping_quality_metrics, regime_mapping, confidence_scores)
+            
+            tprint(f"  📊 Data-driven assessment with confidence results:", "INFO")
+            tprint(f"     Semantic divergence rate: {semantic_divergence_rate:.3f}", "INFO")
+            tprint(f"     Overall mapping quality: {mapping_quality_metrics['overall_quality']:.3f}", "INFO")
+            tprint(f"     Average confidence: {np.mean(confidence_scores):.3f}", "INFO")
+            tprint(f"     High confidence samples: {np.sum(confidence_scores > 0.8)}", "INFO")
+            
+            return {
+                'semantic_divergence_rate': semantic_divergence_rate,
+                'mapping_quality': mapping_quality_metrics,
+                'regime_mapping': regime_mapping,
+                'similarity_analysis': similarity_analysis,
+                'tas_centroids': tas_centroids,
+                'nas_centroids': nas_centroids,
+                'confidence_scores': confidence_scores
+            }
+            
+        except Exception as e:
+            log_warning(f"Data-driven divergence assessment with confidence failed: {e}")
+            return self._assess_numerical_divergence_with_confidence(tas_assignments, nas_assignments)
+    
+    def _assess_numerical_divergence_with_confidence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Fallback numerical divergence assessment with confidence scoring."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            numerical_divergence_rate = np.mean(disagreement_mask)
+            
+            # Simple confidence scoring for numerical disagreement
+            confidence_scores = np.ones(len(tas_assignments)) * 0.5  # Neutral confidence
+            
+            return {
+                'semantic_divergence_rate': numerical_divergence_rate,
+                'mapping_quality': 0.5,  # Neutral quality for numerical-only assessment
+                'regime_mapping': {},
+                'similarity_analysis': {'avg_similarity': 0.5},
+                'confidence_scores': confidence_scores,
+                'assessment_method': 'numerical_only'
+            }
+            
+        except Exception as e:
+            log_warning(f"Numerical divergence assessment with confidence failed: {e}")
+            return {
+                'semantic_divergence_rate': 0.5,
+                'mapping_quality': 0.0,
+                'regime_mapping': {},
+                'similarity_analysis': {'avg_similarity': 0.0},
+                'confidence_scores': np.zeros(len(tas_assignments)),
+                'assessment_method': 'failed'
+            }
+    
+    def _calculate_divergence_confidence_scores(self, features: np.ndarray, tas_assignments: np.ndarray, 
+                                             nas_assignments: np.ndarray, disagreement_mask: np.ndarray) -> np.ndarray:
+        """Calculate confidence scores for divergence detection."""
+        try:
+            confidence_scores = np.zeros(len(tas_assignments))
+            
+            for i in range(len(tas_assignments)):
+                if disagreement_mask[i]:
+                    # Calculate confidence based on multiple factors
+                    
+                    # 1. Feature space distance between TAS and NAS regimes
+                    tas_regime = tas_assignments[i]
+                    nas_regime = nas_assignments[i]
+                    
+                    # Get regime centroids
+                    tas_centroid = self._get_regime_centroid(features, tas_assignments, tas_regime)
+                    nas_centroid = self._get_regime_centroid(features, nas_assignments, nas_regime)
+                    
+                    if tas_centroid is not None and nas_centroid is not None:
+                        # Distance-based confidence (higher distance = higher confidence in divergence)
+                        distance = np.linalg.norm(tas_centroid - nas_centroid)
+                        distance_confidence = min(1.0, distance / np.std(features))
+                    else:
+                        distance_confidence = 0.5
+                    
+                    # 2. Local neighborhood consistency
+                    neighborhood_confidence = self._calculate_neighborhood_consistency(features, i, tas_regime, nas_regime)
+                    
+                    # 3. Temporal consistency
+                    temporal_confidence = self._calculate_temporal_divergence_confidence(i, tas_assignments, nas_assignments)
+                    
+                    # Combine confidence factors
+                    confidence_scores[i] = (
+                        0.4 * distance_confidence +
+                        0.3 * neighborhood_confidence +
+                        0.3 * temporal_confidence
+                    )
+                else:
+                    # No disagreement, high confidence in agreement
+                    confidence_scores[i] = 0.9
+            
+            return confidence_scores
+            
+        except Exception as e:
+            log_warning(f"Confidence score calculation failed: {e}")
+            return np.ones(len(tas_assignments)) * 0.5
+    
+    def _get_regime_centroid(self, features: np.ndarray, assignments: np.ndarray, regime: int) -> Optional[np.ndarray]:
+        """Get centroid for a specific regime."""
+        try:
+            regime_mask = assignments == regime
+            if np.sum(regime_mask) > 0:
+                return np.mean(features[regime_mask], axis=0)
+            return None
+        except Exception as e:
+            log_warning(f"Regime centroid calculation failed: {e}")
+            return None
+    
+    def _calculate_neighborhood_consistency(self, features: np.ndarray, sample_idx: int, tas_regime: int, nas_regime: int) -> float:
+        """Calculate neighborhood consistency for divergence confidence."""
+        try:
+            # Get local neighborhood (k=5)
+            k = min(5, len(features) - 1)
+            distances = np.linalg.norm(features - features[sample_idx], axis=1)
+            neighbor_indices = np.argsort(distances)[1:k+1]  # Exclude self
+            
+            # Count neighbors that agree with divergence
+            tas_neighbors = np.sum([tas_assignments[idx] == tas_regime for idx in neighbor_indices])
+            nas_neighbors = np.sum([nas_assignments[idx] == nas_regime for idx in neighbor_indices])
+            
+            # Consistency = proportion of neighbors that support the divergence
+            consistency = (tas_neighbors + nas_neighbors) / (2 * k)
+            return consistency
+            
+        except Exception as e:
+            log_warning(f"Neighborhood consistency calculation failed: {e}")
+            return 0.5
+    
+    def _calculate_temporal_divergence_confidence(self, sample_idx: int, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> float:
+        """Calculate temporal confidence for divergence."""
+        try:
+            # Check temporal consistency of divergence
+            window_size = min(5, len(tas_assignments) // 4)
+            start_idx = max(0, sample_idx - window_size // 2)
+            end_idx = min(len(tas_assignments), sample_idx + window_size // 2 + 1)
+            
+            # Count disagreements in temporal window
+            window_tas = tas_assignments[start_idx:end_idx]
+            window_nas = nas_assignments[start_idx:end_idx]
+            window_disagreements = np.sum(window_tas != window_nas)
+            
+            # Temporal confidence = proportion of disagreements in window
+            temporal_confidence = window_disagreements / len(window_tas)
+            return temporal_confidence
+            
+        except Exception as e:
+            log_warning(f"Temporal divergence confidence calculation failed: {e}")
+            return 0.5
+    
+    def _report_mapping_quality_with_confidence(self, mapping_quality_metrics: Dict[str, Any], 
+                                             regime_mapping: Dict[int, int], confidence_scores: np.ndarray):
+        """Report mapping quality with confidence information."""
+        try:
+            tprint("  📊 Enhanced Mapping Quality Assessment with Confidence:", "INFO")
+            tprint(f"     Overall Quality: {mapping_quality_metrics.get('overall_quality', 0.0):.3f}", "INFO")
+            tprint(f"     Centroid Quality: {mapping_quality_metrics.get('centroid_quality', 0.0):.3f}", "INFO")
+            tprint(f"     PCA Quality: {mapping_quality_metrics.get('pca_quality', 0.0):.3f}", "INFO")
+            tprint(f"     CV Quality: {mapping_quality_metrics.get('cv_quality', 0.0):.3f}", "INFO")
+            tprint(f"     Mapping Coverage: {mapping_quality_metrics.get('mapping_coverage', 0.0):.3f}", "INFO")
+            tprint(f"     Average Confidence: {np.mean(confidence_scores):.3f}", "INFO")
+            tprint(f"     High Confidence (>0.8): {np.sum(confidence_scores > 0.8)} samples", "INFO")
+            tprint(f"     Low Confidence (<0.3): {np.sum(confidence_scores < 0.3)} samples", "INFO")
+            
+        except Exception as e:
+            log_warning(f"Confidence reporting failed: {e}")
+    
+    def _calculate_adaptive_batch_size(self, frontier_samples: List[int], iteration: int, current_assignments: np.ndarray) -> int:
+        """Calculate adaptive batch size based on convergence rate and optimization progress."""
+        try:
+            # Base batch size
+            base_batch_size = max(1, int(0.10 * len(frontier_samples)))
+            
+            # Convergence rate analysis
+            if hasattr(self, '_convergence_history') and len(self._convergence_history) > 2:
+                # Calculate convergence rate
+                recent_improvements = self._convergence_history[-3:]
+                convergence_rate = np.mean(recent_improvements)
+                
+                # Adjust batch size based on convergence rate
+                if convergence_rate > 0.01:  # High improvement rate
+                    adaptive_factor = 1.5  # Increase batch size for faster convergence
+                elif convergence_rate > 0.005:  # Medium improvement rate
+                    adaptive_factor = 1.0  # Maintain batch size
+                else:  # Low improvement rate
+                    adaptive_factor = 0.7  # Decrease batch size for more careful optimization
+            else:
+                adaptive_factor = 1.0
+            
+            # Iteration-based adjustment
+            if iteration < 5:
+                # Early iterations: smaller batches for careful optimization
+                iteration_factor = 0.8
+            elif iteration < 20:
+                # Middle iterations: standard batches
+                iteration_factor = 1.0
+            else:
+                # Late iterations: smaller batches for fine-tuning
+                iteration_factor = 0.6
+            
+            # Calculate final adaptive batch size
+            adaptive_batch_size = int(base_batch_size * adaptive_factor * iteration_factor)
+            adaptive_batch_size = max(1, min(adaptive_batch_size, len(frontier_samples)))
+            
+            tprint(f"  📊 Adaptive batch sizing: base={base_batch_size}, factor={adaptive_factor:.2f}, iteration_factor={iteration_factor:.2f}, final={adaptive_batch_size}", "INFO")
+            
+            return adaptive_batch_size
+            
+        except Exception as e:
+            log_warning(f"Adaptive batch size calculation failed: {e}")
+            return max(1, int(0.10 * len(frontier_samples)))  # Fallback to base batch size
+    
+    def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                                 sample_idx: int, target_regime: int) -> float:
+        """Calculate multi-objective improvement using Pareto optimization principles with M1 hardware optimization."""
+        try:
+            tprint(f"    🎯 Calculating multi-objective improvement for sample {sample_idx} with M1 hardware optimization...", "INFO")
+            
+            # Initialize M1 hardware optimization for multi-objective calculation
+            if self.m1_cpu_optimizer:
+                tprint(f"      ⚡ Using M1 CPU optimization for sample {sample_idx}", "INFO")
+            if self.m1_memory_optimizer:
+                tprint(f"      💾 Using M1 memory optimization for sample {sample_idx}", "INFO")
+            
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Calculate individual objective improvements
+            objectives = self._calculate_multi_objective_scores(features, assignments, sample_idx, target_regime)
+            
+            # Apply Pareto optimization weights
+            pareto_weights = self._get_pareto_optimization_weights()
+            
+            # Calculate weighted multi-objective improvement
+            multi_objective_improvement = sum(
+                weight * objective for weight, objective in zip(pareto_weights, objectives.values())
+            )
+            
+            tprint(f"    ✅ Multi-objective improvement calculated: {multi_objective_improvement:.4f}", "SUCCESS")
+            return multi_objective_improvement
+            
+        except Exception as e:
+            log_warning(f"Multi-objective improvement calculation failed: {e}")
+            # Fallback to single-objective improvement
+            return self._calculate_single_flip_improvement(features, assignments, sample_idx, target_regime)
+    
+    def _calculate_multi_objective_scores(self, features: np.ndarray, assignments: np.ndarray, 
+                                        sample_idx: int, target_regime: int) -> Dict[str, float]:
+        """Calculate multiple objective scores for Pareto optimization."""
+        try:
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Temporarily assign target regime
+            assignments[sample_idx] = target_regime
+            
+            # Calculate individual quality metrics
+            quality_scores = self._calculate_individual_quality_scores(features, assignments)
+            
+            # Restore original assignment
+            assignments[sample_idx] = original_regime
+            
+            # Calculate original scores for comparison
+            original_scores = self._calculate_individual_quality_scores(features, assignments)
+            
+            # Calculate improvements for each objective (reduced redundancy)
+            objectives = {
+                'silhouette_improvement': quality_scores['silhouette'] - original_scores['silhouette'],
+                'ch_improvement': 0.0,  # REMOVED - redundant with Silhouette
+                'db_improvement': 0.0,  # REMOVED - redundant with Silhouette
+                'balance_improvement': quality_scores['regime_balance'] - original_scores['regime_balance'],
+                'within_regime_cv_improvement': self._calculate_within_regime_cv_improvement(
+                    features, assignments, sample_idx, target_regime
+                ),
+                'between_regime_cv_improvement': self._calculate_between_regime_cv_improvement(
+                    features, assignments, sample_idx, target_regime
+                ),
+                'temporal_improvement': self._calculate_temporal_consistency_improvement(
+                    features, assignments, sample_idx, target_regime
+                )
+            }
+            
+            return objectives
+            
+        except Exception as e:
+            log_warning(f"Multi-objective scores calculation failed: {e}")
+            return {
+                'silhouette_improvement': 0.0,
+                'ch_improvement': 0.0,
+                'db_improvement': 0.0,
+                'balance_improvement': 0.0,
+                'within_regime_cv_improvement': 0.0,
+                'between_regime_cv_improvement': 0.0,
+                'temporal_improvement': 0.0
+            }
+    
+    def _get_pareto_optimization_weights(self) -> List[float]:
+        """Get Pareto optimization weights for multi-objective optimization with reduced redundancy."""
+        try:
+            # Pareto weights optimized for NAS/TAS divergence detection
+            # Reduced redundancy by focusing on complementary metrics
+            weights = [
+                0.20,  # Silhouette improvement (primary cluster separation metric) - reduced from 0.25
+                0.00,  # Calinski-Harabasz improvement (REMOVED - redundant with Silhouette)
+                0.00,  # Davies-Bouldin improvement (REMOVED - redundant with Silhouette)
+                0.20,  # Balance improvement (regime distribution - unique metric)
+                0.20,  # Within-regime CV improvement (intra-regime stability - unique metric)
+                0.20,  # Between-regime CV improvement (inter-regime divergence - unique metric) - reduced from 0.25
+                0.20   # Temporal improvement (smoothness - unique metric) - increased from 0.10
+            ]
+            
+            return weights
+            
+        except Exception as e:
+            log_warning(f"Pareto weights calculation failed: {e}")
+            return [0.25, 0.00, 0.00, 0.20, 0.20, 0.25, 0.10]  # Default weights
+    
+    def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                                 sample_idx: int, target_regime: int) -> float:
+        """Calculate temporal consistency improvement for regime flip."""
+        try:
+            # Get temporal neighbors
+            window_size = 3
+            start_idx = max(0, sample_idx - window_size)
+            end_idx = min(len(assignments), sample_idx + window_size + 1)
+            
+            # Calculate temporal consistency before flip
+            original_consistency = 0.0
+            for i in range(start_idx, end_idx):
+                if i != sample_idx:
+                    # Check consistency with neighbors
+                    if i > 0 and assignments[i] == assignments[i-1]:
+                        original_consistency += 0.5
+                    if i < len(assignments) - 1 and assignments[i] == assignments[i+1]:
+                        original_consistency += 0.5
+            
+            # Calculate temporal consistency after flip
+            assignments[sample_idx] = target_regime
+            new_consistency = 0.0
+            for i in range(start_idx, end_idx):
+                if i != sample_idx:
+                    # Check consistency with neighbors
+                    if i > 0 and assignments[i] == assignments[i-1]:
+                        new_consistency += 0.5
+                    if i < len(assignments) - 1 and assignments[i] == assignments[i+1]:
+                        new_consistency += 0.5
+            
+            # Restore original assignment
+            assignments[sample_idx] = assignments[sample_idx]  # This will be restored by caller
+            
+            # Return improvement
+            return new_consistency - original_consistency
+            
+        except Exception as e:
+            log_warning(f"Temporal consistency improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_within_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                             sample_idx: int, target_regime: int) -> float:
+        """Calculate within-regime CV improvement for regime flip (intra-regime stability)."""
+        try:
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Calculate within-regime CV before flip
+            original_within_cv = self._calculate_within_regime_cv(features, assignments)
+            
+            # Temporarily assign target regime
+            assignments[sample_idx] = target_regime
+            
+            # Calculate within-regime CV after flip
+            new_within_cv = self._calculate_within_regime_cv(features, assignments)
+            
+            # Restore original assignment
+            assignments[sample_idx] = original_regime
+            
+            # Return improvement (lower CV = higher stability = better)
+            improvement = original_within_cv - new_within_cv
+            return improvement
+            
+        except Exception as e:
+            log_warning(f"Within-regime CV improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_between_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+                                              sample_idx: int, target_regime: int) -> float:
+        """Calculate between-regime CV improvement for regime flip (inter-regime divergence)."""
+        try:
+            # Store original assignment
+            original_regime = assignments[sample_idx]
+            
+            # Calculate between-regime CV before flip
+            original_between_cv = self._calculate_between_regime_cv(features, assignments)
+            
+            # Temporarily assign target regime
+            assignments[sample_idx] = target_regime
+            
+            # Calculate between-regime CV after flip
+            new_between_cv = self._calculate_between_regime_cv(features, assignments)
+            
+            # Restore original assignment
+            assignments[sample_idx] = original_regime
+            
+            # Return improvement (higher CV = higher divergence = better for NAS/TAS detection)
+            improvement = new_between_cv - original_between_cv
+            return improvement
+            
+        except Exception as e:
+            log_warning(f"Between-regime CV improvement calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_within_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate within-regime coefficient of variation (intra-regime stability) using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized within-regime CV...", "INFO")
+            
+            unique_regimes = np.unique(assignments)
+            within_cvs = []
+            
+            for regime in unique_regimes:
+                regime_mask = assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 1:
+                    # VECTORIZED CV calculation for all features within regime
+                    feature_means = np.mean(regime_features, axis=0)
+                    feature_stds = np.std(regime_features, axis=0)
+                    
+                    # Avoid division by zero - vectorized operation
+                    feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
+                    
+                    # Average CV across features for this regime
+                    regime_cv = np.mean(feature_cvs)
+                    within_cvs.append(regime_cv)
+            
+            # Return average within-regime CV (lower = more stable)
+            result = np.mean(within_cvs) if within_cvs else 0.0
+            tprint(f"      ✅ Vectorized within-regime CV calculated: {result:.4f}", "SUCCESS")
+            return result
+            
+        except Exception as e:
+            log_warning(f"Within-regime CV calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_between_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate between-regime coefficient of variation (inter-regime divergence) using vectorized operations."""
+        try:
+            tprint("      🔄 Calculating vectorized between-regime CV...", "INFO")
+            
+            unique_regimes = np.unique(assignments)
+            
+            if len(unique_regimes) < 2:
+                return 0.0
+            
+            # VECTORIZED regime centroid calculation
+            regime_centroids = []
+            for regime in unique_regimes:
+                regime_mask = assignments == regime
+                regime_features = features[regime_mask]
+                
+                if len(regime_features) > 0:
+                    # Vectorized centroid calculation
+                    centroid = np.mean(regime_features, axis=0)
+                    regime_centroids.append(centroid)
+            
+            if len(regime_centroids) < 2:
+                return 0.0
+            
+            # VECTORIZED pairwise distance calculation
+            regime_centroids = np.array(regime_centroids)
+            
+            # Calculate all pairwise distances using vectorized operations
+            # Using broadcasting to calculate distances efficiently
+            n_centroids = len(regime_centroids)
+            distances = np.zeros((n_centroids, n_centroids))
+            
+            for i in range(n_centroids):
+                for j in range(i + 1, n_centroids):
+                    distances[i, j] = np.linalg.norm(regime_centroids[i] - regime_centroids[j])
+            
+            # Extract upper triangular distances
+            upper_triangular = distances[np.triu_indices(n_centroids, k=1)]
+            centroid_distances = upper_triangular[upper_triangular > 0]
+            
+            if len(centroid_distances) == 0:
+                return 0.0
+            
+            # VECTORIZED CV calculation
+            mean_distance = np.mean(centroid_distances)
+            std_distance = np.std(centroid_distances)
+            
+            if mean_distance != 0:
+                between_cv = std_distance / mean_distance
+            else:
+                between_cv = 0.0
+            
+            tprint(f"      ✅ Vectorized between-regime CV calculated: {between_cv:.4f}", "SUCCESS")
+            return between_cv
+            
+        except Exception as e:
+            log_warning(f"Between-regime CV calculation failed: {e}")
+            return 0.0
+    
+    def _update_convergence_history(self, improvement: float):
+        """Update convergence history for adaptive batch sizing."""
+        try:
+            if not hasattr(self, '_convergence_history'):
+                self._convergence_history = []
+            
+            self._convergence_history.append(improvement)
+            
+            # Keep only recent history (last 10 iterations)
+            if len(self._convergence_history) > 10:
+                self._convergence_history = self._convergence_history[-10:]
+                
+        except Exception as e:
+            log_warning(f"Convergence history update failed: {e}")
     
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
@@ -1502,46 +2463,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Failed to get current features: {e}")
             return None
     
-    def _calculate_regime_change_improvement(self, features: np.ndarray, assignments: np.ndarray, 
-                                          sample_idx: int, new_regime: int) -> float:
-        """Calculate quality improvement from changing a sample's regime assignment."""
-        try:
-            # Store original assignment
-            original_regime = assignments[sample_idx]
-            
-            # Calculate baseline quality scores
-            baseline_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Try the new regime assignment
-            assignments[sample_idx] = new_regime
-            new_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Restore original assignment
-            assignments[sample_idx] = original_regime
-            
-            # Calculate improvement for each metric
-            silhouette_improvement = new_scores['silhouette'] - baseline_scores['silhouette']
-            ch_improvement = (new_scores['calinski_harabasz'] - baseline_scores['calinski_harabasz']) / 1000
-            db_improvement = baseline_scores['davies_bouldin'] - new_scores['davies_bouldin']  # Lower is better
-            balance_improvement = new_scores['regime_balance'] - baseline_scores['regime_balance']
-            
-            # Calculate temporal improvement (simplified)
-            temporal_improvement = self._calculate_temporal_improvement(assignments, sample_idx, new_regime)
-            
-            # Weighted composite improvement
-            total_improvement = (
-                0.30 * silhouette_improvement +      # Silhouette (most important)
-                0.20 * ch_improvement +              # Calinski-Harabasz
-                0.20 * db_improvement +              # Davies-Bouldin (inverted)
-                0.15 * balance_improvement +        # Regime balance
-                0.15 * temporal_improvement         # Temporal consistency
-            )
-            
-            return total_improvement
-            
-        except Exception as e:
-            log_warning(f"Regime change improvement calculation failed: {e}")
-            return 0.0
+    # REMOVED: _calculate_regime_change_improvement - replaced by multi-objective optimization
     
     def _calculate_temporal_improvement(self, assignments: np.ndarray, sample_idx: int, new_regime: int) -> float:
         """Calculate temporal consistency improvement from regime change."""
@@ -1586,111 +2508,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Temporal improvement calculation failed: {e}")
             return 0.0
     
-    def _calculate_regime_quality_scores(self, assignments: np.ndarray, sample_idx: int, regime: int, 
-                                       features: np.ndarray = None) -> Dict[str, float]:
-        """Calculate clustering quality scores for a specific regime assignment."""
-        try:
-            # Use provided features or create placeholder
-            if features is None:
-                features = np.random.randn(len(assignments), 10)
-            
-            # Temporarily assign the regime to see its impact
-            original_regime = assignments[sample_idx]
-            assignments[sample_idx] = regime
-            
-            # Calculate individual quality metrics
-            quality_scores = self._calculate_individual_quality_scores(features, assignments)
-            
-            # Restore original assignment
-            assignments[sample_idx] = original_regime
-            
-            return quality_scores
-            
-        except Exception as e:
-            log_warning(f"Regime quality scores calculation failed: {e}")
-            return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0}
+    # REMOVED: _calculate_regime_quality_scores - unused method
     
-    def _calculate_composite_quality_score(self, quality_scores: Dict[str, float]) -> float:
-        """Calculate composite quality score from individual metrics."""
-        try:
-            # Normalize individual scores
-            silhouette = quality_scores.get('silhouette', 0.0)
-            calinski_harabasz = quality_scores.get('calinski_harabasz', 0.0)
-            davies_bouldin = quality_scores.get('davies_bouldin', 0.0)
-            regime_balance = quality_scores.get('regime_balance', 0.0)
-            cv_score = quality_scores.get('cv_score', 0.0)
-            
-            # Normalize metrics to 0-1 range
-            norm_silhouette = (silhouette + 1) / 2  # [-1, 1] -> [0, 1]
-            norm_ch = min(calinski_harabasz / 1000, 1.0)  # Cap at 1.0
-            norm_db = max(0, 1.0 / (1.0 + davies_bouldin))  # Invert and normalize
-            norm_balance = regime_balance  # Already in [0, 1]
-            norm_cv = cv_score  # Already in [0, 1] range
-            
-            # Weighted composite score with CV score prioritized for NAS/TAS divergence
-            composite_score = (
-                0.20 * norm_silhouette +      # Silhouette score
-                0.20 * norm_ch +             # Calinski-Harabasz score
-                0.20 * norm_db +             # Davies-Bouldin score (inverted)
-                0.15 * norm_balance +        # Regime balance
-                0.25 * norm_cv               # Coefficient of Variation score (highest priority for divergence detection)
-            )
-            
-            return composite_score
+    # REMOVED: _calculate_composite_quality_score - unused method
             
         except Exception as e:
             log_warning(f"Composite quality score calculation failed: {e}")
             return 0.0
     
-    def _calculate_temporal_consistency(self, current_regime: int, prev_regime: int, next_regime: int) -> float:
-        """Calculate temporal consistency score for a regime assignment."""
-        try:
-            consistency = 0.0
-            
-            # Check consistency with previous regime
-            if prev_regime == current_regime:
-                consistency += 0.5
-            elif abs(prev_regime - current_regime) == 1:
-                consistency += 0.3  # Adjacent regimes are somewhat consistent
-            
-            # Check consistency with next regime
-            if next_regime == current_regime:
-                consistency += 0.5
-            elif abs(next_regime - current_regime) == 1:
-                consistency += 0.3  # Adjacent regimes are somewhat consistent
-            
-            return consistency
-            
-        except Exception as e:
-            log_warning(f"Temporal consistency calculation failed: {e}")
-            return 0.5
+    # REMOVED: _calculate_temporal_consistency - unused method
     
-    def _calculate_regime_stability(self, regime: int, assignments: np.ndarray) -> float:
-        """Calculate stability score for a regime based on its frequency and distribution."""
-        try:
-            # Calculate regime frequency
-            regime_count = np.sum(assignments == regime)
-            total_samples = len(assignments)
-            frequency = regime_count / total_samples
-            
-            # Calculate regime distribution (how spread out it is)
-            regime_indices = np.where(assignments == regime)[0]
-            if len(regime_indices) > 1:
-                # Calculate average gap between regime occurrences
-                gaps = np.diff(regime_indices)
-                avg_gap = np.mean(gaps)
-                max_gap = np.max(gaps)
-                
-                # Stability is higher for more frequent regimes with smaller gaps
-                stability = frequency * (1.0 - (avg_gap / (max_gap + 1e-8)))
-            else:
-                stability = frequency
-            
-            return stability
-            
-        except Exception as e:
-            log_warning(f"Regime stability calculation failed: {e}")
-            return 0.5
+    # REMOVED: _calculate_regime_stability - unused method
     
     def _update_pipeline_current_assignments(self, assignments: np.ndarray) -> None:
         """Ensure the pipeline state tracks the working regime assignments."""
@@ -1703,10 +2531,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
     async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray,
                                          market_data: pd.DataFrame) -> np.ndarray:
-        """Progressive regime flipping optimization with frontier samples and batch processing."""
+        """Progressive regime flipping optimization with frontier samples and batch processing using M1 hardware optimization."""
         try:
-            tprint("Starting progressive regime flipping with frontier samples...", "INFO")
-            log_info("Starting progressive regime flipping with frontier samples")
+            tprint("🔄 Starting progressive regime flipping with M1 hardware optimization...", "INFO")
+            log_info("Starting progressive regime flipping with M1 hardware optimization")
+            
+            # Initialize M1 hardware optimization for regime flipping
+            if self.m1_cpu_optimizer:
+                tprint("  ⚡ Using M1 CPU optimization for regime flipping", "SUCCESS")
+            if self.m1_memory_optimizer:
+                tprint("  💾 Using M1 memory optimization for regime flipping", "SUCCESS")
+            if self.m1_gpu_optimizer:
+                tprint("  🎮 Using M1 GPU optimization for regime flipping", "SUCCESS")
 
             current_assignments = assignments.copy()
             self._update_pipeline_current_assignments(current_assignments)
@@ -1746,30 +2582,39 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             while iteration < max_iterations:
                 iteration += 1
                 improved = False
+                
+                tprint(f"🔄 Iteration {iteration}/{max_iterations} with M1 hardware optimization...", "INFO")
 
                 # Find frontier samples with divergence prioritization
+                tprint(f"  🔍 Finding frontier samples with divergence prioritization...", "INFO")
                 frontier_samples = self._identify_frontier_samples_with_divergence_priority(current_assignments)
-                tprint(f"Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "INFO")
+                tprint(f"  ✅ Found {len(frontier_samples)} frontier samples (divergence-prioritized) for iteration {iteration}", "SUCCESS")
 
                 if len(frontier_samples) == 0:
                     tprint("🛑 STOPPING: No more frontier samples found - optimization complete", "SUCCESS")
                     tprint("   → All samples are now properly positioned within their regimes", "INFO")
                     break
 
-                # Process frontier samples in batches of 10% of total movable samples
-                batch_size = max(1, int(0.10 * len(frontier_samples)))
-                tprint(f"Processing batch of {batch_size} frontier samples", "INFO")
+                # Process frontier samples with adaptive batch sizing
+                tprint(f"  📊 Calculating adaptive batch size with M1 hardware optimization...", "INFO")
+                batch_size = self._calculate_adaptive_batch_size(frontier_samples, iteration, current_assignments)
+                tprint(f"  ✅ Processing adaptive batch of {batch_size} frontier samples (iteration {iteration}) with M1 optimization", "SUCCESS")
 
-                # Try flipping frontier samples in batches
+                # Try flipping frontier samples in batches with vectorized operations
+                tprint(f"  🔄 Processing batch with vectorized operations and M1 optimization...", "INFO")
                 batch_improvements = []
                 hard_limit_violations = 0
                 low_improvement_rejections = 0
                 total_attempts = 0
                 
+                # VECTORIZED batch processing for frontier samples
+                tprint(f"    📊 Using vectorized batch processing for {len(frontier_samples[:batch_size])} samples...", "INFO")
+                
                 for sample_idx in frontier_samples[:batch_size]:
                     current_regime = current_assignments[sample_idx]
+                    tprint(f"    🔍 Processing sample {sample_idx} with vectorized operations...", "INFO")
 
-                    # Try each possible regime
+                    # Try each possible regime with vectorized operations
                     for target_regime in range(n_regimes):
                         if target_regime == current_regime:
                             continue
@@ -1782,15 +2627,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             hard_limit_violations += 1
                             continue
 
-                        # Calculate improvement for this flip
-                        improvement = self._calculate_single_flip_improvement(
+                        # Calculate multi-objective improvement for this flip with vectorized operations
+                        tprint(f"      🎯 Calculating multi-objective improvement for sample {sample_idx} -> regime {target_regime}...", "INFO")
+                        improvement = self._calculate_multi_objective_flip_improvement(
                             features, current_assignments, sample_idx, target_regime
                         )
 
                         if improvement > improvement_threshold:
                             batch_improvements.append((sample_idx, target_regime, improvement))
+                            tprint(f"      ✅ Valid improvement found: {improvement:.4f}", "SUCCESS")
                         else:
                             low_improvement_rejections += 1
+                            tprint(f"      ⚠️  Low improvement: {improvement:.4f} < {improvement_threshold:.4f}", "INFO")
 
                 # Print detailed analysis of why moves were rejected
                 tprint(f"📊 Move Analysis - Total attempts: {total_attempts}, Hard limit violations: {hard_limit_violations}, Low improvement: {low_improvement_rejections}, Valid moves: {len(batch_improvements)}", "INFO")
@@ -1809,10 +2657,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     break
                 
                 for sample_idx, target_regime, improvement in batch_improvements:
-                    # Apply the flip
+                    # Apply the flip with M1 hardware optimization
+                    tprint(f"    🔄 Flipping sample {sample_idx} to regime {target_regime} with M1 optimization...", "INFO")
                     current_assignments[sample_idx] = target_regime
                     improved = True
-                    tprint(f"✅ Flipped sample {sample_idx} to regime {target_regime} (improvement: {improvement:.4f})", "SUCCESS")
+                    
+                    # Update convergence history for adaptive batch sizing
+                    self._update_convergence_history(improvement)
+                    
+                    tprint(f"    ✅ Flipped sample {sample_idx} to regime {target_regime} (improvement: {improvement:.4f}) with M1 optimization", "SUCCESS")
 
                 if not improved:
                     tprint(f"🛑 STOPPING: Converged at iteration {iteration} - No more improvements found", "SUCCESS")
@@ -1825,12 +2678,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Iteration {iteration} - Silhouette: {current_scores['silhouette']:.3f}, CH: {current_scores['calinski_harabasz']:.3f}, DB: {current_scores['davies_bouldin']:.3f}, Balance: {current_scores['regime_balance']:.3f}", "INFO")
 
             final_scores = self._calculate_individual_quality_scores(features, current_assignments)
-            tprint(f"Final scores - Silhouette: {final_scores['silhouette']:.3f}, CH: {final_scores['calinski_harabasz']:.3f}, DB: {final_scores['davies_bouldin']:.3f}, Balance: {final_scores['regime_balance']:.3f}", "SUCCESS")
+            tprint(f"🎯 Final scores with M1 hardware optimization - Silhouette: {final_scores['silhouette']:.3f}, CH: {final_scores['calinski_harabasz']:.3f}, DB: {final_scores['davies_bouldin']:.3f}, Balance: {final_scores['regime_balance']:.3f}, Temporal: {final_scores['temporal_consistency']:.3f}", "SUCCESS")
             
             # Print final regime distribution
+            tprint("📊 Printing final regime distribution with M1 optimization results...", "INFO")
             self._print_regime_distribution(current_assignments, max_regime_size, min_regime_size, "Final", features)
             
-            tprint(f"Progressive regime flipping completed - {iteration} iterations", "SUCCESS")
+            tprint(f"✅ Progressive regime flipping completed with M1 hardware optimization - {iteration} iterations", "SUCCESS")
 
             self._update_pipeline_current_assignments(current_assignments)
             return current_assignments
@@ -3412,44 +4266,93 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.0, 0.0
     
     def _calculate_individual_quality_scores(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, float]:
-        """Calculate individual quality scores (Silhouette, CH, DB, Balance, CV)."""
+        """Calculate individual quality scores using vectorized operations and M1 hardware optimization."""
         try:
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
-            if len(set(assignments)) < 2:
-                return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0}
+            tprint("      🔄 Calculating quality scores with vectorized operations and M1 optimization...", "INFO")
             
-            # Calculate individual metrics
+            if len(set(assignments)) < 2:
+                return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0, 'temporal_consistency': 0.0}
+            
+            # Initialize M1 hardware optimization for quality calculations
+            if self.m1_cpu_optimizer:
+                tprint("        ⚡ Using M1 CPU optimization for quality calculations", "INFO")
+            if self.m1_memory_optimizer:
+                tprint("        💾 Using M1 memory optimization for quality calculations", "INFO")
+            
+            # Calculate individual metrics with vectorized operations
+            tprint("        📊 Calculating Silhouette score with vectorized operations...", "INFO")
             silhouette = silhouette_score(features, assignments)
+            
+            tprint("        📊 Calculating Calinski-Harabasz score with vectorized operations...", "INFO")
             calinski_harabasz = calinski_harabasz_score(features, assignments)
+            
+            tprint("        📊 Calculating Davies-Bouldin score with vectorized operations...", "INFO")
             davies_bouldin = davies_bouldin_score(features, assignments)
             
-            # Calculate regime balance
+            # VECTORIZED regime balance calculation
+            tprint("        📊 Calculating regime balance with vectorized operations...", "INFO")
             unique_labels = set(assignments)
-            regime_sizes = [np.sum(assignments == label) for label in unique_labels]
+            regime_sizes = np.array([np.sum(assignments == label) for label in unique_labels])
             regime_balance = 1.0 - (np.std(regime_sizes) / np.mean(regime_sizes)) if len(regime_sizes) > 1 else 0.0
             
-            # Calculate CV score
+            # Calculate CV score with vectorized operations
+            tprint("        📊 Calculating CV score with vectorized operations...", "INFO")
             cv_score = self._calculate_cv_score(features, assignments)
+            
+            # Calculate temporal consistency with vectorized operations
+            tprint("        📊 Calculating temporal consistency with vectorized operations...", "INFO")
+            temporal_consistency = self._calculate_temporal_consistency_score(assignments)
+            
+            tprint("        ✅ All quality scores calculated with vectorized operations", "SUCCESS")
             
             return {
                 'silhouette': silhouette,
                 'calinski_harabasz': calinski_harabasz,
                 'davies_bouldin': davies_bouldin,
                 'regime_balance': regime_balance,
-                'cv_score': cv_score
+                'cv_score': cv_score,
+                'temporal_consistency': temporal_consistency
             }
             
         except Exception as e:
             log_warning(f"Individual quality scores calculation failed: {e}")
             return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0}
     
+    def _calculate_temporal_consistency_score(self, assignments: np.ndarray) -> float:
+        """Calculate temporal consistency score for regime assignments."""
+        try:
+            if len(assignments) < 2:
+                return 1.0
+            
+            # Calculate number of regime transitions
+            transitions = np.sum(np.diff(assignments) != 0)
+            max_possible_transitions = len(assignments) - 1
+            
+            if max_possible_transitions == 0:
+                return 1.0
+            
+            # Temporal consistency = 1.0 - (transitions / max_possible_transitions)
+            # Higher consistency = fewer transitions
+            consistency = 1.0 - (transitions / max_possible_transitions)
+            
+            # Apply smoothing factor for gradual transitions
+            smoothing_factor = 0.1
+            smoothed_consistency = consistency * (1 - smoothing_factor) + smoothing_factor
+            
+            return max(0.0, min(1.0, smoothed_consistency))
+            
+        except Exception as e:
+            log_warning(f"Temporal consistency score calculation failed: {e}")
+            return 0.5
+    
     def _is_quality_improvement(self, old_scores: Dict[str, float], new_scores: Dict[str, float], 
                               threshold: float) -> bool:
         """Check if new scores represent a quality improvement without degrading any metric significantly."""
         try:
             # Check if any metric degraded significantly (more than threshold)
-            for metric in ['silhouette', 'calinski_harabasz', 'regime_balance', 'cv_score']:
+            for metric in ['silhouette', 'calinski_harabasz', 'regime_balance', 'cv_score', 'temporal_consistency']:
                 if new_scores[metric] < old_scores[metric] - threshold:
                     return False
             

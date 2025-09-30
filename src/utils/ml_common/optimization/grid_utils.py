@@ -7,7 +7,7 @@ to avoid duplication and ensure consistent behavior.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import itertools
 import numpy as np
 
@@ -104,10 +104,52 @@ def build_fine_grid_around_best(search_space: Dict[str, Any], best_params: Dict[
     return [dict(c) for c in itertools.product(*combos)]
 
 
+def generate_grid(search_space: Dict[str, Any], max_trials: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Generate a parameter grid from a search space.
+
+    This helper leverages :func:`build_coarse_grid_from_search_space` to produce
+    cartesian products of parameters. When ``max_trials`` is provided, the helper
+    adapts the number of grid points per parameter to stay close to the desired
+    number of trials and truncates any excess combinations.
+
+    Args:
+        search_space: Configuration describing the search space for each
+            parameter.
+        max_trials: Optional cap on the number of combinations to return.
+
+    Returns:
+        A list of parameter dictionaries representing combinations to explore.
+    """
+
+    if not search_space:
+        return []
+
+    # Determine a reasonable number of grid points per parameter. For discrete
+    # parameters this keeps all values, while for continuous ranges it limits the
+    # cartesian product to roughly ``max_trials`` combinations when specified.
+    if max_trials is None or max_trials <= 0:
+        grid_points = 3
+    else:
+        param_count = max(len(search_space), 1)
+        grid_points = int(np.ceil(max_trials ** (1.0 / param_count)))
+        grid_points = max(grid_points, 2)
+
+    combinations = build_coarse_grid_from_search_space(search_space, grid_points)
+
+    if max_trials is not None and max_trials > 0:
+        return combinations[:max_trials]
+    return combinations
+
+
 class GridSearchOptimizer:
     """Grid search optimizer for hyperparameter tuning."""
 
-    def __init__(self, param_grid: Dict[str, List], scoring: str = 'accuracy', cv: int = 5):
+    def __init__(
+        self,
+        param_grid: Optional[Dict[str, List[Any]]] = None,
+        scoring: str = 'accuracy',
+        cv: int = 5
+    ):
         """Initialize grid search optimizer.
 
         Args:
@@ -115,7 +157,7 @@ class GridSearchOptimizer:
             scoring: Scoring metric to optimize
             cv: Number of cross-validation folds
         """
-        self.param_grid = param_grid
+        self.param_grid = param_grid or {}
         self.scoring = scoring
         self.cv = cv
         self.best_params_ = None
@@ -123,18 +165,25 @@ class GridSearchOptimizer:
         self.cv_results_ = None
         self.grid_search_ = None
 
-    def fit(self, X, y, estimator=None):
+    def fit(self, X, y, estimator=None, param_grid: Optional[Dict[str, List[Any]]] = None):
         """Fit the grid search optimizer.
 
         Args:
             X: Feature matrix
             y: Target vector
             estimator: Base estimator to optimize (if None, uses a simple classifier)
+            param_grid: Optional parameter grid to use for this fit call
         """
         from sklearn.model_selection import GridSearchCV
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.linear_model import LogisticRegression
         from sklearn.svm import SVC
+
+        if param_grid is not None:
+            self.param_grid = param_grid
+
+        if not self.param_grid:
+            raise ValueError("param_grid must be provided before calling fit")
 
         # Default estimator if none provided
         if estimator is None:
@@ -157,6 +206,11 @@ class GridSearchOptimizer:
         self.cv_results_ = self.grid_search_.cv_results_
 
         return self
+
+    def generate_grid(self, search_space: Dict[str, Any], max_trials: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Generate a parameter grid using the shared helper utility."""
+
+        return generate_grid(search_space, max_trials)
 
     def predict(self, X):
         """Make predictions using the best estimator found."""
@@ -200,6 +254,7 @@ class GridSearchOptimizer:
 __all__ = [
     'build_coarse_grid_from_search_space',
     'build_fine_grid_around_best',
+    'generate_grid',
     'GridSearchOptimizer',
 ]
 

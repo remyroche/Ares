@@ -102,7 +102,7 @@ from ...hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 from ..core.nas_engine import NASEngine
 from ..core.tas_engine import TASEngine
-from ..config.base_config import UnifiedArchitectureConfig, ArchitectureType
+from ..config.base_config import UnifiedArchitectureConfig, ArchitectureType, SearchStrategy
 
 
 @dataclass
@@ -376,30 +376,61 @@ class ArchitectureSearchOptimizer:
             context_type = "GPU" if self.gpu_manager else "Memory"
             tprint_debug(f"🔧 Using {context_type} context for architecture search")
             
+            optimization_method = "bayesian_tpe"
+            n_trials = self.config.max_iterations
+            grid_params: Optional[List[Dict[str, Any]]] = None
+
+            if unified_config.search_strategy == SearchStrategy.GRID_SEARCH:
+                tprint_info("🧮 Grid search strategy selected for architecture optimization")
+                grid_params = self.grid_optimizer.generate_grid(search_space, max_trials=n_trials)
+                if grid_params:
+                    n_trials = len(grid_params)
+                    optimization_method = "grid"
+                    tprint_debug(f"🔢 Generated {n_trials} grid parameter combinations")
+                else:
+                    tprint_warning("⚠️ Grid search strategy selected but no parameter combinations were generated; falling back to Bayesian TPE")
+
             with gpu_context("architecture_search") if self.gpu_manager else memory_checkpoint("architecture_search"):
-                
+
                 # Perform search based on architecture type
                 tprint_info(f"🔍 Starting search for architecture type: {unified_config.architecture_type}")
                 tprint_structured({
                     'search_configuration': {
                         'architecture_type': str(unified_config.architecture_type),
                         'search_space_size': len(search_space),
-                        'search_space_keys': list(search_space.keys()) if search_space else []
+                        'search_space_keys': list(search_space.keys()) if search_space else [],
+                        'optimization_method': optimization_method,
+                        'grid_combinations': len(grid_params) if grid_params else 0
                     }
                 }, LogLevel.INFO)
-                
+
                 if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
                     tprint_info("🧠 Searching neural architectures")
                     with tprint_timer("Neural Architecture Search"):
-                        result = await self._search_neural_architectures(data, search_space)
+                        result = await self._search_neural_architectures(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
                     tprint_info("🌳 Searching tree architectures")
                     with tprint_timer("Tree Architecture Search"):
-                        result = await self._search_tree_architectures(data, search_space)
+                        result = await self._search_tree_architectures(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 elif unified_config.architecture_type == ArchitectureType.HYBRID_NEURAL_TREE:
                     tprint_info("🔀 Searching hybrid architectures")
                     with tprint_timer("Hybrid Architecture Search"):
-                        result = await self._search_hybrid_architectures(data, search_space)
+                        result = await self._search_hybrid_architectures(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 else:
                     tprint_error(f"❌ Unsupported architecture type: {unified_config.architecture_type}")
                     raise ValueError(f"Unsupported architecture type: {unified_config.architecture_type}")
@@ -445,7 +476,9 @@ class ArchitectureSearchOptimizer:
     async def _search_neural_architectures(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> ArchitectureSearchResult:
         """Search for neural architectures using NAS engine."""
         tprint_info("🔍 Searching neural architectures")
@@ -459,12 +492,12 @@ class ArchitectureSearchOptimizer:
         tprint_debug("✅ NAS engine is available")
         
         # Use NAS engine for architecture search
-        tprint_debug(f"🔧 Starting NAS engine search with {self.config.max_iterations} trials")
+        tprint_debug(f"🔧 Starting NAS engine search with method={optimization_method}, trials={n_trials}")
         nas_results = self.nas_engine.search_architectures(
             data=data,
             search_space=search_space,
-            optimization_method="bayesian_tpe",
-            n_trials=self.config.max_iterations
+            optimization_method=optimization_method,
+            n_trials=n_trials
         )
         
         tprint_debug(f"📊 NAS search completed: {len(nas_results.get('trials', []))} trials")
@@ -499,7 +532,9 @@ class ArchitectureSearchOptimizer:
     async def _search_tree_architectures(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> ArchitectureSearchResult:
         """Search for tree architectures using TAS engine."""
         tprint_info("🔍 Searching tree architectures")
@@ -513,12 +548,12 @@ class ArchitectureSearchOptimizer:
         tprint_debug("✅ TAS engine is available")
         
         # Use TAS engine for strategy search
-        tprint_debug(f"🔧 Starting TAS engine search with {self.config.max_iterations} trials")
+        tprint_debug(f"🔧 Starting TAS engine search with method={optimization_method}, trials={n_trials}")
         tas_results = self.tas_engine.search_strategies(
             data=data,
             search_space=search_space,
-            optimization_method="bayesian_tpe",
-            n_trials=self.config.max_iterations,
+            optimization_method=optimization_method,
+            n_trials=n_trials,
             include_regime_specific=True
         )
         
@@ -554,7 +589,9 @@ class ArchitectureSearchOptimizer:
     async def _search_hybrid_architectures(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> ArchitectureSearchResult:
         """Search for hybrid architectures combining neural and tree components."""
         tprint_info("🔍 Searching hybrid architectures")
@@ -571,11 +608,21 @@ class ArchitectureSearchOptimizer:
         
         # Search neural architectures
         tprint_info("🧠 Starting neural architecture search for hybrid")
-        nas_results = await self._search_neural_architectures(data, search_space)
+        nas_results = await self._search_neural_architectures(
+            data,
+            search_space,
+            optimization_method,
+            n_trials
+        )
         
         # Search tree architectures
         tprint_info("🌳 Starting tree architecture search for hybrid")
-        tas_results = await self._search_tree_architectures(data, search_space)
+        tas_results = await self._search_tree_architectures(
+            data,
+            search_space,
+            optimization_method,
+            n_trials
+        )
         
         # Combine results for hybrid architecture
         tprint_debug("🔀 Combining neural and tree results for hybrid architecture")

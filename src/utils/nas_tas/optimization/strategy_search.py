@@ -95,7 +95,7 @@ from ...matrix_operations.enhanced_operations import EnhancedMatrixOperations
 from ...matrix_operations.batch_operations import BatchMatrixOperations
 from ...matrix_operations.vectorized_core import VectorizedProcessingCore
 from ...matrix_operations.convenience import MatrixConvenience
-from src.utils.nas_tas.config.base_config import OptimizationMode
+from src.utils.nas_tas.config.base_config import OptimizationMode, SearchStrategy
 
 # Hardware utilities
 from ...hardware.m1_gpu_utils import M1GPUManager, is_m1_available, is_mps_available
@@ -390,12 +390,26 @@ class StrategySearchOptimizer:
             self.initialize_engines(unified_config)
             tprint_success("✅ Search engines initialized successfully")
             
+            optimization_method = "bayesian_tpe"
+            n_trials = self.config.max_iterations
+            grid_params: Optional[List[Dict[str, Any]]] = None
+
+            if unified_config.search_strategy == SearchStrategy.GRID_SEARCH:
+                tprint_info("🧮 Grid search strategy selected for strategy optimization")
+                grid_params = self.grid_optimizer.generate_grid(search_space, max_trials=n_trials)
+                if grid_params:
+                    n_trials = len(grid_params)
+                    optimization_method = "grid"
+                    tprint_debug(f"🔢 Generated {n_trials} grid parameter combinations for strategy search")
+                else:
+                    tprint_warning("⚠️ Grid search strategy selected but no parameter combinations were generated; falling back to Bayesian TPE")
+
             # Use M1 GPU context if available
             context_type = "GPU" if self.gpu_manager else "Memory"
             tprint_debug(f"🔧 Using {context_type} context for strategy search")
-            
+
             with gpu_context("strategy_search") if self.gpu_manager else memory_checkpoint("strategy_search"):
-                
+
                 # Perform search based on architecture type
                 tprint_info(f"🔍 Starting search for architecture type: {unified_config.architecture_type}")
                 tprint_structured({
@@ -403,22 +417,39 @@ class StrategySearchOptimizer:
                         'architecture_type': str(unified_config.architecture_type),
                         'search_space_size': len(search_space),
                         'search_space_keys': list(search_space.keys()) if search_space else [],
-                        'strategy_types': self.config.strategy_types
+                        'strategy_types': self.config.strategy_types,
+                        'optimization_method': optimization_method,
+                        'grid_combinations': len(grid_params) if grid_params else 0
                     }
                 }, LogLevel.INFO)
-                
+
                 if unified_config.architecture_type == ArchitectureType.NEURAL_ONLY:
                     tprint_info("🧠 Searching neural strategies")
                     with tprint_timer("Neural Strategy Search"):
-                        result = await self._search_neural_strategies(data, search_space)
+                        result = await self._search_neural_strategies(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 elif unified_config.architecture_type == ArchitectureType.TREE_ONLY:
                     tprint_info("🌳 Searching tree strategies")
                     with tprint_timer("Tree Strategy Search"):
-                        result = await self._search_tree_strategies(data, search_space)
+                        result = await self._search_tree_strategies(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 elif unified_config.architecture_type == ArchitectureType.HYBRID:
                     tprint_info("🔀 Searching hybrid strategies")
                     with tprint_timer("Hybrid Strategy Search"):
-                        result = await self._search_hybrid_strategies(data, search_space)
+                        result = await self._search_hybrid_strategies(
+                            data,
+                            search_space,
+                            optimization_method,
+                            n_trials
+                        )
                 else:
                     tprint_error(f"❌ Unsupported architecture type: {unified_config.architecture_type}")
                     raise ValueError(f"Unsupported architecture type: {unified_config.architecture_type}")
@@ -476,7 +507,9 @@ class StrategySearchOptimizer:
     async def _search_neural_strategies(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> StrategySearchResult:
         """Search for neural-based strategies using NAS engine."""
         tprint_info("Searching neural strategies")
@@ -488,8 +521,8 @@ class StrategySearchOptimizer:
         nas_results = self.nas_engine.search_architectures(
             data=data,
             search_space=search_space,
-            optimization_method="bayesian_tpe",
-            n_trials=self.config.max_iterations
+            optimization_method=optimization_method,
+            n_trials=n_trials
         )
         
         return StrategySearchResult(
@@ -509,7 +542,9 @@ class StrategySearchOptimizer:
     async def _search_tree_strategies(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> StrategySearchResult:
         """Search for tree-based strategies using TAS engine."""
         tprint_info("Searching tree strategies")
@@ -521,8 +556,8 @@ class StrategySearchOptimizer:
         tas_results = self.tas_engine.search_strategies(
             data=data,
             search_space=search_space,
-            optimization_method="bayesian_tpe",
-            n_trials=self.config.max_iterations,
+            optimization_method=optimization_method,
+            n_trials=n_trials,
             include_regime_specific=True
         )
         
@@ -543,7 +578,9 @@ class StrategySearchOptimizer:
     async def _search_hybrid_strategies(
         self,
         data: pd.DataFrame,
-        search_space: Dict[str, Any]
+        search_space: Dict[str, Any],
+        optimization_method: str,
+        n_trials: int
     ) -> StrategySearchResult:
         """Search for hybrid strategies combining neural and tree components."""
         tprint_info("Searching hybrid strategies")
@@ -552,10 +589,20 @@ class StrategySearchOptimizer:
             raise ValueError("Both NAS and TAS engines required for hybrid search")
         
         # Search neural strategies
-        nas_results = await self._search_neural_strategies(data, search_space)
+        nas_results = await self._search_neural_strategies(
+            data,
+            search_space,
+            optimization_method,
+            n_trials
+        )
         
         # Search tree strategies
-        tas_results = await self._search_tree_strategies(data, search_space)
+        tas_results = await self._search_tree_strategies(
+            data,
+            search_space,
+            optimization_method,
+            n_trials
+        )
         
         # Combine results for hybrid strategy
         hybrid_strategy = {

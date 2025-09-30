@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import os
 import sys
 import types
@@ -10,6 +10,13 @@ import types
 import numpy as np
 import pandas as pd
 import pytest
+
+_REGISTERED_MODULES: Dict[str, Optional[types.ModuleType]] = {}
+_NAMESPACE_MODULES: Dict[str, Optional[types.ModuleType]] = {}
+
+BaseSearchEngine = None  # type: ignore[assignment]
+NASEngine = None  # type: ignore[assignment]
+TASEngine = None  # type: ignore[assignment]
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
@@ -28,16 +35,12 @@ def _ensure_namespace_module(name: str, path: str) -> None:
         )
     except Exception:  # pragma: no cover - defensive guard for older interpreters
         module.__spec__ = None
+    _NAMESPACE_MODULES[name] = None
     sys.modules[name] = module
 
 
-_ensure_namespace_module("src", os.path.join(PROJECT_ROOT, "src"))
-_ensure_namespace_module("src.utils", os.path.join(PROJECT_ROOT, "src", "utils"))
-_ensure_namespace_module(
-    "src.utils.nas_tas", os.path.join(PROJECT_ROOT, "src", "utils", "nas_tas")
-)
-
 def _register_module(name: str, attrs: Dict[str, Any]) -> None:
+    _REGISTERED_MODULES[name] = sys.modules.get(name)
     module = types.ModuleType(name)
     module.__dict__.update(attrs)
     sys.modules[name] = module
@@ -63,6 +66,8 @@ def _identity(value):
 
 
 def _ensure_test_stubs() -> None:
+
+
     common_ops_attrs = {
         "cleanup_m1_optimizers": _noop,
         "get_m1_cpu_optimizer": lambda: None,
@@ -306,9 +311,46 @@ def _ensure_test_stubs() -> None:
     )
 
 
-_ensure_test_stubs()
 
-from src.utils.nas_tas.core import BaseSearchEngine, NASEngine, TASEngine
+@pytest.fixture(autouse=True)
+def stubbed_modules():
+    _REGISTERED_MODULES.clear()
+    _NAMESPACE_MODULES.clear()
+
+    namespace_targets = [
+        ("src", os.path.join(PROJECT_ROOT, "src")),
+        ("src.utils", os.path.join(PROJECT_ROOT, "src", "utils")),
+        ("src.utils.nas_tas", os.path.join(PROJECT_ROOT, "src", "utils", "nas_tas")),
+    ]
+
+    for name, path_value in namespace_targets:
+        if name in sys.modules:
+            _NAMESPACE_MODULES[name] = sys.modules[name]
+        else:
+            _ensure_namespace_module(name, path_value)
+
+    _ensure_test_stubs()
+
+    from src.utils.nas_tas.core import BaseSearchEngine as _Base, NASEngine as _NAS, TASEngine as _TAS
+    globals()["BaseSearchEngine"] = _Base
+    globals()["NASEngine"] = _NAS
+    globals()["TASEngine"] = _TAS
+
+    yield
+
+    for name, original in reversed(list(_REGISTERED_MODULES.items())):
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+    _REGISTERED_MODULES.clear()
+
+    for name, original in reversed(list(_NAMESPACE_MODULES.items())):
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+    _NAMESPACE_MODULES.clear()
 
 
 def _make_test_market_data(rows: int = 12) -> pd.DataFrame:

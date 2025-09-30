@@ -59,6 +59,9 @@ class TASRegimeConfig:
     enable_matrix_optimization: bool = True
     enable_memory_optimization: bool = True
     optimization_level: TASOptimizationLevel = TASOptimizationLevel.MAXIMUM
+    enable_streaming_regime_detection: bool = False
+    streaming_chunk_size: int = 50000
+    max_parallel_timeframes: Optional[int] = None
 
     # Economic evaluation
     enable_economic_evaluation: bool = True

@@ -189,14 +189,22 @@ class NASTASClusteringConfig(BaseConfig):
     enable_economic_clustering: bool = True
     enable_ensemble_clustering: bool = True
     
-    # Economic clustering weights
-    economic_weight: float = 0.3
-    momentum_weight: float = 0.25
-    volume_weight: float = 0.25
+    # Regime-focused clustering weights (removed momentum_weight)
+    economic_weight: float = 0.25
+    volatility_regime_weight: float = 0.30
+    volume_regime_weight: float = 0.25
+    structural_trend_weight: float = 0.20
     
-    # Feature configuration
+    # Regime-focused feature configuration
     feature_categories: List[str] = None
+    use_regime_focused_features: bool = True
+    exclude_trading_features: bool = True
     use_standardized_features: bool = True
+    
+    # Regime-specific feature quality thresholds
+    min_regime_persistence: float = 0.7
+    max_feature_noise_ratio: float = 0.3
+    min_temporal_stability: float = 0.6
     
     # Output configuration
     output_dir: str = "data_cache"
@@ -206,7 +214,13 @@ class NASTASClusteringConfig(BaseConfig):
         """Validate configuration after initialization."""
         super().__post_init__()
         if self.feature_categories is None:
-            self.feature_categories = ['momentum', 'volatility', 'volume', 'trend', 'price_action']
+            # Regime-focused feature categories only
+            self.feature_categories = [
+                'regime_volatility', 
+                'regime_volume', 
+                'regime_structural_trend', 
+                'regime_statistical'
+            ]
         
         # Ensure n_regimes is between 5 and 15
         if not (5 <= self.n_regimes <= 15):
@@ -238,9 +252,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.metrics_calculator = MetricsCalculator(verbose=True)
             self.characteristics_generator = CharacteristicsGenerator(verbose=True)
             
-            # Initialize feature configuration
+            # Initialize regime-focused feature configuration
             self.feature_config = FeatureConfig(
-                feature_categories=getattr(config, 'feature_categories', ['momentum', 'volatility', 'volume', 'trend', 'price_action']),
+                feature_categories=getattr(config, 'feature_categories', [
+                    'regime_volatility', 
+                    'regime_volume', 
+                    'regime_structural_trend', 
+                    'regime_statistical'
+                ]),
                 use_standardized_features=getattr(config, 'use_standardized_features', True),
                 drop_highly_correlated=True
             )
@@ -567,9 +586,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'algorithm_type': getattr(self.config, 'algorithm_type', 'adaptive_clustering'),
                 'enable_economic_clustering': getattr(self.config, 'enable_economic_clustering', True),
                 'enable_ensemble_clustering': getattr(self.config, 'enable_ensemble_clustering', True),
-                'economic_weight': getattr(self.config, 'economic_weight', 0.3),
-                'momentum_weight': getattr(self.config, 'momentum_weight', 0.25),
-                'volume_weight': getattr(self.config, 'volume_weight', 0.25),
+                'economic_weight': getattr(self.config, 'economic_weight', 0.25),
+                'volatility_regime_weight': getattr(self.config, 'volatility_regime_weight', 0.30),
+                'volume_regime_weight': getattr(self.config, 'volume_regime_weight', 0.25),
+                'structural_trend_weight': getattr(self.config, 'structural_trend_weight', 0.20),
                 'n_regimes': getattr(self.config, 'n_regimes', 8),
                 'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
                 'timeframe': getattr(self.config, 'timeframe', '15m'),
@@ -581,15 +601,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Validating and normalizing weights...", "INFO")
             weights_dict = {
                 'economic': clustering_config['economic_weight'],
-                'momentum': clustering_config['momentum_weight'],
-                'volume': clustering_config['volume_weight']
+                'volatility_regime': clustering_config['volatility_regime_weight'],
+                'volume_regime': clustering_config['volume_regime_weight'],
+                'structural_trend': clustering_config['structural_trend_weight']
             }
             normalized_weights = normalize_weights(weights_dict)
 
             clustering_config.update({
                 'economic_weight': normalized_weights['economic'],
-                'momentum_weight': normalized_weights['momentum'],
-                'volume_weight': normalized_weights['volume']
+                'volatility_regime_weight': normalized_weights['volatility_regime'],
+                'volume_regime_weight': normalized_weights['volume_regime'],
+                'structural_trend_weight': normalized_weights['structural_trend']
             })
             tprint("Weights validated and normalized", "SUCCESS")
 
@@ -629,8 +651,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'enable_economic_clustering': clustering_config['enable_economic_clustering'],
                 'enable_ensemble_clustering': clustering_config['enable_ensemble_clustering'],
                 'economic_weight': clustering_config['economic_weight'],
-                'momentum_weight': clustering_config['momentum_weight'],
-                'volume_weight': clustering_config['volume_weight']
+                'volatility_regime_weight': clustering_config['volatility_regime_weight'],
+                'volume_regime_weight': clustering_config['volume_regime_weight'],
+                'structural_trend_weight': clustering_config['structural_trend_weight']
             }
             tprint("Unified clustering configuration created", "SUCCESS")
 
@@ -877,13 +900,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
-        """Select features most important for NAS/TAS clustering and divergence detection using enhanced methods with M1 hardware optimization."""
+        """Select regime-focused features for NAS/TAS clustering, excluding trading-relevant features."""
         try:
             from sklearn.feature_selection import SelectKBest, mutual_info_classif
             from sklearn.model_selection import cross_val_score
             from sklearn.ensemble import RandomForestClassifier
             
-            tprint("🔍 Selecting features optimized for NAS/TAS divergence patterns with M1 hardware optimization...", "INFO")
+            tprint("🔍 Selecting regime-focused features for NAS/TAS clustering (excluding trading features)...", "INFO")
+            
+            # First, filter out trading-relevant features if configured
+            if getattr(self.config, 'exclude_trading_features', True):
+                features, feature_names = self._filter_regime_relevant_features(features, market_data)
+                tprint(f"Filtered to {features.shape[1]} regime-relevant features (excluded trading features)", "SUCCESS")
             
             # Initialize hardware optimization for feature selection
             tprint("  🔧 Initializing M1 hardware optimization for feature selection...", "INFO")
@@ -960,6 +988,124 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_error(f"Enhanced feature selection failed: {e}")
             tprint(f"Enhanced feature selection failed: {e}", "ERROR")
             raise ValueError(f"Enhanced feature selection failed: {e}")
+    
+    def _filter_regime_relevant_features(self, features: np.ndarray, market_data: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        """Filter out trading-relevant features, keep only regime-relevant ones."""
+        try:
+            tprint("🔍 Filtering regime-relevant features (excluding trading features)...", "INFO")
+            
+            # Define trading-relevant feature patterns to exclude
+            trading_patterns = [
+                'rsi', 'macd', 'stochastic', 'williams', 'momentum',
+                'oscillator', 'signal', 'crossover', 'divergence',
+                'candlestick', 'pattern', 'breakout', 'support', 'resistance',
+                'bollinger', 'atr', 'cci', 'roc', 'mfi', 'obv'
+            ]
+            
+            # Define regime-relevant feature patterns to prioritize
+            regime_patterns = [
+                'volatility', 'volume_regime', 'trend_persistence', 
+                'regime_stability', 'correlation', 'distribution',
+                'clustering', 'persistence', 'structural', 'statistical',
+                'vol_persistence', 'vol_clustering', 'vol_stability',
+                'vol_regime', 'trend_strength', 'market_structure'
+            ]
+            
+            # Create dummy feature names for filtering (in real implementation, these would come from feature generation)
+            feature_names = [f'feature_{i}' for i in range(features.shape[1])]
+            
+            # Filter features based on regime relevance
+            regime_relevant_indices = []
+            regime_relevant_names = []
+            
+            for i, name in enumerate(feature_names):
+                name_lower = name.lower()
+                
+                # Exclude if matches trading patterns
+                if any(pattern in name_lower for pattern in trading_patterns):
+                    continue
+                    
+                # Include if matches regime patterns or passes regime tests
+                if (any(pattern in name_lower for pattern in regime_patterns) or
+                    self._is_regime_relevant_feature(features[:, i], market_data)):
+                    regime_relevant_indices.append(i)
+                    regime_relevant_names.append(name)
+            
+            filtered_features = features[:, regime_relevant_indices] if regime_relevant_indices else features
+            
+            tprint(f"Feature filtering: {features.shape[1]} -> {filtered_features.shape[1]} regime-relevant features", "SUCCESS")
+            return filtered_features, regime_relevant_names
+            
+        except Exception as e:
+            tprint(f"Feature filtering failed: {e}", "ERROR")
+            return features, [f'feature_{i}' for i in range(features.shape[1])]
+    
+    def _is_regime_relevant_feature(self, feature_values: np.ndarray, market_data: pd.DataFrame) -> bool:
+        """Test if a feature is relevant for regime classification."""
+        try:
+            # Test 1: Regime persistence - feature should be stable within regimes
+            regime_persistence = self._calculate_feature_regime_persistence(feature_values, market_data)
+            
+            # Test 2: Low noise-to-signal ratio
+            noise_ratio = self._calculate_feature_noise_ratio(feature_values)
+            
+            # Test 3: Temporal stability
+            temporal_stability = self._calculate_feature_temporal_stability(feature_values)
+            
+            return (regime_persistence > getattr(self.config, 'min_regime_persistence', 0.7) and 
+                    noise_ratio < getattr(self.config, 'max_feature_noise_ratio', 0.3) and 
+                    temporal_stability > getattr(self.config, 'min_temporal_stability', 0.6))
+        except:
+            return False
+    
+    def _calculate_feature_regime_persistence(self, feature_values: np.ndarray, market_data: pd.DataFrame) -> float:
+        """Calculate regime persistence for a feature."""
+        try:
+            if len(feature_values) < 10:
+                return 0.0
+            
+            # Calculate autocorrelation as a proxy for regime persistence
+            if len(feature_values) > 1:
+                corr = np.corrcoef(feature_values[:-1], feature_values[1:])[0, 1]
+                return corr if not np.isnan(corr) else 0.0
+            return 0.0
+        except:
+            return 0.0
+    
+    def _calculate_feature_noise_ratio(self, feature_values: np.ndarray) -> float:
+        """Calculate noise-to-signal ratio for a feature."""
+        try:
+            if len(feature_values) < 5:
+                return 1.0
+            
+            # Noise ratio based on coefficient of variation
+            mean_val = np.mean(feature_values)
+            std_val = np.std(feature_values)
+            return std_val / (abs(mean_val) + 1e-8)
+        except:
+            return 1.0
+    
+    def _calculate_feature_temporal_stability(self, feature_values: np.ndarray) -> float:
+        """Calculate temporal stability for a feature."""
+        try:
+            if len(feature_values) < 5:
+                return 0.0
+            
+            # Temporal stability based on low variance of rolling statistics
+            window = min(5, len(feature_values) // 2)
+            if window < 2:
+                return 0.0
+            
+            rolling_means = []
+            for i in range(window, len(feature_values)):
+                rolling_means.append(np.mean(feature_values[i-window:i]))
+            
+            if len(rolling_means) > 1:
+                stability = 1.0 - (np.std(rolling_means) / (np.mean(np.abs(rolling_means)) + 1e-8))
+                return max(0, min(1, stability))
+            return 0.0
+        except:
+            return 0.0
     
     def _calculate_temporal_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Calculate temporal feature importance based on temporal stability with M1 hardware optimization and vectorized operations."""

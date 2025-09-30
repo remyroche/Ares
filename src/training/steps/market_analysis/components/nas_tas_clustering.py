@@ -770,7 +770,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Create initial combined assignments
             tprint("Step 1: Creating initial combined assignments...", "INFO")
-            initial_assignments = self._create_initial_combined_assignments(tas_assignments, nas_assignments)
+            initial_assignments = self._create_initial_combined_assignments(
+                features, tas_assignments, nas_assignments
+            )
             initial_score = self._calculate_composite_score(features, initial_assignments)
             tprint(f"Initial combined score: {initial_score:.3f}", "SUCCESS")
             
@@ -820,23 +822,112 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Return original assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
     
-    def _create_initial_combined_assignments(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> np.ndarray:
-        """Create initial combined assignments from TAS and NAS."""
+    def _create_initial_combined_assignments(
+        self,
+        features: np.ndarray,
+        tas_assignments: np.ndarray,
+        nas_assignments: np.ndarray
+    ) -> np.ndarray:
+        """Create initial combined assignments from TAS and NAS using per-sample quality checks."""
         try:
-            # Combine TAS and NAS assignments using weighted average
-            # For now, we'll use TAS as primary and NAS as secondary
             combined_assignments = tas_assignments.copy()
-            
-            # Find samples where TAS and NAS disagree
-            disagreement_mask = tas_assignments != nas_assignments
-            
-            # For disagreeing samples, use a weighted combination
-            # This is a simplified approach - in practice, you might want more sophisticated logic
-            combined_assignments[disagreement_mask] = (tas_assignments[disagreement_mask] + nas_assignments[disagreement_mask]) // 2
-            
-            tprint(f"Created combined assignments: {len(combined_assignments)} samples", "SUCCESS")
+
+            disagreement_indices = np.where(tas_assignments != nas_assignments)[0]
+            decision_trace: List[Dict[str, Any]] = []
+
+            if len(disagreement_indices) == 0:
+                if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
+                    self.execution_metadata = {}
+
+                self.execution_metadata['initial_combination'] = {
+                    'total_samples': int(len(combined_assignments)),
+                    'disagreements': 0,
+                    'tas_preferred': 0,
+                    'nas_preferred': 0,
+                    'decision_trace': []
+                }
+
+                tprint(
+                    f"Created combined assignments without disagreements: {len(combined_assignments)} samples",
+                    "SUCCESS"
+                )
+                log_info("No TAS/NAS disagreements detected during initial combination")
+                return combined_assignments
+
+            tas_preferred = 0
+            nas_preferred = 0
+
+            for sample_idx in disagreement_indices:
+                tas_regime = int(tas_assignments[sample_idx])
+                nas_regime = int(nas_assignments[sample_idx])
+                original_regime = int(combined_assignments[sample_idx])
+
+                # Evaluate TAS regime quality
+                combined_assignments[sample_idx] = tas_regime
+                tas_score = self._calculate_composite_score(features, combined_assignments)
+
+                # Evaluate NAS regime quality
+                combined_assignments[sample_idx] = nas_regime
+                nas_score = self._calculate_composite_score(features, combined_assignments)
+
+                # Restore original assignment before applying improvements/logging
+                combined_assignments[sample_idx] = original_regime
+
+                # Calculate incremental improvement if switching to NAS for logging context
+                nas_improvement = self._calculate_single_flip_improvement(
+                    features,
+                    combined_assignments,
+                    sample_idx,
+                    nas_regime
+                )
+
+                nas_better = nas_score > tas_score
+
+                if nas_better:
+                    chosen_regime = nas_regime
+                    nas_preferred += 1
+                else:
+                    chosen_regime = tas_regime
+                    tas_preferred += 1
+
+                combined_assignments[sample_idx] = chosen_regime
+
+                decision_trace.append({
+                    'sample_index': int(sample_idx),
+                    'tas_regime': tas_regime,
+                    'nas_regime': nas_regime,
+                    'tas_score': float(tas_score),
+                    'nas_score': float(nas_score),
+                    'nas_improvement': float(nas_improvement),
+                    'chosen_regime': int(chosen_regime),
+                    'decision': 'nas' if nas_better else 'tas'
+                })
+
+            summary_message = (
+                f"Resolved {len(disagreement_indices)} TAS/NAS divergences before batch refinement "
+                f"(TAS retained {tas_preferred}, NAS adopted {nas_preferred})"
+            )
+            tprint(summary_message, "INFO")
+            log_info(summary_message)
+
+            # Persist decision trace for debugging and later tuning
+            if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
+                self.execution_metadata = {}
+
+            self.execution_metadata['initial_combination'] = {
+                'total_samples': int(len(combined_assignments)),
+                'disagreements': int(len(disagreement_indices)),
+                'tas_preferred': int(tas_preferred),
+                'nas_preferred': int(nas_preferred),
+                'decision_trace': decision_trace
+            }
+
+            tprint(
+                f"Created combined assignments with documented divergence resolutions: {len(combined_assignments)} samples",
+                "SUCCESS"
+            )
             return combined_assignments
-            
+
         except Exception as e:
             log_error(f"Failed to create combined assignments: {e}")
             return tas_assignments

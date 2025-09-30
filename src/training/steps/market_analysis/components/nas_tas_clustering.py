@@ -743,23 +743,138 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
         try:
-            # This would normally extract from pipeline state
-            # For now, we'll create placeholder assignments
-            # In a real implementation, this would read from the pipeline state artifacts
-            
-            # Placeholder: create random assignments for demonstration
-            n_samples = 960  # This should come from the actual data
-            tas_assignments = np.random.randint(0, 8, n_samples)
-            nas_assignments = np.random.randint(0, 8, n_samples)
-            
-            tprint(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
+            pipeline_state = getattr(self, 'pipeline_state', {}) or {}
+            if not isinstance(pipeline_state, dict):
+                raise ValueError("Pipeline state is missing or invalid")
+
+            if not hasattr(self, 'features') or self.features is None:
+                raise ValueError("Feature matrix is not available for assignment validation")
+
+            expected_length = self.features.shape[0]
+
+            def _as_numpy(assignments: Any, name: str) -> np.ndarray:
+                """Convert assignments to numpy array."""
+                if assignments is None:
+                    raise ValueError(f"{name} not found in pipeline state")
+
+                if isinstance(assignments, np.ndarray):
+                    array = assignments
+                elif isinstance(assignments, (list, tuple)):
+                    array = np.asarray(assignments)
+                elif isinstance(assignments, str):
+                    cleaned = assignments.strip()
+                    if cleaned.startswith('[') and cleaned.endswith(']'):
+                        cleaned = cleaned[1:-1]
+                    if not cleaned:
+                        raise ValueError(f"{name} string representation is empty")
+                    array = np.fromstring(cleaned, sep=' ')
+                else:
+                    array = np.asarray(assignments)
+
+                array = np.asarray(array)
+
+                if array.size == 0:
+                    raise ValueError(f"{name} is empty after conversion")
+
+                if array.ndim > 1:
+                    array = array.reshape(-1)
+
+                if not np.issubdtype(array.dtype, np.integer):
+                    # Attempt to coerce numeric values to integers when appropriate
+                    if np.allclose(array, np.round(array)):
+                        array = np.round(array).astype(int)
+
+                return array
+
+            def _resolve_discovery_result(source: Any) -> Optional[Dict[str, Any]]:
+                """Resolve the discovery result dictionary from various container types."""
+                if source is None:
+                    return None
+
+                if isinstance(source, dict):
+                    return source
+
+                if hasattr(source, 'artifacts'):
+                    artifacts = getattr(source, 'artifacts', None)
+                    if isinstance(artifacts, dict):
+                        return artifacts.get('nas_tas_regime_discovery_result')
+
+                return None
+
+            candidates: List[Any] = []
+
+            if 'nas_tas_regime_discovery_result' in pipeline_state:
+                candidates.append(pipeline_state.get('nas_tas_regime_discovery_result'))
+
+            artifacts = pipeline_state.get('artifacts')
+            if isinstance(artifacts, dict):
+                candidates.append(artifacts.get('nas_tas_regime_discovery_result'))
+
+            discovery_component = pipeline_state.get('nas_tas_regime_discovery')
+            if discovery_component is not None:
+                candidates.append(_resolve_discovery_result(discovery_component))
+
+            discovery_result: Optional[Dict[str, Any]] = None
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+
+                if isinstance(candidate, dict):
+                    discovery_result = candidate
+                else:
+                    discovery_result = _resolve_discovery_result(candidate)
+
+                if discovery_result:
+                    break
+
+            if not discovery_result:
+                raise ValueError("NAS-TAS regime discovery result not found in pipeline state")
+
+            tas_assignments_raw = discovery_result.get('tas_assignments')
+            nas_assignments_raw = discovery_result.get('nas_assignments')
+
+            if (tas_assignments_raw is None or nas_assignments_raw is None) and isinstance(
+                discovery_result.get('artifacts'), dict
+            ):
+                nested_artifacts = discovery_result['artifacts']
+                tas_assignments_raw = tas_assignments_raw or nested_artifacts.get('tas_assignments')
+                nas_assignments_raw = nas_assignments_raw or nested_artifacts.get('nas_assignments')
+
+            tas_assignments = _as_numpy(tas_assignments_raw, 'tas_assignments')
+            nas_assignments = _as_numpy(nas_assignments_raw, 'nas_assignments')
+
+            if tas_assignments.shape[0] != expected_length:
+                raise ValueError(
+                    f"TAS assignments length mismatch: expected {expected_length}, got {tas_assignments.shape[0]}"
+                )
+
+            if nas_assignments.shape[0] != expected_length:
+                raise ValueError(
+                    f"NAS assignments length mismatch: expected {expected_length}, got {nas_assignments.shape[0]}"
+                )
+
+            tprint(
+                f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}",
+                "SUCCESS"
+            )
             return tas_assignments, nas_assignments
-            
+
         except Exception as e:
             log_error(f"Failed to extract regime assignments: {e}")
-            # Return default assignments
-            n_samples = 960
-            return np.random.randint(0, 8, n_samples), np.random.randint(0, 8, n_samples)
+            # Return default assignments on failure only
+            n_samples = getattr(self, 'features', None)
+            if isinstance(n_samples, np.ndarray):
+                fallback_length = n_samples.shape[0]
+            elif hasattr(n_samples, 'shape'):
+                fallback_length = n_samples.shape[0]
+            elif isinstance(n_samples, (list, tuple)):
+                fallback_length = len(n_samples)
+            else:
+                fallback_length = 960
+            return (
+                np.random.randint(0, 8, fallback_length),
+                np.random.randint(0, 8, fallback_length)
+            )
     
     async def _progressive_regime_optimization(self, features: np.ndarray, tas_assignments: np.ndarray, 
                                             nas_assignments: np.ndarray, market_data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:

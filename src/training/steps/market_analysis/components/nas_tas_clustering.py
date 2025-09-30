@@ -265,7 +265,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 drop_highly_correlated=True
             )
             
-            self.unified_clustering = None
             self.clustering_result = None
             self.execution_metadata = {}
             
@@ -465,14 +464,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             clustering_config = self._create_clustering_config_using_shared_utils()
             tprint("Clustering configuration created", "SUCCESS")
 
-            # Step 6: Initialize unified clustering
-            tprint("Step 6: Initializing unified clustering", "INFO")
-            log_info("Initializing unified clustering")
-            self._initialize_unified_clustering(clustering_config)
-            tprint("Unified clustering initialized", "SUCCESS")
-
-            # Step 7: Perform clustering
-            tprint("Step 7: Performing clustering", "INFO")
+            # Step 6: Perform clustering
+            tprint("Step 6: Performing clustering", "INFO")
             log_info("Performing clustering")
             clustering_result = await self._perform_clustering(features, market_data)
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
@@ -625,74 +618,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
             return create_default_config("clustering")
     
-    def _initialize_unified_clustering(self, clustering_config: Dict[str, Any]):
-        """Initialize unified clustering system."""
-        try:
-            tprint("Initializing unified clustering system...", "INFO")
-            log_info("Initializing unified clustering system")
-
-            # Import unified clustering components
-            tprint("Importing unified clustering components...", "INFO")
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.unified_clustering_algorithms import (
-                UnifiedClusteringAlgorithm, ClusteringAlgorithmType
-            )
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.clustering_cross_validation import (
-                ClusteringCrossValidator, ClusteringCVResult
-            )
-            from src.training.steps.market_analysis.hybrid_nas_tas_regime.multi_objective_optimizer import (
-                MultiObjectiveOptimizer, MultiObjectiveConfig
-            )
-            tprint("Unified clustering components imported", "SUCCESS")
-
-            # Create unified clustering configuration
-            tprint("Creating unified clustering configuration...", "INFO")
-            unified_config = {
-                'n_regimes': clustering_config['n_regimes'],
-                'algorithm_type': clustering_config['algorithm_type'],
-                'enable_economic_clustering': clustering_config['enable_economic_clustering'],
-                'enable_ensemble_clustering': clustering_config['enable_ensemble_clustering'],
-                'economic_weight': clustering_config['economic_weight'],
-                'volatility_regime_weight': clustering_config['volatility_regime_weight'],
-                'volume_regime_weight': clustering_config['volume_regime_weight'],
-                'structural_trend_weight': clustering_config['structural_trend_weight']
-            }
-            tprint("Unified clustering configuration created", "SUCCESS")
-
-            # Initialize unified clustering system
-            tprint("Initializing unified clustering system...", "INFO")
-            self.unified_clustering = UnifiedClusteringAlgorithm(unified_config)
-            tprint("Unified clustering system initialized", "SUCCESS")
-
-            log_success("Unified clustering system initialized")
-
-        except ImportError:
-            log_warning("Unified clustering components not available, using fallback")
-            tprint("Unified clustering components not available, using fallback", "WARNING")
-            self.unified_clustering = None
-        except Exception as e:
-            log_error(f"Unified clustering initialization failed: {e}")
-            tprint(f"Unified clustering initialization failed: {e}", "ERROR")
-            self.unified_clustering = None
     
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform clustering using advanced optimization methods."""
         try:
-            if self.unified_clustering is not None:
-                tprint("Performing advanced clustering optimization...", "INFO")
-                log_info("Performing advanced clustering optimization")
-                
-                # TODO: Integrate UnifiedClusteringAlgorithm methods instead of custom implementation
-                # The unified_clustering object is initialized but not utilized in the clustering logic
-                # Consider refactoring to use self.unified_clustering methods for better maintainability
-                
-                # Use cross-validation for hyperparameter optimization
-                clustering_result = await self._perform_advanced_clustering(features, market_data)
-                tprint("Advanced clustering optimization completed", "SUCCESS")
-            else:
-                tprint("Performing clustering using fallback method...", "INFO")
-                log_info("Performing clustering using fallback method")
-                clustering_result = await self._perform_fallback_clustering(features, market_data)
-                tprint("Clustering completed using fallback method", "SUCCESS")
+            tprint("Performing advanced clustering optimization...", "INFO")
+            log_info("Performing advanced clustering optimization")
+            
+            # Use advanced clustering with progressive regime optimization
+            clustering_result = await self._perform_advanced_clustering(features, market_data)
+            tprint("Advanced clustering optimization completed", "SUCCESS")
 
             log_success(f"Clustering completed: {clustering_result['n_clusters']} clusters")
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
@@ -5351,52 +5286,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_warning(f"Final quality metrics calculation failed: {e}")
             return {'error': str(e)}
     
-    async def _perform_fallback_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Perform fallback clustering when unified system is not available."""
-        try:
-            tprint("Performing fallback clustering...", "INFO")
-            log_info("Performing fallback clustering")
-
-            tprint("Importing sklearn clustering components...", "INFO")
-            from sklearn.cluster import KMeans
-            from sklearn.metrics import silhouette_score
-            tprint("Sklearn clustering components imported", "SUCCESS")
-
-            n_clusters = getattr(self.config, 'n_regimes', 8)
-            tprint(f"Using {n_clusters} clusters for fallback clustering", "INFO")
-
-            # Perform K-means clustering
-            tprint("Performing K-means clustering...", "INFO")
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_assignments = kmeans.fit_predict(features)
-            cluster_centers = kmeans.cluster_centers_
-            tprint("K-means clustering completed", "SUCCESS")
-
-            # Calculate clustering quality metrics
-            tprint("Calculating clustering quality metrics...", "INFO")
-            silhouette_avg = silhouette_score(features, cluster_assignments)
-            tprint(f"Clustering quality metrics calculated (silhouette: {silhouette_avg:.3f})", "SUCCESS")
-            
-            clustering_result = {
-                'n_clusters': n_clusters,
-                'cluster_assignments': cluster_assignments.tolist(),
-                'cluster_centers': cluster_centers.tolist(),
-                'clustering_quality': {
-                    'silhouette_score': float(silhouette_avg),
-                    'inertia': float(kmeans.inertia_),
-                    'algorithm_used': 'kmeans_fallback'
-                },
-                'success': True
-            }
-
-            log_success(f"Fallback clustering completed: {n_clusters} clusters, silhouette={silhouette_avg:.3f}")
-            tprint(f"Fallback clustering completed: {n_clusters} clusters, silhouette={silhouette_avg:.3f}", "SUCCESS")
-            return clustering_result
-
-        except Exception as e:
-            log_error(f"Fallback clustering failed: {e}")
-            tprint(f"Fallback clustering failed: {e}", "ERROR")
-            raise ValueError(f"Fallback clustering failed: {e}")
     
     def _calculate_clustering_metrics_using_shared_utils(
         self,

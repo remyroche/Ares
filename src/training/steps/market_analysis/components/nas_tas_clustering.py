@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import datetime
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import traceback
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
@@ -144,6 +144,25 @@ except ImportError as e:
     get_m1_cpu_scheduler = lambda: None
 
 @dataclass
+class ClusteringContext:
+    """Lightweight context for sharing intermediate clustering artifacts."""
+
+    original_features: np.ndarray
+    market_data: pd.DataFrame
+    optimized_features: Optional[np.ndarray] = None
+    optimal_k: Optional[int] = None
+    optimal_bic: Optional[float] = None
+    k_metadata: Dict[str, Any] = field(default_factory=dict)
+    tas_assignments: Optional[np.ndarray] = None
+    nas_assignments: Optional[np.ndarray] = None
+    optimization_metrics: Dict[str, Any] = field(default_factory=dict)
+    raw_assignments: Optional[np.ndarray] = None
+    smoothed_assignments: Optional[np.ndarray] = None
+    fusion_metadata: Dict[str, Any] = field(default_factory=dict)
+    summary: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class NASTASClusteringConfig(BaseConfig):
     """Configuration for NAS-TAS clustering component using shared utilities."""
     exchange: str = "binance"
@@ -208,7 +227,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Initialize the NAS-TAS clustering component."""
         with LoggingContext('NAS-TAS-Clustering', 'Initialization', verbose=True):
             super().__init__(config)
-            
+
             # Use shared logging utilities
             self.logger = get_logger('NASTASClustering')
             
@@ -248,8 +267,30 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self._initialize_hardware_optimization()
             self._initialize_matrix_operations()
             
+
+            if MATRIX_OPERATIONS_AVAILABLE:
+                try:
+                    self.matrix_ops = get_unified_matrix_operations()
+                    self.vectorized_core = get_vectorized_processing_core()
+                    self.batch_processor = get_batch_matrix_processor()
+                    tprint("Matrix operations initialized successfully", "SUCCESS")
+                except Exception as e:
+                    tprint(f"Failed to initialize matrix operations: {e}", "ERROR")
+            
+            if HARDWARE_OPTIMIZATION_AVAILABLE:
+                try:
+                    self.hardware_manager = get_unified_hardware_manager()
+                    tprint("Hardware optimization initialized successfully", "SUCCESS")
+                except Exception as e:
+                    tprint(f"Failed to initialize hardware optimization: {e}", "ERROR")
+
+
             tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
-    
+
+    def _log(self, message: str, level: str = "INFO") -> None:
+        """Log a message using the standard component logger."""
+        tprint(message, level)
+
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization systems and return created resources."""
         resources = {
@@ -342,7 +383,91 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
-    
+
+    def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
+        """Extract the number of regimes to use for clustering."""
+        tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
+
+        regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
+        tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
+        nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
+
+        n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
+        n_regimes = max(5, min(15, n_regimes))
+
+        tprint(
+            f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}",
+            "INFO"
+        )
+        return n_regimes
+
+    def _validate_configuration(self) -> None:
+        """Validate configuration using shared utilities."""
+        tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
+        validation_errors = self.config_validator.validate_config(self.config)
+        if validation_errors:
+            tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
+            raise ValueError(f"Configuration validation failed: {validation_errors}")
+
+        tprint("Configuration validation passed using shared utilities", "SUCCESS")
+
+    def _initialize_execution_metadata(self) -> None:
+        """Initialize execution metadata for downstream use."""
+        self.execution_metadata = {
+            'start_time': datetime.now(),
+            'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
+            'timeframe': getattr(self.config, 'timeframe', '15m'),
+            'exchange': getattr(self.config, 'exchange', 'binance'),
+            'component': 'refactored_nas_tas_clustering',
+            'uses_shared_utilities': True
+        }
+
+    def _prepare_features(self, market_data: pd.DataFrame) -> Any:
+        """Prepare market features for clustering."""
+        tprint("Step 4: Preparing features using shared utilities", "INFO")
+        features = prepare_market_features(market_data, self.feature_config, verbose=True)
+        if features is None:
+            tprint("Failed to prepare features for clustering", "ERROR")
+            raise ValueError("Failed to prepare features for clustering")
+
+        self.features = features
+        tprint(f"Features prepared: {features.shape}", "SUCCESS")
+        return features
+
+    def _generate_cluster_characteristics(
+        self,
+        market_data: pd.DataFrame,
+        clustering_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Generate characteristics for each cluster."""
+        tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
+        cluster_characteristics = generate_cluster_characteristics(
+            market_data,
+            clustering_result['cluster_assignments'],
+            clustering_result.get('cluster_centers'),
+            verbose=True,
+        )
+        tprint("Cluster characteristics generated", "SUCCESS")
+        return cluster_characteristics
+
+    def _build_artifacts(
+        self,
+        clustering_result: Dict[str, Any],
+        cluster_characteristics: Dict[str, Any],
+        clustering_metrics: Dict[str, Any],
+        market_data: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """Create consolidated artifacts from clustering outputs."""
+        tprint("Step 10: Creating consolidated artifacts", "INFO")
+        artifacts = self._create_consolidated_artifacts(
+            clustering_result,
+            cluster_characteristics,
+            clustering_metrics,
+            market_data,
+        )
+        tprint("Consolidated artifacts created", "SUCCESS")
+        return artifacts
+
     @log_execution('NAS-TAS-Clustering', 'NAS-TAS Clustering', verbose=True)
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -366,42 +491,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             start_time = time.time()
             
             # Step 1: Extract regime count from previous step artifacts
-            tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
-            
-            # Extract regime count from regime discovery results
-            regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
-            tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
-            nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
-            
-            # Use the maximum of both systems or default to 8
-            n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
-            
-            # Ensure n_regimes is between 5 and 15
-            n_regimes = max(5, min(15, n_regimes))
-            
-            tprint(f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}", "INFO")
-            
-            # Update config with extracted regime count
+            n_regimes = self._extract_regime_counts(pipeline_state)
             self.config.n_regimes = n_regimes
-            
-            # Step 2: Validate inputs and configuration using shared utilities
-            tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
-            validation_errors = self.config_validator.validate_config(self.config)
-            if validation_errors:
-                tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
-                raise ValueError(f"Configuration validation failed: {validation_errors}")
 
-            tprint("Configuration validation passed using shared utilities", "SUCCESS")
+            # Step 2: Validate inputs and configuration using shared utilities
+            self._validate_configuration()
 
             # Step 3: Initialize execution metadata
-            self.execution_metadata = {
-                'start_time': datetime.now(),
-                'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
-                'timeframe': getattr(self.config, 'timeframe', '15m'),
-                'exchange': getattr(self.config, 'exchange', 'binance'),
-                'component': 'refactored_nas_tas_clustering',
-                'uses_shared_utilities': True
-            }
+            self._initialize_execution_metadata()
 
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
@@ -413,15 +510,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Market data loaded: {len(market_data)} rows", "SUCCESS")
 
             # Step 4: Prepare features using shared utilities
-            tprint("Step 4: Preparing features using shared utilities", "INFO")
-            features = prepare_market_features(market_data, self.feature_config, verbose=True)
-            if features is None:
-                tprint("Failed to prepare features for clustering", "ERROR")
-                raise ValueError("Failed to prepare features for clustering")
-
-            # Store original features for potential fallback
-            self.features = features
-            tprint(f"Features prepared: {features.shape}", "SUCCESS")
+            features = self._prepare_features(market_data)
 
             # Step 5: Create clustering configuration using shared utilities
             tprint("Step 5: Creating clustering configuration using shared utilities", "INFO")
@@ -434,26 +523,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
 
             # Step 8: Generate cluster characteristics using shared utilities
-            tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
-            cluster_characteristics = generate_cluster_characteristics(
-                market_data, clustering_result['cluster_assignments'],
-                clustering_result.get('cluster_centers'), verbose=True
+            cluster_characteristics = self._generate_cluster_characteristics(
+                market_data, clustering_result
             )
-            tprint("Cluster characteristics generated", "SUCCESS")
 
             # Step 9: Calculate metrics using shared utilities
-            tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
             clustering_metrics = self._calculate_clustering_metrics_using_shared_utils(
                 clustering_result, cluster_characteristics
             )
-            tprint("Clustering metrics calculated", "SUCCESS")
 
             # Step 10: Create consolidated artifacts
-            tprint("Step 10: Creating consolidated artifacts", "INFO")
-            artifacts = self._create_consolidated_artifacts(
+            artifacts = self._build_artifacts(
                 clustering_result, cluster_characteristics, clustering_metrics, market_data
             )
-            tprint("Consolidated artifacts created", "SUCCESS")
 
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
             
@@ -489,22 +571,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Loading market data...", "INFO")
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-                tprint("No market data provided, attempting to load from pipeline state")
-                tprint("No market data provided, attempting to load from pipeline state", "WARNING")
+                self._log("No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
             # If data is already a DataFrame, use it
             if isinstance(data, pd.DataFrame):
-                tprint(f"Using provided DataFrame with {len(data)} rows")
-                tprint(f"Using provided DataFrame with {len(data)} rows", "INFO")
+                self._log(f"Using provided DataFrame with {len(data)} rows", "INFO")
                 return data.copy()
 
             # If data is a dictionary with market data
             if isinstance(data, dict) and 'market_data' in data:
                 market_data = data['market_data']
                 if isinstance(market_data, pd.DataFrame):
-                    tprint(f"Using market data from dictionary with {len(market_data)} rows")
-                    tprint(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
+                    self._log(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
                     return market_data.copy()
 
             tprint("Unknown data type provided", "WARNING")
@@ -592,120 +671,88 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Perform advanced clustering using progressive regime optimization."""
         try:
             tprint("Starting progressive regime optimization...", "INFO")
-            
+
+            context = ClusteringContext(original_features=features, market_data=market_data)
+
             # Step 1: Feature selection and dimensionality reduction
             tprint("Step 1: Feature selection and dimensionality reduction...", "INFO")
-            optimized_features = await self._optimize_features(features, market_data)
-            tprint(f"Feature optimization completed: {features.shape} -> {optimized_features.shape}", "SUCCESS")
+            await self._optimize_features(context)
 
-            # Store optimized features for frontier detection
-            self.optimized_features = optimized_features
-            
-            # Memory cleanup after feature optimization
-            import gc
-            gc.collect()
-            
             # Step 2: Select optimal K using BIC-selected GMM
-            tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
-            optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(optimized_features)
-            tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            
-            # Step 3: Get TAS and NAS regime assignments from pipeline state
-            tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
-            tas_assignments, nas_assignments = await self._extract_regime_assignments()
-            tprint(f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
-            
-            # Step 4: Progressive regime optimization with BIC-selected K
-            tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
-            optimized_assignments, optimization_metrics = await self._progressive_regime_optimization_with_k(
-                optimized_features, tas_assignments, nas_assignments, market_data, optimal_k
-            )
-            tprint(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}", "SUCCESS")
-            
-            # Step 4: Calculate final clustering centers and quality metrics
-            tprint("Step 4: Calculating final clustering metrics...", "INFO")
-            final_centers = self._calculate_cluster_centers(optimized_features, optimized_assignments)
-            final_quality = self._calculate_final_quality_metrics(optimized_features, optimized_assignments)
-            
-            # Convert to dictionary format with comprehensive optimization metadata
-            clustering_result = {
-                'n_clusters': len(set(optimized_assignments)),
-                'cluster_assignments': optimized_assignments.tolist(),
-                'cluster_centers': final_centers.tolist(),
-                'clustering_quality': final_quality,
-                'algorithm_used': 'data_driven_optimization',
-                'success': True,
-                'execution_time': optimization_metrics.get('execution_time', 0.0),
-                'optimization_metadata': {
-                    'optimization_method': 'data_driven_optimization',
-                    'initial_score': optimization_metrics.get('initial_score', 0.0),
-                    'final_score': optimization_metrics.get('final_score', 0.0),
-                    'improvement': optimization_metrics.get('improvement', 0.0),
-                    'iterations': optimization_metrics.get('iterations', 0),
-                    'optimal_k': optimal_k,
-                    'optimal_bic': optimal_bic,
-                    'log_likelihood': optimization_metrics.get('log_likelihood', 0.0),
-                    'k_grid': k_metadata.get('k_values', []),
-                    'ds_confusions': optimization_metrics.get('fusion_metadata', {}).get('tas_confusion_matrix', []),
-                    'hmm_transitions': optimization_metrics.get('hmm_transitions', []),
-                    'random_state': 42,
-                    'k_selection_metadata': k_metadata,
-                    'fusion_metadata': optimization_metrics.get('fusion_metadata', {}),
-                    'feature_optimization': {
-                        'original_features': features.shape[1],
-                        'optimized_features': optimized_features.shape[1],
-                        'reduction_ratio': optimized_features.shape[1] / features.shape[1],
-                        'method': 'pca_mle'
-                    }
-                }
-            }
-            
+            self._select_optimal_k(context)
+
+            # Step 3/4: Reconcile NAS/TAS labels and prepare optimization metrics
+            await self._reconcile_labels(context)
+
+            # Step 5: Smooth regime assignments for temporal coherence
+            self._smooth_assignments(context)
+
+            # Final summary and artifact packaging
+            clustering_result = self._summarize_results(context)
+
             tprint("Progressive regime optimization completed successfully", "SUCCESS")
             return clustering_result
-            
+
         except Exception as e:
             tprint(f"Progressive regime optimization failed: {e}", "ERROR")
             # Fast-fail: Do not fall back to basic clustering
             tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
             raise ValueError(f"Progressive regime optimization failed: {e}. Cannot proceed with fallback clustering.")
     
-    async def _optimize_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
+    async def _optimize_features(self, context: ClusteringContext) -> None:
         """Optimize features using data-driven dimensionality reduction."""
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
-            
+
             # Step 1: Standardize features (keep standardization as-is)
             tprint("Step 1: Standardizing features...", "INFO")
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features)
-            tprint(f"Feature standardization completed: {features.shape}", "SUCCESS")
-            
+            features_scaled = scaler.fit_transform(context.original_features)
+            tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
+
             # Step 2: Apply PCA with Minka's MLE for data-driven dimensionality selection
             tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
             from sklearn.decomposition import PCA
-            
+
             # Use PCA with MLE to automatically select number of components
             # Add fallback for small samples or rank-deficient cases
             try:
                 pca = PCA(n_components='mle', svd_solver='full')
                 features_pca = pca.fit_transform(features_scaled)
-                tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
+                tprint(
+                    f"PCA-MLE reduction: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
+                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
+                    "SUCCESS"
+                )
             except Exception as e:
                 tprint(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
                 tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
                 pca = PCA(n_components=0.99, svd_solver='full')
                 features_pca = pca.fit_transform(features_scaled)
-                tprint(f"PCA fallback: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
-            
+                tprint(
+                    f"PCA fallback: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
+                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
+                    "SUCCESS"
+                )
+
             # Step 3: Basic quality validation (minimal checks)
             tprint("Step 3: Validating feature quality...", "INFO")
-            features_final = self._validate_feature_quality_minimal(features_pca, market_data)
+            features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
             tprint(f"Feature quality validation completed: {features_final.shape}", "SUCCESS")
-            
-            tprint(f"Data-driven feature optimization completed: {features.shape} -> {features_final.shape}", "SUCCESS")
-            return features_final
-            
+
+            tprint(
+                f"Data-driven feature optimization completed: {context.original_features.shape} -> {features_final.shape}",
+                "SUCCESS"
+            )
+
+            context.optimized_features = features_final
+            self.optimized_features = features_final
+
+            # Memory cleanup after feature optimization
+            import gc
+            gc.collect()
+
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
             # Fast-fail: Do not return original features if optimization fails
@@ -734,6 +781,148 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Minimal feature validation failed: {e}", "ERROR")
             return features
+
+    def _select_optimal_k(self, context: ClusteringContext) -> None:
+        """Select the optimal number of clusters using BIC scoring."""
+        if context.optimized_features is None:
+            raise ValueError("Optimized features are required before selecting optimal K")
+
+        tprint("Step 2: Selecting optimal K using BIC-selected GMM...", "INFO")
+        optimal_k, optimal_bic, k_metadata = self._select_optimal_k_bic(context.optimized_features)
+        context.optimal_k = optimal_k
+        context.optimal_bic = optimal_bic
+        context.k_metadata = k_metadata
+        tprint(f"BIC-selected K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+
+    async def _reconcile_labels(self, context: ClusteringContext) -> None:
+        """Reconcile NAS/TAS regime assignments and prepare optimization metrics."""
+        if context.optimal_k is None:
+            raise ValueError("Optimal K must be selected before label reconciliation")
+
+        tprint("Step 3: Extracting TAS and NAS regime assignments...", "INFO")
+        tas_assignments, nas_assignments = await self._extract_regime_assignments()
+        context.tas_assignments = tas_assignments
+        context.nas_assignments = nas_assignments
+        tprint(
+            f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}",
+            "SUCCESS"
+        )
+
+        tprint("Step 4: Progressive regime optimization with BIC-selected K...", "INFO")
+        optimized_assignments, optimization_metrics, fusion_metadata = await self._progressive_regime_optimization_with_k(
+            context.optimized_features,
+            tas_assignments,
+            nas_assignments,
+            context.market_data,
+            context.optimal_k
+        )
+
+        context.raw_assignments = optimized_assignments
+        context.optimization_metrics = optimization_metrics
+        context.fusion_metadata = fusion_metadata or {}
+
+        pre_smoothing_score = optimization_metrics.get('initial_score', 0.0)
+        tprint(f"Progressive optimization completed - Score: {pre_smoothing_score:.3f} (pre-smoothing)", "SUCCESS")
+
+    def _smooth_assignments(self, context: ClusteringContext) -> None:
+        """Apply temporal smoothing to regime assignments when beneficial."""
+        if context.raw_assignments is None:
+            raise ValueError("Assignments must be generated before smoothing")
+
+        tprint("Step 5: Applying HMM smoothing for temporal coherence...", "INFO")
+        features = context.optimized_features
+        base_assignments = context.raw_assignments
+        metrics = context.optimization_metrics or {}
+
+        if features is None:
+            raise ValueError("Optimized features are required before smoothing")
+
+        initial_score = metrics.get('initial_score')
+        if initial_score is None and features is not None:
+            initial_score = self._calculate_composite_score(features, base_assignments)
+            metrics['initial_score'] = initial_score
+
+        smoothed_assignments = self._apply_hmm_smoothing(features, base_assignments)
+        final_score = self._calculate_composite_score(features, smoothed_assignments)
+
+        if initial_score is None or final_score > initial_score:
+            tprint(
+                f"HMM smoothing improved score: {initial_score:.3f} → {final_score:.3f}" if initial_score is not None else
+                f"HMM smoothing score: {final_score:.3f}",
+                "SUCCESS"
+            )
+            context.smoothed_assignments = smoothed_assignments
+            metrics['final_score'] = final_score
+            if initial_score is not None:
+                metrics['improvement'] = final_score - initial_score
+        else:
+            tprint("HMM smoothing did not improve, keeping fused assignments", "INFO")
+            context.smoothed_assignments = base_assignments
+            metrics.setdefault('final_score', initial_score)
+            metrics.setdefault('improvement', 0.0)
+
+        metrics.setdefault('iterations', 1)
+        metrics.setdefault('method', 'data_driven_optimization')
+        metrics.setdefault('fusion_metadata', context.fusion_metadata)
+        metrics.setdefault('hmm_transitions', [])
+        context.optimization_metrics = metrics
+
+        tprint(
+            f"Progressive optimization completed - Final score: {metrics.get('final_score', final_score):.3f}",
+            "SUCCESS"
+        )
+
+    def _summarize_results(self, context: ClusteringContext) -> Dict[str, Any]:
+        """Create the final clustering result payload from the shared context."""
+        if context.optimized_features is None or context.smoothed_assignments is None:
+            raise ValueError("Optimized features and smoothed assignments are required for summarization")
+
+        optimized_assignments = context.smoothed_assignments
+        optimized_features = context.optimized_features
+        final_centers = self._calculate_cluster_centers(optimized_features, optimized_assignments)
+        final_quality = self._calculate_final_quality_metrics(optimized_features, optimized_assignments)
+
+        metrics = context.optimization_metrics or {}
+        metrics.setdefault('fusion_metadata', context.fusion_metadata)
+
+        optimal_k = context.optimal_k or len(set(optimized_assignments))
+        optimal_bic = context.optimal_bic if context.optimal_bic is not None else float('nan')
+        k_metadata = context.k_metadata or {}
+
+        clustering_result = {
+            'n_clusters': len(set(optimized_assignments)),
+            'cluster_assignments': np.asarray(optimized_assignments).tolist(),
+            'cluster_centers': final_centers.tolist(),
+            'clustering_quality': final_quality,
+            'algorithm_used': 'data_driven_optimization',
+            'success': True,
+            'execution_time': metrics.get('execution_time', 0.0),
+            'optimization_metadata': {
+                'optimization_method': 'data_driven_optimization',
+                'initial_score': metrics.get('initial_score', 0.0),
+                'final_score': metrics.get('final_score', 0.0),
+                'improvement': metrics.get('improvement', 0.0),
+                'iterations': metrics.get('iterations', 0),
+                'optimal_k': optimal_k,
+                'optimal_bic': optimal_bic,
+                'log_likelihood': metrics.get('log_likelihood', 0.0),
+                'k_grid': k_metadata.get('k_values', []),
+                'ds_confusions': metrics.get('fusion_metadata', {}).get('tas_confusion_matrix', []),
+                'hmm_transitions': metrics.get('hmm_transitions', []),
+                'random_state': 42,
+                'k_selection_metadata': k_metadata,
+                'fusion_metadata': metrics.get('fusion_metadata', {}),
+                'feature_optimization': {
+                    'original_features': context.original_features.shape[1],
+                    'optimized_features': optimized_features.shape[1],
+                    'reduction_ratio': optimized_features.shape[1] / context.original_features.shape[1],
+                    'method': 'pca_mle'
+                }
+            }
+        }
+
+        context.summary = clustering_result
+        return clustering_result
 
     def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20), 
                              adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
@@ -844,8 +1033,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            tprint(f"Evidence-driven K search failed: {e}")
-            tprint(f"Evidence-driven K search failed: {e}", "ERROR")
+            self._log(f"Evidence-driven K search failed: {e}", "ERROR")
             # Fallback to fixed range
             return self._fixed_range_k_search(features, (2, 20))
 
@@ -879,8 +1067,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return bic_scores, model_metadata
             
         except Exception as e:
-            tprint(f"Parallel K-grid search failed: {e}")
-            tprint(f"Parallel K-grid search failed: {e}", "ERROR")
+            self._log(f"Parallel K-grid search failed: {e}", "ERROR")
             # Fallback to serial search
             return self._serial_k_grid(features, k_values, model_type)
 
@@ -1105,8 +1292,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimal_bic = bic_scores[optimal_k_idx]
             optimal_gmm = gmm_models[optimal_k_idx]
             
-            tprint(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            tprint(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            self._log(
+                f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}",
+                "SUCCESS",
+            )
             
             metadata = {
                 'bic_scores': bic_scores,
@@ -1347,30 +1536,31 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'nas_row_sums': nas_row_sums.tolist()
             }
             
-            tprint(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes", "SUCCESS")
-            tprint(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes")
-            
+            self._log(
+                f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes",
+                "SUCCESS",
+            )
+
             return fused_assignments, metadata
-            
+
         except Exception as e:
-            tprint(f"Dawid-Skene fusion failed: {e}")
-            tprint(f"Dawid-Skene fusion failed: {e}", "ERROR")
+            self._log(f"Dawid-Skene fusion failed: {e}", "ERROR")
             # Fallback to TAS assignments
             return tas_assignments, {'method': 'fallback', 'error': str(e)}
 
-    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray, 
-                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame, 
-                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+    async def _progressive_regime_optimization_with_k(self, features: np.ndarray, tas_assignments: np.ndarray,
+                                                     nas_assignments: np.ndarray, market_data: pd.DataFrame,
+                                                     optimal_k: int) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
         """Progressive regime optimization using BIC-selected K and Dawid-Skene fusion."""
         try:
             tprint("Starting data-driven progressive regime optimization...", "INFO")
             tprint("Starting data-driven progressive regime optimization")
-            
+
             # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
             tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
             fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments, optimal_k, features)
             tprint(f"Dawid-Skene fusion completed: {len(fused_assignments)} samples", "SUCCESS")
-            
+
             # Step 2: Map fused assignments to optimal K if needed
             if len(set(fused_assignments)) != optimal_k:
                 tprint(f"Mapping fused assignments to optimal K={optimal_k}...", "INFO")
@@ -1383,44 +1573,30 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 mapped_assignments = fused_assignments
                 tprint(f"Fused assignments already have optimal K={optimal_k}", "SUCCESS")
-            
+
             # Step 3: Calculate initial score
             initial_score = self._calculate_composite_score(features, mapped_assignments)
             tprint(f"Initial score: {initial_score:.3f}", "SUCCESS")
-            
-            # Step 4: Apply HMM smoothing if temporal coherence is needed
-            tprint("Step 4: Applying HMM smoothing for temporal coherence...", "INFO")
-            smoothed_assignments = self._apply_hmm_smoothing(features, mapped_assignments)
-            final_score = self._calculate_composite_score(features, smoothed_assignments)
-            
-            if final_score > initial_score:
-                tprint(f"HMM smoothing improved score: {initial_score:.3f} → {final_score:.3f}", "SUCCESS")
-                final_assignments = smoothed_assignments
-            else:
-                tprint(f"HMM smoothing did not improve, keeping fused assignments", "INFO")
-                final_assignments = mapped_assignments
-                final_score = initial_score
-            
-            improvement = final_score - initial_score
-            
+
             optimization_metrics = {
                 'initial_score': initial_score,
-                'final_score': final_score,
-                'improvement': improvement,
+                'final_score': initial_score,
+                'improvement': 0.0,
                 'iterations': 1,
                 'optimal_k': optimal_k,
                 'fusion_metadata': fusion_metadata,
                 'method': 'data_driven_optimization'
             }
             
-            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})", "SUCCESS")
-            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})")
+            tprint(
+                f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})",
+                "SUCCESS",
+            )
             
             return final_assignments, optimization_metrics
             
         except Exception as e:
-            tprint(f"Data-driven progressive regime optimization failed: {e}")
-            tprint(f"Data-driven progressive regime optimization failed: {e}", "ERROR")
+            self._log(f"Data-driven progressive regime optimization failed: {e}", "ERROR")
             # Return original TAS assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
 
@@ -2714,8 +2890,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             improvement = best_score - initial_score
             
-            tprint(f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})", "SUCCESS")
-            tprint(f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})")
+            self._log(
+                f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})",
+                "SUCCESS",
+            )
             
             optimization_metrics.update({
                 'initial_score': initial_score,
@@ -2727,8 +2905,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return best_assignments, optimization_metrics
             
         except Exception as e:
-            tprint(f"Smart progressive regime optimization failed: {e}")
-            tprint(f"Smart progressive regime optimization failed: {e}", "ERROR")
+            self._log(f"Smart progressive regime optimization failed: {e}", "ERROR")
             # Return original assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
     
@@ -2767,8 +2944,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'decision_trace': []
                 }
                 
-                tprint("No TAS/NAS disagreements detected during initial combination", "SUCCESS")
-                tprint("No TAS/NAS disagreements detected during initial combination")
+                self._log(
+                    "No TAS/NAS disagreements detected during initial combination",
+                    "SUCCESS",
+                )
                 return combined_assignments
             
             # Process divergence samples with optimized logic
@@ -2984,14 +3163,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 best_method = "initial"
                 tprint(f"Initial assignments are best with score: {initial_score:.3f}", "SUCCESS")
             
-            tprint(f"Best approach: {best_method} with score: {best_score:.3f}", "SUCCESS")
-            tprint(f"Best approach: {best_method} with score: {best_score:.3f}")
+            self._log(
+                f"Best approach: {best_method} with score: {best_score:.3f}",
+                "SUCCESS",
+            )
             
             return best_assignments, best_score, best_method
             
         except Exception as e:
-            tprint(f"Best regime-based approach search failed: {e}")
-            tprint(f"Best regime-based approach search failed: {e}", "ERROR")
+            self._log(f"Best regime-based approach search failed: {e}", "ERROR")
             return initial_assignments, 0.0, "initial"
     
     async def _create_tas_primary_assignments(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -3089,8 +3269,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimized_assignments
             
         except Exception as e:
-            tprint(f"Regime-based optimization failed: {e}")
-            tprint(f"Regime-based optimization failed: {e}", "ERROR")
+            self._log(f"Regime-based optimization failed: {e}", "ERROR")
             return initial_assignments
     
     def _superpose_regime_assignments(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> np.ndarray:
@@ -3536,8 +3715,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return current_assignments
 
         except Exception as e:
-            tprint(f"Progressive regime flipping failed: {e}")
-            tprint(f"Progressive regime flipping failed: {e}", "ERROR")
+            self._log(f"Progressive regime flipping failed: {e}", "ERROR")
             return assignments
     
     def _print_regime_distribution(self, assignments: np.ndarray, max_regime_size: int, min_regime_size: int, 
@@ -5289,14 +5467,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Regime count {n_regimes} failed: {e}")
                     continue
             
-            tprint(f"Optimal regime count: {best_count} (score: {best_score:.3f})", "SUCCESS")
-            tprint(f"Optimal regime count: {best_count} (score: {best_score:.3f})")
+            self._log(
+                f"Optimal regime count: {best_count} (score: {best_score:.3f})",
+                "SUCCESS",
+            )
             
             return best_count
             
         except Exception as e:
-            tprint(f"Regime count optimization failed: {e}")
-            tprint(f"Regime count optimization failed: {e}", "ERROR")
+            self._log(f"Regime count optimization failed: {e}", "ERROR")
             return 8  # Default fallback
     
     async def _ensemble_clustering_optimization(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -5352,8 +5531,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return initial_assignments, {'methods_used': [], 'method_scores': {}, 'ensemble_score': 0.0}
                 
         except Exception as e:
-            tprint(f"Ensemble clustering optimization failed: {e}")
-            tprint(f"Ensemble clustering optimization failed: {e}", "ERROR")
+            self._log(f"Ensemble clustering optimization failed: {e}", "ERROR")
             return initial_assignments, {'methods_used': [], 'method_scores': {}, 'ensemble_score': 0.0}
     
     def _run_clustering_algorithm(self, features: np.ndarray, method: str, params: Dict[str, Any]) -> np.ndarray:
@@ -5504,8 +5682,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Converged at iteration {iteration} - No more improvements found", "SUCCESS")
                     break
             
-            tprint(f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}", "SUCCESS")
-            tprint(f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}")
+            self._log(
+                f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}",
+                "SUCCESS",
+            )
             
             return current_assignments, {
                 'iterations': iteration,
@@ -5514,8 +5694,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            tprint(f"Iterative regime optimization failed: {e}")
-            tprint(f"Iterative regime optimization failed: {e}", "ERROR")
+            self._log(f"Iterative regime optimization failed: {e}", "ERROR")
             return assignments, {'iterations': 0, 'final_score': 0.0, 'execution_time': 0.0}
     
     def _is_flip_valid(self, assignments: np.ndarray, sample_idx: int, target_regime: int, 
@@ -5904,8 +6083,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             tprint("Final metrics compiled", "SUCCESS")
 
-            tprint("Clustering metrics calculated using shared utilities")
-            tprint("Clustering metrics calculated using shared utilities", "SUCCESS")
+            self._log("Clustering metrics calculated using shared utilities", "SUCCESS")
             return metrics
             
         except Exception as e:

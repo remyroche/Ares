@@ -331,7 +331,91 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
-    
+
+    def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
+        """Extract the number of regimes to use for clustering."""
+        tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
+
+        regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
+        tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
+        nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
+
+        n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
+        n_regimes = max(5, min(15, n_regimes))
+
+        tprint(
+            f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}",
+            "INFO"
+        )
+        return n_regimes
+
+    def _validate_configuration(self) -> None:
+        """Validate configuration using shared utilities."""
+        tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
+        validation_errors = self.config_validator.validate_config(self.config)
+        if validation_errors:
+            tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
+            raise ValueError(f"Configuration validation failed: {validation_errors}")
+
+        tprint("Configuration validation passed using shared utilities", "SUCCESS")
+
+    def _initialize_execution_metadata(self) -> None:
+        """Initialize execution metadata for downstream use."""
+        self.execution_metadata = {
+            'start_time': datetime.now(),
+            'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
+            'timeframe': getattr(self.config, 'timeframe', '15m'),
+            'exchange': getattr(self.config, 'exchange', 'binance'),
+            'component': 'refactored_nas_tas_clustering',
+            'uses_shared_utilities': True
+        }
+
+    def _prepare_features(self, market_data: pd.DataFrame) -> Any:
+        """Prepare market features for clustering."""
+        tprint("Step 4: Preparing features using shared utilities", "INFO")
+        features = prepare_market_features(market_data, self.feature_config, verbose=True)
+        if features is None:
+            tprint("Failed to prepare features for clustering", "ERROR")
+            raise ValueError("Failed to prepare features for clustering")
+
+        self.features = features
+        tprint(f"Features prepared: {features.shape}", "SUCCESS")
+        return features
+
+    def _generate_cluster_characteristics(
+        self,
+        market_data: pd.DataFrame,
+        clustering_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Generate characteristics for each cluster."""
+        tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
+        cluster_characteristics = generate_cluster_characteristics(
+            market_data,
+            clustering_result['cluster_assignments'],
+            clustering_result.get('cluster_centers'),
+            verbose=True,
+        )
+        tprint("Cluster characteristics generated", "SUCCESS")
+        return cluster_characteristics
+
+    def _build_artifacts(
+        self,
+        clustering_result: Dict[str, Any],
+        cluster_characteristics: Dict[str, Any],
+        clustering_metrics: Dict[str, Any],
+        market_data: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """Create consolidated artifacts from clustering outputs."""
+        tprint("Step 10: Creating consolidated artifacts", "INFO")
+        artifacts = self._create_consolidated_artifacts(
+            clustering_result,
+            cluster_characteristics,
+            clustering_metrics,
+            market_data,
+        )
+        tprint("Consolidated artifacts created", "SUCCESS")
+        return artifacts
+
     @log_execution('NAS-TAS-Clustering', 'NAS-TAS Clustering', verbose=True)
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -355,42 +439,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             start_time = time.time()
             
             # Step 1: Extract regime count from previous step artifacts
-            tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
-            
-            # Extract regime count from regime discovery results
-            regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
-            tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
-            nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
-            
-            # Use the maximum of both systems or default to 8
-            n_regimes = max(tas_regime_count, nas_regime_count) if tas_regime_count and nas_regime_count else 8
-            
-            # Ensure n_regimes is between 5 and 15
-            n_regimes = max(5, min(15, n_regimes))
-            
-            tprint(f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}", "INFO")
-            
-            # Update config with extracted regime count
+            n_regimes = self._extract_regime_counts(pipeline_state)
             self.config.n_regimes = n_regimes
-            
-            # Step 2: Validate inputs and configuration using shared utilities
-            tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
-            validation_errors = self.config_validator.validate_config(self.config)
-            if validation_errors:
-                tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
-                raise ValueError(f"Configuration validation failed: {validation_errors}")
 
-            tprint("Configuration validation passed using shared utilities", "SUCCESS")
+            # Step 2: Validate inputs and configuration using shared utilities
+            self._validate_configuration()
 
             # Step 3: Initialize execution metadata
-            self.execution_metadata = {
-                'start_time': datetime.now(),
-                'symbol': getattr(self.config, 'symbol', 'BTCUSDT'),
-                'timeframe': getattr(self.config, 'timeframe', '15m'),
-                'exchange': getattr(self.config, 'exchange', 'binance'),
-                'component': 'refactored_nas_tas_clustering',
-                'uses_shared_utilities': True
-            }
+            self._initialize_execution_metadata()
 
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
@@ -402,15 +458,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Market data loaded: {len(market_data)} rows", "SUCCESS")
 
             # Step 4: Prepare features using shared utilities
-            tprint("Step 4: Preparing features using shared utilities", "INFO")
-            features = prepare_market_features(market_data, self.feature_config, verbose=True)
-            if features is None:
-                tprint("Failed to prepare features for clustering", "ERROR")
-                raise ValueError("Failed to prepare features for clustering")
-
-            # Store original features for potential fallback
-            self.features = features
-            tprint(f"Features prepared: {features.shape}", "SUCCESS")
+            features = self._prepare_features(market_data)
 
             # Step 5: Create clustering configuration using shared utilities
             tprint("Step 5: Creating clustering configuration using shared utilities", "INFO")
@@ -423,26 +471,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
 
             # Step 8: Generate cluster characteristics using shared utilities
-            tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
-            cluster_characteristics = generate_cluster_characteristics(
-                market_data, clustering_result['cluster_assignments'],
-                clustering_result.get('cluster_centers'), verbose=True
+            cluster_characteristics = self._generate_cluster_characteristics(
+                market_data, clustering_result
             )
-            tprint("Cluster characteristics generated", "SUCCESS")
 
             # Step 9: Calculate metrics using shared utilities
-            tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
             clustering_metrics = self._calculate_clustering_metrics_using_shared_utils(
                 clustering_result, cluster_characteristics
             )
-            tprint("Clustering metrics calculated", "SUCCESS")
 
             # Step 10: Create consolidated artifacts
-            tprint("Step 10: Creating consolidated artifacts", "INFO")
-            artifacts = self._create_consolidated_artifacts(
+            artifacts = self._build_artifacts(
                 clustering_result, cluster_characteristics, clustering_metrics, market_data
             )
-            tprint("Consolidated artifacts created", "SUCCESS")
 
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
             

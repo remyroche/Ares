@@ -12,7 +12,94 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import traceback
 
-from .base_component import BaseMarketAnalysisComponent, ComponentResult
+
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+)
+
+from ..shared_utils import (
+    # Features
+    prepare_market_features,
+    FeatureConfig,
+
+    # Configuration
+    validate_regime_count,
+    normalize_weights,
+    validate_algorithm_type,
+    create_default_config,
+    ConfigValidator,
+    BaseConfig,
+
+    # Logging
+    log_execution,
+    log_performance,
+    LoggingContext,
+    get_logger,
+    log_info,
+    log_warning,
+    log_error,
+    log_success,
+    log_debug,
+
+    # Metrics
+    calculate_consensus_metrics,
+    calculate_disagreement_metrics,
+    calculate_economic_scores,
+    calculate_trading_scores,
+    calculate_stability_scores,
+    MetricsCalculator,
+
+    # Characteristics
+    create_regime_characteristics,
+    generate_cluster_characteristics,
+    CharacteristicsGenerator,
+)
+
+from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+
+# Import shared utilities before hardware-dependent sections to ensure logging helpers are available
+from ..shared_utils import (
+    # Features
+    prepare_market_features, FeatureConfig,
+
+    # Configuration
+    validate_regime_count, normalize_weights, validate_algorithm_type,
+    create_default_config, ConfigValidator, BaseConfig,
+
+    # Logging
+    log_execution, log_performance, LoggingContext,
+    get_logger, log_info, log_warning, log_error, log_success, log_debug,
+
+    # Metrics
+    calculate_consensus_metrics, calculate_disagreement_metrics,
+    calculate_economic_scores, calculate_trading_scores, calculate_stability_scores,
+    MetricsCalculator,
+
+    # Characteristics
+    create_regime_characteristics, generate_cluster_characteristics,
+    CharacteristicsGenerator
+)
+
+# Import tprint utilities prior to hardware imports so status messages always have access
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+)
 
 # Import matrix operations and hardware utilities
 try:
@@ -90,33 +177,6 @@ except ImportError as e:
     get_m1_cpu_optimizer = lambda: None
     get_m1_cpu_performance_monitor = lambda: None
     get_m1_cpu_scheduler = lambda: None
-
-# Import shared utilities
-from ..shared_utils import (
-    # Features
-    prepare_market_features, FeatureConfig,
-    
-    # Configuration
-    validate_regime_count, normalize_weights, validate_algorithm_type,
-    create_default_config, ConfigValidator, BaseConfig,
-    
-    # Logging
-    log_execution, log_performance, LoggingContext,
-    get_logger, log_info, log_warning, log_error, log_success, log_debug,
-    
-    # Metrics
-    calculate_consensus_metrics, calculate_disagreement_metrics,
-    calculate_economic_scores, calculate_trading_scores, calculate_stability_scores,
-    MetricsCalculator,
-    
-    # Characteristics
-    create_regime_characteristics, generate_cluster_characteristics,
-    CharacteristicsGenerator
-)
-
-# Import original tprint for backward compatibility
-from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
-
 
 @dataclass
 class NASTASClusteringConfig(BaseConfig):
@@ -1536,9 +1596,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             window_size = 3
             start_idx = max(0, sample_idx - window_size)
             end_idx = min(len(assignments), sample_idx + window_size + 1)
-            
+
             # Calculate temporal consistency before flip
             original_consistency = 0.0
+            original_regime = assignments[sample_idx]
             for i in range(start_idx, end_idx):
                 if i != sample_idx:
                     # Check consistency with neighbors
@@ -1557,10 +1618,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         new_consistency += 0.5
                     if i < len(assignments) - 1 and assignments[i] == assignments[i+1]:
                         new_consistency += 0.5
-            
+
             # Restore original assignment
-            assignments[sample_idx] = assignments[sample_idx]  # This will be restored by caller
-            
+            assignments[sample_idx] = original_regime
+
             # Return improvement
             return new_consistency - original_consistency
             

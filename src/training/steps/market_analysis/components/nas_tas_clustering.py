@@ -2262,11 +2262,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Fine-tuned weighted composite score optimized for NAS/TAS divergence detection
             # Based on empirical analysis and performance optimization
             composite_score = (
-                0.25 * norm_silhouette +      # Silhouette score (increased from 0.20)
+                0.20 * norm_silhouette +      # Silhouette score (corrected to 20%)
                 0.20 * norm_ch +             # Calinski-Harabasz score (maintained)
                 0.20 * norm_db +             # Davies-Bouldin score (maintained)
                 0.15 * norm_balance +        # Regime balance (maintained)
-                0.15 * norm_cv +             # Coefficient of Variation score (decreased from 0.25)
+                0.20 * norm_cv +             # Coefficient of Variation score (corrected to 20%)
                 0.05 * norm_temporal         # Temporal consistency (new addition)
             )
             

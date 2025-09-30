@@ -48,12 +48,6 @@ from ..shared_utils import (
     log_execution,
     log_performance,
     LoggingContext,
-    get_logger,
-    log_info,
-    log_warning,
-    log_error,
-    log_success,
-    log_debug,
 
     # Metrics
     calculate_consensus_metrics,
@@ -71,41 +65,6 @@ from ..shared_utils import (
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
-# Import shared utilities before hardware-dependent sections to ensure logging helpers are available
-from ..shared_utils import (
-    # Features
-    prepare_market_features, FeatureConfig,
-
-    # Configuration
-    validate_regime_count, normalize_weights, validate_algorithm_type,
-    create_default_config, ConfigValidator, BaseConfig,
-
-    # Logging
-    log_execution, log_performance, LoggingContext,
-    get_logger, log_info, log_warning, log_error, log_success, log_debug,
-
-    # Metrics
-    calculate_consensus_metrics, calculate_disagreement_metrics,
-    calculate_economic_scores, calculate_trading_scores, calculate_stability_scores,
-    MetricsCalculator,
-
-    # Characteristics
-    create_regime_characteristics, generate_cluster_characteristics,
-    CharacteristicsGenerator
-)
-
-# Import tprint utilities prior to hardware imports so status messages always have access
-from src.utils.tprint import (
-    tprint,
-    tprint_debug,
-    tprint_info,
-    tprint_warning,
-    tprint_error,
-    tprint_success,
-    tprint_progress,
-    tprint_performance,
-    tprint_timer,
-)
 
 # Import matrix operations and hardware utilities
 try:
@@ -131,7 +90,7 @@ try:
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError as e:
     MATRIX_OPERATIONS_AVAILABLE = False
-    log_warning(f"Matrix operations not available: {e}")
+    tprint(f"Matrix operations not available: {e}", "WARNING")
 
 try:
     from src.utils.hardware import (
@@ -149,7 +108,7 @@ try:
     tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
 except ImportError as e:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
-    log_warning(f"Hardware optimization not available: {e}")
+    tprint(f"Hardware optimization not available: {e}", "WARNING")
 
 # Import M1-specific hardware utilities
 try:
@@ -172,7 +131,7 @@ try:
     tprint("✅ M1-specific hardware utilities imported successfully", "SUCCESS")
 except ImportError as e:
     M1_HARDWARE_AVAILABLE = False
-    log_warning(f"M1 hardware utilities not available: {e}")
+    tprint(f"M1 hardware utilities not available: {e}", "WARNING")
     # Set fallback functions
     get_m1_gpu_optimizer = lambda: None
     get_m1_gpu_memory_manager = lambda: None
@@ -294,18 +253,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     self.matrix_ops = get_unified_matrix_operations()
                     self.vectorized_core = get_vectorized_processing_core()
                     self.batch_processor = get_batch_matrix_processor()
-                    log_info("Matrix operations initialized successfully")
+                    tprint("Matrix operations initialized successfully", "SUCCESS")
                 except Exception as e:
-                    log_warning(f"Failed to initialize matrix operations: {e}")
+                    tprint(f"Failed to initialize matrix operations: {e}", "ERROR")
             
             if HARDWARE_OPTIMIZATION_AVAILABLE:
                 try:
                     self.hardware_manager = get_unified_hardware_manager()
-                    log_info("Hardware optimization initialized successfully")
+                    tprint("Hardware optimization initialized successfully", "SUCCESS")
                 except Exception as e:
-                    log_warning(f"Failed to initialize hardware optimization: {e}")
+                    tprint(f"Failed to initialize hardware optimization: {e}", "ERROR")
             
-            log_success("NAS-TAS Clustering Component initialized")
+            tprint("NAS-TAS Clustering Component initialized", "SUCCESS")
     
     def _initialize_hardware_optimization(self):
         """Initialize M1-specific hardware optimization systems."""
@@ -337,7 +296,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 
         except Exception as e:
             tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
-            log_error(f"Hardware optimization initialization failed: {e}")
     
     def _initialize_matrix_operations(self):
         """Initialize matrix operations with hardware optimization."""
@@ -369,7 +327,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 
         except Exception as e:
             tprint(f"❌ Matrix operations initialization failed: {e}", "ERROR")
-            log_error(f"Matrix operations initialization failed: {e}")
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -389,7 +346,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """
         try:
             tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
-            log_info("Starting NAS-TAS clustering execution with hardware optimization")
             
             # Store pipeline state as instance attribute for use in other methods
             self.pipeline_state = pipeline_state
@@ -400,7 +356,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Extract regime count from previous step artifacts
             tprint("📈 Step 1: Extracting regime count from previous step artifacts...", "INFO")
-            log_info("Extracting regime count from previous step artifacts")
             
             # Extract regime count from regime discovery results
             regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
@@ -413,21 +368,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Ensure n_regimes is between 5 and 15
             n_regimes = max(5, min(15, n_regimes))
             
-            log_info(f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}")
+            tprint(f"Extracted regime counts - TAS: {tas_regime_count}, NAS: {nas_regime_count}, Using: {n_regimes}", "INFO")
             
             # Update config with extracted regime count
             self.config.n_regimes = n_regimes
             
             # Step 2: Validate inputs and configuration using shared utilities
             tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
-            log_info("Validating inputs and configuration using shared utilities")
             validation_errors = self.config_validator.validate_config(self.config)
             if validation_errors:
-                log_error(f"Configuration validation failed: {validation_errors}")
                 tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
                 raise ValueError(f"Configuration validation failed: {validation_errors}")
 
-            log_success("Configuration validation passed using shared utilities")
             tprint("Configuration validation passed using shared utilities", "SUCCESS")
 
             # Step 3: Initialize execution metadata
@@ -442,18 +394,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
-            log_info("Loading and validating market data")
             market_data = await self._load_market_data(data)
             if market_data is None or market_data.empty:
                 tprint("No market data available for clustering", "ERROR")
                 raise ValueError("No market data available for clustering")
 
-            log_success(f"Market data loaded: {len(market_data)} rows")
             tprint(f"Market data loaded: {len(market_data)} rows", "SUCCESS")
 
             # Step 4: Prepare features using shared utilities
             tprint("Step 4: Preparing features using shared utilities", "INFO")
-            log_info("Preparing features using shared utilities")
             features = prepare_market_features(market_data, self.feature_config, verbose=True)
             if features is None:
                 tprint("Failed to prepare features for clustering", "ERROR")
@@ -461,7 +410,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Store original features for potential fallback
             self.features = features
-            log_success(f"Features prepared: {features.shape}")
             tprint(f"Features prepared: {features.shape}", "SUCCESS")
 
             # Step 5: Create clustering configuration using shared utilities
@@ -471,13 +419,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 6: Perform clustering
             tprint("Step 6: Performing clustering", "INFO")
-            log_info("Performing clustering")
             clustering_result = await self._perform_clustering(features, market_data)
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
 
             # Step 8: Generate cluster characteristics using shared utilities
             tprint("Step 8: Generating cluster characteristics using shared utilities", "INFO")
-            log_info("Generating cluster characteristics using shared utilities")
             cluster_characteristics = generate_cluster_characteristics(
                 market_data, clustering_result['cluster_assignments'],
                 clustering_result.get('cluster_centers'), verbose=True
@@ -486,7 +432,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 9: Calculate metrics using shared utilities
             tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
-            log_info("Calculating clustering metrics using shared utilities")
             clustering_metrics = self._calculate_clustering_metrics_using_shared_utils(
                 clustering_result, cluster_characteristics
             )
@@ -499,7 +444,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
             tprint("Consolidated artifacts created", "SUCCESS")
 
-            log_success(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters')
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
             
             return ComponentResult(
@@ -517,12 +461,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
             
         except Exception as e:
-            log_error(f'NAS-TAS Clustering failed: {e}')
             tprint(f'NAS-TAS Clustering failed: {e}', "ERROR")
 
             import traceback
             error_traceback = traceback.format_exc()
-            self.logger.error(f'❌ Error details: {error_traceback}')
             tprint(f'Error details: {error_traceback}', "ERROR")
 
             return ComponentResult(
@@ -536,13 +478,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Loading market data...", "INFO")
             if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-                log_warning("No market data provided, attempting to load from pipeline state")
+                tprint("No market data provided, attempting to load from pipeline state")
                 tprint("No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
             # If data is already a DataFrame, use it
             if isinstance(data, pd.DataFrame):
-                log_info(f"Using provided DataFrame with {len(data)} rows")
+                tprint(f"Using provided DataFrame with {len(data)} rows")
                 tprint(f"Using provided DataFrame with {len(data)} rows", "INFO")
                 return data.copy()
 
@@ -550,16 +492,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if isinstance(data, dict) and 'market_data' in data:
                 market_data = data['market_data']
                 if isinstance(market_data, pd.DataFrame):
-                    log_info(f"Using market data from dictionary with {len(market_data)} rows")
+                    tprint(f"Using market data from dictionary with {len(market_data)} rows")
                     tprint(f"Using market data from dictionary with {len(market_data)} rows", "INFO")
                     return market_data.copy()
 
-            log_warning("Unknown data type provided")
             tprint("Unknown data type provided", "WARNING")
             return None
 
         except Exception as e:
-            log_error(f"Market data loading failed: {e}")
             tprint(f"Market data loading failed: {e}", "ERROR")
             return None
     
@@ -567,7 +507,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Create clustering configuration using shared utilities."""
         try:
             tprint("Creating clustering configuration using shared utilities...", "INFO")
-            log_info("Creating clustering configuration using shared utilities")
 
             # Use shared utilities to create configuration
             tprint("Creating base configuration...", "INFO")
@@ -614,12 +553,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             })
             tprint("Weights validated and normalized", "SUCCESS")
 
-            log_success("Clustering configuration created using shared utilities")
             tprint("Clustering configuration created using shared utilities", "SUCCESS")
             return clustering_config
             
         except Exception as e:
-            log_warning(f"Config creation failed: {e}, using defaults")
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
             return create_default_config("clustering")
     
@@ -628,18 +565,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Perform clustering using advanced optimization methods."""
         try:
             tprint("Performing advanced clustering optimization...", "INFO")
-            log_info("Performing advanced clustering optimization")
             
             # Use advanced clustering with progressive regime optimization
             clustering_result = await self._perform_advanced_clustering(features, market_data)
             tprint("Advanced clustering optimization completed", "SUCCESS")
 
-            log_success(f"Clustering completed: {clustering_result['n_clusters']} clusters")
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
             return clustering_result
 
         except Exception as e:
-            log_error(f"Clustering failed: {e}")
             tprint(f"Clustering failed: {e}", "ERROR")
             raise ValueError(f"Clustering failed: {e}")
     
@@ -647,13 +581,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Perform advanced clustering using progressive regime optimization."""
         try:
             tprint("Starting progressive regime optimization...", "INFO")
-            log_info("Starting progressive regime optimization")
             
             # Step 1: Feature selection and dimensionality reduction
             tprint("Step 1: Feature selection and dimensionality reduction...", "INFO")
             optimized_features = await self._optimize_features(features, market_data)
             tprint(f"Feature optimization completed: {features.shape} -> {optimized_features.shape}", "SUCCESS")
-            log_success(f"Feature optimization completed: {features.shape} -> {optimized_features.shape}")
 
             # Store optimized features for frontier detection
             self.optimized_features = optimized_features
@@ -678,7 +610,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 optimized_features, tas_assignments, nas_assignments, market_data, optimal_k
             )
             tprint(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}", "SUCCESS")
-            log_success(f"Progressive optimization completed - Final score: {optimization_metrics['final_score']:.3f}")
             
             # Step 4: Calculate final clustering centers and quality metrics
             tprint("Step 4: Calculating final clustering metrics...", "INFO")
@@ -719,11 +650,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             tprint("Progressive regime optimization completed successfully", "SUCCESS")
-            log_success("Progressive regime optimization completed successfully")
             return clustering_result
             
         except Exception as e:
-            log_error(f"Progressive regime optimization failed: {e}")
             tprint(f"Progressive regime optimization failed: {e}", "ERROR")
             # Fast-fail: Do not fall back to basic clustering
             tprint("Progressive regime optimization failed - cannot proceed with suboptimal clustering", "ERROR")
@@ -733,7 +662,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Optimize features using data-driven dimensionality reduction."""
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
-            log_info("Starting data-driven feature optimization")
             
             # Step 1: Standardize features (keep standardization as-is)
             tprint("Step 1: Standardizing features...", "INFO")
@@ -753,7 +681,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 features_pca = pca.fit_transform(features_scaled)
                 tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
             except Exception as e:
-                log_warning(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
+                tprint(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
                 tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
                 pca = PCA(n_components=0.99, svd_solver='full')
                 features_pca = pca.fit_transform(features_scaled)
@@ -764,11 +692,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             features_final = self._validate_feature_quality_minimal(features_pca, market_data)
             tprint(f"Feature quality validation completed: {features_final.shape}", "SUCCESS")
             
-            log_success(f"Data-driven feature optimization completed: {features.shape} -> {features_final.shape}")
+            tprint(f"Data-driven feature optimization completed: {features.shape} -> {features_final.shape}", "SUCCESS")
             return features_final
             
         except Exception as e:
-            log_error(f"Feature optimization failed: {e}")
             tprint(f"Feature optimization failed: {e}", "ERROR")
             # Fast-fail: Do not return original features if optimization fails
             raise ValueError(f"Feature optimization failed: {e}. Cannot proceed with suboptimal features.")
@@ -778,23 +705,23 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             # Check for NaN/inf values only
             if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-                log_warning("Features contain NaN/inf values, removing problematic samples")
+                tprint("Features contain NaN/inf values, removing problematic samples")
                 valid_mask = ~(np.any(np.isnan(features), axis=1) | np.any(np.isinf(features), axis=1))
                 features = features[valid_mask]
-                log_info(f"Removed {np.sum(~valid_mask)} samples with NaN/inf values")
+                tprint(f"Removed {np.sum(~valid_mask)} samples with NaN/inf values")
             
             # Basic check: ensure we have enough features and samples
             if features.shape[1] < 2:
-                log_error("Too few features for clustering")
+                tprint("Too few features for clustering", "ERROR")
                 return features
 
             if features.shape[0] < 10:
-                log_warning("Very low number of samples for clustering")
+                tprint("Very low number of samples for clustering", "WARNING")
             
             return features
             
         except Exception as e:
-            log_error(f"Minimal feature validation failed: {e}")
+            tprint(f"Minimal feature validation failed: {e}", "ERROR")
             return features
 
     def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20), 
@@ -803,15 +730,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             if adaptive:
                 tprint("Selecting optimal K using adaptive BIC search...", "INFO")
-                log_info("Selecting optimal K using adaptive BIC search")
                 return self._adaptive_k_search(features)
             else:
                 tprint(f"Selecting optimal K using BIC in range {k_range}...", "INFO")
-                log_info(f"Selecting optimal K using BIC in range {k_range}")
                 return self._fixed_range_k_search(features, k_range)
             
         except Exception as e:
-            log_error(f"BIC-based K selection failed: {e}")
             tprint(f"BIC-based K selection failed: {e}", "ERROR")
             # Fallback to default K
             fallback_k = 8
@@ -893,7 +817,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠ Selected K={optimal_k} is at cap ({max_k}) - consider widening search", "WARNING")
             
             tprint(f"Evidence-driven search found optimal K={optimal_k} with BIC={optimal_bic:.3f} (clear minimum: {is_clear_minimum})", "SUCCESS")
-            log_success(f"Evidence-driven search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            tprint(f"Evidence-driven search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
             
             metadata = {
                 'bic_scores': bic_scores,
@@ -909,7 +833,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            log_error(f"Evidence-driven K search failed: {e}")
+            tprint(f"Evidence-driven K search failed: {e}")
             tprint(f"Evidence-driven K search failed: {e}", "ERROR")
             # Fallback to fixed range
             return self._fixed_range_k_search(features, (2, 20))
@@ -944,7 +868,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return bic_scores, model_metadata
             
         except Exception as e:
-            log_error(f"Parallel K-grid search failed: {e}")
+            tprint(f"Parallel K-grid search failed: {e}")
             tprint(f"Parallel K-grid search failed: {e}", "ERROR")
             # Fallback to serial search
             return self._serial_k_grid(features, k_values, model_type)
@@ -1000,7 +924,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return bic_score, metadata
             
         except Exception as e:
-            log_warning(f"Model fit failed for K={k}: {e}")
+            tprint(f"Model fit failed for K={k}: {e}")
             return None, None
 
     def _serial_k_grid(self, features: np.ndarray, k_values: List[int], model_type: str) -> Tuple[List[float], List[Dict]]:
@@ -1018,7 +942,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return bic_scores, model_metadata
             
         except Exception as e:
-            log_error(f"Serial K-grid search failed: {e}")
+            tprint(f"Serial K-grid search failed: {e}")
             return [], []
 
     def _verify_parallel_safety(self, n_jobs: int, n_models: int) -> bool:
@@ -1049,7 +973,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("⚠ psutil not available, skipping parallel safety checks", "WARNING")
             return True
         except Exception as e:
-            log_warning(f"Parallel safety check failed: {e}")
+            tprint(f"Parallel safety check failed: {e}")
             return True
 
     def _validate_bic_minimum(self, bic_curve: List[Tuple[int, float]], optimal_idx: int) -> bool:
@@ -1079,7 +1003,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return True
             
         except Exception as e:
-            log_warning(f"BIC minimum validation failed: {e}")
+            tprint(f"BIC minimum validation failed: {e}")
             return True  # Assume valid if validation fails
 
     def _resolve_bic_tie(self, features: np.ndarray, candidate_indices: List[int], 
@@ -1123,7 +1047,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return best_idx
             
         except Exception as e:
-            log_warning(f"Tie resolution failed: {e}, using first candidate")
+            tprint(f"Tie resolution failed: {e}, using first candidate")
             return candidate_indices[0]
 
     def _calculate_temporal_coherence(self, assignments: np.ndarray) -> float:
@@ -1141,7 +1065,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return persistence / (len(assignments) - 1)
             
         except Exception as e:
-            log_warning(f"Temporal coherence calculation failed: {e}")
+            tprint(f"Temporal coherence calculation failed: {e}")
             return 0.0
 
     def _fixed_range_k_search(self, features: np.ndarray, k_range: Tuple[int, int]) -> Tuple[int, float, Dict[str, Any]]:
@@ -1160,7 +1084,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     gmm_models.append(gmm)
                     tprint(f"K={k}: BIC={gmm.bic(features):.3f}", "INFO")
                 except Exception as e:
-                    log_warning(f"GMM with K={k} failed: {e}")
+                    tprint(f"GMM with K={k} failed: {e}")
                     bic_scores.append(np.inf)
                     gmm_models.append(None)
             
@@ -1171,7 +1095,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimal_gmm = gmm_models[optimal_k_idx]
             
             tprint(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            log_success(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            tprint(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
             
             metadata = {
                 'bic_scores': bic_scores,
@@ -1184,14 +1108,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            log_error(f"Fixed range K search failed: {e}")
+            tprint(f"Fixed range K search failed: {e}")
             raise
 
     def _select_optimal_k_hmm_bic(self, features: np.ndarray, adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
         """Select optimal K using BIC-selected Gaussian HMM for temporal regimes."""
         try:
             tprint("Selecting optimal K using HMM BIC for temporal regimes...", "INFO")
-            log_info("Selecting optimal K using HMM BIC for temporal regimes")
+            tprint("Selecting optimal K using HMM BIC for temporal regimes")
             
             bic_scores = []
             hmm_models = []
@@ -1217,7 +1141,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimal_hmm = hmm_models[optimal_k_idx]
             
             tprint(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            log_success(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            tprint(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
             
             metadata = {
                 'bic_scores': bic_scores,
@@ -1231,7 +1155,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            log_error(f"HMM BIC selection failed: {e}")
+            tprint(f"HMM BIC selection failed: {e}")
             tprint(f"HMM BIC selection failed: {e}, falling back to GMM", "WARNING")
             # Fallback to GMM
             return self._adaptive_k_search(features)
@@ -1305,7 +1229,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_mapped, nas_mapped, mapping_info
             
         except Exception as e:
-            log_warning(f"Label mapping failed: {e}, using modulo fallback")
+            tprint(f"Label mapping failed: {e}, using modulo fallback")
             # Fallback to simple modulo mapping
             tas_mapped = tas_assignments % target_k
             nas_mapped = nas_assignments % target_k
@@ -1343,7 +1267,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_mapped, nas_mapped, tas_mapping, nas_mapping
             
         except Exception as e:
-            log_warning(f"Abstain mapping failed: {e}, using modulo fallback")
+            tprint(f"Abstain mapping failed: {e}, using modulo fallback")
             # Last resort: modulo fallback
             tas_mapped = tas_assignments % target_k
             nas_mapped = nas_assignments % target_k
@@ -1355,7 +1279,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Dawid-Skene EM label fusion for NAS/TAS reconciliation with common label space K."""
         try:
             tprint(f"Starting Dawid-Skene label fusion with K={target_k}...", "INFO")
-            log_info(f"Starting Dawid-Skene label fusion with K={target_k}")
+            tprint(f"Starting Dawid-Skene label fusion with K={target_k}")
             
             n_samples = len(tas_assignments)
             
@@ -1462,12 +1386,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             tprint(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes", "SUCCESS")
-            log_success(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes")
+            tprint(f"Dawid-Skene fusion completed: {n_samples} samples, {n_classes} classes")
             
             return fused_assignments, metadata
             
         except Exception as e:
-            log_error(f"Dawid-Skene fusion failed: {e}")
+            tprint(f"Dawid-Skene fusion failed: {e}")
             tprint(f"Dawid-Skene fusion failed: {e}", "ERROR")
             # Fallback to TAS assignments
             return tas_assignments, {'method': 'fallback', 'error': str(e)}
@@ -1478,7 +1402,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Progressive regime optimization using BIC-selected K and Dawid-Skene fusion."""
         try:
             tprint("Starting data-driven progressive regime optimization...", "INFO")
-            log_info("Starting data-driven progressive regime optimization")
+            tprint("Starting data-driven progressive regime optimization")
             
             # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
             tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
@@ -1528,12 +1452,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
             tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})", "SUCCESS")
-            log_success(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})")
+            tprint(f"Data-driven optimization completed - Score: {initial_score:.3f} → {final_score:.3f} (+{improvement:.3f})")
             
             return final_assignments, optimization_metrics
             
         except Exception as e:
-            log_error(f"Data-driven progressive regime optimization failed: {e}")
+            tprint(f"Data-driven progressive regime optimization failed: {e}")
             tprint(f"Data-driven progressive regime optimization failed: {e}", "ERROR")
             # Return original TAS assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
@@ -1610,7 +1534,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return smoothed_assignments
             
         except Exception as e:
-            log_warning(f"HMM smoothing failed: {e}, using simple smoothing")
+            tprint(f"HMM smoothing failed: {e}, using simple smoothing")
             tprint(f"HMM smoothing failed: {e}, using simple temporal smoothing fallback", "WARNING")
             # Fallback to simple smoothing
             return self._simple_temporal_smoothing(assignments)
@@ -1639,7 +1563,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return smoothed_assignments
             
         except Exception as e:
-            log_warning(f"Simple temporal smoothing failed: {e}")
+            tprint(f"Simple temporal smoothing failed: {e}")
             return assignments
 
     def _run_acceptance_checklist(self, features: np.ndarray, assignments: np.ndarray, 
@@ -1649,7 +1573,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Run comprehensive acceptance checklist for data-driven clustering."""
         try:
             tprint("Running acceptance checklist...", "INFO")
-            log_info("Running acceptance checklist")
+            tprint("Running acceptance checklist")
             
             checklist = {}
             
@@ -1782,7 +1706,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return checklist
             
         except Exception as e:
-            log_error(f"Acceptance checklist failed: {e}")
+            tprint(f"Acceptance checklist failed: {e}")
             tprint(f"Acceptance checklist failed: {e}", "ERROR")
             return {'error': str(e)}
 
@@ -1791,7 +1715,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             # Check for NaN/inf values
             if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-                log_warning("Features contain NaN/inf values, removing problematic samples")
+                tprint("Features contain NaN/inf values, removing problematic samples")
                 valid_mask = ~(np.any(np.isnan(features), axis=1) | np.any(np.isinf(features), axis=1))
                 features = features[valid_mask]
                 market_data = market_data.iloc[valid_mask] if len(market_data) == len(features) else market_data
@@ -1801,7 +1725,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             low_variance_features = feature_variances < 1e-6
 
             if np.any(low_variance_features):
-                log_info(f"Removing {np.sum(low_variance_features)} low-variance features")
+                tprint(f"Removing {np.sum(low_variance_features)} low-variance features")
                 features = features[:, ~low_variance_features]
 
             # Check for highly correlated features (shouldn't be needed after earlier steps but safety check)
@@ -1821,22 +1745,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         if to_remove:
                             keep_indices = [i for i in range(features.shape[1]) if i not in to_remove]
                             features = features[:, keep_indices]
-                            log_info(f"Removed {len(to_remove)} highly correlated features")
+                            tprint(f"Removed {len(to_remove)} highly correlated features")
                 except:
                     pass  # Skip correlation check if it fails
 
             # Final check: ensure we have enough features and samples
             if features.shape[1] < 3:
-                log_error("Too few features for clustering, using fallback")
+                tprint("Too few features for clustering, using fallback")
                 return features
 
             if features.shape[0] < 50:
-                log_warning("Low number of samples for clustering")
+                tprint("Low number of samples for clustering")
 
             return features
 
         except Exception as e:
-            log_warning(f"Feature quality validation failed: {e}")
+            tprint(f"Feature quality validation failed: {e}")
             return features
     
     def _remove_correlated_features(self, features: np.ndarray, threshold: float = 0.95) -> np.ndarray:
@@ -1879,14 +1803,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features_filtered
             
         except Exception as e:
-            log_warning(f"Correlation filtering failed: {e}")
+            tprint(f"Correlation filtering failed: {e}")
             return features
     
     def _select_clustering_features(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Skip feature selection since PCA-MLE already handles redundancy."""
         try:
             tprint("Skipping feature selection - PCA-MLE already handles redundancy...", "INFO")
-            log_info("Skipping feature selection - PCA-MLE already handles redundancy")
+            tprint("Skipping feature selection - PCA-MLE already handles redundancy")
             
             # Since PCA-MLE already handles redundancy, we can skip this step entirely
             # This is the safest approach according to the plan
@@ -1894,7 +1818,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features
             
         except Exception as e:
-            log_error(f"Feature selection failed: {e}")
+            tprint(f"Feature selection failed: {e}")
             tprint(f"Feature selection failed: {e}", "ERROR")
             # Return original features if selection fails
             return features
@@ -1985,7 +1909,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return weighted_features
             
         except Exception as e:
-            log_error(f"Enhanced feature selection failed: {e}")
+            tprint(f"Enhanced feature selection failed: {e}")
             tprint(f"Enhanced feature selection failed: {e}", "ERROR")
             raise ValueError(f"Enhanced feature selection failed: {e}")
     
@@ -2151,7 +2075,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return temporal_weights
             
         except Exception as e:
-            log_warning(f"Temporal feature importance calculation failed: {e}")
+            tprint(f"Temporal feature importance calculation failed: {e}")
             return np.ones(features.shape[1])  # Fallback to uniform weights
     
     def _calculate_vectorized_autocorrelation(self, features: np.ndarray) -> np.ndarray:
@@ -2183,7 +2107,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return autocorr
             
         except Exception as e:
-            log_warning(f"Vectorized autocorrelation calculation failed: {e}")
+            tprint(f"Vectorized autocorrelation calculation failed: {e}")
             return np.zeros(features.shape[1])
     
     def _calculate_vectorized_temporal_variance(self, features: np.ndarray) -> np.ndarray:
@@ -2220,7 +2144,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return temporal_vars
             
         except Exception as e:
-            log_warning(f"Vectorized temporal variance calculation failed: {e}")
+            tprint(f"Vectorized temporal variance calculation failed: {e}")
             # Fallback to simple variance if rolling fails
             return np.var(features, axis=0)
     
@@ -2248,7 +2172,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return consistency
             
         except Exception as e:
-            log_warning(f"Vectorized trend consistency calculation failed: {e}")
+            tprint(f"Vectorized trend consistency calculation failed: {e}")
             return np.zeros(features.shape[1])
     
     def _calculate_vectorized_regime_persistence(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
@@ -2293,7 +2217,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return persistence_weights
             
         except Exception as e:
-            log_warning(f"Vectorized regime persistence calculation failed: {e}")
+            tprint(f"Vectorized regime persistence calculation failed: {e}")
             return np.ones(features.shape[1]) * 0.5
     
     # REMOVED: Legacy single-feature methods replaced by vectorized versions
@@ -2362,7 +2286,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features[:, top_features]
             
         except Exception as e:
-            log_warning(f"Cross-validation feature selection failed: {e}")
+            tprint(f"Cross-validation feature selection failed: {e}")
             # Fallback to simple feature selection
             selector = SelectKBest(score_func=mutual_info_classif, k=min(15, features.shape[1]))
             return selector.fit_transform(features, labels)
@@ -2387,7 +2311,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return weighted_features
             
         except Exception as e:
-            log_warning(f"Temporal weighting application failed: {e}")
+            tprint(f"Temporal weighting application failed: {e}")
             return selected_features
     
     def _assess_data_driven_divergence_with_confidence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
@@ -2444,7 +2368,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Data-driven divergence assessment with confidence failed: {e}")
+            tprint(f"Data-driven divergence assessment with confidence failed: {e}")
             return self._assess_numerical_divergence_with_confidence(tas_assignments, nas_assignments)
     
     def _assess_numerical_divergence_with_confidence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
@@ -2466,7 +2390,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Numerical divergence assessment with confidence failed: {e}")
+            tprint(f"Numerical divergence assessment with confidence failed: {e}")
             return {
                 'semantic_divergence_rate': 0.5,
                 'mapping_quality': 0.0,
@@ -2520,7 +2444,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return confidence_scores
             
         except Exception as e:
-            log_warning(f"Confidence score calculation failed: {e}")
+            tprint(f"Confidence score calculation failed: {e}")
             return np.ones(len(tas_assignments)) * 0.5
     
     def _get_regime_centroid(self, features: np.ndarray, assignments: np.ndarray, regime: int) -> Optional[np.ndarray]:
@@ -2531,7 +2455,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return np.mean(features[regime_mask], axis=0)
             return None
         except Exception as e:
-            log_warning(f"Regime centroid calculation failed: {e}")
+            tprint(f"Regime centroid calculation failed: {e}")
             return None
     
     def _calculate_neighborhood_consistency(self, features: np.ndarray, sample_idx: int, tas_regime: int, nas_regime: int) -> float:
@@ -2551,7 +2475,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return consistency
             
         except Exception as e:
-            log_warning(f"Neighborhood consistency calculation failed: {e}")
+            tprint(f"Neighborhood consistency calculation failed: {e}")
             return 0.5
     
     def _calculate_temporal_divergence_confidence(self, sample_idx: int, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> float:
@@ -2572,7 +2496,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return temporal_confidence
             
         except Exception as e:
-            log_warning(f"Temporal divergence confidence calculation failed: {e}")
+            tprint(f"Temporal divergence confidence calculation failed: {e}")
             return 0.5
     
     def _report_mapping_quality_with_confidence(self, mapping_quality_metrics: Dict[str, Any], 
@@ -2590,7 +2514,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"     Low Confidence (<0.3): {np.sum(confidence_scores < 0.3)} samples", "INFO")
             
         except Exception as e:
-            log_warning(f"Confidence reporting failed: {e}")
+            tprint(f"Confidence reporting failed: {e}")
     
     def _calculate_adaptive_batch_size(self, frontier_samples: List[int], iteration: int, current_assignments: np.ndarray) -> int:
         """Calculate adaptive batch size based on convergence rate and optimization progress."""
@@ -2634,7 +2558,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return adaptive_batch_size
             
         except Exception as e:
-            log_warning(f"Adaptive batch size calculation failed: {e}")
+            tprint(f"Adaptive batch size calculation failed: {e}")
             return max(1, int(0.10 * len(frontier_samples)))  # Fallback to base batch size
     
     def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -2667,7 +2591,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return multi_objective_improvement
             
         except Exception as e:
-            log_warning(f"Multi-objective improvement calculation failed: {e}")
+            tprint(f"Multi-objective improvement calculation failed: {e}")
             # Fallback to single-objective improvement
             return self._calculate_single_flip_improvement(features, assignments, sample_idx, target_regime)
     
@@ -2710,7 +2634,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return objectives
             
         except Exception as e:
-            log_warning(f"Multi-objective scores calculation failed: {e}")
+            tprint(f"Multi-objective scores calculation failed: {e}")
             return {
                 'silhouette_improvement': 0.0,
                 'ch_improvement': 0.0,
@@ -2739,7 +2663,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return weights
             
         except Exception as e:
-            log_warning(f"Pareto weights calculation failed: {e}")
+            tprint(f"Pareto weights calculation failed: {e}")
             return [0.25, 0.00, 0.00, 0.20, 0.20, 0.25, 0.10]  # Default weights
     
     def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -2780,7 +2704,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return new_consistency - original_consistency
             
         except Exception as e:
-            log_warning(f"Temporal consistency improvement calculation failed: {e}")
+            tprint(f"Temporal consistency improvement calculation failed: {e}")
             return 0.0
     
     def _calculate_within_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -2807,7 +2731,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return improvement
             
         except Exception as e:
-            log_warning(f"Within-regime CV improvement calculation failed: {e}")
+            tprint(f"Within-regime CV improvement calculation failed: {e}")
             return 0.0
     
     def _calculate_between_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -2834,7 +2758,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return improvement
             
         except Exception as e:
-            log_warning(f"Between-regime CV improvement calculation failed: {e}")
+            tprint(f"Between-regime CV improvement calculation failed: {e}")
             return 0.0
     
     def _calculate_within_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -2867,7 +2791,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return result
             
         except Exception as e:
-            log_warning(f"Within-regime CV calculation failed: {e}")
+            tprint(f"Within-regime CV calculation failed: {e}")
             return 0.0
     
     def _calculate_between_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -2926,7 +2850,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return between_cv
             
         except Exception as e:
-            log_warning(f"Between-regime CV calculation failed: {e}")
+            tprint(f"Between-regime CV calculation failed: {e}")
             return 0.0
     
     def _update_convergence_history(self, improvement: float):
@@ -2942,7 +2866,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 self._convergence_history = self._convergence_history[-10:]
                 
         except Exception as e:
-            log_warning(f"Convergence history update failed: {e}")
+            tprint(f"Convergence history update failed: {e}")
     
     async def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state."""
@@ -3064,7 +2988,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_assignments, nas_assignments
 
         except Exception as e:
-            log_error(f"Failed to extract regime assignments: {e}")
+            tprint(f"Failed to extract regime assignments: {e}")
             # Return default assignments on failure only
             n_samples = getattr(self, 'features', None)
             if isinstance(n_samples, np.ndarray):
@@ -3085,7 +3009,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Progressive regime optimization using smart single-algorithm approach."""
         try:
             tprint("Starting smart progressive regime optimization...", "INFO")
-            log_info("Starting smart progressive regime optimization")
+            tprint("Starting smart progressive regime optimization")
             
             # Step 1: Create initial combined assignments
             tprint("Step 1: Creating initial combined assignments...", "INFO")
@@ -3122,7 +3046,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             improvement = best_score - initial_score
             
             tprint(f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})", "SUCCESS")
-            log_success(f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})")
+            tprint(f"Smart optimization completed - Score: {initial_score:.3f} → {best_score:.3f} (+{improvement:.3f})")
             
             optimization_metrics.update({
                 'initial_score': initial_score,
@@ -3134,7 +3058,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return best_assignments, optimization_metrics
             
         except Exception as e:
-            log_error(f"Smart progressive regime optimization failed: {e}")
+            tprint(f"Smart progressive regime optimization failed: {e}")
             tprint(f"Smart progressive regime optimization failed: {e}", "ERROR")
             # Return original assignments
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
@@ -3175,7 +3099,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 }
                 
                 tprint("No TAS/NAS disagreements detected during initial combination", "SUCCESS")
-                log_info("No TAS/NAS disagreements detected during initial combination")
+                tprint("No TAS/NAS disagreements detected during initial combination")
                 return combined_assignments
             
             # Process divergence samples with optimized logic
@@ -3304,7 +3228,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 f"Local consistency used {local_consistency_preferred} times"
             )
             tprint(summary_message, "SUCCESS")
-            log_info(summary_message)
+            tprint(summary_message)
             
             # Persist decision trace for debugging and analysis
             if not hasattr(self, 'execution_metadata') or self.execution_metadata is None:
@@ -3326,7 +3250,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return combined_assignments
 
         except Exception as e:
-            log_error(f"Failed to create combined assignments: {e}")
+            tprint(f"Failed to create combined assignments: {e}")
             return tas_assignments
     
     def _get_local_dominant_regime(self, assignments: np.ndarray, center_idx: int, window_size: int = 5) -> int:
@@ -3342,7 +3266,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return unique[np.argmax(counts)]
             
         except Exception as e:
-            log_warning(f"Failed to get local dominant regime: {e}")
+            tprint(f"Failed to get local dominant regime: {e}")
             return assignments[center_idx] if center_idx < len(assignments) else 0
     
     async def _find_best_single_algorithm(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -3350,7 +3274,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Find the best regime-based optimization approach."""
         try:
             tprint("Testing regime-based optimization approaches...", "INFO")
-            log_info("Testing regime-based optimization approaches")
+            tprint("Testing regime-based optimization approaches")
             
             best_score = 0.0
             best_assignments = initial_assignments
@@ -3380,7 +3304,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         tprint(f"New best method: {method_name} with score: {score:.3f}", "SUCCESS")
                     
                 except Exception as e:
-                    log_warning(f"{method_name} approach failed: {e}")
+                    tprint(f"{method_name} approach failed: {e}")
                     continue
             
             # Also test the initial assignments
@@ -3392,12 +3316,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"Initial assignments are best with score: {initial_score:.3f}", "SUCCESS")
             
             tprint(f"Best approach: {best_method} with score: {best_score:.3f}", "SUCCESS")
-            log_success(f"Best approach: {best_method} with score: {best_score:.3f}")
+            tprint(f"Best approach: {best_method} with score: {best_score:.3f}")
             
             return best_assignments, best_score, best_method
             
         except Exception as e:
-            log_error(f"Best regime-based approach search failed: {e}")
+            tprint(f"Best regime-based approach search failed: {e}")
             tprint(f"Best regime-based approach search failed: {e}", "ERROR")
             return initial_assignments, 0.0, "initial"
     
@@ -3419,7 +3343,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimized_assignments
             
         except Exception as e:
-            log_warning(f"TAS primary approach failed: {e}")
+            tprint(f"TAS primary approach failed: {e}")
             return initial_assignments
     
     async def _create_nas_primary_assignments(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -3440,7 +3364,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimized_assignments
             
         except Exception as e:
-            log_warning(f"NAS primary approach failed: {e}")
+            tprint(f"NAS primary approach failed: {e}")
             return initial_assignments
     
     async def _create_weighted_consensus_assignments(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -3470,7 +3394,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimized_assignments
             
         except Exception as e:
-            log_warning(f"Weighted consensus approach failed: {e}")
+            tprint(f"Weighted consensus approach failed: {e}")
             return initial_assignments
     
     async def _create_regime_optimized_assignments(self, features: np.ndarray, initial_assignments: np.ndarray, 
@@ -3478,7 +3402,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Create assignments using pure regime-based optimization (your specified method)."""
         try:
             tprint("Starting pure regime-based optimization...", "INFO")
-            log_info("Starting pure regime-based optimization")
+            tprint("Starting pure regime-based optimization")
             
             # Step 1: Superpose TAS & NAS samples, attributed per regimes
             tprint("Step 1: Superposing TAS & NAS regime assignments...", "INFO")
@@ -3496,7 +3420,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return optimized_assignments
             
         except Exception as e:
-            log_error(f"Regime-based optimization failed: {e}")
+            tprint(f"Regime-based optimization failed: {e}")
             tprint(f"Regime-based optimization failed: {e}", "ERROR")
             return initial_assignments
     
@@ -3538,7 +3462,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return combined_assignments
             
         except Exception as e:
-            log_error(f"Regime superposition failed: {e}")
+            tprint(f"Regime superposition failed: {e}")
             return tas_assignments
     
     def _resolve_regime_disagreement(self, tas_regime: int, nas_regime: int, tas_assignments: np.ndarray, 
@@ -3582,7 +3506,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_regime
                 
         except Exception as e:
-            log_warning(f"Regime disagreement resolution failed: {e}")
+            tprint(f"Regime disagreement resolution failed: {e}")
             return tas_regime
 
     def _calculate_regime_confidence_for_sample(self, features: np.ndarray, assignments: np.ndarray,
@@ -3709,11 +3633,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             if hasattr(self, 'features') and self.features is not None:
                 return self.features
 
-            log_warning("No features available for frontier detection")
+            tprint("No features available for frontier detection")
             return None
 
         except Exception as e:
-            log_warning(f"Failed to get current features: {e}")
+            tprint(f"Failed to get current features: {e}")
             return None
     
     # REMOVED: _calculate_regime_change_improvement - replaced by multi-objective optimization
@@ -3758,7 +3682,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return new_consistency - original_consistency
             
         except Exception as e:
-            log_warning(f"Temporal improvement calculation failed: {e}")
+            tprint(f"Temporal improvement calculation failed: {e}")
             return 0.0
     
     # REMOVED: _calculate_regime_quality_scores - unused method
@@ -3766,7 +3690,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     # REMOVED: _calculate_composite_quality_score - unused method
             
         except Exception as e:
-            log_warning(f"Composite quality score calculation failed: {e}")
+            tprint(f"Composite quality score calculation failed: {e}")
             return 0.0
     
     # REMOVED: _calculate_temporal_consistency - unused method
@@ -3780,14 +3704,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 self.pipeline_state = {}
             self.pipeline_state['current_assignments'] = assignments
         except Exception as e:
-            log_warning(f"Failed to update pipeline current assignments: {e}")
+            tprint(f"Failed to update pipeline current assignments: {e}")
 
     async def _progressive_regime_flipping(self, features: np.ndarray, assignments: np.ndarray,
                                          market_data: pd.DataFrame) -> np.ndarray:
         """Progressive regime flipping optimization with frontier samples and batch processing using M1 hardware optimization."""
         try:
             tprint("🔄 Starting progressive regime flipping with M1 hardware optimization...", "INFO")
-            log_info("Starting progressive regime flipping with M1 hardware optimization")
+            tprint("Starting progressive regime flipping with M1 hardware optimization")
             
             # Initialize M1 hardware optimization for regime flipping
             if self.m1_cpu_optimizer:
@@ -3943,7 +3867,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return current_assignments
 
         except Exception as e:
-            log_error(f"Progressive regime flipping failed: {e}")
+            tprint(f"Progressive regime flipping failed: {e}")
             tprint(f"Progressive regime flipping failed: {e}", "ERROR")
             return assignments
     
@@ -4038,7 +3962,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return regime_stats
             
         except Exception as e:
-            log_warning(f"Regime distribution analysis failed: {e}")
+            tprint(f"Regime distribution analysis failed: {e}")
             return {}
     
     def _calculate_regime_coherence(self, regime_features: np.ndarray) -> float:
@@ -4085,7 +4009,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self._analyze_regime_separation(regime_stats, features, assignments)
             
         except Exception as e:
-            log_warning(f"Regime quality analysis failed: {e}")
+            tprint(f"Regime quality analysis failed: {e}")
     
     def _analyze_regime_separation(self, regime_stats: Dict, features: np.ndarray, assignments: np.ndarray):
         """Analyze how well separated the regimes are."""
@@ -4118,7 +4042,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"   🔗 Closest regimes: {closest_pair[0]} ↔ {closest_pair[1]} (distance: {closest_pair[2]:.3f})", "INFO")
             
         except Exception as e:
-            log_warning(f"Regime separation analysis failed: {e}")
+            tprint(f"Regime separation analysis failed: {e}")
     
     def _identify_frontier_samples(self, assignments: np.ndarray) -> List[int]:
         """Identify frontier samples using regime-space and feature-space neighbors (no temporal component)."""
@@ -4163,7 +4087,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return frontier_samples
             
         except Exception as e:
-            log_warning(f"Frontier sample identification failed: {e}")
+            tprint(f"Frontier sample identification failed: {e}")
             return []
     
     def _identify_frontier_samples_with_divergence_priority(self, assignments: np.ndarray) -> List[int]:
@@ -4230,7 +4154,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return frontier_samples
             
         except Exception as e:
-            log_warning(f"Divergence-prioritized frontier sample identification failed: {e}")
+            tprint(f"Divergence-prioritized frontier sample identification failed: {e}")
             return []
     
     
@@ -4262,7 +4186,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return False
             
         except Exception as e:
-            log_warning(f"TAS/NAS frontier check failed: {e}")
+            tprint(f"TAS/NAS frontier check failed: {e}")
             return False
     
     def _is_feature_space_frontier(self, sample_idx: int, current_regime: int,
@@ -4278,7 +4202,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return False
 
             if len(assignments) != len(features):
-                log_warning(
+                tprint(
                     "Assignment and feature lengths differ during frontier detection; skipping sample."
                 )
                 return False
@@ -4323,7 +4247,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return frontier_ratio > 0.6
 
         except Exception as e:
-            log_warning(f"Feature-space frontier check failed: {e}")
+            tprint(f"Feature-space frontier check failed: {e}")
             return False
     
     def _get_tas_nas_assignments(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
@@ -4389,7 +4313,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint("   ❌ No pipeline state available", "WARNING")
             return None, None
         except Exception as e:
-            log_warning(f"Failed to get TAS/NAS assignments: {e}")
+            tprint(f"Failed to get TAS/NAS assignments: {e}")
             tprint(f"   ❌ Error getting assignments: {e}", "ERROR")
             return None, None
     
@@ -4410,7 +4334,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             raise ValueError("No assignments available for regime lookup")
         except Exception as e:
-            log_warning(f"Failed to get regime for sample {sample_idx}: {e}")
+            tprint(f"Failed to get regime for sample {sample_idx}: {e}")
             return 0
     
     def _calculate_regime_centroids(self, features: np.ndarray, assignments: np.ndarray) -> Dict[int, Dict[str, Any]]:
@@ -4457,7 +4381,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return centroids
             
         except Exception as e:
-            log_warning(f"Failed to calculate regime centroids: {e}")
+            tprint(f"Failed to calculate regime centroids: {e}")
             return {}
     
     def _get_pca_selected_features(self, features: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[Dict]]:
@@ -4485,7 +4409,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return pca_features, feature_importance
             
         except Exception as e:
-            log_warning(f"Failed to get PCA-selected features: {e}")
+            tprint(f"Failed to get PCA-selected features: {e}")
             return None, None
     
     def _calculate_pca_feature_stats(self, regime_pca_features: np.ndarray, feature_importance: Dict) -> Dict[str, Any]:
@@ -4532,7 +4456,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Failed to calculate PCA feature stats: {e}")
+            tprint(f"Failed to calculate PCA feature stats: {e}")
             return {}
     
     def _calculate_regime_cv_stats(self, regime_features: np.ndarray) -> Dict[str, Any]:
@@ -4565,7 +4489,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Failed to calculate regime CV stats: {e}")
+            tprint(f"Failed to calculate regime CV stats: {e}")
             return {}
     
     def _find_optimal_regime_mapping(self, tas_centroids: Dict[int, Dict[str, Any]], nas_centroids: Dict[int, Dict[str, Any]]) -> Dict[int, int]:
@@ -4601,10 +4525,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return mapping
             
         except ImportError:
-            log_error("scipy.optimize.linear_sum_assignment is required for optimal regime mapping. Cannot proceed without it.")
+            tprint("scipy.optimize.linear_sum_assignment is required for optimal regime mapping. Cannot proceed without it.")
             raise ValueError("scipy.optimize.linear_sum_assignment is required for optimal regime mapping. Please install scipy.")
         except Exception as e:
-            log_error(f"Failed to find optimal regime mapping: {e}")
+            tprint(f"Failed to find optimal regime mapping: {e}")
             raise ValueError(f"Optimal regime mapping failed: {e}")
     
     def _calculate_regime_similarity_score(self, tas_regime_data: Dict[str, Any], nas_regime_data: Dict[str, Any]) -> float:
@@ -4648,7 +4572,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return similarity_score
             
         except Exception as e:
-            log_warning(f"Failed to calculate regime similarity score: {e}")
+            tprint(f"Failed to calculate regime similarity score: {e}")
             return 0.0
     
     def _calculate_cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
@@ -4663,7 +4587,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return 0.0
                 
         except Exception as e:
-            log_warning(f"Failed to calculate cosine similarity: {e}")
+            tprint(f"Failed to calculate cosine similarity: {e}")
             return 0.0
     
     def _calculate_pca_similarity(self, tas_pca_stats: Dict, nas_pca_stats: Dict) -> float:
@@ -4698,7 +4622,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.7 * cv_similarity + 0.3 * feature_similarity
             
         except Exception as e:
-            log_warning(f"Failed to calculate PCA similarity: {e}")
+            tprint(f"Failed to calculate PCA similarity: {e}")
             return 0.5
     
     def _calculate_cv_similarity(self, tas_cv_stats: Dict, nas_cv_stats: Dict) -> float:
@@ -4724,7 +4648,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 0.6 * stability_similarity + 0.4 * cv_similarity
             
         except Exception as e:
-            log_warning(f"Failed to calculate CV similarity: {e}")
+            tprint(f"Failed to calculate CV similarity: {e}")
             return 0.5
     
     def _calculate_sample_count_similarity(self, tas_samples: int, nas_samples: int) -> float:
@@ -4743,7 +4667,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 1.0 - relative_diff
             
         except Exception as e:
-            log_warning(f"Failed to calculate sample count similarity: {e}")
+            tprint(f"Failed to calculate sample count similarity: {e}")
             return 0.5
     
     
@@ -4758,7 +4682,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return mapped_assignments
             
         except Exception as e:
-            log_warning(f"Failed to apply regime mapping: {e}")
+            tprint(f"Failed to apply regime mapping: {e}")
             return assignments
     
     def _calculate_mapping_quality(self, tas_centroids: Dict[int, Dict[str, Any]], nas_centroids: Dict[int, Dict[str, Any]], mapping: Dict[int, int]) -> Dict[str, Any]:
@@ -4873,7 +4797,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Failed to calculate mapping quality: {e}")
+            tprint(f"Failed to calculate mapping quality: {e}")
             return {
                 'overall_quality': 0.0,
                 'centroid_quality': 0.0,
@@ -4916,7 +4840,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Failed to analyze regime similarity: {e}")
+            tprint(f"Failed to analyze regime similarity: {e}")
             return {'avg_similarity': 0.0, 'min_similarity': 0.0, 'max_similarity': 0.0, 'std_similarity': 0.0}
     
     def _report_mapping_quality_comprehensive(self, mapping_quality_metrics: Dict[str, Any], regime_mapping: Dict[int, int]):
@@ -4974,7 +4898,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             
         except Exception as e:
-            log_warning(f"Failed to report mapping quality comprehensively: {e}")
+            tprint(f"Failed to report mapping quality comprehensively: {e}")
     
     
     def _analyze_tas_nas_disagreement(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
@@ -5071,7 +4995,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return analysis
             
         except Exception as e:
-            log_warning(f"TAS/NAS disagreement analysis failed: {e}")
+            tprint(f"TAS/NAS disagreement analysis failed: {e}")
             return {"error": str(e)}
     
     def _validate_divergence_assessment(self, disagreement_rate: float, disagreement_count: int, total_samples: int):
@@ -5105,7 +5029,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"     Statistical reliability of divergence assessment may be limited", "WARNING")
             
         except Exception as e:
-            log_warning(f"Divergence assessment validation failed: {e}")
+            tprint(f"Divergence assessment validation failed: {e}")
     
     def _analyze_disagreement_types(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, int]:
         """Analyze different types of disagreement patterns with data-driven divergence assessment."""
@@ -5189,7 +5113,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Enhanced disagreement type analysis failed: {e}")
+            tprint(f"Enhanced disagreement type analysis failed: {e}")
             return {}
     
     def _assess_data_driven_divergence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
@@ -5240,7 +5164,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Data-driven divergence assessment failed: {e}")
+            tprint(f"Data-driven divergence assessment failed: {e}")
             return self._assess_numerical_divergence(tas_assignments, nas_assignments)
     
     def _assess_numerical_divergence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
@@ -5258,7 +5182,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Numerical divergence assessment failed: {e}")
+            tprint(f"Numerical divergence assessment failed: {e}")
             return {
                 'semantic_divergence_rate': 0.5,
                 'mapping_quality': 0.0,
@@ -5283,7 +5207,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return stability
             
         except Exception as e:
-            log_warning(f"Regime stability calculation failed: {e}")
+            tprint(f"Regime stability calculation failed: {e}")
             return 0.5
     
     def _calculate_single_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -5328,7 +5252,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return total_improvement
             
         except Exception as e:
-            log_warning(f"Single flip improvement calculation failed: {e}")
+            tprint(f"Single flip improvement calculation failed: {e}")
             return 0.0
     
     def _calculate_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
@@ -5354,7 +5278,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return cv_improvement
             
         except Exception as e:
-            log_warning(f"CV improvement calculation failed: {e}")
+            tprint(f"CV improvement calculation failed: {e}")
             return 0.0
     
     def _calculate_cv_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -5374,7 +5298,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return cv_score
             
         except Exception as e:
-            log_warning(f"CV score calculation failed: {e}")
+            tprint(f"CV score calculation failed: {e}")
             return 0.0
     
     def _calculate_between_cluster_cv(self, features: np.ndarray, assignments: np.ndarray) -> Tuple[float, float]:
@@ -5393,7 +5317,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return self._calculate_cv_standard(features, assignments, unique_labels)
             
         except Exception as e:
-            log_warning(f"Between cluster CV calculation failed: {e}")
+            tprint(f"Between cluster CV calculation failed: {e}")
             return 0.0, 0.0
     
     def _calculate_cv_hardware_optimized(self, features: np.ndarray, assignments: np.ndarray, unique_labels: List[int]) -> Tuple[float, float]:
@@ -5462,7 +5386,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return within_cv, between_cv
             
         except Exception as e:
-            log_warning(f"Hardware-optimized CV calculation failed: {e}")
+            tprint(f"Hardware-optimized CV calculation failed: {e}")
             return self._calculate_cv_standard(features, assignments, unique_labels)
     
     def _calculate_cv_standard(self, features: np.ndarray, assignments: np.ndarray, unique_labels: List[int]) -> Tuple[float, float]:
@@ -5515,7 +5439,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return within_cv, between_cv
             
         except Exception as e:
-            log_warning(f"Standard CV calculation failed: {e}")
+            tprint(f"Standard CV calculation failed: {e}")
             return 0.0, 0.0
     
     def _calculate_individual_quality_scores(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, float]:
@@ -5570,7 +5494,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_warning(f"Individual quality scores calculation failed: {e}")
+            tprint(f"Individual quality scores calculation failed: {e}")
             return {'silhouette': 0.0, 'calinski_harabasz': 0.0, 'davies_bouldin': 0.0, 'regime_balance': 0.0, 'cv_score': 0.0}
     
     def _calculate_temporal_consistency_score(self, assignments: np.ndarray) -> float:
@@ -5597,7 +5521,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return max(0.0, min(1.0, smoothed_consistency))
             
         except Exception as e:
-            log_warning(f"Temporal consistency score calculation failed: {e}")
+            tprint(f"Temporal consistency score calculation failed: {e}")
             return 0.5
     
     def _is_quality_improvement(self, old_scores: Dict[str, float], new_scores: Dict[str, float], 
@@ -5629,7 +5553,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return improvements > 0
             
         except Exception as e:
-            log_warning(f"Quality improvement check failed: {e}")
+            tprint(f"Quality improvement check failed: {e}")
             return False
     
     def _calculate_regime_confidence(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
@@ -5662,7 +5586,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return confidence_scores
             
         except Exception as e:
-            log_warning(f"Regime confidence calculation failed: {e}")
+            tprint(f"Regime confidence calculation failed: {e}")
             return np.ones(len(assignments)) * 0.5
     
     def _create_confidence_weighted_consensus(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray,
@@ -5688,14 +5612,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return consensus_assignments
             
         except Exception as e:
-            log_warning(f"Confidence weighted consensus failed: {e}")
+            tprint(f"Confidence weighted consensus failed: {e}")
             return tas_assignments
     
     async def _optimize_regime_count(self, features: np.ndarray, market_data: pd.DataFrame) -> int:
         """Optimize the number of regimes using multiple criteria."""
         try:
             tprint("Starting regime count optimization...", "INFO")
-            log_info("Starting regime count optimization")
+            tprint("Starting regime count optimization")
             
             # Test different regime counts
             regime_counts = list(range(5, 16))  # 5-15 regimes
@@ -5725,16 +5649,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Regime count {n_regimes}: score={score:.3f}, adjusted={adjusted_score:.3f}", "INFO")
                     
                 except Exception as e:
-                    log_warning(f"Regime count {n_regimes} failed: {e}")
+                    tprint(f"Regime count {n_regimes} failed: {e}")
                     continue
             
             tprint(f"Optimal regime count: {best_count} (score: {best_score:.3f})", "SUCCESS")
-            log_success(f"Optimal regime count: {best_count} (score: {best_score:.3f})")
+            tprint(f"Optimal regime count: {best_count} (score: {best_score:.3f})")
             
             return best_count
             
         except Exception as e:
-            log_error(f"Regime count optimization failed: {e}")
+            tprint(f"Regime count optimization failed: {e}")
             tprint(f"Regime count optimization failed: {e}", "ERROR")
             return 8  # Default fallback
     
@@ -5743,7 +5667,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Perform ensemble clustering using multiple algorithms with weighted voting."""
         try:
             tprint("Starting ensemble clustering optimization...", "INFO")
-            log_info("Starting ensemble clustering optimization")
+            tprint("Starting ensemble clustering optimization")
             
             # Define clustering algorithms to try with optimal regime count
             algorithms = {
@@ -5770,7 +5694,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"{method} score: {score:.3f}", "SUCCESS")
                     
                 except Exception as e:
-                    log_warning(f"{method} clustering failed: {e}")
+                    tprint(f"{method} clustering failed: {e}")
                     continue
             
             # Weighted ensemble voting
@@ -5791,7 +5715,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return initial_assignments, {'methods_used': [], 'method_scores': {}, 'ensemble_score': 0.0}
                 
         except Exception as e:
-            log_error(f"Ensemble clustering optimization failed: {e}")
+            tprint(f"Ensemble clustering optimization failed: {e}")
             tprint(f"Ensemble clustering optimization failed: {e}", "ERROR")
             return initial_assignments, {'methods_used': [], 'method_scores': {}, 'ensemble_score': 0.0}
     
@@ -5834,7 +5758,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 raise ValueError(f"Unknown clustering method: {method}")
                 
         except Exception as e:
-            log_error(f"Clustering algorithm {method} failed: {e}")
+            tprint(f"Clustering algorithm {method} failed: {e}")
             # Re-raise the exception instead of using random fallback
             raise RuntimeError(f"Clustering algorithm {method} failed: {e}")
     
@@ -5873,7 +5797,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return final_assignments
             
         except Exception as e:
-            log_warning(f"Weighted ensemble voting failed: {e}")
+            tprint(f"Weighted ensemble voting failed: {e}")
             # Return first method's results as fallback
             return list(ensemble_results.values())[0]
     
@@ -5882,7 +5806,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Iteratively optimize regime assignments by flipping samples."""
         try:
             tprint("Starting iterative regime optimization...", "INFO")
-            log_info("Starting iterative regime optimization")
+            tprint("Starting iterative regime optimization")
             
             current_assignments = assignments.copy()
             current_score = self._calculate_composite_score(features, current_assignments)
@@ -5944,7 +5868,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     break
             
             tprint(f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}", "SUCCESS")
-            log_success(f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}")
+            tprint(f"Iterative optimization completed - {iteration} iterations, final score: {current_score:.3f}")
             
             return current_assignments, {
                 'iterations': iteration,
@@ -5953,7 +5877,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             
         except Exception as e:
-            log_error(f"Iterative regime optimization failed: {e}")
+            tprint(f"Iterative regime optimization failed: {e}")
             tprint(f"Iterative regime optimization failed: {e}", "ERROR")
             return assignments, {'iterations': 0, 'final_score': 0.0, 'execution_time': 0.0}
     
@@ -5989,7 +5913,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return len(violations) == 0
             
         except Exception as e:
-            log_warning(f"Flip validation failed: {e}")
+            tprint(f"Flip validation failed: {e}")
             return False
     
     def _is_temporally_consistent(self, assignments: np.ndarray, sample_idx: int, target_regime: int, 
@@ -6024,7 +5948,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return future_switches <= current_switches + max_additional_switches
             
         except Exception as e:
-            log_warning(f"Temporal consistency check failed: {e}")
+            tprint(f"Temporal consistency check failed: {e}")
             return True  # Allow flip if check fails
     
     def _calculate_composite_score_with_temporal_penalty(self, features: np.ndarray, assignments: np.ndarray, 
@@ -6043,7 +5967,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return max(0.0, final_score)  # Ensure non-negative score
             
         except Exception as e:
-            log_warning(f"Temporal penalty calculation failed: {e}")
+            tprint(f"Temporal penalty calculation failed: {e}")
             return self._calculate_composite_score(features, assignments)
     
     def _calculate_temporal_penalty(self, assignments: np.ndarray) -> float:
@@ -6066,7 +5990,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return penalty
             
         except Exception as e:
-            log_warning(f"Temporal penalty calculation failed: {e}")
+            tprint(f"Temporal penalty calculation failed: {e}")
             return 0.0
     
     def _calculate_composite_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -6126,7 +6050,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return composite_score
             
         except Exception as e:
-            log_warning(f"Composite score calculation failed: {e}")
+            tprint(f"Composite score calculation failed: {e}")
             return 0.0
     
     def _calculate_cv_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -6180,7 +6104,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return cv_score
             
         except Exception as e:
-            log_warning(f"CV score calculation failed: {e}")
+            tprint(f"CV score calculation failed: {e}")
             return 0.0
     
     def _calculate_between_cluster_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
@@ -6220,7 +6144,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 return 0.0
                 
         except Exception as e:
-            log_warning(f"Between-cluster CV calculation failed: {e}")
+            tprint(f"Between-cluster CV calculation failed: {e}")
             return 0.0
     
     def _calculate_cluster_centers(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
@@ -6242,7 +6166,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return np.array(centers)
             
         except Exception as e:
-            log_warning(f"Cluster centers calculation failed: {e}")
+            tprint(f"Cluster centers calculation failed: {e}")
             return np.zeros((len(set(assignments)), features.shape[1]))
     
     def _calculate_detailed_cv_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Tuple[float, float]:
@@ -6281,7 +6205,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return within_cluster_cv, between_cluster_cv
             
         except Exception as e:
-            log_warning(f"Detailed CV metrics calculation failed: {e}")
+            tprint(f"Detailed CV metrics calculation failed: {e}")
             return 0.0, 0.0
     
     def _calculate_final_quality_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, float]:
@@ -6322,7 +6246,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 metrics['cv_ratio'] = between_cv / (within_cv + 1e-8)  # Higher is better
                 
             except Exception as e:
-                log_warning(f"CV metrics calculation failed: {e}")
+                tprint(f"CV metrics calculation failed: {e}")
                 metrics['cv_score'] = 0.0
                 metrics['within_cluster_cv'] = 0.0
                 metrics['between_cluster_cv'] = 0.0
@@ -6344,7 +6268,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return metrics
             
         except Exception as e:
-            log_warning(f"Final quality metrics calculation failed: {e}")
+            tprint(f"Final quality metrics calculation failed: {e}")
             return {'error': str(e)}
     
     
@@ -6356,7 +6280,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Calculate clustering metrics using shared utilities."""
         try:
             tprint("Calculating clustering metrics using shared utilities...", "INFO")
-            log_info("Calculating clustering metrics using shared utilities")
+            tprint("Calculating clustering metrics using shared utilities")
 
             cluster_assignments = clustering_result['cluster_assignments']
             n_clusters = clustering_result['n_clusters']
@@ -6397,12 +6321,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             tprint("Final metrics compiled", "SUCCESS")
 
-            log_success("Clustering metrics calculated using shared utilities")
+            tprint("Clustering metrics calculated using shared utilities")
             tprint("Clustering metrics calculated using shared utilities", "SUCCESS")
             return metrics
             
         except Exception as e:
-            log_warning(f"Clustering metrics calculation failed: {e}")
+            tprint(f"Clustering metrics calculation failed: {e}")
             return {
                 'n_clusters': clustering_result.get('n_clusters', 0),
                 'total_samples': len(clustering_result.get('cluster_assignments', [])),
@@ -6447,9 +6371,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'algorithm_type': getattr(self.config, 'algorithm_type', 'adaptive_clustering'),
                     'enable_economic_clustering': getattr(self.config, 'enable_economic_clustering', True),
                     'enable_ensemble_clustering': getattr(self.config, 'enable_ensemble_clustering', True),
-                    'economic_weight': getattr(self.config, 'economic_weight', 0.3),
-                    'momentum_weight': getattr(self.config, 'momentum_weight', 0.25),
-                    'volume_weight': getattr(self.config, 'volume_weight', 0.25),
+                    'economic_weight': getattr(self.config, 'economic_weight', 0.25),
+                    'volatility_regime_weight': getattr(self.config, 'volatility_regime_weight', 0.30),
+                    'volume_regime_weight': getattr(self.config, 'volume_regime_weight', 0.25),
+                    'structural_trend_weight': getattr(self.config, 'structural_trend_weight', 0.20),
                     'uses_shared_utilities': True
                 },
                 

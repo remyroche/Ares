@@ -857,6 +857,140 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 "total_assignments": len(clustering_result.get('cluster_assignments', []))
             }
 
+    def _create_consolidated_artifacts(
+        self,
+        clustering_result: Dict[str, Any],
+        cluster_characteristics: Dict[str, Any],
+        clustering_metrics: Dict[str, Any],
+        market_data: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """Create consolidated artifacts from clustering outputs with comprehensive metadata."""
+        try:
+            tprint("Creating consolidated artifacts with comprehensive metadata", "INFO")
+            
+            # Extract core clustering data
+            cluster_assignments = clustering_result.get('cluster_assignments', [])
+            cluster_centers = clustering_result.get('cluster_centers', [])
+            n_clusters = clustering_result.get('n_clusters', 0)
+            algorithm_used = clustering_result.get('algorithm_used', 'unknown')
+            
+            # Extract optimization metadata
+            optimization_metadata = clustering_result.get('optimization_metadata', {})
+            
+            # Create comprehensive artifact structure
+            artifacts = {
+                # Core clustering results
+                'nas_tas_clustering_result': {
+                    'cluster_assignments': cluster_assignments,
+                    'cluster_centers': cluster_centers,
+                    'n_clusters': n_clusters,
+                    'algorithm_used': algorithm_used,
+                    'success': clustering_result.get('success', True),
+                    'execution_time': clustering_result.get('execution_time', 0.0)
+                },
+                
+                # Raw and smoothed assignments
+                'raw_assignments': cluster_assignments,
+                'smoothed_assignments': cluster_assignments,  # Same as raw for now
+                
+                # Clustering quality metrics
+                'clustering_quality': clustering_result.get('clustering_quality', {}),
+                
+                # Optimization metadata
+                'optimization_metadata': optimization_metadata,
+                
+                # Cluster characteristics
+                'cluster_characteristics': cluster_characteristics,
+                
+                # Comprehensive metrics
+                'clustering_metrics': clustering_metrics,
+                
+                # Data information
+                'data_info': {
+                    'total_samples': len(cluster_assignments),
+                    'n_features': market_data.shape[1] if not market_data.empty else 0,
+                    'n_clusters': n_clusters,
+                    'symbol': getattr(self.config, 'symbol', 'UNKNOWN'),
+                    'timeframe': getattr(self.config, 'timeframe', 'UNKNOWN'),
+                    'exchange': getattr(self.config, 'exchange', 'UNKNOWN')
+                },
+                
+                # Execution metadata
+                'execution_metadata': {
+                    'component': 'nas_tas_clustering',
+                    'timestamp': datetime.now().isoformat(),
+                    'uses_shared_utilities': True,
+                    'm1_hardware_available': M1_HARDWARE_AVAILABLE,
+                    'matrix_operations_available': MATRIX_OPERATIONS_AVAILABLE
+                },
+                
+                # Performance metrics
+                'performance_metrics': {
+                    'memory_usage_mb': get_memory_usage() / (1024**2) if 'get_memory_usage' in globals() else 0.0,
+                    'processing_time': clustering_result.get('execution_time', 0.0),
+                    'optimization_trials': optimization_metadata.get('iterations', 0)
+                }
+            }
+            
+            # Add consensus and disagreement metrics if available
+            if 'consensus_metrics' in clustering_metrics:
+                artifacts['consensus_metrics'] = clustering_metrics['consensus_metrics']
+            
+            if 'disagreement_metrics' in clustering_metrics:
+                artifacts['disagreement_metrics'] = clustering_metrics['disagreement_metrics']
+            
+            # Add economic and trading scores if available
+            if 'economic_scores' in clustering_metrics:
+                artifacts['economic_scores'] = clustering_metrics['economic_scores']
+            
+            if 'trading_scores' in clustering_metrics:
+                artifacts['trading_scores'] = clustering_metrics['trading_scores']
+            
+            # Add stability scores if available
+            if 'stability_scores' in clustering_metrics:
+                artifacts['stability_scores'] = clustering_metrics['stability_scores']
+            
+            # Add feature optimization metadata if available
+            if 'feature_optimization' in optimization_metadata:
+                artifacts['feature_optimization'] = optimization_metadata['feature_optimization']
+            
+            # Add fusion metadata if available
+            if 'fusion_metadata' in optimization_metadata:
+                artifacts['fusion_metadata'] = optimization_metadata['fusion_metadata']
+            
+            # Add HMM smoothing metadata if available
+            if 'hmm_transitions' in optimization_metadata:
+                artifacts['hmm_smoothing'] = {
+                    'transitions': optimization_metadata['hmm_transitions'],
+                    'smoothing_metadata': optimization_metadata.get('smoothing_metadata', {})
+                }
+            
+            # Add HMM smoothing metadata if available in clustering_metrics
+            if 'hmm_smoothing' in clustering_metrics:
+                artifacts['hmm_smoothing'] = clustering_metrics['hmm_smoothing']
+            
+            tprint("Consolidated artifacts created successfully", "SUCCESS")
+            return artifacts
+            
+        except Exception as exc:
+            tprint_error(f"Failed to create consolidated artifacts: {exc}")
+            # Return minimal fallback artifacts
+            return {
+                'nas_tas_clustering_result': {
+                    'cluster_assignments': clustering_result.get('cluster_assignments', []),
+                    'cluster_centers': clustering_result.get('cluster_centers', []),
+                    'n_clusters': clustering_result.get('n_clusters', 0),
+                    'algorithm_used': clustering_result.get('algorithm_used', 'unknown'),
+                    'success': False,
+                    'error': str(exc)
+                },
+                'execution_metadata': {
+                    'component': 'nas_tas_clustering',
+                    'timestamp': datetime.now().isoformat(),
+                    'error': str(exc)
+                }
+            }
+
     def _build_artifacts(
         self,
         clustering_result: Dict[str, Any],
@@ -1332,6 +1466,123 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Return zero centers as fallback
             unique_labels = np.unique(assignments)
             return np.zeros((len(unique_labels), features.shape[1]))
+
+    def _calculate_composite_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate composite score for clustering quality using multiple metrics."""
+        try:
+            # Handle edge cases
+            if len(features) == 0 or len(assignments) == 0:
+                return 0.0
+            
+            unique_labels = np.unique(assignments)
+            n_clusters = len(unique_labels)
+            
+            # Return 0 for single cluster or empty data
+            if n_clusters < 2:
+                return 0.0
+            
+            # Import safe functions from metrics module
+            from ..regime_analysis.metrics import (
+                safe_silhouette_score, 
+                safe_davies_bouldin_score, 
+                safe_calinski_harabasz_score
+            )
+            
+            # Calculate individual metrics
+            silhouette = safe_silhouette_score(features, assignments)
+            davies_bouldin = safe_davies_bouldin_score(features, assignments)
+            calinski_harabasz = safe_calinski_harabasz_score(features, assignments)
+            
+            # Normalize metrics to [0, 1] range
+            # Silhouette is already in [-1, 1], normalize to [0, 1]
+            normalized_silhouette = (silhouette + 1) / 2
+            
+            # Davies-Bouldin: lower is better, normalize by taking inverse and capping
+            normalized_davies_bouldin = min(1.0, 1.0 / max(0.1, davies_bouldin))
+            
+            # Calinski-Harabasz: higher is better, normalize by capping at reasonable value
+            normalized_calinski_harabasz = min(1.0, calinski_harabasz / 1000.0)
+            
+            # Calculate stability score (regime persistence)
+            stability_score = self._calculate_stability_score(assignments)
+            
+            # Calculate consensus score using shared utilities
+            consensus_score = 0.0
+            try:
+                consensus_metrics = self.metrics_calculator.calculate_consensus_metrics(
+                    assignments, verbose=False
+                )
+                consensus_score = consensus_metrics.get('overall_consensus', 0.0)
+            except Exception:
+                # Fallback to simple consensus calculation
+                consensus_score = self._calculate_simple_consensus(assignments)
+            
+            # Weighted composite score
+            weights = {
+                'silhouette': 0.25,
+                'davies_bouldin': 0.20,
+                'calinski_harabasz': 0.20,
+                'stability': 0.20,
+                'consensus': 0.15
+            }
+            
+            composite_score = (
+                weights['silhouette'] * normalized_silhouette +
+                weights['davies_bouldin'] * normalized_davies_bouldin +
+                weights['calinski_harabasz'] * normalized_calinski_harabasz +
+                weights['stability'] * stability_score +
+                weights['consensus'] * consensus_score
+            )
+            
+            # Ensure score is in [0, 1] range
+            composite_score = max(0.0, min(1.0, composite_score))
+            
+            return float(composite_score)
+            
+        except Exception as exc:
+            tprint_warning(f"Failed to calculate composite score: {exc}")
+            return 0.0
+
+    def _calculate_stability_score(self, assignments: np.ndarray) -> float:
+        """Calculate stability score based on regime persistence."""
+        try:
+            if len(assignments) < 2:
+                return 0.0
+            
+            # Calculate regime change frequency
+            changes = np.sum(assignments[1:] != assignments[:-1])
+            total_transitions = len(assignments) - 1
+            change_rate = changes / total_transitions
+            
+            # Stability is inverse of change rate
+            stability = 1.0 - change_rate
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_simple_consensus(self, assignments: np.ndarray) -> float:
+        """Calculate simple consensus score as fallback."""
+        try:
+            if len(assignments) == 0:
+                return 0.0
+            
+            # Calculate how well assignments are distributed
+            unique_labels, counts = np.unique(assignments, return_counts=True)
+            n_clusters = len(unique_labels)
+            
+            if n_clusters < 2:
+                return 0.0
+            
+            # Calculate balance (inverse of standard deviation of cluster sizes)
+            mean_size = len(assignments) / n_clusters
+            size_variance = np.var(counts)
+            balance = 1.0 / (1.0 + size_variance / (mean_size ** 2))
+            
+            return min(1.0, balance)
+            
+        except Exception:
+            return 0.0
 
     def _calculate_final_quality_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
         """Calculate final quality metrics for clustering results."""

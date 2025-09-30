@@ -69,7 +69,7 @@ from ..shared_utils import (
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
-# Import shared utilities early so logging helpers are available
+# Import shared utilities before hardware-dependent sections to ensure logging helpers are available
 from ..shared_utils import (
     # Features
     prepare_market_features, FeatureConfig,
@@ -92,7 +92,7 @@ from ..shared_utils import (
     CharacteristicsGenerator
 )
 
-# Import original tprint for backward compatibility
+# Import tprint utilities prior to hardware imports so status messages always have access
 from src.utils.tprint import (
     tprint,
     tprint_debug,

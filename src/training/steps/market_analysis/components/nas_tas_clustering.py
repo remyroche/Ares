@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import traceback
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
+from hmmlearn import hmm
 
 
 from src.utils.tprint import (
@@ -699,6 +700,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'iterations': optimization_metrics.get('iterations', 0),
                     'optimal_k': optimal_k,
                     'optimal_bic': optimal_bic,
+                    'log_likelihood': optimization_metrics.get('log_likelihood', 0.0),
+                    'k_grid': k_metadata.get('k_values', []),
+                    'ds_confusions': optimization_metrics.get('fusion_metadata', {}).get('tas_confusion_matrix', []),
+                    'hmm_transitions': optimization_metrics.get('hmm_transitions', []),
+                    'random_state': 42,
                     'k_selection_metadata': k_metadata,
                     'fusion_metadata': optimization_metrics.get('fusion_metadata', {}),
                     'feature_optimization': {
@@ -739,10 +745,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             from sklearn.decomposition import PCA
             
             # Use PCA with MLE to automatically select number of components
-            pca = PCA(n_components='mle', svd_solver='full')
-            features_pca = pca.fit_transform(features_scaled)
-            
-            tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
+            # Add fallback for small samples or rank-deficient cases
+            try:
+                pca = PCA(n_components='mle', svd_solver='full')
+                features_pca = pca.fit_transform(features_scaled)
+                tprint(f"PCA-MLE reduction: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
+            except Exception as e:
+                log_warning(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
+                tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
+                pca = PCA(n_components=0.99, svd_solver='full')
+                features_pca = pca.fit_transform(features_scaled)
+                tprint(f"PCA fallback: {features.shape[1]} -> {features_pca.shape[1]} features (explained variance: {pca.explained_variance_ratio_.sum():.3f})", "SUCCESS")
             
             # Step 3: Basic quality validation (minimal checks)
             tprint("Step 3: Validating feature quality...", "INFO")
@@ -782,12 +795,93 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             log_error(f"Minimal feature validation failed: {e}")
             return features
 
-    def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20)) -> Tuple[int, float, Dict[str, Any]]:
-        """Select optimal K using BIC-selected GMM."""
+    def _select_optimal_k_bic(self, features: np.ndarray, k_range: Tuple[int, int] = (2, 20), 
+                             adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
+        """Select optimal K using BIC-selected GMM with adaptive search."""
         try:
-            tprint(f"Selecting optimal K using BIC in range {k_range}...", "INFO")
-            log_info(f"Selecting optimal K using BIC in range {k_range}")
+            if adaptive:
+                tprint("Selecting optimal K using adaptive BIC search...", "INFO")
+                log_info("Selecting optimal K using adaptive BIC search")
+                return self._adaptive_k_search(features)
+            else:
+                tprint(f"Selecting optimal K using BIC in range {k_range}...", "INFO")
+                log_info(f"Selecting optimal K using BIC in range {k_range}")
+                return self._fixed_range_k_search(features, k_range)
             
+        except Exception as e:
+            log_error(f"BIC-based K selection failed: {e}")
+            tprint(f"BIC-based K selection failed: {e}", "ERROR")
+            # Fallback to default K
+            fallback_k = 8
+            tprint(f"Using fallback K={fallback_k}", "WARNING")
+            return fallback_k, np.inf, {'method': 'fallback', 'error': str(e)}
+
+    def _adaptive_k_search(self, features: np.ndarray) -> Tuple[int, float, Dict[str, Any]]:
+        """Adaptive K search that grows until BIC increases for 3 consecutive K."""
+        try:
+            bic_scores = []
+            gmm_models = []
+            k_values = []
+            consecutive_increases = 0
+            max_k = min(50, features.shape[0] // 10)  # Reasonable upper bound
+            
+            k = 2
+            while k <= max_k and consecutive_increases < 3:
+                try:
+                    gmm = GaussianMixture(n_components=k, random_state=42, max_iter=100)
+                    gmm.fit(features)
+                    bic_score = gmm.bic(features)
+                    bic_scores.append(bic_score)
+                    gmm_models.append(gmm)
+                    k_values.append(k)
+                    
+                    tprint(f"K={k}: BIC={bic_score:.3f}", "INFO")
+                    
+                    # Check if BIC increased from previous
+                    if len(bic_scores) > 1 and bic_scores[-1] > bic_scores[-2]:
+                        consecutive_increases += 1
+                        tprint(f"BIC increased (consecutive: {consecutive_increases}/3)", "INFO")
+                    else:
+                        consecutive_increases = 0
+                    
+                    k += 1
+                    
+                except Exception as e:
+                    log_warning(f"GMM with K={k} failed: {e}")
+                    break
+            
+            if not bic_scores:
+                raise ValueError("No valid BIC scores computed")
+            
+            # Find optimal K (minimum BIC)
+            optimal_k_idx = np.argmin(bic_scores)
+            optimal_k = k_values[optimal_k_idx]
+            optimal_bic = bic_scores[optimal_k_idx]
+            optimal_gmm = gmm_models[optimal_k_idx]
+            
+            tprint(f"Adaptive search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+            log_success(f"Adaptive search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            
+            metadata = {
+                'bic_scores': bic_scores,
+                'k_values': k_values,
+                'optimal_k': optimal_k,
+                'optimal_bic': optimal_bic,
+                'consecutive_increases': consecutive_increases,
+                'method': 'adaptive_bic_gmm'
+            }
+            
+            return optimal_k, optimal_bic, metadata
+            
+        except Exception as e:
+            log_error(f"Adaptive K search failed: {e}")
+            tprint(f"Adaptive K search failed: {e}", "ERROR")
+            # Fallback to fixed range
+            return self._fixed_range_k_search(features, (2, 20))
+
+    def _fixed_range_k_search(self, features: np.ndarray, k_range: Tuple[int, int]) -> Tuple[int, float, Dict[str, Any]]:
+        """Fixed range K search for fallback."""
+        try:
             min_k, max_k = k_range
             bic_scores = []
             gmm_models = []
@@ -811,55 +905,120 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             optimal_bic = bic_scores[optimal_k_idx]
             optimal_gmm = gmm_models[optimal_k_idx]
             
-            tprint(f"Optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
-            log_success(f"Optimal K={optimal_k} with BIC={optimal_bic:.3f}")
-            
-            # Get assignments from optimal GMM
-            if optimal_gmm is not None:
-                optimal_assignments = optimal_gmm.predict(features)
-                optimal_centers = optimal_gmm.means_
-            else:
-                # Fallback to random assignments
-                optimal_assignments = np.random.randint(0, optimal_k, len(features))
-                optimal_centers = np.random.randn(optimal_k, features.shape[1])
+            tprint(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+            log_success(f"Fixed range search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
             
             metadata = {
                 'bic_scores': bic_scores,
                 'k_range': k_range,
                 'optimal_k': optimal_k,
                 'optimal_bic': optimal_bic,
-                'method': 'bic_gmm'
+                'method': 'fixed_range_bic_gmm'
             }
             
             return optimal_k, optimal_bic, metadata
             
         except Exception as e:
-            log_error(f"BIC-based K selection failed: {e}")
-            tprint(f"BIC-based K selection failed: {e}", "ERROR")
-            # Fallback to default K
-            fallback_k = 8
-            tprint(f"Using fallback K={fallback_k}", "WARNING")
-            return fallback_k, np.inf, {'method': 'fallback', 'error': str(e)}
+            log_error(f"Fixed range K search failed: {e}")
+            raise
+
+    def _select_optimal_k_hmm_bic(self, features: np.ndarray, adaptive: bool = True) -> Tuple[int, float, Dict[str, Any]]:
+        """Select optimal K using BIC-selected Gaussian HMM for temporal regimes."""
+        try:
+            tprint("Selecting optimal K using HMM BIC for temporal regimes...", "INFO")
+            log_info("Selecting optimal K using HMM BIC for temporal regimes")
+            
+            bic_scores = []
+            hmm_models = []
+            k_values = []
+            consecutive_increases = 0
+            max_k = min(20, features.shape[0] // 20)  # Conservative upper bound for HMM
+            
+            k = 2
+            while k <= max_k and consecutive_increases < 3:
+                try:
+                    # Create Gaussian HMM
+                    model = hmm.GaussianHMM(n_components=k, random_state=42, n_iter=100)
+                    model.fit(features)
+                    bic_score = model.score(features)  # Log-likelihood
+                    # Convert to BIC: BIC = -2*log_likelihood + k*log(n)
+                    n_params = k * (k - 1) + 2 * k * features.shape[1]  # transitions + emissions
+                    bic_score = -2 * bic_score + n_params * np.log(features.shape[0])
+                    
+                    bic_scores.append(bic_score)
+                    hmm_models.append(model)
+                    k_values.append(k)
+                    
+                    tprint(f"HMM K={k}: BIC={bic_score:.3f}", "INFO")
+                    
+                    # Check if BIC increased from previous
+                    if len(bic_scores) > 1 and bic_scores[-1] > bic_scores[-2]:
+                        consecutive_increases += 1
+                        tprint(f"HMM BIC increased (consecutive: {consecutive_increases}/3)", "INFO")
+                    else:
+                        consecutive_increases = 0
+                    
+                    k += 1
+                    
+                except Exception as e:
+                    log_warning(f"HMM with K={k} failed: {e}")
+                    break
+            
+            if not bic_scores:
+                raise ValueError("No valid HMM BIC scores computed")
+            
+            # Find optimal K (minimum BIC)
+            optimal_k_idx = np.argmin(bic_scores)
+            optimal_k = k_values[optimal_k_idx]
+            optimal_bic = bic_scores[optimal_k_idx]
+            optimal_hmm = hmm_models[optimal_k_idx]
+            
+            tprint(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}", "SUCCESS")
+            log_success(f"HMM BIC search found optimal K={optimal_k} with BIC={optimal_bic:.3f}")
+            
+            metadata = {
+                'bic_scores': bic_scores,
+                'k_values': k_values,
+                'optimal_k': optimal_k,
+                'optimal_bic': optimal_bic,
+                'consecutive_increases': consecutive_increases,
+                'method': 'hmm_bic'
+            }
+            
+            return optimal_k, optimal_bic, metadata
+            
+        except Exception as e:
+            log_error(f"HMM BIC selection failed: {e}")
+            tprint(f"HMM BIC selection failed: {e}, falling back to GMM", "WARNING")
+            # Fallback to GMM
+            return self._adaptive_k_search(features)
 
     def _dawid_skene_fusion(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, 
-                           max_iterations: int = 50, tolerance: float = 1e-6) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Dawid-Skene EM label fusion for NAS/TAS reconciliation."""
+                           target_k: int, max_iterations: int = 50, tolerance: float = 1e-6) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Dawid-Skene EM label fusion for NAS/TAS reconciliation with common label space K."""
         try:
-            tprint("Starting Dawid-Skene label fusion...", "INFO")
-            log_info("Starting Dawid-Skene label fusion")
+            tprint(f"Starting Dawid-Skene label fusion with K={target_k}...", "INFO")
+            log_info(f"Starting Dawid-Skene label fusion with K={target_k}")
             
             n_samples = len(tas_assignments)
-            n_classes = len(set(tas_assignments) | set(nas_assignments))
+            
+            # Use target K as common label space (no pre-mapping needed)
+            n_classes = target_k
             
             # Initialize confusion matrices for TAS and NAS as "annotators"
-            tas_confusion = np.eye(n_classes) + np.random.rand(n_classes, n_classes) * 0.1
-            nas_confusion = np.eye(n_classes) + np.random.rand(n_classes, n_classes) * 0.1
+            # Initialize with uniform confusion rows for stability
+            tas_confusion = np.ones((n_classes, n_classes)) / n_classes
+            nas_confusion = np.ones((n_classes, n_classes)) / n_classes
+            
+            # Add small random perturbation for breaking symmetry
+            tas_confusion += np.random.rand(n_classes, n_classes) * 0.01
+            nas_confusion += np.random.rand(n_classes, n_classes) * 0.01
             
             # Normalize confusion matrices
             tas_confusion = tas_confusion / tas_confusion.sum(axis=1, keepdims=True)
             nas_confusion = nas_confusion / nas_confusion.sum(axis=1, keepdims=True)
             
-            # Initialize class priors
+            # Initialize class priors uniformly
             class_priors = np.ones(n_classes) / n_classes
             
             # EM iterations
@@ -946,7 +1105,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Step 1: Use Dawid-Skene fusion for NAS/TAS reconciliation
             tprint("Step 1: Applying Dawid-Skene fusion for NAS/TAS reconciliation...", "INFO")
-            fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments)
+            fused_assignments, fusion_metadata = self._dawid_skene_fusion(tas_assignments, nas_assignments, optimal_k)
             tprint(f"Dawid-Skene fusion completed: {len(fused_assignments)} samples", "SUCCESS")
             
             # Step 2: Map fused assignments to optimal K if needed
@@ -1003,14 +1162,34 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return tas_assignments, {'initial_score': 0.0, 'final_score': 0.0, 'improvement': 0.0, 'iterations': 0}
 
     def _apply_hmm_smoothing(self, features: np.ndarray, assignments: np.ndarray) -> np.ndarray:
-        """Apply HMM smoothing for temporal coherence."""
+        """Apply HMM smoothing for temporal coherence using learned transitions."""
         try:
             from sklearn.mixture import GaussianMixture
+            from hmmlearn import hmm
             
             n_clusters = len(set(assignments))
             n_samples = len(assignments)
             
+            # Initialize HMM emissions from BIC-best GMM for stability
+            tprint("Initializing HMM emissions from BIC-best GMM...", "INFO")
+            gmm = GaussianMixture(n_components=n_clusters, random_state=42)
+            gmm.fit(features)
+            
+            # Create HMM with emissions initialized from GMM
+            model = hmm.GaussianHMM(
+                n_components=n_clusters,
+                random_state=42,
+                n_iter=50,  # Fewer iterations for smoothing
+                init_params='stmc'  # Initialize startprob, transmat, means, covars
+            )
+            
+            # Initialize with GMM parameters
+            model.means_ = gmm.means_
+            model.covars_ = gmm.covariances_
+            model.startprob_ = np.ones(n_clusters) / n_clusters
+            
             # Learn transition matrix from assignments
+            tprint("Learning transition matrix from assignments...", "INFO")
             transition_matrix = np.zeros((n_clusters, n_clusters))
             for i in range(n_samples - 1):
                 current_cluster = assignments[i]
@@ -1019,8 +1198,28 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             # Normalize transition matrix
             transition_matrix = transition_matrix / (transition_matrix.sum(axis=1, keepdims=True) + 1e-10)
+            model.transmat_ = transition_matrix
             
-            # Apply Viterbi-like smoothing
+            # Fit HMM to learn better parameters
+            tprint("Fitting HMM to learn better parameters...", "INFO")
+            model.fit(features)
+            
+            # Decode with Viterbi for temporal coherence
+            tprint("Applying Viterbi decoding for temporal coherence...", "INFO")
+            smoothed_assignments = model.predict(features)
+            
+            tprint(f"HMM smoothing completed: {n_clusters} clusters, {n_samples} samples", "SUCCESS")
+            return smoothed_assignments
+            
+        except Exception as e:
+            log_warning(f"HMM smoothing failed: {e}, using simple smoothing")
+            # Fallback to simple smoothing
+            return self._simple_temporal_smoothing(assignments)
+
+    def _simple_temporal_smoothing(self, assignments: np.ndarray) -> np.ndarray:
+        """Simple temporal smoothing fallback."""
+        try:
+            n_samples = len(assignments)
             smoothed_assignments = assignments.copy()
             
             # Simple smoothing: if a sample is isolated (different from neighbors), 
@@ -1041,7 +1240,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return smoothed_assignments
             
         except Exception as e:
-            log_warning(f"HMM smoothing failed: {e}")
+            log_warning(f"Simple temporal smoothing failed: {e}")
             return assignments
 
     def _validate_feature_quality(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
@@ -5341,8 +5540,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             davies_bouldin = davies_bouldin_score(features, assignments)
             
             # Use z-score normalization relative to null distributions (no caps)
-            # Calculate null distributions by permuting labels
-            n_permutations = 100
+            # Calculate null distributions by permuting labels (reduced for efficiency)
+            n_permutations = 75  # Reduced from 100 for efficiency
             silhouette_null = []
             ch_null = []
             db_null = []

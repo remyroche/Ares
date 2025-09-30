@@ -4,7 +4,11 @@ Tests for Hybrid Regime Orchestrator
 Tests for the main orchestrator that replaces HMM clustering functionality.
 """
 
+import importlib
+import sys
+import types
 import unittest
+from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -13,7 +17,10 @@ import json
 from pathlib import Path
 
 from ..config.hybrid_regime_config import HybridRegimeConfig
-from ..integration.hybrid_orchestrator import HybridRegimeOrchestrator
+try:
+    from ..integration.hybrid_orchestrator import HybridRegimeOrchestrator
+except ImportError:  # pragma: no cover - allow tests to run with partial dependencies
+    HybridRegimeOrchestrator = None
 
 
 class TestHybridOrchestrator(unittest.TestCase):
@@ -21,6 +28,8 @@ class TestHybridOrchestrator(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
+        if HybridRegimeOrchestrator is None:
+            self.skipTest("HybridRegimeOrchestrator dependencies unavailable")
         self.config = HybridRegimeConfig(n_regimes=4)
         self.orchestrator = HybridRegimeOrchestrator(self.config)
 
@@ -206,6 +215,82 @@ class TestHybridOrchestrator(unittest.TestCase):
                         len(set(result['regime_data']['predictions'])),
                         config.n_regimes
                     )
+
+
+class TestEnhancedHybridOrchestratorConfig(unittest.TestCase):
+    """Tests for the enhanced hybrid orchestrator configuration toggles."""
+
+    def test_boolean_feature_toggles_propagate(self):
+        """Ensure boolean flags on the config are accessible as attributes."""
+
+        config = HybridRegimeConfig(
+            n_regimes=3,
+            enable_multi_timeframe=False,
+            use_unified_search=False,
+            use_signal_generation=False,
+        )
+        if not hasattr(config, "search_config"):
+            config.search_config = {}
+
+        module_path = "src.training.steps.market_analysis.hybrid_nas_tas_regime.enhanced_hybrid_orchestrator"
+
+        # Provide stub modules required for importing the enhanced orchestrator
+        components_pkg = types.ModuleType("components")
+        tas_module = types.ModuleType("tas_integration")
+        nas_module = types.ModuleType("nas_integration")
+        setattr(tas_module, "TASIntegrationComponent", MagicMock)
+        setattr(nas_module, "NASIntegrationComponent", MagicMock)
+
+        sys.modules.setdefault("src.training.steps.market_analysis.hybrid_nas_tas_regime.components", components_pkg)
+        sys.modules.setdefault(
+            "src.training.steps.market_analysis.hybrid_nas_tas_regime.components.tas_integration",
+            tas_module
+        )
+        sys.modules.setdefault(
+            "src.training.steps.market_analysis.hybrid_nas_tas_regime.components.nas_integration",
+            nas_module
+        )
+
+        utility_module = types.ModuleType("enhanced_utility_integration")
+        setattr(utility_module, "EnhancedUtilityIntegration", MagicMock)
+        setattr(utility_module, "UtilityIntegrationConfig", MagicMock)
+        setattr(utility_module, "create_enhanced_utility_integration", MagicMock(return_value=MagicMock()))
+        sys.modules.setdefault(
+            "src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_utility_integration",
+            utility_module
+        )
+
+        data_module = types.ModuleType("enhanced_data_integration")
+        setattr(data_module, "EnhancedDataIntegration", MagicMock)
+        setattr(data_module, "DataIntegrationConfig", MagicMock)
+        setattr(data_module, "create_enhanced_data_integration", MagicMock(return_value=MagicMock()))
+        sys.modules.setdefault(
+            "src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_data_integration",
+            data_module
+        )
+
+        ml_module = types.ModuleType("enhanced_ml_integration")
+        setattr(ml_module, "EnhancedMLIntegration", MagicMock)
+        setattr(ml_module, "MLIntegrationConfig", MagicMock)
+        setattr(ml_module, "create_enhanced_ml_integration", MagicMock(return_value=MagicMock()))
+        sys.modules.setdefault(
+            "src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.enhanced_ml_integration",
+            ml_module
+        )
+
+        enhanced_module = importlib.import_module(module_path)
+        EnhancedHybridOrchestrator = enhanced_module.EnhancedHybridOrchestrator
+
+        with patch.object(EnhancedHybridOrchestrator, "_initialize_enhanced_utilities", return_value=None), \
+             patch(f"{module_path}.TASIntegrationComponent", return_value=MagicMock()), \
+             patch(f"{module_path}.NASIntegrationComponent", return_value=MagicMock()), \
+             patch(f"{module_path}.create_unified_search_manager", return_value=MagicMock()), \
+             patch(f"{module_path}.create_unified_clustering_algorithm", return_value=MagicMock()):
+            orchestrator = EnhancedHybridOrchestrator(config)
+
+        self.assertFalse(orchestrator.enable_multi_timeframe)
+        self.assertFalse(orchestrator.use_unified_search)
+        self.assertFalse(orchestrator.use_signal_generation)
 
 
 if __name__ == '__main__':

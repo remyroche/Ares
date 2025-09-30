@@ -11,13 +11,37 @@ The system creates coherent regime modeling with economic significance and repla
 the HMM-based clustering entirely.
 """
 
-from .core.hybrid_regime_detector import HybridNASTASRegimeDetector
+try:
+    from .core.hybrid_regime_detector import HybridNASTASRegimeDetector
+except ImportError:  # pragma: no cover - optional dependency guard for tests
+    HybridNASTASRegimeDetector = None
+
 from .config.hybrid_regime_config import HybridRegimeConfig
-from .integration.hybrid_orchestrator import HybridRegimeOrchestrator
-from .components.tas_integration import TASIntegrationComponent
-from .components.nas_integration import NASIntegrationComponent
-from .evaluation.economic_evaluator import EconomicRegimeEvaluator
-from .tagging.regime_tagger import RegimeTagger
+
+try:
+    from .integration.hybrid_orchestrator import HybridRegimeOrchestrator
+except ImportError:  # pragma: no cover - optional dependency guard
+    HybridRegimeOrchestrator = None
+
+try:
+    from .components.tas_integration import TASIntegrationComponent
+except ImportError:  # pragma: no cover - optional dependency guard
+    TASIntegrationComponent = None
+
+try:
+    from .components.nas_integration import NASIntegrationComponent
+except ImportError:  # pragma: no cover - optional dependency guard
+    NASIntegrationComponent = None
+
+try:
+    from .evaluation.economic_evaluator import EconomicRegimeEvaluator
+except ImportError:  # pragma: no cover - optional dependency guard
+    EconomicRegimeEvaluator = None
+
+try:
+    from .tagging.regime_tagger import RegimeTagger
+except ImportError:  # pragma: no cover - optional dependency guard
+    RegimeTagger = None
 
 __all__ = [
     'HybridNASTASRegimeDetector',

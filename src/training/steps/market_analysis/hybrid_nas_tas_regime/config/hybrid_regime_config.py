@@ -77,6 +77,11 @@ class HybridRegimeConfig:
     # Regime combination strategy
     combination_strategy: RegimeCombinationStrategy = RegimeCombinationStrategy.ADAPTIVE_FUSION
 
+    # Core feature toggles
+    enable_multi_timeframe: bool = True
+    use_unified_search: bool = True
+    use_signal_generation: bool = True
+
     # Number of regimes to detect
     n_regimes: int = 8
 

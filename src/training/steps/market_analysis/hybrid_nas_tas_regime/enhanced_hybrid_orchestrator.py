@@ -135,6 +135,7 @@ class EnhancedHybridOrchestrator:
         """Initialize the enhanced hybrid orchestrator with comprehensive utility integrations."""
         tprint("🎯 Initializing EnhancedHybridOrchestrator", color="blue")
         self.config = config
+        self.logger = logger
         tprint(f"📊 Config: {config.n_regimes} regimes, strategy: {config.combination_strategy.value}", color="cyan")
 
         # Initialize enhanced utility integrations
@@ -154,18 +155,18 @@ class EnhancedHybridOrchestrator:
         self.clustering_algorithm = create_unified_clustering_algorithm(config.clustering_config)
 
         # Multi-timeframe support
-        self.enable_multi_timeframe = config.get('enable_multi_timeframe', True)
+        self.enable_multi_timeframe = config.enable_multi_timeframe
         self.primary_timeframe = TimeframeType.MINUTE_15  # Always 15m for regime detection
         self.trading_timeframes = [TimeframeType.MINUTE_1, TimeframeType.MINUTE_5]
         tprint(f"⏰ Multi-timeframe: {'enabled' if self.enable_multi_timeframe else 'disabled'}, trading timeframes: {[tf.value for tf in self.trading_timeframes]}", color="cyan")
 
         # Unified architecture search engine
-        self.use_unified_search = config.get('use_unified_search', True)
+        self.use_unified_search = config.use_unified_search
         self.unified_search_engine = None
         tprint(f"🔍 Unified search engine: {'enabled' if self.use_unified_search else 'disabled'}", color="cyan")
 
         # Signal generation system
-        self.use_signal_generation = config.get('use_signal_generation', True)
+        self.use_signal_generation = config.use_signal_generation
         self.signal_generator = None
         tprint(f"📡 Signal generation: {'enabled' if self.use_signal_generation else 'disabled'}", color="cyan")
 

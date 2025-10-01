@@ -11,7 +11,7 @@ from .feature_engineering import FeatureEngineer, FeatureConfig, FeatureResult
 from .regime_detection import RegimeDetector, RegimeConfig, RegimeResult
 from .data_validation import DataValidator, ValidationConfig, ValidationResult
 from .data_storage import DataStorageManager, StorageConfig, StorageResult
-from .pipeline_orchestrator import PipelineOrchestrator, PipelineConfig, PipelineResult
+from .pipeline_orchestrator import DataPipelineOrchestrator, PipelineConfig, PipelineResult
 
 __all__ = [
     'DataIngestionManager', 'DataIngestionConfig', 'DataIngestionResult',
@@ -20,5 +20,5 @@ __all__ = [
     'RegimeDetector', 'RegimeConfig', 'RegimeResult',
     'DataValidator', 'ValidationConfig', 'ValidationResult',
     'DataStorageManager', 'StorageConfig', 'StorageResult',
-    'PipelineOrchestrator', 'PipelineConfig', 'PipelineResult'
+    'DataPipelineOrchestrator', 'PipelineConfig', 'PipelineResult'
 ]

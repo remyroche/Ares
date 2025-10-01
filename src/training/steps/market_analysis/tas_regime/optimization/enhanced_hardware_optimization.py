@@ -18,6 +18,9 @@ from contextlib import contextmanager
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint functions
+from src.utils.tprint import tprint_info, tprint_debug, tprint_warning, tprint_error, tprint_success
+
 # Import existing hardware optimization tools
 try:
     from src.utils.hardware.unified_hardware_manager import (

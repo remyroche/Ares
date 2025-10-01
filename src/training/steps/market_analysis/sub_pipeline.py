@@ -84,7 +84,7 @@ class LoggingConfig:
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
     mode: ExecutionMode = ExecutionMode.FULL
-    symbol: str = "BTCUSDT"
+    symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "30m"
     data_dir: str = "historical_data"
@@ -319,7 +319,7 @@ class MarketAnalysisSubPipeline:
         # Create SubPipelineConfig
         sub_config = SubPipelineConfig(
             mode=mode,
-            symbol=config.get('symbol', 'BTCUSDT'),
+            symbol=config.get('symbol', 'ETHUSDT'),
             exchange=config.get('exchange', 'binance'),
             timeframe=config.get('timeframe', '15m'),
             data_dir=config.get('data_dir', './data'),
@@ -702,7 +702,7 @@ class MarketAnalysisSubPipeline:
                 return error_info
             
             # Extract data from consolidated artifact
-            nas_tas_clustering_data = nas_tas_clustering_result.artifacts.get('optimal_regime_clustering_result', {})
+            nas_tas_clustering_data = nas_tas_clustering_result.artifacts.get('nas_tas_clustering_result', {})
             results['nas_tas_clusters'] = nas_tas_clustering_data.get('nas_tas_clusters', {})
             results['nas_tas_clustering_metrics'] = nas_tas_clustering_data.get('nas_tas_clustering_metrics', {})
             
@@ -710,7 +710,8 @@ class MarketAnalysisSubPipeline:
             cluster_assignments = nas_tas_clustering_data.get('cluster_assignments', [])
             self._current_pipeline_state.update({
                 'nas_tas_clusters': nas_tas_clustering_data,  # Store the full result
-                'cluster_assignments': cluster_assignments  # Make cluster_assignments directly accessible
+                'cluster_assignments': cluster_assignments,  # Make cluster_assignments directly accessible
+                'optimal_regime_clustering_result': nas_tas_clustering_data  # Add the key that regime_data_splitting expects
             })
             
             # Prepare data for HMM Models Training
@@ -784,6 +785,70 @@ class MarketAnalysisSubPipeline:
             self._current_pipeline_state.update({
                 'regime_models': results['regime_models']
             })
+            
+            # Ensure features and targets are available for regime ensemble training
+            # Extract features from optimized_features or pid_based_features if available
+            features = None
+            feature_names = []
+            targets = None
+            
+            if 'optimized_features' in results and results['optimized_features']:
+                features_data = results['optimized_features']
+                if isinstance(features_data, dict) and 'features' in features_data:
+                    features = features_data['features']
+                    feature_names = features_data.get('feature_names', [])
+            
+            if features is None and 'pid_based_features' in results:
+                pid_features = results['pid_based_features']
+                if isinstance(pid_features, dict) and 'combined_features' in pid_features:
+                    features = pid_features['combined_features']
+                    feature_names = pid_features.get('combined_feature_names', [])
+            
+            # If no features available yet, use basic features from regime models training
+            if features is None:
+                # Extract basic features from the regime models training data
+                # The regime models training component generates features internally
+                self.logger.warning("⚠️ No optimized features available for regime ensemble training, using basic features from regime models training")
+                
+                # Get the features that were used in regime models training
+                # These are generated internally by the regime models training component
+                # We need to regenerate them or extract them from the training process
+                try:
+                    # Extract regime labels for feature generation
+                    regime_labels = None
+                    if 'regime_assignments' in results and results['regime_assignments']:
+                        regime_data = results['regime_assignments']
+                        if isinstance(regime_data, list):
+                            regime_labels = regime_data
+                        elif isinstance(regime_data, dict) and 'regime_labels' in regime_data:
+                            regime_labels = regime_data['regime_labels']
+                    
+                    # Generate basic features similar to what regime models training does
+                    if regime_labels is not None:
+                        features, feature_names = self._generate_basic_features(data, regime_labels)
+                        targets = regime_labels  # Use regime labels as targets
+                        self.logger.info(f"✅ Generated basic features: {features.shape if features is not None else 'None'}")
+                    else:
+                        self.logger.warning("⚠️ No regime labels available for feature generation")
+                        features = None
+                        targets = None
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to generate basic features: {e}")
+                    features = None
+                    targets = None
+            
+            # Update pipeline state with features and targets for regime ensemble training
+            self._current_pipeline_state.update({
+                'features': features,
+                'targets': targets,
+                'feature_names': feature_names
+            })
+            
+            # Log data availability for debugging
+            self.logger.info(f"📊 Data prepared for Regime Ensemble Training:")
+            self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
+            self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
+            self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
             
             # Stage 7: Regime Detection Ensemble Training
             self.logger.info('🎭 Executing Stage 7: Regime Detection Ensemble Training')
@@ -1125,7 +1190,7 @@ class MarketAnalysisSubPipeline:
                         if param == 'data_dir':
                             pipeline_state_with_artifacts[param] = 'historical_data'
                         elif param == 'symbol':
-                            pipeline_state_with_artifacts[param] = 'BTCUSDT'
+                            pipeline_state_with_artifacts[param] = 'ETHUSDT'
                         elif param == 'exchange':
                             pipeline_state_with_artifacts[param] = 'binance'
                         elif param == 'timeframe':
@@ -1431,6 +1496,108 @@ class MarketAnalysisSubPipeline:
         except Exception as e:
             self.logger.error(f'❌ Failed to load market data: {e}')
             raise
+
+    def _generate_basic_features(self, data: pd.DataFrame, regime_labels: List[int]) -> Tuple[np.ndarray, List[str]]:
+        """
+        Generate basic features similar to what regime models training does.
+        
+        Args:
+            data: Market data DataFrame
+            regime_labels: List of regime labels
+            
+        Returns:
+            Tuple of (features_array, feature_names)
+        """
+        try:
+            import numpy as np
+            
+            features = []
+            feature_names = []
+            
+            # Create basic price-based features
+            if 'close' in data.columns:
+                # Price returns
+                returns = data['close'].pct_change().fillna(0)
+                features.append(returns.values)
+                feature_names.append('price_returns')
+                
+                # Multi-timeframe returns
+                returns_5 = data['close'].pct_change(5).fillna(0)
+                returns_10 = data['close'].pct_change(10).fillna(0)
+                returns_20 = data['close'].pct_change(20).fillna(0)
+                features.extend([returns_5.values, returns_10.values, returns_20.values])
+                feature_names.extend(['returns_5', 'returns_10', 'returns_20'])
+                
+                # Moving averages
+                sma_10 = data['close'].rolling(10).mean().fillna(data['close'].iloc[0])
+                sma_20 = data['close'].rolling(20).mean().fillna(data['close'].iloc[0])
+                sma_50 = data['close'].rolling(50).mean().fillna(data['close'].iloc[0])
+                features.extend([sma_10.values, sma_20.values, sma_50.values])
+                feature_names.extend(['sma_10', 'sma_20', 'sma_50'])
+                
+                # Price position relative to MAs
+                price_to_sma10 = (data['close'] / sma_10 - 1).fillna(0)
+                price_to_sma20 = (data['close'] / sma_20 - 1).fillna(0)
+                price_to_sma50 = (data['close'] / sma_50 - 1).fillna(0)
+                features.extend([price_to_sma10.values, price_to_sma20.values, price_to_sma50.values])
+                feature_names.extend(['price_to_sma10', 'price_to_sma20', 'price_to_sma50'])
+                
+                # Volatility
+                volatility_10 = returns.rolling(10).std().fillna(0)
+                volatility_20 = returns.rolling(20).std().fillna(0)
+                volatility_50 = returns.rolling(50).std().fillna(0)
+                features.extend([volatility_10.values, volatility_20.values, volatility_50.values])
+                feature_names.extend(['volatility_10', 'volatility_20', 'volatility_50'])
+                
+                # RSI
+                delta = data['close'].diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                features.append(rsi.fillna(50).values)
+                feature_names.append('rsi_14')
+                
+                # Momentum
+                momentum_5 = data['close'].pct_change(5).fillna(0)
+                momentum_10 = data['close'].pct_change(10).fillna(0)
+                features.extend([momentum_5.values, momentum_10.values])
+                feature_names.extend(['momentum_5', 'momentum_10'])
+                
+                # Price range features
+                if 'high' in data.columns and 'low' in data.columns:
+                    price_range = (data['high'] - data['low']) / data['close']
+                    hl_position = (data['close'] - data['low']) / (data['high'] - data['low'])
+                    features.extend([price_range.fillna(0).values, hl_position.fillna(0.5).values])
+                    feature_names.extend(['price_range', 'hl_position'])
+            
+            # Volume features
+            if 'volume' in data.columns:
+                volume_change = data['volume'].pct_change().fillna(0)
+                volume_ratio = data['volume'] / data['volume'].rolling(20).mean()
+                volume_momentum = data['volume'].pct_change(5).fillna(0)
+                features.extend([volume_change.values, volume_ratio.fillna(1).values, volume_momentum.values])
+                feature_names.extend(['volume_change', 'volume_ratio', 'volume_momentum'])
+            
+            # Trend strength
+            if 'close' in data.columns:
+                # Simple trend strength based on price position
+                trend_strength = (data['close'] - data['close'].rolling(20).mean()) / data['close'].rolling(20).std()
+                features.append(trend_strength.fillna(0).values)
+                feature_names.append('trend_strength')
+            
+            # Convert to numpy array
+            if features:
+                features_array = np.column_stack(features)
+                self.logger.info(f"✅ Generated {len(feature_names)} basic features with shape {features_array.shape}")
+                return features_array, feature_names
+            else:
+                self.logger.warning("⚠️ No features generated")
+                return None, []
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate basic features: {e}")
+            return None, []
 
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary with all results."""

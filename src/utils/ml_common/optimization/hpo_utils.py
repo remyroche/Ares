@@ -701,8 +701,8 @@ class HyperparameterOptimization:
     def bayesian_optimization(self, model_factory: Callable,
                             X: np.ndarray, y: np.ndarray,
                             search_space: Dict[str, Any],
-                            n_trials: int = 50,
-                            acquisition_function: str = 'ucb',
+                            n_trials: int = 10,  # Reduced from 50 to 10 for faster iteration
+                            acquisition_function: str = 'ei',  # Changed from 'ucb' to 'ei' for better exploration
                             scoring: Union[str, Callable] = 'accuracy',
                             cv: Optional[Any] = None,
                             fit_params: Optional[Dict[str, Any]] = None,
@@ -710,7 +710,9 @@ class HyperparameterOptimization:
                             storage: Optional[str] = None,
                             study_name: Optional[str] = None,
                             timeout: Optional[int] = None,
-                            use_enhanced_search_space: bool = True) -> Dict[str, Any]:
+                            use_enhanced_search_space: bool = True,
+                            enable_diagnostics: bool = True,
+                            optimization_context: Optional[str] = None) -> Dict[str, Any]:
         """
         Perform enhanced Bayesian hyperparameter optimization with non-linear transformations.
 
@@ -722,12 +724,53 @@ class HyperparameterOptimization:
             n_trials: Number of optimization trials
             acquisition_function: Acquisition function ('ucb', 'ei', 'poi')
             use_enhanced_search_space: Whether to use enhanced non-linear search space
+            enable_diagnostics: Whether to run data diagnostics before HPO
+            optimization_context: Descriptive context about what this study is optimizing
 
         Returns:
             Enhanced Bayesian optimization results
         """
         try:
+            # Enhanced study context logging
+            self._log_study_context(X, y, search_space, optimization_context, study_name, n_trials)
+            
             self.logger.info(f"🎲 Starting enhanced Bayesian optimization with {acquisition_function} acquisition")
+            
+            # Run diagnostics if enabled
+            if enable_diagnostics:
+                from .hpo_diagnostics_and_fixes import HPODiagnostics, HPOMonitor
+                
+                self.logger.info("🔍 Running HPO diagnostics...")
+                diagnostics = HPODiagnostics.check_data_variance(X, y, "Training Data")
+                HPODiagnostics.print_diagnostics(diagnostics)
+                
+                if not diagnostics["is_valid"]:
+                    self.logger.error("❌ Data validation failed! Cannot proceed with HPO.")
+                    return {
+                        'error': 'Data validation failed',
+                        'diagnostics': diagnostics,
+                        'best_params': {},
+                        'best_score': 0.0
+                    }
+                
+                # Check scoring metric appropriateness
+                stats = diagnostics["stats"]
+                if scoring == 'accuracy' and 'class_percentages' in stats:
+                    max_pct = max(stats['class_percentages'].values())
+                    if max_pct > 70:
+                        recommended = HPODiagnostics.recommend_scoring_metric(diagnostics)
+                        self.logger.warning(
+                            f"⚠️  Using 'accuracy' with imbalanced data ({max_pct:.1f}% majority class)!\n"
+                            f"   This may cause constant predictions. Recommended: '{recommended}'"
+                        )
+                        self.logger.info(f"   Automatically switching to '{recommended}'")
+                        scoring = recommended
+                
+                # Initialize monitor
+                monitor = HPOMonitor()
+            else:
+                monitor = None
+            
             if use_enhanced_search_space and self.use_nonlinear_optimization:
                 self.logger.info("🚀 Using enhanced non-linear search space")
 
@@ -754,8 +797,22 @@ class HyperparameterOptimization:
                 except Exception as e:
                     self.logger.warning(f"Could not set model parameters: {e}, continuing with default parameters")
 
-                # Prepare CV and fit params
-                cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
+                # Prepare CV and fit params - improved for small datasets
+                if cv is None:
+                    # Adaptive CV strategy based on dataset size
+                    n_samples = len(X)
+                    if n_samples < 1000:
+                        # Use TimeSeriesSplit for small datasets to prevent data leakage
+                        # CRITICAL: Never shuffle time series data!
+                        recommended_folds = max(2, min(5, n_samples // 50))  # At least 50 samples per fold
+                        if hasattr(self, 'cv_splits') and self.cv_splits > recommended_folds:
+                            self.logger.warning(f"⚠️ Reducing CV folds from {self.cv_splits} to {recommended_folds} for small dataset ({n_samples} samples)")
+                        self.logger.warning(f"⚠️ Using TimeSeriesSplit for small dataset ({n_samples} samples) to prevent data leakage")
+                        cv_obj = TimeSeriesSplit(n_splits=recommended_folds)
+                    else:
+                        cv_obj = self._create_time_series_split(len(X))
+                else:
+                    cv_obj = cv
 
                 # Compute sample weights if classification and estimator supports it
                 fp = dict(fit_params or {})
@@ -768,6 +825,8 @@ class HyperparameterOptimization:
                 # Manual CV loop to support sample_weight without passing fit_params
                 try:
                     fold_scores: list[float] = []
+                    fold_predictions = []  # Track predictions for diagnostics
+                    
                     for i, (train_idx, test_idx) in enumerate(cv_obj.split(X, y)):
                         X_tr, X_te = X[train_idx], X[test_idx]
                         y_tr, y_te = y[train_idx], y[test_idx]
@@ -780,6 +839,12 @@ class HyperparameterOptimization:
                                 mdl.fit(X_tr, y_tr)
                         except Exception:
                             mdl.fit(X_tr, y_tr)
+                        
+                        # Get predictions for diagnostics
+                        if hasattr(mdl, 'predict'):
+                            y_pred = mdl.predict(X_te)
+                            fold_predictions.extend(y_pred)
+                        
                         try:
                             from sklearn.metrics import get_scorer
                             scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
@@ -790,19 +855,114 @@ class HyperparameterOptimization:
                         trial.report(float(score), step=i)
                         if trial.should_prune():
                             raise optuna.TrialPruned()
+                    
                     if fold_scores:
-                        return float(np.mean(fold_scores))
+                        mean_score = float(np.mean(fold_scores))
+                        
+                        # Log diagnostics for monitoring
+                        if enable_diagnostics and monitor and trial.number % 1 == 0:
+                            # Check prediction diversity
+                            if fold_predictions:
+                                unique_preds = len(np.unique(fold_predictions))
+                                if unique_preds == 1:
+                                    self.logger.warning(
+                                        f"⚠️  Trial {trial.number}: Model predicting CONSTANT class! "
+                                        f"Score: {mean_score:.4f}, Params: {params}"
+                                    )
+                            
+                            # Record trial for monitoring
+                            monitor.record_trial(trial.number, mean_score, params)
+                        
+                        # Check for suspiciously high scores (data leakage indicator)
+                        # Adaptive threshold based on dataset size and complexity
+                        n_samples = len(X)
+                        n_features = X.shape[1] if len(X.shape) > 1 else 1
+                        n_classes = len(np.unique(y))
+
+                        # More sophisticated threshold calculation
+                        if n_samples < 1000:
+                            # Small datasets need higher thresholds due to easier overfitting
+                            base_threshold = 0.85 if n_samples < 500 else 0.90
+                        else:
+                            # Larger datasets can achieve higher legitimate scores
+                            base_threshold = 0.95 if n_classes <= 5 else 0.97
+
+                        # Adjust for feature count (more features = easier overfitting)
+                        feature_adjustment = min(0.05, n_features / 1000)  # Up to 5% reduction
+                        suspicious_threshold = base_threshold - feature_adjustment
+
+                        # Special handling for very small datasets
+                        if n_samples < 300 and n_features > 10:
+                            suspicious_threshold = 0.80  # Very conservative for small, high-dimensional data
+
+                        if mean_score > suspicious_threshold:
+                            threshold_pct = int(suspicious_threshold * 100)
+                            self.logger.warning(
+                                f"🚨 SUSPICIOUSLY HIGH SCORE: {mean_score:.4f} (>{threshold_pct}%)!\n"
+                                f"   Dataset: {n_samples} samples, {n_features} features, {n_classes} classes\n"
+                                f"   This suggests: {'DATA LEAKAGE' if mean_score > 0.98 else 'OVERFITTING' if mean_score > 0.95 else 'POTENTIAL LEAKAGE'}\n"
+                                f"   Features may contain {'future information or target itself' if mean_score > 0.98 else 'too much target-correlated information' if mean_score > 0.95 else 'correlated information'}\n"
+                                f"   Params: {params}"
+                            )
+
+                            # Additional diagnostics for data leakage/overfitting
+                            if fold_predictions:
+                                unique_preds = len(np.unique(fold_predictions))
+                                self.logger.warning(f"   Prediction diversity: {unique_preds} unique classes out of {len(fold_predictions)} predictions")
+
+                                # Check for constant predictions
+                                if unique_preds == 1:
+                                    self.logger.warning(f"   ⚠️ MODEL PREDICTING CONSTANT CLASS! Severe overfitting detected.")
+
+                                # Check fold score consistency (should vary for legitimate models)
+                                if len(fold_scores) > 1:
+                                    score_std = np.std(fold_scores)
+                                    if score_std < 0.01 and mean_score > 0.8:
+                                        self.logger.warning(f"   ⚠️ VERY LOW SCORE VARIANCE: {score_std:.6f} - suggests overfitting or identical folds")
+
+                            # Additional checks for small datasets
+                            if n_samples < 1000:
+                                self.logger.warning(f"   ⚠️ SMALL DATASET DETECTED: {n_samples} samples - prone to overfitting")
+                                if n_features > n_samples / 10:
+                                    self.logger.warning(f"   ⚠️ HIGH DIMENSIONALITY: {n_features} features > {n_samples/10:.0f} recommended ratio")
+
+                            # Suggest fixes based on diagnosis
+                            if mean_score > 0.98:
+                                self.logger.warning(f"   💡 SUGGESTION: Implement stronger regularization (L1/L2) or feature selection")
+                            elif mean_score > 0.95 and n_samples < 500:
+                                self.logger.warning(f"   💡 SUGGESTION: Increase dataset size or use stratified sampling")
+
+                            if unique_preds == 1:
+                                self.logger.warning("   🚨 CRITICAL: Model predicting ONLY ONE CLASS - definite data leakage!")
+                        
+                        return mean_score
+                except optuna.TrialPruned:
+                    # Trial pruning is expected behavior - not an error
+                    self.logger.info(f"📊 Trial {trial.number} pruned due to poor performance")
+                    raise  # Re-raise to let Optuna handle pruning properly
                 except Exception as e:
-                    self.logger.warning(f"CV loop failed: {e}, returning worst possible score")
+                    import traceback
+                    error_details = str(e) if str(e) else traceback.format_exc()
+                    self.logger.error(f"🚨 CV loop failed with error: {error_details}")
+                    self.logger.warning(f"   Returning worst possible score (999.0)")
+                    self.logger.warning(f"   Failed params: {params}")
                     return 999.0  # Return worst possible score
 
             # Create study with TPE sampler (Bayesian optimization) and pruner/storage
             sampler = TPESampler()
             pruner_obj = None
             if pruner == 'median':
-                pruner_obj = MedianPruner()
+                # Configure MedianPruner to be less aggressive
+                pruner_obj = MedianPruner(
+                    n_startup_trials=5,  # Allow 5 trials before starting pruning
+                    n_warmup_steps=3,    # Wait 3 steps before pruning
+                    interval_steps=1     # Check for pruning every step
+                )
             elif pruner == 'hyperband':
                 pruner_obj = HyperbandPruner()
+            elif pruner == 'none' or pruner is None:
+                # No pruning - let all trials complete
+                pruner_obj = None
 
             study = optuna.create_study(
                 direction='maximize',
@@ -813,7 +973,17 @@ class HyperparameterOptimization:
                 load_if_exists=bool(storage and study_name)
             )
 
-            study.optimize(objective, n_trials=n_trials, timeout=timeout)
+            # Smart initialization: enqueue first trial with sensible defaults
+            smart_params = self._get_smart_initialization(model_factory, actual_search_space, X, y)
+            if smart_params:
+                self.logger.info(f"🎯 Enqueuing smart initialization trial with domain knowledge defaults")
+                self.logger.info(f"   Smart params: {smart_params}")
+                study.enqueue_trial(smart_params)
+
+            # Enhanced optimization with early stopping for low variance
+            self.logger.info(f"🎲 Starting Bayesian optimization with {n_trials} trials...")
+            study.optimize(objective, n_trials=n_trials, timeout=timeout, 
+                         callbacks=[self._early_stopping_callback])
 
             results = {
                 'best_params': study.best_params,
@@ -1166,9 +1336,9 @@ class HyperparameterOptimization:
                 'n_estimators': {'type': 'int', 'low': 200, 'high': 600}
             },
             'bayesian_rule_lists_regime': {
-                'max_rules': {'type': 'int', 'low': 6, 'high': 12},
-                'max_rule_length': {'type': 'int', 'low': 2, 'high': 3},
-                'min_support': {'type': 'float', 'low': 0.02, 'high': 0.05},
+                'listlengthprior': {'type': 'int', 'low': 2, 'high': 5},
+                'maxcardinality': {'type': 'int', 'low': 2, 'high': 3},
+                'minsupport': {'type': 'float', 'low': 0.02, 'high': 0.05},
                 'alpha': {'type': 'float', 'low': 0.5, 'high': 2.0},
                 'beta': {'type': 'float', 'low': 0.5, 'high': 2.0},
                 'list_length_lambda': {'type': 'int', 'low': 3, 'high': 5},
@@ -1192,12 +1362,13 @@ class HyperparameterOptimization:
                 'lambda_l2': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True}
             },
             'random_forest': {
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
-                'max_depth': {'type': 'int', 'low': 5, 'high': 50},
+                'n_estimators': {'type': 'int', 'low': 100, 'high': 500},  # Reduced from 500-2000 to 100-500
+                'max_depth': {'type': 'int', 'low': 5, 'high': 15},  # Expanded from 3-9 to 5-15 for regime detection
                 'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
-                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]}
+                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},  # Expanded range for regime detection
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.5]},  # Added 0.5
+                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                'class_weight': {'type': 'categorical', 'choices': ['balanced', 'balanced_subsample', None]}  # Added class_weight
             },
             'neural_network': {
                 'hidden_layers': {'type': 'int', 'low': 1, 'high': 5},
@@ -1227,6 +1398,185 @@ class HyperparameterOptimization:
                                        'choices': ['multi:softmax', 'multi:softprob']}
 
         return search_space
+
+    def _log_study_context(self, X: np.ndarray, y: np.ndarray, 
+                          search_space: Dict[str, Any], 
+                          optimization_context: Optional[str],
+                          study_name: Optional[str], 
+                          n_trials: int) -> None:
+        """Log detailed context about what this study is optimizing."""
+        try:
+            # Get model type from search space characteristics
+            model_type = self._infer_model_type_from_search_space(search_space)
+            
+            # Get data characteristics
+            n_samples, n_features = X.shape
+            n_classes = len(np.unique(y)) if len(y) > 0 else 0
+            
+            # Calculate additional data insights
+            data_insights = self._analyze_dataset_characteristics(X, y)
+            
+            # Create study identifier
+            study_id = study_name or f"study_{id(self)}"
+            
+            # Enhanced logging with more descriptive information
+            self.logger.info("=" * 100)
+            self.logger.info(f"🔬 HYPERPARAMETER OPTIMIZATION STUDY: {study_id}")
+            self.logger.info("=" * 100)
+            
+            if optimization_context:
+                self.logger.info(f"🎯 OPTIMIZATION PURPOSE: {optimization_context}")
+                self.logger.info("")
+            
+            # Model and algorithm information
+            self.logger.info(f"🤖 ALGORITHM: {model_type}")
+            self.logger.info(f"🔧 OPTIMIZATION METHOD: Bayesian Optimization with TPE Sampler")
+            self.logger.info(f"🎲 PLANNED TRIALS: {n_trials}")
+            self.logger.info("")
+            
+            # Dataset analysis
+            self.logger.info("📊 DATASET ANALYSIS:")
+            self.logger.info(f"   • Total Samples: {n_samples:,}")
+            self.logger.info(f"   • Feature Dimensions: {n_features:,}")
+            self.logger.info(f"   • Target Classes: {n_classes}")
+            self.logger.info(f"   • Sample-to-Feature Ratio: {n_samples/n_features:.2f}")
+            self.logger.info(f"   • Samples per Class (avg): {n_samples/n_classes:.1f}")
+            
+            # Data quality insights
+            if data_insights:
+                self.logger.info("")
+                self.logger.info("🔍 DATA QUALITY INSIGHTS:")
+                if data_insights.get('high_dimensionality'):
+                    self.logger.info("   ⚠️  HIGH DIMENSIONALITY: Consider feature selection")
+                if data_insights.get('class_imbalance'):
+                    self.logger.info("   ⚠️  CLASS IMBALANCE: May need balanced sampling")
+                if data_insights.get('small_dataset'):
+                    self.logger.info("   ⚠️  SMALL DATASET: May need more regularization")
+                if data_insights.get('good_balance'):
+                    self.logger.info("   ✅ WELL-BALANCED: Good for optimization")
+            
+            self.logger.info("")
+            self.logger.info(f"🔧 HYPERPARAMETER SEARCH SPACE ({len(search_space)} parameters):")
+            
+            # Categorize parameters by type
+            int_params = []
+            float_params = []
+            categorical_params = []
+            
+            for param_name, param_config in search_space.items():
+                if isinstance(param_config, dict):
+                    param_type = param_config.get('type', 'unknown')
+                    if param_type == 'categorical':
+                        categorical_params.append((param_name, param_config))
+                    elif param_type == 'int':
+                        int_params.append((param_name, param_config))
+                    elif param_type == 'float':
+                        float_params.append((param_name, param_config))
+            
+            # Log parameters by category
+            if int_params:
+                self.logger.info("   📈 INTEGER PARAMETERS:")
+                for param_name, config in int_params:
+                    low = config.get('low', 'N/A')
+                    high = config.get('high', 'N/A')
+                    step = config.get('step', 1)
+                    self.logger.info(f"      • {param_name}: [{low}, {high}] (step: {step})")
+            
+            if float_params:
+                self.logger.info("   📊 FLOAT PARAMETERS:")
+                for param_name, config in float_params:
+                    low = config.get('low', 'N/A')
+                    high = config.get('high', 'N/A')
+                    log_scale = config.get('log', False)
+                    scale_info = " (log scale)" if log_scale else " (linear scale)"
+                    self.logger.info(f"      • {param_name}: [{low}, {high}]{scale_info}")
+            
+            if categorical_params:
+                self.logger.info("   🎛️  CATEGORICAL PARAMETERS:")
+                for param_name, config in categorical_params:
+                    choices = config.get('choices', [])
+                    self.logger.info(f"      • {param_name}: {choices}")
+            
+            # Optimization strategy insights
+            self.logger.info("")
+            self.logger.info("🚀 OPTIMIZATION STRATEGY:")
+            self.logger.info(f"   • Acquisition Function: Expected Improvement (EI)")
+            self.logger.info(f"   • Pruning Strategy: Median Pruner with early stopping")
+            self.logger.info(f"   • Convergence: Will stop if no improvement for 5 consecutive trials")
+            self.logger.info(f"   • Expected Runtime: ~{n_trials * 2}-{n_trials * 5} minutes")
+            
+            # Expected outcomes
+            self.logger.info("")
+            self.logger.info("🎯 EXPECTED OUTCOMES:")
+            if model_type in ['RandomForest', 'XGBoost', 'LightGBM']:
+                self.logger.info("   • Tree-based model optimization for robust predictions")
+                self.logger.info("   • Focus on ensemble parameters (n_estimators, max_depth)")
+            elif model_type == 'NeuralNetwork':
+                self.logger.info("   • Neural network architecture optimization")
+                self.logger.info("   • Focus on learning rate, hidden units, regularization")
+            else:
+                self.logger.info("   • General hyperparameter tuning for model performance")
+            
+            self.logger.info("=" * 100)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to log study context: {e}")
+
+    def _analyze_dataset_characteristics(self, X: np.ndarray, y: np.ndarray) -> Dict[str, bool]:
+        """Analyze dataset characteristics for optimization insights."""
+        try:
+            n_samples, n_features = X.shape
+            n_classes = len(np.unique(y))
+            
+            insights = {}
+            
+            # High dimensionality check
+            insights['high_dimensionality'] = n_features > n_samples * 0.1
+            
+            # Class imbalance check
+            class_counts = np.bincount(y)
+            max_class = np.max(class_counts)
+            min_class = np.min(class_counts)
+            insights['class_imbalance'] = max_class > min_class * 3
+            
+            # Small dataset check
+            insights['small_dataset'] = n_samples < 1000
+            
+            # Good balance check
+            insights['good_balance'] = (
+                not insights.get('high_dimensionality', False) and
+                not insights.get('class_imbalance', False) and
+                not insights.get('small_dataset', False)
+            )
+            
+            return insights
+            
+        except Exception:
+            return {}
+
+    def _infer_model_type_from_search_space(self, search_space: Dict[str, Any]) -> str:
+        """Infer model type from search space parameters."""
+        try:
+            # Check for model-specific parameters
+            if 'n_estimators' in search_space and 'max_depth' in search_space:
+                if 'learning_rate' in search_space:
+                    return 'XGBoost'
+                elif 'num_leaves' in search_space:
+                    return 'LightGBM'
+                else:
+                    return 'RandomForest'
+            elif 'num_leaves' in search_space:
+                return 'LightGBM'
+            elif 'learning_rate' in search_space and 'max_iter' in search_space:
+                return 'HistGradientBoosting'
+            elif 'hidden_units' in search_space or 'batch_size' in search_space:
+                return 'NeuralNetwork'
+            elif 'C' in search_space and 'gamma' in search_space:
+                return 'SVM'
+            else:
+                return 'Unknown'
+        except Exception:
+            return 'Unknown'
 
     def _generate_lightgbm_search_space(self, n_samples: int, n_features: int,
                                       n_classes: int, task_type: str) -> Dict[str, Any]:
@@ -1328,6 +1678,138 @@ class HyperparameterOptimization:
             self.logger.warning(f"Search space adjustment failed: {e}")
             return search_space
 
+    def _get_smart_initialization(self, model_factory: Callable, search_space: Dict[str, Any], 
+                                   X: np.ndarray, y: np.ndarray) -> Optional[Dict[str, Any]]:
+        """
+        Get smart initialization parameters based on domain knowledge and data characteristics.
+        
+        Returns sensible defaults from literature and best practices for:
+        - RandomForest: Optimal for regime detection
+        - XGBoost/LightGBM: Common defaults
+        - Other models: Conservative starting points
+        """
+        try:
+            model_name = model_factory.__name__.lower() if hasattr(model_factory, '__name__') else str(model_factory).lower()
+            
+            # Analyze data characteristics
+            n_samples = X.shape[0]
+            n_features = X.shape[1] if len(X.shape) > 1 else 1
+            n_classes = len(np.unique(y))
+            
+            self.logger.info(f"📊 Data characteristics: {n_samples} samples, {n_features} features, {n_classes} classes")
+            
+            smart_params = {}
+            
+            # RandomForest smart defaults (regime detection optimized)
+            if 'randomforest' in model_name or 'random_forest' in model_name:
+                smart_params = {
+                    'n_estimators': 200,  # Good balance of performance and speed
+                    'max_depth': 8,  # From domain knowledge: good for regime detection
+                    'min_samples_split': 10,  # Prevent overfitting on small regimes
+                    'min_samples_leaf': 5,  # Ensure meaningful leaf nodes
+                    'max_features': 'sqrt',  # Standard best practice
+                    'class_weight': 'balanced'  # Handle imbalance
+                }
+                
+                # Adjust for data size
+                if n_samples < 500:
+                    smart_params['n_estimators'] = 150
+                    smart_params['max_depth'] = 6
+                elif n_samples > 5000:
+                    smart_params['n_estimators'] = 250
+                    smart_params['max_depth'] = 10
+                
+                self.logger.info("🎯 Using RandomForest regime detection defaults from literature")
+                
+            # XGBoost smart defaults
+            elif 'xgb' in model_name:
+                smart_params = {
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'n_estimators': 150,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'gamma': 0.1,
+                    'reg_alpha': 0.01,
+                    'reg_lambda': 1.0
+                }
+                self.logger.info("🎯 Using XGBoost defaults from literature")
+                
+            # LightGBM smart defaults
+            elif 'lgbm' in model_name or 'lightgbm' in model_name:
+                smart_params = {
+                    'num_leaves': 31,
+                    'max_depth': 6,
+                    'learning_rate': 0.05,
+                    'n_estimators': 150,
+                    'feature_fraction': 0.8,
+                    'bagging_fraction': 0.8,
+                    'bagging_freq': 5,
+                    'min_child_samples': 20
+                }
+                self.logger.info("🎯 Using LightGBM defaults from literature")
+                
+            # CatBoost smart defaults
+            elif 'catboost' in model_name:
+                smart_params = {
+                    'depth': 5,
+                    'learning_rate': 0.05,
+                    'iterations': 500,
+                    'l2_leaf_reg': 8,
+                    'subsample': 0.8,
+                    'colsample_bylevel': 0.8
+                }
+                self.logger.info("🎯 Using CatBoost defaults from literature")
+                
+            # ExtraTrees smart defaults (similar to RandomForest but more randomized)
+            elif 'extratrees' in model_name or 'extra_trees' in model_name:
+                smart_params = {
+                    'n_estimators': 200,
+                    'max_depth': 8,
+                    'min_samples_split': 10,
+                    'min_samples_leaf': 5,
+                    'max_features': 'sqrt',
+                    'class_weight': 'balanced'
+                }
+                self.logger.info("🎯 Using ExtraTrees defaults from literature")
+            
+            # Filter out params not in search space
+            if search_space:
+                filtered_params = {}
+                for param, value in smart_params.items():
+                    if param in search_space:
+                        param_config = search_space[param]
+                        
+                        # Validate param is within bounds
+                        if param_config['type'] == 'int':
+                            if 'low' in param_config and 'high' in param_config:
+                                value = max(param_config['low'], min(param_config['high'], value))
+                        elif param_config['type'] == 'float':
+                            if 'low' in param_config and 'high' in param_config:
+                                value = max(param_config['low'], min(param_config['high'], value))
+                        elif param_config['type'] == 'categorical':
+                            if 'choices' in param_config:
+                                if value not in param_config['choices']:
+                                    # Use first choice as default
+                                    value = param_config['choices'][0]
+                        
+                        filtered_params[param] = value
+                    else:
+                        self.logger.debug(f"Skipping smart param '{param}' - not in search space")
+                
+                if filtered_params:
+                    self.logger.info(f"✅ Smart initialization: {len(filtered_params)}/{len(smart_params)} params applied")
+                    return filtered_params
+                else:
+                    self.logger.warning("⚠️  No smart params matched search space")
+                    return None
+            
+            return smart_params if smart_params else None
+            
+        except Exception as e:
+            self.logger.warning(f"Smart initialization failed: {e}")
+            return None
+
     def _sample_hyperparameters(self, trial: Any, model_factory: Callable, search_space: Dict[str, Any] = None) -> Dict[str, Any]:
         """Enhanced hyperparameter sampling with non-linear transformations."""
         try:
@@ -1410,21 +1892,22 @@ class HyperparameterOptimization:
             # Simple cross-validation for evaluation
             try:
                 from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
-                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='accuracy')
+                # Use temporal strategy for time-series data to prevent data leakage
+                cv_res = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=3, scoring='accuracy')
                 scores['accuracy'] = float(cv_res.get('mean', 0.0))
             except Exception:
                 scores['accuracy'] = 0.0
 
             if 'f1' in objectives:
                 try:
-                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='f1_macro')
+                    cv_res = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=3, scoring='f1_macro')
                     scores['f1'] = float(cv_res.get('mean', 0.0))
                 except Exception:
                     scores['f1'] = 0.0
 
             if 'auc' in objectives and len(np.unique(y)) == 2:
                 try:
-                    cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='roc_auc')
+                    cv_res = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=3, scoring='roc_auc')
                     scores['auc'] = float(cv_res.get('mean', 0.0))
                 except Exception:
                     scores['auc'] = 0.0
@@ -1489,7 +1972,7 @@ class HyperparameterOptimization:
                 return 0.5
 
             try:
-                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=3, scoring='accuracy')
+                cv_res = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=3, scoring='accuracy')
                 return float(cv_res.get('mean', 0.0))
             except Exception:
                 return 0.0
@@ -1501,9 +1984,15 @@ class HyperparameterOptimization:
     # ---- Helpers for staged HPO ----
     def _create_time_series_split(self, n_samples: int, n_splits: int = 5, gap: int = 0) -> Any:
         try:
+            # Use a gap to prevent data leakage in time series
+            # For financial time series, use at least 1 day gap (96 periods for 15m data)
+            if gap == 0:
+                gap = max(96, n_samples // 50)  # Adaptive gap based on data size
+
             test_size = max(1, n_samples // (n_splits + 1))
             return TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"TimeSeriesSplit creation failed: {e}, using default 3-fold CV")
             return 3
 
     def _evaluate_model_cv(self, model: Any, X: np.ndarray, y: np.ndarray,
@@ -1629,6 +2118,27 @@ class HyperparameterOptimization:
         def _eval(model, X, y):
             return self._evaluate_model_cv(model, X, y, cv_obj, scoring)
         return _eval
+
+    def _early_stopping_callback(self, study, trial):
+        """Early stopping callback for low variance scenarios."""
+        if len(study.trials) < 5:  # Need at least 5 trials to check variance
+            return
+        
+        # Get recent scores (last 5 trials)
+        recent_scores = [t.value for t in study.trials[-5:] if t.value is not None]
+        
+        if len(recent_scores) >= 5:
+            # Calculate variance
+            score_variance = np.var(recent_scores)
+            
+            # If variance is extremely low (all scores identical), stop early
+            if score_variance < 1e-10:  # Threshold for identical scores
+                self.logger.warning(f"⚠️ Early stopping triggered: Score variance extremely low ({score_variance:.2e})")
+                self.logger.warning("⚠️ All recent scores are identical - stopping optimization")
+                study.stop()
+            elif score_variance < 0.001:  # Very low variance threshold
+                self.logger.warning(f"⚠️ Very low score variance detected: {score_variance:.6f}")
+                # Continue but log warning
 
     def _calculate_parameter_importance(self, study: Any) -> Dict[str, float]:
         """Calculate parameter importance from study."""

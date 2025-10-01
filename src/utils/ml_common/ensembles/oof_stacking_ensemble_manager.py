@@ -246,11 +246,9 @@ class OOFStackingEnsembleManager:
                 return cv
 
             except Exception as e:
-                self.logger.warning(f"Failed to setup temporal CV, falling back to standard CV: {e}")
-                if is_classification:
-                    return StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
-                else:
-                    return KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
+                self.logger.warning(f"⚠️ Failed to setup temporal CV, falling back to TimeSeriesSplit without shuffle to prevent data leakage: {e}")
+                # CRITICAL: Always use TimeSeriesSplit for time series data!
+                return TimeSeriesSplit(n_splits=self.config.cv_folds)
 
     def _generate_oof_predictions(self,
                                  models: Dict[str, Any],

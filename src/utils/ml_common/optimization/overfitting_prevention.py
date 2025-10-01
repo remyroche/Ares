@@ -346,16 +346,18 @@ class OverfittingPrevention:
             if self.config.cv_strategy == 'time_series_split':
                 cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
             elif self.config.cv_strategy == 'kfold':
-                cv = KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
+                # ⚠️ Using TimeSeriesSplit instead to prevent data leakage
+                cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
             elif self.config.cv_strategy == 'stratified_kfold':
-                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
+                # ⚠️ WARNING: For time series, use 'time_series' strategy instead!
+                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=False)
             else:
                 cv = TimeSeriesSplit(n_splits=self.config.cv_folds)
             
             # Perform cross-validation
             try:
                 from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
-                cv_res = unified_perform_cv(model, X, y, strategy='standard', cv_folds=self.config.cv_folds, scoring='neg_mean_squared_error')
+                cv_res = unified_perform_cv(model, X, y, strategy='temporal', cv_folds=self.config.cv_folds, scoring='neg_mean_squared_error')
                 cv_scores = np.array(cv_res.get('scores', []) or [])
             except Exception:
                 cv_scores = np.array([])

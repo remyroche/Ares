@@ -18,7 +18,7 @@ from src.utils.tprint import (
 )
 
 try:
-    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureConfig, FeatureResult
+    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureResult
     from src.feature_generation.core.factory import FeatureFactory
     from src.feature_generation.categories.momentum import MomentumCalculator
     from src.feature_generation.categories.volatility import VolatilityCalculator
@@ -27,6 +27,13 @@ try:
     FEATURE_GENERATION_AVAILABLE = True
 except ImportError:
     FEATURE_GENERATION_AVAILABLE = False
+
+# Import shared FeatureConfig for compatibility
+try:
+    from src.training.steps.market_analysis.shared_utils.features import FeatureConfig
+    SHARED_FEATURES_AVAILABLE = True
+except ImportError:
+    SHARED_FEATURES_AVAILABLE = False
 
 try:
     from src.utils.matrix_operations import (

@@ -54,6 +54,7 @@ class FeatureConfig:
     dependencies: List[str] = None
     matrix_optimized: bool = True
     gpu_accelerated: bool = False
+    enable_feature_selection: bool = True
     
     def __post_init__(self):
         if self.optional_columns is None:

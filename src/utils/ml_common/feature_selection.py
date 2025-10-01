@@ -3951,10 +3951,13 @@ class FeatureSelectionFramework:
                 raise ImportError("Scikit-learn required for cross-validated feature selection")
 
             # Perform cross-validation
-            skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+            # ⚠️ WARNING: For time series data, use TimeSeriesSplit instead!
+            # Using TimeSeriesSplit to prevent data leakage
+            from sklearn.model_selection import TimeSeriesSplit
+            tss = TimeSeriesSplit(n_splits=cv_folds)
 
             fold_selections = []
-            for fold_idx, (train_idx, test_idx) in enumerate(skf.split(X, y)):
+            for fold_idx, (train_idx, test_idx) in enumerate(tss.split(X)):
                 try:
                     X_fold, y_fold = X[train_idx], y[train_idx]
 
@@ -4764,10 +4767,9 @@ class FeatureSelectionFramework:
                 cv_scores = []
                 cv_importances = []
                 
-                if is_classification:
-                    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
-                else:
-                    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+                # ⚠️ WARNING: Using TimeSeriesSplit for time series data to prevent leakage
+                from sklearn.model_selection import TimeSeriesSplit
+                cv = TimeSeriesSplit(n_splits=cv_folds)
                 
                 for fold, (train_idx, val_idx) in enumerate(cv.split(X_selected, y)):
                     X_train, X_val = X_selected[train_idx], X_selected[val_idx]

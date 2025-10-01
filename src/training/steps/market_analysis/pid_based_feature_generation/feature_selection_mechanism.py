@@ -80,7 +80,7 @@ except ImportError:
 
 # Import configuration constants
 try:
-    from .constants import FEATURE_GEN, VALIDATION, CROSS_TIMEFRAME
+    from src.training.steps.market_analysis.pid_based_feature_generation.constants import FEATURE_GEN, VALIDATION, CROSS_TIMEFRAME
     CONSTANTS_AVAILABLE = True
 except ImportError:
     CONSTANTS_AVAILABLE = False
@@ -91,7 +91,7 @@ except ImportError:
         MAX_REDUNDANCY_SCORE = 0.8
         MIN_VARIANCE_THRESHOLD = 0.01
         STANDARD_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
-    
+
     FEATURE_GEN = _Constants()
     VALIDATION = _Constants()
     CROSS_TIMEFRAME = _Constants()
@@ -526,6 +526,14 @@ class FeatureSelectionMechanism:
                 # Fallback to numpy correlation
                 correlation_matrix = np.corrcoef(X.T)
             
+            # Use more permissive thresholds for correlation-based selection
+            original_min_synergy = self.config.min_synergy_score
+            original_max_redundancy = self.config.max_redundancy_score
+            
+            # Temporarily use very permissive thresholds to get more features
+            self.config.min_synergy_score = 0.001  # Very low threshold to include more features
+            self.config.max_redundancy_score = 0.999  # Very high threshold to include more features
+            
             # Select interaction features based on correlation
             interaction_features = self._select_interaction_features_from_correlation(
                 correlation_matrix, feature_names
@@ -536,7 +544,7 @@ class FeatureSelectionMechanism:
                 for pair in interaction_features
             }
             
-            # Select polynomial features based on variance
+            # Select polynomial features based on variance (ensure we get some)
             polynomial_features = self._select_polynomial_features_from_variance(X, feature_names)
             result.polynomial_features = polynomial_features
             result.polynomial_scores = {
@@ -554,6 +562,43 @@ class FeatureSelectionMechanism:
                 for pair in cross_timeframe_features
             }
             
+            # Restore original thresholds
+            self.config.min_synergy_score = original_min_synergy
+            self.config.max_redundancy_score = original_max_redundancy
+            
+            # When all feature generation is disabled, focus on selecting original market features
+            total_features = (len(result.interaction_features) + 
+                            len(result.polynomial_features) + 
+                            len(result.cross_timeframe_features))
+            
+            # If no features were generated (all disabled), select top variance original features
+            if total_features == 0:
+                self.logger.info("🔍 No feature generation enabled, selecting top variance original features")
+                # Select top variance features from original feature set
+                target_features = min(100, len(feature_names))  # Target 100 or all available
+                top_variance_features = self._get_top_variance_features(X, feature_names, target_features)
+                result.polynomial_features = top_variance_features
+                result.polynomial_scores = {
+                    feature: np.var(X[:, feature_names.index(feature)])
+                    for feature in top_variance_features
+                }
+                self.logger.info(f"✅ Selected {len(top_variance_features)} top variance original features")
+            else:
+                # Target at least 50 features, ideally 100
+                min_target = min(50, len(feature_names) // 2)  # At least 50 or half of available features
+                
+                if total_features < min_target:
+                    self.logger.warning(f"⚠️ Insufficient features selected ({total_features}), target: {min_target}, adding top variance features")
+                    # Add top variance features to reach target
+                    additional_needed = min_target - total_features
+                    additional_features = self._get_top_variance_features(X, feature_names, additional_needed)
+                    result.polynomial_features.extend(additional_features)
+                    result.polynomial_scores.update({
+                        feature: np.var(X[:, feature_names.index(feature)])
+                        for feature in additional_features
+                    })
+                    self.logger.info(f"✅ Added {len(additional_features)} variance-based features to reach {min_target} total features")
+            
             return result
             
         except Exception as e:
@@ -570,6 +615,12 @@ class FeatureSelectionMechanism:
             selected_features = []
             n_features = len(feature_names)
             
+            # Handle None max_interaction_features
+            max_features = self.config.max_interaction_features
+            if max_features is None:
+                max_features = 100  # Default fallback
+                self.logger.warning("⚠️ max_interaction_features is None, using default of 100")
+            
             for i in range(n_features):
                 for j in range(i + 1, n_features):
                     corr = abs(correlation_matrix[i, j])
@@ -577,10 +628,10 @@ class FeatureSelectionMechanism:
                     if (self.config.min_synergy_score <= corr <= self.config.max_redundancy_score):
                         selected_features.append((feature_names[i], feature_names[j]))
                         
-                        if len(selected_features) >= self.config.max_interaction_features:
+                        if len(selected_features) >= max_features:
                             break
                 
-                if len(selected_features) >= self.config.max_interaction_features:
+                if len(selected_features) >= max_features:
                     break
             
             return selected_features
@@ -603,16 +654,48 @@ class FeatureSelectionMechanism:
             variance_indices = np.argsort(variances)[::-1]
             selected_features = []
             
+            # Handle None max_polynomial_features
+            max_features = self.config.max_polynomial_features
+            if max_features is None or max_features == 0:
+                max_features = 50  # Default fallback
+                self.logger.warning("⚠️ max_polynomial_features is None or 0, using default of 50")
+            
             for idx in variance_indices:
                 if variances[idx] > VALIDATION.MIN_VARIANCE_THRESHOLD:
                     selected_features.append(feature_names[idx])
-                    if len(selected_features) >= self.config.max_polynomial_features:
+                    if len(selected_features) >= max_features:
                         break
             
             return selected_features
             
         except Exception as e:
             self.logger.warning(f"⚠️ Variance-based polynomial selection failed: {e}")
+            return []
+    
+    def _get_top_variance_features(
+        self, 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        n_features: int
+    ) -> List[str]:
+        """Get top N features by variance."""
+        try:
+            # Calculate variance for each feature
+            variances = np.var(X, axis=0)
+            
+            # Select top N features by variance
+            variance_indices = np.argsort(variances)[::-1]
+            selected_features = []
+            
+            for idx in variance_indices:
+                selected_features.append(feature_names[idx])
+                if len(selected_features) >= n_features:
+                    break
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Top variance feature selection failed: {e}")
             return []
     
     def _select_cross_timeframe_features_from_correlation(
@@ -628,6 +711,12 @@ class FeatureSelectionMechanism:
             selected_features = []
             timeframe_indices = [feature_names.index(f) for f in timeframe_features]
             
+            # Handle None max_cross_timeframe_features
+            max_features = self.config.max_cross_timeframe_features
+            if max_features is None:
+                max_features = 50  # Default fallback
+                self.logger.warning("⚠️ max_cross_timeframe_features is None, using default of 50")
+            
             for i, feat1 in enumerate(timeframe_features):
                 for j, feat2 in enumerate(timeframe_features[i+1:], i+1):
                     # Check if features are from different timeframes
@@ -639,10 +728,10 @@ class FeatureSelectionMechanism:
                         if (self.config.min_synergy_score <= corr <= self.config.max_redundancy_score):
                             selected_features.append((feat1, feat2))
                             
-                            if len(selected_features) >= self.config.max_cross_timeframe_features:
+                            if len(selected_features) >= max_features:
                                 break
                 
-                if len(selected_features) >= self.config.max_cross_timeframe_features:
+                if len(selected_features) >= max_features:
                     break
             
             return selected_features

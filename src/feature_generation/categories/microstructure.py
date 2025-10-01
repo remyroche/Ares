@@ -58,7 +58,7 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(ms, index=data.index, name='ms_placeholder')
 
 # Bid-Ask Spread Generator
-class BidAskSpreadGenerator(FeatureGenerator):
+class BidAskSpreadGenerator(VectorizedFeatureGenerator):
     """Generator for bid-ask spread features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -82,7 +82,7 @@ class BidAskSpreadGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -98,7 +98,7 @@ class BidAskSpreadGenerator(FeatureGenerator):
         return spread
 
 # Order Flow Imbalance Generator
-class OrderFlowImbalanceGenerator(FeatureGenerator):
+class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for order flow imbalance features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -120,7 +120,7 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -132,7 +132,7 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
         return order_flow_imbalance
 
 # Trade Size Imbalance Generator
-class TradeSizeImbalanceGenerator(FeatureGenerator):
+class TradeSizeImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for trade size imbalance features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -154,7 +154,7 @@ class TradeSizeImbalanceGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -166,7 +166,7 @@ class TradeSizeImbalanceGenerator(FeatureGenerator):
         return trade_size_imbalance
 
 # Price Impact Generator
-class PriceImpactGenerator(FeatureGenerator):
+class PriceImpactGenerator(VectorizedFeatureGenerator):
     """Generator for price impact features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -188,7 +188,7 @@ class PriceImpactGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -200,7 +200,7 @@ class PriceImpactGenerator(FeatureGenerator):
         return price_impact
 
 # Volume Weighted Price Generator
-class VolumeWeightedPriceGenerator(FeatureGenerator):
+class VolumeWeightedPriceGenerator(VectorizedFeatureGenerator):
     """Generator for volume weighted price features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -222,7 +222,7 @@ class VolumeWeightedPriceGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -234,7 +234,7 @@ class VolumeWeightedPriceGenerator(FeatureGenerator):
         return volume_weighted_price
 
 # Trade Intensity Generator
-class TradeIntensityGenerator(FeatureGenerator):
+class TradeIntensityGenerator(VectorizedFeatureGenerator):
     """Generator for trade intensity features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -256,7 +256,7 @@ class TradeIntensityGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -268,7 +268,7 @@ class TradeIntensityGenerator(FeatureGenerator):
         return trade_intensity
 
 # Liquidity Proxy Generator
-class LiquidityProxyGenerator(FeatureGenerator):
+class LiquidityProxyGenerator(VectorizedFeatureGenerator):
     """Generator for liquidity proxy features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -290,7 +290,7 @@ class LiquidityProxyGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -302,7 +302,7 @@ class LiquidityProxyGenerator(FeatureGenerator):
         return liquidity_proxy
 
 # Market Depth Generator
-class MarketDepthGenerator(FeatureGenerator):
+class MarketDepthGenerator(VectorizedFeatureGenerator):
     """Generator for market depth features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -324,7 +324,7 @@ class MarketDepthGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     

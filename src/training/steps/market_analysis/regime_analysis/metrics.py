@@ -179,10 +179,20 @@ def calculate_regime_distribution(labels: np.ndarray, regime_type: str) -> Dict[
             raise
 
 
-def calculate_clustering_metrics(features: np.ndarray, labels: np.ndarray, regime_type: str) -> Dict[str, Any]:
+def calculate_clustering_metrics(features: Optional[np.ndarray], labels: np.ndarray, regime_type: str) -> Dict[str, Any]:
     """Calculate clustering quality metrics for the provided feature set with enhanced validation and M1 optimizations."""
     with tprint_timer(f"Calculating clustering metrics for {regime_type}"):
         try:
+            # Check if features are available
+            if features is None:
+                tprint_warning(f"⚠️  No features available for {regime_type} clustering metrics")
+                return {
+                    "regime_type": regime_type,
+                    "skipped": True,
+                    "reason": "no_features",
+                    "message": "Clustering metrics require features. Only regime distribution available."
+                }
+            
             # Validate input data
             features = validate_finite(features, "clustering_features")
             labels = validate_finite(labels, "clustering_labels")

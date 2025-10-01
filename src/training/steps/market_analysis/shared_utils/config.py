@@ -13,7 +13,7 @@ from src.utils.tprint import tprint, tprint_debug, tprint_success, tprint_warnin
 @dataclass
 class BaseConfig:
     """Base configuration class with common validation methods."""
-    symbol: str = "BTCUSDT"
+    symbol: str = "ETHUSDT"
     timeframe: str = "15m"
     n_regimes: int = 8
     
@@ -182,7 +182,7 @@ class ConfigValidator:
     
     def _validate_algorithm_type(self, algorithm_type: str) -> List[str]:
         """Validate algorithm type parameter."""
-        valid_algorithms = ['kmeans', 'gmm', 'hierarchical', 'dbscan', 'adaptive_clustering', 'ensemble_clustering']
+        valid_algorithms = ['kmeans', 'gmm', 'hierarchical', 'dbscan', 'adaptive_clustering', 'ensemble_clustering', 'nas_tas_clustering']
         errors = []
         if not isinstance(algorithm_type, str) or algorithm_type not in valid_algorithms:
             errors.append(f"Algorithm type must be one of {valid_algorithms}")
@@ -287,7 +287,7 @@ def validate_algorithm_type(algorithm_name: str, valid_algorithms: List[str]) ->
 
 def create_default_config(
     config_type: str = "hybrid",
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     timeframe: str = "15m",
     n_regimes: int = 8,
     **kwargs
@@ -309,14 +309,17 @@ def create_default_config(
         'symbol': symbol,
         'timeframe': timeframe,
         'n_regimes': n_regimes,
-        **kwargs
     }
     
     if config_type.lower() == 'nas':
-        return NASConfig(**base_params)
+        # For NAS config, include all parameters
+        return NASConfig(**base_params, **kwargs)
     elif config_type.lower() == 'tas':
-        return TASConfig(**base_params)
+        # For TAS config, include all parameters
+        return TASConfig(**base_params, **kwargs)
     elif config_type.lower() == 'hybrid':
+        # For Hybrid config, only use base parameters
+        # NAS-specific parameters should be handled in nas_config
         return HybridConfig(**base_params)
     else:
         raise ValueError(f"Unknown config type: {config_type}. Must be 'nas', 'tas', or 'hybrid'")

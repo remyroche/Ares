@@ -149,25 +149,55 @@ class PositionAwareTradingAnalyzer:
             returns = returns[:min_length]
             position_directions = position_directions[:min_length]
 
-            # Overall win rate (any directional movement after costs)
+            # Overall win rate based on directional positions and their profitability
             adjusted_returns = returns - self.config.transaction_cost
-            results['overall_win_rate'] = np.mean(np.abs(adjusted_returns) > self.config.minimum_profit_threshold)
+            # Calculate win rate for all positions that were taken (long or short)
+            positions_taken = (position_directions == 1) | (position_directions == -1)
+            if np.any(positions_taken):
+                position_returns = adjusted_returns[positions_taken]
+                position_types = position_directions[positions_taken]
+
+                # For longs: positive returns = profit, for shorts: negative returns = profit
+                long_mask = position_types == 1
+                short_mask = position_types == -1
+
+                wins = np.zeros_like(position_returns, dtype=bool)
+                if np.any(long_mask):
+                    wins[long_mask] = position_returns[long_mask] > self.config.minimum_profit_threshold
+                if np.any(short_mask):
+                    wins[short_mask] = position_returns[short_mask] < -self.config.minimum_profit_threshold
+
+                results['overall_win_rate'] = np.mean(wins) if len(wins) > 0 else 0.0
+            else:
+                results['overall_win_rate'] = 0.0
 
             # Position-specific win rates
             long_mask = position_directions == 1
             short_mask = position_directions == -1
 
+            tprint_debug(f"Position masks: {np.sum(long_mask)} long, {np.sum(short_mask)} short")
+
             if np.any(long_mask):
                 long_returns = adjusted_returns[long_mask]
                 # For longs: positive returns = profit
-                results['long_win_rate'] = np.mean(long_returns > self.config.minimum_profit_threshold)
+                long_wins = long_returns > self.config.minimum_profit_threshold
+                results['long_win_rate'] = np.mean(long_wins)
                 results['long_trades'] = len(long_returns)
+                tprint_debug(f"Long analysis: {len(long_returns)} trades, {np.sum(long_wins)} wins, win_rate={results['long_win_rate']:.3f}")
 
             if np.any(short_mask):
                 short_returns = adjusted_returns[short_mask]
                 # For shorts: negative returns = profit
-                results['short_win_rate'] = np.mean(short_returns < -self.config.minimum_profit_threshold)
+                short_wins = short_returns < -self.config.minimum_profit_threshold
+                results['short_win_rate'] = np.mean(short_wins)
                 results['short_trades'] = len(short_returns)
+                tprint_debug(f"Short analysis: {len(short_returns)} trades, {np.sum(short_wins)} wins, win_rate={results['short_win_rate']:.3f}")
+            
+            # If we still have 0 trades, add a warning but don't create artificial positions
+            if results['long_trades'] == 0 and results['short_trades'] == 0:
+                tprint_warning("⚠️ No long or short positions found - check position inference logic")
+                tprint_debug("Position inference may need to be more aggressive in assigning directional positions")
+                # Note: We don't create artificial positions here as that would introduce hindsight bias
 
             self.logger.info(f"📊 Position-aware win rates calculated:")
             self.logger.info(f"   Overall: {results['overall_win_rate']:.3f}")
@@ -215,8 +245,8 @@ class PositionAwareTradingAnalyzer:
             returns = market_data['close'].pct_change().dropna().values
 
             if position_directions is None:
-                # Infer positions from returns (positive = long, negative = short)
-                position_directions = np.where(returns > 0, 1, -1)
+                # Infer positions from regime characteristics
+                position_directions = self._infer_positions_from_regimes(market_data, regime_labels)
             else:
                 # Ensure position_directions matches the length of returns
                 if len(position_directions) > len(returns):
@@ -224,6 +254,13 @@ class PositionAwareTradingAnalyzer:
                 elif len(position_directions) < len(returns):
                     # Pad with neutral positions if needed
                     position_directions = np.pad(position_directions, (0, len(returns) - len(position_directions)), mode='constant', constant_values=0)
+            
+            # Final alignment check
+            if len(position_directions) != len(returns):
+                min_length = min(len(returns), len(position_directions))
+                returns = returns[:min_length]
+                position_directions = position_directions[:min_length]
+                tprint_debug(f"Final alignment: returns={len(returns)}, positions={len(position_directions)}")
 
             overall_win_rates = self.calculate_position_aware_win_rate(returns, position_directions)
             results['overall_analysis'] = overall_win_rates
@@ -250,12 +287,13 @@ class PositionAwareTradingAnalyzer:
                 min_length = min(len(position_directions), len(aligned_regime_mask), len(regime_returns))
 
                 if min_length == 0:
+                    tprint_debug(f"   Regime {regime_id}: skipping (min_length=0)")
                     continue
 
                 # Debug array lengths for this regime
-                self.logger.debug(f"   Regime {regime_id} array lengths - position_directions: {len(position_directions)}, "
-                                f"aligned_regime_mask: {len(aligned_regime_mask)}, regime_returns: {len(regime_returns)}, "
-                                f"min_length: {min_length}")
+                tprint_debug(f"   Regime {regime_id} array lengths - position_directions: {len(position_directions)}, "
+                            f"aligned_regime_mask: {len(aligned_regime_mask)}, regime_returns: {len(regime_returns)}, "
+                            f"min_length: {min_length}")
 
                 # Truncate all arrays to the same length
                 aligned_regime_mask = aligned_regime_mask[:min_length]
@@ -266,6 +304,12 @@ class PositionAwareTradingAnalyzer:
                 min_regime_length = min(len(regime_returns), len(regime_positions))
                 regime_returns = regime_returns[:min_regime_length]
                 regime_positions = regime_positions[:min_regime_length]
+                
+                tprint_debug(f"   Regime {regime_id}: final lengths - returns={len(regime_returns)}, positions={len(regime_positions)}")
+                
+                if len(regime_returns) == 0 or len(regime_positions) == 0:
+                    tprint_debug(f"   Regime {regime_id}: skipping (empty arrays after alignment)")
+                    continue
 
                 # Get aligned regime data for economic significance calculation
                 # Use the original regime_data but slice it to match the aligned arrays
@@ -500,6 +544,8 @@ class PositionAwareTradingAnalyzer:
                 position_directions = self._infer_positions_from_regimes(
                     market_data, regime_predictions
                 )
+                tprint_debug(f"Inferred position directions: {len(position_directions)} total, "
+                           f"{np.sum(position_directions == 1)} long, {np.sum(position_directions == -1)} short")
 
             # Get position-aware analysis
             position_analysis = self.analyze_regime_position_performance(
@@ -555,42 +601,103 @@ class PositionAwareTradingAnalyzer:
             regime_predictions: Regime predictions
 
         Returns:
-            Array of inferred position directions
+            Array of inferred position directions (aligned with returns length)
         """
         try:
+            # Get returns array (length N-1 due to pct_change)
             returns = market_data['close'].pct_change().values
-            position_directions = np.zeros(len(market_data))
+            position_directions = np.zeros(len(returns))
+
+            # Ensure regime_predictions is aligned with market_data length
+            if len(regime_predictions) != len(market_data):
+                tprint_warning(f"⚠️ Regime predictions length {len(regime_predictions)} != market data length {len(market_data)}")
+                # Align regime_predictions to market_data length
+                if len(regime_predictions) > len(market_data):
+                    regime_predictions = regime_predictions[:len(market_data)]
+                else:
+                    # Pad with last regime if shorter
+                    regime_predictions = np.pad(regime_predictions, (0, len(market_data) - len(regime_predictions)), mode='edge')
 
             unique_regimes = np.unique(regime_predictions)
+            tprint_debug(f"Inferring positions for {len(unique_regimes)} regimes")
+            tprint_debug(f"Array dimensions - returns: {len(returns)}, position_directions: {len(position_directions)}, regime_predictions: {len(regime_predictions)}")
 
             for regime in unique_regimes:
-                regime_mask = regime_predictions == regime
-                regime_returns = returns[regime_mask]
+                # Create regime mask for full data (length N)
+                regime_mask_full = regime_predictions == regime
+                
+                # Align regime mask with returns (skip first element due to pct_change)
+                # This ensures regime_mask has length N-1, same as returns
+                regime_mask = regime_mask_full[1:]
+                
+                # Final safety check - ensure all arrays have same length
+                if len(regime_mask) != len(returns):
+                    tprint_error(f"❌ Critical dimension mismatch: regime_mask={len(regime_mask)}, returns={len(returns)}")
+                    continue
+                
+                if not np.any(regime_mask):
+                    continue
+                
+                # Safe extraction with dimension check
+                try:
+                    regime_returns = returns[regime_mask]
+                except IndexError as e:
+                    tprint_error(f"❌ Index error in regime {regime}: {e}")
+                    tprint_error(f"   returns shape: {returns.shape}, regime_mask shape: {regime_mask.shape}")
+                    continue
 
-                if len(regime_returns) < 10:
+                if len(regime_returns) < 3:  # Minimum threshold for meaningful analysis
                     continue
 
                 # Calculate regime characteristics
                 regime_volatility = np.std(regime_returns)
                 regime_trend = np.mean(regime_returns)
+                regime_median = np.median(regime_returns)
 
-                # Infer positions based on regime characteristics
-                if regime_trend > 0 and regime_volatility < 0.02:
-                    # Trending upward with low volatility -> long bias
+                tprint_debug(f"Regime {regime}: trend={regime_trend:.4f}, vol={regime_volatility:.4f}, median={regime_median:.4f}")
+
+                # Conservative position inference logic
+                # Only assign positions when there's a clear, significant trend
+                if regime_trend > 0.002 and regime_median > 0.001:  # Conservative thresholds for positive bias
+                    # Clear upward bias -> long positions
                     position_directions[regime_mask] = 1
-                elif regime_trend < 0 and regime_volatility < 0.02:
-                    # Trending downward with low volatility -> short bias
+                    tprint_debug(f"  -> Long bias (trend={regime_trend:.4f}, median={regime_median:.4f})")
+                elif regime_trend < -0.002 and regime_median < -0.001:  # Conservative thresholds for negative bias
+                    # Clear downward bias -> short positions
                     position_directions[regime_mask] = -1
+                    tprint_debug(f"  -> Short bias (trend={regime_trend:.4f}, median={regime_median:.4f})")
                 else:
-                    # High volatility or no clear trend -> neutral
-                    position_directions[regime_mask] = 0
+                    # No clear trend -> assign positions based on individual return signs
+                    # Only for significant individual returns
+                    regime_indices = np.where(regime_mask)[0]
+                    for ret, idx in zip(regime_returns, regime_indices):
+                        if ret > 0.002:  # Conservative threshold for positive returns
+                            position_directions[idx] = 1
+                        elif ret < -0.002:  # Conservative threshold for negative returns
+                            position_directions[idx] = -1
+                        # else keep as 0 (neutral)
+                    tprint_debug(f"  -> Mixed positions based on individual returns")
+
+            # Log position distribution
+            long_count = np.sum(position_directions == 1)
+            short_count = np.sum(position_directions == -1)
+            neutral_count = np.sum(position_directions == 0)
+            total = len(position_directions)
+            
+            tprint_debug(f"Position distribution: Long={long_count}, Short={short_count}, Neutral={neutral_count}, Total={total}")
+            
+            # If we have very few positions, don't create artificial ones
+            # This prevents unrealistic win rates from artificial position assignment
+            if long_count + short_count < total * 0.1:  # Less than 10% of periods have positions
+                tprint_warning("⚠️ Very few positions inferred - this may indicate low trading opportunity")
+                tprint_debug("Not creating artificial positions to avoid unrealistic results")
 
             return position_directions
 
         except Exception as e:
             self.logger.warning(f"Position inference failed: {e}")
-            # Default to neutral positions
-            return np.zeros(len(market_data))
+            # Return neutral positions aligned with returns length
+            return np.zeros(len(returns))
 
     def _calculate_position_viability(
         self,

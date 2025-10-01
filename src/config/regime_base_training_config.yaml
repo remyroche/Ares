@@ -41,9 +41,9 @@ extratrees:
 # Bayesian Rule Lists Configuration
 bayesian_rule_lists:
   # Interpretability and stability
-  max_rules: 12              # hard cap; posterior usually 3–7
-  max_rule_length: 3         # 2–3 is the sweet spot
-  min_support: 0.02          # ≥2% of samples per rule (raise if dataset is big)
+  listlengthprior: 3         # prior for list length
+  maxcardinality: 2          # maximum cardinality of rules
+  minsupport: 0.02           # ≥2% of samples per rule (raise if dataset is big)
   # Priors (generic; map to your library's names)
   alpha: 1.0                 # class prior (Beta/Dirichlet strength)
   beta: 1.0

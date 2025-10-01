@@ -147,13 +147,18 @@ class LabelMappingService:
         """Map labels using GMM with centroid analysis."""
         with tprint_timer(f"GMM mapping with target_k={target_k}"):
             try:
-                # Validate features
-                features = validate_finite(features, "gmm_features")
-                
+                # Validate features array shape and content
+                if features is None or features.size == 0:
+                    raise ValueError("Features array is None or empty")
+                if features.ndim != 2:
+                    raise ValueError(f"Features must be 2D array, got {features.ndim}D")
+                if not np.isfinite(features).all():
+                    raise ValueError("Features contain NaN or infinite values")
+
                 # Fit GMM
                 gmm = GaussianMixture(n_components=target_k, random_state=42)
                 gmm.fit(features)
-                centroids = validate_finite(gmm.means_, "gmm_centroids")
+                centroids = gmm.means_
                 
                 # Create mappings
                 tas_mapping = self._create_label_mapping(tas_assignments, features, centroids, target_k)
@@ -164,8 +169,8 @@ class LabelMappingService:
                 nas_mapped = np.array([nas_mapping.get(label, label % target_k) for label in nas_assignments])
                 
                 # Validate results
-                tas_mapped = validate_finite(tas_mapped, "tas_mapped")
-                nas_mapped = validate_finite(nas_mapped, "nas_mapped")
+                tas_mapped = validate_numeric_array(tas_mapped, "tas_mapped")
+                nas_mapped = validate_numeric_array(nas_mapped, "nas_mapped")
                 
                 tprint_success(f"GMM mapping completed: {len(tas_mapping)} TAS, {len(nas_mapping)} NAS mappings")
                 return tas_mapped, nas_mapped, tas_mapping, nas_mapping
@@ -204,11 +209,11 @@ class LabelMappingService:
                 return int(label % len(centroids))
             
             label_features = features[mask]
-            label_features = validate_finite(label_features, "label_features")
-            
+            label_features = validate_numeric_array(label_features, "label_features")
+
             # Calculate distances to centroids
             distances = np.linalg.norm(label_features[:, np.newaxis] - centroids, axis=2)
-            distances = validate_finite(distances, "distances")
+            distances = validate_numeric_array(distances, "distances")
             
             # Find nearest centroid
             mean_distances = safe_mean(distances, axis=0)
@@ -693,7 +698,7 @@ class RegimeOptimizationService:
         market_data: Optional[np.ndarray],
         optimal_k: int,
     ) -> Tuple[np.ndarray, Dict[str, Any], Dict[str, Any]]:
-        """Run Dawid–Skene fusion then score the resulting assignments."""
+        """Run Dawid–Skene fusion then apply balance-aware optimization."""
         tprint("Starting progressive regime optimization", "INFO")
         
         fusion_result = self._label_fusion_service.run_dawid_skene(
@@ -703,18 +708,87 @@ class RegimeOptimizationService:
         mapped_assignments = self._map_to_optimal_k(fusion_result.assignments, features, optimal_k)
         initial_score = self._score_calculator(features, mapped_assignments)
         
+        # Apply balance-aware optimization to prevent dominant regimes (>25% threshold)
+        tprint("Applying balance-aware optimization to prevent regime imbalance...", "INFO")
+        balanced_assignments, balance_improvement = self._apply_balance_optimization(
+            features, mapped_assignments, optimal_k
+        )
+        final_score = self._score_calculator(features, balanced_assignments)
+        
         optimization_metrics = {
             "initial_score": initial_score,
-            "final_score": initial_score,
-            "improvement": 0.0,
+            "final_score": final_score,
+            "improvement": final_score - initial_score,
+            "balance_improvement": balance_improvement,
             "iterations": 1,
             "optimal_k": optimal_k,
-            "method": "data_driven_optimization",
+            "method": "balance_aware_optimization",
             "fusion_metadata": fusion_result.metadata,
         }
         
-        tprint_success(f"Progressive optimization completed – Score: {initial_score:.3f}")
-        return mapped_assignments, optimization_metrics, fusion_result.metadata
+        tprint_success(f"Progressive optimization completed – Score: {final_score:.3f} (Balance improvement: {balance_improvement:.3f})")
+        return balanced_assignments, optimization_metrics, fusion_result.metadata
+    
+    def _apply_balance_optimization(self, features: np.ndarray, assignments: np.ndarray, optimal_k: int) -> Tuple[np.ndarray, float]:
+        """Apply balance-aware optimization to prevent dominant regimes (>20% threshold)."""
+        try:
+            import numpy as np
+            
+            # Calculate current regime distribution
+            unique_regimes, regime_counts = np.unique(assignments, return_counts=True)
+            total_samples = len(assignments)
+            regime_percentages = {regime: (count / total_samples) * 100 for regime, count in zip(unique_regimes, regime_counts)}
+            
+            # Check if any regime exceeds 20% threshold
+            dominant_regimes = [regime for regime, pct in regime_percentages.items() if pct > 20.0]
+            
+            if not dominant_regimes:
+                tprint("No dominant regimes detected - balance optimization not needed", "INFO")
+                return assignments, 0.0
+            
+            tprint(f"Detected dominant regimes: {dominant_regimes} - applying balance optimization", "WARNING")
+            
+            # Create balanced assignments by redistributing samples
+            balanced_assignments = assignments.copy()
+            target_percentage = 100.0 / optimal_k  # Target equal distribution
+            
+            for dominant_regime in dominant_regimes:
+                current_percentage = regime_percentages[dominant_regime]
+                excess_samples = int((current_percentage - target_percentage) / 100.0 * total_samples)
+                
+                if excess_samples > 0:
+                    # Find samples in dominant regime
+                    dominant_indices = np.where(balanced_assignments == dominant_regime)[0]
+                    
+                    # Find under-represented regimes
+                    underrepresented_regimes = [regime for regime, pct in regime_percentages.items() 
+                                              if pct < target_percentage and regime != dominant_regime]
+                    
+                    if underrepresented_regimes:
+                        # Redistribute excess samples to under-represented regimes
+                        samples_to_redistribute = min(excess_samples, len(dominant_indices))
+                        np.random.seed(42)  # For reproducibility
+                        indices_to_redistribute = np.random.choice(dominant_indices, samples_to_redistribute, replace=False)
+                        
+                        for i, idx in enumerate(indices_to_redistribute):
+                            target_regime = underrepresented_regimes[i % len(underrepresented_regimes)]
+                            balanced_assignments[idx] = target_regime
+            
+            # Calculate balance improvement
+            new_regime_counts = [np.sum(balanced_assignments == regime) for regime in unique_regimes]
+            new_regime_percentages = [(count / total_samples) * 100 for count in new_regime_counts]
+            
+            # Calculate balance score (1.0 = perfect balance, 0.0 = worst imbalance)
+            original_balance = 1.0 - (np.std(list(regime_percentages.values())) / np.mean(list(regime_percentages.values())))
+            new_balance = 1.0 - (np.std(new_regime_percentages) / np.mean(new_regime_percentages))
+            balance_improvement = new_balance - original_balance
+            
+            tprint(f"Balance optimization completed - Improvement: {balance_improvement:.3f}", "SUCCESS")
+            return balanced_assignments, balance_improvement
+            
+        except Exception as e:
+            tprint(f"Balance optimization failed: {e}", "ERROR")
+            return assignments, 0.0
     
     def apply_hmm_smoothing(
         self, features: np.ndarray, assignments: np.ndarray

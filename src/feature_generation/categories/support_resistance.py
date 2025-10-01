@@ -57,7 +57,7 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(sr, index=data.index, name='sr_placeholder')
 
 # Support Level Generator
-class SupportLevelGenerator(FeatureGenerator):
+class SupportLevelGenerator(VectorizedFeatureGenerator):
     """Generator for support level features."""
     
     def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -79,7 +79,7 @@ class SupportLevelGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.level = level
         self.window = window
         self.base_calculation = base_calculation
@@ -95,7 +95,7 @@ class SupportLevelGenerator(FeatureGenerator):
         return support_level
 
 # Resistance Level Generator
-class ResistanceLevelGenerator(FeatureGenerator):
+class ResistanceLevelGenerator(VectorizedFeatureGenerator):
     """Generator for resistance level features."""
     
     def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -117,7 +117,7 @@ class ResistanceLevelGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.level = level
         self.window = window
         self.base_calculation = base_calculation
@@ -133,7 +133,7 @@ class ResistanceLevelGenerator(FeatureGenerator):
         return resistance_level
 
 # Pivot Point Generator
-class PivotPointGenerator(FeatureGenerator):
+class PivotPointGenerator(VectorizedFeatureGenerator):
     """Generator for pivot point features."""
     
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -159,7 +159,7 @@ class PivotPointGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -176,7 +176,7 @@ class PivotPointGenerator(FeatureGenerator):
         return pivot_point
 
 # Fibonacci Level Generator
-class FibonacciLevelGenerator(FeatureGenerator):
+class FibonacciLevelGenerator(VectorizedFeatureGenerator):
     """Generator for Fibonacci level features."""
     
     def __init__(self, level: float = 0.618, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -200,7 +200,7 @@ class FibonacciLevelGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.level = level
         self.window = window
         self.base_calculation = base_calculation

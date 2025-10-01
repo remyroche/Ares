@@ -8,7 +8,7 @@ This package provides comprehensive regime data splitting functionality with enh
 regime_data_splitting/
 ├── __init__.py          # Package initialization and exports
 ├── component.py         # Main regime data splitting component
-├── enhanced.py          # Enhanced implementation with HMM ML model integration
+├── nas_tas_regime_data_splitting.py  # NAS/TAS regime data splitting with clustering integration
 ├── main.py             # Main step implementation with standardized data quality management
 ├── validator.py        # Comprehensive validation framework
 └── README.md           # This file
@@ -60,7 +60,7 @@ report = result.artifacts['regime_splitting_report']
 validation = result.artifacts['regime_validation_results']
 ```
 
-### **2. RegimeDataSplittingEnhanced (`enhanced.py`)**
+### **2. NasTasRegimeDataSplitting (`nas_tas_regime_data_splitting.py`)**
 Enhanced implementation with HMM ML model integration and advanced features.
 
 **Key Features:**
@@ -72,9 +72,9 @@ Enhanced implementation with HMM ML model integration and advanced features.
 
 **Usage:**
 ```python
-from src.training.steps.market_analysis.regime_data_splitting import RegimeDataSplittingEnhanced
+from src.training.steps.market_analysis.regime_data_splitting import NasTasRegimeDataSplitting
 
-splitter = RegimeDataSplittingEnhanced(config)
+splitter = NasTasRegimeDataSplitting(config)
 result = await splitter.execute(training_input, pipeline_state)
 
 # Access execution metrics
@@ -185,10 +185,10 @@ The package provides actionable recommendations based on execution results:
 ```python
 # Old imports
 from src.training.steps.market_analysis.components.regime_data_splitting import RegimeDataSplittingComponent
-from src.training.steps.market_analysis.step04_regime_data_splitting_enhanced import RegimeDataSplittingEnhanced
+from src.training.steps.market_analysis.regime_data_splitting.nas_tas_regime_data_splitting import NasTasRegimeDataSplitting
 
 # New imports
-from src.training.steps.market_analysis.regime_data_splitting import RegimeDataSplittingComponent, RegimeDataSplittingEnhanced
+from src.training.steps.market_analysis.regime_data_splitting import RegimeDataSplittingComponent, NasTasRegimeDataSplitting
 ```
 
 ### **Enhanced Features**

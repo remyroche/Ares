@@ -35,6 +35,7 @@ class M1CPUOptimizer:
         self.is_m1 = self._detect_m1()
         self.performance_cores = self._get_performance_cores()
         self.efficiency_cores = self._get_efficiency_cores()
+        self.conservative_mode = False
 
     def _detect_m1(self) -> bool:
         """Detect if running on Apple Silicon."""
@@ -64,6 +65,8 @@ class M1CPUOptimizer:
 
     def get_optimal_worker_count(self) -> int:
         """Get optimal worker count for parallel processing."""
+        if self.conservative_mode:
+            return self.cpu_count
         return self._get_optimal_cpu_count()
 
     def _get_performance_cores(self) -> int:
@@ -178,6 +181,22 @@ class M1CPUOptimizer:
 
         except Exception as e:
             self.logger.warning(f"Numpy optimization failed: {e}")
+
+    def set_conservative_mode(self):
+        """
+        Enable conservative mode to reduce CPU intensity.
+        This reduces the number of workers and thread usage to avoid high CPU usage.
+        """
+        self.conservative_mode = True
+        
+        # Reduce CPU count to be more conservative
+        self.cpu_count = max(1, self.performance_cores // 2)
+        
+        # Set more conservative thread limits
+        os.environ['OMP_NUM_THREADS'] = str(max(1, self.performance_cores // 2))
+        os.environ['MKL_NUM_THREADS'] = str(max(1, self.performance_cores // 2))
+        
+        self.logger.info(f"🔧 Conservative mode enabled: reduced workers to {self.cpu_count}")
 
     def create_m1_optimized_context(self):
         """Create context manager for M1 optimizations."""

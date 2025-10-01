@@ -76,22 +76,18 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.characteristics_generator = CharacteristicsGenerator(verbose=True)
             tprint("🔧 Shared utilities initialized (ConfigValidator, MetricsCalculator, CharacteristicsGenerator)")
             
-            # Initialize feature configuration with all specified categories
+            # Initialize feature configuration with regime-specific categories
             self.feature_config = FeatureConfig(
                 feature_categories=[
-                    'oscillator',      # RSI, MACD, Stochastic, etc.
-                    'momentum',        # Price momentum indicators
-                    'trend',           # Moving averages, trend lines
-                    'price',           # Price action features
-                    'volume',          # Volume-based indicators
-                    'volatility',      # Volatility measures
-                    'entropy',         # Market entropy and complexity
-                    'returns'          # Price returns and derivatives
+                    'regime_volatility',      # Regime volatility features
+                    'regime_volume',          # Regime volume features
+                    'regime_structural_trend', # Regime structural trend features
+                    'regime_statistical'      # Regime statistical features
                 ],
                 use_standardized_features=True,
                 drop_highly_correlated=True
             )
-            tprint("⚙️ Feature configuration created with 8 categories")
+            tprint("⚙️ Feature configuration created with 4 regime categories")
             
             self._resources_to_cleanup = []
             log_success("NAS-TAS Regime Discovery Component initialized")
@@ -364,7 +360,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             adaptive_config = create_adaptive_config(
                 data_size=data_size,
                 config_type="hybrid",
-                symbol=getattr(self.config, 'symbol', 'BTCUSDT'),
+                symbol=getattr(self.config, 'symbol', 'ETHUSDT'),
                 timeframe=getattr(self.config, 'timeframe', '15m')
             )
             
@@ -470,7 +466,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Process results (no hybrid combination - use best performing system)
             tprint("🔧 Processing results without hybrid combination")
-            processed_result = self._process_regime_results(regime_result, hybrid_config)
+            processed_result = self._process_regime_results(regime_result, hybrid_config, market_data)
             
             log_success("Results processed successfully")
             tprint("✅ Results processed successfully")
@@ -485,7 +481,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Discovery failed: {e}")
             raise e
     
-    def _process_regime_results(self, regime_result: Dict[str, Any], hybrid_config) -> Dict[str, Any]:
+    def _process_regime_results(self, regime_result: Dict[str, Any], hybrid_config, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Process regime results without hybrid combination, with quality assessment."""
         tprint("🔧 Processing regime results with quality assessment")
         try:
@@ -536,6 +532,20 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             tprint(f"✅ Combined assignments: TAS={len(tas_assignments)} ({len(set(tas_assignments))} regimes), NAS={len(nas_assignments)} ({len(set(nas_assignments))} regimes)")
             
+            # Perform semantic divergence assessment (for regime mapping)
+            log_info("Performing semantic divergence assessment")
+            tprint("🧠 Performing semantic divergence assessment for regime mapping")
+            try:
+                # Create semantic consensus validator for regime mapping
+                divergence_result = self._perform_semantic_divergence_assessment(
+                    tas_assignments, nas_assignments, market_data
+                )
+                processed_result['divergence_assessment'] = divergence_result
+                tprint(f"✅ Divergence assessment completed: semantic divergence = {divergence_result.get('semantic_divergence_rate', 0.0):.3f}")
+            except Exception as e:
+                tprint(f"⚠️ Divergence assessment failed: {e}", "WARNING")
+                processed_result['divergence_assessment'] = {}
+            
             # Calculate comprehensive quality assessment
             log_info("Calculating comprehensive quality assessment")
             tprint("📊 Calculating comprehensive quality assessment")
@@ -543,13 +553,25 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             processed_result['quality_assessment'] = quality_assessment
             tprint("✅ Quality assessment completed")
             
-            # Calculate consensus metrics for validation
+            # Calculate consensus metrics for validation (using semantic regime mapping if available)
             log_info("Calculating consensus metrics for validation")
             tprint("🤝 Calculating consensus metrics for validation")
+            
+            # Extract regime mapping from divergence assessment if available
+            regime_mapping = None
+            divergence_assessment = processed_result.get('divergence_assessment', {})
+            if isinstance(divergence_assessment, dict):
+                regime_mapping = divergence_assessment.get('regime_mapping')
+                if regime_mapping:
+                    tprint(f"🔗 Using semantic regime mapping with {len(regime_mapping)} mappings")
+                else:
+                    tprint("⚠️ No regime mapping found in divergence assessment, using raw ID comparison", "WARNING")
+            
             processed_result['consensus_metrics'] = calculate_consensus_metrics(
                 processed_result.get('tas_assignments', []),
                 processed_result.get('nas_assignments', []),
-                verbose=True
+                verbose=True,
+                regime_mapping=regime_mapping
             )
             processed_result['disagreement_metrics'] = calculate_disagreement_metrics(
                 processed_result.get('tas_assignments', []),
@@ -652,15 +674,27 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         consensus_score = processed_result.get('consensus_metrics', {}).get('consensus_score', 0.5)
         disagreement_score = processed_result.get('disagreement_metrics', {}).get('disagreement_score', 0.3)
         
-        # Calculate combined quality score
+        # Calculate combined quality score with improved weighting
         combined_regime_balance = (tas_regime_balance + nas_regime_balance) / 2
+        
+        # Enhanced scoring with regime diversity bonus and consensus penalty
+        total_regimes = tas_regime_count + nas_regime_count
+        regime_diversity_bonus = min(0.2, max(0, (min(total_regimes, 15) - 8) * 0.02))  # Bonus capped at 15 regimes
+        consensus_penalty = max(0, 0.3 - consensus_score)  # Penalty for low consensus
+        
+        # Improved weight distribution focusing on regime quality
         overall_score = (
-            economic_avg * 0.25 +
-            trading_avg * 0.25 +
-            stability_avg * 0.2 +
-            combined_regime_balance * 0.15 +
-            consensus_score * 0.15
+            economic_avg * 0.2 +           # Reduced from 0.25
+            trading_avg * 0.2 +            # Reduced from 0.25  
+            stability_avg * 0.15 +         # Reduced from 0.2
+            combined_regime_balance * 0.25 +  # Increased from 0.15
+            consensus_score * 0.2 +        # Increased from 0.15
+            regime_diversity_bonus -      # New: diversity bonus
+            consensus_penalty             # New: consensus penalty
         )
+        
+        # Ensure score is bounded [0, 1]
+        overall_score = max(0.0, min(1.0, overall_score))
         
         quality_assessment = {
             'overall_score': overall_score,
@@ -1151,3 +1185,266 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             log_warning(f"Failed to save thorough outcome: {e}")
             tprint(f"⚠️ Failed to save thorough outcome: {e}")
+    
+    def _perform_semantic_divergence_assessment(
+        self, 
+        tas_assignments: List[int], 
+        nas_assignments: List[int], 
+        market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """
+        Perform semantic divergence assessment with regime mapping for consensus validation.
+        
+        This method creates a semantic mapping between TAS and NAS regimes based on their
+        characteristics in feature space, enabling more accurate consensus measurement.
+        
+        Args:
+            tas_assignments: TAS regime assignments
+            nas_assignments: NAS regime assignments  
+            market_data: Market data for feature-based regime comparison
+            
+        Returns:
+            Dictionary containing semantic divergence assessment results
+        """
+        tprint("🧠 Starting semantic divergence assessment with regime mapping")
+        try:
+            log_info("Performing semantic divergence assessment with regime mapping")
+            
+            if len(tas_assignments) == 0 or len(nas_assignments) == 0:
+                tprint("⚠️ Missing assignments for semantic assessment", "WARNING")
+                return {
+                    'semantic_divergence_rate': 1.0,
+                    'regime_mapping': {},
+                    'assessment_method': 'failed_missing_data'
+                }
+            
+            # Ensure both assignments have the same length
+            min_length = min(len(tas_assignments), len(nas_assignments))
+            tas_assignments = np.array(tas_assignments[:min_length])
+            nas_assignments = np.array(nas_assignments[:min_length])
+            
+            tprint(f"📊 Analyzing {min_length} samples: TAS={len(set(tas_assignments))} regimes, NAS={len(set(nas_assignments))} regimes")
+            
+            # Step 1: Prepare features for regime centroid comparison
+            tprint("🔧 Preparing features for regime centroid comparison")
+            features = self._prepare_features_for_assessment(market_data, min_length)
+            
+            if features is None or features.shape[0] == 0:
+                tprint("⚠️ No features available, using numerical comparison only", "WARNING")
+                return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+            
+            # Step 2: Calculate regime centroids in feature space
+            tprint("📐 Calculating regime centroids in feature space")
+            tas_centroids = self._calculate_regime_centroids(features, tas_assignments)
+            nas_centroids = self._calculate_regime_centroids(features, nas_assignments)
+            
+            if not tas_centroids or not nas_centroids:
+                tprint("⚠️ Failed to calculate centroids, using numerical comparison", "WARNING")
+                return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+            
+            # Step 3: Find optimal regime mapping using distance-based matching
+            tprint("🎯 Finding optimal regime mapping using distance-based matching")
+            regime_mapping = self._find_optimal_regime_mapping(tas_centroids, nas_centroids)
+            
+            if not regime_mapping:
+                tprint("⚠️ No regime mapping found, using numerical comparison", "WARNING")
+                return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+            
+            # Step 4: Calculate semantic divergence using mapped regimes
+            tprint("🧮 Calculating semantic divergence using mapped regimes")
+            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
+            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_divergence_rate = np.mean(semantic_disagreement_mask)
+            
+            # Step 5: Calculate mapping quality metrics
+            tprint("📊 Calculating mapping quality metrics")
+            mapping_quality = self._calculate_mapping_quality_metrics(tas_centroids, nas_centroids, regime_mapping)
+            
+            # Step 6: Report results
+            tprint(f"✅ Semantic divergence assessment completed:")
+            tprint(f"   📊 Semantic divergence rate: {semantic_divergence_rate:.3f}")
+            tprint(f"   🎯 Regime mappings: {len(regime_mapping)}")
+            tprint(f"   📈 Mapping quality: {mapping_quality:.3f}")
+            
+            # Calculate semantic consensus improvement
+            raw_agreements = np.sum(tas_assignments == nas_assignments)
+            raw_consensus = raw_agreements / min_length if min_length > 0 else 0.0
+            semantic_agreements = np.sum(tas_assignments == semantic_assignments)
+            semantic_consensus = semantic_agreements / min_length if min_length > 0 else 0.0
+            consensus_improvement = semantic_consensus - raw_consensus
+            
+            tprint(f"   🤝 Raw consensus: {raw_consensus:.3f} ({raw_agreements}/{min_length})")
+            tprint(f"   🧠 Semantic consensus: {semantic_consensus:.3f} ({semantic_agreements}/{min_length})")
+            tprint(f"   📈 Consensus improvement: {consensus_improvement:.3f}")
+            
+            return {
+                'semantic_divergence_rate': semantic_divergence_rate,
+                'regime_mapping': regime_mapping,
+                'mapping_quality': mapping_quality,
+                'raw_consensus': raw_consensus,
+                'semantic_consensus': semantic_consensus,
+                'consensus_improvement': consensus_improvement,
+                'tas_centroids': tas_centroids,
+                'nas_centroids': nas_centroids,
+                'assessment_method': 'semantic_feature_based',
+                'feature_dimensions': features.shape[1] if len(features.shape) > 1 else 0
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Semantic divergence assessment failed: {e}")
+            log_error(f"Semantic divergence assessment failed: {e}")
+            return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+    
+    def _prepare_features_for_assessment(self, market_data: pd.DataFrame, min_length: int) -> Optional[np.ndarray]:
+        """Prepare features for regime centroid comparison."""
+        try:
+            if market_data is None or market_data.empty:
+                return None
+            
+            # Use the same feature preparation as the main component
+            features = prepare_market_features(market_data, self.feature_config, verbose=False)
+            
+            if features is None or len(features) == 0:
+                return None
+            
+            # Ensure we have enough features and samples
+            if len(features) < min_length:
+                return None
+            
+            # Take only the required number of samples
+            features_array = features[:min_length]
+            features_array = np.nan_to_num(features_array, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            return features_array
+            
+        except Exception as e:
+            log_warning(f"Feature preparation failed: {e}")
+            return None
+    
+    def _calculate_regime_centroids(self, features: np.ndarray, assignments: np.ndarray) -> Dict[int, np.ndarray]:
+        """Calculate centroids for each regime in feature space."""
+        try:
+            centroids = {}
+            unique_regimes = np.unique(assignments)
+            
+            for regime in unique_regimes:
+                mask = assignments == regime
+                regime_features = features[mask]
+                
+                if len(regime_features) > 0:
+                    centroid = np.mean(regime_features, axis=0)
+                    centroids[int(regime)] = centroid
+            
+            return centroids
+            
+        except Exception as e:
+            log_warning(f"Centroid calculation failed: {e}")
+            return {}
+    
+    def _find_optimal_regime_mapping(self, tas_centroids: Dict[int, np.ndarray], nas_centroids: Dict[int, np.ndarray]) -> Dict[int, int]:
+        """Find optimal mapping between NAS and TAS regimes using distance-based matching."""
+        try:
+            if not tas_centroids or not nas_centroids:
+                return {}
+            
+            # Create distance matrix between all TAS and NAS regime pairs
+            tas_regimes = list(tas_centroids.keys())
+            nas_regimes = list(nas_centroids.keys())
+            
+            # Calculate pairwise distances
+            distances = {}
+            for nas_regime in nas_regimes:
+                for tas_regime in tas_regimes:
+                    nas_centroid = nas_centroids[nas_regime]
+                    tas_centroid = tas_centroids[tas_regime]
+                    distance = np.linalg.norm(nas_centroid - tas_centroid)
+                    distances[(nas_regime, tas_regime)] = distance
+            
+            # Greedy matching: assign each NAS regime to the closest TAS regime
+            regime_mapping = {}
+            used_tas_regimes = set()
+            
+            # Sort by distance (closest first)
+            sorted_pairs = sorted(distances.items(), key=lambda x: x[1])
+            
+            for (nas_regime, tas_regime), distance in sorted_pairs:
+                if nas_regime not in regime_mapping and tas_regime not in used_tas_regimes:
+                    regime_mapping[nas_regime] = tas_regime
+                    used_tas_regimes.add(tas_regime)
+            
+            return regime_mapping
+            
+        except Exception as e:
+            log_warning(f"Regime mapping failed: {e}")
+            return {}
+    
+    def _apply_regime_mapping(self, nas_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
+        """Apply regime mapping to NAS assignments."""
+        try:
+            mapped_assignments = nas_assignments.copy()
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                mask = nas_assignments == nas_regime
+                mapped_assignments[mask] = tas_regime
+            
+            return mapped_assignments
+            
+        except Exception as e:
+            log_warning(f"Regime mapping application failed: {e}")
+            return nas_assignments
+    
+    def _calculate_mapping_quality_metrics(self, tas_centroids: Dict[int, np.ndarray], nas_centroids: Dict[int, np.ndarray], regime_mapping: Dict[int, int]) -> float:
+        """Calculate quality metrics for the regime mapping."""
+        try:
+            if not regime_mapping:
+                return 0.0
+            
+            total_distance = 0.0
+            mapping_count = 0
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                if nas_regime in nas_centroids and tas_regime in tas_centroids:
+                    distance = np.linalg.norm(nas_centroids[nas_regime] - tas_centroids[tas_regime])
+                    total_distance += distance
+                    mapping_count += 1
+            
+            if mapping_count == 0:
+                return 0.0
+            
+            # Normalize by average distance (lower is better)
+            avg_distance = total_distance / mapping_count
+            quality = max(0.0, 1.0 - avg_distance)  # Simple quality metric
+            
+            return quality
+            
+        except Exception as e:
+            log_warning(f"Mapping quality calculation failed: {e}")
+            return 0.0
+    
+    def _assess_numerical_divergence_fallback(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Fallback numerical divergence assessment when semantic analysis fails."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            numerical_divergence_rate = np.mean(disagreement_mask)
+            
+            return {
+                'semantic_divergence_rate': numerical_divergence_rate,
+                'regime_mapping': {},
+                'mapping_quality': 0.5,
+                'raw_consensus': 1.0 - numerical_divergence_rate,
+                'semantic_consensus': 1.0 - numerical_divergence_rate,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'numerical_fallback'
+            }
+            
+        except Exception as e:
+            log_warning(f"Numerical divergence fallback failed: {e}")
+            return {
+                'semantic_divergence_rate': 1.0,
+                'regime_mapping': {},
+                'mapping_quality': 0.0,
+                'raw_consensus': 0.0,
+                'semantic_consensus': 0.0,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'failed'
+            }

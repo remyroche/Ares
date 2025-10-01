@@ -18,11 +18,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import pipeline components
-from .data_ingestion import DataIngestor, DataIngestionConfig
-from .data_preprocessing import DataPreprocessor, DataPreprocessingConfig
-from .feature_engineering import FeatureEngineer, FeatureEngineeringConfig
-from .regime_detection import RegimeDetectorPipeline, RegimeDetectionPipelineConfig
-from .data_validation import DataValidator, DataValidationConfig
+from .data_ingestion import DataIngestionManager, DataIngestionConfig
+from .data_preprocessing import DataPreprocessor, PreprocessingConfig
+from .feature_engineering import FeatureEngineer, FeatureConfig
+from .regime_detection import RegimeDetector, RegimeConfig
+from .data_validation import DataValidator, ValidationConfig
 from .data_storage import DataStorageManager, StorageConfig, StorageResult
 
 logger = logging.getLogger(__name__)
@@ -74,10 +74,10 @@ class PipelineConfig:
     
     # Component configurations
     ingestion_config: DataIngestionConfig = field(default_factory=DataIngestionConfig)
-    preprocessing_config: DataPreprocessingConfig = field(default_factory=DataPreprocessingConfig)
-    feature_engineering_config: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
-    regime_detection_config: RegimeDetectionPipelineConfig = field(default_factory=RegimeDetectionPipelineConfig)
-    validation_config: DataValidationConfig = field(default_factory=DataValidationConfig)
+    preprocessing_config: PreprocessingConfig = field(default_factory=PreprocessingConfig)
+    feature_engineering_config: FeatureConfig = field(default_factory=FeatureConfig)
+    regime_detection_config: RegimeConfig = field(default_factory=RegimeConfig)
+    validation_config: ValidationConfig = field(default_factory=ValidationConfig)
     storage_config: StorageConfig = field(default_factory=StorageConfig)
     
     # Output configuration
@@ -190,7 +190,7 @@ class DataPipelineOrchestrator:
         try:
             # Initialize data ingestion
             if self.config.enable_ingestion:
-                self.data_ingestor = DataIngestor(self.config.ingestion_config)
+                self.data_ingestor = DataIngestionManager(self.config.ingestion_config)
                 self.logger.info("✅ Data ingestion component initialized")
             
             # Initialize data preprocessing
@@ -205,7 +205,7 @@ class DataPipelineOrchestrator:
             
             # Initialize regime detection
             if self.config.enable_regime_detection:
-                self.regime_detector = RegimeDetectorPipeline(self.config.regime_detection_config)
+                self.regime_detector = RegimeDetector(self.config.regime_detection_config)
                 self.logger.info("✅ Regime detection component initialized")
             
             # Initialize data validation

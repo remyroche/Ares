@@ -804,13 +804,27 @@ class DataQualityFramework:
             result.add_metric('analysis_columns', analysis_columns)
 
             if high_corr_pairs:
-                # Create detailed warning message with specific pairs
-                warning_msg = f'Found {len(high_corr_pairs)} highly correlated column pairs (after excluding known correlated features):'
-                for pair in high_corr_pairs[:3]:  # Show first 3 pairs to avoid spam
-                    warning_msg += f" {pair['col1']}↔{pair['col2']}({pair['correlation']:.3f})"
-                if len(high_corr_pairs) > 3:
-                    warning_msg += f" ... and {len(high_corr_pairs) - 3} more"
-                result.add_warning('high_correlations', warning_msg)
+                # Filter out known timestamp correlations that are expected in crypto data
+                filtered_pairs = []
+                for pair in high_corr_pairs:
+                    col1, col2 = pair['col1'], pair['col2']
+                    # Skip timestamp correlations (open_time, close_time) as they're expected
+                    if ('time' in col1.lower() and 'time' in col2.lower()) or \
+                       (col1 == 'open_time' and col2 == 'close_time') or \
+                       (col1 == 'close_time' and col2 == 'open_time'):
+                        continue
+                    filtered_pairs.append(pair)
+                
+                if filtered_pairs:
+                    # Create detailed warning message with specific pairs
+                    warning_msg = f'Found {len(filtered_pairs)} highly correlated column pairs (after excluding known correlated features):'
+                    for pair in filtered_pairs[:3]:  # Show first 3 pairs to avoid spam
+                        warning_msg += f" {pair['col1']}↔{pair['col2']}({pair['correlation']:.3f})"
+                    if len(filtered_pairs) > 3:
+                        warning_msg += f" ... and {len(filtered_pairs) - 3} more"
+                    result.add_warning('high_correlations', warning_msg)
+                else:
+                    result.add_info('correlation_analysis', f'All high correlations are expected timestamp correlations in crypto data')
                 result.add_info('correlation_filtering', f'Excluded {len(excluded_features)} known correlated features from analysis')
             else:
                 result.add_info('correlation_analysis', f'No problematic correlations found in {len(analysis_columns)} analyzed features')

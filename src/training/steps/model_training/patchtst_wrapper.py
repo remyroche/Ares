@@ -245,6 +245,17 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         logger.info(f"✅ PatchTST Wrapper fitted with {X.shape[1]} features, {patches.shape[0]} patches")
         return self
 
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        """Transform features using PatchTST-style enhancement."""
+        # Convert to numpy if pandas DataFrame
+        if hasattr(X, 'values'):
+            X = X.values
+
+        # Enhance features with patch-based transformations
+        X_enhanced = self._enhance_features_with_patches(X)
+
+        return X_enhanced
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions using PatchTST wrapper."""
         # Convert to numpy if pandas DataFrame

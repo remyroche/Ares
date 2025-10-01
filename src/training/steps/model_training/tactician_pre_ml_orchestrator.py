@@ -1391,8 +1391,11 @@ class TacticianPreMLOrchestrator:
                 tprint_warning(f"⚠️ No PID features available for {signal_type} selection")
                 return []
 
-            # Mock feature selection based on importance scores
+            # Apply proper feature selection with 200 feature limit
             importance_scores = pid_features.feature_importance_scores
+            target_features = 200  # Maximum 200 features
+            
+            tprint_info(f"🔍 FEATURE SELECTION: Starting with {len(available_features)} features, target: {target_features}", color="cyan", bold=True)
 
             # Sort features by importance and select top features
             if importance_scores:
@@ -1401,16 +1404,18 @@ class TacticianPreMLOrchestrator:
                     key=lambda x: x[1],
                     reverse=True
                 )
-
-                # Select top features up to configured limits
-                max_features = min(self.config.stage_3_target, len(sorted_features))
-                selected_features = [name for name, _ in sorted_features[:max_features]]
+                
+                # Select top 200 features maximum
+                selected_features = [f[0] for f in sorted_features[:target_features]]
+                tprint_info(f"🎯 SELECTED: {len(selected_features)} features from {len(available_features)} available", color="green")
             else:
-                # Fallback: select first N features
-                max_features = min(self.config.stage_3_target, len(available_features))
-                selected_features = available_features[:max_features]
+                # Fallback: select first 200 features if no importance scores
+                selected_features = available_features[:target_features]
+                tprint_warning(f"⚠️ No importance scores available, selecting first {target_features} features")
+
 
             tprint_success(f"✅ Feature selection for {signal_type} completed: {len(selected_features)}/{len(available_features)} features selected")
+            tprint_info(f"🎯 FINAL RESULT: {signal_type} feature selection - {len(available_features)} → {len(selected_features)} features (target: {target_features})", color="green", bold=True)
             return selected_features
 
         except Exception as e:

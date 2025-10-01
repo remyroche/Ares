@@ -21,6 +21,30 @@ This module provides feature generators organized by category, including:
 # Returns: handled by base calculations and other generators
 # Momentum: handled by acceleration.py and interaction.py
 # Volume: now handled by volume.py with comprehensive basic volume features
+from .returns import (
+    ReturnsFeatureGenerator,
+    LogReturnsGenerator,
+    SimpleReturnsGenerator,
+    CumulativeReturnsGenerator,
+    RollingReturnsGenerator,
+    ReturnsVolatilityGenerator,
+    ReturnsSkewnessGenerator,
+    ReturnsKurtosisGenerator,
+    SharpeRatioGenerator,
+    create_returns_generators,
+    create_default_returns_generators
+)
+from .momentum import (
+    MomentumFeatureGenerator,
+    RSIGenerator,
+    MACDGenerator,
+    StochasticGenerator,
+    WilliamsRGenerator,
+    MomentumOscillatorGenerator,
+    RateOfChangeGenerator,
+    create_momentum_generators,
+    create_default_momentum_generators
+)
 from .volume import VolumeFeatureGenerator, create_default_volume_generators
 from .volatility import VolatilityFeatureGenerator
 from .trend import TrendFeatureGenerator
@@ -101,6 +125,22 @@ from .time import create_default_time_generators
 
 __all__ = [
     # Core categories
+    "ReturnsFeatureGenerator",
+    "LogReturnsGenerator",
+    "SimpleReturnsGenerator",
+    "CumulativeReturnsGenerator",
+    "RollingReturnsGenerator",
+    "ReturnsVolatilityGenerator",
+    "ReturnsSkewnessGenerator",
+    "ReturnsKurtosisGenerator",
+    "SharpeRatioGenerator",
+    "MomentumFeatureGenerator",
+    "RSIGenerator",
+    "MACDGenerator",
+    "StochasticGenerator",
+    "WilliamsRGenerator",
+    "MomentumOscillatorGenerator",
+    "RateOfChangeGenerator",
     "VolumeFeatureGenerator",
     "VolatilityFeatureGenerator",
     "TrendFeatureGenerator",
@@ -168,6 +208,10 @@ __all__ = [
     "create_default_interaction_generators",
     
     # Other categories
+    "create_returns_generators",
+    "create_default_returns_generators",
+    "create_momentum_generators",
+    "create_default_momentum_generators",
     "create_default_volume_generators",
     "create_default_microstructure_generators",
     "create_default_entropy_generators",

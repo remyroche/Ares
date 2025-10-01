@@ -566,8 +566,10 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             'n_estimators': trial.suggest_int('n_estimators', 50, 500),
             'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.1, log=True),
             'num_leaves': trial.suggest_int('num_leaves', 20, 127),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.95),
-            'subsample': trial.suggest_float('subsample', 0.6, 0.95)
+            'feature_fraction': trial.suggest_float('feature_fraction', 0.6, 0.95),  # Aligned with smart init
+            'bagging_fraction': trial.suggest_float('bagging_fraction', 0.6, 0.95),  # Aligned with smart init
+            'bagging_freq': trial.suggest_int('bagging_freq', 1, 10),  # Added for smart init compatibility
+            'min_child_samples': trial.suggest_int('min_child_samples', 10, 50)  # Added for smart init compatibility
         }
         if self.regularization_config and 'lightgbm' in self.regularization_config:
             reg_config = self.regularization_config['lightgbm']
@@ -576,6 +578,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         else:
             base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 1.0, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 1.0, log = True)})
             self.logger.info('Using optuna-optimized regularization parameters')
+        
         return base_space
 
     @handles_errors(fallback = LogisticRegression())

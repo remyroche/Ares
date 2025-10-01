@@ -44,9 +44,9 @@ base_model_optimization:
     enabled: true
     search_space:
       # Keep complexity under control
-      max_rules:        [6, 8, 10, 12]
-      max_rule_length:  [2, 3]
-      min_support:      [0.02, 0.03, 0.05]
+      listlengthprior:  [2, 3, 4, 5]
+      maxcardinality:   [2, 3]
+      minsupport:       [0.02, 0.03, 0.05]
       # Priors / regularization
       alpha:            [0.5, 1.0, 2.0]
       beta:             [0.5, 1.0, 2.0]

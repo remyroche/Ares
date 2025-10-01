@@ -106,10 +106,14 @@ class UnifiedCrossValidator:
                 else:
                     cv = TimeSeriesSplit(n_splits=cv_folds, gap=temporal_gap)
             else:
+                # ⚠️ WARNING: For trading/time series data, ALWAYS use strategy="temporal"!
+                # Using shuffle for time series data causes SEVERE data leakage
+                LOGGER.warning("⚠️ Using non-temporal CV strategy! For time series data, use strategy='temporal' to prevent data leakage")
+                LOGGER.warning("⚠️ Disabling shuffle to reduce (but not eliminate) data leakage risk")
                 if is_classification:
-                    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+                    cv = StratifiedKFold(n_splits=cv_folds, shuffle=False)
                 else:
-                    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+                    cv = KFold(n_splits=cv_folds, shuffle=False)
 
             # Multi-metric vs single-metric
             if isinstance(scoring, list):
@@ -167,12 +171,15 @@ class UnifiedCrossValidator:
                 scoring = "accuracy" if is_classification else "r2"
 
             # Outer CV
+            # ⚠️ WARNING: For trading/time series data, use TimeSeriesSplit instead!
+            LOGGER.warning("⚠️ Using nested CV without temporal awareness! This may cause data leakage for time series data")
+            LOGGER.warning("⚠️ Disabling shuffle to reduce (but not eliminate) data leakage risk")
             if is_classification:
-                outer_cv = StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
-                inner_cv = StratifiedKFold(n_splits=inner_folds, shuffle=True, random_state=random_state)
+                outer_cv = StratifiedKFold(n_splits=outer_folds, shuffle=False)
+                inner_cv = StratifiedKFold(n_splits=inner_folds, shuffle=False)
             else:
-                outer_cv = KFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
-                inner_cv = KFold(n_splits=inner_folds, shuffle=True, random_state=random_state)
+                outer_cv = KFold(n_splits=outer_folds, shuffle=False)
+                inner_cv = KFold(n_splits=inner_folds, shuffle=False)
 
             outer_scores: List[float] = []
             for train_idx, val_idx in outer_cv.split(X, y):

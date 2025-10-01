@@ -48,14 +48,16 @@ class MetricsCalculator:
     def calculate_consensus_metrics(
         self,
         tas_assignments: List[int],
-        nas_assignments: List[int]
+        nas_assignments: List[int],
+        regime_mapping: Optional[Dict[int, int]] = None
     ) -> Dict[str, Any]:
         """
-        Calculate consensus metrics between NAS and TAS.
+        Calculate consensus metrics between NAS and TAS using semantic regime mapping.
         
         Args:
             tas_assignments: TAS regime assignments
             nas_assignments: NAS regime assignments
+            regime_mapping: Optional mapping from NAS regime IDs to TAS regime IDs for semantic comparison
             
         Returns:
             Dictionary containing consensus metrics
@@ -70,18 +72,52 @@ class MetricsCalculator:
                 return {'consensus_score': 0.0, 'agreement_rate': 0.0}
             
             min_length = min(len(tas_assignments), len(nas_assignments))
-            agreements = sum(1 for i in range(min_length) if tas_assignments[i] == nas_assignments[i])
-            consensus_score = agreements / min_length if min_length > 0 else 0.0
+            tas_assignments = np.array(tas_assignments[:min_length])
+            nas_assignments = np.array(nas_assignments[:min_length])
             
-            if self.verbose:
-                tprint(f"📊 [METRICS] Consensus: {agreements}/{min_length} agreements ({consensus_score*100:.1f}%)", color="green")
+            # Apply semantic regime mapping if available
+            if regime_mapping:
+                if self.verbose:
+                    tprint(f"🔗 [METRICS] Applying semantic regime mapping with {len(regime_mapping)} mappings", color="cyan")
+                
+                # Map NAS assignments to TAS regime space
+                mapped_nas_assignments = nas_assignments.copy()
+                for nas_regime, tas_regime in regime_mapping.items():
+                    mask = nas_assignments == nas_regime
+                    mapped_nas_assignments[mask] = tas_regime
+                    if self.verbose and np.sum(mask) > 0:
+                        tprint(f"  🔗 Mapped {np.sum(mask)} samples from NAS regime {nas_regime} -> TAS regime {tas_regime}", color="blue")
+                
+                # Calculate semantic consensus using mapped assignments
+                agreements = np.sum(tas_assignments == mapped_nas_assignments)
+                consensus_score = agreements / min_length if min_length > 0 else 0.0
+                
+                if self.verbose:
+                    tprint(f"📊 [METRICS] Semantic Consensus: {agreements}/{min_length} agreements ({consensus_score*100:.1f}%)", color="green")
+                    
+                    # Also show raw ID comparison for reference
+                    raw_agreements = np.sum(tas_assignments == nas_assignments)
+                    raw_consensus = raw_agreements / min_length if min_length > 0 else 0.0
+                    tprint(f"📊 [METRICS] Raw ID Consensus (for reference): {raw_agreements}/{min_length} ({raw_consensus*100:.1f}%)", color="yellow")
+            else:
+                # Fallback to direct ID comparison (legacy behavior)
+                if self.verbose:
+                    tprint_warning("⚠️ [METRICS] No regime mapping provided, using raw ID comparison (may be inaccurate)")
+                
+                agreements = np.sum(tas_assignments == nas_assignments)
+                consensus_score = agreements / min_length if min_length > 0 else 0.0
+                
+                if self.verbose:
+                    tprint(f"📊 [METRICS] Raw Consensus: {agreements}/{min_length} agreements ({consensus_score*100:.1f}%)", color="yellow")
             
             return {
                 'consensus_score': consensus_score,
                 'agreement_rate': consensus_score,
                 'total_comparisons': min_length,
-                'agreements': agreements,
-                'threshold_met': consensus_score >= self.config.consensus_threshold
+                'agreements': int(agreements),
+                'threshold_met': consensus_score >= self.config.consensus_threshold,
+                'used_semantic_mapping': regime_mapping is not None,
+                'num_mappings': len(regime_mapping) if regime_mapping else 0
             }
             
         except Exception as e:
@@ -372,11 +408,12 @@ class MetricsCalculator:
 def calculate_consensus_metrics(
     tas_assignments: List[int],
     nas_assignments: List[int],
-    verbose: bool = False
+    verbose: bool = False,
+    regime_mapping: Optional[Dict[int, int]] = None
 ) -> Dict[str, Any]:
-    """Calculate consensus metrics between NAS and TAS."""
+    """Calculate consensus metrics between NAS and TAS using semantic regime mapping."""
     calculator = MetricsCalculator(verbose=verbose)
-    return calculator.calculate_consensus_metrics(tas_assignments, nas_assignments)
+    return calculator.calculate_consensus_metrics(tas_assignments, nas_assignments, regime_mapping=regime_mapping)
 
 
 def calculate_disagreement_metrics(

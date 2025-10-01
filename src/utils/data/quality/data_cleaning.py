@@ -738,11 +738,13 @@ class DataCleaner:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 max_z_score = z_scores.max()
                 
-                if max_z_score > threshold * 3:
+                # Adjust severity thresholds for cryptocurrency data
+                # Crypto markets have higher volatility and more extreme movements
+                if max_z_score > threshold * 5:  # Increased from 3 to 5 for crypto
                     severity = OutlierSeverity.CRITICAL
-                elif max_z_score > threshold * 2:
+                elif max_z_score > threshold * 3:  # Increased from 2 to 3 for crypto
                     severity = OutlierSeverity.HIGH
-                elif max_z_score > threshold * 1.5:
+                elif max_z_score > threshold * 2:  # Increased from 1.5 to 2 for crypto
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
@@ -953,13 +955,40 @@ class DataCleaner:
         return outliers
 
     def _log_outlier_details(self, outliers: List[OutlierInfo]) -> None:
-        """Log detailed outlier information."""
+        """Log detailed outlier information with crypto-specific context."""
         if not outliers:
             return
         self.logger.info(f'🔍 Detected {len(outliers)} outlier groups')
-        for outlier in outliers:
+        
+        # Group outliers by severity for better analysis
+        critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
+        high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
+        medium_outliers = [o for o in outliers if o.severity == OutlierSeverity.MEDIUM]
+        low_outliers = [o for o in outliers if o.severity == OutlierSeverity.LOW]
+        
+        # Log summary with crypto context
+        if critical_outliers:
+            self.logger.warning(f'🚨 CRITICAL outliers detected: {len(critical_outliers)} groups - These may indicate major market events (flash crashes, pumps, whale movements)')
+        if high_outliers:
+            self.logger.warning(f'⚠️ HIGH severity outliers: {len(high_outliers)} groups - Common in volatile crypto markets')
+        if medium_outliers:
+            self.logger.info(f'📊 MEDIUM severity outliers: {len(medium_outliers)} groups - Normal crypto market volatility')
+        if low_outliers:
+            self.logger.info(f'📈 LOW severity outliers: {len(low_outliers)} groups - Minor market fluctuations')
+        
+        # Log detailed information for critical and high outliers
+        for outlier in critical_outliers + high_outliers:
             self.logger.warning(f'Outlier in {outlier.column}: {len(outlier.indices)} values, severity={outlier.severity.value}, method={outlier.method}')
-            if outlier.severity in [OutlierSeverity.HIGH, OutlierSeverity.CRITICAL]:
+            
+            # Add crypto-specific context
+            if outlier.column in ['volume', 'quote_volume']:
+                self.logger.info(f'  💰 Volume outliers may indicate whale movements or major news events')
+            elif outlier.column in ['price_range', 'body_size']:
+                self.logger.info(f'  📈 Price range outliers may indicate flash crashes or pumps')
+            elif outlier.column in ['trades']:
+                self.logger.info(f'  🔄 Trade count outliers may indicate high-frequency trading periods')
+            
+            if outlier.severity == OutlierSeverity.CRITICAL:
                 self.logger.error(f'Critical outlier details: {outlier}')
                 self.logger.error(f'  Values: {outlier.values[:5]}...')
                 self.logger.error(f'  Context: {outlier.context}')

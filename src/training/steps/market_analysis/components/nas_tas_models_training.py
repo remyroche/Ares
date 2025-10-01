@@ -462,8 +462,8 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # Fallback to clustering result if available
                 nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
                 tprint(f"🔍 [NAS_TAS_MODELS] NAS-TAS clustering result keys: {list(nas_tas_clustering_result.keys())}", color="blue")
-                regime_labels = nas_tas_clustering_result.get('regime_assignments')
-                
+                regime_labels = nas_tas_clustering_result.get('cluster_assignments')
+
                 if regime_labels is None:
                     error_msg = "No regime labels found in pipeline state artifacts"
                     tprint(f"❌ [NAS_TAS_MODELS] {error_msg}", color="red")
@@ -869,10 +869,14 @@ class NASTASModelsTrainingComponent(BaseMarketAnalysisComponent):
             brl_start = time.time()
             
             brl_params = {
-                'max_rules': 12,
-                'max_rule_length': 3,
+                'listlengthprior': 3,
+                'listwidthprior': 1,
+                'maxcardinality': 2,
+                'minsupport': 0.1,
                 'n_chains': 3,
-                'n_iter': 10000
+                'max_iter': 10000,
+                'verbose': False,
+                'random_state': 42
             }
             tprint(f"📋 [NAS_TAS_MODELS] Bayesian Rule Lists parameters: {brl_params}", color="blue")
             tprint(f"📋 [NAS_TAS_MODELS] Bayesian Rule Lists training data: {X_train_scaled.shape[0]} samples, {X_train_scaled.shape[1]} features", color="blue")

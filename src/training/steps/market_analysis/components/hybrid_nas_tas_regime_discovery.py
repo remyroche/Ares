@@ -733,24 +733,40 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tprint("⚠️ [HYBRID_NAS_TAS] No assignments to compare for consensus calculation", color="yellow")
                 return {'consensus_score': 0.0, 'agreement_rate': 0.0, 'total_comparisons': 0, 'agreements': 0}
 
-            # Create regime alignment mapping
-            regime_mapping = self._calculate_regime_alignment(tas_assignments, nas_assignments, min_length)
-
-            # Calculate agreements using the mapping
-            agreements = sum(1 for i in range(min_length)
-                          if self._map_regime_label(tas_assignments[i], regime_mapping['tas_to_nas']) == nas_assignments[i])
-
-            consensus_score = agreements / min_length if min_length > 0 else 0.0
-
-            tprint(f"📊 [HYBRID_NAS_TAS] Consensus: {agreements}/{min_length} agreements ({consensus_score*100:.1f}%)", color="green")
-            tprint(f"📊 [HYBRID_NAS_TAS] Regime mapping: {regime_mapping['tas_to_nas']}", color="blue")
+            # Use semantic consensus approach for regime mapping
+            tprint("🧠 [HYBRID_NAS_TAS] Using semantic consensus approach for regime mapping", color="cyan")
+            
+            # Import semantic consensus utilities
+            from ..shared_utils.metrics import calculate_consensus_metrics
+            
+            # Perform semantic divergence assessment to get regime mapping
+            semantic_mapping = self._perform_semantic_divergence_assessment(
+                tas_assignments, nas_assignments, min_length
+            )
+            
+            # Calculate semantic consensus using the mapping
+            consensus_metrics = calculate_consensus_metrics(
+                tas_assignments, nas_assignments, 
+                regime_mapping=semantic_mapping.get('regime_mapping', {}),
+                verbose=True
+            )
+            
+            consensus_score = consensus_metrics['consensus_score']
+            agreements = consensus_metrics['agreements']
+            
+            tprint(f"📊 [HYBRID_NAS_TAS] Semantic Consensus: {agreements}/{min_length} agreements ({consensus_score*100:.1f}%)", color="green")
+            if semantic_mapping.get('regime_mapping'):
+                tprint(f"🔗 [HYBRID_NAS_TAS] Semantic regime mapping: {semantic_mapping['regime_mapping']}", color="blue")
+                tprint(f"📈 [HYBRID_NAS_TAS] Mapping quality: {semantic_mapping.get('mapping_quality', 0.0):.3f}", color="blue")
 
             return {
                 'consensus_score': consensus_score,
                 'agreement_rate': consensus_score,
                 'total_comparisons': min_length,
                 'agreements': agreements,
-                'regime_mapping': regime_mapping
+                'regime_mapping': semantic_mapping.get('regime_mapping', {}),
+                'semantic_assessment': semantic_mapping,
+                'used_semantic_approach': True
             }
 
         except Exception as e:
@@ -1169,3 +1185,212 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ [HYBRID_NAS_TAS] Distribution calculation failed: {e}", color="yellow")
             return {}
+    
+    def _perform_semantic_divergence_assessment(
+        self, 
+        tas_assignments: List[int], 
+        nas_assignments: List[int], 
+        min_length: int
+    ) -> Dict[str, Any]:
+        """
+        Perform semantic divergence assessment with regime mapping for consensus validation.
+        
+        This method creates a semantic mapping between TAS and NAS regimes based on their
+        characteristics in feature space, enabling more accurate consensus measurement.
+        
+        Args:
+            tas_assignments: TAS regime assignments
+            nas_assignments: NAS regime assignments  
+            min_length: Minimum length for comparison
+            
+        Returns:
+            Dictionary containing semantic divergence assessment results
+        """
+        tprint("🧠 [HYBRID_NAS_TAS] Starting semantic divergence assessment with regime mapping")
+        try:
+            if len(tas_assignments) == 0 or len(nas_assignments) == 0:
+                tprint("⚠️ [HYBRID_NAS_TAS] Missing assignments for semantic assessment", color="yellow")
+                return {
+                    'semantic_divergence_rate': 1.0,
+                    'regime_mapping': {},
+                    'assessment_method': 'failed_missing_data'
+                }
+            
+            # Ensure both assignments have the same length
+            tas_assignments = np.array(tas_assignments[:min_length])
+            nas_assignments = np.array(nas_assignments[:min_length])
+            
+            tprint(f"📊 [HYBRID_NAS_TAS] Analyzing {min_length} samples: TAS={len(set(tas_assignments))} regimes, NAS={len(set(nas_assignments))} regimes")
+            
+            # For hybrid regime discovery, we'll use a simplified semantic approach
+            # since we don't have direct access to market data features
+            # We'll use regime distribution similarity for mapping
+            
+            # Step 1: Calculate regime distributions
+            tas_distribution = self._calculate_regime_distribution(tas_assignments)
+            nas_distribution = self._calculate_regime_distribution(nas_assignments)
+            
+            # Step 2: Find optimal regime mapping using distribution similarity
+            regime_mapping = self._find_optimal_regime_mapping_by_distribution(tas_distribution, nas_distribution)
+            
+            if not regime_mapping:
+                tprint("⚠️ [HYBRID_NAS_TAS] No regime mapping found, using numerical comparison", color="yellow")
+                return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+            
+            # Step 3: Calculate semantic divergence using mapped regimes
+            tprint("🧮 [HYBRID_NAS_TAS] Calculating semantic divergence using mapped regimes")
+            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
+            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_divergence_rate = np.mean(semantic_disagreement_mask)
+            
+            # Step 4: Calculate mapping quality metrics
+            tprint("📊 [HYBRID_NAS_TAS] Calculating mapping quality metrics")
+            mapping_quality = self._calculate_mapping_quality_by_distribution(tas_distribution, nas_distribution, regime_mapping)
+            
+            # Step 5: Report results
+            tprint(f"✅ [HYBRID_NAS_TAS] Semantic divergence assessment completed:")
+            tprint(f"   📊 Semantic divergence rate: {semantic_divergence_rate:.3f}")
+            tprint(f"   🎯 Regime mappings: {len(regime_mapping)}")
+            tprint(f"   📈 Mapping quality: {mapping_quality:.3f}")
+            
+            # Calculate semantic consensus improvement
+            raw_agreements = np.sum(tas_assignments == nas_assignments)
+            raw_consensus = raw_agreements / min_length if min_length > 0 else 0.0
+            semantic_agreements = np.sum(tas_assignments == semantic_assignments)
+            semantic_consensus = semantic_agreements / min_length if min_length > 0 else 0.0
+            consensus_improvement = semantic_consensus - raw_consensus
+            
+            tprint(f"   🤝 Raw consensus: {raw_consensus:.3f} ({raw_agreements}/{min_length})")
+            tprint(f"   🧠 Semantic consensus: {semantic_consensus:.3f} ({semantic_agreements}/{min_length})")
+            tprint(f"   📈 Consensus improvement: {consensus_improvement:.3f}")
+            
+            return {
+                'semantic_divergence_rate': semantic_divergence_rate,
+                'regime_mapping': regime_mapping,
+                'mapping_quality': mapping_quality,
+                'raw_consensus': raw_consensus,
+                'semantic_consensus': semantic_consensus,
+                'consensus_improvement': consensus_improvement,
+                'assessment_method': 'distribution_based',
+                'tas_distribution': tas_distribution,
+                'nas_distribution': nas_distribution
+            }
+            
+        except Exception as e:
+            tprint(f"❌ [HYBRID_NAS_TAS] Semantic divergence assessment failed: {e}", color="red")
+            return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+    
+    def _find_optimal_regime_mapping_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float]) -> Dict[int, int]:
+        """Find optimal mapping between NAS and TAS regimes using distribution similarity."""
+        try:
+            if not tas_distribution or not nas_distribution:
+                return {}
+            
+            # Extract regime IDs and their percentages
+            tas_regimes = {}
+            nas_regimes = {}
+            
+            for key, percentage in tas_distribution.items():
+                regime_id = int(key.replace('regime_', ''))
+                tas_regimes[regime_id] = percentage
+            
+            for key, percentage in nas_distribution.items():
+                regime_id = int(key.replace('regime_', ''))
+                nas_regimes[regime_id] = percentage
+            
+            # Create mapping based on distribution similarity
+            regime_mapping = {}
+            used_tas_regimes = set()
+            
+            # Sort regimes by size (largest first) for better mapping
+            tas_sorted = sorted(tas_regimes.items(), key=lambda x: x[1], reverse=True)
+            nas_sorted = sorted(nas_regimes.items(), key=lambda x: x[1], reverse=True)
+            
+            # Map largest NAS regime to largest TAS regime, etc.
+            for i, (nas_regime, nas_percentage) in enumerate(nas_sorted):
+                if i < len(tas_sorted) and tas_sorted[i][0] not in used_tas_regimes:
+                    tas_regime = tas_sorted[i][0]
+                    regime_mapping[nas_regime] = tas_regime
+                    used_tas_regimes.add(tas_regime)
+            
+            return regime_mapping
+            
+        except Exception as e:
+            tprint(f"⚠️ [HYBRID_NAS_TAS] Distribution-based mapping failed: {e}", color="yellow")
+            return {}
+    
+    def _apply_regime_mapping(self, nas_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
+        """Apply regime mapping to NAS assignments."""
+        try:
+            mapped_assignments = nas_assignments.copy()
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                mask = nas_assignments == nas_regime
+                mapped_assignments[mask] = tas_regime
+            
+            return mapped_assignments
+            
+        except Exception as e:
+            tprint(f"⚠️ [HYBRID_NAS_TAS] Regime mapping application failed: {e}", color="yellow")
+            return nas_assignments
+    
+    def _calculate_mapping_quality_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float], regime_mapping: Dict[int, int]) -> float:
+        """Calculate quality metrics for the regime mapping based on distribution similarity."""
+        try:
+            if not regime_mapping:
+                return 0.0
+            
+            total_similarity = 0.0
+            mapping_count = 0
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                nas_key = f'regime_{nas_regime}'
+                tas_key = f'regime_{tas_regime}'
+                
+                if nas_key in nas_distribution and tas_key in tas_distribution:
+                    nas_percentage = nas_distribution[nas_key]
+                    tas_percentage = tas_distribution[tas_key]
+                    
+                    # Calculate similarity (higher is better, max difference is 100%)
+                    similarity = 1.0 - abs(nas_percentage - tas_percentage) / 100.0
+                    total_similarity += similarity
+                    mapping_count += 1
+            
+            if mapping_count == 0:
+                return 0.0
+            
+            # Average similarity as quality metric
+            quality = total_similarity / mapping_count
+            return max(0.0, quality)
+            
+        except Exception as e:
+            tprint(f"⚠️ [HYBRID_NAS_TAS] Mapping quality calculation failed: {e}", color="yellow")
+            return 0.0
+    
+    def _assess_numerical_divergence_fallback(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Fallback numerical divergence assessment when semantic analysis fails."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            numerical_divergence_rate = np.mean(disagreement_mask)
+            
+            return {
+                'semantic_divergence_rate': numerical_divergence_rate,
+                'regime_mapping': {},
+                'mapping_quality': 0.5,
+                'raw_consensus': 1.0 - numerical_divergence_rate,
+                'semantic_consensus': 1.0 - numerical_divergence_rate,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'numerical_fallback'
+            }
+            
+        except Exception as e:
+            tprint(f"⚠️ [HYBRID_NAS_TAS] Numerical divergence fallback failed: {e}", color="yellow")
+            return {
+                'semantic_divergence_rate': 1.0,
+                'regime_mapping': {},
+                'mapping_quality': 0.0,
+                'raw_consensus': 0.0,
+                'semantic_consensus': 0.0,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'failed'
+            }

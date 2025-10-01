@@ -23,13 +23,7 @@ from ..base_calculations import (
     create_base_calculator
 )
 
-# Import existing momentum features
-from .legacy import (
-    LegacyRSIGenerator,
-    LegacyMACDGenerator,
-    LegacyStochasticGenerator,
-    LegacyATRGenerator
-)
+# Legacy features are imported separately to avoid circular imports
 from .entropy import (
     RSIEntropyGenerator,
     MACDEntropyGenerator
@@ -81,7 +75,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         momentum = prices - np.roll(prices, period)
         return momentum
 
-class RSIGenerator(FeatureGenerator):
+class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
     
     def __init__(self, 
@@ -119,7 +113,7 @@ class RSIGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -148,7 +142,7 @@ class RSIGenerator(FeatureGenerator):
             
             return rsi
 
-class MACDGenerator(FeatureGenerator):
+class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
     def __init__(self, 
@@ -192,7 +186,7 @@ class MACDGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.fast = fast
         self.slow = slow
         self.signal = signal
@@ -210,7 +204,7 @@ class MACDGenerator(FeatureGenerator):
         
         return macd
 
-class StochasticGenerator(FeatureGenerator):
+class StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -253,7 +247,7 @@ class StochasticGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.k_period = k_period
         self.d_period = d_period
         self.base_calculation = base_calculation
@@ -281,7 +275,7 @@ class StochasticGenerator(FeatureGenerator):
             
             return k_percent
 
-class WilliamsRGenerator(FeatureGenerator):
+class WilliamsRGenerator(VectorizedFeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
     def __init__(self, 
@@ -321,7 +315,7 @@ class WilliamsRGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -348,7 +342,7 @@ class WilliamsRGenerator(FeatureGenerator):
             
             return williams_r
 
-class MomentumOscillatorGenerator(FeatureGenerator):
+class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Momentum Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -386,7 +380,7 @@ class MomentumOscillatorGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -400,7 +394,7 @@ class MomentumOscillatorGenerator(FeatureGenerator):
         
         return momentum
 
-class RateOfChangeGenerator(FeatureGenerator):
+class RateOfChangeGenerator(VectorizedFeatureGenerator):
     """Generator for Rate of Change (ROC) with different base calculations."""
     
     def __init__(self, 
@@ -438,7 +432,7 @@ class RateOfChangeGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     

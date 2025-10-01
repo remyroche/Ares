@@ -705,6 +705,7 @@ class HybridOrchestrator:
             tas_results = {
                 'regime_count': n_regimes,
                 'regime_assignments': regime_assignments.tolist(),
+                'regime_predictions': regime_assignments.tolist(),  # Add this for compatibility
                 'regime_characteristics': regime_characteristics,
                 'clustering_quality': {
                     'silhouette_score': float(tas_result.clustering_quality.silhouette_score),
@@ -854,15 +855,36 @@ class HybridOrchestrator:
             nas_assignments = nas_assignments[:min_length]
             tas_assignments = tas_assignments[:min_length]
             
-            # Simple consensus mapping based on regime overlap
+            # Use semantic consensus approach for regime mapping
+            self.logger.info("🧠 Using semantic consensus approach for regime mapping")
+            
+            # Import semantic consensus utilities
+            from ..shared_utils.metrics import calculate_consensus_metrics
+            
+            # Perform semantic divergence assessment to get regime mapping
+            semantic_mapping = self._perform_semantic_divergence_assessment(
+                tas_assignments, nas_assignments, min_length
+            )
+            
+            # Calculate semantic consensus using the mapping
+            consensus_metrics = calculate_consensus_metrics(
+                tas_assignments, nas_assignments, 
+                regime_mapping=semantic_mapping.get('regime_mapping', {}),
+                verbose=False
+            )
+            
+            # Enhanced consensus mapping with semantic information
             consensus_mapping = {
                 'nas_regimes': list(np.unique(nas_assignments)),
                 'tas_regimes': list(np.unique(tas_assignments)),
-                'consensus_regimes': [],
+                'semantic_regime_mapping': semantic_mapping.get('regime_mapping', {}),
+                'semantic_assessment': semantic_mapping,
+                'consensus_metrics': consensus_metrics,
+                'used_semantic_approach': True,
                 'mapping_matrix': {}
             }
             
-            # Calculate overlap between regimes
+            # Calculate overlap ratios between regimes (for backward compatibility)
             for nas_regime in np.unique(nas_assignments):
                 for tas_regime in np.unique(tas_assignments):
                     nas_mask = nas_assignments == nas_regime
@@ -1025,181 +1047,562 @@ class HybridOrchestrator:
                                     timestamps: Optional[np.ndarray] = None,
                                     timeframes: Optional[List[str]] = None) -> Dict[str, Any]:
         """Orchestrate TAS and NAS regime detection."""
+        execution_start_time = time.time()
+        
         try:
-            tprint(Panel.fit(
-                "[bold green]🚀 Starting TAS-NAS Orchestration[/bold green]\n"
-                f"Data shape: {market_data.shape if hasattr(market_data, 'shape') else 'Unknown'}\n"
-                f"Timeframes: {timeframes or ['1m', '5m', '15m']}",
-                title="Orchestration Start",
-                border_style="green"
-            ))
+            # Input validation with detailed error reporting
+            self.logger.info("🔍 DEBUG: Starting orchestrate_tas_nas_detection with input validation")
+            
+            if market_data is None:
+                error_msg = "❌ CRITICAL: market_data is None - cannot proceed with orchestration"
+                self.logger.error(error_msg)
+                tprint(f"[red]{error_msg}[/red]")
+                return {'error': error_msg, 'execution_time': 0.0, 'success': False}
+            
+            # Validate data shape and type
+            try:
+                if hasattr(market_data, 'shape'):
+                    data_shape = market_data.shape
+                    self.logger.info(f"📊 Data shape: {data_shape}")
+                    if len(data_shape) == 0 or (len(data_shape) > 0 and data_shape[0] == 0):
+                        error_msg = f"❌ CRITICAL: Empty data - shape: {data_shape}"
+                        self.logger.error(error_msg)
+                        tprint(f"[red]{error_msg}[/red]")
+                        return {'error': error_msg, 'execution_time': 0.0, 'success': False}
+                else:
+                    self.logger.warning("⚠️ market_data has no shape attribute")
+                    data_shape = "Unknown"
+            except Exception as e:
+                error_msg = f"❌ CRITICAL: Error validating data shape: {e}"
+                self.logger.error(error_msg)
+                tprint(f"[red]{error_msg}[/red]")
+                return {'error': error_msg, 'execution_time': 0.0, 'success': False}
+            
+            # Validate system availability
+            tas_available = self.tas_system is not None
+            nas_available = self.nas_system is not None
+            
+            self.logger.info(f"🔧 System availability - TAS: {tas_available}, NAS: {nas_available}")
+            self.logger.info(f"🔧 TAS system object: {self.tas_system}")
+            self.logger.info(f"🔧 NAS system object: {self.nas_system}")
+            
+            # Additional debug logging for TAS system
+            if self.tas_system is not None:
+                self.logger.info(f"🔧 TAS system type: {type(self.tas_system)}")
+                self.logger.info(f"🔧 TAS system has detect_regimes: {hasattr(self.tas_system, 'detect_regimes')}")
+            else:
+                self.logger.error("❌ TAS system is None - this should not happen after successful initialization")
+            
+            if not tas_available and not nas_available:
+                error_msg = "❌ CRITICAL: Neither TAS nor NAS system is available"
+                self.logger.error(error_msg)
+                tprint(f"[red]{error_msg}[/red]")
+                return {'error': error_msg, 'execution_time': 0.0, 'success': False}
+            
+            # Print orchestration start panel with error handling
+            try:
+                tprint(Panel.fit(
+                    "[bold green]🚀 Starting TAS-NAS Orchestration[/bold green]\n"
+                    f"Data shape: {data_shape}\n"
+                    f"Timeframes: {timeframes or ['1m', '5m', '15m']}\n"
+                    f"TAS Available: {tas_available}\n"
+                    f"NAS Available: {nas_available}",
+                    title="Orchestration Start",
+                    border_style="green"
+                ))
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error printing orchestration panel: {e}")
+                tprint(f"[yellow]🚀 Starting TAS-NAS Orchestration (panel error: {e})[/yellow]")
             
             self.logger.info("🚀 Starting TAS-NAS orchestration...")
 
             # Use configured timeframes if not specified
             if timeframes is None:
                 timeframes = ['1m', '5m', '15m']
+                self.logger.info(f"📅 Using default timeframes: {timeframes}")
 
             results = {
                 'tas_results': {},
                 'nas_results': {},
                 'hybrid_analysis': {},
                 'timeframes_processed': timeframes,
-                'execution_time': 0.0
+                'execution_time': 0.0,
+                'success': False,
+                'errors': []
             }
 
             start_time = time.time()
 
-            # Run detection for each timeframe
-            for timeframe in timeframes:
-                tprint(f"[cyan]🔍 Processing timeframe: {timeframe}[/cyan]")
-                self.logger.info(f"🔍 Processing timeframe: {timeframe}")
-
-                # Prepare market_data for timeframe
-                tprint(f"[yellow]📊 Preparing data for {timeframe}...[/yellow]")
-                timeframe_market_data = self._prepare_timeframe_market_data(market_data, timeframe)
-                tprint(f"[green]✅ Data prepared: {timeframe_market_data.shape if hasattr(timeframe_market_data, 'shape') else 'Unknown shape'}[/green]")
-
-                # Run TAS detection
-                if self.tas_system is not None:
-                    tprint(f"[blue]🌳 Running TAS detection for {timeframe}...[/blue]")
-                    tas_result = self._run_tas_detection(timeframe_market_data, timestamps, timeframe)
-                    results['tas_results'][timeframe] = tas_result
-                    if tas_result.get('success', False):
-                        tprint(f"[green]✅ TAS detection completed for {timeframe}[/green]")
-                    else:
-                        tprint(f"[red]❌ TAS detection failed for {timeframe}[/red]")
-
-                # Run NAS detection
-                if self.nas_system is not None:
-                    tprint(f"[blue]🧠 Running NAS detection for {timeframe}...[/blue]")
-                    nas_result = self._run_nas_detection_sync(timeframe_market_data, timestamps, timeframe)
-                    results['nas_results'][timeframe] = nas_result
-                    if nas_result.get('success', False):
-                        tprint(f"[green]✅ NAS detection completed for {timeframe}[/green]")
-                    else:
-                        tprint(f"[red]❌ NAS detection failed for {timeframe}[/red]")
-
-            # Perform hybrid analysis on primary timeframe (15m) - only if both systems succeeded
-            primary_timeframe = '15m'
-            tprint(f"[magenta]🔬 Checking hybrid analysis prerequisites for {primary_timeframe}...[/magenta]")
-            
-            tas_success = (primary_timeframe in results.get('tas_results', {}) and
-                          results['tas_results'][primary_timeframe].get('success', False))
-            nas_success = (primary_timeframe in results.get('nas_results', {}) and
-                          results['nas_results'][primary_timeframe].get('success', False))
-
-            tprint(f"[cyan]TAS Success: {tas_success}[/cyan]")
-            tprint(f"[cyan]NAS Success: {nas_success}[/cyan]")
-
-            if tas_success and nas_success:
-                tprint("[bold green]🎯 Starting hybrid analysis...[/bold green]")
-                hybrid_analysis = self._perform_hybrid_analysis(
-                    market_data, timestamps,
-                    results['tas_results'][primary_timeframe],
-                    results['nas_results'][primary_timeframe]
-                )
-                results['hybrid_analysis'] = hybrid_analysis
-                tprint("[green]✅ Hybrid analysis completed[/green]")
-            else:
-                # Fast fail - both TAS and NAS systems are required
-                error_msg = "Both TAS and NAS systems failed to initialize. Cannot perform hybrid regime discovery."
-                self.logger.error(f"❌ {error_msg}")
-                tprint(f"[red]❌ {error_msg}[/red]")
-                raise RuntimeError(error_msg)
-
-            # Generate comprehensive outcome report
-            if tas_success and nas_success:
-                tprint("[bold magenta]📊 Generating comprehensive outcome report...[/bold magenta]")
-                outcome_report = self._generate_outcome_report(results, market_data)
-                results['outcome_report'] = outcome_report
-                tprint("[green]✅ Outcome report generated[/green]")
-
-            # Add clustering quality metrics (only if both systems succeeded)
-            if tas_success and nas_success and self.clustering_quality_analyzer:
+            # Run detection for each timeframe with comprehensive error handling
+            for i, timeframe in enumerate(timeframes):
                 try:
-                    self.logger.info("🔍 DEBUG: Starting clustering quality analysis")
+                    self.logger.info(f"🔄 Processing timeframe {i+1}/{len(timeframes)}: {timeframe}")
+                    self.logger.info(f"🔧 DEBUG: TAS system status before timeframe {timeframe}: {self.tas_system is not None}")
+                    self.logger.info(f"🔧 DEBUG: NAS system status before timeframe {timeframe}: {self.nas_system is not None}")
+                    tprint(f"[cyan]🔍 Processing timeframe: {timeframe}[/cyan]")
 
-                    # Prepare features for quality analysis
-                    if isinstance(market_data, pd.DataFrame):
-                        numeric_columns = market_data.select_dtypes(include=[np.number]).columns
-                        if len(numeric_columns) > 0:
-                            features = market_data[numeric_columns].values
-                        else:
-                            # Fallback to basic OHLCV columns
-                            basic_columns = ['open', 'high', 'low', 'close', 'volume']
-                            available_columns = [col for col in basic_columns if col in market_data.columns]
-                            features = market_data[available_columns].values if available_columns else market_data.values
+                    # Prepare market_data for timeframe with error handling
+                    try:
+                        tprint(f"[yellow]📊 Preparing data for {timeframe}...[/yellow]")
+                        timeframe_market_data = self._prepare_timeframe_market_data(market_data, timeframe)
+                        
+                        if timeframe_market_data is None:
+                            error_msg = f"❌ Failed to prepare data for timeframe {timeframe}"
+                            self.logger.error(error_msg)
+                            results['errors'].append(error_msg)
+                            continue
+                        
+                        prep_shape = timeframe_market_data.shape if hasattr(timeframe_market_data, 'shape') else 'Unknown'
+                        tprint(f"[green]✅ Data prepared: {prep_shape}[/green]")
+                        self.logger.info(f"✅ Data prepared for {timeframe}: {prep_shape}")
+                        
+                    except Exception as e:
+                        error_msg = f"❌ Error preparing data for {timeframe}: {e}"
+                        self.logger.error(error_msg)
+                        tprint(f"[red]{error_msg}[/red]")
+                        results['errors'].append(error_msg)
+                        continue
+
+                    # Run TAS detection with comprehensive error handling
+                    tprint(f"[bold yellow]🔍 === ORCHESTRATOR: TAS DETECTION START ===[/bold yellow]")
+                    if self.tas_system is not None:
+                        try:
+                            tprint(f"[blue]🌳 Running TAS detection for {timeframe}...[/blue]")
+                            tprint(f"[cyan]🔧 TAS system available: Yes[/cyan]")
+                            tprint(f"[cyan]🔧 TAS system type: {type(self.tas_system).__name__}[/cyan]")
+                            self.logger.info(f"🌳 Starting TAS detection for {timeframe}")
+                            
+                            tprint(f"[yellow]⏳ Calling _run_tas_detection...[/yellow]")
+                            tas_result = self._run_tas_detection(timeframe_market_data, timestamps, timeframe)
+                            tprint(f"[yellow]⏳ _run_tas_detection returned[/yellow]")
+                            
+                            tprint(f"[cyan]🔍 Checking TAS result...[/cyan]")
+                            if tas_result is None:
+                                error_msg = f"❌ TAS detection returned None for {timeframe}"
+                                self.logger.error(error_msg)
+                                tprint(f"[bold red]{error_msg}[/bold red]")
+                                tas_result = {'error': error_msg, 'success': False}
+                            elif 'error' in tas_result:
+                                self.logger.error(f"❌ TAS detection error for {timeframe}: {tas_result['error']}")
+                                tprint(f"[red]❌ TAS result contains error: {tas_result['error']}[/red]")
+                            else:
+                                tprint(f"[green]✅ TAS result has no error field[/green]")
+                            
+                            tprint(f"[cyan]🔍 TAS result keys: {list(tas_result.keys()) if isinstance(tas_result, dict) else 'Not a dict'}[/cyan]")
+                            tprint(f"[cyan]🔍 TAS result success value: {tas_result.get('success', 'No success key') if isinstance(tas_result, dict) else 'N/A'}[/cyan]")
+                            
+                            results['tas_results'][timeframe] = tas_result
+                            tprint(f"[green]✅ TAS result stored in results dict[/green]")
+                            
+                            if tas_result.get('success', False):
+                                tprint(f"[bold green]✅ TAS detection completed successfully for {timeframe}[/bold green]")
+                                self.logger.info(f"✅ TAS detection completed for {timeframe}")
+                            else:
+                                error_msg = f"❌ TAS detection failed for {timeframe}: {tas_result.get('error', 'Unknown error')}"
+                                tprint(f"[bold red]{error_msg}[/bold red]")
+                                
+                                # Extract additional error details
+                                if 'error_message' in tas_result:
+                                    tprint(f"[red]❌ Error message: {tas_result['error_message']}[/red]")
+                                if 'error_details' in tas_result:
+                                    tprint(f"[red]❌ Error details: {tas_result['error_details']}[/red]")
+                                if 'error_type' in tas_result:
+                                    tprint(f"[red]❌ Error type: {tas_result['error_type']}[/red]")
+                                if 'exception_type' in tas_result:
+                                    tprint(f"[red]❌ Exception type: {tas_result['exception_type']}[/red]")
+                                if 'traceback' in tas_result:
+                                    tprint(f"[red]❌ Traceback available in result[/red]")
+                                
+                                self.logger.error(error_msg)
+                                results['errors'].append(error_msg)
+                                
+                        except Exception as e:
+                            error_msg = f"❌ Exception during TAS detection for {timeframe}: {e}"
+                            tprint(f"[bold red]💥 EXCEPTION IN ORCHESTRATOR TAS CALL![/bold red]")
+                            tprint(f"[red]❌ Exception type: {type(e).__name__}[/red]")
+                            tprint(f"[red]❌ Exception message: {str(e)}[/red]")
+                            
+                            import traceback
+                            traceback_str = traceback.format_exc()
+                            tprint(f"[red]📋 Traceback:\n{traceback_str}[/red]")
+                            
+                            self.logger.error(error_msg)
+                            tprint(f"[red]{error_msg}[/red]")
+                            results['tas_results'][timeframe] = {'error': error_msg, 'success': False}
+                            results['errors'].append(error_msg)
                     else:
-                        features = market_data
+                        tprint(f"[bold red]❌ TAS system is None![/bold red]")
+                        self.logger.warning(f"⚠️ TAS system not available for {timeframe}")
+                    
+                    tprint(f"[bold yellow]🔍 === ORCHESTRATOR: TAS DETECTION END ===[/bold yellow]")
 
-                    # Calculate clustering quality for each successful prediction set
-                    clustering_quality = {}
-
-                    # TAS quality
-                    tas_predictions = results['tas_results'][primary_timeframe]['regime_predictions']
-                    try:
-                        # Ensure features and predictions have the same length for TAS
-                        tas_features = features
-                        if len(tas_features) != len(tas_predictions):
-                            min_length = min(len(tas_features), len(tas_predictions))
-                            tas_features = tas_features[:min_length]
-                            tas_predictions = tas_predictions[:min_length]
-
-                        tas_quality_metrics = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            tas_features, tas_predictions
-                        )
-                        clustering_quality['tas_quality'] = tas_quality_metrics
-                    except Exception as e:
-                        clustering_quality['tas_quality'] = {'error': str(e)}
-
-                    # NAS quality
-                    nas_predictions = results['nas_results'][primary_timeframe]['regime_predictions']
-                    try:
-                        # Ensure features and predictions have the same length for NAS
-                        nas_features = features
-                        if len(nas_features) != len(nas_predictions):
-                            min_length = min(len(nas_features), len(nas_predictions))
-                            nas_features = nas_features[:min_length]
-                            nas_predictions = nas_predictions[:min_length]
-
-                        nas_quality_metrics = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
-                            nas_features, nas_predictions
-                        )
-                        clustering_quality['nas_quality'] = nas_quality_metrics
-                    except Exception as e:
-                        clustering_quality['nas_quality'] = {'error': str(e)}
-
-                    # Add comparison if both succeeded
-                    tas_quality = clustering_quality.get('tas_quality', {})
-                    nas_quality = clustering_quality.get('nas_quality', {})
-
-                    comparison = {}
-                    if tas_quality and nas_quality and 'error' not in tas_quality and 'error' not in nas_quality:
-                        comparison = {
-                            'best_silhouette': 'TAS' if tas_quality.get('silhouette_score', 0) > nas_quality.get('silhouette_score', 0) else 'NAS',
-                            'best_davies_bouldin': 'TAS' if tas_quality.get('davies_bouldin_index', float('inf')) < nas_quality.get('davies_bouldin_index', float('inf')) else 'NAS',
-                            'best_calinski_harabasz': 'TAS' if tas_quality.get('calinski_harabasz_score', 0) > nas_quality.get('calinski_harabasz_score', 0) else 'NAS'
-                        }
-                    clustering_quality['comparison'] = comparison
-
-                    # Add to hybrid analysis and main results
-                    results['hybrid_analysis']['clustering_quality'] = clustering_quality
-                    results['clustering_quality'] = clustering_quality
+                    # Run NAS detection with comprehensive error handling
+                    if self.nas_system is not None:
+                        try:
+                            tprint(f"[blue]🧠 Running NAS detection for {timeframe}...[/blue]")
+                            self.logger.info(f"🧠 Starting NAS detection for {timeframe}")
+                            
+                            nas_result = self._run_nas_detection_sync(timeframe_market_data, timestamps, timeframe)
+                            
+                            if nas_result is None:
+                                error_msg = f"❌ NAS detection returned None for {timeframe}"
+                                self.logger.error(error_msg)
+                                nas_result = {'error': error_msg, 'success': False}
+                            elif 'error' in nas_result:
+                                self.logger.error(f"❌ NAS detection error for {timeframe}: {nas_result['error']}")
+                            
+                            results['nas_results'][timeframe] = nas_result
+                            
+                            if nas_result.get('success', False):
+                                tprint(f"[green]✅ NAS detection completed for {timeframe}[/green]")
+                                self.logger.info(f"✅ NAS detection completed for {timeframe}")
+                            else:
+                                error_msg = f"❌ NAS detection failed for {timeframe}: {nas_result.get('error', 'Unknown error')}"
+                                tprint(f"[red]{error_msg}[/red]")
+                                self.logger.error(error_msg)
+                                results['errors'].append(error_msg)
+                                
+                        except Exception as e:
+                            error_msg = f"❌ Exception during NAS detection for {timeframe}: {e}"
+                            self.logger.error(error_msg)
+                            tprint(f"[red]{error_msg}[/red]")
+                            results['nas_results'][timeframe] = {'error': error_msg, 'success': False}
+                            results['errors'].append(error_msg)
+                    else:
+                        self.logger.warning(f"⚠️ NAS system not available for {timeframe}")
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Clustering quality analysis failed: {e}")
-                    results['hybrid_analysis']['clustering_quality'] = {'error': str(e)}
-                    results['clustering_quality'] = {'error': str(e)}
+                    error_msg = f"❌ Exception processing timeframe {timeframe}: {e}"
+                    self.logger.error(error_msg)
+                    tprint(f"[red]{error_msg}[/red]")
+                    results['errors'].append(error_msg)
+                    continue
+
+            # Perform hybrid analysis on primary timeframe (15m) with enhanced error handling
+            primary_timeframe = '15m'
+            tprint(f"[magenta]🔬 Checking hybrid analysis prerequisites for {primary_timeframe}...[/magenta]")
+            self.logger.info(f"🔬 Checking hybrid analysis prerequisites for {primary_timeframe}")
+            
+            try:
+                tas_success = (primary_timeframe in results.get('tas_results', {}) and
+                              results['tas_results'][primary_timeframe].get('success', False))
+                nas_success = (primary_timeframe in results.get('nas_results', {}) and
+                              results['nas_results'][primary_timeframe].get('success', False))
+
+                self.logger.info(f"📊 Success status - TAS: {tas_success}, NAS: {nas_success}")
+                tprint(f"[cyan]TAS Success: {tas_success}[/cyan]")
+                tprint(f"[cyan]NAS Success: {nas_success}[/cyan]")
+
+                if tas_success and nas_success:
+                    try:
+                        tprint("[bold green]🎯 Starting hybrid analysis...[/bold green]")
+                        self.logger.info("🎯 Starting hybrid analysis")
+                        
+                        hybrid_analysis = self._perform_hybrid_analysis(
+                            market_data, timestamps,
+                            results['tas_results'][primary_timeframe],
+                            results['nas_results'][primary_timeframe]
+                        )
+                        
+                        if hybrid_analysis is None:
+                            error_msg = "❌ Hybrid analysis returned None"
+                            self.logger.error(error_msg)
+                            hybrid_analysis = {'error': error_msg, 'success': False}
+                        elif 'error' in hybrid_analysis:
+                            self.logger.error(f"❌ Hybrid analysis error: {hybrid_analysis['error']}")
+                        
+                        results['hybrid_analysis'] = hybrid_analysis
+                        
+                        if hybrid_analysis.get('success', False):
+                            tprint("[green]✅ Hybrid analysis completed[/green]")
+                            self.logger.info("✅ Hybrid analysis completed successfully")
+                        else:
+                            error_msg = f"❌ Hybrid analysis failed: {hybrid_analysis.get('error', 'Unknown error')}"
+                            tprint(f"[red]{error_msg}[/red]")
+                            self.logger.error(error_msg)
+                            results['errors'].append(error_msg)
+                            
+                    except Exception as e:
+                        error_msg = f"❌ Exception during hybrid analysis: {e}"
+                        self.logger.error(error_msg)
+                        tprint(f"[red]{error_msg}[/red]")
+                        results['hybrid_analysis'] = {'error': error_msg, 'success': False}
+                        results['errors'].append(error_msg)
+                else:
+                    # Enhanced error reporting for failed systems
+                    tprint(f"[bold yellow]🔍 === ERROR REPORTING: FAILED SYSTEMS ===[/bold yellow]")
+                    tprint(f"[cyan]📍 Primary timeframe: {primary_timeframe}[/cyan]")
+                    tprint(f"[cyan]📍 TAS success: {tas_success}[/cyan]")
+                    tprint(f"[cyan]📍 NAS success: {nas_success}[/cyan]")
+                    
+                    failed_systems = []
+                    if not tas_success:
+                        tprint(f"[yellow]🔍 Extracting TAS error details...[/yellow]")
+                        tprint(f"[cyan]📊 results['tas_results'] = {results.get('tas_results', 'KEY_NOT_FOUND')}[/cyan]")
+                        
+                        tas_result_for_timeframe = results.get('tas_results', {}).get(primary_timeframe, {})
+                        tprint(f"[cyan]📊 TAS result for {primary_timeframe} = {tas_result_for_timeframe}[/cyan]")
+                        
+                        tas_error = tas_result_for_timeframe.get('error', 'Unknown TAS error')
+                        tprint(f"[red]❌ TAS error: {tas_error}[/red]")
+                        
+                        # Check for additional error fields
+                        if 'error_message' in tas_result_for_timeframe:
+                            tprint(f"[red]❌ TAS error_message: {tas_result_for_timeframe['error_message']}[/red]")
+                            tas_error = tas_result_for_timeframe['error_message']
+                        if 'error_details' in tas_result_for_timeframe:
+                            tprint(f"[red]❌ TAS error_details: {tas_result_for_timeframe['error_details']}[/red]")
+                        if 'error_type' in tas_result_for_timeframe:
+                            tprint(f"[red]❌ TAS error_type: {tas_result_for_timeframe['error_type']}[/red]")
+                        if 'exception_type' in tas_result_for_timeframe:
+                            tprint(f"[red]❌ TAS exception_type: {tas_result_for_timeframe['exception_type']}[/red]")
+                        if 'exception_details' in tas_result_for_timeframe:
+                            tprint(f"[red]❌ TAS exception_details: {tas_result_for_timeframe['exception_details']}[/red]")
+                        if 'traceback' in tas_result_for_timeframe:
+                            tprint(f"[red]📋 TAS traceback:\n{tas_result_for_timeframe['traceback']}[/red]")
+                        
+                        failed_systems.append(f"TAS: {tas_error}")
+                        
+                    if not nas_success:
+                        tprint(f"[yellow]🔍 Extracting NAS error details...[/yellow]")
+                        tprint(f"[cyan]📊 results['nas_results'] = {results.get('nas_results', 'KEY_NOT_FOUND')}[/cyan]")
+                        
+                        nas_result_for_timeframe = results.get('nas_results', {}).get(primary_timeframe, {})
+                        tprint(f"[cyan]📊 NAS result for {primary_timeframe} = {nas_result_for_timeframe}[/cyan]")
+                        
+                        nas_error = nas_result_for_timeframe.get('error', 'Unknown NAS error')
+                        tprint(f"[red]❌ NAS error: {nas_error}[/red]")
+                        
+                        failed_systems.append(f"NAS: {nas_error}")
+                    
+                    error_msg = f"❌ Cannot perform hybrid analysis - Failed systems: {'; '.join(failed_systems)}"
+                    self.logger.error(error_msg)
+                    tprint(f"[bold red]{error_msg}[/bold red]")
+                    tprint(f"[bold yellow]🔍 === ERROR REPORTING END ===[/bold yellow]")
+                    results['errors'].append(error_msg)
+                    
+                    # Don't raise exception - continue with partial results
+                    self.logger.info("ℹ️ Continuing with partial results despite hybrid analysis failure")
+                    
+            except Exception as e:
+                error_msg = f"❌ Exception checking hybrid analysis prerequisites: {e}"
+                self.logger.error(error_msg)
+                tprint(f"[red]{error_msg}[/red]")
+                results['errors'].append(error_msg)
+
+            # Generate comprehensive outcome report with error handling
+            if tas_success and nas_success:
+                try:
+                    tprint("[bold magenta]📊 Generating comprehensive outcome report...[/bold magenta]")
+                    self.logger.info("📊 Generating comprehensive outcome report")
+                    
+                    outcome_report = self._generate_outcome_report(results, market_data)
+                    
+                    if outcome_report is None:
+                        error_msg = "❌ Outcome report generation returned None"
+                        self.logger.error(error_msg)
+                        outcome_report = {'error': error_msg}
+                    elif 'error' in outcome_report:
+                        self.logger.error(f"❌ Outcome report generation error: {outcome_report['error']}")
+                    
+                    results['outcome_report'] = outcome_report
+                    
+                    if 'error' not in outcome_report:
+                        tprint("[green]✅ Outcome report generated[/green]")
+                        self.logger.info("✅ Outcome report generated successfully")
+                    else:
+                        error_msg = f"❌ Outcome report generation failed: {outcome_report.get('error', 'Unknown error')}"
+                        tprint(f"[red]{error_msg}[/red]")
+                        self.logger.error(error_msg)
+                        results['errors'].append(error_msg)
+                        
+                except Exception as e:
+                    error_msg = f"❌ Exception generating outcome report: {e}"
+                    self.logger.error(error_msg)
+                    tprint(f"[red]{error_msg}[/red]")
+                    results['outcome_report'] = {'error': error_msg}
+                    results['errors'].append(error_msg)
+
+            # Add clustering quality metrics with comprehensive error handling
+            if tas_success and nas_success and self.clustering_quality_analyzer:
+                try:
+                    self.logger.info("🔍 Starting clustering quality analysis")
+                    tprint("[blue]🔍 Starting clustering quality analysis...[/blue]")
+
+                    # Prepare features for quality analysis with error handling
+                    features = None
+                    try:
+                        if isinstance(market_data, pd.DataFrame):
+                            numeric_columns = market_data.select_dtypes(include=[np.number]).columns
+                            if len(numeric_columns) > 0:
+                                features = market_data[numeric_columns].values
+                                self.logger.info(f"📊 Using {len(numeric_columns)} numeric columns for clustering quality analysis")
+                            else:
+                                # Fallback to basic OHLCV columns
+                                basic_columns = ['open', 'high', 'low', 'close', 'volume']
+                                available_columns = [col for col in basic_columns if col in market_data.columns]
+                                if available_columns:
+                                    features = market_data[available_columns].values
+                                    self.logger.info(f"📊 Using basic OHLCV columns: {available_columns}")
+                                else:
+                                    features = market_data.values
+                                    self.logger.info("📊 Using all DataFrame values")
+                        else:
+                            features = market_data
+                            self.logger.info("📊 Using numpy array as features")
+                        
+                        if features is None or (hasattr(features, 'shape') and features.shape[0] == 0):
+                            raise ValueError("Features are None or empty")
+                            
+                    except Exception as e:
+                        error_msg = f"❌ Error preparing features for clustering quality analysis: {e}"
+                        self.logger.error(error_msg)
+                        results['clustering_quality'] = {'error': error_msg}
+                        results['errors'].append(error_msg)
+                        features = None
+
+                    if features is not None:
+                        # Calculate clustering quality for each successful prediction set
+                        clustering_quality = {}
+
+                        # TAS quality analysis
+                        try:
+                            tas_predictions = results['tas_results'][primary_timeframe]['regime_predictions']
+                            self.logger.info(f"🔍 Analyzing TAS quality with {len(tas_predictions)} predictions")
+                            
+                            # Ensure features and predictions have the same length for TAS
+                            tas_features = features
+                            if len(tas_features) != len(tas_predictions):
+                                min_length = min(len(tas_features), len(tas_predictions))
+                                tas_features = tas_features[:min_length]
+                                tas_predictions = tas_predictions[:min_length]
+                                self.logger.info(f"📏 Adjusted TAS features/predictions to length: {min_length}")
+
+                            tas_quality_metrics = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
+                                tas_features, tas_predictions
+                            )
+                            clustering_quality['tas_quality'] = tas_quality_metrics
+                            self.logger.info("✅ TAS quality analysis completed")
+                            
+                        except Exception as e:
+                            error_msg = f"❌ TAS quality analysis failed: {e}"
+                            self.logger.error(error_msg)
+                            clustering_quality['tas_quality'] = {'error': error_msg}
+                            results['errors'].append(error_msg)
+
+                        # NAS quality analysis
+                        try:
+                            nas_predictions = results['nas_results'][primary_timeframe]['regime_predictions']
+                            self.logger.info(f"🔍 Analyzing NAS quality with {len(nas_predictions)} predictions")
+                            
+                            # Ensure features and predictions have the same length for NAS
+                            nas_features = features
+                            if len(nas_features) != len(nas_predictions):
+                                min_length = min(len(nas_features), len(nas_predictions))
+                                nas_features = nas_features[:min_length]
+                                nas_predictions = nas_predictions[:min_length]
+                                self.logger.info(f"📏 Adjusted NAS features/predictions to length: {min_length}")
+
+                            nas_quality_metrics = self.clustering_quality_analyzer.calculate_comprehensive_metrics(
+                                nas_features, nas_predictions
+                            )
+                            clustering_quality['nas_quality'] = nas_quality_metrics
+                            self.logger.info("✅ NAS quality analysis completed")
+                            
+                        except Exception as e:
+                            error_msg = f"❌ NAS quality analysis failed: {e}"
+                            self.logger.error(error_msg)
+                            clustering_quality['nas_quality'] = {'error': error_msg}
+                            results['errors'].append(error_msg)
+
+                        # Add comparison if both succeeded
+                        try:
+                            tas_quality = clustering_quality.get('tas_quality', {})
+                            nas_quality = clustering_quality.get('nas_quality', {})
+
+                            comparison = {}
+                            if tas_quality and nas_quality and 'error' not in tas_quality and 'error' not in nas_quality:
+                                comparison = {
+                                    'best_silhouette': 'TAS' if tas_quality.get('silhouette_score', 0) > nas_quality.get('silhouette_score', 0) else 'NAS',
+                                    'best_davies_bouldin': 'TAS' if tas_quality.get('davies_bouldin_index', float('inf')) < nas_quality.get('davies_bouldin_index', float('inf')) else 'NAS',
+                                    'best_calinski_harabasz': 'TAS' if tas_quality.get('calinski_harabasz_score', 0) > nas_quality.get('calinski_harabasz_score', 0) else 'NAS'
+                                }
+                                self.logger.info("✅ Quality comparison completed")
+                            else:
+                                comparison = {'error': 'One or both quality analyses failed'}
+                                self.logger.warning("⚠️ Quality comparison failed - one or both analyses had errors")
+                                
+                            clustering_quality['comparison'] = comparison
+
+                            # Add to hybrid analysis and main results
+                            results['hybrid_analysis']['clustering_quality'] = clustering_quality
+                            results['clustering_quality'] = clustering_quality
+
+                            tprint("[green]✅ Clustering quality analysis completed[/green]")
+                            self.logger.info("✅ Clustering quality analysis completed successfully")
+                            
+                        except Exception as e:
+                            error_msg = f"❌ Quality comparison failed: {e}"
+                            self.logger.error(error_msg)
+                            clustering_quality['comparison'] = {'error': error_msg}
+                            results['errors'].append(error_msg)
+
+                except Exception as e:
+                    error_msg = f"❌ Exception during clustering quality analysis: {e}"
+                    self.logger.error(error_msg)
+                    tprint(f"[red]{error_msg}[/red]")
+                    results['hybrid_analysis']['clustering_quality'] = {'error': error_msg}
+                    results['clustering_quality'] = {'error': error_msg}
+                    results['errors'].append(error_msg)
+            else:
+                self.logger.info("ℹ️ Skipping clustering quality analysis - prerequisites not met")
 
             results['execution_time'] = time.time() - start_time
 
-            self.logger.info("✅ TAS-NAS orchestration completed successfully")
+            # Determine overall success
+            has_successful_detection = (
+                any(result.get('success', False) for result in results.get('tas_results', {}).values()) or
+                any(result.get('success', False) for result in results.get('nas_results', {}).values())
+            )
+            results['success'] = has_successful_detection
+            
+            if has_successful_detection:
+                self.logger.info("✅ TAS-NAS orchestration completed with at least one successful detection")
+                tprint("[green]✅ TAS-NAS orchestration completed with partial success[/green]")
+            else:
+                self.logger.error("❌ TAS-NAS orchestration completed with no successful detections")
+                tprint("[red]❌ TAS-NAS orchestration completed with no successful detections[/red]")
+
+            # Log summary
+            tas_success_count = sum(1 for result in results.get('tas_results', {}).values() if result.get('success', False))
+            nas_success_count = sum(1 for result in results.get('nas_results', {}).values() if result.get('success', False))
+            total_errors = len(results.get('errors', []))
+            
+            self.logger.info(f"📊 Orchestration Summary:")
+            self.logger.info(f"   - TAS successful detections: {tas_success_count}/{len(timeframes)}")
+            self.logger.info(f"   - NAS successful detections: {nas_success_count}/{len(timeframes)}")
+            self.logger.info(f"   - Total errors: {total_errors}")
+            self.logger.info(f"   - Execution time: {results['execution_time']:.2f}s")
+            
             return results
 
         except Exception as e:
-            self.logger.error(f"❌ TAS-NAS orchestration failed: {e}")
-            return {'error': str(e), 'execution_time': 0.0}
+            execution_time = time.time() - execution_start_time
+            error_msg = f"❌ CRITICAL: TAS-NAS orchestration failed with exception: {e}"
+            self.logger.error(error_msg)
+            tprint(f"[red]{error_msg}[/red]")
+            
+            # Return detailed error information
+            return {
+                'error': error_msg,
+                'execution_time': execution_time,
+                'success': False,
+                'tas_results': {},
+                'nas_results': {},
+                'hybrid_analysis': {},
+                'timeframes_processed': timeframes or [],
+                'errors': [error_msg]
+            }
 
 
     def _generate_outcome_report(self, results: Dict[str, Any], market_data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
@@ -1292,36 +1695,58 @@ class HybridOrchestrator:
             tas_results = results.get('tas_results', {}).get(primary_timeframe, {})
             nas_results = results.get('nas_results', {}).get(primary_timeframe, {})
             
+            # Fast fail if required keys are missing
+            if tas_results.get('success', False) and 'regime_assignments' not in tas_results:
+                raise KeyError("TAS results missing 'regime_assignments' key - this indicates a critical configuration error")
+            
+            if nas_results.get('success', False) and 'regime_predictions' not in nas_results:
+                raise KeyError("NAS results missing 'regime_predictions' key - this indicates a critical configuration error")
+            
+            tas_assignments = tas_results.get('regime_assignments', [])
+            nas_assignments = nas_results.get('regime_predictions', [])
+            
             comparison = {
                 'tas_analysis': {
                     'success': tas_results.get('success', False),
-                    'regime_count': len(np.unique(tas_results.get('regime_predictions', []))) if tas_results.get('success') else 0,
+                    'regime_count': len(np.unique(tas_assignments)) if tas_results.get('success') and len(tas_assignments) > 0 else 0,
                     'execution_time': tas_results.get('execution_time', 0),
-                    'regime_distribution': self._calculate_regime_distribution(tas_results.get('regime_predictions', [])) if tas_results.get('success') else {}
+                    'regime_distribution': self._calculate_regime_distribution(tas_assignments) if tas_results.get('success') and len(tas_assignments) > 0 else {}
                 },
                 'nas_analysis': {
                     'success': nas_results.get('success', False),
-                    'regime_count': len(np.unique(nas_results.get('regime_predictions', []))) if nas_results.get('success') else 0,
+                    'regime_count': len(np.unique(nas_assignments)) if nas_results.get('success') and len(nas_assignments) > 0 else 0,
                     'execution_time': nas_results.get('execution_time', 0),
-                    'regime_distribution': self._calculate_regime_distribution(nas_results.get('regime_predictions', [])) if nas_results.get('success') else {}
+                    'regime_distribution': self._calculate_regime_distribution(nas_assignments) if nas_results.get('success') and len(nas_assignments) > 0 else {}
                 }
             }
             
-            # Calculate agreement metrics
+            # Calculate agreement metrics using semantic mapping
             if comparison['tas_analysis']['success'] and comparison['nas_analysis']['success']:
-                tas_preds = np.array(tas_results.get('regime_predictions', []))
-                nas_preds = np.array(nas_results.get('regime_predictions', []))
+                tas_preds = np.array(tas_assignments)
+                nas_preds = np.array(nas_assignments)
                 
                 min_len = min(len(tas_preds), len(nas_preds))
                 if min_len > 0:
                     tas_preds = tas_preds[:min_len]
                     nas_preds = nas_preds[:min_len]
                     
-                    agreement_rate = np.sum(tas_preds == nas_preds) / min_len
+                    # Perform semantic divergence assessment to get proper regime mapping
+                    semantic_assessment = self._perform_semantic_divergence_assessment(
+                        tas_preds, nas_preds, min_len
+                    )
+                    
+                    # Use semantic consensus as the primary agreement rate
                     comparison['agreement_metrics'] = {
-                        'agreement_rate': float(agreement_rate),
+                        'agreement_rate': float(semantic_assessment.get('semantic_consensus', 0.0)),
+                        'raw_agreement_rate': float(semantic_assessment.get('raw_consensus', 0.0)),
+                        'semantic_consensus': float(semantic_assessment.get('semantic_consensus', 0.0)),
+                        'consensus_improvement': float(semantic_assessment.get('consensus_improvement', 0.0)),
+                        'mapping_quality': float(semantic_assessment.get('mapping_quality', 0.0)),
                         'total_samples': min_len,
-                        'matching_samples': int(np.sum(tas_preds == nas_preds))
+                        'matching_samples': int(semantic_assessment.get('semantic_consensus', 0.0) * min_len),
+                        'raw_matching_samples': int(semantic_assessment.get('raw_consensus', 0.0) * min_len),
+                        'regime_mapping': semantic_assessment.get('regime_mapping', {}),
+                        'assessment_method': semantic_assessment.get('assessment_method', 'unknown')
                     }
                 else:
                     comparison['agreement_metrics'] = {'error': 'No overlapping predictions'}
@@ -1480,8 +1905,20 @@ class HybridOrchestrator:
                 
                 agreement_metrics = comparison.get('agreement_metrics', {})
                 if 'error' not in agreement_metrics:
-                    tprint(f"Agreement Rate: {agreement_metrics.get('agreement_rate', 0):.2%}")
-                    tprint(f"Matching Samples: {agreement_metrics.get('matching_samples', 0)}")
+                    tprint(f"[bold cyan]Semantic Agreement Rate: {agreement_metrics.get('semantic_consensus', 0):.2%}[/bold cyan]")
+                    tprint(f"Semantic Matching Samples: {agreement_metrics.get('matching_samples', 0)}/{agreement_metrics.get('total_samples', 0)}")
+                    tprint(f"Raw Agreement Rate: {agreement_metrics.get('raw_agreement_rate', 0):.2%} (without mapping)")
+                    tprint(f"Raw Matching Samples: {agreement_metrics.get('raw_matching_samples', 0)}/{agreement_metrics.get('total_samples', 0)}")
+                    tprint(f"[green]Consensus Improvement: +{agreement_metrics.get('consensus_improvement', 0):.2%}[/green]")
+                    tprint(f"Mapping Quality: {agreement_metrics.get('mapping_quality', 0):.2%}")
+                    tprint(f"Assessment Method: {agreement_metrics.get('assessment_method', 'unknown')}")
+                    
+                    # Show regime mapping if available
+                    regime_mapping = agreement_metrics.get('regime_mapping', {})
+                    if regime_mapping:
+                        tprint(f"\n[bold]Regime Mapping (NAS→TAS):[/bold]")
+                        for nas_regime, tas_regime in sorted(regime_mapping.items()):
+                            tprint(f"  NAS Regime {nas_regime} → TAS Regime {tas_regime}")
                 else:
                     tprint(f"[red]Agreement analysis error: {agreement_metrics['error']}[/red]")
             else:
@@ -1536,7 +1973,7 @@ class HybridOrchestrator:
                 tprint(f"NAS Success: {detection_summary.get('nas_success', False)}")
                 tprint(f"Final Regimes: {output_summary.get('final_regimes', 0)}")
                 tprint(f"Target Range Met: {output_summary.get('target_range_met', False)}")
-                tprint(f"Agreement Rate: {output_summary.get('agreement_rate', 0):.2%}")
+                tprint(f"[bold cyan]Semantic Agreement Rate: {output_summary.get('agreement_rate', 0):.2%}[/bold cyan]")
             else:
                 tprint(f"[red]Summary error: {summary['error']}[/red]")
             
@@ -1607,27 +2044,170 @@ class HybridOrchestrator:
 
     def _run_tas_detection(self, market_data: Union[pd.DataFrame, np.ndarray],
                           timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
-        """Run TAS regime detection."""
+        """Run TAS regime detection with comprehensive error handling."""
         try:
+            tprint(f"[bold cyan]🔍 === TAS DETECTION START ===[/bold cyan]")
+            tprint(f"[cyan]📍 Timeframe: {timeframe}[/cyan]")
+            self.logger.info(f"🌳 Starting TAS detection for {timeframe}")
+            
+            tprint(f"[yellow]🔧 Step 1: Checking TAS system initialization...[/yellow]")
             if self.tas_system is None:
-                return {'error': 'TAS system not initialized', 'timeframe': timeframe}
+                error_msg = 'TAS system not initialized'
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"[bold red]❌ CRITICAL: TAS system is None![/bold red]")
+                return {'error': error_msg, 'success': False, 'timeframe': timeframe, 'system': 'TAS'}
+            
+            tprint(f"[green]✅ TAS system is initialized: {type(self.tas_system).__name__}[/green]")
+            tprint(f"[cyan]🔧 TAS system has detect_regimes: {hasattr(self.tas_system, 'detect_regimes')}[/cyan]")
 
+            # Validate input data
+            tprint(f"[yellow]🔧 Step 2: Validating input data...[/yellow]")
+            if market_data is None:
+                error_msg = 'Market data is None'
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"[bold red]❌ CRITICAL: Market data is None![/bold red]")
+                return {'error': error_msg, 'success': False, 'timeframe': timeframe, 'system': 'TAS'}
+            
+            tprint(f"[green]✅ Market data is not None[/green]")
+            tprint(f"[cyan]📊 Market data type: {type(market_data).__name__}[/cyan]")
+            
+            if hasattr(market_data, 'shape'):
+                tprint(f"[cyan]📊 Market data shape: {market_data.shape}[/cyan]")
+                if market_data.shape[0] == 0:
+                    error_msg = f'Empty market data - shape: {market_data.shape}'
+                    self.logger.error(f"❌ {error_msg}")
+                    tprint(f"[bold red]❌ CRITICAL: Empty market data![/bold red]")
+                    return {'error': error_msg, 'success': False, 'timeframe': timeframe, 'system': 'TAS'}
+                tprint(f"[green]✅ Market data has {market_data.shape[0]} rows[/green]")
+            else:
+                tprint(f"[yellow]⚠️ Market data has no shape attribute[/yellow]")
+
+            self.logger.info(f"📊 TAS input data shape: {market_data.shape if hasattr(market_data, 'shape') else 'Unknown'}")
+            
+            # Run TAS detection
+            tprint(f"[yellow]🔧 Step 3: Calling TAS detect_regimes method...[/yellow]")
+            tprint(f"[cyan]🔍 Parameters: optimize_performance=True, enable_patchtst_enhancement=True[/cyan]")
+            self.logger.info("🚀 Calling TAS detect_regimes method...")
+            
+            tprint(f"[bold blue]⏳ Executing TAS detection...[/bold blue]")
             result = self.tas_system.detect_regimes(
                 market_data, timestamps, optimize_performance=True, enable_patchtst_enhancement=True
             )
+            tprint(f"[bold green]✅ TAS detect_regimes returned![/bold green]")
+            
+            tprint(f"[yellow]🔧 Step 4: Analyzing TAS result...[/yellow]")
+            self.logger.info(f"📋 TAS result type: {type(result)}")
+            tprint(f"[cyan]📋 TAS result type: {type(result)}[/cyan]")
+            
+            tprint(f"[cyan]🔍 Checking result for 'success' attribute...[/cyan]")
+            success_attr = getattr(result, 'success', 'No success attribute')
+            self.logger.info(f"📋 TAS result success: {success_attr}")
+            tprint(f"[cyan]📋 TAS result success: {success_attr}[/cyan]")
+            
+            if result is None:
+                error_msg = 'TAS detect_regimes returned None'
+                self.logger.error(f"❌ {error_msg}")
+                tprint(f"[bold red]❌ CRITICAL: TAS detect_regimes returned None![/bold red]")
+                return {'error': error_msg, 'success': False, 'timeframe': timeframe, 'system': 'TAS'}
 
+            tprint(f"[green]✅ Result is not None[/green]")
+            
+            # Extract results with error handling
+            tprint(f"[yellow]🔧 Step 5: Extracting result attributes...[/yellow]")
+            success = getattr(result, 'success', False)
+            tprint(f"[cyan]📊 success = {success}[/cyan]")
+            
+            regime_predictions = getattr(result, 'regime_predictions', np.array([]))
+            tprint(f"[cyan]📊 regime_predictions length = {len(regime_predictions) if hasattr(regime_predictions, '__len__') else 'N/A'}[/cyan]")
+            
+            regime_probabilities = getattr(result, 'regime_probabilities', np.array([]))
+            tprint(f"[cyan]📊 regime_probabilities length = {len(regime_probabilities) if hasattr(regime_probabilities, '__len__') else 'N/A'}[/cyan]")
+            
+            execution_time = getattr(result, 'execution_time', 0.0)
+            tprint(f"[cyan]📊 execution_time = {execution_time:.2f}s[/cyan]")
+            
+            # Extract detailed error information
+            tprint(f"[yellow]🔧 Step 6: Checking for error information...[/yellow]")
+            error_message = getattr(result, 'error_message', None)
+            error_details = getattr(result, 'error_details', None)
+            error_type = getattr(result, 'error_type', None)
+            
+            if error_message:
+                tprint(f"[red]❌ error_message: {error_message}[/red]")
+            if error_details:
+                tprint(f"[red]❌ error_details: {error_details}[/red]")
+            if error_type:
+                tprint(f"[red]❌ error_type: {error_type}[/red]")
+            
+            self.logger.info(f"📊 TAS detection results - Success: {success}, Predictions: {len(regime_predictions)}, Time: {execution_time:.2f}s")
+            
+            if not success:
+                tprint(f"[bold red]❌ TAS DETECTION FAILED![/bold red]")
+                self.logger.error(f"❌ TAS detection failed - Error message: {error_message}")
+                self.logger.error(f"❌ TAS detection failed - Error details: {error_details}")
+                self.logger.error(f"❌ TAS detection failed - Error type: {error_type}")
+                
+                # Log all attributes of the result object for debugging
+                tprint(f"[yellow]🔧 Dumping all TAS result attributes for debugging...[/yellow]")
+                self.logger.info(f"🔧 TAS result attributes: {dir(result)}")
+                tprint(f"[cyan]🔧 TAS result attributes: {[attr for attr in dir(result) if not attr.startswith('_')]}[/cyan]")
+                
+                for attr in dir(result):
+                    if not attr.startswith('_'):
+                        try:
+                            value = getattr(result, attr)
+                            self.logger.info(f"🔧 TAS result.{attr}: {value}")
+                            tprint(f"[cyan]🔧 TAS result.{attr} = {value}[/cyan]")
+                        except Exception as e:
+                            self.logger.info(f"🔧 TAS result.{attr}: <error accessing: {e}>")
+                            tprint(f"[yellow]🔧 TAS result.{attr} = <error accessing: {e}>[/yellow]")
+            else:
+                tprint(f"[bold green]✅ TAS DETECTION SUCCEEDED![/bold green]")
+
+            tprint(f"[bold cyan]🔍 === TAS DETECTION END ===[/bold cyan]")
             return {
-                'success': result.success,
-                'regime_predictions': getattr(result, 'regime_predictions', np.array([])),
-                'regime_probabilities': getattr(result, 'regime_probabilities', np.array([])),
-                'execution_time': getattr(result, 'execution_time', 0.0),
+                'success': success,
+                'regime_predictions': regime_predictions,
+                'regime_assignments': regime_predictions,  # Standardize key for compatibility
+                'regime_probabilities': regime_probabilities,
+                'execution_time': execution_time,
                 'timeframe': timeframe,
-                'system': 'TAS'
+                'system': 'TAS',
+                'result': result,  # Include full result for debugging
+                'error_message': error_message,
+                'error_details': error_details,
+                'error_type': error_type
             }
 
         except Exception as e:
-            self.logger.error(f"❌ TAS regime detection failed: {e}")
-            raise ValueError(f"TAS regime detection failed: {e}")
+            error_msg = f"TAS regime detection failed: {str(e)}"
+            tprint(f"[bold red]💥 EXCEPTION IN TAS DETECTION![/bold red]")
+            tprint(f"[red]❌ Exception type: {type(e).__name__}[/red]")
+            tprint(f"[red]❌ Exception message: {str(e)}[/red]")
+            tprint(f"[red]❌ Exception details: {repr(e)}[/red]")
+            
+            self.logger.error(f"❌ {error_msg}")
+            self.logger.error(f"❌ TAS detection exception type: {type(e).__name__}")
+            self.logger.error(f"❌ TAS detection exception details: {repr(e)}")
+            
+            # Print traceback
+            import traceback
+            traceback_str = traceback.format_exc()
+            tprint(f"[red]📋 Full traceback:\n{traceback_str}[/red]")
+            self.logger.error(f"❌ TAS detection traceback:\n{traceback_str}")
+            
+            tprint(f"[bold cyan]🔍 === TAS DETECTION END (EXCEPTION) ===[/bold cyan]")
+            
+            # Return error instead of raising exception
+            return {
+                'error': error_msg,
+                'success': False,
+                'timeframe': timeframe,
+                'system': 'TAS',
+                'exception_type': type(e).__name__,
+                'exception_details': repr(e),
+                'traceback': traceback_str
+            }
 
     def _run_nas_detection_sync(self, market_data: Union[pd.DataFrame, np.ndarray],
                                 timestamps: Optional[np.ndarray], timeframe: str) -> Dict[str, Any]:
@@ -1683,6 +2263,38 @@ class HybridOrchestrator:
 
             # Step 1: Regime Alignment
             self.logger.info("🔄 Step 1: Performing regime alignment")
+            
+            # Log regime distributions to identify imbalance source
+            if len(nas_predictions) > 0:
+                nas_unique, nas_counts = np.unique(nas_predictions, return_counts=True)
+                nas_distribution = {int(regime): f"{(count/len(nas_predictions)*100):.1f}%" 
+                                   for regime, count in zip(nas_unique, nas_counts)}
+                self.logger.info(f"📊 NAS Regime Distribution: {nas_distribution}")
+                tprint(f"[yellow]📊 NAS Regime Distribution: {nas_distribution}[/yellow]")
+                
+                # Alert on highly imbalanced regimes
+                for regime, count in zip(nas_unique, nas_counts):
+                    percentage = (count/len(nas_predictions)*100)
+                    if percentage > 20.0:
+                        tprint(f"[bold red]⚠️🚨 ALERT: NAS Regime {regime} is {percentage:.1f}% (>20% threshold)[/bold red]")
+                    elif percentage < 3.0:
+                        tprint(f"[bold yellow]⚠️ WARNING: NAS Regime {regime} is {percentage:.1f}% (<3% threshold)[/bold yellow]")
+            
+            if len(tas_predictions) > 0:
+                tas_unique, tas_counts = np.unique(tas_predictions, return_counts=True)
+                tas_distribution = {int(regime): f"{(count/len(tas_predictions)*100):.1f}%" 
+                                   for regime, count in zip(tas_unique, tas_counts)}
+                self.logger.info(f"📊 TAS Regime Distribution: {tas_distribution}")
+                tprint(f"[yellow]📊 TAS Regime Distribution: {tas_distribution}[/yellow]")
+                
+                # Alert on highly imbalanced regimes
+                for regime, count in zip(tas_unique, tas_counts):
+                    percentage = (count/len(tas_predictions)*100)
+                    if percentage > 20.0:
+                        tprint(f"[bold red]⚠️🚨 ALERT: TAS Regime {regime} is {percentage:.1f}% (>20% threshold)[/bold red]")
+                    elif percentage < 3.0:
+                        tprint(f"[bold yellow]⚠️ WARNING: TAS Regime {regime} is {percentage:.1f}% (<3% threshold)[/bold yellow]")
+            
             alignment_result = self.regime_aligner.align_regimes(
                 nas_predictions, tas_predictions, market_data
             )
@@ -1797,7 +2409,239 @@ class HybridOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Hybrid centers calculation failed: {e}")
             return np.array([])
-
+    
+    def _perform_semantic_divergence_assessment(
+        self, 
+        tas_assignments: np.ndarray, 
+        nas_assignments: np.ndarray, 
+        min_length: int
+    ) -> Dict[str, Any]:
+        """
+        Perform semantic divergence assessment with regime mapping for consensus validation.
+        
+        This method creates a semantic mapping between TAS and NAS regimes based on their
+        characteristics, enabling more accurate consensus measurement.
+        
+        Args:
+            tas_assignments: TAS regime assignments
+            nas_assignments: NAS regime assignments  
+            min_length: Minimum length for comparison
+            
+        Returns:
+            Dictionary containing semantic divergence assessment results
+        """
+        self.logger.info("🧠 Starting semantic divergence assessment with regime mapping")
+        try:
+            if len(tas_assignments) == 0 or len(nas_assignments) == 0:
+                self.logger.warning("⚠️ Missing assignments for semantic assessment")
+                return {
+                    'semantic_divergence_rate': 1.0,
+                    'regime_mapping': {},
+                    'assessment_method': 'failed_missing_data'
+                }
+            
+            # Ensure both assignments have the same length
+            tas_assignments = np.array(tas_assignments[:min_length])
+            nas_assignments = np.array(nas_assignments[:min_length])
+            
+            self.logger.info(f"📊 Analyzing {min_length} samples: TAS={len(set(tas_assignments))} regimes, NAS={len(set(nas_assignments))} regimes")
+            
+            # For hybrid orchestrator, we'll use a distribution-based semantic approach
+            # since we don't have direct access to market data features
+            
+            # Step 1: Calculate regime distributions
+            tas_distribution = self._calculate_regime_distribution(tas_assignments)
+            nas_distribution = self._calculate_regime_distribution(nas_assignments)
+            
+            # Step 2: Find optimal regime mapping using distribution similarity
+            regime_mapping = self._find_optimal_regime_mapping_by_distribution(tas_distribution, nas_distribution)
+            
+            if not regime_mapping:
+                self.logger.warning("⚠️ No regime mapping found, using numerical comparison")
+                return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+            
+            # Step 3: Calculate semantic divergence using mapped regimes
+            self.logger.info("🧮 Calculating semantic divergence using mapped regimes")
+            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
+            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_divergence_rate = np.mean(semantic_disagreement_mask)
+            
+            # Step 4: Calculate mapping quality metrics
+            self.logger.info("📊 Calculating mapping quality metrics")
+            mapping_quality = self._calculate_mapping_quality_by_distribution(tas_distribution, nas_distribution, regime_mapping)
+            
+            # Step 5: Report results
+            self.logger.info(f"✅ Semantic divergence assessment completed:")
+            self.logger.info(f"   📊 Semantic divergence rate: {semantic_divergence_rate:.3f}")
+            self.logger.info(f"   🎯 Regime mappings: {len(regime_mapping)}")
+            self.logger.info(f"   📈 Mapping quality: {mapping_quality:.3f}")
+            
+            # Calculate semantic consensus improvement
+            raw_agreements = np.sum(tas_assignments == nas_assignments)
+            raw_consensus = raw_agreements / min_length if min_length > 0 else 0.0
+            semantic_agreements = np.sum(tas_assignments == semantic_assignments)
+            semantic_consensus = semantic_agreements / min_length if min_length > 0 else 0.0
+            consensus_improvement = semantic_consensus - raw_consensus
+            
+            self.logger.info(f"   🤝 Raw consensus: {raw_consensus:.3f} ({raw_agreements}/{min_length})")
+            self.logger.info(f"   🧠 Semantic consensus: {semantic_consensus:.3f} ({semantic_agreements}/{min_length})")
+            self.logger.info(f"   📈 Consensus improvement: {consensus_improvement:.3f}")
+            
+            return {
+                'semantic_divergence_rate': semantic_divergence_rate,
+                'regime_mapping': regime_mapping,
+                'mapping_quality': mapping_quality,
+                'raw_consensus': raw_consensus,
+                'semantic_consensus': semantic_consensus,
+                'consensus_improvement': consensus_improvement,
+                'assessment_method': 'distribution_based',
+                'tas_distribution': tas_distribution,
+                'nas_distribution': nas_distribution
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Semantic divergence assessment failed: {e}")
+            return self._assess_numerical_divergence_fallback(tas_assignments, nas_assignments)
+    
+    def _calculate_regime_distribution(self, assignments: np.ndarray) -> Dict[str, float]:
+        """Calculate the distribution of regime assignments."""
+        try:
+            if len(assignments) == 0:
+                return {}
+            
+            total_assignments = len(assignments)
+            regime_counts = {}
+            
+            for assignment in assignments:
+                regime_counts[assignment] = regime_counts.get(assignment, 0) + 1
+            
+            # Convert to percentages
+            regime_distribution = {}
+            for regime, count in regime_counts.items():
+                key = f'regime_{regime}'
+                percentage = (count / total_assignments) * 100
+                regime_distribution[key] = percentage
+            
+            return regime_distribution
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Distribution calculation failed: {e}")
+            return {}
+    
+    def _find_optimal_regime_mapping_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float]) -> Dict[int, int]:
+        """Find optimal mapping between NAS and TAS regimes using distribution similarity."""
+        try:
+            if not tas_distribution or not nas_distribution:
+                return {}
+            
+            # Extract regime IDs and their percentages
+            tas_regimes = {}
+            nas_regimes = {}
+            
+            for key, percentage in tas_distribution.items():
+                regime_id = int(key.replace('regime_', ''))
+                tas_regimes[regime_id] = percentage
+            
+            for key, percentage in nas_distribution.items():
+                regime_id = int(key.replace('regime_', ''))
+                nas_regimes[regime_id] = percentage
+            
+            # Create mapping based on distribution similarity
+            regime_mapping = {}
+            used_tas_regimes = set()
+            
+            # Sort regimes by size (largest first) for better mapping
+            tas_sorted = sorted(tas_regimes.items(), key=lambda x: x[1], reverse=True)
+            nas_sorted = sorted(nas_regimes.items(), key=lambda x: x[1], reverse=True)
+            
+            # Map largest NAS regime to largest TAS regime, etc.
+            for i, (nas_regime, nas_percentage) in enumerate(nas_sorted):
+                if i < len(tas_sorted) and tas_sorted[i][0] not in used_tas_regimes:
+                    tas_regime = tas_sorted[i][0]
+                    regime_mapping[nas_regime] = tas_regime
+                    used_tas_regimes.add(tas_regime)
+            
+            return regime_mapping
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Distribution-based mapping failed: {e}")
+            return {}
+    
+    def _apply_regime_mapping(self, nas_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
+        """Apply regime mapping to NAS assignments."""
+        try:
+            mapped_assignments = nas_assignments.copy()
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                mask = nas_assignments == nas_regime
+                mapped_assignments[mask] = tas_regime
+            
+            return mapped_assignments
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regime mapping application failed: {e}")
+            return nas_assignments
+    
+    def _calculate_mapping_quality_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float], regime_mapping: Dict[int, int]) -> float:
+        """Calculate quality metrics for the regime mapping based on distribution similarity."""
+        try:
+            if not regime_mapping:
+                return 0.0
+            
+            total_similarity = 0.0
+            mapping_count = 0
+            
+            for nas_regime, tas_regime in regime_mapping.items():
+                nas_key = f'regime_{nas_regime}'
+                tas_key = f'regime_{tas_regime}'
+                
+                if nas_key in nas_distribution and tas_key in tas_distribution:
+                    nas_percentage = nas_distribution[nas_key]
+                    tas_percentage = tas_distribution[tas_key]
+                    
+                    # Calculate similarity (higher is better, max difference is 100%)
+                    similarity = 1.0 - abs(nas_percentage - tas_percentage) / 100.0
+                    total_similarity += similarity
+                    mapping_count += 1
+            
+            if mapping_count == 0:
+                return 0.0
+            
+            # Average similarity as quality metric
+            quality = total_similarity / mapping_count
+            return max(0.0, quality)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Mapping quality calculation failed: {e}")
+            return 0.0
+    
+    def _assess_numerical_divergence_fallback(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
+        """Fallback numerical divergence assessment when semantic analysis fails."""
+        try:
+            disagreement_mask = tas_assignments != nas_assignments
+            numerical_divergence_rate = np.mean(disagreement_mask)
+            
+            return {
+                'semantic_divergence_rate': numerical_divergence_rate,
+                'regime_mapping': {},
+                'mapping_quality': 0.5,
+                'raw_consensus': 1.0 - numerical_divergence_rate,
+                'semantic_consensus': 1.0 - numerical_divergence_rate,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'numerical_fallback'
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Numerical divergence fallback failed: {e}")
+            return {
+                'semantic_divergence_rate': 1.0,
+                'regime_mapping': {},
+                'mapping_quality': 0.0,
+                'raw_consensus': 0.0,
+                'semantic_consensus': 0.0,
+                'consensus_improvement': 0.0,
+                'assessment_method': 'failed'
+            }
 
 
 def create_hybrid_orchestrator(config: HybridOrchestratorConfig) -> HybridOrchestrator:

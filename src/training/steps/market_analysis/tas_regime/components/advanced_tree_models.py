@@ -23,6 +23,9 @@ from dataclasses import dataclass, field
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint for logging
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success
+
 # Import tree-based models
 try:
     from sklearn.ensemble import RandomForestClassifier

@@ -419,7 +419,18 @@ class KlinesParquetManager:
             if dataframes:
                 self.logger.info(f"🔧 First dataframe shape: {dataframes[0].shape}")
                 self.logger.info(f"🔧 First dataframe columns: {list(dataframes[0].columns)}")
+                # Log details about each dataframe being combined
+                total_records_before_combine = 0
+                for idx, df in enumerate(dataframes):
+                    df_records = len(df)
+                    total_records_before_combine += df_records
+                    self.logger.info(
+                        f"   📦 DataFrame {idx+1}/{len(dataframes)}: {df_records:,} records, "
+                        f"index range: {df.index.min()} to {df.index.max()}"
+                    )
+                self.logger.info(f"   📊 Total records before concat: {total_records_before_combine:,}")
             combined_df = pd.concat(dataframes, ignore_index=False)
+            self.logger.info(f"🔧 After concat: {len(combined_df)} records")
             
             # Normalize index types before sorting to prevent Timestamp vs int comparison errors
             if not combined_df.empty and len(combined_df.index) > 0:
@@ -444,9 +455,30 @@ class KlinesParquetManager:
             combined_df = combined_df.sort_index()
             self.logger.info(f"🔧 After sorting: {len(combined_df)} records")
             
-            # Remove duplicates
-            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
-            self.logger.info(f"🔧 After duplicate removal: {len(combined_df)} records")
+            # Remove duplicates - with detailed logging
+            records_before_dedup = len(combined_df)
+            duplicate_mask = combined_df.index.duplicated(keep='last')
+            num_duplicates = duplicate_mask.sum()
+            
+            if num_duplicates > 0:
+                # Get sample of duplicate timestamps for debugging
+                duplicate_indices = combined_df.index[duplicate_mask]
+                sample_duplicates = duplicate_indices[:10].tolist() if len(duplicate_indices) > 0 else []
+                
+                # Count how many times each timestamp appears
+                index_counts = combined_df.index.value_counts()
+                most_duplicated = index_counts.head(5)
+                
+                self.logger.warning(
+                    f"⚠️ 🔍 Found {num_duplicates:,} duplicate records ({num_duplicates/records_before_dedup*100:.2f}% of data)\n"
+                    f"   📊 Records before dedup: {records_before_dedup:,}\n"
+                    f"   🔢 Unique timestamps: {len(index_counts):,}\n"
+                    f"   🔝 Most duplicated timestamps:\n{most_duplicated.to_string()}\n"
+                    f"   🧪 Sample duplicate timestamps: {sample_duplicates}"
+                )
+            
+            combined_df = combined_df[~duplicate_mask]
+            self.logger.info(f"🔧 After duplicate removal: {len(combined_df)} records (removed {num_duplicates:,})")
             
             # Apply date filtering if specified
             if start_date is not None or end_date is not None:
@@ -470,16 +502,27 @@ class KlinesParquetManager:
                             # Get sample of invalid values for debugging
                             invalid_sample = timestamp_series[~valid_mask].head(5).tolist()
                             
+                            # Analyze types of invalid values
+                            nan_count = timestamp_series.isna().sum()
+                            inf_count = np.isinf(timestamp_series.replace([np.inf, -np.inf], np.nan).dropna()).sum()
+                            
+                            # Check if there are valid timestamps to compare
+                            valid_timestamps = timestamp_series[valid_mask]
+                            timestamp_range = f"{valid_timestamps.min()} to {valid_timestamps.max()}" if len(valid_timestamps) > 0 else "No valid timestamps"
+                            
                             self.logger.warning(
-                                f"⚠️ Found {invalid_count} invalid timestamps (NaN or inf) in 'timestamp' column, removing them\n"
-                                f"   📊 Dataframe info: {len(combined_df)} rows × {len(combined_df.columns)} columns\n"
+                                f"⚠️ Found {invalid_count:,} invalid timestamps (NaN or inf) in 'timestamp' column, removing them\n"
+                                f"   📊 Dataframe info: {len(combined_df):,} rows × {len(combined_df.columns)} columns\n"
                                 f"   📋 Columns: {list(combined_df.columns)}\n"
+                                f"   🔢 Invalid breakdown: {nan_count:,} NaN, {inf_count:,} Inf\n"
+                                f"   📈 Valid timestamp range: {timestamp_range}\n"
+                                f"   💯 Invalid percentage: {invalid_count/len(timestamp_series)*100:.2f}%\n"
                                 f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
                                 f"   🧪 Sample invalid values: {invalid_sample}"
                             )
                             timestamp_series = timestamp_series[valid_mask]
                             combined_df = combined_df[valid_mask]
-                            self.logger.info(f"🔧 After cleaning invalid timestamps: {len(combined_df)} records")
+                            self.logger.info(f"🔧 After cleaning invalid timestamps: {len(combined_df):,} records (removed {invalid_count:,})")
                         
                         # Try to convert timestamps to datetime using seconds first
                         timestamp_col = pd.to_datetime(timestamp_series, unit='s')
@@ -506,16 +549,27 @@ class KlinesParquetManager:
                             # Get sample of invalid values for debugging
                             invalid_sample = open_time_series[~valid_mask].head(5).tolist()
                             
+                            # Analyze types of invalid values
+                            nan_count = open_time_series.isna().sum()
+                            inf_count = np.isinf(open_time_series.replace([np.inf, -np.inf], np.nan).dropna()).sum()
+                            
+                            # Check if there are valid timestamps to compare
+                            valid_timestamps = open_time_series[valid_mask]
+                            timestamp_range = f"{valid_timestamps.min()} to {valid_timestamps.max()}" if len(valid_timestamps) > 0 else "No valid timestamps"
+                            
                             self.logger.warning(
-                                f"⚠️ Found {invalid_count} invalid timestamps (NaN or inf) in 'open_time' column, removing them\n"
-                                f"   📊 Dataframe info: {len(combined_df)} rows × {len(combined_df.columns)} columns\n"
+                                f"⚠️ Found {invalid_count:,} invalid timestamps (NaN or inf) in 'open_time' column, removing them\n"
+                                f"   📊 Dataframe info: {len(combined_df):,} rows × {len(combined_df.columns)} columns\n"
                                 f"   📋 Columns: {list(combined_df.columns)}\n"
+                                f"   🔢 Invalid breakdown: {nan_count:,} NaN, {inf_count:,} Inf\n"
+                                f"   📈 Valid timestamp range: {timestamp_range}\n"
+                                f"   💯 Invalid percentage: {invalid_count/len(open_time_series)*100:.2f}%\n"
                                 f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
                                 f"   🧪 Sample invalid values: {invalid_sample}"
                             )
                             open_time_series = open_time_series[valid_mask]
                             combined_df = combined_df[valid_mask]
-                            self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df)} records")
+                            self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df):,} records (removed {invalid_count:,})")
                         
                         # open_time is typically in milliseconds for Binance data
                         timestamp_col = pd.to_datetime(open_time_series, unit='ms')
@@ -534,15 +588,15 @@ class KlinesParquetManager:
                     
                     self.logger.info(f"📅 Available data range: {min_date.date()} to {max_date.date()}")
                     
-                    # If the requested date range doesn't match available data, use last 10 days
+                    # If the requested date range doesn't match available data, use last 20 days (light mode default)
                     if start_date is not None:
                         # Convert string to datetime if needed
                         if isinstance(start_date, str):
                             start_date = pd.to_datetime(start_date)
                         if start_date.date() > max_date.date():
                             self.logger.warning(f"⚠️ Requested start_date {start_date.date()} is beyond available data (max: {max_date.date()})")
-                            self.logger.info(f"📅 Using last 10 days of available data instead")
-                            start_date = max_date - timedelta(days=10)
+                            self.logger.info(f"📅 Using last 20 days of available data instead")
+                            start_date = max_date - timedelta(days=20)
                             end_date = max_date
                     
                     if end_date is not None:
@@ -551,14 +605,14 @@ class KlinesParquetManager:
                             end_date = pd.to_datetime(end_date)
                         if end_date.date() > max_date.date():
                             self.logger.warning(f"⚠️ Requested end_date {end_date.date()} is beyond available data (max: {max_date.date()})")
-                            self.logger.info(f"📅 Using last 10 days of available data instead")
-                            start_date = max_date - timedelta(days=10)
+                            self.logger.info(f"📅 Using last 20 days of available data instead")
+                            start_date = max_date - timedelta(days=20)
                             end_date = max_date
                     
                     if start_date is not None and end_date is not None and start_date.date() > end_date.date():
                         self.logger.warning(f"⚠️ Invalid date range: start_date {start_date.date()} > end_date {end_date.date()}")
-                        self.logger.info(f"📅 Using last 10 days of available data instead")
-                        start_date = max_date - timedelta(days=10)
+                        self.logger.info(f"📅 Using last 20 days of available data instead")
+                        start_date = max_date - timedelta(days=20)
                         end_date = max_date
                     
                     self.logger.info(f"📅 Final date range: {start_date.date()} to {end_date.date()}")
@@ -569,9 +623,9 @@ class KlinesParquetManager:
                     
                     if len(combined_df) == 0:
                         self.logger.warning(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
-                        self.logger.info(f"📅 Fallback: Using last 10 days from {max_date.date()}")
-                        last_10_days = max_date - timedelta(days=10)
-                        mask = timestamp_col >= last_10_days
+                        self.logger.info(f"📅 Fallback: Using last 20 days from {max_date.date()}")
+                        last_20_days = max_date - timedelta(days=20)
+                        mask = timestamp_col >= last_20_days
                         combined_df = combined_df[mask]
                         self.logger.info(f"📅 Fallback result: {len(combined_df)} records")
                 else:

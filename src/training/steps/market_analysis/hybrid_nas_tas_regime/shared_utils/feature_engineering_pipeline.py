@@ -20,7 +20,7 @@ from src.utils.tprint import (
 
 # Import existing feature generation utilities
 try:
-    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureConfig, FeatureResult
+    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureResult
     from src.feature_generation.core.factory import FeatureFactory
     from src.feature_generation.categories.momentum import MomentumCalculator
     from src.feature_generation.categories.volatility import VolatilityCalculator
@@ -33,6 +33,13 @@ try:
     FEATURE_GENERATION_AVAILABLE = True
 except ImportError:
     FEATURE_GENERATION_AVAILABLE = False
+
+# Import shared FeatureConfig for compatibility
+try:
+    from src.training.steps.market_analysis.shared_utils.features import FeatureConfig
+    SHARED_FEATURES_AVAILABLE = True
+except ImportError:
+    SHARED_FEATURES_AVAILABLE = False
 
 # Import existing utilities
 try:
@@ -281,21 +288,21 @@ class FeatureEngineeringPipeline:
                     polynomial_features = self._generate_polynomial_features(base_features)
                     base_features = pd.concat([base_features, polynomial_features], axis=1)
                     tprint_success(f"Polynomial features added: {base_features.shape}")
-                
+
                 # Step 4: Handle outliers if enabled
                 if self.config.enable_outlier_handling:
                     tprint_info("Step 4: Handling outliers")
                     tprint_progress(4, 7, "Feature Engineering Pipeline")
                     base_features = self._handle_outliers(base_features)
                     tprint_success("Outliers handled")
-                
+
                 # Step 5: Normalize features if enabled
                 if self.config.enable_normalization:
                     tprint_info("Step 5: Normalizing features")
                     tprint_progress(5, 7, "Feature Engineering Pipeline")
                     base_features = self._normalize_features(base_features)
                     tprint_success("Features normalized")
-                
+
                 # Step 6: Feature selection if enabled
                 selected_features = base_features
                 selection_info = {}
@@ -304,7 +311,7 @@ class FeatureEngineeringPipeline:
                     tprint_progress(6, 7, "Feature Engineering Pipeline")
                     selected_features, selection_info = self._select_features(base_features, target)
                     tprint_success(f"Features selected: {selected_features.shape}")
-                
+
                 # Step 7: Feature validation if enabled
                 validation_scores = {}
                 if self.config.enable_feature_validation and target is not None:
@@ -312,20 +319,20 @@ class FeatureEngineeringPipeline:
                     tprint_progress(7, 7, "Feature Engineering Pipeline")
                     validation_scores = self._validate_features(selected_features, target)
                     tprint_success("Features validated")
-            
-            # Step 8: Calculate feature importance
-            feature_importance = self._calculate_feature_importance(selected_features, target)
-            
-            # Step 9: Categorize features
-            feature_categories = self._categorize_features(selected_features)
-            
-            processing_time = time.time() - start_time
-            
-            self.logger.info(f"✅ Feature engineering completed in {processing_time:.2f}s")
-            self.logger.info(f"   Generated features: {selected_features.shape[1]}")
-            self.logger.info(f"   Selected features: {len(selection_info.get('selected_features', []))}")
-            
-            return FeaturePipelineResult(
+
+                # Step 8: Calculate feature importance
+                feature_importance = self._calculate_feature_importance(selected_features, target)
+
+                # Step 9: Categorize features
+                feature_categories = self._categorize_features(selected_features)
+
+                processing_time = time.time() - start_time
+
+                self.logger.info(f"✅ Feature engineering completed in {processing_time:.2f}s")
+                self.logger.info(f"   Generated features: {selected_features.shape[1]}")
+                self.logger.info(f"   Selected features: {len(selection_info.get('selected_features', []))}")
+
+                return FeaturePipelineResult(
                 features=selected_features,
                 feature_names=list(selected_features.columns),
                 feature_categories=feature_categories,
@@ -336,23 +343,23 @@ class FeatureEngineeringPipeline:
                 success=True,
                 hardware_optimization_applied=self.hardware_accelerator is not None,
                 matrix_operations_used=self.matrix_ops is not None
-            )
-            
-        except Exception as e:
-            processing_time = time.time() - start_time
-            self.logger.error(f"❌ Feature engineering failed: {e}")
-            
-            return FeaturePipelineResult(
-                features=pd.DataFrame(),
-                feature_names=[],
-                feature_categories={},
-                feature_importance={},
-                selection_info={},
-                validation_scores={},
-                processing_time=processing_time,
-                success=False,
-                error_message=str(e)
-            )
+                )
+
+            except Exception as e:
+                processing_time = time.time() - start_time
+                self.logger.error(f"❌ Feature engineering failed: {e}")
+
+                return FeaturePipelineResult(
+                    features=pd.DataFrame(),
+                    feature_names=[],
+                    feature_categories={},
+                    feature_importance={},
+                    selection_info={},
+                    validation_scores={},
+                    processing_time=processing_time,
+                    success=False,
+                    error_message=str(e)
+                )
     
     def _generate_base_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Generate base features for all categories.

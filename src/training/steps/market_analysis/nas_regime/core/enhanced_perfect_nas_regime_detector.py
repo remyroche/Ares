@@ -494,6 +494,9 @@ class EnhancedPerfectNASRegimeDetector:
                 tprint("⚠️ No feature extractor available, using raw data")
                 extracted_features = processed_data
 
+            # Verify feature scaling quality
+            self._verify_feature_scaling(extracted_features, system_name="NAS")
+
             # Step 2: Simple regime detection (simplified to avoid generator issues)
             self.logger.info("🎯 Performing simple regime detection...")
             tprint("🎯 Performing simple regime detection...")
@@ -902,7 +905,7 @@ class EnhancedPerfectNASRegimeDetector:
             n_clusters = max(2, n_clusters)  # At least 2 clusters
             
             # Perform K-means clustering to find natural regimes
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=n_clusters, n_init=10)
             cluster_labels = kmeans.fit_predict(data_normalized)
             
             tprint(f"📊 Found {n_clusters} natural regimes in the data")
@@ -973,7 +976,7 @@ class EnhancedPerfectNASRegimeDetector:
             data_normalized = scaler.fit_transform(data)
 
             # Use K-means with NAS-optimized parameters
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=n_regimes, n_init=10)
             regime_predictions = kmeans.fit_predict(data_normalized)
 
             # Calculate probabilities based on distance to cluster centers
@@ -993,7 +996,7 @@ class EnhancedPerfectNASRegimeDetector:
             # Fallback to simple clustering
             tprint("🔄 Using fallback clustering...")
             from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=n_regimes, n_init=10)
             regime_predictions = kmeans.fit_predict(data)
 
             # Simple uniform probabilities
@@ -1354,7 +1357,7 @@ class EnhancedPerfectNASRegimeDetector:
             n_clusters = min(n_regimes, len(data_np) // 20)  # Ensure reasonable cluster size
             n_clusters = max(2, n_clusters)  # At least 2 clusters
             
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=n_clusters, n_init=10)
             cluster_labels = kmeans.fit_predict(data_normalized)
             
             # Convert to tensor
@@ -1563,6 +1566,67 @@ class EnhancedPerfectNASRegimeDetector:
             self.logger.error(f"Data preparation failed: {e}")
             raise
 
+    def _verify_feature_scaling(self, features: np.ndarray, system_name: str = "System") -> None:
+        """Verify that features are properly scaled for clustering."""
+        try:
+            if features is None or len(features) == 0:
+                return
+            
+            # Calculate feature statistics
+            feature_means = np.mean(features, axis=0)
+            feature_stds = np.std(features, axis=0)
+            
+            # Calculate overall statistics
+            overall_mean = np.mean(np.abs(feature_means))
+            overall_std_mean = np.mean(feature_stds)
+            
+            # Log feature scaling quality
+            self.logger.info(f"📊 {system_name} Feature Scaling - Mean: {overall_mean:.4f}, Std: {overall_std_mean:.4f}")
+            tprint(f"[cyan]📊 {system_name} Feature Scaling Quality:[/cyan]")
+            tprint(f"[cyan]   Mean (abs): {overall_mean:.4f} (target: ~0.0)[/cyan]")
+            tprint(f"[cyan]   Std (mean): {overall_std_mean:.4f} (target: ~1.0)[/cyan]")
+            
+            # Check if features are properly scaled (mean≈0, std≈1)
+            mean_threshold = 0.5
+            std_lower = 0.3
+            std_upper = 3.0
+            
+            issues = []
+            
+            if overall_mean > mean_threshold:
+                issues.append(f"High mean ({overall_mean:.4f} > {mean_threshold})")
+                tprint(f"[bold yellow]⚠️ WARNING: {system_name} features have high mean ({overall_mean:.4f} > {mean_threshold})[/bold yellow]")
+                tprint(f"[yellow]   → Features may not be centered. Consider StandardScaler or normalization.[/yellow]")
+            
+            if overall_std_mean < std_lower or overall_std_mean > std_upper:
+                issues.append(f"Std out of range ({overall_std_mean:.4f} not in [{std_lower}, {std_upper}])")
+                tprint(f"[bold yellow]⚠️ WARNING: {system_name} features have unusual std ({overall_std_mean:.4f})[/bold yellow]")
+                tprint(f"[yellow]   → Features may need scaling. Consider StandardScaler.[/yellow]")
+            
+            # Check for constant or near-constant features
+            near_constant = np.sum(feature_stds < 0.01)
+            if near_constant > 0:
+                issues.append(f"{near_constant} near-constant features")
+                tprint(f"[bold yellow]⚠️ WARNING: {system_name} has {near_constant} near-constant features (std < 0.01)[/bold yellow]")
+                tprint(f"[yellow]   → These features provide little information for clustering.[/yellow]")
+            
+            # Check for extreme values
+            extreme_means = np.sum(np.abs(feature_means) > 10)
+            if extreme_means > 0:
+                tprint(f"[bold red]⚠️🚨 ALERT: {system_name} has {extreme_means} features with extreme means (|mean| > 10)[/bold red]")
+                tprint(f"[red]   → This may cause clustering instability. Strong scaling recommended.[/red]")
+                issues.append(f"{extreme_means} features with extreme values")
+            
+            if issues:
+                self.logger.warning(f"⚠️ {system_name} feature scaling issues: {', '.join(issues)}")
+            else:
+                tprint(f"[green]✅ {system_name} features are well-scaled[/green]")
+                self.logger.info(f"✅ {system_name} features are well-scaled")
+                
+        except Exception as e:
+            self.logger.warning(f"Feature scaling verification failed: {e}")
+            tprint(f"[yellow]⚠️ Feature scaling verification failed: {e}[/yellow]")
+    
     def _extract_features_basic(self, processed_data: np.ndarray) -> np.ndarray:
         """Basic feature extraction."""
         try:
@@ -1574,16 +1638,25 @@ class EnhancedPerfectNASRegimeDetector:
             return processed_data
 
     def _detect_regimes_simple(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Simple regime detection using clustering."""
+        """Simple regime detection using clustering with minimum size constraints."""
         try:
             from sklearn.cluster import KMeans
 
-            # Determine number of regimes
-            n_regimes = min(8, max(3, features.shape[0] // 50))
+            # Determine number of regimes (target 8-12 for better balance)
+            n_regimes = min(12, max(8, features.shape[0] // 192))
 
-            # Perform clustering
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            # Perform clustering (removed fixed random_state for true randomization)
+            kmeans = KMeans(n_clusters=n_regimes, n_init=10)
             regime_predictions = kmeans.fit_predict(features)
+            
+            # CRITICAL: Enforce minimum regime size constraint (5% of samples)
+            min_regime_size = max(int(0.05 * len(regime_predictions)), 48)  # Min 5% or 48 samples
+            regime_predictions = self._merge_small_regimes(regime_predictions, features, min_regime_size)
+            
+            # Update n_regimes after merging
+            n_regimes = len(np.unique(regime_predictions))
+            self.logger.info(f"✅ Regime size constraint enforced: {n_regimes} regimes (min size: {min_regime_size})")
+            tprint(f"✅ Regime size constraint enforced: {n_regimes} regimes (min size: {min_regime_size})")
 
             # Create probabilities
             regime_probabilities = np.zeros((len(regime_predictions), n_regimes))
@@ -1604,6 +1677,96 @@ class EnhancedPerfectNASRegimeDetector:
             regime_predictions = np.random.randint(0, 3, n_samples)
             regime_probabilities = np.random.dirichlet(np.ones(3), n_samples)
             return regime_predictions, regime_probabilities
+    
+    def _merge_small_regimes(self, regime_predictions: np.ndarray, features: np.ndarray, 
+                           min_regime_size: int) -> np.ndarray:
+        """
+        Merge regimes with fewer than min_regime_size samples into nearest larger regime.
+        
+        Args:
+            regime_predictions: Initial regime assignments
+            features: Feature matrix used for clustering
+            min_regime_size: Minimum number of samples per regime
+            
+        Returns:
+            Updated regime assignments with small regimes merged
+        """
+        try:
+            from sklearn.metrics.pairwise import euclidean_distances
+            
+            regime_predictions = regime_predictions.copy()
+            unique_regimes = np.unique(regime_predictions)
+            
+            # Calculate regime sizes
+            regime_sizes = {r: np.sum(regime_predictions == r) for r in unique_regimes}
+            
+            # Find small regimes that need merging
+            small_regimes = [r for r, size in regime_sizes.items() if size < min_regime_size]
+            
+            if len(small_regimes) > 0:
+                self.logger.info(f"⚠️ Found {len(small_regimes)} small regimes to merge (sizes: {[regime_sizes[r] for r in small_regimes]})")
+                tprint(f"⚠️ Found {len(small_regimes)} small regimes to merge: {[f'R{r}={regime_sizes[r]}' for r in small_regimes]}", color="yellow")
+                
+                # Calculate regime centroids
+                regime_centroids = {}
+                for r in unique_regimes:
+                    mask = regime_predictions == r
+                    if np.sum(mask) > 0:
+                        regime_centroids[r] = np.mean(features[mask], axis=0)
+                
+                # Merge each small regime into its nearest large regime
+                for small_regime in sorted(small_regimes):  # Process smallest first
+                    # Find samples in small regime
+                    small_mask = regime_predictions == small_regime
+                    
+                    # Find nearest large regime based on centroid distance
+                    large_regimes = [r for r in unique_regimes if r not in small_regimes and np.sum(regime_predictions == r) >= min_regime_size]
+                    
+                    if len(large_regimes) == 0:
+                        # If no large regimes exist, keep the small regime (edge case)
+                        self.logger.warning(f"⚠️ No large regimes available for merging regime {small_regime}")
+                        continue
+                    
+                    # Calculate distances from small regime centroid to all large regime centroids
+                    small_centroid = regime_centroids[small_regime]
+                    distances = {}
+                    for large_regime in large_regimes:
+                        large_centroid = regime_centroids[large_regime]
+                        distances[large_regime] = euclidean_distances([small_centroid], [large_centroid])[0][0]
+                    
+                    # Find nearest large regime
+                    nearest_regime = min(distances.keys(), key=lambda k: distances[k])
+                    
+                    # Merge small regime into nearest regime
+                    regime_predictions[small_mask] = nearest_regime
+                    
+                    self.logger.info(f"✅ Merged regime {small_regime} ({regime_sizes[small_regime]} samples) into regime {nearest_regime} (distance: {distances[nearest_regime]:.3f})")
+                    tprint(f"✅ Merged R{small_regime} ({regime_sizes[small_regime]} samples) → R{nearest_regime}", color="green")
+                    
+                    # Update regime sizes and centroids
+                    regime_sizes[nearest_regime] += regime_sizes[small_regime]
+                    regime_sizes.pop(small_regime)
+                    regime_centroids[nearest_regime] = np.mean(features[regime_predictions == nearest_regime], axis=0)
+                    regime_centroids.pop(small_regime)
+                
+                # Re-map regime IDs to be sequential (0, 1, 2, ...)
+                final_regimes = sorted(set(regime_predictions))
+                regime_mapping = {old_id: new_id for new_id, old_id in enumerate(final_regimes)}
+                regime_predictions = np.array([regime_mapping[r] for r in regime_predictions])
+                
+                final_sizes = {r: np.sum(regime_predictions == r) for r in np.unique(regime_predictions)}
+                self.logger.info(f"✅ Final regimes: {len(final_sizes)} with sizes: {final_sizes}")
+                tprint(f"✅ Final regimes: {len(final_sizes)} with balanced sizes: {list(final_sizes.values())}", color="green", bold=True)
+            else:
+                self.logger.info(f"✅ All regimes meet minimum size requirement ({min_regime_size} samples)")
+                tprint(f"✅ All regimes meet minimum size requirement ({min_regime_size} samples)", color="green")
+            
+            return regime_predictions
+            
+        except Exception as e:
+            self.logger.error(f"⚠️ Regime merging failed: {e}, returning original assignments")
+            tprint(f"⚠️ Regime merging failed: {e}, returning original assignments", color="red")
+            return regime_predictions
 
     def _analyze_regimes_basic(self, features: np.ndarray, regime_predictions: np.ndarray,
                               timestamps: Optional[np.ndarray]) -> Dict[str, Any]:

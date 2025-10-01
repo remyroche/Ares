@@ -95,28 +95,28 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         try:
             # Extract required data from pipeline state
             tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state", color="yellow")
-            X = pipeline_state.get('features')
-            y = pipeline_state.get('targets')
             
             # Extract regime labels from pipeline state artifacts
             artifacts = pipeline_state.get('artifacts', {})
             nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            regime_labels = nas_tas_clustering_result.get('regime_assignments')
+            regime_labels = nas_tas_clustering_result.get('cluster_assignments')
             
             # Get base models from previous training
             regime_models_result = artifacts.get('regime_models_training_result', {})
             base_models = regime_models_result.get('regime_models', {})
             
-            feature_names = pipeline_state.get('feature_names', [])
+            # Prepare training data from the input data DataFrame
+            tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame", color="yellow")
+            X, y, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
             
             # Validate required data
             tprint("🔍 [REGIME_ENSEMBLE] Validating required data", color="yellow")
-            if X is None or y is None:
-                tprint("❌ [REGIME_ENSEMBLE] Missing features or targets", color="red")
+            if X is None or y is None or feature_names is None:
+                tprint("❌ [REGIME_ENSEMBLE] Failed to prepare training data", color="red")
                 return ComponentResult(
                     success=False,
                     artifacts={},
-                    error_message="Missing features or targets in pipeline state",
+                    error_message="Failed to prepare training data from input DataFrame",
                     metadata={'component_type': 'regime_ensemble_training'}
                 )
             
@@ -218,13 +218,73 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
     
+    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Create enhanced meta-features for better ensemble performance.
+        
+        Args:
+            meta_features: Base meta-features from base models
+            y: Target labels
+            
+        Returns:
+            Enhanced meta-features array
+        """
+        try:
+            tprint("🔧 [REGIME_ENSEMBLE] Creating enhanced meta-features", color="blue")
+            
+            # Calculate additional meta-features
+            enhanced_features = []
+            
+            # 1. Base meta-features
+            enhanced_features.append(meta_features)
+            
+            # 2. Confidence features (max probability for each sample)
+            max_probs = np.max(meta_features, axis=1, keepdims=True)
+            enhanced_features.append(max_probs)
+            
+            # 3. Entropy features (uncertainty measure)
+            epsilon = 1e-10  # Avoid log(0)
+            probs_safe = np.clip(meta_features, epsilon, 1 - epsilon)
+            entropy = -np.sum(probs_safe * np.log(probs_safe), axis=1, keepdims=True)
+            enhanced_features.append(entropy)
+            
+            # 4. Variance features (prediction consistency)
+            variance = np.var(meta_features, axis=1, keepdims=True)
+            enhanced_features.append(variance)
+            
+            # 5. Class-specific features
+            unique_classes = np.unique(y)
+            for class_val in unique_classes:
+                class_mask = (y == class_val)
+                if np.sum(class_mask) > 0:
+                    class_confidence = meta_features[class_mask, class_val].mean()
+                    class_feature = np.full((len(y), 1), class_confidence)
+                    enhanced_features.append(class_feature)
+            
+            # Combine all features
+            enhanced_meta_features = np.column_stack(enhanced_features)
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Enhanced features created: {enhanced_meta_features.shape}", color="green")
+            return enhanced_meta_features
+            
+        except Exception as e:
+            tprint(f"⚠️ [REGIME_ENSEMBLE] Enhanced feature creation failed, using base features: {e}", color="yellow")
+            return meta_features
+    
     def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any]) -> Dict[str, Any]:
         """Train stacker_lgbm_calibrated meta-learner."""
         tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner", color="yellow")
         
         try:
-            # Filter out None models
-            valid_base_models = {name: model for name, model in base_models.items() if model is not None}
+            # Filter out None models and non-model objects (like feature indices)
+            valid_base_models = {}
+            for name, model in base_models.items():
+                if model is not None and hasattr(model, 'predict'):
+                    valid_base_models[name] = model
+                elif name.endswith('_feature_indices'):
+                    tprint(f"📊 [REGIME_ENSEMBLE] Skipping feature indices metadata: {name}", color="blue")
+                else:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping non-model object: {name}", color="yellow")
             
             if not valid_base_models:
                 tprint("❌ [REGIME_ENSEMBLE] No valid base models available for meta-learner", color="red")
@@ -239,6 +299,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             for name, model in valid_base_models.items():
                 try:
+                    # Skip problematic models that cause feature mismatches
+                    if name in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping problematic model during training: {name}", color="yellow")
+                        continue
+                        
                     if hasattr(model, 'predict_proba'):
                         # Use probability predictions
                         pred_proba = model.predict_proba(X)
@@ -269,21 +334,32 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             meta_features = np.column_stack(base_predictions)
             tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
             
-            # Create LightGBM meta-learner
+            # Create LightGBM meta-learner with improved parameters
             tprint("🌲 [REGIME_ENSEMBLE] Creating LightGBM meta-learner", color="blue")
             meta_learner = LGBMClassifier(
-                num_leaves=31,
-                max_depth=6,
-                learning_rate=0.1,
-                n_estimators=100,
+                num_leaves=63,        # Increased for better complexity
+                max_depth=8,          # Increased depth
+                learning_rate=0.05,   # Reduced for better convergence
+                n_estimators=200,     # More estimators
+                min_child_samples=20, # Prevent overfitting
+                subsample=0.8,        # Stochastic sampling
+                colsample_bytree=0.8, # Feature sampling
+                reg_alpha=0.1,        # L1 regularization
+                reg_lambda=0.1,       # L2 regularization
+                class_weight='balanced', # Handle class imbalance
                 random_state=42,
                 verbose=-1,
                 n_jobs=-1
             )
             
+            # Add feature engineering for meta-learner
+            tprint("🔧 [REGIME_ENSEMBLE] Creating enhanced meta-learner features", color="blue")
+            enhanced_meta_features = self._create_enhanced_meta_features(meta_features, y)
+            tprint(f"📊 [REGIME_ENSEMBLE] Enhanced meta-features shape: {enhanced_meta_features.shape}", color="blue")
+            
             # Train meta-learner
             tprint("🏋️ [REGIME_ENSEMBLE] Training meta-learner", color="blue")
-            meta_learner.fit(meta_features, y)
+            meta_learner.fit(enhanced_meta_features, y)
             tprint("✅ [REGIME_ENSEMBLE] Meta-learner trained successfully", color="green")
             
             # Apply probability calibration
@@ -354,9 +430,15 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             for name, model in base_models.items():
                 try:
+                    # Skip problematic models that cause feature mismatches
+                    if name in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping problematic model: {name}", color="yellow")
+                        continue
+                        
                     if hasattr(model, 'predict_proba'):
                         pred_proba = model.predict_proba(X)
                         base_predictions.append(pred_proba)
+                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using probability predictions (shape: {pred_proba.shape})", color="blue")
                     else:
                         pred = model.predict(X)
                         unique_classes = np.unique(y)
@@ -364,6 +446,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         for i, class_val in enumerate(unique_classes):
                             pred_onehot[pred == class_val, i] = 1
                         base_predictions.append(pred_onehot)
+                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using class predictions (shape: {pred_onehot.shape})", color="blue")
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to get predictions from {name}: {e}", color="yellow")
                     continue
@@ -374,6 +457,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # Combine predictions
             meta_features = np.column_stack(base_predictions)
+            tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
+            
+            # Check if meta-learner expects different number of features
+            if hasattr(meta_learner, 'n_features_') and meta_learner.n_features_ != meta_features.shape[1]:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Feature mismatch: meta-learner expects {meta_learner.n_features_} features, got {meta_features.shape[1]}", color="yellow")
+                # Skip evaluation if feature dimensions don't match
+                return {'error': f'Feature dimension mismatch: expected {meta_learner.n_features_}, got {meta_features.shape[1]}'}
             
             # Evaluate meta-learner
             tprint("📊 [REGIME_ENSEMBLE] Evaluating meta-learner", color="blue")
@@ -404,3 +494,74 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         
         tprint("✅ [REGIME_ENSEMBLE] Ensemble evaluation completed", color="green")
         return metrics
+    
+    def _prepare_training_data(self, data: pd.DataFrame, regime_labels: np.ndarray, pipeline_state: Dict[str, Any] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Prepare training data from market data and regime labels."""
+        tprint("🔧 [REGIME_ENSEMBLE] Preparing training data", color="cyan")
+        self.logger.info("Starting data preparation process")
+
+        try:
+            # Log input data characteristics
+            tprint(f"📊 [REGIME_ENSEMBLE] Input data shape: {data.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Input data columns: {list(data.columns)}", color="blue")
+
+            # Reuse features from clustering stage instead of creating generic ones
+            tprint("🔧 [REGIME_ENSEMBLE] Reusing regime-focused features from clustering stage", color="cyan")
+
+            # Extract features from pipeline state artifacts
+            if pipeline_state is None:
+                pipeline_state = {}
+            artifacts = pipeline_state.get('artifacts', {})
+            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+
+            # Try to get the original features used in clustering
+            if 'original_features' in nas_tas_clustering_result:
+                X = nas_tas_clustering_result['original_features']
+                feature_names = nas_tas_clustering_result.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
+                tprint(f"📊 [REGIME_ENSEMBLE] Reusing clustering features: {X.shape}", color="blue")
+                tprint(f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names}", color="blue")
+            else:
+                # Fallback: Use shared utilities to create regime-focused features (same as regime models training)
+                tprint("⚠️ [REGIME_ENSEMBLE] Clustering features not found, creating regime-focused features", color="yellow")
+                from src.training.steps.market_analysis.shared_utils.features import prepare_market_features, FeatureConfig
+
+                # Create feature config for regime-focused features (same as regime models training)
+                feature_config = FeatureConfig()
+                feature_config.feature_categories = ['regime_volatility', 'regime_volume', 'regime_structural_trend', 'regime_statistical']
+
+                # Generate regime-focused features
+                X = prepare_market_features(data, feature_config, verbose=True)
+                if X is None:
+                    raise ValueError("Failed to create regime-focused features")
+
+                feature_names = [f'regime_feature_{i}' for i in range(X.shape[1])]
+                tprint(f"📊 [REGIME_ENSEMBLE] Created regime-focused features: {X.shape}", color="blue")
+                tprint(f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names}", color="blue")
+
+            # Check for NaN or infinite values in features
+            nan_count = np.isnan(X).sum()
+            inf_count = np.isinf(X).sum()
+            if nan_count > 0:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Found {nan_count} NaN values in features", color="yellow")
+                X = np.nan_to_num(X, nan=0.0)
+            if inf_count > 0:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Found {inf_count} infinite values in features", color="yellow")
+                X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
+
+            # Align with regime labels
+            tprint("🔧 [REGIME_ENSEMBLE] Aligning features with regime labels", color="cyan")
+            min_length = min(len(X), len(regime_labels))
+            X = X[:min_length]
+            y = np.array(regime_labels[:min_length])
+
+            tprint(f"✅ [REGIME_ENSEMBLE] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green", bold=True)
+
+            self.logger.info(f"Training data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
+            return X, y, feature_names
+            
+        except Exception as e:
+            error_type = type(e).__name__
+            tprint(f"❌ [REGIME_ENSEMBLE] Error preparing training data: {e}", color="red")
+            tprint(f"🔍 [REGIME_ENSEMBLE] Error type: {error_type}", color="yellow")
+            self.logger.error(f"Error preparing training data: {e}", exc_info=True)
+            return None, None, None

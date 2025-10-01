@@ -507,6 +507,7 @@ class AresLauncher:
         nas_sub_pipelines = [
             'nas_regime_discovery',     # Discover market regimes using NAS
             'nas_tas_regime_discovery', # Hybrid NAS-TAS regime discovery
+            'nas_tas_clustering',       # NAS-TAS regime clustering
             'nas_clustering',           # NAS-based regime clustering
             'nas_tas_models_training',      # Train regime detection models using NAS-TAS regime labels
             'nas_tas_ensemble_training',    # Train ensemble regime detection models using NAS-TAS regime labels
@@ -646,7 +647,8 @@ class AresLauncher:
                 # Check for existing outcome files
                 outcome_data = await self._check_outcome_files(stage.value, "stage")
                 if outcome_data:
-                    self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
+                    timestamp = outcome_data.get('metadata', {}).get('timestamp', 'unknown')
+                    self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
                 
                 # Execute stage
                 stage_result = await self.pipeline._execute_stage(stage, config)
@@ -700,7 +702,8 @@ class AresLauncher:
         # Check for existing outcome files
         outcome_data = await self._check_outcome_files(stage.value, "stage")
         if outcome_data:
-            self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
+            timestamp = outcome_data.get('metadata', {}).get('timestamp', 'unknown')
+            self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
         
         # Create mid-function artifacts for the stage
         artifacts = await self._create_stage_artifacts(stage, config)
@@ -746,7 +749,8 @@ class AresLauncher:
         # Check for existing outcome files
         outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
         if outcome_data:
-            self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
+            timestamp = outcome_data.get('metadata', {}).get('timestamp', outcome_data.get('timestamp', 'unknown'))
+            self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
         
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)

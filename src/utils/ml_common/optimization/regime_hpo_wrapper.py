@@ -14,11 +14,11 @@ Key Features:
 
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
 import time
-from datetime import datetime
 import yaml
 from pathlib import Path
 
@@ -330,17 +330,17 @@ class RegimeHPOWrapper:
         if 'bayesian_rule_lists' in self.regime_base_config:
             brl_config = self.regime_base_config['bayesian_rule_lists']
             search_spaces['bayesian_rule_lists'] = {
-                'max_rules': {
+                'listlengthprior': {
                     'type': 'int',
-                    'low': 6,
-                    'high': 12
+                    'low': 2,
+                    'high': 5
                 },
-                'max_rule_length': {
+                'maxcardinality': {
                     'type': 'int',
                     'low': 2,
                     'high': 3
                 },
-                'min_support': {
+                'minsupport': {
                     'type': 'float',
                     'low': 0.02,
                     'high': 0.05
@@ -426,6 +426,20 @@ class RegimeHPOWrapper:
                 # Create model factory
                 model_factory = self._create_model_factory(model_type)
                 
+                # Determine CV strategy based on configuration
+                cv_strategy = None
+                if self.hpo_config.enable_time_series_cv:
+                    try:
+                        from sklearn.model_selection import TimeSeriesSplit
+                        # Use TimeSeriesSplit for temporal data to prevent data leakage
+                        cv_strategy = TimeSeriesSplit(n_splits=self.hpo_config.base_model_cv_folds)
+                        self.logger.info(f"📅 Using TimeSeriesSplit with {self.hpo_config.base_model_cv_folds} folds for {model_type}")
+                    except ImportError:
+                        self.logger.warning("⚠️ TimeSeriesSplit not available, falling back to StratifiedKFold WITHOUT shuffle to prevent data leakage")
+                        from sklearn.model_selection import StratifiedKFold
+                        # CRITICAL: Do NOT shuffle time series data - causes severe data leakage!
+                        cv_strategy = StratifiedKFold(n_splits=self.hpo_config.base_model_cv_folds, shuffle=False)
+
                 # Perform optimization
                 if self.hpo_config.optimization_strategy == 'staged':
                     optimization_result = self.hpo_utils.staged_hpo(
@@ -435,6 +449,7 @@ class RegimeHPOWrapper:
                         search_space=search_space,
                         n_trials=self.hpo_config.base_model_n_trials,
                         scoring=self.hpo_config.base_model_scoring,
+                        cv=cv_strategy,
                         timeout=self.hpo_config.base_model_timeout
                     )
                 elif self.hpo_config.optimization_strategy == 'bayesian':
@@ -445,7 +460,10 @@ class RegimeHPOWrapper:
                         search_space=search_space,
                         n_trials=self.hpo_config.base_model_n_trials,
                         scoring=self.hpo_config.base_model_scoring,
-                        timeout=self.hpo_config.base_model_timeout
+                        cv=cv_strategy,
+                        timeout=self.hpo_config.base_model_timeout,
+                        optimization_context=f"Base Model Optimization - {model_name} hyperparameter tuning for {regime} market regime using ensemble learning with cross-validation and regime-specific feature engineering",
+                        study_name=f"base_model_{model_name}_{regime}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                     )
                 else:
                     # Default to staged HPO
@@ -455,7 +473,8 @@ class RegimeHPOWrapper:
                         y=y,
                         search_space=search_space,
                         n_trials=self.hpo_config.base_model_n_trials,
-                        scoring=self.hpo_config.base_model_scoring
+                        scoring=self.hpo_config.base_model_scoring,
+                        cv=cv_strategy
                     )
                 
                 results[model_type] = optimization_result
@@ -503,7 +522,21 @@ class RegimeHPOWrapper:
         try:
             # Create LightGBM meta model factory
             model_factory = self._create_lightgbm_meta_factory()
-            
+
+            # Determine CV strategy based on configuration
+            cv_strategy = None
+            if self.hpo_config.enable_time_series_cv:
+                try:
+                    from sklearn.model_selection import TimeSeriesSplit
+                    # Use TimeSeriesSplit for temporal data to prevent data leakage
+                    cv_strategy = TimeSeriesSplit(n_splits=self.hpo_config.meta_model_cv_folds)
+                    self.logger.info(f"📅 Using TimeSeriesSplit with {self.hpo_config.meta_model_cv_folds} folds for meta-model")
+                except ImportError:
+                    self.logger.warning("⚠️ TimeSeriesSplit not available, falling back to StratifiedKFold WITHOUT shuffle to prevent data leakage")
+                    from sklearn.model_selection import StratifiedKFold
+                    # CRITICAL: Do NOT shuffle time series data - causes severe data leakage!
+                    cv_strategy = StratifiedKFold(n_splits=self.hpo_config.meta_model_cv_folds, shuffle=False)
+
             # Perform optimization
             if self.hpo_config.optimization_strategy == 'staged':
                 optimization_result = self.hpo_utils.staged_hpo(
@@ -513,6 +546,7 @@ class RegimeHPOWrapper:
                     search_space=search_space,
                     n_trials=self.hpo_config.meta_model_n_trials,
                     scoring=self.hpo_config.meta_model_scoring,
+                    cv=cv_strategy,
                     timeout=self.hpo_config.meta_model_timeout
                 )
             else:
@@ -523,7 +557,10 @@ class RegimeHPOWrapper:
                     search_space=search_space,
                     n_trials=self.hpo_config.meta_model_n_trials,
                     scoring=self.hpo_config.meta_model_scoring,
-                    timeout=self.hpo_config.meta_model_timeout
+                    cv=cv_strategy,
+                    timeout=self.hpo_config.meta_model_timeout,
+                    optimization_context=f"Meta Model Optimization - {model_name} hyperparameter tuning for regime ensemble meta-learning with stacked generalization and cross-validated predictions",
+                    study_name=f"meta_model_{model_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 )
             
             optimization_time = time.time() - start_time
@@ -575,7 +612,9 @@ class RegimeHPOWrapper:
                 y=y,
                 search_space=meta_feature_search_space,
                 n_trials=self.hpo_config.meta_feature_n_trials,
-                scoring=self.hpo_config.meta_feature_scoring
+                scoring=self.hpo_config.meta_feature_scoring,
+                optimization_context="Meta Feature Optimization - Ensemble feature selection and weighting optimization for regime detection using advanced feature engineering and ensemble stacking",
+                study_name=f"meta_features_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             
             optimization_time = time.time() - start_time

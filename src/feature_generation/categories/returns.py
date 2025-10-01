@@ -67,8 +67,8 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         returns[:period] = np.nan
         return returns
 
-class LogReturnsGenerator(FeatureGenerator):
-    """Generator for Log Returns with different base calculations."""
+class LogReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for Log Returns with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  period: int = 1,
@@ -103,24 +103,40 @@ class LogReturnsGenerator(FeatureGenerator):
                 'period': period,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate log returns based on the specified base calculation."""
+        """Generate log returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate log returns
-        log_returns = np.log(base_values / base_values.shift(self.period))
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        return log_returns
+        # Vectorized log returns calculation
+        if len(values) < self.period + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        
+        # Calculate log returns using numpy operations
+        shifted_values = np.roll(values, self.period)
+        shifted_values[:self.period] = np.nan  # Set initial values to NaN
+        
+        # Avoid division by zero and log of zero
+        ratio = values / shifted_values
+        ratio = np.where(np.isfinite(ratio) & (ratio > 0), ratio, np.nan)
+        
+        log_returns = np.log(ratio)
+        
+        return pd.Series(log_returns, index=data.index)
 
-class SimpleReturnsGenerator(FeatureGenerator):
-    """Generator for Simple Returns with different base calculations."""
+class SimpleReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for Simple Returns with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  period: int = 1,
@@ -155,24 +171,41 @@ class SimpleReturnsGenerator(FeatureGenerator):
                 'period': period,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate simple returns based on the specified base calculation."""
+        """Generate simple returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate simple returns
-        simple_returns = (base_values - base_values.shift(self.period)) / base_values.shift(self.period)
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        return simple_returns
+        # Vectorized simple returns calculation
+        if len(values) < self.period + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        
+        # Calculate simple returns using numpy operations
+        shifted_values = np.roll(values, self.period)
+        shifted_values[:self.period] = np.nan  # Set initial values to NaN
+        
+        # Avoid division by zero
+        simple_returns = np.where(
+            np.isfinite(shifted_values) & (shifted_values != 0),
+            (values - shifted_values) / shifted_values,
+            np.nan
+        )
+        
+        return pd.Series(simple_returns, index=data.index)
 
-class CumulativeReturnsGenerator(FeatureGenerator):
-    """Generator for Cumulative Returns with different base calculations."""
+class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for Cumulative Returns with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -207,29 +240,44 @@ class CumulativeReturnsGenerator(FeatureGenerator):
                 'window': window,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate cumulative returns based on the specified base calculation."""
+        """Generate cumulative returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate returns
-        returns = base_values.pct_change()
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        # Calculate cumulative returns over rolling window
-        cumulative_returns = returns.rolling(window=self.window).apply(
-            lambda x: (1 + x).prod() - 1, raw=False
-        )
+        # Vectorized cumulative returns calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
         
-        return cumulative_returns
+        # Calculate returns using vectorized operations
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        
+        # Vectorized rolling cumulative returns calculation
+        cumulative_returns = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_returns = returns[i-self.window+1:i+1]
+            # Filter out NaN values
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 0:
+                cumulative_returns[i] = np.prod(1 + valid_returns) - 1
+        
+        return pd.Series(cumulative_returns, index=data.index)
 
-class RollingReturnsGenerator(FeatureGenerator):
-    """Generator for Rolling Returns with different base calculations."""
+class RollingReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for Rolling Returns with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -264,26 +312,38 @@ class RollingReturnsGenerator(FeatureGenerator):
                 'window': window,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate rolling returns based on the specified base calculation."""
+        """Generate rolling returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate rolling returns
-        rolling_returns = base_values.rolling(window=self.window).apply(
-            lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0], raw=False
-        )
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        return rolling_returns
+        # Vectorized rolling returns calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        
+        # Calculate rolling returns using vectorized operations
+        rolling_returns = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_values = values[i-self.window:i+1]
+            if np.isfinite(window_values[0]) and window_values[0] != 0:
+                rolling_returns[i] = (window_values[-1] - window_values[0]) / window_values[0]
+        
+        return pd.Series(rolling_returns, index=data.index)
 
-class ReturnsVolatilityGenerator(FeatureGenerator):
-    """Generator for Returns Volatility with different base calculations."""
+class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
+    """Generator for Returns Volatility with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -318,27 +378,44 @@ class ReturnsVolatilityGenerator(FeatureGenerator):
                 'window': window,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate returns volatility based on the specified base calculation."""
+        """Generate returns volatility based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate returns
-        returns = base_values.pct_change()
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        # Calculate rolling volatility
-        volatility = returns.rolling(window=self.window).std()
+        # Vectorized returns volatility calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
         
-        return volatility
+        # Calculate returns using vectorized operations
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        
+        # Vectorized rolling volatility calculation
+        volatility = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_returns = returns[i-self.window+1:i+1]
+            # Filter out NaN values
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 1:  # Need at least 2 values for std
+                volatility[i] = np.std(valid_returns, ddof=1)
+        
+        return pd.Series(volatility, index=data.index)
 
-class ReturnsSkewnessGenerator(FeatureGenerator):
-    """Generator for Returns Skewness with different base calculations."""
+class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
+    """Generator for Returns Skewness with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -373,27 +450,47 @@ class ReturnsSkewnessGenerator(FeatureGenerator):
                 'window': window,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate returns skewness based on the specified base calculation."""
+        """Generate returns skewness based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate returns
-        returns = base_values.pct_change()
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        # Calculate rolling skewness
-        skewness = returns.rolling(window=self.window).skew()
+        # Vectorized returns skewness calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
         
-        return skewness
+        # Calculate returns using vectorized operations
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        
+        # Vectorized rolling skewness calculation
+        skewness = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_returns = returns[i-self.window+1:i+1]
+            # Filter out NaN values
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 2:  # Need at least 3 values for skewness
+                mean_ret = np.mean(valid_returns)
+                std_ret = np.std(valid_returns, ddof=1)
+                if std_ret > 0:
+                    skewness[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 3)
+        
+        return pd.Series(skewness, index=data.index)
 
-class ReturnsKurtosisGenerator(FeatureGenerator):
-    """Generator for Returns Kurtosis with different base calculations."""
+class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
+    """Generator for Returns Kurtosis with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -428,27 +525,47 @@ class ReturnsKurtosisGenerator(FeatureGenerator):
                 'window': window,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate returns kurtosis based on the specified base calculation."""
+        """Generate returns kurtosis based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate returns
-        returns = base_values.pct_change()
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        # Calculate rolling kurtosis
-        kurtosis = returns.rolling(window=self.window).kurt()
+        # Vectorized returns kurtosis calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
         
-        return kurtosis
+        # Calculate returns using vectorized operations
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        
+        # Vectorized rolling kurtosis calculation
+        kurtosis = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_returns = returns[i-self.window+1:i+1]
+            # Filter out NaN values
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 3:  # Need at least 4 values for kurtosis
+                mean_ret = np.mean(valid_returns)
+                std_ret = np.std(valid_returns, ddof=1)
+                if std_ret > 0:
+                    kurtosis[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 4) - 3  # Excess kurtosis
+        
+        return pd.Series(kurtosis, index=data.index)
 
-class SharpeRatioGenerator(FeatureGenerator):
-    """Generator for Sharpe Ratio with different base calculations."""
+class SharpeRatioGenerator(VectorizedFeatureGenerator):
+    """Generator for Sharpe Ratio with different base calculations - VECTORIZED."""
     
     def __init__(self, 
                  window: int = 20,
@@ -486,26 +603,49 @@ class SharpeRatioGenerator(FeatureGenerator):
                 'risk_free_rate': risk_free_rate,
                 'base_calculation': base_calculation.value,
                 **base_kwargs
-            }
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.window = window
         self.risk_free_rate = risk_free_rate
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Sharpe ratio based on the specified base calculation."""
+        """Generate Sharpe ratio based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate returns
-        returns = base_values.pct_change()
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
         
-        # Calculate rolling Sharpe ratio
-        excess_returns = returns - self.risk_free_rate / 252  # Daily risk-free rate
-        sharpe_ratio = excess_returns.rolling(window=self.window).mean() / returns.rolling(window=self.window).std()
+        # Vectorized Sharpe ratio calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
         
-        return sharpe_ratio
+        # Calculate returns using vectorized operations
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        
+        # Calculate daily risk-free rate
+        daily_rf_rate = self.risk_free_rate / 252
+        
+        # Vectorized rolling Sharpe ratio calculation
+        sharpe_ratio = np.full(len(values), np.nan)
+        
+        for i in range(self.window, len(values)):
+            window_returns = returns[i-self.window+1:i+1]
+            # Filter out NaN values
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 1:  # Need at least 2 values for std
+                excess_returns = valid_returns - daily_rf_rate
+                mean_excess = np.mean(excess_returns)
+                std_returns = np.std(valid_returns, ddof=1)
+                if std_returns > 0:
+                    sharpe_ratio[i] = mean_excess / std_returns
+        
+        return pd.Series(sharpe_ratio, index=data.index)
 
 def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of returns feature generators."""

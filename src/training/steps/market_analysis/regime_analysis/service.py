@@ -181,6 +181,7 @@ class RegimeAnalysisService:
                 with tprint_timer("Calculating clustering metrics"):
                     nas_metrics = calculate_clustering_metrics(nas_features, nas_labels, "NAS")
                     tas_metrics = calculate_clustering_metrics(tas_features, tas_labels, "TAS")
+
                     self.performance_metrics["success_count"] += 1
 
                 # Print detailed metrics
@@ -223,14 +224,35 @@ class RegimeAnalysisService:
                 print_analysis_summary(analysis)
                 return analysis
                 
+            except ValueError as exc:
+                # Handle missing features error specifically
+                self.performance_metrics["error_count"] += 1
+
+                # Log specific error for missing features
+                tprint_error(f"🚨 Regime analysis failed for {symbol}: Missing features in regime_assignments file")
+                tprint_error(f"   Error: {exc}")
+
+                # Create detailed error result for missing features
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "MissingFeaturesError",
+                        "message": str(exc),
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat(),
+                        "solution": "Re-run clustering step to generate features: python3 src/launcher/ares_launcher.py step05 nas_tas_clustering"
+                    },
+                    "performance_metrics": self.performance_metrics
+                }
+
             except Exception as exc:
                 self.performance_metrics["error_count"] += 1
                 error_traceback = traceback.format_exc()
-                
+
                 # Log comprehensive error details
                 tprint_error(f"Regime analysis failed for {symbol}: {exc}")
                 tprint_debug(f"Error traceback: {error_traceback}")
-                
+
                 # Log structured error information
                 error_info = {
                     "error_type": type(exc).__name__,
@@ -241,7 +263,7 @@ class RegimeAnalysisService:
                     "traceback": error_traceback
                 }
                 tprint_structured(error_info)
-                
+
                 # Create detailed error result
                 return {
                     "success": False,
@@ -405,7 +427,9 @@ class RegimeAnalysisService:
                 raise ValueError(f"Symbol length invalid: {len(symbol)} (expected 3-20)")
             
             # Check for valid characters (alphanumeric only)
-            if not symbol.replace("USDT", "").replace("USD", "").replace("BTC", "").replace("ETH", "").isalnum():
+            # Remove common trading pair suffixes and check if remaining part is alphanumeric
+            cleaned_symbol = symbol.replace("USDT", "").replace("USD", "").replace("BTC", "").replace("ETH", "")
+            if cleaned_symbol and not cleaned_symbol.isalnum():
                 raise ValueError(f"Symbol contains invalid characters: {symbol}")
             
             # Validate data cache path

@@ -103,7 +103,7 @@ class FeatureCategory(Enum):
     MOMENTUM: str = "momentum"
     TREND: str = "trend"
     TECHNICAL: str = "technical"
-    STATISTICAL: str = "statistical"
+    REGIME: str = "regime"
     INTERACTION: str = "interaction"
 
 
@@ -114,7 +114,7 @@ class BalancedFeatureConfig:
     enabled_categories: List[FeatureCategory] = field(default_factory=lambda: [
         FeatureCategory.PRICE, FeatureCategory.VOLUME, FeatureCategory.VOLATILITY,
         FeatureCategory.MOMENTUM, FeatureCategory.TREND, FeatureCategory.TECHNICAL,
-        FeatureCategory.STATISTICAL
+        FeatureCategory.REGIME
     ])
 
     # TAS-style balanced extraction settings
@@ -274,7 +274,7 @@ class BalancedFeatureExtractor:
                         features, names = self._extract_trend_features_balanced(data_df)
                     elif category == FeatureCategory.TECHNICAL:
                         features, names = self._extract_technical_features_balanced(data_df)
-                    elif category == FeatureCategory.STATISTICAL:
+                    elif category == FeatureCategory.REGIME:
                         features, names = self._extract_statistical_features_balanced(data_df)
                     elif category == FeatureCategory.INTERACTION:
                         features, names = self._extract_interaction_features_balanced(data_df)
@@ -1590,7 +1590,7 @@ def create_unified_config() -> BalancedFeatureConfig:
         enabled_categories=[
             FeatureCategory.PRICE, FeatureCategory.VOLUME, FeatureCategory.VOLATILITY,
             FeatureCategory.MOMENTUM, FeatureCategory.TREND, FeatureCategory.TECHNICAL,
-            FeatureCategory.STATISTICAL
+            FeatureCategory.REGIME
         ],
         use_tas_style_extraction=True,
         use_balanced_scaling=True,

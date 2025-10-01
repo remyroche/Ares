@@ -22,7 +22,7 @@ from src.utils.tprint import tprint
 tprint('📦 Loading Regime Data Splitting Package')
 
 tprint('📦 Importing component module')
-from .component import (
+from .regime_data_splitting_component import (
     RegimeDataSplittingComponent,
     RegimeSplittingStatus,
     RegimeSplittingMetrics,
@@ -30,16 +30,16 @@ from .component import (
 )
 tprint('✅ Component module imported')
 
-tprint('📦 Importing enhanced module')
-from .enhanced import (
-    RegimeDataSplittingEnhanced,
+tprint('📦 Importing NAS/TAS regime data splitting module')
+from .nas_tas_regime_data_splitting import (
+    NasTasRegimeDataSplitting,
     HMMRegimeTagger,
-    execute_enhanced_regime_data_splitting
+    execute_nas_tas_regime_data_splitting
 )
-tprint('✅ Enhanced module imported')
+tprint('✅ NAS/TAS regime data splitting module imported')
 
 tprint('📦 Importing main module')
-from .main import (
+from .regime_data_splitting_main import (
     RegimeDataSplittingStep,
     RegimeDataResult,
     StepResult,
@@ -78,7 +78,7 @@ tprint('✅ Configuration utilities imported')
 __all__ = [
     # Component classes
     'RegimeDataSplittingComponent',
-    'RegimeDataSplittingEnhanced',
+    'NasTasRegimeDataSplitting',
     'RegimeDataSplittingStep',
     'HMMRegimeTagger',
     
@@ -94,7 +94,7 @@ __all__ = [
     'Step4RegimeDataSplittingValidator',
     
     # Functions
-    'execute_enhanced_regime_data_splitting',
+    'execute_nas_tas_regime_data_splitting',
     'run_validator',
     
     # Validation utilities

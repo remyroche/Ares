@@ -31,6 +31,9 @@ from ..base_calculations import (
     create_base_calculator
 )
 
+# Import tprint for consistent logging
+from src.utils.tprint import tprint
+
 class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility regime features optimized for 15m timeframe."""
     
@@ -51,15 +54,38 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             min_lookback=4,       # 1 hour minimum
             max_lookback=80,      # 20 hours maximum
             parameters={
-                "regime_windows": [12, 20, 40],  # 3h, 5h, 10h in 15m periods
-                "persistence_windows": [8, 16, 32],  # 2h, 4h, 8h
-                "vol_of_vol_windows": [16, 32, 64],  # 4h, 8h, 16h
-                "transition_windows": [4, 8, 16]  # 1h, 2h, 4h
+                "regime_windows": [12, 30, 80],  # 3h, 7.5h, 20h in 15m periods (original min, middle, new max)
+                "persistence_windows": [8, 20, 64],  # 2h, 5h, 16h (original min, middle, new max)
+                "vol_of_vol_windows": [16, 40, 128],  # 4h, 10h, 32h (original min, middle, new max)
+                "transition_windows": [4, 12, 32]  # 1h, 3h, 8h (original min, middle, new max)
             },
             matrix_optimized=True,
             gpu_accelerated=False
         )
     
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate a single volatility regime feature as required by the base class."""
+        try:
+            # Generate all volatility features
+            features_dict = self.generate_features(data, **kwargs)
+            
+            # Combine all features into a single series (use first feature as representative)
+            if features_dict:
+                first_feature_name = list(features_dict.keys())[0]
+                return pd.Series(features_dict[first_feature_name], index=data.index[:len(features_dict[first_feature_name])])
+            else:
+                # Return a simple volatility feature if no features generated
+                returns = self._get_returns(data)
+                if returns is not None and len(returns) > 0:
+                    vol_feature = np.abs(returns)  # Simple volatility proxy
+                    return pd.Series(vol_feature, index=data.index[1:len(vol_feature)+1])
+                else:
+                    return pd.Series(np.zeros(len(data)), index=data.index)
+                
+        except Exception as e:
+            tprint(f"_generate_feature: Volatility feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
         """Generate volatility regime features."""
         features = {}
@@ -121,10 +147,13 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             vol_padded = np.full(len(data), np.nan)
             vol_persistence_padded = np.full(len(data), np.nan)
             vol_strength_padded = np.full(len(data), np.nan)
-            
-            vol_padded[window-1:] = vol
-            vol_persistence_padded[window-1:] = vol_persistence
-            vol_strength_padded[window-1:] = vol_regime_strength
+
+            # Account for returns being 1 element shorter than data
+            # vol is a rolling result of returns, vol[0] aligns with data[window]
+            # vol has length len(returns) - window + 1
+            vol_padded[window:window+len(vol)] = vol
+            vol_persistence_padded[window:window+len(vol_persistence)] = vol_persistence
+            vol_strength_padded[window:window+len(vol_regime_strength)] = vol_regime_strength
             
             features[f'vol_persistence_{window}'] = vol_persistence_padded
             features[f'vol_regime_strength_{window}'] = vol_strength_padded
@@ -149,9 +178,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             # Pad to match data length
             clustering_padded = np.full(len(data), np.nan)
             consistency_padded = np.full(len(data), np.nan)
-            
-            clustering_padded[window-1:] = vol_clustering
-            consistency_padded[window-1:] = vol_consistency
+
+            # Account for returns being 1 element shorter than data
+            # returns[i] aligns with data[i+1], so feature[window:] aligns with data[window+1:]
+            clustering_padded[window+1:] = vol_clustering[window:]
+            consistency_padded[window+1:] = vol_consistency[window:]
             
             features[f'vol_clustering_{window}'] = clustering_padded
             features[f'vol_consistency_{window}'] = consistency_padded
@@ -176,9 +207,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             # Pad to match data length
             vol_of_vol_padded = np.full(len(data), np.nan)
             uncertainty_padded = np.full(len(data), np.nan)
-            
-            vol_of_vol_padded[window*2-1:] = vol_of_vol
-            uncertainty_padded[window*2-1:] = vol_uncertainty
+
+            # Account for returns being 1 element shorter than data
+            # returns[i] aligns with data[i+1], so feature[window:] aligns with data[window+1:]
+            vol_of_vol_padded[window*2+1:] = vol_of_vol[window*2:]
+            uncertainty_padded[window+1:] = vol_uncertainty[window:]
             
             features[f'vol_of_vol_{window}'] = vol_of_vol_padded
             features[f'vol_uncertainty_{window}'] = uncertainty_padded
@@ -203,9 +236,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             # Pad to match data length
             change_padded = np.full(len(data), np.nan)
             prob_padded = np.full(len(data), np.nan)
-            
-            change_padded[window*2-1:] = vol_change
-            prob_padded[window*2-1:] = transition_prob
+
+            # Account for returns being 1 element shorter than data
+            # returns[i] aligns with data[i+1], so feature[window*2:] aligns with data[window*2+1:]
+            change_padded[window*2+1:] = vol_change[window*2:]
+            prob_padded[window*2+1:] = transition_prob[window*2:]
             
             features[f'vol_regime_change_{window}'] = change_padded
             features[f'vol_transition_prob_{window}'] = prob_padded
@@ -230,9 +265,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             # Pad to match data length
             stability_padded = np.full(len(data), np.nan)
             persistence_padded = np.full(len(data), np.nan)
-            
-            stability_padded[window-1:] = vol_stability
-            persistence_padded[window-1:] = persistence_score
+
+            # Account for returns being 1 element shorter than data
+            # returns[i] aligns with data[i+1], so vol_stability[window:] aligns with data[window+1:]
+            stability_padded[window+1:] = vol_stability[window:]
+            persistence_padded[window+1:] = persistence_score[window:]
             
             features[f'vol_stability_{window}'] = stability_padded
             features[f'regime_persistence_{window}'] = persistence_padded
@@ -240,163 +277,215 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return features
     
     def _rolling_volatility(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling volatility."""
+        """Calculate rolling volatility - VECTORIZED."""
         if len(returns) < window:
             return np.array([])
         
-        vol = np.zeros(len(returns) - window + 1)
-        for i in range(len(vol)):
-            vol[i] = np.std(returns[i:i+window])
+        # Vectorized approach using pandas rolling
+        returns_series = pd.Series(returns)
+        vol = returns_series.rolling(window=window).std().dropna().values
         
         return vol
     
     def _calculate_volatility_persistence(self, vol: np.ndarray, lag: int) -> np.ndarray:
-        """Calculate volatility persistence using autocorrelation."""
+        """Calculate volatility persistence using autocorrelation - OPTIMIZED VECTORIZED."""
         if len(vol) < lag + 1:
             return np.zeros(len(vol))
         
-        persistence = np.zeros(len(vol))
-        for i in range(lag, len(vol)):
-            if i >= lag:
-                corr = np.corrcoef(vol[i-lag:i], vol[i-lag+1:i+1])[0, 1]
-                persistence[i] = corr if not np.isnan(corr) else 0
+        # OPTIMIZED: Use vectorized autocorrelation calculation
+        vol_series = pd.Series(vol)
+        
+        # Calculate volatility changes for autocorrelation
+        vol_changes = vol_series.diff()
+        
+        # Vectorized persistence using rolling autocorrelation
+        persistence = vol_changes.rolling(window=lag+1).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+            raw=False
+        ).fillna(0).values
         
         return persistence
     
     def _calculate_volatility_regime_strength(self, vol: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime strength."""
+        """Calculate volatility regime strength - VECTORIZED."""
         if len(vol) < window:
             return np.zeros(len(vol))
         
-        strength = np.zeros(len(vol))
-        for i in range(window, len(vol)):
-            vol_window = vol[i-window:i]
-            # Regime strength based on consistency of volatility level
-            vol_consistency = 1.0 - (np.std(vol_window) / (np.mean(vol_window) + 1e-8))
-            strength[i] = max(0, min(1, vol_consistency))
+        # Vectorized regime strength calculation
+        vol_series = pd.Series(vol)
+        rolling_std = vol_series.rolling(window=window).std()
+        rolling_mean = vol_series.rolling(window=window).mean()
         
-        return strength
+        # Regime strength based on consistency of volatility level
+        vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
+        strength = vol_consistency.clip(0, 1)
+        
+        return strength.fillna(0).values
     
     def _calculate_volatility_clustering(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate GARCH-like volatility clustering."""
+        """Calculate GARCH-like volatility clustering - OPTIMIZED VECTORIZED."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        clustering = np.zeros(len(returns))
-        for i in range(window, len(returns)):
-            # Calculate squared returns autocorrelation
-            squared_returns = returns[i-window:i] ** 2
-            if len(squared_returns) > 1:
-                corr = np.corrcoef(squared_returns[:-1], squared_returns[1:])[0, 1]
-                clustering[i] = corr if not np.isnan(corr) else 0
+        # OPTIMIZED: Use vectorized squared returns autocorrelation
+        returns_series = pd.Series(returns)
+        squared_returns = returns_series ** 2
+        
+        # Vectorized clustering using rolling autocorrelation
+        clustering = squared_returns.rolling(window=window).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+            raw=False
+        ).fillna(0).values
         
         return clustering
     
     def _calculate_volatility_consistency(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime consistency."""
+        """Calculate volatility regime consistency - VECTORIZED."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        consistency = np.zeros(len(returns))
-        for i in range(window, len(returns)):
-            vol_window = self._rolling_volatility(returns[i-window:i], window // 4)
-            if len(vol_window) > 1:
-                # Consistency based on low coefficient of variation
-                cv = np.std(vol_window) / (np.mean(vol_window) + 1e-8)
-                consistency[i] = max(0, 1 - cv)
+        # Vectorized consistency calculation using rolling volatility
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 4)
         
-        return consistency
+        # Calculate rolling volatility
+        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        
+        # Calculate consistency using rolling coefficient of variation
+        vol_rolling_std = rolling_vol.rolling(window=window).std()
+        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        
+        cv = vol_rolling_std / (vol_rolling_mean + 1e-8)
+        consistency = (1 - cv).clip(0, 1)
+        
+        return consistency.fillna(0).values
     
     def _calculate_volatility_of_volatility(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility of volatility."""
+        """Calculate volatility of volatility - VECTORIZED."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        vol_of_vol = np.zeros(len(returns))
-        for i in range(window * 2, len(returns)):
-            # Calculate volatility over first window
-            vol1 = np.std(returns[i-window*2:i-window])
-            # Calculate volatility over second window
-            vol2 = np.std(returns[i-window:i])
-            # Volatility of volatility
-            vol_of_vol[i] = abs(vol2 - vol1) / (vol1 + 1e-8)
+        # Vectorized volatility of volatility calculation
+        returns_series = pd.Series(returns)
         
-        return vol_of_vol
+        # Calculate rolling volatility for both windows
+        vol1 = returns_series.rolling(window=window).std().shift(window)
+        vol2 = returns_series.rolling(window=window).std()
+        
+        # Volatility of volatility
+        vol_of_vol = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+        
+        return vol_of_vol.values
     
     def _calculate_volatility_uncertainty(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime uncertainty."""
+        """Calculate volatility regime uncertainty - VECTORIZED."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        uncertainty = np.zeros(len(returns))
-        for i in range(window, len(returns)):
-            vol_window = self._rolling_volatility(returns[i-window:i], window // 4)
-            if len(vol_window) > 2:
-                # Uncertainty based on volatility of volatility
-                vol_vol = np.std(vol_window) / (np.mean(vol_window) + 1e-8)
-                uncertainty[i] = min(1, vol_vol)
+        # Vectorized uncertainty calculation
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 4)
         
-        return uncertainty
+        # Calculate rolling volatility
+        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        
+        # Calculate uncertainty using rolling coefficient of variation
+        vol_rolling_std = rolling_vol.rolling(window=window).std()
+        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        
+        vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+        uncertainty = vol_vol.clip(0, 1)
+        
+        return uncertainty.fillna(0).values
     
     def _detect_volatility_regime_changes(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Detect volatility regime changes."""
+        """Detect volatility regime changes - VECTORIZED."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        changes = np.zeros(len(returns))
-        for i in range(window * 2, len(returns)):
-            # Compare volatility in two consecutive windows
-            vol1 = np.std(returns[i-window*2:i-window])
-            vol2 = np.std(returns[i-window:i])
-            
-            # Significant change threshold (50% change)
-            change_ratio = abs(vol2 - vol1) / (vol1 + 1e-8)
-            changes[i] = 1 if change_ratio > 0.5 else 0
+        # Vectorized regime change detection
+        returns_series = pd.Series(returns)
         
-        return changes
+        # Calculate rolling volatility for both windows
+        vol1 = returns_series.rolling(window=window).std().shift(window)
+        vol2 = returns_series.rolling(window=window).std()
+        
+        # Significant change threshold (50% change)
+        change_ratio = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+        changes = (change_ratio > 0.5).astype(int)
+        
+        return changes.values
     
     def _calculate_volatility_transition_probability(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime transition probability."""
+        """Calculate volatility regime transition probability - OPTIMIZED VECTORIZED."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        transition_prob = np.zeros(len(returns))
-        for i in range(window * 2, len(returns)):
-            # Calculate transition probability based on recent volatility changes
-            recent_vol = self._rolling_volatility(returns[i-window*2:i], window // 2)
-            if len(recent_vol) > 1:
-                # Probability based on volatility trend
-                trend = np.polyfit(range(len(recent_vol)), recent_vol, 1)[0]
-                transition_prob[i] = min(1, max(0, abs(trend) / (np.mean(recent_vol) + 1e-8)))
+        # OPTIMIZED: Use vectorized transition probability calculation
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 2)
         
-        return transition_prob
+        # Calculate rolling volatility
+        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        
+        # Vectorized transition probability using volatility changes
+        vol_changes = rolling_vol.diff()
+        vol_mean = rolling_vol.rolling(window=window).mean()
+        
+        # Transition probability based on volatility change rate
+        transition_prob = vol_changes.abs() / (vol_mean + 1e-8)
+        transition_prob = transition_prob.clip(0, 1)
+        
+        return transition_prob.fillna(0).values
+    
+    def _calculate_trend_probability(self, vol_window: pd.Series) -> float:
+        """Calculate trend probability for a volatility window."""
+        if len(vol_window) < 2:
+            return 0.0
+        
+        # Probability based on volatility trend
+        x = np.arange(len(vol_window))
+        trend = np.polyfit(x, vol_window, 1)[0]
+        mean_vol = vol_window.mean()
+        return min(1, max(0, abs(trend) / (mean_vol + 1e-8)))
     
     def _calculate_volatility_stability(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime stability."""
+        """Calculate volatility regime stability - VECTORIZED."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        stability = np.zeros(len(returns))
-        for i in range(window, len(returns)):
-            vol_window = self._rolling_volatility(returns[i-window:i], window // 4)
-            if len(vol_window) > 1:
-                # Stability based on low volatility of volatility
-                vol_vol = np.std(vol_window) / (np.mean(vol_window) + 1e-8)
-                stability[i] = max(0, 1 - vol_vol)
+        # Vectorized stability calculation
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 4)
         
-        return stability
+        # Calculate rolling volatility
+        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        
+        # Calculate stability using rolling coefficient of variation
+        vol_rolling_std = rolling_vol.rolling(window=window).std()
+        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        
+        vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+        stability = (1 - vol_vol).clip(0, 1)
+        
+        return stability.fillna(0).values
     
     def _calculate_regime_persistence_score(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate regime persistence score."""
+        """Calculate regime persistence score - OPTIMIZED VECTORIZED."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        persistence = np.zeros(len(returns))
-        for i in range(window, len(returns)):
-            vol_window = self._rolling_volatility(returns[i-window:i], window // 4)
-            if len(vol_window) > 2:
-                # Persistence based on autocorrelation of volatility
-                corr = np.corrcoef(vol_window[:-1], vol_window[1:])[0, 1]
-                persistence[i] = corr if not np.isnan(corr) else 0
+        # OPTIMIZED: Use vectorized persistence calculation
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 4)
         
-        return persistence
+        # Calculate rolling volatility
+        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        
+        # Vectorized persistence using rolling autocorrelation
+        persistence = rolling_vol.rolling(window=window).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+            raw=False
+        ).fillna(0)
+        
+        return persistence.values

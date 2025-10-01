@@ -24,7 +24,7 @@ from ..base_calculations import (
 )
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for volatility-based features."""
+    """Feature generator for volatility-based features with batch processing."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
@@ -68,9 +68,49 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         returns = np.diff(np.log(prices))
         volatility = pd.Series(returns).rolling(window=period-1).std().values
         return np.concatenate([[np.nan], volatility])
+    
+    @classmethod
+    def generate_batch_features(cls,
+                               data: pd.DataFrame,
+                               periods: List[int] = [5, 10, 20, 30],
+                               volatility_types: List[str] = ["returns", "price"],
+                               **kwargs) -> Dict[str, pd.Series]:
+        """
+        Generate volatility features for multiple periods and types in batch.
+        
+        Args:
+            data: Input data DataFrame
+            periods: List of periods to calculate
+            volatility_types: List of volatility calculation types
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary mapping feature names to Series
+        """
+        features = {}
+        close_prices = data['close']
+        
+        for period in periods:
+            for vol_type in volatility_types:
+                if vol_type == "returns":
+                    # Calculate volatility based on returns
+                    returns = close_prices.pct_change().dropna()
+                    volatility = returns.rolling(window=period).std()
+                    # Pad with NaN to match original length
+                    volatility = pd.concat([pd.Series([np.nan] * (len(close_prices) - len(volatility)), index=close_prices.index[:len(close_prices) - len(volatility)]), volatility])
+                elif vol_type == "price":
+                    # Calculate volatility based on price levels
+                    volatility = close_prices.rolling(window=period).std()
+                else:
+                    continue
+                
+                feature_name = f"volatility_{vol_type}_{period}"
+                features[feature_name] = volatility
+        
+        return features
 
 class BollingerBandsGenerator(FeatureGenerator):
-    """Generator for Bollinger Bands with different base calculations."""
+    """Generator for Bollinger Bands with different base calculations and batch processing."""
     
     def __init__(self, 
                  period: int = 20, 
@@ -138,9 +178,62 @@ class BollingerBandsGenerator(FeatureGenerator):
             raise ValueError(f"Invalid band_type: {self.band_type}")
         
         return band
+    
+    @classmethod
+    def generate_batch_features(cls, 
+                               data: pd.DataFrame,
+                               periods: List[int] = [10, 20, 30],
+                               std_devs: List[float] = [1.5, 2.0, 2.5],
+                               band_types: List[str] = ["upper", "lower", "middle"],
+                               base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                               **base_kwargs) -> Dict[str, pd.Series]:
+        """
+        Generate Bollinger Bands features for multiple periods, std_devs, and band_types in batch.
+        
+        Args:
+            data: Input data DataFrame
+            periods: List of periods to calculate
+            std_devs: List of standard deviation multipliers
+            band_types: List of band types to generate
+            base_calculation: Base calculation type
+            **base_kwargs: Additional parameters for base calculation
+            
+        Returns:
+            Dictionary mapping feature names to Series
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        base_values = base_calculator.calculate(data)
+        
+        features = {}
+        
+        # Vectorized calculation for all combinations
+        for period in periods:
+            # Calculate rolling mean and std for this period
+            rolling_mean = base_values.rolling(window=period).mean()
+            rolling_std = base_values.rolling(window=period).std()
+            
+            for std_dev in std_devs:
+                for band_type in band_types:
+                    if band_type == "upper":
+                        band = rolling_mean + (rolling_std * std_dev)
+                    elif band_type == "lower":
+                        band = rolling_mean - (rolling_std * std_dev)
+                    elif band_type == "middle":
+                        band = rolling_mean
+                    else:
+                        continue
+                    
+                    feature_name = f"bb_{band_type}_{period}_{std_dev}_{base_calculation.value}"
+                    features[feature_name] = band
+        
+        return features
 
 class ATRGenerator(FeatureGenerator):
-    """Generator for Average True Range with different base calculations."""
+    """Generator for Average True Range with different base calculations and batch processing."""
     
     def __init__(self, 
                  period: int = 14,
@@ -206,6 +299,60 @@ class ATRGenerator(FeatureGenerator):
             # Calculate rolling standard deviation as volatility measure
             atr = base_values.rolling(window=self.period).std()
             return atr
+    
+    @classmethod
+    def generate_batch_features(cls,
+                               data: pd.DataFrame,
+                               periods: List[int] = [7, 14, 21],
+                               base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                               **base_kwargs) -> Dict[str, pd.Series]:
+        """
+        Generate ATR features for multiple periods in batch.
+        
+        Args:
+            data: Input data DataFrame
+            periods: List of periods to calculate
+            base_calculation: Base calculation type
+            **base_kwargs: Additional parameters for base calculation
+            
+        Returns:
+            Dictionary mapping feature names to Series
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        features = {}
+        
+        if base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional ATR calculation on price levels
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Calculate ATR for each period
+            for period in periods:
+                atr = true_range.rolling(window=period).mean()
+                feature_name = f"atr_{period}_{base_calculation.value}"
+                features[feature_name] = atr
+        else:
+            # For other base calculations, calculate ATR on the base values
+            base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+            base_values = base_calculator.calculate(data)
+            
+            # Calculate rolling standard deviation for each period
+            for period in periods:
+                atr = base_values.rolling(window=period).std()
+                feature_name = f"atr_{period}_{base_calculation.value}"
+                features[feature_name] = atr
+        
+        return features
 
 
 class VolatilityBandsGenerator(FeatureGenerator):

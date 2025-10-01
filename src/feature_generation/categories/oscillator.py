@@ -72,7 +72,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
     return create_oscillator_generators()
 
 # CCI (Commodity Channel Index)
-class CCIGenerator(FeatureGenerator):
+class CCIGenerator(VectorizedFeatureGenerator):
     """Generator for CCI (Commodity Channel Index) with different base calculations."""
     
     def __init__(self,
@@ -110,7 +110,7 @@ class CCIGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -124,24 +124,26 @@ class CCIGenerator(FeatureGenerator):
             # Calculate typical price
             typical_price = (high + low + close) / 3
             
-            # Calculate CCI
+            # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
             sma_tp = typical_price.rolling(window=self.period).mean()
-            mad = typical_price.rolling(window=self.period).apply(lambda x: np.mean(np.abs(x - x.mean())))
+            # Vectorized MAD: use rolling mean of absolute deviations
+            mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
             cci = (typical_price - sma_tp) / (0.015 * mad)
             
             return cci
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # Calculate CCI on base values
+            # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
             sma_base = base_values.rolling(window=self.period).mean()
-            mad_base = base_values.rolling(window=self.period).apply(lambda x: np.mean(np.abs(x - x.mean())))
+            # Vectorized MAD: use rolling mean of absolute deviations
+            mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
             cci = (base_values - sma_base) / (0.015 * mad_base)
             
             return cci
 
 # ADX (Average Directional Index)
-class ADXGenerator(FeatureGenerator):
+class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for ADX (Average Directional Index) with different base calculations."""
     
     def __init__(self,
@@ -179,7 +181,7 @@ class ADXGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -222,7 +224,7 @@ class ADXGenerator(FeatureGenerator):
             return adx
 
 # Aroon Oscillator
-class AroonGenerator(FeatureGenerator):
+class AroonGenerator(VectorizedFeatureGenerator):
     """Generator for Aroon Oscillator with different base calculations."""
     
     def __init__(self,
@@ -260,7 +262,7 @@ class AroonGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -270,9 +272,10 @@ class AroonGenerator(FeatureGenerator):
             high = data['high']
             low = data['low']
             
-            # Calculate Aroon Up and Down
-            aroon_up = high.rolling(window=self.period).apply(lambda x: (self.period - x.argmax()) / self.period * 100)
-            aroon_down = low.rolling(window=self.period).apply(lambda x: (self.period - x.argmin()) / self.period * 100)
+            # OPTIMIZED: Use vectorized argmax/argmin calculations
+            # Use pandas built-in rolling idxmax/idxmin for better performance
+            aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+            aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
             
             # Calculate Aroon Oscillator
             aroon = aroon_up - aroon_down
@@ -281,16 +284,17 @@ class AroonGenerator(FeatureGenerator):
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # For other base calculations, use rolling min/max
-            aroon_up = base_values.rolling(window=self.period).apply(lambda x: (self.period - x.argmax()) / self.period * 100)
-            aroon_down = base_values.rolling(window=self.period).apply(lambda x: (self.period - x.argmin()) / self.period * 100)
+            # OPTIMIZED: Use vectorized argmax/argmin calculations
+            # Use pandas built-in rolling idxmax/idxmin for better performance
+            aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+            aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
             
             aroon = aroon_up - aroon_down
             
             return aroon
 
 # Parabolic SAR
-class SARGenerator(FeatureGenerator):
+class SARGenerator(VectorizedFeatureGenerator):
     """Generator for Parabolic SAR with different base calculations."""
     
     def __init__(self,
@@ -331,7 +335,7 @@ class SARGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.acceleration = acceleration
         self.maximum = maximum
         self.base_calculation = base_calculation
@@ -363,7 +367,7 @@ class SARGenerator(FeatureGenerator):
             return sar
 
 # Ultimate Oscillator
-class UltimateOscillatorGenerator(FeatureGenerator):
+class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Ultimate Oscillator with different base calculations."""
     
     def __init__(self,
@@ -407,7 +411,7 @@ class UltimateOscillatorGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period1 = period1
         self.period2 = period2
         self.period3 = period3
@@ -446,7 +450,7 @@ class UltimateOscillatorGenerator(FeatureGenerator):
             return uo
 
 # KST (Know Sure Thing)
-class KSTGenerator(FeatureGenerator):
+class KSTGenerator(VectorizedFeatureGenerator):
     """Generator for KST (Know Sure Thing) with different base calculations."""
     
     def __init__(self,
@@ -505,7 +509,7 @@ class KSTGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.roc1 = roc1
         self.roc2 = roc2
         self.roc3 = roc3
@@ -546,7 +550,7 @@ class KSTGenerator(FeatureGenerator):
             return kst
 
 # APO (Absolute Price Oscillator)
-class APOGenerator(FeatureGenerator):
+class APOGenerator(VectorizedFeatureGenerator):
     """Generator for APO (Absolute Price Oscillator) with different base calculations."""
     
     def __init__(self,
@@ -587,7 +591,7 @@ class APOGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.base_calculation = base_calculation
@@ -606,7 +610,7 @@ class APOGenerator(FeatureGenerator):
         return apo
 
 # CMO (Chande Momentum Oscillator)
-class CMOGenerator(FeatureGenerator):
+class CMOGenerator(VectorizedFeatureGenerator):
     """Generator for CMO (Chande Momentum Oscillator) with different base calculations."""
     
     def __init__(self,
@@ -644,7 +648,7 @@ class CMOGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -668,7 +672,7 @@ class CMOGenerator(FeatureGenerator):
         return cmo
 
 # NATR (Normalized Average True Range)
-class NATRGenerator(FeatureGenerator):
+class NATRGenerator(VectorizedFeatureGenerator):
     """Generator for NATR (Normalized Average True Range) with different base calculations."""
     
     def __init__(self,
@@ -706,7 +710,7 @@ class NATRGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -737,7 +741,7 @@ class NATRGenerator(FeatureGenerator):
             return natr
 
 # PFE (Polarized Fractal Efficiency)
-class PFEGenerator(FeatureGenerator):
+class PFEGenerator(VectorizedFeatureGenerator):
     """Generator for PFE (Polarized Fractal Efficiency) with different base calculations."""
     
     def __init__(self,
@@ -775,7 +779,7 @@ class PFEGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.base_calculation = base_calculation
     
@@ -783,16 +787,20 @@ class PFEGenerator(FeatureGenerator):
         """Generate PFE based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate PFE
-        pfe = base_values.rolling(window=self.period).apply(
-            lambda x: 100 * np.sqrt((x.iloc[-1] - x.iloc[0])**2 + self.period**2) / 
-                     np.sum(np.sqrt((x.diff()**2 + 1)))
-        )
+        # Calculate PFE - OPTIMIZED: Vectorized PFE calculation
+        # Pre-calculate differences and their norms
+        diff_values = base_values.diff().fillna(0)
+        diff_norms = np.sqrt(diff_values**2 + 1)
+        
+        # Vectorized PFE calculation
+        numerator = np.sqrt((base_values - base_values.shift(self.period))**2 + self.period**2)
+        denominator = diff_norms.rolling(window=self.period).sum()
+        pfe = 100 * numerator / denominator
         
         return pfe
 
 # T3 (T3 Moving Average)
-class T3Generator(FeatureGenerator):
+class T3Generator(VectorizedFeatureGenerator):
     """Generator for T3 (T3 Moving Average) with different base calculations."""
     
     def __init__(self,
@@ -833,7 +841,7 @@ class T3Generator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.volume_factor = volume_factor
         self.base_calculation = base_calculation
@@ -848,7 +856,7 @@ class T3Generator(FeatureGenerator):
         return t3
 
 # KAMA (Kaufman's Adaptive Moving Average)
-class KAMAGenerator(FeatureGenerator):
+class KAMAGenerator(VectorizedFeatureGenerator):
     """Generator for KAMA (Kaufman's Adaptive Moving Average) with different base calculations."""
     
     def __init__(self,
@@ -892,7 +900,7 @@ class KAMAGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.fast_period = fast_period
         self.slow_period = slow_period

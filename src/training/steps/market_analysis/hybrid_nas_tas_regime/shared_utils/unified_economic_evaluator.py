@@ -247,6 +247,11 @@ class UnifiedEconomicSignificanceEvaluator:
             
             tprint("📊 Calculating volume significance...", color="blue")
             volume_scores = self._calculate_volume_significance(data_array, regime_predictions)
+            # Debug: Check for extreme values in volume scores
+            if np.any(np.abs(volume_scores) > 1000):
+                tprint_warning(f"⚠️ Extreme volume scores detected: min={np.min(volume_scores):.3f}, max={np.max(volume_scores):.3f}")
+                # Clamp extreme values to reasonable range
+                volume_scores = np.clip(volume_scores, -1.0, 1.0)
             tprint(f"✅ Volume significance calculated: {np.mean(volume_scores):.3f} average", color="green")
             
             tprint("📉 Calculating volatility impact...", color="blue")
@@ -512,8 +517,18 @@ class UnifiedEconomicSignificanceEvaluator:
                 return np.ones(len(regime_predictions)) * 0.5
             
             volumes = market_data[:, 4]  # Volume
-            volume_scores = np.zeros(len(regime_predictions))
             
+            # Debug: Check for extreme volume values
+            if np.any(np.abs(volumes) > 1e10):
+                tprint_warning(f"⚠️ Extreme volume values detected: min={np.min(volumes):.2e}, max={np.max(volumes):.2e}")
+                # Normalize volumes to prevent extreme calculations
+                volumes = np.clip(volumes, -1e6, 1e6)
+            
+            # Handle potential negative or zero volumes
+            volumes = np.abs(volumes)  # Ensure non-negative
+            volumes = np.maximum(volumes, 1e-6)  # Avoid division by zero
+            
+            volume_scores = np.zeros(len(regime_predictions))
             unique_regimes = np.unique(regime_predictions)
             
             for regime in unique_regimes:
@@ -526,27 +541,46 @@ class UnifiedEconomicSignificanceEvaluator:
                 if len(regime_volumes) < 2:
                     continue
                 
-                # Calculate volume significance metrics
+                # Calculate volume significance metrics with better numerical stability
                 volume_mean = np.mean(regime_volumes)
                 volume_std = np.std(regime_volumes)
-                volume_consistency = 1.0 / (1.0 + volume_std / (volume_mean + 1e-8))
                 
-                # Calculate volume trend
+                # Volume consistency (higher is better)
+                if volume_mean > 0 and volume_std >= 0:
+                    cv = volume_std / volume_mean  # Coefficient of variation
+                    volume_consistency = 1.0 / (1.0 + cv)  # Higher consistency = lower CV
+                else:
+                    volume_consistency = 0.5
+                
+                # Calculate volume trend (normalized)
                 volume_changes = np.diff(regime_volumes)
-                volume_trend = np.mean(volume_changes) / (volume_mean + 1e-8)
+                if len(volume_changes) > 0 and volume_mean > 0:
+                    volume_trend = np.mean(volume_changes) / volume_mean
+                    volume_trend_normalized = min(abs(volume_trend), 1.0)
+                else:
+                    volume_trend_normalized = 0.5
                 
                 # Calculate volume relative to market average
                 market_volume_avg = np.mean(volumes)
-                volume_ratio = volume_mean / (market_volume_avg + 1e-8)
+                if market_volume_avg > 0:
+                    volume_ratio = min(volume_mean / market_volume_avg, 2.0)  # Cap at 2x
+                else:
+                    volume_ratio = 1.0
                 
-                # Combine volume significance metrics
+                # Combine volume significance metrics (all components should be [0,1])
                 volume_significance = (
                     volume_consistency * 0.4 +
-                    min(abs(volume_trend), 1.0) * 0.3 +
-                    min(volume_ratio, 2.0) * 0.3  # Cap at 2x market average
+                    volume_trend_normalized * 0.3 +
+                    volume_ratio * 0.3
                 )
                 
-                volume_scores[regime_mask] = min(volume_significance, 1.0)
+                # Ensure result is in valid range
+                volume_scores[regime_mask] = np.clip(volume_significance, 0.0, 1.0)
+            
+            # Final safety check
+            if np.any(np.abs(volume_scores) > 10):
+                tprint_warning(f"⚠️ Volume scores still extreme: min={np.min(volume_scores):.3f}, max={np.max(volume_scores):.3f}")
+                volume_scores = np.clip(volume_scores, 0.0, 1.0)
             
             return volume_scores
             

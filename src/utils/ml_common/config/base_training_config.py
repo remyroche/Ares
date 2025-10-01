@@ -156,9 +156,9 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
             'criterion': {'type': 'categorical', 'choices': ['gini', 'entropy']}
         },
         'BayesianRuleLists': {
-            'max_rules': {'type': 'int', 'low': 6, 'high': 12},
-            'max_rule_length': {'type': 'int', 'low': 2, 'high': 3},
-            'min_support': {'type': 'float', 'low': 0.02, 'high': 0.05},
+            'listlengthprior': {'type': 'int', 'low': 2, 'high': 5},
+            'maxcardinality': {'type': 'int', 'low': 2, 'high': 3},
+            'minsupport': {'type': 'float', 'low': 0.02, 'high': 0.05},
             'alpha': {'type': 'float', 'low': 0.5, 'high': 2.0},
             'beta': {'type': 'float', 'low': 0.5, 'high': 2.0},
             'list_length_lambda': {'type': 'int', 'low': 3, 'high': 5},

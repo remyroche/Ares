@@ -647,10 +647,9 @@ class HPOWithOverfittingPrevention:
         """Check if trial exhibits overfitting."""
         try:
             # Split data for overfitting check
-            if is_classification:
-                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-            else:
-                cv = KFold(n_splits=3, shuffle=True, random_state=42)
+            # ⚠️ CRITICAL: For time series data, ALWAYS use TimeSeriesSplit!
+            from sklearn.model_selection import TimeSeriesSplit
+            cv = TimeSeriesSplit(n_splits=3)
 
             train_scores = []
             val_scores = []

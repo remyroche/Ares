@@ -55,7 +55,7 @@ from src.utils.serialization_utils import UniversalSerializer
 # Import shared utilities from hybrid regime system
 try:
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.search_strategies import SearchStrategyManager, SearchStrategyConfig
-    # SharedClusteringUtilities removed - will be implemented in subsequent step
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.analysis_components import SharedClusteringUtilities
     from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.position_aware_trading import PositionAwareTradingAnalyzer, PositionAwareConfig
     SHARED_UTILITIES_AVAILABLE = True
     POSITION_AWARE_AVAILABLE = True

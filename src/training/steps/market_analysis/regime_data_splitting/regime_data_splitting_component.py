@@ -163,7 +163,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     """
     Regime Data Splitting Component.
     
-    Tags data by regimes discovered in previous stages.
+    Tags data by regimes discovered in previous stages using NAS/TAS clustering results.
     Enhanced with comprehensive error handling, validation, and reporting.
     """
     
@@ -555,17 +555,19 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             return None
     
     def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Get regime discovery results from pipeline state or load from previous outcomes."""
-        self.logger.info("🔍 Retrieving regime discovery results...")
+        """Get NAS/TAS clustering results from pipeline state or load from previous outcomes."""
+        self.logger.info("🔍 Retrieving NAS/TAS clustering results...")
 
         try:
-            # Try different possible keys for regime discovery results
+            # Try different possible keys for NAS/TAS clustering results
             possible_keys = [
-                'hmm_regime_discovery_result',
-                'regime_discovery_result',
-                'optimal_regime_clustering_result',  # Updated to use optimal regime clustering
-                'regime_states',
-                'regime_probabilities'
+                'optimal_regime_clustering_result',  # Primary NAS/TAS clustering result
+                'nas_tas_clustering_result',        # Alternative NAS/TAS clustering key
+                'cluster_assignments',              # Direct cluster assignments
+                'hmm_regime_discovery_result',      # Fallback to HMM results
+                'regime_discovery_result',          # General regime discovery fallback
+                'regime_states',                    # Legacy regime states
+                'regime_probabilities'              # Legacy regime probabilities
             ]
 
             regime_discovery = None
@@ -608,8 +610,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         try:
             outcomes_dir = Path("/Users/remyroche/Documents/Ares/outcomes")
 
-            # Look for successful regime discovery outcomes
-            pattern = "market_analysis_hmm_regime_discovery_outcome_*.json"
+            # Look for successful NAS/TAS clustering outcomes
+            pattern = "market_analysis_nas_tas_clustering_outcome_*.json"
             outcome_files = list(outcomes_dir.glob(pattern))
 
             if not outcome_files:
@@ -653,6 +655,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'hmm_regime_discovery_result',
                 'regime_discovery_result',
                 'optimal_regime_clustering_result',
+                'nas_tas_clustering_result',  # Also check for NAS-TAS clustering result
                 'regime_states',
                 'regime_probabilities'
             ]

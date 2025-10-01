@@ -27,6 +27,7 @@ class FeatureConfig:
     ma_long_lookback: int = 30
     volume_lookback: int = 10
     momentum_lookback: int = 14
+    entropy_lookback: int = 20
     
     # Feature processing options
     use_standardized_features: bool = True
@@ -39,7 +40,13 @@ class FeatureConfig:
     
     def __post_init__(self):
         if self.feature_categories is None:
-            self.feature_categories = ['momentum', 'volatility', 'volume', 'trend', 'price_action']
+            # Use regime-focused feature categories for regime classification
+            self.feature_categories = [
+                'regime_volatility',       # Volatility regime features (8 features)
+                'regime_volume',           # Volume regime features
+                'regime_structural_trend', # Structural trend features (6 features)
+                'regime_statistical'       # Statistical regime features (11 features)
+            ]
 
 
 def prepare_market_features(
@@ -111,42 +118,94 @@ def prepare_market_features(
             )
             
             # Create regime-focused configuration
+            # Check if regime categories are in the feature config, default to True if not specified
+            has_regime_categories = any('regime_' in cat for cat in feature_config.feature_categories)
+            
             regime_config = RegimeFeatureConfig(
-                include_volatility_regime='regime_volatility' in feature_config.feature_categories,
-                include_volume_regime='regime_volume' in feature_config.feature_categories,
-                include_structural_trend='regime_structural_trend' in feature_config.feature_categories,
-                include_statistical_regime='regime_statistical' in feature_config.feature_categories,
-                min_regime_persistence=0.7,
-                max_feature_noise_ratio=0.3,
-                min_temporal_stability=0.6,
+                include_volatility_regime='regime_volatility' in feature_config.feature_categories if has_regime_categories else True,
+                include_volume_regime='regime_volume' in feature_config.feature_categories if has_regime_categories else True,
+                include_structural_trend='regime_structural_trend' in feature_config.feature_categories if has_regime_categories else True,
+                include_statistical_regime='regime_statistical' in feature_config.feature_categories if has_regime_categories else True,
+                min_regime_persistence=0.2,     # Relaxed from 0.7 - regimes change!
+                max_feature_noise_ratio=1.2,   # Relaxed from 0.3 - allow variability
+                min_temporal_stability=0.1,    # Relaxed from 0.6 - allow transitions
                 optimize_for_15m=True,
-                trade_duration_minutes=(5, 30)
+                trade_duration_minutes=(5, 30),
+                enable_feature_selection=True,
+                max_features_per_category=20,
+                total_max_features=80
             )
             
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Extracting regime-focused features for categories: {feature_config.feature_categories}")
+                tprint("🎯 [REGIME_FEATURES] Using RegimeFeatureIntegration with 28 regime-specific features", color="cyan", bold=True)
             
             # Generate regime-focused features
             features_dict, summary = generate_regime_features(
                 data=market_data,
                 config=regime_config
             )
-            
+
+            if verbose:
+                tprint_debug(f"📊 [SHARED_FEATURES] Generated {len(features_dict)} regime features")
+                if features_dict:
+                    tprint_debug(f"📊 [SHARED_FEATURES] Feature keys: {list(features_dict.keys())}")
+                    # Check for NaN/inf values in features
+                    nan_counts = {k: np.sum(np.isnan(v)) for k, v in features_dict.items()}
+                    inf_counts = {k: np.sum(np.isinf(v)) for k, v in features_dict.items()}
+                    tprint_debug(f"📊 [SHARED_FEATURES] NaN counts: {nan_counts}")
+                    tprint_debug(f"📊 [SHARED_FEATURES] Inf counts: {inf_counts}")
+
             if not features_dict or len(features_dict) == 0:
+                error_msg = "❌ [SHARED_FEATURES] No regime features generated - trying fallback features"
                 if verbose:
-                    tprint_warning("⚠️ [SHARED_FEATURES] No regime features generated, falling back to basic features")
-                # Fall back to basic feature generation
-                features_df = _generate_basic_features(market_data, feature_config, verbose)
+                    tprint_warning(error_msg)
+                # Try fallback to basic features
+                try:
+                    fallback_features = _generate_basic_features(market_data, feature_config, verbose)
+                    if fallback_features is not None and not fallback_features.empty:
+                        features_dict = {f"fallback_{col}": fallback_features[col].values for col in fallback_features.columns}
+                        if verbose:
+                            tprint_warning(f"✅ [SHARED_FEATURES] Using fallback features: {len(features_dict)} features")
+                    else:
+                        error_msg = "❌ [SHARED_FEATURES] No fallback features available either"
+                        if verbose:
+                            tprint_error(error_msg)
+                        raise ValueError(error_msg)
+                except Exception as fallback_error:
+                    error_msg = f"❌ [SHARED_FEATURES] Fallback feature generation also failed: {fallback_error}"
+                    if verbose:
+                        tprint_error(error_msg)
+                    raise ValueError(error_msg)
             else:
                 # Convert regime features to DataFrame
                 if verbose:
-                    tprint_debug(f"✅ [SHARED_FEATURES] Generated {len(features_dict)} regime features")
-                    tprint_debug(f"📊 [SHARED_FEATURES] Feature summary: {summary}")
-                
+                    tprint_success(f"✅ [REGIME_FEATURES] Generated {len(features_dict)} regime features")
+                    tprint(f"📊 [REGIME_FEATURES] Feature categories:", color="blue")
+                    for cat, count in summary['feature_categories'].items():
+                        if count > 0:
+                            tprint(f"   - {cat}: {count} features", color="cyan")
+                    tprint(f"📊 [REGIME_FEATURES] Quality metrics:", color="blue")
+                    tprint(f"   - Avg persistence: {summary['quality_metrics']['avg_persistence']:.3f}", color="cyan")
+                    tprint(f"   - Avg noise ratio: {summary['quality_metrics']['avg_noise_ratio']:.3f}", color="cyan")
+
+                # Ensure all feature arrays have the same length before stacking
+                feature_lengths = [len(arr) for arr in features_dict.values()]
+                min_length = min(feature_lengths)
+                max_length = max(feature_lengths)
+
+                if min_length != max_length:
+                    if verbose:
+                        tprint_warning(f"⚠️ [SHARED_FEATURES] Feature arrays have different lengths (min: {min_length}, max: {max_length}), truncating to minimum length")
+                    # Truncate all arrays to the minimum length
+                    features_dict = {
+                        name: arr[:min_length] for name, arr in features_dict.items()
+                    }
+
                 # Convert features dict to DataFrame
                 features_array = np.column_stack(list(features_dict.values()))
                 features_df = pd.DataFrame(
-                    features_array, 
+                    features_array,
                     columns=list(features_dict.keys()),
                     index=market_data.index[:len(features_array)]
                 )
@@ -156,29 +215,55 @@ def prepare_market_features(
                 tprint_debug(f"📊 [SHARED_FEATURES] Feature columns: {list(features_df.columns)}")
             
         except Exception as e:
+            error_msg = f"❌ [SHARED_FEATURES] Regime feature generation failed: {e} - fast failing as requested"
             if verbose:
-                tprint_warning(f"⚠️ [SHARED_FEATURES] Balanced feature extractor failed: {e}, falling back to basic features")
-            # Fall back to basic feature generation
-            features_df = _generate_basic_features(market_data, feature_config, verbose)
+                tprint_error(error_msg)
+            raise ValueError(error_msg) from e
         
         # Convert to numpy array and handle missing values
         if verbose:
             tprint_debug("🔧 [SHARED_FEATURES] Handling missing values")
-        
-        # Fill missing values with forward fill, then backward fill
-        features_df = features_df.fillna(method='ffill').fillna(method='bfill')
-        
+
         # Convert to numpy array
         features_array = features_df.values
-        
-        # Remove rows with any remaining NaN values
-        valid_rows = ~np.isnan(features_array).any(axis=1)
-        features_array = features_array[valid_rows]
-        
+
+        # Check for NaN/inf values before processing
+        nan_mask = np.isnan(features_array)
+        inf_mask = np.isinf(features_array)
+        total_invalid = np.sum(nan_mask) + np.sum(inf_mask)
+
+        if verbose:
+            tprint_debug(f"📊 [SHARED_FEATURES] Found {np.sum(nan_mask)} NaN and {np.sum(inf_mask)} Inf values ({total_invalid} total invalid)")
+
+        if total_invalid > 0:
+            if verbose:
+                tprint_warning(f"⚠️ [SHARED_FEATURES] Found {total_invalid} invalid values, attempting to fix...")
+
+            # Replace infinite values with NaN first
+            features_array = np.where(np.isinf(features_array), np.nan, features_array)
+
+            # Fill missing values with backward fill only (no forward fill to prevent data leakage)
+            features_df = pd.DataFrame(features_array, index=features_df.index, columns=features_df.columns)
+            features_df = features_df.fillna(method='bfill')
+            features_array = features_df.values
+
+            # Check remaining NaN values
+            remaining_nan = np.sum(np.isnan(features_array))
+            if remaining_nan > 0 and verbose:
+                tprint_warning(f"⚠️ [SHARED_FEATURES] Still have {remaining_nan} NaN values after backward fill")
+
+            # Remove rows with any remaining NaN values
+            valid_rows = ~np.isnan(features_array).any(axis=1)
+            features_array = features_array[valid_rows]
+
+            if verbose:
+                removed_rows = len(features_df) - len(features_array)
+                tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
+
         if len(features_array) == 0:
             if verbose:
-                tprint_error("❌ [SHARED_FEATURES] No valid features after cleaning")
-            raise ValueError("No valid features after cleaning")
+                tprint_error("❌ [SHARED_FEATURES] No valid features after cleaning - all rows contained NaN/inf values")
+            raise ValueError("No valid features after cleaning - all rows contained NaN/inf values")
         
         # Remove highly correlated features if requested
         if feature_config.drop_highly_correlated:
@@ -243,7 +328,7 @@ def prepare_market_features(
                 tprint_debug(f"   - Max: {np.max(features_array):.6f}")
         
         return features_array
-        
+
     except Exception as e:
         if verbose:
             tprint_error(f"❌ [SHARED_FEATURES] Feature preparation failed: {e}")
@@ -267,63 +352,50 @@ def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureC
     
     features_dict = {}
     
-    # Calculate returns
-    if 'momentum' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("📈 [SHARED_FEATURES] Calculating returns")
-        features_dict['returns'] = market_data['close'].pct_change(feature_config.returns_lookback)
+    # Always generate basic features regardless of categories
+    if verbose:
+        tprint_debug("📈 [SHARED_FEATURES] Calculating basic returns")
+    features_dict['returns'] = market_data['close'].pct_change(feature_config.returns_lookback)
     
-    # Calculate volatility
-    if 'volatility' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("📊 [SHARED_FEATURES] Calculating volatility")
-        returns = market_data['close'].pct_change()
-        features_dict['volatility'] = returns.rolling(window=feature_config.volatility_lookback).std()
+    if verbose:
+        tprint_debug("📊 [SHARED_FEATURES] Calculating basic volatility")
+    returns = market_data['close'].pct_change()
+    features_dict['volatility'] = returns.rolling(window=feature_config.volatility_lookback).std()
     
-    # Calculate moving average ratios
-    if 'trend' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("📈 [SHARED_FEATURES] Calculating moving average ratios")
-        ma_short = market_data['close'].rolling(window=feature_config.ma_short_lookback).mean()
-        ma_long = market_data['close'].rolling(window=feature_config.ma_long_lookback).mean()
-        features_dict['ma_ratio'] = ma_short / ma_long
-        features_dict['ma_spread'] = (ma_short - ma_long) / ma_long
+    if verbose:
+        tprint_debug("📈 [SHARED_FEATURES] Calculating basic moving averages")
+    ma_short = market_data['close'].rolling(window=feature_config.ma_short_lookback).mean()
+    ma_long = market_data['close'].rolling(window=feature_config.ma_long_lookback).mean()
+    features_dict['ma_ratio'] = ma_short / ma_long
+    features_dict['ma_spread'] = (ma_short - ma_long) / ma_long
     
-    # Calculate volume ratios
-    if 'volume' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("📊 [SHARED_FEATURES] Calculating volume ratios")
-        volume_ma = market_data['volume'].rolling(window=feature_config.volume_lookback).mean()
-        features_dict['volume_ratio'] = market_data['volume'] / volume_ma
-        features_dict['volume_change'] = market_data['volume'].pct_change()
+    if verbose:
+        tprint_debug("📊 [SHARED_FEATURES] Calculating basic volume features")
+    volume_ma = market_data['volume'].rolling(window=feature_config.volume_lookback).mean()
+    features_dict['volume_ratio'] = market_data['volume'] / volume_ma
+    features_dict['volume_change'] = market_data['volume'].pct_change()
     
-    # Calculate price action features
-    if 'price' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("📊 [SHARED_FEATURES] Calculating price action features")
-        features_dict['hl_spread'] = (market_data['high'] - market_data['low']) / market_data['close']
-        features_dict['oc_spread'] = (market_data['close'] - market_data['open']) / market_data['open']
-        features_dict['body_size'] = abs(market_data['close'] - market_data['open']) / (market_data['high'] - market_data['low'])
+    if verbose:
+        tprint_debug("📊 [SHARED_FEATURES] Calculating basic price action features")
+    features_dict['hl_spread'] = (market_data['high'] - market_data['low']) / market_data['close']
+    features_dict['oc_spread'] = (market_data['close'] - market_data['open']) / market_data['open']
+    features_dict['body_size'] = abs(market_data['close'] - market_data['open']) / (market_data['high'] - market_data['low'])
     
-    # Calculate momentum indicators
-    if 'momentum' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("🚀 [SHARED_FEATURES] Calculating momentum indicators")
-        # RSI-like momentum
-        returns = market_data['close'].pct_change()
-        positive_returns = returns.where(returns > 0, 0).rolling(window=feature_config.momentum_lookback).mean()
-        negative_returns = (-returns.where(returns < 0, 0)).rolling(window=feature_config.momentum_lookback).mean()
-        features_dict['momentum'] = positive_returns / (positive_returns + negative_returns)
-        features_dict['price_momentum'] = market_data['close'].pct_change(feature_config.momentum_lookback)
+    if verbose:
+        tprint_debug("🚀 [SHARED_FEATURES] Calculating basic momentum indicators")
+    # RSI-like momentum
+    returns = market_data['close'].pct_change()
+    positive_returns = returns.where(returns > 0, 0).rolling(window=feature_config.momentum_lookback).mean()
+    negative_returns = (-returns.where(returns < 0, 0)).rolling(window=feature_config.momentum_lookback).mean()
+    features_dict['momentum'] = positive_returns / (positive_returns + negative_returns)
+    features_dict['price_momentum'] = market_data['close'].pct_change(feature_config.momentum_lookback)
     
-    # Calculate entropy features
-    if 'entropy' in feature_config.feature_categories:
-        if verbose:
-            tprint_debug("🔍 [SHARED_FEATURES] Calculating entropy features")
-        # Simple entropy measure based on price changes
-        returns = market_data['close'].pct_change()
-        returns_abs = abs(returns)
-        features_dict['entropy'] = returns_abs.rolling(window=feature_config.entropy_lookback).std()
+    if verbose:
+        tprint_debug("🔍 [SHARED_FEATURES] Calculating basic entropy features")
+    # Simple entropy measure based on price changes
+    returns = market_data['close'].pct_change()
+    returns_abs = abs(returns)
+    features_dict['entropy'] = returns_abs.rolling(window=feature_config.entropy_lookback).std()
     
     # Convert to DataFrame
     features_df = pd.DataFrame(features_dict, index=market_data.index)
@@ -333,6 +405,59 @@ def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureC
         tprint_debug(f"📊 [SHARED_FEATURES] Feature columns: {list(features_df.columns)}")
     
     return features_df
+
+
+def detect_data_leakage(features: np.ndarray, targets: np.ndarray, threshold: float = 0.95) -> Dict[str, Any]:
+    """
+    Detect potential data leakage by checking for suspiciously high correlations
+    between features and target variables.
+
+    Args:
+        features: Feature matrix (n_samples, n_features)
+        targets: Target variable array (n_samples,)
+        threshold: Correlation threshold above which to flag as suspicious
+
+    Returns:
+        Dictionary with leakage detection results
+    """
+    results = {
+        'has_leakage': False,
+        'suspicious_features': [],
+        'max_correlation': 0.0,
+        'correlation_matrix': None
+    }
+
+    try:
+        if features.shape[0] != len(targets):
+            raise ValueError(f"Features and targets must have same number of samples. Got {features.shape[0]} vs {len(targets)}")
+
+        # Calculate correlation between each feature and target
+        correlations = []
+        suspicious_indices = []
+
+        for i in range(features.shape[1]):
+            feature_col = features[:, i]
+            # Handle NaN values
+            valid_mask = ~(np.isnan(feature_col) | np.isnan(targets))
+            if np.sum(valid_mask) < 10:  # Need minimum samples for correlation
+                continue
+
+            corr = np.corrcoef(feature_col[valid_mask], targets[valid_mask])[0, 1]
+            if not np.isnan(corr):
+                correlations.append(abs(corr))
+                if abs(corr) > threshold:
+                    suspicious_indices.append(i)
+
+        if correlations:
+            results['max_correlation'] = max(correlations)
+            results['suspicious_features'] = suspicious_indices
+            results['has_leakage'] = results['max_correlation'] > threshold
+
+        return results
+
+    except Exception as e:
+        print(f"Error in data leakage detection: {e}")
+        return results
 
 
 def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = None) -> bool:

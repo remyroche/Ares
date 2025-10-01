@@ -165,9 +165,8 @@ def auto_reformat_aggtrades_files() -> None:
                 files_to_reformat.append((file_path, format_type))
     if not files_to_reformat:
         return
-    response = input('\nDo you want to proceed with reformatting? (y/N): ')
-    if response.lower() != 'y':
-        return
+    # Auto-proceed with reformatting in non-interactive mode
+    print('\nAuto-proceeding with reformatting in non-interactive mode...')
     for file_path, format_type in files_to_reformat:
         backup_path = os.path.join(backup_dir, os.path.basename(file_path))
         shutil.copy2(file_path, backup_path)

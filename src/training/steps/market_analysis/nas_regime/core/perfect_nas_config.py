@@ -91,6 +91,7 @@ class EconomicEvaluationConfig:
     market_efficiency_weight: float = 0.15
     economic_indicators_weight: float = 0.1
     trading_opportunity_weight: float = 0.05
+    risk_adjustment_weight: float = 0.05
     significance_threshold: float = 0.7
     economic_indicators: List[str] = field(default_factory=lambda: [
         'gdp_growth', 'inflation_rate', 'interest_rate', 'unemployment_rate'

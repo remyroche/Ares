@@ -255,10 +255,14 @@ class NASTASEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         try:
             from imodels import BayesianRuleListClassifier
             brl_model = BayesianRuleListClassifier(
-                max_rules=12,
-                max_rule_length=3,
+                listlengthprior=3,
+                listwidthprior=1,
+                maxcardinality=2,
+                minsupport=0.1,
                 n_chains=3,
-                n_iter=10000
+                max_iter=10000,
+                verbose=False,
+                random_state=42
             )
             brl_model.fit(X, y)
             base_models['bayesian_rule_lists'] = brl_model

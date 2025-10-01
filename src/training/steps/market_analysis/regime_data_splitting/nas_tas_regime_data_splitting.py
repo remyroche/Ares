@@ -1,17 +1,18 @@
 """
-Enhanced Step 4: Regime Data Tagging with HMM ML Model Integration
+NAS/TAS Regime Data Splitting - Enhanced Regime Tagging with NAS/TAS Clustering Integration
 
 This module creates a unified dataset with regime labels for regime-aware processing.
-It now includes HMM ML model tagging capabilities to determine regime membership
-using trained HMM models from the hmm_training module.
+It uses NAS/TAS clustering results to determine regime membership and tag market data
+with regime states and probabilities.
 
 KEY FEATURES:
-- HMM ML model integration for regime tagging
+- NAS/TAS clustering integration for regime tagging
 - 100% data retention (no rows lost to splitting boundaries)
 - Full lookback period preservation for all features
 - Temporal continuity maintained across regime transitions
 - Single dataset management (no multiple files per regime)
 - Context preservation around regime changes
+- Enhanced regime state extraction from NAS/TAS clustering results
 """
 
 import numpy as np
@@ -26,14 +27,12 @@ warnings.filterwarnings('ignore')
 
 # Import existing infrastructure
 try:
-    from ..hmm_models_training.hmm_models_training_enhanced import HMMModelsTrainingEnhanced as HMMModelsTraining
-    from ..hmm_models_training.hmm_ensemble_training import HMMEnsembleTrainingComponent as HMMEnsembleTraining
     from src.feature_generation.core.feature_generator import FeatureGenerator
     from src.training.utils.feature_selection.main_framework import FeatureSelectionFramework
-    HMM_TRAINING_AVAILABLE = True
+    HMM_TRAINING_AVAILABLE = False  # HMM training modules no longer needed
 except ImportError as e:
     from src.utils.tprint import tprint
-    tprint(f"⚠️ Warning: HMM training modules not available: {e}")
+    tprint(f"⚠️ Warning: Feature modules not available: {e}")
     HMM_TRAINING_AVAILABLE = False
 
 # Core decorators imports
@@ -70,33 +69,26 @@ from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.utils.data.validation.validators import CrossStepValidator
 from src.utils.data.quality.data_quality import DataQualityFramework
 
-logger = system_logger.getChild('RegimeDataSplittingEnhanced')
+logger = system_logger.getChild('NasTasRegimeDataSplitting')
 
 class HMMRegimeTagger:
-    """HMM-based regime tagger using trained ML models."""
+    """Legacy regime tagger - HMM functionality no longer needed."""
     
     def __init__(self, config: Dict[str, Any]):
-        """Initialize HMM regime tagger."""
-        tprint('🔧 Initializing HMMRegimeTagger')
+        """Initialize regime tagger (HMM functionality removed)."""
+        tprint('🔧 Initializing RegimeTagger (HMM functionality removed)')
         self.config = config
-        self.logger = logger.getChild('HMMRegimeTagger')
+        self.logger = logger.getChild('RegimeTagger')
         self.base_models = {}
         self.ensemble_models = {}
         self.feature_generator = None
         self.feature_selector = None
-        tprint('✅ HMMRegimeTagger basic initialization completed')
-        
-        if HMM_TRAINING_AVAILABLE:
-            tprint('🤖 HMM training available, initializing components')
-            self._initialize_components()
-            tprint('✅ HMM components initialized')
-        else:
-            tprint('⚠️ HMM training not available')
+        tprint('✅ RegimeTagger initialization completed (HMM functionality removed)')
     
     def _initialize_components(self):
-        """Initialize HMM training components."""
+        """Initialize regime tagger components (HMM functionality removed)."""
         try:
-            # Initialize feature generator
+            # Initialize feature generator for regime analysis
             self.feature_generator = FeatureGenerator()
             
             # Initialize feature selection framework
@@ -108,44 +100,20 @@ class HMMRegimeTagger:
             }
             self.feature_selector = FeatureSelectionFramework(fs_config)
             
-            self.logger.info("✅ HMM regime tagger components initialized")
+            self.logger.info("✅ Regime tagger components initialized")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize HMM components: {e}")
+            self.logger.error(f"❌ Failed to initialize regime tagger components: {e}")
             raise
     
     def load_trained_models(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
-        """Load trained HMM models."""
-        tprint(f'🤖 Loading trained HMM models for {symbol} on {exchange} ({timeframe})')
-        try:
-            models_dir = Path("generated/market_analysis") / 'models' / 'hmm'
-            
-            # Load base models
-            base_models_dir = models_dir / 'base_models'
-            if base_models_dir.exists():
-                for model_file in base_models_dir.glob(f'hmm_base_*_{symbol}_{exchange}_{timeframe}.pkl'):
-                    model_name = model_file.stem.split('_')[2]  # Extract model name
-                    with open(model_file, 'rb') as f:
-                        self.base_models[model_name] = pickle.load(f)
-                self.logger.info(f"✅ Loaded {len(self.base_models)} base models")
-            
-            # Load ensemble models
-            ensemble_models_dir = models_dir / 'ensemble_models'
-            if ensemble_models_dir.exists():
-                for model_file in ensemble_models_dir.glob(f'hmm_ensemble_*_{symbol}_{exchange}_{timeframe}.pkl'):
-                    model_name = model_file.stem.split('_')[2]  # Extract model name
-                    with open(model_file, 'rb') as f:
-                        self.ensemble_models[model_name] = pickle.load(f)
-                self.logger.info(f"✅ Loaded {len(self.ensemble_models)} ensemble models")
-            
-            return len(self.base_models) > 0 or len(self.ensemble_models) > 0
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load trained models: {e}")
-            return False
+        """Load trained models (HMM functionality removed - returns False)."""
+        tprint(f'⚠️ HMM models no longer needed for {symbol} on {exchange} ({timeframe})')
+        self.logger.info("⚠️ HMM models no longer needed - using regime clustering results instead")
+        return False
     
     def create_features_for_tagging(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Create features for HMM regime tagging."""
+        """Create features for regime tagging (HMM functionality removed)."""
         # Input validation using standardized validator
         validator = get_validator(self.logger)
         
@@ -168,7 +136,7 @@ class HMMRegimeTagger:
         return features
     
     def select_features_for_tagging(self, X: pd.DataFrame, is_classification: bool = True) -> pd.DataFrame:
-        """Select features for HMM regime tagging."""
+        """Select features for regime tagging (HMM functionality removed)."""
         # Input validation using standardized validator
         validator = get_validator(self.logger)
         
@@ -210,8 +178,8 @@ class HMMRegimeTagger:
     
     def tag_regimes_with_models(self, market_data: pd.DataFrame, 
                               use_ensemble: bool = True) -> Dict[str, Any]:
-        """Tag regimes using trained HMM models."""
-        tprint('🏷️ Starting regime tagging with HMM models')
+        """Tag regimes using models (HMM functionality removed - returns empty result)."""
+        tprint('⚠️ HMM regime tagging no longer needed - using clustering results instead')
         # Input validation using standardized error messages
         if market_data is None:
             tprint('❌ market_data is None')
@@ -223,108 +191,33 @@ class HMMRegimeTagger:
         if market_data.empty:
             raise ValueError("market_data is empty - Provide non-empty market data")
         
-        if not isinstance(use_ensemble, bool):
-            raise ValueError(f"use_ensemble must be a boolean, got {type(use_ensemble)} - Set use_ensemble to True or False")
-        
-        try:
-            # Create features with memory optimization
-            features = self.create_features_for_tagging(market_data)
-            tprint(f"📊 Generated {features.shape[1]} features for HMM tagging")
-            
-            # Select features
-            features_selected = self.select_features_for_tagging(features)
-            tprint(f"📊 Selected {features_selected.shape[1]} features for HMM tagging")
-            
-            # Clean up original features to free memory
-            del features
-            import gc
-            gc.collect()
-            
-            # Scale features
-            from sklearn.preprocessing import StandardScaler
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features_selected)
-            
-            # Clean up selected features using hardware manager
-            del features_selected
-            
-            # Optimize memory using hardware manager
-            try:
-                self.hardware_manager.optimize_memory()
-            except Exception as e:
-                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
-            
-            # Get predictions from models
-            regime_predictions = {}
-            regime_probabilities = {}
-            
-            # Use ensemble models if available and requested
-            if use_ensemble and self.ensemble_models:
-                for name, model in self.ensemble_models.items():
-                    try:
-                        pred = model.predict(features_scaled)
-                        proba = model.predict_proba(features_scaled) if hasattr(model, 'predict_proba') else None
-                        
-                        regime_predictions[f'ensemble_{name}'] = pred
-                        if proba is not None:
-                            regime_probabilities[f'ensemble_{name}'] = proba
-                            
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error with ensemble model {name}: {e}")
-            
-            # Use base models if no ensemble or as fallback
-            if not regime_predictions or not use_ensemble:
-                for name, model in self.base_models.items():
-                    try:
-                        pred = model.predict(features_scaled)
-                        proba = model.predict_proba(features_scaled) if hasattr(model, 'predict_proba') else None
-                        
-                        regime_predictions[f'base_{name}'] = pred
-                        if proba is not None:
-                            regime_probabilities[f'base_{name}'] = proba
-                            
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error with base model {name}: {e}")
-            
-            if not regime_predictions:
-                raise ValueError("No models available for regime tagging")
-            
-            # Use the best available model (first one)
-            best_model_name = list(regime_predictions.keys())[0]
-            final_predictions = regime_predictions[best_model_name]
-            final_probabilities = regime_probabilities.get(best_model_name)
-            
-            self.logger.info(f"✅ Tagged regimes using model: {best_model_name}")
-            
-            return {
-                'regime_predictions': final_predictions,
-                'regime_probabilities': final_probabilities,
-                'model_used': best_model_name,
-                'all_predictions': regime_predictions,
-                'all_probabilities': regime_probabilities,
-                'n_regimes': len(np.unique(final_predictions)),
-                'regime_distribution': dict(zip(*np.unique(final_predictions, return_counts=True)))
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error tagging regimes with models: {e}")
-            raise
+        # HMM functionality removed - return empty result
+        self.logger.info("⚠️ HMM regime tagging no longer needed - using clustering results instead")
+        return {
+            'regime_predictions': [],
+            'regime_probabilities': None,
+            'model_used': 'hmm_removed',
+            'all_predictions': {},
+            'all_probabilities': {},
+            'n_regimes': 0,
+            'regime_distribution': {}
+        }
 
-class RegimeDataSplittingEnhanced:
-    """Enhanced regime data splitting with HMM ML model integration."""
+class NasTasRegimeDataSplitting:
+    """NAS/TAS regime data splitting with clustering integration."""
     
     def __init__(self, config: Dict[str, Any]):
-        """Initialize enhanced regime data splitting."""
-        tprint('🔧 Initializing RegimeDataSplittingEnhanced')
+        """Initialize NAS/TAS regime data splitting."""
+        tprint('🔧 Initializing NasTasRegimeDataSplitting')
         self.config = config
-        self.logger = logger.getChild('RegimeDataSplittingEnhanced')
+        self.logger = logger.getChild('NasTasRegimeDataSplitting')
         self.hmm_tagger = None
         tprint('✅ Basic initialization completed')
         
         # Initialize error handler using existing utilities
         error_context = ErrorContext(
-            operation="regime_data_splitting_enhanced",
-            component="RegimeDataSplittingEnhanced"
+            operation="nas_tas_regime_data_splitting",
+            component="NasTasRegimeDataSplitting"
         )
         self.error_handler = EnhancedErrorHandler(logger=self.logger)
         tprint('✅ Error handler initialized')
@@ -343,14 +236,14 @@ class RegimeDataSplittingEnhanced:
         self.path_manager = get_path_manager(config)
         self.validator = get_validator(self.logger)
         
-        if HMM_TRAINING_AVAILABLE:
-            self.hmm_tagger = HMMRegimeTagger(config)
+        # HMM functionality removed - no longer needed
+        self.hmm_tagger = HMMRegimeTagger(config)
     
     @handles_errors
     async def execute(self, training_input: Dict[str, Any], 
                     pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute enhanced regime data splitting with HMM ML model tagging.
+        Execute enhanced regime data splitting (HMM ML model tagging removed).
         Enhanced with comprehensive error handling, validation, and reporting.
         
         Args:
@@ -368,7 +261,7 @@ class RegimeDataSplittingEnhanced:
             'validation_checks': {}
         }
         
-        tprint('🔄 Starting enhanced regime data splitting with HMM ML model integration')
+        tprint('🔄 Starting enhanced regime data splitting (HMM ML model integration removed)')
         
         try:
             # Step 1: Validate inputs
@@ -401,225 +294,170 @@ class RegimeDataSplittingEnhanced:
             execution_metrics['validation_checks']['market_data_loaded'] = True
             execution_metrics['data_points'] = len(market_data)
             
-            # Step 3: Check HMM model availability with enhanced validation
-            tprint('🤖 Step 3: Checking HMM model availability...')
+            # Step 3: HMM model availability check removed
+            tprint('⚠️ Step 3: HMM model availability check removed - using clustering results instead')
             hmm_models_available = False
-            hmm_model_info = {}
-            
-            if self.hmm_tagger:
-                try:
-                    hmm_models_available = self.hmm_tagger.load_trained_models(symbol, exchange, timeframe, data_dir)
-                    hmm_model_info = {
-                        'models_loaded': hmm_models_available,
-                        'base_models_count': len(self.hmm_tagger.base_models) if hasattr(self.hmm_tagger, 'base_models') else 0,
-                        'ensemble_models_count': len(self.hmm_tagger.ensemble_models) if hasattr(self.hmm_tagger, 'ensemble_models') else 0
-                    }
-                    if hmm_models_available:
-                        tprint(f'✅ HMM models loaded: {hmm_model_info["base_models_count"]} base, {hmm_model_info["ensemble_models_count"]} ensemble')
-                    else:
-                        tprint('⚠️ HMM models not available')
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Error loading HMM models: {e}")
-                    tprint(f'⚠️ Error loading HMM models: {e}')
-                    execution_metrics['warnings'].append(f"HMM model loading failed: {e}")
-                    hmm_models_available = False
-            else:
-                tprint('⚠️ HMM tagger not initialized')
+            hmm_model_info = {
+                'models_loaded': False,
+                'base_models_count': 0,
+                'ensemble_models_count': 0,
+                'note': 'HMM functionality removed'
+            }
             
             execution_metrics['validation_checks']['hmm_models_available'] = hmm_models_available
             execution_metrics['hmm_model_info'] = hmm_model_info
             
-            # Step 4: Perform regime tagging with enhanced error handling
-            tprint('✂️ Step 4: Performing regime tagging...')
-            if hmm_models_available:
-                # Use HMM ML models for regime tagging
-                self.logger.info("🤖 Using HMM ML models for regime tagging")
-                tprint("🤖 Using HMM ML models for regime tagging")
+            # Step 4: Perform regime tagging using NAS/TAS clustering results
+            tprint('✂️ Step 4: Performing regime tagging using NAS/TAS clustering results...')
+            # Use NAS/TAS clustering results with enhanced validation
+            self.logger.info("📊 Using NAS/TAS clustering results for regime tagging")
+            tprint("📊 Using NAS/TAS clustering results for regime tagging")
+            
+            # Get regime data from NAS/TAS clustering results with multiple fallback options
+            regime_states = self._extract_nas_tas_regime_states(pipeline_state)
+            regime_probabilities = self._extract_nas_tas_regime_probabilities(pipeline_state)
+            
+            if not regime_states:
+                raise ValueError("No regime data available for tagging")
+            
+            # Align data lengths with comprehensive validation and temporal consistency checks
+            original_market_len = len(market_data)
+            original_regime_len = len(regime_states)
+            original_prob_len = len(regime_probabilities) if regime_probabilities else 0
+            min_len = min(original_market_len, original_regime_len)
+            
+            # Calculate and validate data alignment impact
+            data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
+                                  max(original_market_len, original_regime_len)) * 100
+            
+            if data_loss_percentage > 5.0:  # More than 5% data loss
+                warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
+                execution_metrics['warnings'].append(warning_msg)
+                tprint(f"⚠️ {warning_msg}")
+                self.logger.warning(f"⚠️ {warning_msg}")
+            elif data_loss_percentage > 20.0:  # More than 20% data loss - this should be an error
+                error_msg = f"Excessive data loss during alignment: {data_loss_percentage:.1f}% ({max(original_market_len, original_regime_len) - min_len} rows)"
+                execution_metrics['errors'].append(error_msg)
+                tprint(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            if min_len == 0:
+                error_msg = "No overlapping data between market data and regime states"
+                execution_metrics['errors'].append(error_msg)
+                raise ValueError(error_msg)
+            
+            tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
+            
+            # Validate temporal consistency if timestamp information exists
+            temporal_validation_passed = True
+            try:
+                if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
+                    # DataFrame has timestamp index
+                    market_timestamps = market_data.index[:min_len]
+                    if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
+                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                        execution_metrics['warnings'].append(warning_msg)
+                        tprint(f"⚠️ {warning_msg}")
+                        temporal_validation_passed = False
+                elif 'timestamp' in market_data.columns:
+                    # DataFrame has timestamp column
+                    market_timestamps = market_data['timestamp'].iloc[:min_len]
+                    if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
+                        warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
+                        execution_metrics['warnings'].append(warning_msg)
+                        tprint(f"⚠️ {warning_msg}")
+                        temporal_validation_passed = False
+            except Exception as e:
+                warning_msg = f"Could not validate temporal consistency: {e}"
+                execution_metrics['warnings'].append(warning_msg)
+                tprint(f"⚠️ {warning_msg}")
+            
+            # Create aligned copies with proper error handling
+            try:
+                market_data_aligned = market_data.iloc[:min_len].copy()
+                if market_data_aligned is None or len(market_data_aligned) != min_len:
+                    raise ValueError(f"Market data alignment failed: expected {min_len} rows")
+            except Exception as e:
+                error_msg = f"Failed to align market data: {str(e)}"
+                execution_metrics['errors'].append(error_msg)
+                raise ValueError(error_msg)
+            
+            try:
+                regime_states_aligned = regime_states[:min_len]
+                if len(regime_states_aligned) != min_len:
+                    raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
+            except Exception as e:
+                error_msg = f"Failed to align regime states: {str(e)}"
+                execution_metrics['errors'].append(error_msg)
+                raise ValueError(error_msg)
+            
+            # Handle regime probabilities alignment with validation
+            if original_prob_len > 0:
                 try:
-                    tagging_result = self.hmm_tagger.tag_regimes_with_models(market_data)
-                    tprint(f'✅ HMM tagging completed: {tagging_result["n_regimes"]} regimes detected')
-                    
-                    # Validate tagging results
-                    if not self._validate_tagging_results(tagging_result, market_data):
-                        tprint('❌ HMM tagging results validation failed')
-                        raise ValueError("HMM tagging results validation failed")
-                    tprint('✅ HMM tagging results validated')
-                    
-                    # Update market data with HMM regime tags
-                    market_data['hmm_regime_states'] = tagging_result['regime_predictions']
-                    if tagging_result['regime_probabilities'] is not None:
-                        market_data['hmm_regime_probabilities'] = tagging_result['regime_probabilities'].tolist()
-                    market_data['hmm_regime_confidence'] = np.max(tagging_result['regime_probabilities'], axis=1) if tagging_result['regime_probabilities'] is not None else np.ones(len(market_data))
-                    
-                    # Store HMM tagging results
-                    hmm_tagging_info = {
-                        'hmm_tagging_completed': True,
-                        'hmm_model_used': tagging_result['model_used'],
-                        'hmm_n_regimes': tagging_result['n_regimes'],
-                        'hmm_regime_distribution': tagging_result['regime_distribution'],
-                        'hmm_tagging_timestamp': pd.Timestamp.now().isoformat(),
-                        'tagging_confidence_mean': float(np.mean(market_data['hmm_regime_confidence'])),
-                        'tagging_confidence_std': float(np.std(market_data['hmm_regime_confidence']))
-                    }
-                    
-                    execution_metrics['validation_checks']['hmm_tagging_successful'] = True
-                    execution_metrics['regime_count'] = tagging_result['n_regimes']
-                    
-                except Exception as e:
-                    self.logger.error(f"❌ HMM tagging failed: {e}")
-                    execution_metrics['errors'].append(f"HMM tagging failed: {e}")
-                    raise
-                
-            else:
-                # Fallback to original regime discovery results with enhanced validation
-                self.logger.info("⚠️ HMM models not available, using original regime discovery results")
-                tprint("⚠️ HMM models not available, using original regime discovery results")
-                
-                # Get regime data from pipeline state with multiple fallback options
-                regime_states = self._extract_regime_states_from_pipeline(pipeline_state)
-                regime_probabilities = self._extract_regime_probabilities_from_pipeline(pipeline_state)
-                
-                if not regime_states:
-                    raise ValueError("No regime data available for tagging")
-                
-                # Align data lengths with comprehensive validation and temporal consistency checks
-                original_market_len = len(market_data)
-                original_regime_len = len(regime_states)
-                original_prob_len = len(regime_probabilities) if regime_probabilities else 0
-                min_len = min(original_market_len, original_regime_len)
-                
-                # Calculate and validate data alignment impact
-                data_loss_percentage = ((max(original_market_len, original_regime_len) - min_len) / 
-                                      max(original_market_len, original_regime_len)) * 100
-                
-                if data_loss_percentage > 5.0:  # More than 5% data loss
-                    warning_msg = f"Data alignment will lose {data_loss_percentage:.1f}% of data ({max(original_market_len, original_regime_len) - min_len} rows)"
-                    execution_metrics['warnings'].append(warning_msg)
-                    tprint(f"⚠️ {warning_msg}")
-                    self.logger.warning(f"⚠️ {warning_msg}")
-                elif data_loss_percentage > 20.0:  # More than 20% data loss - this should be an error
-                    error_msg = f"Excessive data loss during alignment: {data_loss_percentage:.1f}% ({max(original_market_len, original_regime_len) - min_len} rows)"
-                    execution_metrics['errors'].append(error_msg)
-                    tprint(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
-                
-                if min_len == 0:
-                    error_msg = "No overlapping data between market data and regime states"
-                    execution_metrics['errors'].append(error_msg)
-                    raise ValueError(error_msg)
-                
-                tprint(f"📊 Aligning data lengths: market_data={original_market_len}, regime_states={original_regime_len} -> {min_len}")
-                
-                # Validate temporal consistency if timestamp information exists
-                temporal_validation_passed = True
-                try:
-                    if hasattr(market_data, 'index') and hasattr(market_data.index, 'name') and market_data.index.name == 'timestamp':
-                        # DataFrame has timestamp index
-                        market_timestamps = market_data.index[:min_len]
-                        if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
-                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
-                            execution_metrics['warnings'].append(warning_msg)
-                            tprint(f"⚠️ {warning_msg}")
-                            temporal_validation_passed = False
-                    elif 'timestamp' in market_data.columns:
-                        # DataFrame has timestamp column
-                        market_timestamps = market_data['timestamp'].iloc[:min_len]
-                        if len(market_timestamps) > 1 and not market_timestamps.is_monotonic_increasing:
-                            warning_msg = "Market data timestamps are not monotonic increasing - temporal consistency may be compromised"
-                            execution_metrics['warnings'].append(warning_msg)
-                            tprint(f"⚠️ {warning_msg}")
-                            temporal_validation_passed = False
-                except Exception as e:
-                    warning_msg = f"Could not validate temporal consistency: {e}"
-                    execution_metrics['warnings'].append(warning_msg)
-                    tprint(f"⚠️ {warning_msg}")
-                
-                # Create aligned copies with proper error handling
-                try:
-                    market_data_aligned = market_data.iloc[:min_len].copy()
-                    if market_data_aligned is None or len(market_data_aligned) != min_len:
-                        raise ValueError(f"Market data alignment failed: expected {min_len} rows")
-                except Exception as e:
-                    error_msg = f"Failed to align market data: {str(e)}"
-                    execution_metrics['errors'].append(error_msg)
-                    raise ValueError(error_msg)
-                
-                try:
-                    regime_states_aligned = regime_states[:min_len]
-                    if len(regime_states_aligned) != min_len:
-                        raise ValueError(f"Regime states alignment failed: expected {min_len}, got {len(regime_states_aligned)}")
-                except Exception as e:
-                    error_msg = f"Failed to align regime states: {str(e)}"
-                    execution_metrics['errors'].append(error_msg)
-                    raise ValueError(error_msg)
-                
-                # Handle regime probabilities alignment with validation
-                if original_prob_len > 0:
-                    try:
-                        regime_probabilities_aligned = regime_probabilities[:min_len]
-                        if len(regime_probabilities_aligned) != min_len:
-                            warning_msg = f"Regime probabilities alignment mismatch: expected {min_len}, got {len(regime_probabilities_aligned)}"
-                            execution_metrics['warnings'].append(warning_msg)
-                            tprint(f"⚠️ {warning_msg}")
-                            regime_probabilities_aligned = []
-                    except Exception as e:
-                        warning_msg = f"Failed to align regime probabilities: {e}"
+                    regime_probabilities_aligned = regime_probabilities[:min_len]
+                    if len(regime_probabilities_aligned) != min_len:
+                        warning_msg = f"Regime probabilities alignment mismatch: expected {min_len}, got {len(regime_probabilities_aligned)}"
                         execution_metrics['warnings'].append(warning_msg)
                         tprint(f"⚠️ {warning_msg}")
                         regime_probabilities_aligned = []
-                else:
-                    regime_probabilities_aligned = []
-                
-                # Final validation of all aligned data
-                if len(market_data_aligned) != len(regime_states_aligned):
-                    error_msg = f"Final alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}"
-                    execution_metrics['errors'].append(error_msg)
-                    raise ValueError(error_msg)
-                
-                # Log successful alignment with comprehensive metrics
-                alignment_metrics = {
-                    'original_market_data_length': original_market_len,
-                    'original_regime_states_length': original_regime_len,
-                    'original_probabilities_length': original_prob_len,
-                    'aligned_length': min_len,
-                    'data_loss_percentage': data_loss_percentage,
-                    'temporal_validation_passed': temporal_validation_passed
-                }
-                execution_metrics['alignment_metrics'] = alignment_metrics
-                self.logger.info(f"✅ Data alignment completed successfully: {alignment_metrics}")
-                tprint(f"✅ Data alignment completed: {min_len} rows, {data_loss_percentage:.1f}% data loss")
-                
-                # Clean up original references using hardware manager (after successful validation)
-                del regime_states, regime_probabilities
-                
-                # Use hardware manager for memory optimization
-                try:
-                    memory_result = self.hardware_manager.optimize_memory()
-                    self.logger.debug(f"Memory optimization result: {memory_result}")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Memory optimization failed: {e}")
-                
-                # Use aligned regime data
-                market_data_aligned['hmm_regime_states'] = regime_states_aligned
-                if len(regime_probabilities_aligned) > 0:
-                    market_data_aligned['hmm_regime_probabilities'] = regime_probabilities_aligned
-                market_data_aligned['hmm_regime_confidence'] = np.ones(len(market_data_aligned))  # Default confidence
-                
-                # Update market_data reference to use aligned data
-                market_data = market_data_aligned
-                
-                hmm_tagging_info = {
-                    'hmm_tagging_completed': False,
-                    'hmm_model_used': 'original_regime_discovery',
-                    'hmm_n_regimes': len(np.unique(regime_states_aligned)),
-                    'hmm_regime_distribution': dict(zip(*np.unique(regime_states_aligned, return_counts=True))),
-                    'hmm_tagging_timestamp': pd.Timestamp.now().isoformat(),
-                    'tagging_confidence_mean': 1.0,
-                    'tagging_confidence_std': 0.0
-                }
-                
-                execution_metrics['validation_checks']['fallback_tagging_successful'] = True
-                execution_metrics['regime_count'] = len(np.unique(regime_states_aligned))
+                    warning_msg = f"Failed to align regime probabilities: {e}"
+                    execution_metrics['warnings'].append(warning_msg)
+                    tprint(f"⚠️ {warning_msg}")
+                    regime_probabilities_aligned = []
+            else:
+                regime_probabilities_aligned = []
+            
+            # Final validation of all aligned data
+            if len(market_data_aligned) != len(regime_states_aligned):
+                error_msg = f"Final alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}"
+                execution_metrics['errors'].append(error_msg)
+                raise ValueError(error_msg)
+            
+            # Log successful alignment with comprehensive metrics
+            alignment_metrics = {
+                'original_market_data_length': original_market_len,
+                'original_regime_states_length': original_regime_len,
+                'original_probabilities_length': original_prob_len,
+                'aligned_length': min_len,
+                'data_loss_percentage': data_loss_percentage,
+                'temporal_validation_passed': temporal_validation_passed
+            }
+            execution_metrics['alignment_metrics'] = alignment_metrics
+            self.logger.info(f"✅ Data alignment completed successfully: {alignment_metrics}")
+            tprint(f"✅ Data alignment completed: {min_len} rows, {data_loss_percentage:.1f}% data loss")
+            
+            # Clean up original references using hardware manager (after successful validation)
+            del regime_states, regime_probabilities
+            
+            # Use hardware manager for memory optimization
+            try:
+                memory_result = self.hardware_manager.optimize_memory()
+                self.logger.debug(f"Memory optimization result: {memory_result}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
+            
+            # Use aligned regime data
+            market_data_aligned['hmm_regime_states'] = regime_states_aligned
+            if len(regime_probabilities_aligned) > 0:
+                market_data_aligned['hmm_regime_probabilities'] = regime_probabilities_aligned
+            market_data_aligned['hmm_regime_confidence'] = np.ones(len(market_data_aligned))  # Default confidence
+            
+            # Update market_data reference to use aligned data
+            market_data = market_data_aligned
+            
+            nas_tas_tagging_info = {
+                'nas_tas_tagging_completed': True,
+                'nas_tas_model_used': 'nas_tas_clustering_results',
+                'nas_tas_n_regimes': len(np.unique(regime_states_aligned)),
+                'nas_tas_regime_distribution': dict(zip(*np.unique(regime_states_aligned, return_counts=True))),
+                'nas_tas_tagging_timestamp': pd.Timestamp.now().isoformat(),
+                'tagging_confidence_mean': 1.0,
+                'tagging_confidence_std': 0.0
+            }
+            
+            execution_metrics['validation_checks']['regime_tagging_successful'] = True
+            execution_metrics['regime_count'] = len(np.unique(regime_states_aligned))
             
             # Step 5: Validate final data quality
             tprint('📊 Step 5: Validating final data quality...')
@@ -648,7 +486,7 @@ class RegimeDataSplittingEnhanced:
                 'end_time': datetime.now().isoformat(),
                 'execution_time_seconds': execution_time,
                 'success': True,
-                'regime_distribution': hmm_tagging_info['hmm_regime_distribution'],
+                'regime_distribution': nas_tas_tagging_info['nas_tas_regime_distribution'],
                 'recommendations': self._generate_enhanced_recommendations(execution_metrics)
             })
             
@@ -659,15 +497,15 @@ class RegimeDataSplittingEnhanced:
                 'step04_regime_data_splitting_timestamp': pd.Timestamp.now().isoformat(),
                 'regime_tagged_data_available': True,
                 'regime_tagged_data_path': f"{data_dir}/training/{exchange}_{symbol}_{timeframe}_regime_tagged_data.parquet",
-                'hmm_tagging_info': hmm_tagging_info,
+                'nas_tas_tagging_info': nas_tas_tagging_info,
                 'execution_metrics': execution_metrics,
                 'data_quality_score': data_quality_score,
                 'regime_count': execution_metrics['regime_count']
             })
             
-            self.logger.info(f"✅ Enhanced regime data splitting completed successfully in {execution_time:.2f}s")
+            self.logger.info(f"✅ NAS/TAS regime data splitting completed successfully in {execution_time:.2f}s")
             self.logger.info(f"📊 Final metrics: {execution_metrics['regime_count']} regimes, quality score: {data_quality_score:.2f}")
-            tprint(f"✅ Enhanced regime data splitting completed successfully in {execution_time:.2f}s")
+            tprint(f"✅ NAS/TAS regime data splitting completed successfully in {execution_time:.2f}s")
             tprint(f"📊 Final metrics: {execution_metrics['regime_count']} regimes, quality score: {data_quality_score:.2f}")
             
             return updated_pipeline_state
@@ -681,8 +519,8 @@ class RegimeDataSplittingEnhanced:
                 'errors': execution_metrics['errors'] + [str(e)]
             })
             
-            self.logger.error(f"❌ Enhanced regime data splitting failed after {execution_time:.2f}s: {e}")
-            tprint(f"❌ Enhanced regime data splitting failed after {execution_time:.2f}s: {e}")
+            self.logger.error(f"❌ NAS/TAS regime data splitting failed after {execution_time:.2f}s: {e}")
+            tprint(f"❌ NAS/TAS regime data splitting failed after {execution_time:.2f}s: {e}")
             import traceback
             self.logger.error(f"❌ Error details: {traceback.format_exc()}")
             tprint(f"❌ Error details: {traceback.format_exc()}")
@@ -769,42 +607,152 @@ class RegimeDataSplittingEnhanced:
             self.logger.error(f"❌ Error loading market data: {e}")
             return None
     
-    def _extract_regime_states_from_pipeline(self, pipeline_state: Dict[str, Any]) -> List[Any]:
-        """Extract regime states from pipeline state with multiple fallback options."""
-        possible_keys = [
-            'regime_states',
-            'hmm_regime_discovery_result',
-            'regime_discovery_result',
-            'optimal_regime_clustering_result'  # Updated to use optimal regime clustering
+    def _extract_nas_tas_regime_states(self, pipeline_state: Dict[str, Any]) -> List[Any]:
+        """Extract regime states from NAS/TAS clustering results with enhanced extraction logic."""
+        # Primary NAS/TAS clustering result keys
+        nas_tas_keys = [
+            'optimal_regime_clustering_result',
+            'nas_tas_clustering_result',
+            'cluster_assignments'
         ]
         
-        for key in possible_keys:
+        # Try NAS/TAS specific keys first
+        for key in nas_tas_keys:
+            if key in pipeline_state and pipeline_state[key]:
+                result = self._extract_regime_states_from_nas_tas_result(pipeline_state[key])
+                if result:
+                    self.logger.info(f"✅ Found NAS/TAS regime states under key: {key}")
+                    return result
+        
+        # Fallback to legacy keys
+        legacy_keys = [
+            'regime_states',
+            'hmm_regime_discovery_result',
+            'regime_discovery_result'
+        ]
+        
+        for key in legacy_keys:
             if key in pipeline_state and pipeline_state[key]:
                 if isinstance(pipeline_state[key], list):
+                    self.logger.info(f"✅ Found regime states under legacy key: {key}")
                     return pipeline_state[key]
                 elif isinstance(pipeline_state[key], dict) and 'regime_states' in pipeline_state[key]:
+                    self.logger.info(f"✅ Found regime states under legacy key: {key}")
                     return pipeline_state[key]['regime_states']
         
         return []
     
-    def _extract_regime_probabilities_from_pipeline(self, pipeline_state: Dict[str, Any]) -> List[Any]:
-        """Extract regime probabilities from pipeline state with multiple fallback options."""
-        possible_keys = [
-            'regime_probabilities',
-            'hmm_regime_discovery_result',
-            'regime_discovery_result',
-            'optimal_regime_clustering_result'  # Updated to use optimal regime clustering
+    def _extract_regime_states_from_nas_tas_result(self, nas_tas_result: Any) -> List[Any]:
+        """Extract regime states from NAS/TAS clustering result with comprehensive extraction logic."""
+        try:
+            if isinstance(nas_tas_result, list):
+                return nas_tas_result
+            elif isinstance(nas_tas_result, dict):
+                # Try different possible keys for regime states in NAS/TAS results
+                possible_state_keys = [
+                    'cluster_assignments',
+                    'regime_states', 
+                    'states',
+                    'predictions',
+                    'labels',
+                    'assignments'
+                ]
+                
+                for state_key in possible_state_keys:
+                    if state_key in nas_tas_result and nas_tas_result[state_key]:
+                        states = nas_tas_result[state_key]
+                        if isinstance(states, list):
+                            return states
+                        elif hasattr(states, 'tolist'):  # numpy array
+                            return states.tolist()
+                        elif hasattr(states, 'values'):  # pandas series
+                            return states.values.tolist()
+                
+                # If no direct state keys found, try to extract from nested structure
+                if 'clustering_result' in nas_tas_result:
+                    return self._extract_regime_states_from_nas_tas_result(nas_tas_result['clustering_result'])
+                elif 'results' in nas_tas_result:
+                    return self._extract_regime_states_from_nas_tas_result(nas_tas_result['results'])
+            
+            return []
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime states from NAS/TAS result: {e}")
+            return []
+    
+    def _extract_nas_tas_regime_probabilities(self, pipeline_state: Dict[str, Any]) -> List[Any]:
+        """Extract regime probabilities from NAS/TAS clustering results with enhanced extraction logic."""
+        # Primary NAS/TAS clustering result keys
+        nas_tas_keys = [
+            'optimal_regime_clustering_result',
+            'nas_tas_clustering_result',
+            'cluster_probabilities'
         ]
         
-        for key in possible_keys:
+        # Try NAS/TAS specific keys first
+        for key in nas_tas_keys:
+            if key in pipeline_state and pipeline_state[key]:
+                result = self._extract_regime_probabilities_from_nas_tas_result(pipeline_state[key])
+                if result:
+                    self.logger.info(f"✅ Found NAS/TAS regime probabilities under key: {key}")
+                    return result
+        
+        # Fallback to legacy keys
+        legacy_keys = [
+            'regime_probabilities',
+            'hmm_regime_discovery_result',
+            'regime_discovery_result'
+        ]
+        
+        for key in legacy_keys:
             if key in pipeline_state and pipeline_state[key]:
                 if isinstance(pipeline_state[key], dict):
                     if 'regime_probabilities' in pipeline_state[key]:
+                        self.logger.info(f"✅ Found regime probabilities under legacy key: {key}")
                         return pipeline_state[key]['regime_probabilities']
                     elif 'probabilities' in pipeline_state[key]:
+                        self.logger.info(f"✅ Found regime probabilities under legacy key: {key}")
                         return pipeline_state[key]['probabilities']
         
         return []
+    
+    def _extract_regime_probabilities_from_nas_tas_result(self, nas_tas_result: Any) -> List[Any]:
+        """Extract regime probabilities from NAS/TAS clustering result with comprehensive extraction logic."""
+        try:
+            if isinstance(nas_tas_result, list):
+                return nas_tas_result
+            elif isinstance(nas_tas_result, dict):
+                # Try different possible keys for regime probabilities in NAS/TAS results
+                possible_prob_keys = [
+                    'cluster_probabilities',
+                    'regime_probabilities',
+                    'probabilities',
+                    'proba',
+                    'scores',
+                    'confidence_scores'
+                ]
+                
+                for prob_key in possible_prob_keys:
+                    if prob_key in nas_tas_result and nas_tas_result[prob_key]:
+                        probs = nas_tas_result[prob_key]
+                        if isinstance(probs, list):
+                            return probs
+                        elif hasattr(probs, 'tolist'):  # numpy array
+                            return probs.tolist()
+                        elif hasattr(probs, 'values'):  # pandas series
+                            return probs.values.tolist()
+                
+                # If no direct probability keys found, try to extract from nested structure
+                if 'clustering_result' in nas_tas_result:
+                    return self._extract_regime_probabilities_from_nas_tas_result(nas_tas_result['clustering_result'])
+                elif 'results' in nas_tas_result:
+                    return self._extract_regime_probabilities_from_nas_tas_result(nas_tas_result['results'])
+            
+            return []
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime probabilities from NAS/TAS result: {e}")
+            return []
     
     def _validate_tagging_results(self, tagging_result: Dict[str, Any], market_data: pd.DataFrame) -> bool:
         """Validate HMM tagging results."""
@@ -974,12 +922,12 @@ class RegimeDataSplittingEnhanced:
             raise
 
 # Convenience function
-async def execute_enhanced_regime_data_splitting(
+async def execute_nas_tas_regime_data_splitting(
     training_input: Dict[str, Any], 
     pipeline_state: Dict[str, Any],
     config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Execute enhanced regime data splitting with HMM ML model integration."""
+    """Execute NAS/TAS regime data splitting with clustering integration."""
     config = config or {}
-    splitter = RegimeDataSplittingEnhanced(config)
+    splitter = NasTasRegimeDataSplitting(config)
     return await splitter.execute(training_input, pipeline_state)

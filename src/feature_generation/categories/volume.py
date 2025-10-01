@@ -58,7 +58,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(volume, index=data.index, name='volume_placeholder')
 
 # Volume Simple Moving Average
-class VolumeSMAGenerator(FeatureGenerator):
+class VolumeSMAGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Simple Moving Average."""
     
     def __init__(self, period: int = 20):
@@ -72,7 +72,7 @@ class VolumeSMAGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -81,7 +81,7 @@ class VolumeSMAGenerator(FeatureGenerator):
         return volume.rolling(window=self.period).mean()
 
 # Volume Exponential Moving Average
-class VolumeEMAGenerator(FeatureGenerator):
+class VolumeEMAGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Exponential Moving Average."""
     
     def __init__(self, period: int = 20, alpha: Optional[float] = None):
@@ -98,7 +98,7 @@ class VolumeEMAGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period, 'alpha': alpha}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
         self.alpha = alpha
     
@@ -108,7 +108,7 @@ class VolumeEMAGenerator(FeatureGenerator):
         return volume.ewm(alpha=self.alpha, adjust=False).mean()
 
 # Volume Ratio
-class VolumeRatioGenerator(FeatureGenerator):
+class VolumeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Ratio (current volume vs average volume)."""
     
     def __init__(self, period: int = 20):
@@ -122,7 +122,7 @@ class VolumeRatioGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -132,7 +132,7 @@ class VolumeRatioGenerator(FeatureGenerator):
         return volume / avg_volume.replace(0, 1)  # Avoid division by zero
 
 # Volume Rate of Change
-class VolumeROCGenerator(FeatureGenerator):
+class VolumeROCGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Rate of Change."""
     
     def __init__(self, period: int = 10):
@@ -146,7 +146,7 @@ class VolumeROCGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -155,7 +155,7 @@ class VolumeROCGenerator(FeatureGenerator):
         return volume.pct_change(periods=self.period) * 100
 
 # Volume Standard Deviation
-class VolumeStdGenerator(FeatureGenerator):
+class VolumeStdGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Standard Deviation."""
     
     def __init__(self, period: int = 20):
@@ -169,7 +169,7 @@ class VolumeStdGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -178,7 +178,7 @@ class VolumeStdGenerator(FeatureGenerator):
         return volume.rolling(window=self.period).std()
 
 # Volume Percentile Rank
-class VolumePercentileGenerator(FeatureGenerator):
+class VolumePercentileGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Percentile Rank."""
     
     def __init__(self, period: int = 50):
@@ -192,7 +192,7 @@ class VolumePercentileGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -201,7 +201,7 @@ class VolumePercentileGenerator(FeatureGenerator):
         return volume.rolling(window=self.period).rank(pct=True) * 100
 
 # Volume Trend Strength
-class VolumeTrendStrengthGenerator(FeatureGenerator):
+class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Trend Strength."""
     
     def __init__(self, short_period: int = 10, long_period: int = 30):
@@ -215,7 +215,7 @@ class VolumeTrendStrengthGenerator(FeatureGenerator):
             max_lookback=long_period,
             parameters={'short_period': short_period, 'long_period': long_period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.short_period = short_period
         self.long_period = long_period
     
@@ -227,7 +227,7 @@ class VolumeTrendStrengthGenerator(FeatureGenerator):
         return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
 
 # Volume Oscillator
-class VolumeOscillatorGenerator(FeatureGenerator):
+class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Oscillator."""
     
     def __init__(self, short_period: int = 10, long_period: int = 20):
@@ -241,7 +241,7 @@ class VolumeOscillatorGenerator(FeatureGenerator):
             max_lookback=long_period,
             parameters={'short_period': short_period, 'long_period': long_period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.short_period = short_period
         self.long_period = long_period
     
@@ -253,7 +253,7 @@ class VolumeOscillatorGenerator(FeatureGenerator):
         return short_ma - long_ma
 
 # Volume Momentum
-class VolumeMomentumGenerator(FeatureGenerator):
+class VolumeMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Momentum."""
     
     def __init__(self, period: int = 10):
@@ -267,7 +267,7 @@ class VolumeMomentumGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -276,7 +276,7 @@ class VolumeMomentumGenerator(FeatureGenerator):
         return volume - volume.shift(self.period)
 
 # Volume Weighted Average Price (VWAP)
-class VolumeVWAPGenerator(FeatureGenerator):
+class VolumeVWAPGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Weighted Average Price."""
     
     def __init__(self, period: int = 20):
@@ -290,7 +290,7 @@ class VolumeVWAPGenerator(FeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -300,7 +300,7 @@ class VolumeVWAPGenerator(FeatureGenerator):
         return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
 
 # Volume Price Trend (VPT)
-class VolumePriceTrendGenerator(FeatureGenerator):
+class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Price Trend."""
     
     def __init__(self):
@@ -314,7 +314,7 @@ class VolumePriceTrendGenerator(FeatureGenerator):
             max_lookback=1,
             parameters={}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume Price Trend."""
@@ -325,7 +325,7 @@ class VolumePriceTrendGenerator(FeatureGenerator):
         return vpt
 
 # Volume Accumulation/Distribution
-class VolumeAccumulationDistributionGenerator(FeatureGenerator):
+class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Accumulation/Distribution."""
     
     def __init__(self):
@@ -339,7 +339,7 @@ class VolumeAccumulationDistributionGenerator(FeatureGenerator):
             max_lookback=1,
             parameters={}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume Accumulation/Distribution."""

@@ -7,7 +7,7 @@ to prevent errors in mathematical calculations.
 
 import logging
 import numpy as np
-from typing import Any, List, Callable
+from typing import Any, List, Callable, Optional
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -40,18 +40,42 @@ def safe_power(x: float, y: float, default: float = 0.0) -> float:
     except Exception:
         return default
 
-def validate_finite(value: Any, name: str = "value") -> float:
+def validate_finite(value: Any, name: str = "value") -> Any:
     """Validate that a value is finite."""
     try:
-        val = float(value)
+        # Handle numpy arrays
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                raise ValueError(f"{name} cannot be empty")
+            if not np.all(np.isfinite(value)):
+                non_finite_count = np.sum(~np.isfinite(value))
+                raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+            return value
+
+        # Handle scalar values - check if it's a single-element array first
+        if hasattr(value, '__len__') and len(value) == 1:
+            # Single-element array or list
+            val = float(value[0])
+        elif hasattr(value, '__len__') and len(value) > 1:
+            # Multi-element array - convert to numpy array for validation
+            val_array = np.array(value)
+            if not np.all(np.isfinite(val_array)):
+                raise ValueError(f"{name} contains non-finite values")
+            return val_array
+        else:
+            # Scalar value
+            val = float(value)
+        
         if not np.isfinite(val):
             raise ValueError(f"{name} must be finite, got {val}")
         return val
     except Exception as e:
         raise ValueError(f"Invalid {name}: {e}")
 
-def validate_positive(value: float, name: str = "value") -> float:
+def validate_positive(value, name: str = "value") -> Optional[float]:
     """Validate that a value is positive."""
+    if value is None:
+        return None
     if value <= 0:
         raise ValueError(f"{name} must be positive, got {value}")
     return value
@@ -186,7 +210,7 @@ def safe_covariance(x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float
     except Exception:
         return default
 
-def safe_mean(x: np.ndarray, default: float = 0.0) -> float:
+def safe_mean(x: np.ndarray, axis: Optional[int] = None, default: float = 0.0) -> float:
     """Safely calculate mean of array."""
     try:
         if x is None or len(x) == 0:
@@ -197,11 +221,11 @@ def safe_mean(x: np.ndarray, default: float = 0.0) -> float:
         if not np.any(valid_mask):
             return default
 
-        x_clean = x[valid_mask]
+        x_clean = x[valid_mask] if axis is None else x[valid_mask]
         if len(x_clean) == 0:
             return default
 
-        mean_val = np.mean(x_clean)
+        mean_val = np.mean(x_clean, axis=axis)
 
         # Ensure result is valid
         if not np.isfinite(mean_val):
@@ -212,7 +236,7 @@ def safe_mean(x: np.ndarray, default: float = 0.0) -> float:
     except Exception:
         return default
 
-def safe_std(x: np.ndarray, default: float = 0.0) -> float:
+def safe_std(x: np.ndarray, axis: Optional[int] = None, default: float = 0.0) -> float:
     """Safely calculate standard deviation of array."""
     try:
         if x is None or len(x) <= 1:
@@ -223,11 +247,11 @@ def safe_std(x: np.ndarray, default: float = 0.0) -> float:
         if not np.any(valid_mask):
             return default
 
-        x_clean = x[valid_mask]
+        x_clean = x[valid_mask] if axis is None else x[valid_mask]
         if len(x_clean) <= 1:
             return default
 
-        std_val = np.std(x_clean, ddof=1)  # Use ddof=1 for sample standard deviation
+        std_val = np.std(x_clean, axis=axis, ddof=1)  # Use ddof=1 for sample standard deviation
 
         # Ensure result is valid
         if not np.isfinite(std_val):

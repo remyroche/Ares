@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 import signal
 import sys
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.validation.regime_consensus_validator import RegimeConsensusValidator
 
 from analyst.analyst import Analyst
 from config.environment import get_environment_settings
@@ -92,6 +95,7 @@ class AresPipeline:
         self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
         self.auto_monitoring_launcher = None
         self.regime_transition_handler: RegimeTransitionHandler | None = None
+        self.regime_consensus_validator: RegimeConsensusValidator | None = None
         self.is_running: bool = False
         self.start_time: datetime | None = None
         self.cycle_count: int = 0
@@ -116,6 +120,7 @@ class AresPipeline:
             await self._initialize_enhanced_monitoring()
             await self._launch_auto_monitoring()
             await self._initialize_regime_transition_handler()
+            await self._initialize_regime_consensus_validator()
             await self._discover_and_register_services()
             await self._check_optional_dependencies()
             self._setup_signal_handlers()
@@ -668,6 +673,34 @@ class AresPipeline:
         except Exception as e:
             self.logger.exception(f'Error initializing regime transition handler: {e}')
             raise
+    
+    @handles_errors(default_return=None, context='regime consensus validator initialization')
+    async def _initialize_regime_consensus_validator(self) -> None:
+        """Initialize regime consensus validator for semantic consensus validation."""
+        try:
+            self.logger.info('🧠 Initializing regime consensus validator...')
+            
+            # Import the regime consensus validator
+            from src.validation.regime_consensus_validator import RegimeConsensusValidator
+            
+            # Initialize with configuration
+            validator_config = self.config.get('regime_consensus_validator', {
+                'enable_semantic_consensus': True,
+                'consensus_threshold': 0.6,
+                'disagreement_tolerance': 0.3,
+                'enable_regime_mapping': True,
+                'enable_feature_based_mapping': True
+            })
+            
+            self.regime_consensus_validator = RegimeConsensusValidator(validator_config)
+            self.logger.info('✅ Regime consensus validator initialized successfully')
+            
+        except ImportError:
+            self.logger.warning('⚠️ Regime consensus validator not available - semantic consensus validation disabled')
+            self.regime_consensus_validator = None
+        except Exception as e:
+            self.logger.exception(f'Error initializing regime consensus validator: {e}')
+            self.regime_consensus_validator = None
 
     async def _discover_and_register_services(self) -> None:
         """Discover and register services automatically."""

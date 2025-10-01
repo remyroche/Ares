@@ -15,7 +15,7 @@ from .artifact_manager import ArtifactManager
 @dataclass
 class ComponentConfig:
     """Base configuration for pipeline components."""
-    symbol: str = "BTCUSDT"
+    symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "5m"
     data_dir: str = "historical_data"
@@ -27,6 +27,19 @@ class ComponentConfig:
     monitoring_enabled: bool = True
     fast_mode: bool = False
     custom_params: Dict[str, Any] = None
+    
+    # Clustering-specific attributes
+    min_regime_persistence: float = 0.1
+    max_feature_noise_ratio: float = 0.3
+    min_temporal_stability: float = 0.5
+    regime_search_min: int = 2
+    regime_search_max: int = 20
+    n_regimes: Optional[int] = 8
+    algorithm_type: Optional[str] = "nas_tas_clustering"
+    economic_weight: float = 0.3
+    volatility_regime_weight: float = 0.25
+    volume_regime_weight: float = 0.25
+    structural_trend_weight: float = 0.2
     
     def __post_init__(self):
         if self.custom_params is None:

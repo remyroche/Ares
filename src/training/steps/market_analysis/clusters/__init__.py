@@ -5,12 +5,13 @@ This package contains the refactored clustering components organized by sequenti
 and iterative optimization processes.
 """
 
-from .step1_feature_preparation import FeaturePreparationStep
+from .step1_feature_preparation import FeaturePreparationStep, ClusteringContext
 from .step2_initial_clustering import InitialClusteringStep
 from .iterative_optimization import IterativeOptimization
 from .step8_validation import ValidationStep
 from .step9_results_consolidation import ResultsConsolidationStep
 from .clustering_orchestrator import ClusteringOrchestrator
+from .nas_tas_clustering_refactored import NASTASClusteringComponent, NASTASClusteringConfig
 
 __all__ = [
     'FeaturePreparationStep',
@@ -18,5 +19,8 @@ __all__ = [
     'IterativeOptimization',
     'ValidationStep',
     'ResultsConsolidationStep',
-    'ClusteringOrchestrator'
+    'ClusteringOrchestrator',
+    'ClusteringContext',
+    'NASTASClusteringComponent',
+    'NASTASClusteringConfig'
 ]

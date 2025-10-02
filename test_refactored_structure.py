@@ -15,7 +15,7 @@ def test_directory_structure():
     
     # Check main directories
     required_dirs = [
-        "src/training/steps/market_analysis/components/clustering",
+        "src/training/steps/market_analysis/clusters",
         "src/training/steps/market_analysis/components/optimization",
         "src/training/steps/market_analysis/components/validation",
         "src/training/steps/market_analysis/components/metrics",
@@ -38,14 +38,14 @@ def test_file_structure():
     
     # Check main files
     required_files = [
-        "src/training/steps/market_analysis/components/nas_tas_clustering_refactored.py",
-        "src/training/steps/market_analysis/components/clustering/__init__.py",
-        "src/training/steps/market_analysis/components/clustering/step1_feature_preparation.py",
-        "src/training/steps/market_analysis/components/clustering/step2_initial_clustering.py",
-        "src/training/steps/market_analysis/components/clustering/iterative_optimization.py",
-        "src/training/steps/market_analysis/components/clustering/step8_validation.py",
-        "src/training/steps/market_analysis/components/clustering/step9_results_consolidation.py",
-        "src/training/steps/market_analysis/components/clustering/clustering_orchestrator.py"
+        "src/training/steps/market_analysis/clusters/nas_tas_clustering_refactored.py",
+        "src/training/steps/market_analysis/clusters/__init__.py",
+        "src/training/steps/market_analysis/clusters/step1_feature_preparation.py",
+        "src/training/steps/market_analysis/clusters/step2_initial_clustering.py",
+        "src/training/steps/market_analysis/clusters/iterative_optimization.py",
+        "src/training/steps/market_analysis/clusters/step8_validation.py",
+        "src/training/steps/market_analysis/clusters/step9_results_consolidation.py",
+        "src/training/steps/market_analysis/clusters/clustering_orchestrator.py"
     ]
     
     for file_path in required_files:
@@ -95,13 +95,13 @@ def test_file_sizes():
     
     # Check file sizes
     files_to_check = [
-        "src/training/steps/market_analysis/components/nas_tas_clustering_refactored.py",
-        "src/training/steps/market_analysis/components/clustering/step1_feature_preparation.py",
-        "src/training/steps/market_analysis/components/clustering/step2_initial_clustering.py",
-        "src/training/steps/market_analysis/components/clustering/iterative_optimization.py",
-        "src/training/steps/market_analysis/components/clustering/step8_validation.py",
-        "src/training/steps/market_analysis/components/clustering/step9_results_consolidation.py",
-        "src/training/steps/market_analysis/components/clustering/clustering_orchestrator.py"
+        "src/training/steps/market_analysis/clusters/nas_tas_clustering_refactored.py",
+        "src/training/steps/market_analysis/clusters/step1_feature_preparation.py",
+        "src/training/steps/market_analysis/clusters/step2_initial_clustering.py",
+        "src/training/steps/market_analysis/clusters/iterative_optimization.py",
+        "src/training/steps/market_analysis/clusters/step8_validation.py",
+        "src/training/steps/market_analysis/clusters/step9_results_consolidation.py",
+        "src/training/steps/market_analysis/clusters/clustering_orchestrator.py"
     ]
     
     for file_path in files_to_check:
@@ -125,7 +125,7 @@ def test_code_structure():
     print("=" * 50)
     
     # Check for key classes and functions
-    main_file = "src/training/steps/market_analysis/components/nas_tas_clustering_refactored.py"
+    main_file = "src/training/steps/market_analysis/clusters/nas_tas_clustering_refactored.py"
     
     if os.path.exists(main_file):
         try:
@@ -167,7 +167,7 @@ def test_refactoring_benefits():
         print(f"📊 Original file size: {original_size:,} bytes")
         
         # Check refactored main file size
-        refactored_file = "src/training/steps/market_analysis/components/nas_tas_clustering_refactored.py"
+        refactored_file = "src/training/steps/market_analysis/clusters/nas_tas_clustering_refactored.py"
         if os.path.exists(refactored_file):
             refactored_size = os.path.getsize(refactored_file)
             print(f"📊 Refactored main file size: {refactored_size:,} bytes")
@@ -188,7 +188,7 @@ def test_refactoring_benefits():
     print()
     
     # Check modular structure
-    clustering_dir = "src/training/steps/market_analysis/components/clustering"
+    clustering_dir = "src/training/steps/market_analysis/clusters"
     if os.path.exists(clustering_dir):
         files = [f for f in os.listdir(clustering_dir) if f.endswith('.py')]
         print(f"📁 Clustering modules: {len(files)} files")

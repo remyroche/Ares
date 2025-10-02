@@ -21,7 +21,7 @@ from .step2_initial_clustering import InitialClusteringStep
 from .iterative_optimization import IterativeOptimization
 from .step8_validation import ValidationStep
 from .step9_results_consolidation import ResultsConsolidationStep
-from ..shared_utils import get_logger
+from ...shared_utils import get_logger
 
 
 class ClusteringOrchestrator:

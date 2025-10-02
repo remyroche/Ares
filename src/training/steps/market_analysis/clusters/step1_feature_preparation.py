@@ -16,7 +16,7 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 
-from ..shared_utils import (
+from ...shared_utils import (
     prepare_market_features,
     FeatureConfig,
     FeaturePreparationResult,

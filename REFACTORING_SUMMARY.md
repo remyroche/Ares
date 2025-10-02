@@ -26,16 +26,17 @@ nas_tas_clustering.py (11,281 lines)
 
 #### After (Modular)
 ```
-market_analysis/components/
+market_analysis/clusters/
 ├── nas_tas_clustering_refactored.py (374 lines - main orchestrator)
-├── clustering/
-│   ├── step1_feature_preparation.py (240 lines)
-│   ├── step2_initial_clustering.py (151 lines)
-│   ├── iterative_optimization.py (516 lines)
-│   ├── step8_validation.py (591 lines)
-│   ├── step9_results_consolidation.py (494 lines)
-│   ├── clustering_orchestrator.py (267 lines)
-│   └── __init__.py
+├── step1_feature_preparation.py (240 lines)
+├── step2_initial_clustering.py (151 lines)
+├── iterative_optimization.py (516 lines)
+├── step8_validation.py (591 lines)
+├── step9_results_consolidation.py (494 lines)
+├── clustering_orchestrator.py (267 lines)
+└── __init__.py
+
+market_analysis/components/
 ├── optimization/ (placeholder)
 ├── validation/ (placeholder)
 ├── metrics/ (placeholder)

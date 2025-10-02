@@ -60,6 +60,7 @@ class ClusteringOrchestrator:
             # Initialize performance tracking
             self.performance_metrics["start_time"] = time.time()
             tprint("🚀 Starting NAS-TAS Clustering Pipeline (Refactored)", "INFO")
+            tprint("🎯 Using advanced 3-step iterative clustering with risk mitigation", "INFO")
             
             # Create clustering context
             context = ClusteringContext(
@@ -81,6 +82,8 @@ class ClusteringOrchestrator:
             # Add performance metrics to results
             if hasattr(context, 'final_results'):
                 context.final_results['performance_metrics'] = self.performance_metrics
+                context.final_results['clustering_method'] = 'advanced_3_step_iterative'
+                context.final_results['risk_mitigation_enabled'] = True
             
             return context.final_results
             

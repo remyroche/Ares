@@ -579,6 +579,7 @@ class AresLauncher:
                 tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_regime_discovery -> nas_tas_clustering -> nas_tas_models_training -> nas_tas_ensemble_training")
             elif sub_pipeline == 'nas_tas_clustering':
                 tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_clustering -> nas_tas_models_training -> nas_tas_ensemble_training")
+                tprint(f"🎯 [SUB_PIPELINE_CONFIG] Using advanced 3-step iterative clustering with risk mitigation", "INFO")
             elif sub_pipeline == 'nas_tas_models_training':
                 tprint(f"🔗 [SUB_PIPELINE_CONFIG] NAS-TAS chaining enabled for {sub_pipeline} - will automatically run: nas_tas_models_training -> nas_tas_ensemble_training")
         else:

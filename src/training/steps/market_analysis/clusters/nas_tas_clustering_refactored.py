@@ -437,12 +437,30 @@ class NASTASClusteringComponent:
             # Extract from pipeline state
             if 'artifacts' in pipeline_state:
                 artifacts = pipeline_state['artifacts']
+                
+                # Look for nas_tas_regime_discovery_result in multiple possible locations
+                discovery_result = None
                 if 'nas_tas_regime_discovery_result' in artifacts:
                     discovery_result = artifacts['nas_tas_regime_discovery_result']
-                    if isinstance(discovery_result, dict) and 'n_regimes' in discovery_result:
-                        return int(discovery_result['n_regimes'])
+                elif 'nas_tas_regime_discovery' in artifacts:
+                    discovery_result = artifacts['nas_tas_regime_discovery']
+                elif 'regime_discovery_result' in artifacts:
+                    discovery_result = artifacts['regime_discovery_result']
+                
+                if discovery_result and isinstance(discovery_result, dict):
+                    # Try multiple possible keys for n_regimes
+                    n_regimes = None
+                    for key in ['n_regimes', 'optimal_k', 'final_k', 'k_optimal', 'regime_count']:
+                        if key in discovery_result:
+                            n_regimes = int(discovery_result[key])
+                            break
+                    
+                    if n_regimes is not None:
+                        tprint(f"Extracted regime count from {key}: {n_regimes}", "SUCCESS")
+                        return n_regimes
             
             # Fallback to default
+            tprint("No regime count found in artifacts, using default", "WARNING")
             return getattr(self.config, 'n_regimes', 6)
         except Exception as e:
             tprint(f"Failed to extract regime counts: {e}", "WARNING")

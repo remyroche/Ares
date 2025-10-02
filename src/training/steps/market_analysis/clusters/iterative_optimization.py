@@ -384,6 +384,7 @@ class IterativeOptimization:
             if enable_risk_mitigation:
                 risk_system = RiskMitigationSystem(PRODUCTION_RISK_CONFIG)
                 tprint("Risk mitigation system enabled", "INFO")
+                tprint("🎯 Advanced 3-step iterative clustering with comprehensive safeguards", "INFO")
             
             # Track convergence
             convergence_count = 0

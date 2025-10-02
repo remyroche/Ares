@@ -66,18 +66,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class FeatureCategory(Enum):
-    """Feature categories available."""
-    MOMENTUM = "momentum"
-    VOLATILITY = "volatility"
-    VOLUME = "volume"
-    TREND = "trend"
-    RETURNS = "returns"
-    OSCILLATOR = "oscillator"
-    TIME = "time"
-    MICROSTRUCTURE = "microstructure"
-
-
 class FeatureSelectionMethod(Enum):
     """Feature selection methods."""
     CORRELATION = "correlation"

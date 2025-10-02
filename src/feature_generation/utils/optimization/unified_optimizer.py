@@ -50,6 +50,24 @@ except ImportError:
         return a / b if b != 0 else default
     def safe_log(x, default=0):
         return np.log(x) if x > 0 else default
+    
+    # Fallback ParallelProcessor
+    class ParallelProcessor:
+        def __init__(self, max_workers=4):
+            self.max_workers = max_workers
+            logger.warning("Using fallback ParallelProcessor")
+        
+        def process_parallel(self, tasks, *args, **kwargs):
+            # Simple sequential fallback
+            results = []
+            for task in tasks:
+                try:
+                    result = task(*args, **kwargs)
+                    results.append(result)
+                except Exception as e:
+                    logger.warning(f"Task failed: {e}")
+                    results.append(None)
+            return results
 
 class OptimizationMethod(Enum):
     """Unified optimization methods for feature parameters."""

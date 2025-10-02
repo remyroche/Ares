@@ -210,7 +210,10 @@ class FeatureRegistry:
         Returns:
             List of generators for the category
         """
-        return self._generators_by_category.get(category, []).copy()
+        generators = self._generators_by_category.get(category, []).copy()
+        print(f"🔍 DEBUG: get_by_category({category.value}) found {len(generators)} generators")
+        print(f"🔍 DEBUG: Available categories: {[cat.value for cat in self._generators_by_category.keys()]}")
+        return generators
     
     def get_all(self) -> List[FeatureGenerator]:
         """

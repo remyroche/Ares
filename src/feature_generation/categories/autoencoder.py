@@ -48,7 +48,7 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
         """Create default configuration for autoencoder features."""
         return FeatureConfig(
             name="autoencoder_features",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description="Comprehensive autoencoder features including encoded features and reconstruction error",
             required_columns=["close"],
             optional_columns=["high", "low", "open", "volume"],
@@ -103,7 +103,7 @@ class AutoencoderEncodedGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_encoded_{encoding_dimension}_{window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder encoded feature {encoding_dimension} over {window} periods based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -160,7 +160,7 @@ class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_{window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error over {window} periods based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -216,7 +216,7 @@ class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_ma_{window}_{ma_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error MA over {window} periods with MA {ma_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -276,7 +276,7 @@ class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_std_{window}_{std_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error std over {window} periods with std {std_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -336,7 +336,7 @@ class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_skew_{window}_{skew_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error skew over {window} periods with skew {skew_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -396,7 +396,7 @@ class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_kurtosis_{window}_{kurtosis_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error kurtosis over {window} periods with kurtosis {kurtosis_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -456,7 +456,7 @@ class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_ratio_{window}_{ratio_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error ratio over {window} periods with ratio {ratio_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -517,7 +517,7 @@ class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_diff_{window}_{diff_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error diff over {window} periods with diff {diff_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -577,7 +577,7 @@ class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_product_{window}_{product_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error product over {window} periods with product {product_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -636,7 +636,7 @@ class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_squared_{window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error squared over {window} periods based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -692,7 +692,7 @@ class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_cubed_{window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error cubed over {window} periods based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -750,7 +750,7 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_cross_timeframe_{window}_{cross_timeframe}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error cross timeframe over {window} periods with cross timeframe {cross_timeframe} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -810,7 +810,7 @@ class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_regime_{window}_{regime_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error regime over {window} periods with regime {regime_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,
@@ -872,7 +872,7 @@ class AutoencoderReconstructionErrorInteractionGenerator(FeatureGenerator):
         
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_interaction_{window}_{interaction_window}_{base_calculation.value}",
-            category=FeatureCategory.CROSS_TIMEFRAME,
+            category=FeatureCategory.AUTOENCODER,
             description=f"Autoencoder reconstruction error interaction over {window} periods with interaction {interaction_window} based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=window,

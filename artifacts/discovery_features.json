@@ -1,0 +1,72 @@
+{
+  "generated_at": "2025-10-02T07:20:41.455801Z",
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "columns": [
+    "momentum_macd",
+    "momentum_macd_signal",
+    "momentum_macd_histogram",
+    "volume_obv",
+    "trend_ema_12",
+    "trend_ema_26",
+    "trend_price_above_sma20",
+    "trend_sma10_above_sma20",
+    "trend_trend_direction"
+  ],
+  "category_counts": {
+    "momentum": 3,
+    "volatility": 1,
+    "volume": 0,
+    "trend": 5,
+    "returns": 0,
+    "oscillator": 0,
+    "time": 0,
+    "interaction": 0,
+    "polynomial": 0,
+    "other": 0
+  },
+  "acceptance_checks": {
+    "nan_guard_passed": true,
+    "column_limit_passed": true,
+    "category_coverage_passed": false,
+    "category_coverage": {
+      "momentum": 3,
+      "volatility": 1,
+      "volume": 0,
+      "trend": 5,
+      "returns": 0,
+      "oscillator": 0
+    },
+    "column_count": 9,
+    "invalid_columns_removed": [
+      "momentum_rsi",
+      "momentum_stoch_k",
+      "momentum_stoch_d",
+      "volatility_volatility_20",
+      "volatility_volatility_50",
+      "volatility_atr",
+      "volatility_bb_upper",
+      "volatility_bb_lower",
+      "volatility_bb_width",
+      "volatility_bb_position",
+      "volume_volume_ma_10",
+      "volume_volume_ma_20",
+      "volume_volume_ma_50",
+      "volume_volume_ratio",
+      "trend_sma_10",
+      "trend_sma_20",
+      "trend_sma_50",
+      "returns_returns_1",
+      "returns_returns_5",
+      "returns_returns_10",
+      "returns_log_returns",
+      "returns_cumulative_returns",
+      "returns_rolling_returns_5",
+      "returns_rolling_returns_10",
+      "oscillator_williams_r",
+      "oscillator_cci",
+      "oscillator_roc_10",
+      "oscillator_roc_20"
+    ]
+  }
+}

@@ -8,11 +8,12 @@ Supports different base calculations: price returns, returns-based VWAP, etc.
 
 import numpy as np
 import pandas as pd
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
-    FeatureGenerator, 
-    FeatureConfig, 
+    FeatureGenerator,
+    FeatureConfig,
     FeatureCategory,
     VectorizedFeatureGenerator
 )
@@ -25,28 +26,26 @@ from ..base_calculations import (
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility-based features with batch processing."""
-    
-    def __init__(self, config: Optional[FeatureConfig] = None):
+
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        self.period = period
         if config is None:
-            config = self._create_default_config()
+            config = self._create_default_config(period)
         super().__init__(config, enable_matrix_ops=True)
     
     @classmethod
-    def _create_default_config(cls) -> FeatureConfig:
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
-            name="volatility_features",
+            name=f"volatility_{period}",
             category=FeatureCategory.VOLATILITY,
-            description="Comprehensive volatility-based features including Bollinger Bands, ATR, and volatility measures",
+            description=f"Volatility measure over {period} periods",
             required_columns=["close"],
             optional_columns=["high", "low", "open"],
-            default_lookback=20,
-            min_lookback=2,
-            max_lookback=50,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
             parameters={
-                "bb_periods": [20],
-                "bb_std": [2.0],
-                "atr_periods": [14],
-                "volatility_windows": [10, 20]
+                "period": period
             },
             matrix_optimized=True,
             gpu_accelerated=False
@@ -58,8 +57,8 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         close_prices = data['close'].values
-        volatility = self._calculate_volatility(close_prices, period=20)
-        return pd.Series(volatility, index=data.index, name='volatility_20')
+        volatility = self._calculate_volatility(close_prices, period=self.period)
+        return pd.Series(volatility, index=data.index, name=f'volatility_{self.period}')
     
     def _calculate_volatility(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:
@@ -415,6 +414,127 @@ class VolatilityBandsGenerator(FeatureGenerator):
         
         return upper_band
 
+
+class GARCHFeatureGenerator(FeatureGenerator):
+    """Generator for GARCH-based volatility features."""
+
+    def __init__(self,
+                 p: int = 1,
+                 q: int = 1,
+                 forecast_horizon: int = 1,
+                 **garch_kwargs):
+        """
+        Initialize GARCH generator.
+
+        Args:
+            p: GARCH lag order
+            q: ARCH lag order
+            forecast_horizon: Number of steps to forecast
+            **garch_kwargs: Additional parameters for GARCH model
+        """
+        config = FeatureConfig(
+            name=f"garch_{p}_{q}_h{forecast_horizon}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"GARCH({p},{q}) volatility model with {forecast_horizon}-step forecast using vectorized rolling windows",
+            required_columns=["close"],
+            default_lookback=252,  # Use 1 year of data for GARCH fitting
+            min_lookback=100,      # Minimum 100 data points for reliable GARCH
+            max_lookback=1000,
+            parameters={
+                'p': p,
+                'q': q,
+                'forecast_horizon': forecast_horizon,
+                **garch_kwargs
+            },
+            dependencies=["arch"]  # Require arch library for GARCH models
+        )
+        super().__init__(config)
+        self.p = p
+        self.q = q
+        self.forecast_horizon = forecast_horizon
+        self.garch_kwargs = garch_kwargs
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate GARCH-based volatility features using vectorized calculations."""
+        return self._generate_garch_vectorized(data)
+
+    def _generate_garch_vectorized(self, data: pd.DataFrame) -> pd.Series:
+        """Generate GARCH-based volatility features using vectorized rolling window approach."""
+        from arch import arch_model
+
+        close_prices = data['close'].dropna()
+        if len(close_prices) < self.config.min_lookback:
+            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+
+        # Calculate returns
+        returns = 100 * close_prices.pct_change().dropna()
+
+        if len(returns) < 50:  # Need minimum data for GARCH
+            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+
+        try:
+            # Use vectorized rolling window with pandas
+            window_size = min(252, len(returns))  # Use up to 252 days for fitting
+
+            def fit_garch_window(window_returns: pd.Series) -> float:
+                """Fit GARCH model on a window and return volatility forecast."""
+                if len(window_returns) < 50:  # Minimum data requirement
+                    return np.nan
+
+                try:
+                    # Fit GARCH model
+                    model = arch_model(window_returns, p=self.p, q=self.q, **self.garch_kwargs)
+                    model_fit = model.fit(disp='off')
+
+                    # Generate forecast
+                    forecast = model_fit.forecast(horizon=self.forecast_horizon)
+                    volatility_forecast = forecast.variance.iloc[-1].values[0] if self.forecast_horizon == 1 else forecast.variance.iloc[-1].values[0]
+                    return volatility_forecast
+
+                except Exception:
+                    return np.nan
+
+            # Apply GARCH fitting to rolling windows
+            # For vectorized processing, we'll use expanding windows with proper alignment
+            volatility_forecasts = []
+
+            # Process in chunks for better performance
+            chunk_size = min(100, len(returns) - window_size + 1)
+
+            for i in range(0, len(returns) - window_size + 1, chunk_size):
+                end_idx = min(i + chunk_size, len(returns) - window_size + 1)
+
+                for j in range(i, end_idx):
+                    start_idx = j
+                    end_idx_window = start_idx + window_size
+
+                    if end_idx_window > len(returns):
+                        break
+
+                    window_returns = returns.iloc[start_idx:end_idx_window]
+
+                    try:
+                        model = arch_model(window_returns, p=self.p, q=self.q, **self.garch_kwargs)
+                        model_fit = model.fit(disp='off')
+                        forecast = model_fit.forecast(horizon=self.forecast_horizon)
+                        volatility_forecast = forecast.variance.iloc[-1].values[0] if self.forecast_horizon == 1 else forecast.variance.iloc[-1].values[0]
+                        volatility_forecasts.append(volatility_forecast)
+                    except Exception:
+                        volatility_forecasts.append(np.nan)
+
+            # Pad the beginning with NaN to match data length
+            pad_length = len(data) - len(volatility_forecasts)
+            volatility_series = pd.Series([np.nan] * pad_length + volatility_forecasts,
+                                        index=data.index, name=self.config.name)
+
+            return volatility_series
+
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"⚠️ Vectorized GARCH calculation failed: {e}")
+            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+
+
+
 def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of volatility feature generators."""
     if periods is None:
@@ -422,7 +542,8 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
             'bb': [20],
             'atr': [14],
             'volatility': [10, 20],
-            'volatility_bands': [20]
+            'volatility_bands': [20],
+            'garch': [(1, 1, 1), (1, 1, 5)]  # GARCH(p,q,h) configurations
         }
     
     generators = []
@@ -438,7 +559,16 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
     # Volatility Bands generators
     for period in periods.get('volatility_bands', [20]):
         generators.append(VolatilityBandsGenerator(period))
-    
+
+    # Basic volatility generators
+    for period in periods.get('volatility', [10, 20]):
+        generators.append(VolatilityFeatureGenerator(period))
+
+    # GARCH generators
+    for garch_config in periods.get('garch', [(1, 1, 1), (1, 1, 5)]):
+        p, q, h = garch_config
+        generators.append(GARCHFeatureGenerator(p=p, q=q, forecast_horizon=h))
+
     return generators
 
 def create_default_volatility_generators() -> List[FeatureGenerator]:

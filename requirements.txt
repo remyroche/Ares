@@ -8,3 +8,4 @@ hmmlearn>=0.2.7
 optuna>=2.10.0
 joblib>=1.1.0
 imodels>=1.0.0
+arch>=5.0.0  # For GARCH models

@@ -7,7 +7,7 @@ redundancy between NAS and TAS components.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass
 import time
 import psutil

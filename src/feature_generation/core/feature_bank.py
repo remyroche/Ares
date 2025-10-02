@@ -90,7 +90,15 @@ class FeatureBank:
         self.feature_cache = {} if self.config.cache_results else None
         
         # Auto-register default generators
+        print("🔍 DEBUG: About to call _auto_register_generators")
         self._auto_register_generators()
+        print("🔍 DEBUG: _auto_register_generators completed")
+
+        # Set as global feature bank if no global instance exists
+        global _global_feature_bank
+        if _global_feature_bank is None:
+            _global_feature_bank = self
+            print("🔍 DEBUG: FeatureBank set as global instance")
 
         self.logger.info("✅ FeatureBank initialized")
         self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
@@ -101,6 +109,7 @@ class FeatureBank:
         """
         Auto-register default feature generators from all categories.
         """
+        print("🔍 DEBUG: Starting _auto_register_generators")
         try:
 
             # List of categories to auto-register (including all available categories)
@@ -120,32 +129,44 @@ class FeatureBank:
                 FeatureCategory.AUTOENCODER,
                 FeatureCategory.INTERACTION,
                 FeatureCategory.MICROSTRUCTURE,
+                FeatureCategory.REGIME,
                 FeatureCategory.TIME
             ]
 
             registered_count = 0
             total_categories = len(categories_to_register)
+            print(f"🔍 DEBUG: About to initialize {total_categories} feature categories")
             self.logger.info(f"🚀 Initializing {total_categories} feature categories...")
             
             for i, category in enumerate(categories_to_register, 1):
                 try:
+                    print(f"🔍 DEBUG: Processing category {i}/{total_categories}: {category.value}")
+                    self.logger.info(f"🔧 Creating generators for {category.value}...")
                     generators = self._create_default_generators_for_category(category)
+                    print(f"🔍 DEBUG: Created {len(generators)} generators for {category.value}")
+                    self.logger.info(f"🔍 Found {len(generators)} generators for {category.value}")
                     for generator in generators:
                         self.register_generator(generator)
                         registered_count += 1
                     self.logger.info(f"📊 Progress: {i}/{total_categories} categories completed")
                 except Exception as e:
+                    print(f"🔍 DEBUG: Exception in category {category.value}: {e}")
                     self.logger.warning(f"⚠️ Failed to register {category.value} generators: {e}")
+                    import traceback
+                    self.logger.warning(f"⚠️ Traceback: {traceback.format_exc()}")
 
+            print(f"🔍 DEBUG: Auto-registration completed. Registered {registered_count} generators")
             self.logger.info(f"✅ Auto-registered {registered_count} generators from {len(categories_to_register)} categories")
 
         except Exception as e:
+            print(f"🔍 DEBUG: Auto-registration failed with exception: {e}")
             self.logger.warning(f"⚠️ Auto-registration failed: {e}")
 
     def _create_default_generators_for_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
         """
         Create default generators for a given category using existing factory functions.
         """
+        print(f"🔍 DEBUG: _create_default_generators_for_category called with {category.value}")
         try:
             # Import all the factory functions from categories
             from ..categories import (
@@ -175,34 +196,47 @@ class FeatureBank:
                 FeatureCategory.AUTOENCODER: self._create_autoencoder_generators,
                 FeatureCategory.INTERACTION: self._create_interaction_generators,
                 FeatureCategory.MICROSTRUCTURE: self._create_microstructure_generators,
+                FeatureCategory.REGIME: self._create_regime_generators,
                 FeatureCategory.TIME: self._create_time_generators
             }
 
             creator_func = category_creators.get(category)
+            print(f"🔍 DEBUG: Creator function for {category.value}: {creator_func}")
             if creator_func:
+                print(f"🔍 DEBUG: Calling creator function for {category.value}")
                 self.logger.info(f"🔧 Creating {category.value} features...")
                 generators = creator_func()
+                print(f"🔍 DEBUG: Creator function returned {len(generators)} generators")
                 self.logger.info(f"✅ Created {len(generators)} generators for {category.value}")
                 return generators
             else:
+                print(f"🔍 DEBUG: No creator function available for {category.value}")
                 self.logger.warning(f"⚠️ No creator function available for category: {category.value}")
                 return []
 
         except Exception as e:
+            print(f"🔍 DEBUG: Exception in _create_default_generators_for_category: {e}")
+            import traceback
+            print(f"🔍 DEBUG: Traceback: {traceback.format_exc()}")
             self.logger.warning(f"⚠️ Failed to create generators for {category.value}: {e}")
             return []
 
     def _create_momentum_generators(self) -> List[FeatureGenerator]:
         """Create momentum-specific feature generators."""
+        print("🔍 DEBUG: _create_momentum_generators called")
         generators = []
         try:
             # First try to create advanced momentum generators
+            print("🔍 DEBUG: Importing create_default_momentum_generators")
             from ..categories.momentum import create_default_momentum_generators
+            print("🔍 DEBUG: Calling create_default_momentum_generators")
             advanced_generators = create_default_momentum_generators()
+            print(f"🔍 DEBUG: create_default_momentum_generators returned {len(advanced_generators)} generators")
             generators.extend(advanced_generators)
 
             # Fallback to legacy generators if advanced ones fail
             if not generators:
+                print("🔍 DEBUG: No advanced generators, trying legacy")
                 from ..categories.legacy import create_default_legacy_generators
                 from ..categories.legacy import create_default_legacy_generators
                 legacy_generators = create_default_legacy_generators()
@@ -216,8 +250,12 @@ class FeatureBank:
                         generators.append(gen)
 
         except Exception as e:
+            print(f"🔍 DEBUG: Exception in _create_momentum_generators: {e}")
+            import traceback
+            print(f"🔍 DEBUG: Traceback: {traceback.format_exc()}")
             self.logger.warning(f"⚠️ Failed to create momentum generators: {e}")
 
+        print(f"🔍 DEBUG: _create_momentum_generators returning {len(generators)} generators")
         return generators
 
     def _create_volatility_generators(self) -> List[FeatureGenerator]:
@@ -389,8 +427,8 @@ class FeatureBank:
             # Try to create advanced candlestick pattern generators
             # Note: This might not exist yet, so we'll handle the exception
             try:
-                from ..categories.candlestick_pattern import create_default_candlestick_generators
-                advanced_generators = create_default_candlestick_generators()
+                from ..categories.candlestick_pattern import create_default_candlestick_pattern_generators
+                advanced_generators = create_default_candlestick_pattern_generators()
                 generators.extend(advanced_generators)
             except ImportError:
                 # Candlestick patterns might not be implemented yet
@@ -524,6 +562,51 @@ class FeatureBank:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create microstructure generators: {e}")
+
+        return generators
+
+    def _create_regime_generators(self) -> List[FeatureGenerator]:
+        """Create regime-specific feature generators."""
+        generators = []
+        try:
+            # Try to create regime volatility generators
+            try:
+                from ..categories.regime_volatility import RegimeVolatilityFeatureGenerator
+                # Create a regime volatility generator (single instance for now)
+                generators.append(RegimeVolatilityFeatureGenerator())
+            except ImportError:
+                pass
+
+            # Try to create regime statistical generators
+            try:
+                from ..categories.regime_statistical import RegimeStatisticalFeatureGenerator
+                generators.append(RegimeStatisticalFeatureGenerator())
+            except ImportError:
+                pass
+
+            # Try to create regime feature integration generators
+            try:
+                from ..categories.regime_feature_integration import RegimeFeatureIntegration
+                generators.append(RegimeFeatureIntegration())
+            except ImportError:
+                pass
+
+            # Try to create regime structural trend generators
+            try:
+                from ..categories.regime_structural_trend import RegimeStructuralTrendGenerator
+                generators.append(RegimeStructuralTrendGenerator())
+            except ImportError:
+                pass
+
+            # Try to create regime volume generators
+            try:
+                from ..categories.regime_volume import RegimeVolumeFeatureGenerator
+                generators.append(RegimeVolumeFeatureGenerator())
+            except ImportError:
+                pass
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create regime generators: {e}")
 
         return generators
 
@@ -1072,8 +1155,15 @@ def get_global_feature_bank() -> FeatureBank:
         Global feature bank instance
     """
     global _global_feature_bank
+
     if _global_feature_bank is None:
         _global_feature_bank = FeatureBank()
+    
+    # Ensure the feature bank is properly initialized with generators
+    if len(_global_feature_bank.registry.get_all()) == 0:
+        # Force re-initialization if no generators are found
+        _global_feature_bank = FeatureBank()
+
     return _global_feature_bank
 
 def set_global_feature_bank(bank: FeatureBank) -> None:

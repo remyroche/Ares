@@ -28,6 +28,12 @@ from .entropy import (
     RSIEntropyGenerator,
     MACDEntropyGenerator
 )
+from .legacy import (
+    LegacyRSIGenerator,
+    LegacyMACDGenerator,
+    LegacyStochasticGenerator,
+    LegacyWilliamsRGenerator
+)
 
 class MomentumFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for momentum-based features."""

@@ -966,8 +966,3 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
         generators.append(TrendScoreGenerator(period))
 
     return generators
-
-
-def create_default_trend_generators() -> List[FeatureGenerator]:
-    """Create default trend generators."""
-    return create_trend_generators()

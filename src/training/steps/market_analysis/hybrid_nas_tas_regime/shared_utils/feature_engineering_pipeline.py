@@ -20,16 +20,9 @@ from src.utils.tprint import (
 
 # Import existing feature generation utilities
 try:
-    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureResult
-    from src.feature_generation.core.factory import FeatureFactory
-    from src.feature_generation.categories.momentum import MomentumCalculator
-    from src.feature_generation.categories.volatility import VolatilityCalculator
-    from src.feature_generation.categories.volume import VolumeCalculator
-    from src.feature_generation.categories.trend import TrendCalculator
-    from src.feature_generation.categories.returns import ReturnsCalculator
-    from src.feature_generation.categories.oscillator import OscillatorCalculator
-    from src.feature_generation.categories.time import TimeCalculator
-    from src.feature_generation.categories.microstructure import MicrostructureCalculator
+    from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureResult, FeatureCategory
+    from src.feature_generation.core.factory import get_feature_bank
+    from src.feature_generation.core.feature_bank import FeatureBank
     FEATURE_GENERATION_AVAILABLE = True
 except ImportError:
     FEATURE_GENERATION_AVAILABLE = False
@@ -230,14 +223,39 @@ class FeatureEngineeringPipeline:
         
         if FEATURE_GENERATION_AVAILABLE:
             try:
-                calculators['momentum'] = MomentumCalculator()
-                calculators['volatility'] = VolatilityCalculator()
-                calculators['volume'] = VolumeCalculator()
-                calculators['trend'] = TrendCalculator()
-                calculators['returns'] = ReturnsCalculator()
-                calculators['oscillator'] = OscillatorCalculator()
-                calculators['time'] = TimeCalculator()
-                calculators['microstructure'] = MicrostructureCalculator()
+                # Use the global feature bank to get generators by category
+                from src.feature_generation.core.factory import get_global_feature_bank
+                self.feature_bank = get_global_feature_bank()
+                
+                # Debug: Check if the feature bank has generators
+                total_generators = len(self.feature_bank.registry.get_all())
+                self.logger.info(f"🔍 Feature bank has {total_generators} total generators")
+                
+                # Debug: Check what categories are available in the registry
+                available_categories = list(self.feature_bank.registry._generators_by_category.keys())
+                self.logger.info(f"🔍 Available categories in registry: {[cat.value for cat in available_categories]}")
+                
+                # Map feature categories to their generators
+                category_mapping = {
+                    'momentum': FeatureCategory.MOMENTUM,
+                    'volatility': FeatureCategory.VOLATILITY,
+                    'volume': FeatureCategory.VOLUME,
+                    'trend': FeatureCategory.TREND,
+                    'returns': FeatureCategory.RETURNS,
+                    'oscillator': FeatureCategory.OSCILLATOR,
+                    'time': FeatureCategory.TIME,
+                    'microstructure': FeatureCategory.MICROSTRUCTURE
+                }
+                
+                for category_name, category_enum in category_mapping.items():
+                    generators = self.feature_bank.get_generators_by_category(category_enum)
+                    self.logger.info(f"🔍 {category_name} generators found: {len(generators)}")
+                    if generators:
+                        calculators[category_name] = generators
+                        self.logger.info(f"✅ {category_name} calculators initialized: {len(generators)} generators")
+                    else:
+                        self.logger.warning(f"⚠️ No generators found for {category_name}")
+                
                 self.logger.info("✅ Feature calculators initialized")
             except Exception as e:
                 self.logger.warning(f"⚠️ Feature calculator initialization failed: {e}")
@@ -375,8 +393,8 @@ class FeatureEngineeringPipeline:
             
             for category in self.config.feature_categories:
                 if category.value in self.feature_calculators:
-                    calculator = self.feature_calculators[category.value]
-                    category_features = self._generate_category_features(data, category, calculator)
+                    generators = self.feature_calculators[category.value]
+                    category_features = self._generate_category_features(data, category, generators)
                     
                     if category_features is not None and not category_features.empty:
                         all_features = pd.concat([all_features, category_features], axis=1)
@@ -390,13 +408,13 @@ class FeatureEngineeringPipeline:
     
     def _generate_category_features(self, data: pd.DataFrame, 
                                   category: FeatureCategory, 
-                                  calculator: Any) -> Optional[pd.DataFrame]:
+                                  generators: List[FeatureGenerator]) -> Optional[pd.DataFrame]:
         """Generate features for a specific category.
         
         Args:
             data: Input market data
             category: Feature category
-            calculator: Feature calculator
+            generators: List of feature generators for this category
             
         Returns:
             DataFrame with category features
@@ -404,27 +422,28 @@ class FeatureEngineeringPipeline:
         try:
             features = pd.DataFrame(index=data.index)
             
-            if category == FeatureCategory.MOMENTUM:
-                features = self._generate_momentum_features(data, calculator)
-            elif category == FeatureCategory.VOLATILITY:
-                features = self._generate_volatility_features(data, calculator)
-            elif category == FeatureCategory.VOLUME:
-                features = self._generate_volume_features(data, calculator)
-            elif category == FeatureCategory.TREND:
-                features = self._generate_trend_features(data, calculator)
-            elif category == FeatureCategory.RETURNS:
-                features = self._generate_returns_features(data, calculator)
-            elif category == FeatureCategory.OSCILLATOR:
-                features = self._generate_oscillator_features(data, calculator)
-            elif category == FeatureCategory.TIME:
-                features = self._generate_time_features(data, calculator)
-            elif category == FeatureCategory.MICROSTRUCTURE:
-                features = self._generate_microstructure_features(data, calculator)
+            if not generators:
+                self.logger.warning(f"⚠️ No generators available for category: {category}")
+                return features
+            
+            # Generate features using all generators for this category
+            for generator in generators:
+                try:
+                    result = generator.generate(data)
+                    if result and hasattr(result, 'features') and not result.features.empty:
+                        # Add features with category prefix to avoid naming conflicts
+                        category_features = result.features.copy()
+                        category_features.columns = [f"{category.value}_{col}" for col in category_features.columns]
+                        features = pd.concat([features, category_features], axis=1)
+                        self.logger.debug(f"✅ Generated {len(category_features.columns)} {category.value} features")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Generator {generator.name} failed for {category}: {e}")
+                    continue
             
             return features
             
         except Exception as e:
-            self.logger.warning(f"⚠️ {category.value} feature generation failed: {e}")
+            self.logger.error(f"❌ Category feature generation failed for {category}: {e}")
             return None
     
     def _generate_momentum_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:

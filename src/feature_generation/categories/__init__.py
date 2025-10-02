@@ -123,6 +123,13 @@ from .cross_timeframe import create_default_cross_timeframe_generators
 from .legacy import create_default_legacy_generators
 from .time import create_default_time_generators
 
+# Regime feature integration
+from .regime_feature_integration import (
+    RegimeFeatureIntegration,
+    RegimeFeatureConfig,
+    generate_regime_features
+)
+
 __all__ = [
     # Core categories
     "ReturnsFeatureGenerator",
@@ -143,6 +150,7 @@ __all__ = [
     "RateOfChangeGenerator",
     "VolumeFeatureGenerator",
     "VolatilityFeatureGenerator",
+    "GARCHFeatureGenerator",
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
@@ -219,5 +227,9 @@ __all__ = [
     "create_default_order_flow_generators",
     "create_default_cross_timeframe_generators",
     "create_default_legacy_generators",
-    "create_default_time_generators"
+    "create_default_time_generators",
+    # Regime feature integration
+    "RegimeFeatureIntegration",
+    "RegimeFeatureConfig",
+    "generate_regime_features"
 ]

@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 # Import the refactored component
-from src.training.steps.market_analysis.components.nas_tas_clustering_refactored import (
+from src.training.steps.market_analysis.clusters import (
     NASTASClusteringComponent,
     NASTASClusteringConfig
 )
@@ -184,7 +184,7 @@ async def test_modular_architecture():
         print("=" * 60)
         
         # Test individual modules
-        from src.training.steps.market_analysis.components.clustering import (
+        from src.training.steps.market_analysis.clusters import (
             FeaturePreparationStep,
             InitialClusteringStep,
             IterativeOptimization,

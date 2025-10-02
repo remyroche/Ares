@@ -338,6 +338,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 f"NaN guard: {'passed' if nan_guard_passed else 'failed'}, "
                 f"Category coverage: {'passed' if category_coverage_passed else 'failed'}"
             )
+
             
             # Step 4: Create hybrid configuration using shared utilities
             tprint("⚙️ Step 4: Creating hybrid configuration")
@@ -1500,19 +1501,19 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         try:
             if market_data is None or market_data.empty:
                 return None
-            
+
             # Use the same feature preparation as the main component
-            features = prepare_market_features(market_data, self.feature_config, verbose=False)
-            
-            if features is None or len(features) == 0:
+            features, _ = prepare_market_features(market_data, self.feature_config, verbose=False)
+
+            if features is None or features.empty:
                 return None
-            
+
             # Ensure we have enough features and samples
             if len(features) < min_length:
                 return None
-            
+
             # Take only the required number of samples
-            features_array = features[:min_length]
+            features_array = features.iloc[:min_length].to_numpy()
             features_array = np.nan_to_num(features_array, nan=0.0, posinf=0.0, neginf=0.0)
             
             return features_array

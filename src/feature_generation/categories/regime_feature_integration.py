@@ -38,6 +38,7 @@ from .regime_volatility import RegimeVolatilityFeatureGenerator
 from .regime_volume import RegimeVolumeFeatureGenerator
 from .regime_structural_trend import RegimeStructuralTrendFeatureGenerator
 from .regime_statistical import RegimeStatisticalFeatureGenerator
+from src.config.regime_feature_thresholds import get_regime_feature_thresholds
 
 @dataclass
 class RegimeFeatureConfig:
@@ -49,9 +50,9 @@ class RegimeFeatureConfig:
     include_statistical_regime: bool = True
     
     # Feature quality filters (moderately relaxed for regime signal)
-    min_regime_persistence: float = 0.15    # Moderately relaxed for regime transitions
-    max_feature_noise_ratio: float = 1.8    # Allow moderate noise for regime changes
-    min_temporal_stability: float = -0.1    # Allow slight negative stability for regime transitions
+    min_regime_persistence: Optional[float] = None
+    max_feature_noise_ratio: Optional[float] = None
+    min_temporal_stability: Optional[float] = None
     
     # Enhanced regime quality features
     include_regime_quality_metrics: bool = True
@@ -76,6 +77,19 @@ class RegimeFeatureConfig:
     persistence_weight: float = 0.5
     noise_penalty_weight: float = 0.3
     stability_weight: float = 0.2
+
+    def __post_init__(self) -> None:
+        thresholds = get_regime_feature_thresholds()
+        quality_thresholds = thresholds.get("quality_thresholds", {})
+
+        if self.min_regime_persistence is None:
+            self.min_regime_persistence = quality_thresholds.get("min_regime_persistence", 0.2)
+
+        if self.max_feature_noise_ratio is None:
+            self.max_feature_noise_ratio = quality_thresholds.get("max_feature_noise_ratio", 1.2)
+
+        if self.min_temporal_stability is None:
+            self.min_temporal_stability = quality_thresholds.get("min_temporal_stability", 0.1)
 
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """Unified regime feature generator that excludes trading features."""

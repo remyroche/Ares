@@ -17,7 +17,7 @@ except Exception:
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
-    def Field(default: Any = None, env: str | None = None) -> None:
+    def Field(default: Any = None, env: str | None = None, **kwargs) -> Any:
         return default
 from ..utils.logger import system_logger
 import logging

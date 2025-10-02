@@ -64,7 +64,10 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period:
             return np.full(len(prices), np.nan)
 
-        sma = pd.Series(prices).rolling(window=period).mean().values
+        # Calculate SMA using numpy convolution
+        sma = np.convolve(prices, np.ones(period)/period, mode='valid')
+        # Pad with NaN to match original length
+        sma = np.concatenate([np.full(period-1, np.nan), sma])
         return sma
 
     def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
@@ -103,15 +106,27 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         dm_plus = np.maximum(high - np.roll(high, 1), 0)
         dm_minus = np.maximum(np.roll(low, 1) - low, 0)
 
-        # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
-        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+        # Calculate Directional Indicators using numpy operations
+        # Calculate rolling means manually using numpy
+        dm_plus_ma = np.convolve(dm_plus, np.ones(period)/period, mode='valid')
+        dm_minus_ma = np.convolve(dm_minus, np.ones(period)/period, mode='valid')
+        tr_ma = np.convolve(tr, np.ones(period)/period, mode='valid')
+        
+        # Pad the arrays to match original length
+        dm_plus_ma = np.concatenate([np.full(period-1, np.nan), dm_plus_ma])
+        dm_minus_ma = np.concatenate([np.full(period-1, np.nan), dm_minus_ma])
+        tr_ma = np.concatenate([np.full(period-1, np.nan), tr_ma])
+        
+        # Calculate directional indicators
+        di_plus = 100 * (dm_plus_ma / tr_ma)
+        di_minus = 100 * (dm_minus_ma / tr_ma)
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(period).mean()
+        adx_ma = np.convolve(dx, np.ones(period)/period, mode='valid')
+        adx = np.concatenate([np.full(period-1, np.nan), adx_ma])
 
-        return adx.values
+        return adx
 
     def _calculate_directional_signal(self, prices: np.ndarray) -> np.ndarray:
         """
@@ -214,15 +229,27 @@ class ADXGenerator(FeatureGenerator):
         dm_plus = np.maximum(high - np.roll(high, 1), 0)
         dm_minus = np.maximum(np.roll(low, 1) - low, 0)
 
-        # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
-        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+        # Calculate Directional Indicators using numpy operations
+        # Calculate rolling means manually using numpy
+        dm_plus_ma = np.convolve(dm_plus, np.ones(period)/period, mode='valid')
+        dm_minus_ma = np.convolve(dm_minus, np.ones(period)/period, mode='valid')
+        tr_ma = np.convolve(tr, np.ones(period)/period, mode='valid')
+        
+        # Pad the arrays to match original length
+        dm_plus_ma = np.concatenate([np.full(period-1, np.nan), dm_plus_ma])
+        dm_minus_ma = np.concatenate([np.full(period-1, np.nan), dm_minus_ma])
+        tr_ma = np.concatenate([np.full(period-1, np.nan), tr_ma])
+        
+        # Calculate directional indicators
+        di_plus = 100 * (dm_plus_ma / tr_ma)
+        di_minus = 100 * (dm_minus_ma / tr_ma)
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(period).mean()
+        adx_ma = np.convolve(dx, np.ones(period)/period, mode='valid')
+        adx = np.concatenate([np.full(period-1, np.nan), adx_ma])
 
-        return adx.values
+        return adx
 
 class DirectionalSignalGenerator(FeatureGenerator):
     """Generator for Directional Signal (EMA_8 - EMA_20)."""

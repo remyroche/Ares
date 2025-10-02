@@ -4,28 +4,59 @@ Search Space
 Implementation for NAS search space definition.
 """
 
+from rich.console import Console
+from rich import print as tprint
+
+tprint("🔍 [SEARCH_SPACE] Loading Search Space module")
+tprint("🔍 [SEARCH_SPACE] Module path: /workspace/src/training/steps/market_analysis/nas_clustering/core/nas_search/search_space.py")
+tprint("🔍 [SEARCH_SPACE] Purpose: Implementation for NAS search space definition")
+tprint("🔍 [SEARCH_SPACE] Status: Starting module import")
+
 import numpy as np
+tprint("🔍 [SEARCH_SPACE] ✓ NumPy imported successfully")
+
 from typing import Dict, List, Any, Optional, Tuple
+tprint("🔍 [SEARCH_SPACE] ✓ Typing imports completed")
+
 from dataclasses import dataclass
+tprint("🔍 [SEARCH_SPACE] ✓ Dataclasses imported successfully")
+
 from enum import Enum
+tprint("🔍 [SEARCH_SPACE] ✓ Enum imported successfully")
+
+tprint("🔍 [SEARCH_SPACE] All imports completed successfully")
 
 
 class LayerType(Enum):
     """Types of neural network layers."""
+    tprint("🔍 [LAYER_TYPE] Defining LayerType enum")
     DENSE = "dense"
+    tprint("🔍 [LAYER_TYPE] ✓ DENSE defined")
     CONV2D = "conv2d"
+    tprint("🔍 [LAYER_TYPE] ✓ CONV2D defined")
     LSTM = "lstm"
+    tprint("🔍 [LAYER_TYPE] ✓ LSTM defined")
     GRU = "gru"
+    tprint("🔍 [LAYER_TYPE] ✓ GRU defined")
     ATTENTION = "attention"
+    tprint("🔍 [LAYER_TYPE] ✓ ATTENTION defined")
+    tprint("🔍 [LAYER_TYPE] All layer types defined successfully")
 
 
 class ActivationType(Enum):
     """Types of activation functions."""
+    tprint("🔍 [ACTIVATION_TYPE] Defining ActivationType enum")
     RELU = "relu"
+    tprint("🔍 [ACTIVATION_TYPE] ✓ RELU defined")
     TANH = "tanh"
+    tprint("🔍 [ACTIVATION_TYPE] ✓ TANH defined")
     SIGMOID = "sigmoid"
+    tprint("🔍 [ACTIVATION_TYPE] ✓ SIGMOID defined")
     SWISH = "swish"
+    tprint("🔍 [ACTIVATION_TYPE] ✓ SWISH defined")
     GELU = "gelu"
+    tprint("🔍 [ACTIVATION_TYPE] ✓ GELU defined")
+    tprint("🔍 [ACTIVATION_TYPE] All activation types defined successfully")
 
 
 @dataclass
@@ -53,46 +84,86 @@ class SearchSpace:
     
     def __post_init__(self):
         """Initialize default values."""
+        tprint("🔍 [SEARCH_SPACE_POST_INIT] Initializing SearchSpace default values")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Layer types provided: {self.layer_types is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Layer widths provided: {self.layer_widths is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Activations provided: {self.activations is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Dropout rates provided: {self.dropout_rates is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Weight decay rates provided: {self.weight_decay_rates is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Learning rates provided: {self.learning_rates is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_POST_INIT] Batch sizes provided: {self.batch_sizes is not None}")
+        
         if self.layer_types is None:
             self.layer_types = [LayerType.DENSE, LayerType.CONV2D, LayerType.LSTM]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Layer types set to default: [DENSE, CONV2D, LSTM]")
         
         if self.layer_widths is None:
             self.layer_widths = [32, 64, 128, 256, 512]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Layer widths set to default: [32, 64, 128, 256, 512]")
         
         if self.activations is None:
             self.activations = [ActivationType.RELU, ActivationType.TANH, ActivationType.SIGMOID]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Activations set to default: [RELU, TANH, SIGMOID]")
         
         if self.dropout_rates is None:
             self.dropout_rates = [0.0, 0.1, 0.2, 0.3, 0.5]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Dropout rates set to default: [0.0, 0.1, 0.2, 0.3, 0.5]")
         
         if self.weight_decay_rates is None:
             self.weight_decay_rates = [0.0, 1e-4, 1e-3, 1e-2]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Weight decay rates set to default: [0.0, 1e-4, 1e-3, 1e-2]")
         
         if self.learning_rates is None:
             self.learning_rates = [1e-4, 1e-3, 1e-2, 1e-1]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Learning rates set to default: [1e-4, 1e-3, 1e-2, 1e-1]")
         
         if self.batch_sizes is None:
             self.batch_sizes = [16, 32, 64, 128]
+            tprint("🔍 [SEARCH_SPACE_POST_INIT] ✓ Batch sizes set to default: [16, 32, 64, 128]")
+        
+        tprint("🔍 [SEARCH_SPACE_POST_INIT] Default value initialization complete!")
     
     def validate(self) -> bool:
         """Validate search space configuration."""
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] Starting search space validation")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Max layers: {self.max_layers}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Min layers: {self.min_layers}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Max width: {self.max_width}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Min width: {self.min_width}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Layer types: {self.layer_types}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Layer widths: {self.layer_widths}")
+        tprint(f"🔍 [SEARCH_SPACE_VALIDATE] Activations: {self.activations}")
+        
         # Check layer constraints
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] Checking layer constraints...")
         if self.max_layers < self.min_layers:
+            tprint("🔍 [SEARCH_SPACE_VALIDATE] ❌ Validation failed: max_layers < min_layers")
             raise ValueError("max_layers must be >= min_layers")
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ Layer count constraints valid")
         
         if self.max_width < self.min_width:
+            tprint("🔍 [SEARCH_SPACE_VALIDATE] ❌ Validation failed: max_width < min_width")
             raise ValueError("max_width must be >= min_width")
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ Layer width constraints valid")
         
         # Check that we have at least one option for each parameter
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] Checking parameter availability...")
         if not self.layer_types:
+            tprint("🔍 [SEARCH_SPACE_VALIDATE] ❌ Validation failed: No layer types specified")
             raise ValueError("At least one layer type must be specified")
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ Layer types available")
         
         if not self.layer_widths:
+            tprint("🔍 [SEARCH_SPACE_VALIDATE] ❌ Validation failed: No layer widths specified")
             raise ValueError("At least one layer width must be specified")
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ Layer widths available")
         
         if not self.activations:
+            tprint("🔍 [SEARCH_SPACE_VALIDATE] ❌ Validation failed: No activations specified")
             raise ValueError("At least one activation must be specified")
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ Activations available")
         
+        tprint("🔍 [SEARCH_SPACE_VALIDATE] ✓ All validations passed successfully")
         return True
     
     def get_layer_types(self) -> List[str]:
@@ -116,23 +187,49 @@ class SearchSpace:
         Returns:
             Random architecture specification
         """
+        tprint("🔍 [SEARCH_SPACE_SAMPLE] Starting architecture sampling")
+        tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Num layers provided: {num_layers is not None}")
+        tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Min layers: {self.min_layers}")
+        tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Max layers: {self.max_layers}")
+        
         if num_layers is None:
             num_layers = np.random.randint(self.min_layers, self.max_layers + 1)
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] ✓ Random num layers generated: {num_layers}")
+        else:
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] ✓ Using provided num layers: {num_layers}")
         
         architecture = {
             'layers': [],
             'num_layers': num_layers
         }
+        tprint("🔍 [SEARCH_SPACE_SAMPLE] ✓ Architecture dictionary initialized")
         
+        tprint("🔍 [SEARCH_SPACE_SAMPLE] Generating layers...")
         for i in range(num_layers):
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Generating layer {i+1}/{num_layers}")
+            
+            layer_type = np.random.choice(self.get_layer_types())
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Layer {i+1}: Type = {layer_type}")
+            
+            layer_width = np.random.choice(self.get_valid_widths())
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Layer {i+1}: Width = {layer_width}")
+            
+            layer_activation = np.random.choice(self.get_activations())
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Layer {i+1}: Activation = {layer_activation}")
+            
+            layer_dropout = np.random.choice(self.dropout_rates)
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Layer {i+1}: Dropout = {layer_dropout}")
+            
             layer = {
-                'type': np.random.choice(self.get_layer_types()),
-                'width': np.random.choice(self.get_valid_widths()),
-                'activation': np.random.choice(self.get_activations()),
-                'dropout': np.random.choice(self.dropout_rates)
+                'type': layer_type,
+                'width': layer_width,
+                'activation': layer_activation,
+                'dropout': layer_dropout
             }
             architecture['layers'].append(layer)
+            tprint(f"🔍 [SEARCH_SPACE_SAMPLE] Layer {i+1}: {layer}")
         
+        tprint(f"🔍 [SEARCH_SPACE_SAMPLE] ✓ Architecture sampling completed: {architecture}")
         return architecture
     
     def get_architecture_space_size(self) -> int:

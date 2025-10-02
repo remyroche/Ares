@@ -4,30 +4,61 @@ NAS Clusterer
 Implementation for Neural Architecture Search clustering.
 """
 
+print("🔍 [NAS_CLUSTERER] Loading NAS Clusterer module")
+print("🔍 [NAS_CLUSTERER] Module path: /workspace/src/training/steps/market_analysis/nas_clustering/core/nas_clusterer.py")
+print("🔍 [NAS_CLUSTERER] Purpose: Implementation for Neural Architecture Search clustering")
+print("🔍 [NAS_CLUSTERER] Status: Starting module import")
+
 import numpy as np
+print("🔍 [NAS_CLUSTERER] ✓ NumPy imported successfully")
+
 from typing import Dict, List, Any, Optional, Tuple
+print("🔍 [NAS_CLUSTERER] ✓ Typing imports completed")
+
 from dataclasses import dataclass
+print("🔍 [NAS_CLUSTERER] ✓ Dataclasses imported successfully")
+
 from enum import Enum
+print("🔍 [NAS_CLUSTERER] ✓ Enum imported successfully")
+
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+print("🔍 [NAS_CLUSTERER] ✓ Scikit-learn clustering algorithms imported")
+
 from sklearn.metrics import silhouette_score, calinski_harabasz_score
+print("🔍 [NAS_CLUSTERER] ✓ Clustering metrics imported")
+
+print("🔍 [NAS_CLUSTERER] All imports completed successfully")
 
 
 class ClusteringAlgorithm(Enum):
     """Clustering algorithms."""
+    print("🔍 [CLUSTERING_ALGORITHM] Defining ClusteringAlgorithm enum")
     KMEANS = "kmeans"
+    print("🔍 [CLUSTERING_ALGORITHM] ✓ KMEANS defined")
     DBSCAN = "dbscan"
+    print("🔍 [CLUSTERING_ALGORITHM] ✓ DBSCAN defined")
     AGGLOMERATIVE = "agglomerative"
+    print("🔍 [CLUSTERING_ALGORITHM] ✓ AGGLOMERATIVE defined")
+    print("🔍 [CLUSTERING_ALGORITHM] All clustering algorithms defined successfully")
 
 
 @dataclass
 class ClusteringConfig:
     """Configuration for NAS clustering."""
+    print("🔍 [CLUSTERING_CONFIG] Defining ClusteringConfig dataclass")
     algorithm: ClusteringAlgorithm
+    print("🔍 [CLUSTERING_CONFIG] ✓ algorithm field defined")
     n_clusters: Optional[int] = None
+    print("🔍 [CLUSTERING_CONFIG] ✓ n_clusters field defined (default: None)")
     eps: float = 0.5
+    print("🔍 [CLUSTERING_CONFIG] ✓ eps field defined (default: 0.5)")
     min_samples: int = 5
+    print("🔍 [CLUSTERING_CONFIG] ✓ min_samples field defined (default: 5)")
     linkage: str = "ward"
+    print("🔍 [CLUSTERING_CONFIG] ✓ linkage field defined (default: 'ward')")
     random_state: int = 42
+    print("🔍 [CLUSTERING_CONFIG] ✓ random_state field defined (default: 42)")
+    print("🔍 [CLUSTERING_CONFIG] All configuration fields defined successfully")
 
 
 class NASClusterer:
@@ -39,11 +70,32 @@ class NASClusterer:
         Args:
             config: Clustering configuration
         """
+        print("🔍 [NAS_CLUSTERER_INIT] Initializing NASClusterer")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Config received: {config}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Config type: {type(config)}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Algorithm: {config.algorithm}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] N clusters: {config.n_clusters}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Eps: {config.eps}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Min samples: {config.min_samples}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Linkage: {config.linkage}")
+        print(f"🔍 [NAS_CLUSTERER_INIT] Random state: {config.random_state}")
+        
         self.config = config
+        print("🔍 [NAS_CLUSTERER_INIT] ✓ Config assigned to self.config")
+        
         self.clusterer = None
+        print("🔍 [NAS_CLUSTERER_INIT] ✓ clusterer initialized as None")
+        
         self.cluster_labels = None
+        print("🔍 [NAS_CLUSTERER_INIT] ✓ cluster_labels initialized as None")
+        
         self.cluster_centers = None
+        print("🔍 [NAS_CLUSTERER_INIT] ✓ cluster_centers initialized as None")
+        
         self.clustering_metrics = {}
+        print("🔍 [NAS_CLUSTERER_INIT] ✓ clustering_metrics initialized as empty dict")
+        
+        print("🔍 [NAS_CLUSTERER_INIT] Initialization complete!")
         
     def fit(self, architectures: List[Dict], features: Optional[np.ndarray] = None) -> Dict:
         """Fit clustering model to architectures.
@@ -55,68 +107,121 @@ class NASClusterer:
         Returns:
             Dictionary containing clustering results
         """
+        print("🔍 [NAS_CLUSTERER_FIT] Starting clustering fit")
+        print(f"🔍 [NAS_CLUSTERER_FIT] Number of architectures: {len(architectures)}")
+        print(f"🔍 [NAS_CLUSTERER_FIT] Features provided: {features is not None}")
+        
+        if features is not None:
+            print(f"🔍 [NAS_CLUSTERER_FIT] Features shape: {features.shape}")
+            print(f"🔍 [NAS_CLUSTERER_FIT] Features type: {type(features)}")
+            print(f"🔍 [NAS_CLUSTERER_FIT] Features dtype: {features.dtype}")
+        else:
+            print("🔍 [NAS_CLUSTERER_FIT] No features provided - will extract from architectures")
+        
         # Extract features if not provided
         if features is None:
+            print("🔍 [NAS_CLUSTERER_FIT] Extracting features from architectures...")
             features = self._extract_features(architectures)
+            print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Features extracted - shape: {features.shape}")
+        else:
+            print("🔍 [NAS_CLUSTERER_FIT] Using provided features")
         
         # Initialize clusterer
+        print("🔍 [NAS_CLUSTERER_FIT] Initializing clusterer...")
         self._initialize_clusterer()
+        print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Clusterer initialized: {type(self.clusterer)}")
         
         # Fit clustering model
+        print("🔍 [NAS_CLUSTERER_FIT] Fitting clustering model...")
         self.cluster_labels = self.clusterer.fit_predict(features)
+        print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Clustering completed - labels shape: {self.cluster_labels.shape}")
+        print(f"🔍 [NAS_CLUSTERER_FIT] Unique labels: {np.unique(self.cluster_labels)}")
+        print(f"🔍 [NAS_CLUSTERER_FIT] Number of clusters: {len(np.unique(self.cluster_labels))}")
         
         # Calculate cluster centers
+        print("🔍 [NAS_CLUSTERER_FIT] Calculating cluster centers...")
         self.cluster_centers = self._calculate_cluster_centers(features)
+        print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Cluster centers calculated - shape: {self.cluster_centers.shape}")
         
         # Calculate clustering metrics
+        print("🔍 [NAS_CLUSTERER_FIT] Calculating clustering metrics...")
         self.clustering_metrics = self._calculate_metrics(features)
+        print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Metrics calculated: {self.clustering_metrics}")
         
-        return {
+        n_clusters = len(set(self.cluster_labels)) - (1 if -1 in self.cluster_labels else 0)
+        print(f"🔍 [NAS_CLUSTERER_FIT] Final number of clusters: {n_clusters}")
+        
+        result = {
             'cluster_labels': self.cluster_labels,
             'cluster_centers': self.cluster_centers,
             'metrics': self.clustering_metrics,
-            'n_clusters': len(set(self.cluster_labels)) - (1 if -1 in self.cluster_labels else 0)
+            'n_clusters': n_clusters
         }
+        print(f"🔍 [NAS_CLUSTERER_FIT] ✓ Fit completed successfully")
+        print(f"🔍 [NAS_CLUSTERER_FIT] Result: {result}")
+        return result
     
     def _extract_features(self, architectures: List[Dict]) -> np.ndarray:
         """Extract features from architectures."""
+        print("🔍 [NAS_CLUSTERER_EXTRACT] Starting feature extraction")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Number of architectures: {len(architectures)}")
+        
         features = []
         
-        for architecture in architectures:
+        for i, architecture in enumerate(architectures):
+            if i % 10 == 0:  # Print progress every 10 architectures
+                print(f"🔍 [NAS_CLUSTERER_EXTRACT] Processing architecture {i+1}/{len(architectures)}")
+            
             feature_vector = []
             
             # Extract layer features
             layers = architecture.get('layers', [])
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: {len(layers)} layers")
             
             # Number of layers
-            feature_vector.append(len(layers))
+            n_layers = len(layers)
+            feature_vector.append(n_layers)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Number of layers = {n_layers}")
             
             # Total parameters
             total_params = sum(layer.get('width', 64) for layer in layers)
             feature_vector.append(total_params)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Total parameters = {total_params}")
             
             # Average layer width
             avg_width = total_params / len(layers) if layers else 0
             feature_vector.append(avg_width)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Average width = {avg_width:.2f}")
             
             # Layer width variance
             widths = [layer.get('width', 64) for layer in layers]
             width_variance = np.var(widths) if len(widths) > 1 else 0
             feature_vector.append(width_variance)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Width variance = {width_variance:.2f}")
             
             # Activation diversity
             activations = [layer.get('activation', 'relu') for layer in layers]
             unique_activations = len(set(activations))
             feature_vector.append(unique_activations)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Unique activations = {unique_activations}")
             
             # Dropout rate
             dropout_rates = [layer.get('dropout', 0) for layer in layers]
             avg_dropout = np.mean(dropout_rates) if dropout_rates else 0
             feature_vector.append(avg_dropout)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Average dropout = {avg_dropout:.3f}")
             
             features.append(feature_vector)
+            print(f"🔍 [NAS_CLUSTERER_EXTRACT] Architecture {i}: Feature vector = {feature_vector}")
         
-        return np.array(features)
+        result = np.array(features)
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] ✓ Feature extraction completed")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Features shape: {result.shape}")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Features dtype: {result.dtype}")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Features min: {np.min(result):.6f}")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Features max: {np.max(result):.6f}")
+        print(f"🔍 [NAS_CLUSTERER_EXTRACT] Features mean: {np.mean(result):.6f}")
+        return result
     
     def _initialize_clusterer(self):
         """Initialize clustering algorithm."""

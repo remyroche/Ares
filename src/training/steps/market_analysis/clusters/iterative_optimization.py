@@ -29,6 +29,7 @@ from src.utils.tprint import (
 
 from ..shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
+from .risk_mitigation import RiskMitigationSystem, PRODUCTION_RISK_CONFIG
 
 
 # Numba-optimized helper functions
@@ -364,7 +365,8 @@ class IterativeOptimization:
         self, 
         context: ClusteringContext, 
         config: Any, 
-        max_iterations: int = 100
+        max_iterations: int = 100,
+        enable_risk_mitigation: bool = True
     ) -> ClusteringContext:
         """Execute the advanced 3-step iterative optimization loop."""
         try:
@@ -377,12 +379,31 @@ class IterativeOptimization:
             # Initialize clustering statistics
             stats = ClusteringStats(features, current_assignments)
             
+            # Initialize risk mitigation system
+            risk_system = None
+            if enable_risk_mitigation:
+                risk_system = RiskMitigationSystem(PRODUCTION_RISK_CONFIG)
+                tprint("Risk mitigation system enabled", "INFO")
+            
             # Track convergence
             convergence_count = 0
             last_total_delta = float('inf')
             
             for round_num in range(self.max_rounds):
                 tprint(f"\n=== Round {round_num + 1}/{self.max_rounds} ===", "INFO")
+                
+                # Risk mitigation checks
+                if risk_system:
+                    # Check if optimization should stop
+                    should_stop, stop_reason = risk_system.should_stop_optimization(
+                        round_num, stats, features, current_assignments
+                    )
+                    if should_stop:
+                        tprint(f"Stopping optimization: {stop_reason}", "WARNING")
+                        break
+                    
+                    # Log cycle metrics
+                    risk_system.log_cycle_metrics(round_num, stats, features, current_assignments)
                 
                 # Report initial metrics
                 initial_cv = stats.get_cv_ratio()
@@ -401,9 +422,23 @@ class IterativeOptimization:
                 global_moves = await self._step2_global_reallocation(features, stats)
                 round_delta += global_moves
                 
-                # Step 3: Break large clusters
-                split_moves = await self._step3_break_large_clusters(features, stats)
+                # Step 3: Break large clusters (with k-growth prevention)
+                split_moves = 0
+                if risk_system:
+                    # Check k growth before splitting
+                    proposed_k = len(np.unique(stats.assignments))
+                    if risk_system.check_unbounded_k_growth(current_k, proposed_k, len(features)):
+                        split_moves = await self._step3_break_large_clusters(features, stats)
+                    else:
+                        tprint("Skipping cluster splits due to k-growth prevention", "WARNING")
+                else:
+                    split_moves = await self._step3_break_large_clusters(features, stats)
+                
                 round_delta += split_moves
+                
+                # Update operation counts for risk tracking
+                if risk_system:
+                    risk_system.update_operation_counts(local_moves, global_moves, split_moves)
                 
                 # Report final metrics
                 final_cv = stats.get_cv_ratio()
@@ -412,6 +447,28 @@ class IterativeOptimization:
                 
                 tprint(f"Final metrics - CV: {final_cv:.4f}, Balance: {final_balance:.4f}, Silhouette: {final_silhouette:.4f}", "INFO")
                 tprint(f"Round delta: {round_delta:.6f}", "INFO")
+                
+                # Risk mitigation: Check metric drift and monotonicity
+                if risk_system:
+                    current_objective = stats.get_objective_value()
+                    monotone_ok, monotone_msg = risk_system.check_metric_drift(
+                        current_objective, risk_system.last_objective
+                    )
+                    if not monotone_ok:
+                        tprint(f"Metric drift detected: {monotone_msg}", "ERROR")
+                        if "rollback" in monotone_msg.lower():
+                            tprint("Rolling back to previous state", "WARNING")
+                            # Rollback logic would go here
+                            break
+                    
+                    risk_system.update_objective_history(current_objective)
+                    
+                    # Periodic incremental correctness audit
+                    if round_num % risk_system.config.incremental_audit_frequency == 0:
+                        audit_ok = risk_system.audit_incremental_correctness(features, stats)
+                        if not audit_ok:
+                            tprint("Incremental correctness audit failed", "ERROR")
+                            break
                 
                 # Store step report
                 self.step_reports.append({

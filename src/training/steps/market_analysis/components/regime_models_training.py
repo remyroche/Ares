@@ -651,30 +651,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             artifacts = pipeline_state.get('artifacts', {})
             nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
             
-            # Try to get the original features used in clustering
-            if 'original_features' in nas_tas_clustering_result:
-                X = nas_tas_clustering_result['original_features']
-                feature_names = nas_tas_clustering_result.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
-                tprint(f"📊 [REGIME_MODELS] Reusing clustering features: {X.shape}", color="blue")
-                tprint(f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names}", color="blue")
-            else:
-                # Fallback: Use shared utilities to create regime-focused features
-                tprint("⚠️ [REGIME_MODELS] Clustering features not found, creating regime-focused features", color="yellow")
-                from src.training.steps.market_analysis.shared_utils.features import prepare_market_features, FeatureConfig
-                
-                # Create feature config for regime-focused features
-                feature_config = FeatureConfig()
-                feature_config.feature_categories = ['regime_volatility', 'regime_volume', 'regime_structural_trend', 'regime_statistical']
-                
-                # Generate regime-focused features
-                feature_frame, _ = prepare_market_features(data, feature_config, verbose=True)
-                if feature_frame is None or feature_frame.empty:
-                    raise ValueError("Failed to create regime-focused features")
-                X = feature_frame.to_numpy()
-                
-                feature_names = [f'regime_feature_{i}' for i in range(X.shape[1])]
-                tprint(f"📊 [REGIME_MODELS] Created regime-focused features: {X.shape}", color="blue")
-                tprint(f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names}", color="blue")
+            # Fast fail if clustering features not available
+            if 'original_features' not in nas_tas_clustering_result:
+                raise ValueError(
+                    "ML Training requires clustering features. "
+                    "Ensure clustering stage completed successfully before ML training. "
+                    "Clustering features not found in pipeline state."
+                )
+            
+            # Use clustering features (fast fail ensures they exist)
+            X = nas_tas_clustering_result['original_features']
+            feature_names = nas_tas_clustering_result.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
+            tprint(f"📊 [REGIME_MODELS] Using clustering features: {X.shape}", color="blue")
+            tprint(f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names}", color="blue")
             
             # Check for NaN or infinite values in features
             nan_count = np.isnan(X).sum()

@@ -170,8 +170,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'trend': 15,
                     'returns': 10,
                     'oscillator': 10,
-                    'time': 5,
-                    'microstructure': 5,
+                    # Removed 'time' and 'microstructure' categories
                 }
             )
 
@@ -183,8 +182,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     PipelineFeatureCategory.TREND,
                     PipelineFeatureCategory.RETURNS,
                     PipelineFeatureCategory.OSCILLATOR,
-                    PipelineFeatureCategory.TIME,
-                    PipelineFeatureCategory.MICROSTRUCTURE,
+                    # Removed TIME and MICROSTRUCTURE for better regime focus
                 ],
                 enable_feature_selection=False,
                 enable_feature_validation=False,

@@ -35,6 +35,7 @@ ML_IMPORT_ERRORS = []
 # Import sklearn components
 try:
     from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
+    from sklearn.feature_selection import SelectFromModel
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
     from sklearn.model_selection import train_test_split, cross_val_score
     from sklearn.preprocessing import StandardScaler
@@ -284,7 +285,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Step 3: Prepare training data
             tprint("🔍 [REGIME_MODELS] Step 3: Preparing training data", color="cyan")
             data_prep_start = time.time()
-            X, y = self._prepare_training_data(data, regime_labels, pipeline_state)
+            X, y, feature_selection_info = self._prepare_training_data(data, regime_labels, pipeline_state)
             self._log_performance_metrics("Data preparation", data_prep_start)
             self._monitor_memory_usage("After data preparation")
             if X is None or y is None:
@@ -310,12 +311,25 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             
             tprint(f"📊 [REGIME_MODELS] Training data prepared: X={X.shape}, y={y.shape}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Feature matrix info: dtype={X.dtype}, min={X.min():.4f}, max={X.max():.4f}", color="blue")
+            if feature_selection_info:
+                retained = feature_selection_info.get('retained_feature_count', X.shape[1])
+                total = feature_selection_info.get('total_feature_count', retained)
+                tprint(
+                    f"🎯 [REGIME_MODELS] Feature selection retained {retained}/{total} features",
+                    color="green"
+                )
+                top_preview = feature_selection_info.get('top_features_preview')
+                if top_preview:
+                    tprint(
+                        f"🏆 [REGIME_MODELS] Top retained features: {top_preview}",
+                        color="blue"
+                    )
             tprint(f"📊 [REGIME_MODELS] Target distribution: {dict(zip(*np.unique(y, return_counts=True)))}", color="blue")
-            
+
             # Step 4: Train regime detection models
             tprint("🔍 [REGIME_MODELS] Step 4: Training regime detection models", color="cyan")
             model_training_start = time.time()
-            training_results = self._train_regime_models(X, y)
+            training_results = self._train_regime_models(X, y, feature_selection_info)
             self._log_performance_metrics("Model training", model_training_start)
             self._monitor_memory_usage("After model training")
             
@@ -344,7 +358,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'model_count': len(training_results['models']),
                     'feature_count': X.shape[1],
                     'sample_count': X.shape[0],
-                    'regime_models_config': self.regime_models_config
+                    'regime_models_config': self.regime_models_config,
+                    'feature_selection': training_results.get('feature_selection', feature_selection_info),
+                    'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []
                 }
             }
             
@@ -366,12 +382,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 success=True,
                 artifacts=artifacts,
                 metadata={
-                    'component_type': 'regime_models_training', 
+                    'component_type': 'regime_models_training',
                     'execution_time': execution_time,
                     'training_time': training_results['training_time'],
                     'model_count': len(training_results['models']),
                     'feature_count': X.shape[1],
-                    'sample_count': X.shape[0]
+                    'sample_count': X.shape[0],
+                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1]
                 }
             )
             
@@ -610,7 +627,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_MODELS] Model validation error: {e}", color="red")
             return False
     
-    def _prepare_training_data(self, data: pd.DataFrame, regime_labels: np.ndarray, pipeline_state: Dict[str, Any] = None) -> Tuple[np.ndarray, np.ndarray]:
+    def _prepare_training_data(
+        self,
+        data: pd.DataFrame,
+        regime_labels: np.ndarray,
+        pipeline_state: Dict[str, Any] = None
+    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Prepare training data from market data and regime labels."""
         tprint("🔧 [REGIME_MODELS] Preparing training data", color="cyan")
         self.logger.info("Starting data preparation process")
@@ -669,24 +691,56 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             X = X[:min_length]
             y = np.array(regime_labels[:min_length])
             
+            # Perform model-driven feature selection
+            feature_selection_info = self._run_feature_selection(X, y, feature_names)
+
+            if feature_selection_info and feature_selection_info.get('selected_indices'):
+                X = self._apply_feature_selection(X, feature_selection_info)
+                feature_names = feature_selection_info.get('selected_feature_names', feature_names)
+                tprint(
+                    f"🎯 [REGIME_MODELS] Feature selector retained {feature_selection_info['retained_feature_count']}/{feature_selection_info['total_feature_count']} features",
+                    color="green"
+                )
+                self.logger.info(
+                    "Feature selection applied",
+                    extra={
+                        'retained_features': feature_selection_info['retained_feature_count'],
+                        'total_features': feature_selection_info['total_feature_count'],
+                        'selection_method': feature_selection_info.get('selection_method'),
+                        'selection_time_seconds': feature_selection_info.get('selection_time_seconds')
+                    }
+                )
+            else:
+                tprint("⚠️ [REGIME_MODELS] Feature selection fallback - retaining all features", color="yellow")
+                feature_selection_info = feature_selection_info or {}
+                feature_selection_info.setdefault('selected_indices', list(range(X.shape[1])))
+                feature_selection_info.setdefault('selected_feature_names', feature_names)
+                feature_selection_info.setdefault('retained_feature_count', X.shape[1])
+                feature_selection_info.setdefault('total_feature_count', X.shape[1])
+
             tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green", bold=True)
-            
+
             self.logger.info(f"Training data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
-            return X, y
-            
+            return X, y, feature_selection_info
+
         except Exception as e:
             error_type = type(e).__name__
             tprint(f"❌ [REGIME_MODELS] Error preparing training data: {e}", color="red")
             tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
-            
+
             self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
-            return None, None
+            return None, None, {}
     
-    def _train_regime_models(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def _train_regime_models(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_selection_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Train regime detection models."""
         tprint("🏋️ [REGIME_MODELS] Training regime detection models", color="cyan")
         self.logger.info("Starting regime detection models training process")
-        
+
         start_time = time.time()
         models = {}
         metrics = {}
@@ -695,6 +749,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         try:
             # Log training data characteristics
             tprint(f"📊 [REGIME_MODELS] Training data: {X.shape[0]} samples, {X.shape[1]} features", color="blue")
+            if feature_selection_info:
+                tprint(
+                    f"🎯 [REGIME_MODELS] Using feature subset of {feature_selection_info.get('retained_feature_count', X.shape[1])}/{feature_selection_info.get('total_feature_count', X.shape[1])} features",
+                    color="blue"
+                )
             tprint(f"📊 [REGIME_MODELS] Target classes: {np.unique(y)} (count: {len(np.unique(y))})", color="blue")
             
             # Step 1: Split data
@@ -938,7 +997,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'scaler': scaler,
                 'training_history': training_history,
                 'feature_count': X.shape[1],
-                'sample_count': X.shape[0]
+                'sample_count': X.shape[0],
+                'feature_selection': feature_selection_info or {}
             }
             
         except Exception as e:
@@ -956,6 +1016,132 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'error': str(e),
                 'error_type': error_type
             }
+
+    def _run_feature_selection(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Run model-based feature selection to identify informative inputs."""
+        selection_start = time.time()
+
+        info: Dict[str, Any] = {
+            'selection_performed': False,
+            'selection_method': 'none',
+            'selected_indices': list(range(features.shape[1])) if features.size else [],
+            'selected_feature_names': feature_names.copy(),
+            'retained_feature_count': int(features.shape[1]),
+            'total_feature_count': int(features.shape[1]),
+            'feature_importances': {},
+            'importance_ranking': [],
+            'top_features_preview': None,
+            'selection_time_seconds': 0.0,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        if features.size == 0 or labels.size == 0:
+            return info
+
+        try:
+            selector = SelectFromModel(
+                lgb.LGBMClassifier(
+                    n_estimators=200,
+                    learning_rate=0.05,
+                    random_state=self.model_config.get('random_state', 42),
+                    class_weight='balanced',
+                    importance_type='gain'
+                ),
+                threshold='median',
+                max_features=min(150, features.shape[1]) if features.shape[1] > 0 else None
+            )
+
+            selector.fit(features, labels)
+
+            fitted_estimator = getattr(selector, 'estimator_', None)
+            if fitted_estimator is None and hasattr(selector, 'estimator'):
+                fitted_estimator = selector.estimator
+
+            if fitted_estimator is not None and hasattr(fitted_estimator, 'feature_importances_'):
+                importances = np.asarray(fitted_estimator.feature_importances_)
+            else:
+                importances = np.zeros(features.shape[1])
+
+            support_mask = selector.get_support()
+            if not np.any(support_mask):
+                sorted_indices = np.argsort(importances)[::-1]
+                top_k = min(max(1, int(np.ceil(features.shape[1] * 0.25))), features.shape[1])
+                support_mask = np.zeros_like(importances, dtype=bool)
+                support_mask[sorted_indices[:top_k]] = True
+
+            selected_indices = np.where(support_mask)[0]
+            selected_feature_names = [feature_names[idx] for idx in selected_indices]
+
+            info.update({
+                'selection_performed': True,
+                'selection_method': 'lightgbm_selectfrommodel',
+                'selected_indices': [int(idx) for idx in selected_indices],
+                'selected_feature_names': selected_feature_names,
+                'retained_feature_count': int(len(selected_indices)),
+                'total_feature_count': int(features.shape[1]),
+                'selection_threshold': float(getattr(selector, 'threshold_', 0.0)) if hasattr(selector, 'threshold_') else None,
+                'selection_time_seconds': time.time() - selection_start
+            })
+
+            if importances.size:
+                info['feature_importances'] = {
+                    feature_names[i]: float(importances[i]) for i in range(len(feature_names))
+                }
+                sorted_indices = np.argsort(importances)[::-1]
+                top_preview = [
+                    {
+                        'feature': feature_names[idx],
+                        'importance': float(importances[idx]),
+                        'rank': int(rank + 1)
+                    }
+                    for rank, idx in enumerate(sorted_indices[: min(20, len(sorted_indices))])
+                ]
+                info['importance_ranking'] = top_preview
+                info['top_features_preview'] = ', '.join(
+                    f"{item['feature']} ({item['importance']:.4f})" for item in top_preview[:5]
+                )
+
+            tprint(
+                f"🎯 [REGIME_MODELS] Feature selection completed in {info['selection_time_seconds']:.3f}s - retained {info['retained_feature_count']}/{info['total_feature_count']} features",
+                color="green"
+            )
+            self.logger.info(
+                "Feature selection summary",
+                extra={
+                    'retained_features': info['retained_feature_count'],
+                    'total_features': info['total_feature_count'],
+                    'selection_method': info['selection_method'],
+                    'selection_time_seconds': info['selection_time_seconds']
+                }
+            )
+
+        except Exception as e:
+            info['selection_time_seconds'] = time.time() - selection_start
+            tprint(f"⚠️ [REGIME_MODELS] Feature selection failed ({e}); retaining all features", color="yellow")
+            self.logger.warning("Feature selection failed; using all features", exc_info=True)
+
+        return info
+
+    def _apply_feature_selection(
+        self,
+        features: np.ndarray,
+        feature_selection_info: Dict[str, Any]
+    ) -> np.ndarray:
+        """Apply a stored feature selection mask to the provided features."""
+        if features is None or feature_selection_info is None:
+            return features
+
+        indices = feature_selection_info.get('selected_indices')
+        if not indices:
+            return features
+
+        indices_array = np.asarray(indices, dtype=int)
+        return np.asarray(features)[:, indices_array]
     
     def _get_recovery_suggestions(self, error: Exception) -> str:
         """Get recovery suggestions based on error type."""

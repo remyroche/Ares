@@ -1831,6 +1831,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return 'regime_quality'
         return 'other'
 
+
     def _select_regime_features(
         self,
         feature_result: FeaturePreparationResult,

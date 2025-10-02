@@ -7,6 +7,12 @@ logging utilities, metrics calculation, and regime characteristics.
 """
 
 from .features import prepare_market_features, FeatureConfig, FeaturePreparationResult
+from .feature_filters import (
+    winsorize_frame,
+    filter_low_variance,
+    prune_correlated_features,
+    apply_quality_thresholds,
+)
 from .config import (
     validate_regime_count, normalize_weights, validate_algorithm_type,
     create_default_config, create_adaptive_config, ConfigValidator, BaseConfig, NASConfig, TASConfig, HybridConfig
@@ -28,6 +34,7 @@ from .characteristics import (
 __all__ = [
     # Features
     'prepare_market_features', 'FeatureConfig', 'FeaturePreparationResult',
+    'winsorize_frame', 'filter_low_variance', 'prune_correlated_features', 'apply_quality_thresholds',
     
     # Configuration
     'validate_regime_count', 'normalize_weights', 'validate_algorithm_type',

@@ -1,0 +1,16 @@
+quality_thresholds:
+  min_regime_persistence: 0.2
+  max_feature_noise_ratio: 1.2
+  min_temporal_stability: 0.1
+filter_thresholds:
+  variance:
+    min_variance: 1.0e-08
+  winsorization:
+    lower_quantile: 0.01
+    upper_quantile: 0.99
+  correlation:
+    threshold: 0.95
+  quality:
+    min_persistence: 0.2
+    max_noise_ratio: 1.2
+    min_stability: 0.1

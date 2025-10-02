@@ -42,8 +42,14 @@ from ..shared_utils import (
 
 # Import original tprint for backward compatibility
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
+
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.feature_engineering_pipeline import (
+    create_feature_pipeline,
+    FeaturePipelineConfig,
+    FeatureCategory as PipelineFeatureCategory,
 )
 
 
@@ -149,15 +155,190 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             log_success(f"Market data loaded: {len(market_data)} rows")
             tprint(f"✅ Market data loaded: {len(market_data)} rows")
             
-            # Step 3: Prepare features using shared utilities
-            tprint("🔧 Step 3: Preparing features using shared utilities")
-            log_info("Preparing features using shared utilities")
-            features = prepare_market_features(market_data, self.feature_config, verbose=True)
-            if features is None:
-                raise ValueError("Failed to prepare features for regime discovery")
-            
-            log_success(f"Features prepared: {features.shape}")
-            tprint(f"✅ Features prepared: {features.shape}")
+            # Step 3: Build discovery features using refactored pipeline
+            tprint("🔧 Step 3: Building discovery features with refactored pipeline")
+            log_info("Building discovery features with refactored pipeline")
+
+            max_discovery_features = getattr(self.config, 'max_discovery_features', 100)
+            feature_caps = getattr(
+                self.config,
+                'discovery_feature_category_caps',
+                {
+                    'momentum': 20,
+                    'volatility': 20,
+                    'volume': 15,
+                    'trend': 15,
+                    'returns': 10,
+                    'oscillator': 10,
+                    'time': 5,
+                    'microstructure': 5,
+                }
+            )
+
+            pipeline_config = FeaturePipelineConfig(
+                feature_categories=[
+                    PipelineFeatureCategory.MOMENTUM,
+                    PipelineFeatureCategory.VOLATILITY,
+                    PipelineFeatureCategory.VOLUME,
+                    PipelineFeatureCategory.TREND,
+                    PipelineFeatureCategory.RETURNS,
+                    PipelineFeatureCategory.OSCILLATOR,
+                    PipelineFeatureCategory.TIME,
+                    PipelineFeatureCategory.MICROSTRUCTURE,
+                ],
+                enable_feature_selection=False,
+                enable_feature_validation=False,
+                enable_interaction_features=False,
+                enable_polynomial_features=False,
+                enable_outlier_handling=True,
+                enable_normalization=True,
+                max_features=max_discovery_features,
+            )
+
+            feature_pipeline = create_feature_pipeline(pipeline_config)
+            pipeline_result = feature_pipeline.engineer_features(market_data)
+
+            if not pipeline_result.success or pipeline_result.features.empty:
+                raise ValueError("Failed to engineer discovery features using refactored pipeline")
+
+            raw_feature_df = pipeline_result.features
+            raw_feature_categories = pipeline_result.feature_categories or {}
+            column_to_category = {}
+            for category_name, columns in raw_feature_categories.items():
+                for column in columns:
+                    column_to_category[column] = category_name
+
+            # Balance categories according to caps and trim to configured maximum
+            balanced_columns = []
+            dropped_for_balance: Dict[str, List[str]] = {}
+            for category_name, cap in feature_caps.items():
+                available_columns = raw_feature_categories.get(category_name, [])
+                if available_columns:
+                    balanced_columns.extend(available_columns[:cap])
+                    if len(available_columns) > cap:
+                        dropped_for_balance[category_name] = available_columns[cap:]
+                else:
+                    dropped_for_balance[category_name] = []
+
+            remaining_slots = max(0, max_discovery_features - len(balanced_columns))
+            if remaining_slots > 0:
+                for category_name, available_columns in raw_feature_categories.items():
+                    if category_name in feature_caps:
+                        continue
+                    if not available_columns:
+                        continue
+                    take = available_columns[:remaining_slots]
+                    if take:
+                        balanced_columns.extend(take)
+                        remaining_slots -= len(take)
+                    if remaining_slots <= 0:
+                        break
+
+            # Ensure deterministic order and enforce global column limit
+            ordered_balanced_columns = []
+            seen_columns = set()
+            for column in raw_feature_df.columns:
+                if column in balanced_columns and column not in seen_columns:
+                    ordered_balanced_columns.append(column)
+                    seen_columns.add(column)
+                if len(ordered_balanced_columns) >= max_discovery_features:
+                    break
+
+            balanced_feature_df = raw_feature_df[ordered_balanced_columns].copy()
+
+            # NaN/Inf guard – drop columns that still contain invalid values
+            invalid_columns = balanced_feature_df.columns[
+                balanced_feature_df.replace([np.inf, -np.inf], np.nan).isna().any()
+            ].tolist()
+            if invalid_columns:
+                balanced_feature_df = balanced_feature_df.drop(columns=invalid_columns)
+
+            if balanced_feature_df.empty:
+                raise ValueError("Discovery feature matrix is empty after balancing and cleaning")
+
+            # Final enforcement of column limit
+            if balanced_feature_df.shape[1] > max_discovery_features:
+                balanced_feature_df = balanced_feature_df.iloc[:, :max_discovery_features]
+
+            final_columns = list(balanced_feature_df.columns)
+            final_category_counts: Dict[str, int] = {}
+            for category_name in feature_caps.keys():
+                final_category_counts[category_name] = sum(
+                    1 for col in final_columns if column_to_category.get(col) == category_name
+                )
+            additional_categories = {
+                category_name: sum(1 for col in final_columns if column_to_category.get(col) == category_name)
+                for category_name in raw_feature_categories.keys()
+                if category_name not in feature_caps
+            }
+            final_category_counts.update(additional_categories)
+
+            category_coverage = {
+                category_name: final_category_counts.get(category_name, 0)
+                for category_name in feature_caps.keys()
+            }
+            category_coverage_passed = all(count > 0 for count in category_coverage.values())
+
+            nan_guard_passed = not balanced_feature_df.replace([np.inf, -np.inf], np.nan).isna().any().any()
+            column_limit_passed = balanced_feature_df.shape[1] <= max_discovery_features
+
+            feature_metadata = {
+                'total_raw_columns': int(raw_feature_df.shape[1]),
+                'total_columns_after_balance': int(balanced_feature_df.shape[1]),
+                'column_limit': int(max_discovery_features),
+                'initial_category_counts': {
+                    name: len(columns) for name, columns in raw_feature_categories.items()
+                },
+                'final_category_counts': final_category_counts,
+                'category_caps': feature_caps,
+                'dropped_for_balance': dropped_for_balance,
+                'dropped_for_nan': invalid_columns,
+                'pipeline_processing_time': pipeline_result.processing_time,
+                'pipeline_success': pipeline_result.success,
+            }
+
+            acceptance_checks = {
+                'nan_guard_passed': nan_guard_passed,
+                'column_limit_passed': column_limit_passed,
+                'category_coverage_passed': category_coverage_passed,
+                'category_coverage': category_coverage,
+                'column_count': int(balanced_feature_df.shape[1]),
+                'invalid_columns_removed': invalid_columns,
+            }
+
+            # Persist selected columns for downstream stages
+            artifacts_dir = Path('artifacts')
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            feature_columns_path = artifacts_dir / 'discovery_features.json'
+            feature_columns_payload = {
+                'generated_at': datetime.utcnow().isoformat() + 'Z',
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'columns': final_columns,
+                'category_counts': final_category_counts,
+                'acceptance_checks': acceptance_checks,
+            }
+            feature_columns_path.write_text(json.dumps(feature_columns_payload, indent=2))
+
+            pipeline_state.setdefault('nas_tas_regime_discovery_features', {})
+            pipeline_state['nas_tas_regime_discovery_features'].update({
+                'feature_matrix': balanced_feature_df,
+                'metadata': feature_metadata,
+                'acceptance_checks': acceptance_checks,
+                'selected_columns': final_columns,
+                'feature_columns_path': str(feature_columns_path),
+            })
+
+            log_success(
+                f"Discovery features prepared: {balanced_feature_df.shape} (nan_guard={nan_guard_passed}, "
+                f"category_coverage={category_coverage_passed})"
+            )
+            tprint(
+                f"✅ Discovery features prepared: {balanced_feature_df.shape} | "
+                f"NaN guard: {'passed' if nan_guard_passed else 'failed'}, "
+                f"Category coverage: {'passed' if category_coverage_passed else 'failed'}"
+            )
+
             
             # Step 4: Create hybrid configuration using shared utilities
             tprint("⚙️ Step 4: Creating hybrid configuration")
@@ -215,15 +396,23 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Step 10: Create consolidated artifacts for clustering pipeline
             tprint("📦 Step 10: Creating consolidated artifacts for clustering pipeline")
             artifacts = self._create_consolidated_artifacts(
-                regime_predictions, regime_metrics, regime_characteristics, 
+                regime_predictions, regime_metrics, regime_characteristics,
                 regime_result, hybrid_config, symbol, timeframe, market_data
             )
             tprint("✅ Consolidated artifacts created")
-            
+
+            if 'nas_tas_regime_discovery_result' in artifacts:
+                artifacts['nas_tas_regime_discovery_result']['feature_engineering'] = {
+                    'selected_columns': final_columns,
+                    'columns_path': str(feature_columns_path),
+                    'metadata': feature_metadata,
+                    'acceptance_checks': acceptance_checks,
+                }
+
             total_regimes = tas_count + nas_count
             log_success(f'NAS-TAS Regime Discovery completed: TAS={tas_count} regimes, NAS={nas_count} regimes')
             tprint(f"🎉 NAS-TAS Regime Discovery completed successfully: TAS={tas_count} regimes, NAS={nas_count} regimes (Total diversity: {total_regimes})")
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -237,7 +426,19 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'architecture_type': 'NAS_TAS_Regime_Discovery',
                     'processing_strategy': 'both_systems_combined',
                     'execution_successful': True,
-                    'uses_shared_utilities': True
+                    'uses_shared_utilities': True,
+                    'feature_engineering': {
+                        'total_raw_columns': feature_metadata['total_raw_columns'],
+                        'columns_after_balance': feature_metadata['total_columns_after_balance'],
+                        'column_limit': feature_metadata['column_limit'],
+                        'category_caps': feature_metadata['category_caps'],
+                        'initial_category_counts': feature_metadata['initial_category_counts'],
+                        'final_category_counts': feature_metadata['final_category_counts'],
+                        'dropped_for_balance': feature_metadata['dropped_for_balance'],
+                        'dropped_for_nan': feature_metadata['dropped_for_nan'],
+                        'acceptance_checks': acceptance_checks,
+                        'feature_columns_path': str(feature_columns_path),
+                    }
                 }
             )
             
@@ -1300,19 +1501,19 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         try:
             if market_data is None or market_data.empty:
                 return None
-            
+
             # Use the same feature preparation as the main component
-            features = prepare_market_features(market_data, self.feature_config, verbose=False)
-            
-            if features is None or len(features) == 0:
+            features, _ = prepare_market_features(market_data, self.feature_config, verbose=False)
+
+            if features is None or features.empty:
                 return None
-            
+
             # Ensure we have enough features and samples
             if len(features) < min_length:
                 return None
-            
+
             # Take only the required number of samples
-            features_array = features[:min_length]
+            features_array = features.iloc[:min_length].to_numpy()
             features_array = np.nan_to_num(features_array, nan=0.0, posinf=0.0, neginf=0.0)
             
             return features_array

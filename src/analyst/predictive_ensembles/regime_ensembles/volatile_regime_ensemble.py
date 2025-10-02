@@ -4,7 +4,7 @@ from keras.layers import LSTM, Dense, Dropout, Flatten, Input, LayerNormalizatio
 from keras.models import Model
 from lightgbm import LGBMClassifier
 from pytorch_tabnet.tab_model import TabNetClassifier
-from .utils.warning_symbols import failed
+from src.utils.warning_symbols import failed
 from .base_ensemble import BaseEnsemble
 import numpy as np
 import pandas as pd

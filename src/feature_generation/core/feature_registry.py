@@ -82,6 +82,14 @@ class FeatureRegistry:
         # Register by category
         if generator not in self._generators_by_category[category]:
             self._generators_by_category[category].append(generator)
+            print(f"🔍 DEBUG: Added generator {name} to category {category.value}")
+            print(f"🔍 DEBUG: Category {category.value} now has {len(self._generators_by_category[category])} generators")
+        else:
+            print(f"🔍 DEBUG: Generator {name} already in category {category.value}")
+        
+        # Debug: Check if the category is in the dictionary
+        print(f"🔍 DEBUG: Category {category.value} in dictionary: {category in self._generators_by_category}")
+        print(f"🔍 DEBUG: Category {category.value} generators: {len(self._generators_by_category.get(category, []))}")
         
         # Track category names
         self._category_names.add(category.value)
@@ -210,10 +218,7 @@ class FeatureRegistry:
         Returns:
             List of generators for the category
         """
-        generators = self._generators_by_category.get(category, []).copy()
-        print(f"🔍 DEBUG: get_by_category({category.value}) found {len(generators)} generators")
-        print(f"🔍 DEBUG: Available categories: {[cat.value for cat in self._generators_by_category.keys()]}")
-        return generators
+        return self._generators_by_category.get(category, []).copy()
     
     def get_all(self) -> List[FeatureGenerator]:
         """

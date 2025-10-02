@@ -1163,6 +1163,7 @@ def get_global_feature_bank() -> FeatureBank:
     if len(_global_feature_bank.registry.get_all()) == 0:
         # Force re-initialization if no generators are found
         _global_feature_bank = FeatureBank()
+    
 
     return _global_feature_bank
 

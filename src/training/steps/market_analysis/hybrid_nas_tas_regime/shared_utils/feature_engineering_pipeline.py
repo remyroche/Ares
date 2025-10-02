@@ -66,16 +66,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class FeatureCategory(Enum):
-    """Feature categories available."""
-    MOMENTUM = "momentum"
-    VOLATILITY = "volatility"
-    VOLUME = "volume"
-    TREND = "trend"
-    RETURNS = "returns"
-    OSCILLATOR = "oscillator"
-    TIME = "time"
-    MICROSTRUCTURE = "microstructure"
 
 
 class FeatureSelectionMethod(Enum):
@@ -220,20 +210,27 @@ class FeatureEngineeringPipeline:
     def _initialize_feature_calculators(self) -> Dict[str, Any]:
         """Initialize feature calculators for different categories."""
         calculators = {}
-        
+
         if FEATURE_GENERATION_AVAILABLE:
             try:
-                # Use the global feature bank to get generators by category
-                from src.feature_generation.core.factory import get_global_feature_bank
+                # Import the global feature bank and ensure it's properly initialized
+                from src.feature_generation.core.feature_bank import get_global_feature_bank, _global_feature_bank
+
+                # Get the global feature bank instance
                 self.feature_bank = get_global_feature_bank()
-                
-                # Debug: Check if the feature bank has generators
+
+                # Ensure this is the same instance as the global one
+                if self.feature_bank is not _global_feature_bank:
+                    self.logger.warning("⚠️ Feature bank instance mismatch, using global instance")
+                    self.feature_bank = _global_feature_bank
+
+                # Verify the feature bank is properly initialized
                 total_generators = len(self.feature_bank.registry.get_all())
-                self.logger.info(f"🔍 Feature bank has {total_generators} total generators")
-                
-                # Debug: Check what categories are available in the registry
-                available_categories = list(self.feature_bank.registry._generators_by_category.keys())
-                self.logger.info(f"🔍 Available categories in registry: {[cat.value for cat in available_categories]}")
+                if total_generators == 0:
+                    self.logger.error("❌ Feature bank has no generators, this should not happen!")
+                    raise ValueError("Feature bank is not properly initialized")
+
+                self.logger.info(f"✅ Feature bank initialized with {total_generators} generators")
                 
                 # Map feature categories to their generators
                 category_mapping = {
@@ -256,7 +253,8 @@ class FeatureEngineeringPipeline:
                     else:
                         self.logger.warning(f"⚠️ No generators found for {category_name}")
                 
-                self.logger.info("✅ Feature calculators initialized")
+                self.logger.info(f"✅ Feature calculators initialized: {len(calculators)} categories")
+                self.logger.info(f"🔍 Available categories: {list(calculators.keys())}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Feature calculator initialization failed: {e}")
         
@@ -391,14 +389,23 @@ class FeatureEngineeringPipeline:
         try:
             all_features = pd.DataFrame(index=data.index)
             
+            self.logger.info(f"🔍 Available feature calculators: {list(self.feature_calculators.keys())}")
+            self.logger.info(f"🔍 Config feature categories: {[cat.value for cat in self.config.feature_categories]}")
+            
             for category in self.config.feature_categories:
+                self.logger.info(f"🔍 Processing category: {category.value}")
                 if category.value in self.feature_calculators:
                     generators = self.feature_calculators[category.value]
+                    self.logger.info(f"🔍 Found {len(generators)} generators for {category.value}")
                     category_features = self._generate_category_features(data, category, generators)
                     
                     if category_features is not None and not category_features.empty:
                         all_features = pd.concat([all_features, category_features], axis=1)
                         self.logger.info(f"✅ Generated {category.value} features: {category_features.shape[1]}")
+                    else:
+                        self.logger.warning(f"⚠️ No features generated for {category.value}")
+                else:
+                    self.logger.warning(f"⚠️ No calculators found for {category.value}")
             
             return all_features
             
@@ -429,15 +436,26 @@ class FeatureEngineeringPipeline:
             # Generate features using all generators for this category
             for generator in generators:
                 try:
+                    self.logger.info(f"🔍 Generating features with generator: {generator.name}")
+                    self.logger.info(f"🔍 Data shape: {data.shape}, columns: {list(data.columns)}")
                     result = generator.generate(data)
+                    self.logger.info(f"🔍 Generator {generator.name} result type: {type(result)}")
+                    if result:
+                        self.logger.info(f"🔍 Generator {generator.name} result has features: {hasattr(result, 'features')}")
+                        if hasattr(result, 'features'):
+                            self.logger.info(f"🔍 Generator {generator.name} features shape: {result.features.shape if not result.features.empty else 'empty'}")
                     if result and hasattr(result, 'features') and not result.features.empty:
                         # Add features with category prefix to avoid naming conflicts
                         category_features = result.features.copy()
                         category_features.columns = [f"{category.value}_{col}" for col in category_features.columns]
                         features = pd.concat([features, category_features], axis=1)
-                        self.logger.debug(f"✅ Generated {len(category_features.columns)} {category.value} features")
+                        self.logger.info(f"✅ Generated {len(category_features.columns)} {category.value} features")
+                    else:
+                        self.logger.warning(f"⚠️ Generator {generator.name} returned empty result")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Generator {generator.name} failed for {category}: {e}")
+                    import traceback
+                    self.logger.warning(f"⚠️ Generator {generator.name} traceback: {traceback.format_exc()}")
                     continue
             
             return features

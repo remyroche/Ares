@@ -329,12 +329,18 @@ class TrendScoreGenerator(FeatureGenerator):
         dm_minus = np.maximum(np.roll(low, 1) - low, 0)
 
         # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
-        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+        # Convert to pandas Series for rolling operations
+        dm_plus_series = pd.Series(dm_plus)
+        dm_minus_series = pd.Series(dm_minus)
+        tr_series = pd.Series(tr)
+        
+        di_plus = 100 * (dm_plus_series.rolling(period).mean() / tr_series.rolling(period).mean())
+        di_minus = 100 * (dm_minus_series.rolling(period).mean() / tr_series.rolling(period).mean())
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(period).mean()
+        dx_series = pd.Series(dx)
+        adx = dx_series.rolling(period).mean()
 
         return adx.values
 
@@ -877,7 +883,7 @@ class KeltnerChannelsGenerator(FeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Keltner Channels middle line (EMA) based on the specified base calculation."""
-        if self.base_calculator.base_calculation == BaseCalculationType.PRICE_LEVELS:
+        if self.base_calculator.config.calculation_type == BaseCalculationType.PRICE_LEVELS:
             # Traditional Keltner Channels calculation on price levels
             close = data['close']
             high = data['high']

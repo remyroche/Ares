@@ -61,11 +61,65 @@ def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[F
     """Create a set of oscillator feature generators."""
     if periods is None:
         periods = {
-            'stochastic': [14],
-            'williams': [14]
+            'cci': [20],
+            'adx': [14],
+            'aroon': [25],
+            'ultimate': [14],
+            'kst': [10, 15, 20, 30],
+            'apo': [12, 26],
+            'cmo': [14],
+            'natr': [14],
+            'pfe': [12],
+            't3': [14],
+            'kama': [30]
         }
     
     generators = []
+    
+    # CCI generators
+    for period in periods.get('cci', [20]):
+        generators.append(CCIGenerator(period=period))
+    
+    # ADX generators
+    for period in periods.get('adx', [14]):
+        generators.append(ADXGenerator(period=period))
+    
+    # Aroon generators
+    for period in periods.get('aroon', [25]):
+        generators.append(AroonGenerator(period=period))
+    
+    # Ultimate Oscillator generators
+    for period in periods.get('ultimate', [14]):
+        generators.append(UltimateOscillatorGenerator(period=period))
+    
+    # KST generators
+    for period in periods.get('kst', [10]):
+        generators.append(KSTGenerator(period=period))
+    
+    # APO generators
+    for period in periods.get('apo', [12]):
+        generators.append(APOGenerator(period=period))
+    
+    # CMO generators
+    for period in periods.get('cmo', [14]):
+        generators.append(CMOGenerator(period=period))
+    
+    # NATR generators
+    for period in periods.get('natr', [14]):
+        generators.append(NATRGenerator(period=period))
+    
+    # PFE generators
+    for period in periods.get('pfe', [12]):
+        generators.append(PFEGenerator(period=period))
+    
+    # T3 generators
+    for period in periods.get('t3', [14]):
+        generators.append(T3Generator(period=period))
+    
+    # KAMA generators
+    for period in periods.get('kama', [30]):
+        generators.append(KAMAGenerator(period=period))
+    
     return generators
 
 def create_default_oscillator_generators() -> List[FeatureGenerator]:
@@ -90,8 +144,11 @@ class CCIGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -161,8 +218,11 @@ class ADXGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -219,6 +279,9 @@ class ADXGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # For other base calculations, use rolling standard deviation as proxy
+            # Convert to pandas Series if it's a numpy array
+            if isinstance(base_values, np.ndarray):
+                base_values = pd.Series(base_values, index=data.index)
             adx = base_values.rolling(window=self.period).std()
             
             return adx
@@ -242,8 +305,11 @@ class AroonGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -314,8 +380,11 @@ class SARGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -389,8 +458,11 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -482,8 +554,11 @@ class KSTGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -570,8 +645,11 @@ class APOGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -628,8 +706,11 @@ class CMOGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -690,8 +771,11 @@ class NATRGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -759,8 +843,11 @@ class PFEGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -820,8 +907,11 @@ class T3Generator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
@@ -878,8 +968,11 @@ class KAMAGenerator(VectorizedFeatureGenerator):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        # Create base calculator - map period to lookback_period for base calculator
+        base_kwargs_copy = base_kwargs.copy()
+        if 'period' in base_kwargs_copy:
+            base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
         
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()

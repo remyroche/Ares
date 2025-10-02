@@ -436,14 +436,14 @@ class FeatureEngineeringPipeline:
             # Generate features using all generators for this category
             for generator in generators:
                 try:
-                    self.logger.info(f"🔍 Generating features with generator: {generator.name}")
+                    self.logger.info(f"🔍 Generating features with generator: {generator.config.name}")
                     self.logger.info(f"🔍 Data shape: {data.shape}, columns: {list(data.columns)}")
                     result = generator.generate(data)
-                    self.logger.info(f"🔍 Generator {generator.name} result type: {type(result)}")
+                    self.logger.info(f"🔍 Generator {generator.config.name} result type: {type(result)}")
                     if result:
-                        self.logger.info(f"🔍 Generator {generator.name} result has features: {hasattr(result, 'features')}")
+                        self.logger.info(f"🔍 Generator {generator.config.name} result has features: {hasattr(result, 'features')}")
                         if hasattr(result, 'features'):
-                            self.logger.info(f"🔍 Generator {generator.name} features shape: {result.features.shape if not result.features.empty else 'empty'}")
+                            self.logger.info(f"🔍 Generator {generator.config.name} features shape: {result.features.shape if not result.features.empty else 'empty'}")
                     if result and hasattr(result, 'features') and not result.features.empty:
                         # Add features with category prefix to avoid naming conflicts
                         category_features = result.features.copy()
@@ -451,11 +451,11 @@ class FeatureEngineeringPipeline:
                         features = pd.concat([features, category_features], axis=1)
                         self.logger.info(f"✅ Generated {len(category_features.columns)} {category.value} features")
                     else:
-                        self.logger.warning(f"⚠️ Generator {generator.name} returned empty result")
+                        self.logger.warning(f"⚠️ Generator {generator.config.name} returned empty result")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Generator {generator.name} failed for {category}: {e}")
+                    self.logger.warning(f"⚠️ Generator {generator.config.name} failed for {category}: {e}")
                     import traceback
-                    self.logger.warning(f"⚠️ Generator {generator.name} traceback: {traceback.format_exc()}")
+                    self.logger.warning(f"⚠️ Generator {generator.config.name} traceback: {traceback.format_exc()}")
                     continue
             
             return features

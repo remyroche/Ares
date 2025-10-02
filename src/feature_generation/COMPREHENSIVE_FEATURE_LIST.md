@@ -203,7 +203,7 @@ volume_ratio = VolumeRatioGenerator(period=20)
 
 # Generate and store features
 for generator in [rsi, macd, stoch, sma_vwap, ema_vwap, volume_ma, volume_ratio]:
-    features[generator.name] = generator.generate(data)
+    features[generator.config.name] = generator.generate(data)
 
 # Store in feature bank
 bank.add_features("enhanced_features", features)

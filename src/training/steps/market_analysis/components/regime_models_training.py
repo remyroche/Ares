@@ -667,9 +667,10 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 feature_config.feature_categories = ['regime_volatility', 'regime_volume', 'regime_structural_trend', 'regime_statistical']
                 
                 # Generate regime-focused features
-                X = prepare_market_features(data, feature_config, verbose=True)
-                if X is None:
+                feature_frame, _ = prepare_market_features(data, feature_config, verbose=True)
+                if feature_frame is None or feature_frame.empty:
                     raise ValueError("Failed to create regime-focused features")
+                X = feature_frame.to_numpy()
                 
                 feature_names = [f'regime_feature_{i}' for i in range(X.shape[1])]
                 tprint(f"📊 [REGIME_MODELS] Created regime-focused features: {X.shape}", color="blue")

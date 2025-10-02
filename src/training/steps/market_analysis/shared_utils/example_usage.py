@@ -86,15 +86,18 @@ def demonstrate_feature_preparation():
     )
     
     # Prepare features using shared utilities
-    features = prepare_market_features(market_data, feature_config, verbose=True)
-    
-    if features is not None:
-        log_success(f"Features prepared successfully: {features.shape}")
-        log_info(f"Feature statistics: mean={np.mean(features):.4f}, std={np.std(features):.4f}")
+    feature_frame, _ = prepare_market_features(market_data, feature_config, verbose=True)
+
+    if feature_frame is not None:
+        log_success(f"Features prepared successfully: {feature_frame.shape}")
+        log_info(
+            f"Feature statistics: mean={feature_frame.to_numpy().mean():.4f}, "
+            f"std={feature_frame.to_numpy().std():.4f}"
+        )
     else:
         log_error("Feature preparation failed")
-    
-    return features
+
+    return feature_frame
 
 
 @log_execution('Example', 'Configuration Validation Demo', verbose=True)

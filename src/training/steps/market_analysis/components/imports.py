@@ -265,7 +265,13 @@ except ImportError as e:
         def __init__(self, verbose: bool = False): pass
     
     def prepare_market_features(data, config, verbose=False):
-        return np.random.randn(len(data), 10)
+        frame = pd.DataFrame(np.random.randn(len(data), 10))
+        metadata = {
+            'columns': {col: {} for col in frame.columns},
+            'filters': {},
+            'dropped_columns': {},
+        }
+        return frame, metadata
     
     def create_regime_characteristics(data, labels, verbose=False):
         return {}

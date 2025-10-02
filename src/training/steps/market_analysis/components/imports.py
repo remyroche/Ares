@@ -85,7 +85,8 @@ except ImportError as e:
     # Fallback functions
     def validate_finite(data: Any, name: str = "data") -> Any:
         if isinstance(data, np.ndarray):
-            if not np.all(np.isfinite(data)):
+            finite_mask = np.isfinite(data)
+            if not finite_mask.all():
                 raise ValueError(f"Non-finite values found in {name}")
         return data
     

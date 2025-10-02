@@ -352,7 +352,8 @@ class EnhancedClusteringIntegration:
                 return False
             
             # Check for NaN or infinite values
-            if not np.all(np.isfinite(features)):
+            finite_mask = np.isfinite(features)
+            if not finite_mask.all():
                 return False
             
             # Check metadata

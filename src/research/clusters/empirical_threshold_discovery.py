@@ -394,7 +394,9 @@ class EmpiricalThresholdDiscovery:
                 X = pd.concat([X, cluster_features], axis=1)
             
             # Remove NaN and infinite values
-            valid_mask = np.isfinite(y) & np.all(np.isfinite(X), axis=1)
+            x_finite = np.isfinite(X)
+            y_finite = np.isfinite(y)
+            valid_mask = y_finite & x_finite.all(axis=1)
             X = X[valid_mask]
             y = y[valid_mask]
             

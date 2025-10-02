@@ -31,20 +31,27 @@ class InitialClusteringStep:
         """Execute initial clustering step."""
         try:
             tprint("Step 2: Starting initial clustering setup...", "INFO")
-            
+            tprint(f"🔍 DEBUG: Context features shape: {context.optimized_features.shape}", "DEBUG")
+
             # Extract TAS and NAS regime assignments
+            tprint("🔍 DEBUG: About to extract regime assignments", "DEBUG")
             tas_assignments, nas_assignments = await self._extract_regime_assignments(context, config)
+            tprint(f"✅ DEBUG: Regime assignments extracted - TAS: {len(tas_assignments)}, NAS: {len(nas_assignments)}", "DEBUG")
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
             
             # Initialize basic clustering with optimal K
+            tprint("🔍 DEBUG: About to determine optimal K", "DEBUG")
             optimal_k = await self._determine_optimal_k(context, config)
+            tprint(f"✅ DEBUG: Optimal K determined: {optimal_k}", "DEBUG")
             context.optimal_k = optimal_k
-            
+
             # Perform initial clustering
+            tprint("🔍 DEBUG: About to perform initial clustering", "DEBUG")
             initial_assignments = await self._perform_initial_clustering(
                 context.optimized_features, optimal_k
             )
+            tprint(f"✅ DEBUG: Initial clustering completed - assignments shape: {initial_assignments.shape}", "DEBUG")
             context.initial_assignments = initial_assignments
             
             tprint("Step 2: Initial clustering completed successfully", "SUCCESS")
@@ -100,9 +107,20 @@ class InitialClusteringStep:
                     tprint(f"BIC calculation failed for k={k}: {e}", "WARNING")
                     bic_scores.append(float('inf'))
             
-            if bic_scores and not all(np.isinf(bic_scores)):
-                optimal_k = k_range[np.argmin(bic_scores)]
-                tprint(f"BIC-selected optimal K: {optimal_k}", "SUCCESS")
+            # More robust BIC score validation
+            if bic_scores and len(bic_scores) > 0:
+                try:
+                    # Check if all scores are finite and not all infinite
+                    finite_scores = [score for score in bic_scores if np.isfinite(score)]
+                    if finite_scores:
+                        optimal_k = k_range[np.argmin(bic_scores)]
+                        tprint(f"BIC-selected optimal K: {optimal_k}", "SUCCESS")
+                    else:
+                        optimal_k = default_k
+                        tprint(f"Using default optimal K: {optimal_k}", "INFO")
+                except (ValueError, TypeError):
+                    optimal_k = default_k
+                    tprint(f"Using default optimal K due to BIC validation error: {optimal_k}", "INFO")
             else:
                 optimal_k = default_k
                 tprint(f"Using default optimal K: {optimal_k}", "INFO")

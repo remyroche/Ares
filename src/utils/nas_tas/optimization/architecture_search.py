@@ -245,7 +245,7 @@ class ArchitectureSearchOptimizer:
         tprint_debug("✅ BayesianEntryTimingOptimizer initialized")
         self.grid_optimizer = GridSearchOptimizer()
         tprint_debug("✅ GridSearchOptimizer initialized")
-        self.hpo_utils = HPOUtils()
+        self.hpo_utils = HPOUtils
         tprint_debug("✅ HPOUtils initialized")
         self.hierarchical_hpo = HierarchicalHPO()
         tprint_debug("✅ HierarchicalHPO initialized")

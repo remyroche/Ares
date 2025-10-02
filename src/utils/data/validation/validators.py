@@ -19,10 +19,41 @@ except ImportError:
         """Fallback DataValidator implementation."""
         def __init__(self, logger=None):
             self.logger = logger or logging.getLogger(__name__)
-        
+
         def validate_dataframe(self, data, validation_level="comprehensive"):
             """Basic validation fallback."""
             return {"valid": True, "issues": [], "warnings": []}
+
+        def validate_input_data(self, data, labels=None):
+            """Validate input data for ML processing."""
+            result = {
+                'is_valid': True,
+                'warnings': [],
+                'errors': []
+            }
+
+            if data is None:
+                result['is_valid'] = False
+                result['errors'].append("Data is None")
+                return result
+
+            # Check for empty data
+            if hasattr(data, 'shape') and data.shape[0] == 0:
+                result['is_valid'] = False
+                result['errors'].append("Data is empty")
+                return result
+
+            # Check minimum samples
+            if hasattr(data, 'shape') and data.shape[0] < 10:
+                result['warnings'].append(f"Low number of samples: {data.shape[0]}")
+
+            # Check for NaN values
+            if hasattr(data, 'isna'):
+                nan_count = data.isna().sum().sum()
+                if nan_count > 0:
+                    result['warnings'].append(f"Found {nan_count} NaN values")
+
+            return result
 
 @dataclass
 class DataLineage:

@@ -621,15 +621,25 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 return None, None, None
             tprint(f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names}", color="blue")
 
-            # Check for NaN or infinite values in features
+            # Check for NaN or infinite values in features with detailed analysis
             nan_count = np.isnan(X).sum()
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
+                # Import the detailed NaN analysis function
+                from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
+                
+                # Perform detailed NaN analysis
+                nan_analysis = analyze_nan_values_detailed(X, feature_names)
+                detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_ENSEMBLE] ")
+                
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Found {nan_count} NaN values in features", color="yellow")
+                tprint(detailed_report, color="yellow")
+                tprint("🔧 [REGIME_ENSEMBLE] Using sophisticated NaN handling for time series data", color="cyan")
                 # Use sophisticated NaN handling for time series data
                 X = self._handle_nan_values(X, nan_count)
             if inf_count > 0:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Found {inf_count} infinite values in features", color="yellow")
+                tprint("🔧 [REGIME_ENSEMBLE] Replacing infinite values with finite numbers", color="cyan")
                 X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
 
             # Align with regime labels

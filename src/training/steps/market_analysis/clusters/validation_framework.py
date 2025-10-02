@@ -21,6 +21,12 @@ import warnings
 
 from .iterative_optimization import IterativeOptimization, ClusteringStats
 from .step1_feature_preparation import ClusteringContext
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_structured,
+    tprint_timer, tprint_logged, LogLevel, TimestampFormat
+)
+
 from ..shared_utils import get_logger
 
 
@@ -98,14 +104,17 @@ class ClusteringValidator:
         self.hash_history: List[str] = []
         self.moved_points: Set[int] = set()
         self.move_rounds: Dict[int, int] = {}
+
+        tprint("🚀 Clustering Validator initialized", "INFO")
         
     def validate_incremental_correctness(
-        self, 
-        features: np.ndarray, 
+        self,
+        features: np.ndarray,
         stats: ClusteringStats,
         sample_size: int = None
     ) -> bool:
         """Validate that incremental updates match full recomputation."""
+        tprint(f"🔍 Validating incremental correctness with sample size: {sample_size}", "DEBUG")
         if sample_size is None:
             sample_size = min(self.config.sample_moves_for_validation, len(features))
         
@@ -273,8 +282,9 @@ class ClusteringValidator:
         
         return test_cases
     
-    def run_synthetic_validation(self) -> Dict[str, ValidationResults]:
+    async def run_synthetic_validation(self) -> Dict[str, ValidationResults]:
         """Run validation on synthetic test cases."""
+        tprint("🧪 Starting synthetic validation test suite", "INFO")
         test_cases = self.create_synthetic_test_suite()
         results = {}
         
@@ -299,9 +309,9 @@ class ClusteringValidator:
         
         return results
     
-    def run_optimization_with_validation(
-        self, 
-        context: ClusteringContext, 
+    async def run_optimization_with_validation(
+        self,
+        context: ClusteringContext,
         stats: ClusteringStats
     ) -> ValidationResults:
         """Run optimization with comprehensive validation."""
@@ -420,9 +430,9 @@ class ClusteringValidator:
         # Cluster size statistics
         cluster_sizes = stats.cluster_sizes[stats.cluster_sizes > 0]
         size_stats = {
-            'min': np.min(cluster_sizes),
-            'median': np.median(cluster_sizes),
-            'p95': np.percentile(cluster_sizes, 95)
+            'min': int(np.min(cluster_sizes)) if len(cluster_sizes) > 0 else 0,
+            'median': float(np.median(cluster_sizes)) if len(cluster_sizes) > 0 else 0.0,
+            'p95': float(np.percentile(cluster_sizes, 95)) if len(cluster_sizes) > 0 else 0.0
         }
         
         # Log summary

@@ -225,8 +225,20 @@ class M1MemoryOptimizer:
         if not PANDAS_AVAILABLE:
             self.logger.warning("Pandas not available, returning DataFrame as-is")
             return df
-            
-        if df is None or df.empty:
+
+        if df is None:
+            return df
+
+        # Check if it's a pandas DataFrame
+        if hasattr(df, 'empty'):
+            # It's a pandas DataFrame
+            if df.empty:
+                return df
+        else:
+            # It's likely a numpy array or other object
+            # For numpy arrays, we can't optimize them the same way as DataFrames
+            # but we can still return them as-is
+            self.logger.debug("Non-DataFrame object passed to optimize_dataframe_memory, returning as-is")
             return df
 
         try:

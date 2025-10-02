@@ -46,7 +46,23 @@ from functools import partial
 import gc
 from sklearn.model_selection import cross_validate, cross_val_predict
 from sklearn.metrics import make_scorer
+from sklearn.ensemble import (
+    StackingClassifier, VotingClassifier, BaggingClassifier, AdaBoostClassifier,
+    StackingRegressor, VotingRegressor, BaggingRegressor, AdaBoostRegressor
+)
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 import joblib
+
+# Optional torch imports for MPS/GPU acceleration
+try:
+    import torch
+    from torch.cuda.amp import GradScaler, autocast
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    GradScaler = None
+    autocast = None
+    TORCH_AVAILABLE = False
 
 # Import existing utilities
 from src.utils.logger import system_logger
@@ -67,6 +83,7 @@ from src.utils.ml_common.models.model_factory import EnhancedModelFactory
 from src.utils.ml_common.models.model_registry import ModelRegistry
 
 # Import hardware optimizations
+HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
@@ -1525,8 +1542,9 @@ class VectorizedTrainingManager:
         self.logger.info(f"🎯 Training with gradient accumulation (steps={accumulation_steps})")
 
         try:
-            import torch
-            from torch.cuda.amp import GradScaler
+            if not TORCH_AVAILABLE:
+                self.logger.warning("⚠️ Gradient accumulation requires PyTorch")
+                return {'success': False, 'error': 'PyTorch not available'}
 
             # Check if model is PyTorch
             is_pytorch = hasattr(model, 'parameters') and hasattr(model, 'to')
@@ -1536,7 +1554,7 @@ class VectorizedTrainingManager:
                 return {'success': False, 'error': 'PyTorch model required'}
 
             # Enable automatic mixed precision if available
-            scaler = GradScaler() if torch.cuda.is_available() or torch.backends.mps.is_available() else None
+            scaler = GradScaler() if (torch.cuda.is_available() or torch.backends.mps.is_available()) else None
 
             best_loss = float('inf')
             patience_counter = 0
@@ -1556,7 +1574,7 @@ class VectorizedTrainingManager:
 
                     # Forward pass
                     if scaler:
-                        with torch.cuda.amp.autocast():
+                        with autocast():
                             outputs = model(batch_X)
                             loss = criterion(outputs, batch_y) / accumulation_steps
                     else:
@@ -1584,9 +1602,9 @@ class VectorizedTrainingManager:
                     batch_count += 1
 
                     # Memory cleanup
-                    if hasattr(torch.cuda, 'empty_cache'):
+                    if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                    elif hasattr(torch, 'mps') and torch.backends.mps.is_available():
+                    elif torch.backends.mps.is_available():
                         torch.mps.empty_cache()
 
                 # Calculate average epoch loss
@@ -1832,6 +1850,10 @@ class VectorizedTrainingManager:
                 self.logger.warning("⚠️ Mixed precision training requires PyTorch models")
                 return {'success': False, 'error': 'PyTorch model required'}
 
+            if not TORCH_AVAILABLE:
+                self.logger.warning("⚠️ Mixed precision training requires PyTorch")
+                return {'success': False, 'error': 'PyTorch not available'}
+
             # Check for MPS or CUDA availability
             has_mps = torch.backends.mps.is_available()
             has_cuda = torch.cuda.is_available()
@@ -1865,9 +1887,10 @@ class VectorizedTrainingManager:
                     batch_X, batch_y = batch_X.to(device), batch_y.to(device)
 
                     # Mixed precision forward pass
-                    with autocast():
-                        outputs = model(batch_X)
-                        loss = criterion(outputs, batch_y) / accumulation_steps
+                    if autocast:
+                        with autocast():
+                            outputs = model(batch_X)
+                            loss = criterion(outputs, batch_y) / accumulation_steps
 
                     # Scale loss for gradient accumulation
                     scaler.scale(loss).backward()
@@ -1876,7 +1899,8 @@ class VectorizedTrainingManager:
                     if (step + 1) % accumulation_steps == 0:
                         # Gradient clipping
                         scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
+                        if torch is not None:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
 
                         # Optimizer step with scaler
                         scaler.step(optimizer)
@@ -1887,9 +1911,9 @@ class VectorizedTrainingManager:
                     batch_count += 1
 
                     # Memory cleanup for MPS
-                    if has_mps:
+                    if has_mps and torch is not None:
                         torch.mps.empty_cache()
-                    elif has_cuda:
+                    elif has_cuda and torch is not None:
                         torch.cuda.empty_cache()
 
                 # Calculate epoch metrics

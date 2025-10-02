@@ -18,6 +18,22 @@ from collections import defaultdict
 import pickle
 import re
 
+# Mac M1 Hardware Optimizations
+HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel,
+        HardwareConfig
+    )
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+    tprint("⚠️ Mac M1 hardware optimizations not available", "WARNING")
+
 from src.utils.tprint import (
     tprint,
     tprint_debug,
@@ -30,6 +46,9 @@ from src.utils.tprint import (
     tprint_timer,
     tprint_structured,
 )
+
+# Import ComponentResult for the wrapper compatibility
+from ..components.base_component import ComponentResult
 
 from ..shared_utils import (
     # Features
@@ -176,6 +195,42 @@ class NASTASClusteringComponent:
                 "cv_folds": 0
             }
             
+            # Initialize Mac M1 hardware optimizations
+            self.hardware_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            
+            if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+                try:
+                    # Initialize hardware manager with conservative settings for light mode
+                    hardware_config = HardwareConfig(
+                        memory_limit_gb=4.0,  # Conservative memory limit for light mode
+                        cpu_optimization_level=OptimizationLevel.BALANCED,
+                        memory_optimization_level=OptimizationLevel.AGGRESSIVE,
+                        enable_adaptive_optimization=True,
+                        monitoring_interval=10.0,
+                        alert_thresholds={
+                            'cpu_usage': 75.0,
+                            'memory_usage': 80.0,
+                            'gpu_usage': 70.0,
+                            'temperature': 80.0
+                        }
+                    )
+                    
+                    self.hardware_manager = get_unified_hardware_manager(hardware_config, conservative_mode=True)
+                    self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=4.0)
+                    self.cpu_optimizer = get_m1_cpu_optimizer()
+                    
+                    # Set conservative mode for CPU optimizer
+                    self.cpu_optimizer.set_conservative_mode()
+                    
+                    tprint_success("🧠 Mac M1 hardware optimizations initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to initialize hardware optimizations: {e}")
+                    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+            else:
+                tprint_warning("⚠️ Hardware optimizations not available")
+            
             tprint_success("🔍 Refactored NAS-TAS Clustering Component initialized")
     
     def _log(self, message: str, level: str = "INFO") -> None:
@@ -263,7 +318,15 @@ class NASTASClusteringComponent:
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
             market_data = await self._load_market_data(data)
-            if market_data is None or market_data.empty:
+            # More robust empty check for market_data
+            market_is_empty = False
+            if market_data is not None:
+                try:
+                    market_is_empty = len(market_data) == 0 or market_data.empty
+                except (AttributeError, ValueError):
+                    market_is_empty = len(market_data) == 0
+
+            if market_data is None or market_is_empty:
                 tprint("No market data available for clustering", "ERROR")
                 raise ValueError("No market data available for clustering")
 
@@ -274,7 +337,7 @@ class NASTASClusteringComponent:
 
             # Step 4.5: Perform PID-based feature selection for regime discovery
             tprint("Step 4.5: Performing intelligent feature selection for regime discovery", "INFO")
-            tprint(f"🔍 DEBUG: Before feature selection - feature_result shape: {feature_result.features_array.shape}", "INFO")
+            tprint(f"🔍 DEBUG: Before feature selection - feature_result shape: {feature_result.features.shape}", "INFO")
             features, feature_names, selection_metadata = self._select_regime_features(
                 feature_result=feature_result,
                 market_data=market_data,
@@ -405,15 +468,68 @@ class NASTASClusteringComponent:
         try:
             tprint("Starting NAS-TAS Clustering (Refactored)", "INFO")
             
+            # Initialize hardware optimizations for this run
+            if self.hardware_manager:
+                try:
+                    self.hardware_manager.optimize_for_workload(
+                        WorkloadType.ML_TRAINING, 
+                        OptimizationLevel.BALANCED
+                    )
+                    tprint("🧠 Hardware optimized for ML training workload", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Hardware optimization failed: {e}", "WARNING")
+            
+            # Start memory monitoring
+            if self.memory_optimizer:
+                try:
+                    self.memory_optimizer.start_monitoring()
+                    tprint("🧠 Memory monitoring started", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Memory monitoring failed: {e}", "WARNING")
+            
+            # Optimize market data for memory efficiency
+            if self.memory_optimizer and hasattr(market_data, 'memory_usage'):
+                try:
+                    market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
+                    tprint("🧠 Market data memory optimized", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Data optimization failed: {e}", "WARNING")
+            
             # Prepare features using shared utilities
             feature_result = await self._prepare_features(market_data)
             features = feature_result.features
             
-            # Perform clustering
+            # Optimize features for memory efficiency
+            if self.memory_optimizer and hasattr(features, 'dtype'):
+                try:
+                    # Convert to more memory-efficient types if possible
+                    if features.dtype == np.float64:
+                        features = features.astype(np.float32)
+                        tprint("🧠 Features converted to float32 for memory efficiency", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Feature optimization failed: {e}", "WARNING")
+            
+            # Perform clustering with memory checkpoints
             clustering_result = await self._perform_clustering(features, market_data)
             
             # Create consolidated artifacts
             artifacts = await self._create_consolidated_artifacts(clustering_result, market_data)
+            
+            # Final memory cleanup
+            if self.memory_optimizer:
+                try:
+                    self.memory_optimizer.force_garbage_collection()
+                    tprint("🧠 Final memory cleanup completed", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Final cleanup failed: {e}", "WARNING")
+            
+            # Stop memory monitoring
+            if self.memory_optimizer:
+                try:
+                    self.memory_optimizer.stop_monitoring()
+                    tprint("🧠 Memory monitoring stopped", "INFO")
+                except Exception as e:
+                    tprint(f"⚠️ Memory monitoring stop failed: {e}", "WARNING")
             
             # Return results
             return {
@@ -526,7 +642,16 @@ class NASTASClusteringComponent:
         """Load and validate market data for clustering."""
         try:
             tprint("Loading market data...", "INFO")
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            # More robust empty check for DataFrame
+            is_empty = False
+            if isinstance(data, pd.DataFrame):
+                try:
+                    is_empty = len(data) == 0 or data.empty
+                except (AttributeError, ValueError):
+                    # Fallback: check if DataFrame has no rows
+                    is_empty = len(data) == 0
+
+            if data is None or is_empty:
                 tprint("No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
@@ -568,11 +693,29 @@ class NASTASClusteringComponent:
             # Prepare features using shared utilities
             feature_result = prepare_market_features(
                 market_data=market_data,
-                config=feature_config
+                feature_config=feature_config
             )
-            
-            tprint(f"Prepared {feature_result.features.shape[1]} features", "SUCCESS")
-            return feature_result
+
+            # Handle both FeaturePreparationResult object and direct numpy array return
+            if hasattr(feature_result, 'features'):
+                # FeaturePreparationResult object
+                features_array = feature_result.features
+                tprint(f"Prepared {features_array.shape[1]} features", "SUCCESS")
+                return feature_result
+            else:
+                # Direct numpy array return
+                features_array = feature_result
+                tprint(f"Prepared {features_array.shape[1]} features", "SUCCESS")
+
+                # Create a FeaturePreparationResult-like object for consistency
+                return FeaturePreparationResult(
+                    features=features_array,
+                    feature_names=[f'feature_{i}' for i in range(features_array.shape[1])],
+                    feature_scores={},
+                    dropped_features=[],
+                    preparation_time=0.0,
+                    metadata={'prepared_directly': True, 'total_features': features_array.shape[1]}
+                )
             
         except Exception as e:
             tprint(f"Feature preparation failed: {e}", "ERROR")
@@ -595,7 +738,12 @@ class NASTASClusteringComponent:
             tprint(f"Performing intelligent feature selection for regime discovery (target: {target_n_features})", "INFO")
             
             features = feature_result.features_array
-            feature_names = feature_result.feature_names
+            # Generate feature names if not available
+            if hasattr(feature_result, 'feature_names') and feature_result.feature_names is not None:
+                feature_names = feature_result.feature_names
+            else:
+                # Generate placeholder feature names based on count
+                feature_names = [f'feature_{i}' for i in range(features.shape[1])]
             
             if features.shape[1] <= target_n_features:
                 tprint(f"Feature count ({features.shape[1]}) <= target ({target_n_features}), no selection needed", "INFO")
@@ -623,8 +771,16 @@ class NASTASClusteringComponent:
         except Exception as e:
             tprint(f"Feature selection failed: {e}", "ERROR")
             # Fallback to original features
-            return feature_result.features_array, feature_result.feature_names, {
-                'selected_n_features': feature_result.features_array.shape[1],
+            features = feature_result.features_array
+            # Generate feature names if not available
+            if hasattr(feature_result, 'feature_names') and feature_result.feature_names is not None:
+                feature_names = feature_result.feature_names
+            else:
+                # Generate placeholder feature names based on count
+                feature_names = [f'feature_{i}' for i in range(features.shape[1])]
+
+            return features, feature_names, {
+                'selected_n_features': features.shape[1],
                 'selection_method': 'fallback',
                 'error': str(e)
             }
@@ -1574,11 +1730,20 @@ class NASTASClusteringComponent:
         try:
             if features.shape[0] == 0 or features.shape[1] == 0:
                 raise ValueError("Features array is empty after processing")
-            
-            if not np.isfinite(features).all():
+
+            # More robust finite value checking
+            try:
+                is_finite = np.isfinite(features)
+                # Explicitly handle boolean array to avoid ambiguous truth value error
+                has_non_finite = not is_finite.all()
+            except (ValueError, TypeError):
+                # If isfinite fails, assume there are non-finite values
+                has_non_finite = True
+
+            if has_non_finite:
                 tprint("Non-finite values detected in features. Attempting to handle.", "WARNING")
                 features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             return features
         except Exception as e:
             tprint(f"Feature quality validation failed: {e}", "ERROR")

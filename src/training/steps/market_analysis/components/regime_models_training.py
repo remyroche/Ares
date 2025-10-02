@@ -261,15 +261,86 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             artifacts = pipeline_state.get('artifacts', {})
             tprint(f"📋 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="blue")
             
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            tprint(f"🔍 [REGIME_MODELS] NAS-TAS clustering result keys: {list(nas_tas_clustering_result.keys())}", color="blue")
+            # Look for regime labels in nas_tas_regime_discovery_result artifact
+            nas_tas_regime_discovery_result = artifacts.get('nas_tas_regime_discovery_result', {})
+            tprint(f"🔍 [REGIME_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="blue")
             
-            regime_labels = nas_tas_clustering_result.get('cluster_assignments')
+            # Try to get regime labels from TAS assignments first, then NAS assignments as fallback
+            regime_labels = nas_tas_regime_discovery_result.get('tas_assignments')
+            if regime_labels is None:
+                regime_labels = nas_tas_regime_discovery_result.get('nas_assignments')
+                tprint("🔍 [REGIME_MODELS] Using NAS assignments as regime labels", color="blue")
+            else:
+                tprint("🔍 [REGIME_MODELS] Using TAS assignments as regime labels", color="blue")
+
+            # If still no regime labels, try alternative artifact structures
+            if regime_labels is None:
+                tprint("🔍 [REGIME_MODELS] Trying alternative artifact structures...", color="yellow")
+                
+                # Try direct access to artifacts
+                if 'tas_assignments' in artifacts:
+                    regime_labels = artifacts['tas_assignments']
+                    tprint("🔍 [REGIME_MODELS] Found TAS assignments in direct artifacts", color="blue")
+                elif 'nas_assignments' in artifacts:
+                    regime_labels = artifacts['nas_assignments']
+                    tprint("🔍 [REGIME_MODELS] Found NAS assignments in direct artifacts", color="blue")
+                
+                # Try other possible artifact keys
+                for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
+                    if key in artifacts:
+                        regime_labels = artifacts[key]
+                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in {key}", color="blue")
+                        break
+                
+                # Try nested structures
+                if regime_labels is None:
+                    for artifact_key, artifact_value in artifacts.items():
+                        if isinstance(artifact_value, dict):
+                            if 'tas_assignments' in artifact_value:
+                                regime_labels = artifact_value['tas_assignments']
+                                tprint(f"🔍 [REGIME_MODELS] Found TAS assignments in {artifact_key}", color="blue")
+                                break
+                            elif 'nas_assignments' in artifact_value:
+                                regime_labels = artifact_value['nas_assignments']
+                                tprint(f"🔍 [REGIME_MODELS] Found NAS assignments in {artifact_key}", color="blue")
+                                break
+                            elif 'assignments' in artifact_value:
+                                regime_labels = artifact_value['assignments']
+                                tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
+                                break
+                
+                # Try extracting from optimal_regime_clustering_result clustering_result object
+                if regime_labels is None:
+                    optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
+                    if optimal_clustering_result:
+                        tprint("🔍 [REGIME_MODELS] Found optimal_regime_clustering_result, extracting from clustering_result object", color="blue")
+                        clustering_result = optimal_clustering_result.get('clustering_result')
+                        if clustering_result is not None:
+                            # Try to get assignments from the clustering result object
+                            if hasattr(clustering_result, 'current_results') and clustering_result.current_results:
+                                current_results = clustering_result.current_results
+                                # Try different possible keys for assignments
+                                for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
+                                    if assignment_key in current_results:
+                                        regime_labels = current_results[assignment_key]
+                                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.current_results.{assignment_key}", color="blue")
+                                        break
+                                
+                                # If still not found, try to get from context
+                                if regime_labels is None and hasattr(clustering_result, 'context'):
+                                    context = clustering_result.context
+                                    if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
+                                        regime_labels = context.optimized_assignments
+                                        tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.optimized_assignments", color="blue")
+                                    elif hasattr(context, 'initial_assignments') and context.initial_assignments is not None:
+                                        regime_labels = context.initial_assignments
+                                        tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.initial_assignments", color="blue")
 
             if regime_labels is None:
-                error_msg = "No regime labels found in pipeline state artifacts"
+                error_msg = "No regime labels found in any artifact structure"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 tprint(f"🔍 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="yellow")
+                tprint(f"🔍 [REGIME_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="yellow")
                 self.logger.error(f"Missing regime labels. Available artifacts: {list(artifacts.keys())}")
                 return ComponentResult(
                     success=False,
@@ -298,7 +369,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Step 3: Prepare training data
             tprint("🔍 [REGIME_MODELS] Step 3: Preparing training data", color="cyan")
             data_prep_start = time.time()
-            X, y, feature_selection_info = self._prepare_training_data(data, regime_labels, pipeline_state)
+            X, y, feature_selection_info, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
             self._log_performance_metrics("Data preparation", data_prep_start)
             self._monitor_memory_usage("After data preparation")
             if X is None or y is None:
@@ -312,7 +383,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 )
             
             # Validate prepared training data
-            if not self._validate_training_data(X, y):
+            if not self._validate_training_data(X, y, feature_names):
                 error_msg = "Training data validation failed"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 self.logger.error("Training data validation failed")
@@ -565,7 +636,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_MODELS] Regime labels validation error: {e}", color="red")
             return False
     
-    def _validate_training_data(self, X: np.ndarray, y: np.ndarray) -> bool:
+    def _validate_training_data(self, X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> bool:
         """Validate prepared training data."""
         tprint("🔍 [REGIME_MODELS] Validating training data", color="cyan")
         
@@ -580,11 +651,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ [REGIME_MODELS] Insufficient features: {X.shape[1]} < 2", color="red")
                 return False
             
-            # Check for NaN or infinite values
+            # Check for NaN or infinite values with detailed analysis
             nan_count = np.isnan(X).sum()
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
+                # Import the detailed NaN analysis function
+                from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
+                
+                # Perform detailed NaN analysis
+                nan_analysis = analyze_nan_values_detailed(X, feature_names)
+                detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_MODELS] ")
+                
                 tprint(f"❌ [REGIME_MODELS] Found {nan_count} NaN values in features", color="red")
+                tprint(detailed_report, color="red")
                 return False
             if inf_count > 0:
                 tprint(f"❌ [REGIME_MODELS] Found {inf_count} infinite values in features", color="red")
@@ -646,7 +725,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         data: pd.DataFrame,
         regime_labels: np.ndarray,
         pipeline_state: Dict[str, Any] = None
-    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], Optional[List[str]]]:
         """Prepare training data from market data and regime labels."""
         tprint("🔧 [REGIME_MODELS] Preparing training data", color="cyan")
         self.logger.info("Starting data preparation process")
@@ -676,7 +755,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 data_for_features = data
             
             if FEATURE_GENERATION_AVAILABLE:
-                X = self._generate_features_with_bank(data_for_features)
+                X, feature_names = self._generate_features_with_bank(data_for_features)
                 if X is None or X.shape[1] < 50:
                     error_msg = f"Feature bank generated insufficient features: {X.shape[1] if X is not None else 0} < 50 required"
                     tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
@@ -684,21 +763,32 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     return None, None, {}
                 else:
                     tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} comprehensive features", color="green")
-                    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+                    if feature_names is None:
+                        feature_names = [f'feature_{i}' for i in range(X.shape[1])]
             else:
                 error_msg = "Feature generation system not available - cannot generate comprehensive features"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 self.logger.error(error_msg)
                 return None, None, {}
             
-            # Check for NaN or infinite values in features
+            # Check for NaN or infinite values in features with detailed analysis
             nan_count = np.isnan(X).sum()
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
+                # Import the detailed NaN analysis function
+                from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
+                
+                # Perform detailed NaN analysis
+                nan_analysis = analyze_nan_values_detailed(X, feature_names)
+                detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_MODELS] ")
+                
                 tprint(f"⚠️ [REGIME_MODELS] Found {nan_count} NaN values in features", color="yellow")
+                tprint(detailed_report, color="yellow")
+                tprint("🔧 [REGIME_MODELS] Filling NaN values with 0.0", color="cyan")
                 X = np.nan_to_num(X, nan=0.0)
             if inf_count > 0:
                 tprint(f"⚠️ [REGIME_MODELS] Found {inf_count} infinite values in features", color="yellow")
+                tprint("🔧 [REGIME_MODELS] Replacing infinite values with finite numbers", color="cyan")
                 X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
             
             # Align with regime labels
@@ -706,6 +796,25 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             min_length = min(len(X), len(regime_labels))
             X = X[:min_length]
             y = np.array(regime_labels[:min_length])
+            
+            # Early validation: Check class distribution before proceeding
+            unique_classes, class_counts = np.unique(y, return_counts=True)
+            min_class_count = np.min(class_counts)
+            class_distribution = dict(zip(unique_classes, class_counts))
+            
+            tprint(f"📊 [REGIME_MODELS] Regime class distribution: {class_distribution}", color="blue")
+            
+            if min_class_count < 2:
+                error_msg = f"🚨 CRITICAL: Insufficient regime class samples detected early!"
+                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
+                tprint(f"❌ [REGIME_MODELS] 🚨 Class distribution: {class_distribution}", color="red")
+                tprint(f"❌ [REGIME_MODELS] 🚨 Minimum class count: {min_class_count} (required: 2+)", color="red")
+                tprint("❌ [REGIME_MODELS] 🚨 Fast fail: Cannot proceed with insufficient regime data", color="red")
+                tprint("❌ [REGIME_MODELS] 💡 Recommendation: Check regime clustering and labeling process", color="red")
+                
+                raise ValueError(f"Early validation failed: Insufficient regime class samples. Distribution: {class_distribution}. Minimum required: 2 samples per class.")
+            
+            tprint(f"✅ [REGIME_MODELS] Early validation passed: All regime classes have sufficient samples", color="green")
             
             # Perform model-driven feature selection
             feature_selection_info = self._run_feature_selection(X, y, feature_names)
@@ -737,7 +846,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green", bold=True)
 
             self.logger.info(f"Training data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
-            return X, y, feature_selection_info
+            return X, y, feature_selection_info, feature_names
 
         except Exception as e:
             error_type = type(e).__name__
@@ -747,14 +856,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
             return None, None, {}
     
-    def _generate_features_with_bank(self, data: pd.DataFrame) -> Optional[np.ndarray]:
+    def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Generate comprehensive features using the existing feature bank."""
         tprint("🔧 [REGIME_MODELS] Generating features using feature bank", color="cyan", bold=True)
         
         try:
             if not FEATURE_GENERATION_AVAILABLE:
                 tprint("❌ [REGIME_MODELS] Feature generation system not available", color="red")
-                return None
+                return None, None
             
             # Get feature bank
             feature_bank = get_feature_bank()
@@ -813,17 +922,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Convert to numpy array
             if not all_features.empty:
                 X = all_features.values
+                feature_names = list(all_features.columns)
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
-                return X
+                return X, feature_names
             else:
                 tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")
-                return None
+                return None, None
                 
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Error generating features with feature bank: {e}", color="red")
             self.logger.error(f"Error generating features with feature bank: {str(e)}", exc_info=True)
-            return None
+            return None, None
     
     def _train_regime_models(
         self,
@@ -850,9 +960,27 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 )
             tprint(f"📊 [REGIME_MODELS] Target classes: {np.unique(y)} (count: {len(np.unique(y))})", color="blue")
             
-            # Step 1: Split data
-            tprint("🔧 [REGIME_MODELS] Step 1: Splitting data into train/test sets", color="cyan")
+            # Step 1: Validate class distribution before splitting
+            tprint("🔧 [REGIME_MODELS] Step 1: Validating class distribution for training", color="cyan")
             split_start = time.time()
+            
+            # Check class distribution for stratified splitting
+            unique_classes, class_counts = np.unique(y, return_counts=True)
+            min_class_count = np.min(class_counts)
+            class_distribution = dict(zip(unique_classes, class_counts))
+            
+            if min_class_count < 2:
+                error_msg = f"🚨 CRITICAL: Insufficient samples for stratified training! Minimum class count: {min_class_count}"
+                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
+                tprint(f"❌ [REGIME_MODELS] 🚨 Class distribution: {class_distribution}", color="red")
+                tprint("❌ [REGIME_MODELS] 🚨 Fast fail: Cannot proceed with model training", color="red")
+                tprint("❌ [REGIME_MODELS] 💡 Recommendation: Ensure all regime classes have at least 2 samples", color="red")
+                
+                raise ValueError(f"Insufficient class samples for stratified training. Class distribution: {class_distribution}. Minimum required: 2 samples per class.")
+            
+            # Proceed with stratified split when validation passes
+            tprint(f"✅ [REGIME_MODELS] Class distribution validation passed: {class_distribution}", color="green")
+            tprint("🔧 [REGIME_MODELS] Proceeding with stratified train/test split", color="cyan")
             
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=self.model_config['test_size'], 

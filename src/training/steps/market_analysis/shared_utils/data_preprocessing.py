@@ -115,8 +115,9 @@ def validate_ml_data(data_array: np.ndarray, name: str = "data") -> np.ndarray:
             raise ValueError(f"{name} contains non-numeric data types")
         
         # Check for finite values
-        if not np.all(np.isfinite(data_array)):
-            non_finite_count = np.sum(~np.isfinite(data_array))
+        finite_mask = np.isfinite(data_array)
+        if not finite_mask.all():
+            non_finite_count = np.sum(~finite_mask)
             logger.warning(f"{name} contains {non_finite_count} non-finite values")
             
             # Replace non-finite values with 0

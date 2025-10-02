@@ -91,7 +91,8 @@ class BaseClusteringAlgorithm(ABC):
         """Preprocess features for clustering."""
         try:
             # Validate features
-            if not np.all(np.isfinite(features)):
+            finite_mask = np.isfinite(features)
+            if not finite_mask.all():
                 tprint_warning("Non-finite values found in features, cleaning...")
                 features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
             

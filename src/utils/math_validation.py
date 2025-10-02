@@ -47,8 +47,11 @@ def validate_finite(value: Any, name: str = "value") -> Any:
         if isinstance(value, np.ndarray):
             if value.size == 0:
                 raise ValueError(f"{name} cannot be empty")
-            if not np.all(np.isfinite(value)):
-                non_finite_count = np.sum(~np.isfinite(value))
+            # Check for non-finite values using explicit boolean array handling
+            finite_mask = np.isfinite(value)
+            has_non_finite = not finite_mask.all()
+            if has_non_finite:
+                non_finite_count = np.sum(~finite_mask)
                 raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
             return value
 
@@ -59,7 +62,8 @@ def validate_finite(value: Any, name: str = "value") -> Any:
         elif hasattr(value, '__len__') and len(value) > 1:
             # Multi-element array - convert to numpy array for validation
             val_array = np.array(value)
-            if not np.all(np.isfinite(val_array)):
+            finite_mask = np.isfinite(val_array)
+            if not finite_mask.all():
                 raise ValueError(f"{name} contains non-finite values")
             return val_array
         else:
@@ -100,8 +104,9 @@ def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray
         raise ValueError(f"{name} cannot be empty")
     
     # Check for non-finite values
-    if not np.all(np.isfinite(array)):
-        non_finite_count = np.sum(~np.isfinite(array))
+    finite_mask = np.isfinite(array)
+    if not finite_mask.all():
+        non_finite_count = np.sum(~finite_mask)
         raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
     
     # Check if array contains numeric data

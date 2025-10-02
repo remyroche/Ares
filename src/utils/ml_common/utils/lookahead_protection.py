@@ -1666,6 +1666,70 @@ class LookaheadProtection:
         except Exception:
             return []
 
+    def check_lookahead_bias(self, data: pd.DataFrame, labels: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Check for lookahead bias in the data.
+        
+        Args:
+            data: DataFrame containing features
+            labels: Optional labels/targets to check against
+            
+        Returns:
+            Dictionary with bias detection results
+        """
+        try:
+            self.logger.info("🔍 Checking for lookahead bias...")
+            
+            # Use the existing detect_and_prevent_leakage method
+            if labels is not None and 'target' not in data.columns:
+                # Add labels as target column if not present
+                data_with_target = data.copy()
+                data_with_target['target'] = labels
+            else:
+                data_with_target = data
+            
+            # Perform bias detection
+            bias_results = self.detect_data_leakage(
+                features_df=data_with_target,
+                target_df=data_with_target,
+                timestamp_col='timestamp' if 'timestamp' in data_with_target.columns else None,
+                feature_cols=[col for col in data_with_target.columns if col not in ['timestamp', 'target', 'label']]
+            )
+            
+            # Convert to expected format - ensure bias_results is a dictionary
+            if not isinstance(bias_results, dict):
+                self.logger.warning(f"⚠️ bias_results is not a dictionary: {type(bias_results)}")
+                # Handle case where bias_results is not a dictionary
+                result = {
+                    'bias_detected': True,  # Assume bias on unexpected format
+                    'bias_score': 1.0,
+                    'issues': [f"Unexpected bias_results format: {type(bias_results)}"],
+                    'warnings': [f"Bias detection returned unexpected format: {type(bias_results)}"],
+                    'recommendations': ["Review bias detection implementation"]
+                }
+            else:
+                result = {
+                    'bias_detected': bias_results.get('leakage_detected', False),
+                    'bias_score': len(bias_results.get('issues', [])) / max(len(data), 1),
+                    'issues': bias_results.get('issues', []),
+                    'warnings': bias_results.get('warnings', []),
+                    'recommendations': bias_results.get('recommendations', [])
+                }
+            
+            self.logger.info(f"✅ Lookahead bias check completed - {'Bias detected' if result['bias_detected'] else 'No bias detected'}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Lookahead bias check failed: {e}")
+            return {
+                'bias_detected': True,  # Assume bias on error
+                'bias_score': 1.0,
+                'issues': [f"Bias check failed: {str(e)}"],
+                'warnings': [f"Error in bias detection: {str(e)}"],
+                'recommendations': ["Review data format and try again"],
+                'error': str(e)
+            }
+
     async def detect_and_prevent_leakage(self, data: pd.DataFrame, 
                                        symbol: Optional[str] = None,
                                        exchange: Optional[str] = None,
@@ -1715,19 +1779,35 @@ class LookaheadProtection:
                 feature_cols=feature_cols
             )
             
-            # Convert to expected format
-            result = {
-                'has_leakage': leakage_results.get('leakage_detected', False),
-                'leakage_details': leakage_results.get('issues', []),
-                'warnings': leakage_results.get('warnings', []),
-                'recommendations': leakage_results.get('recommendations', []),
-                'feature_analysis': leakage_results.get('feature_analysis', {}),
-                'temporal_analysis': leakage_results.get('temporal_analysis', {}),
-                'symbol': symbol,
-                'exchange': exchange,
-                'context': context,
-                'timestamp': self.current_timestamp
-            }
+            # Convert to expected format - ensure leakage_results is a dictionary
+            if not isinstance(leakage_results, dict):
+                self.logger.warning(f"⚠️ leakage_results is not a dictionary: {type(leakage_results)}")
+                # Handle case where leakage_results is not a dictionary
+                result = {
+                    'has_leakage': True,  # Assume leakage on unexpected format
+                    'leakage_details': [f"Unexpected leakage_results format: {type(leakage_results)}"],
+                    'warnings': [f"Leakage detection returned unexpected format: {type(leakage_results)}"],
+                    'recommendations': ["Review leakage detection implementation"],
+                    'feature_analysis': {},
+                    'temporal_analysis': {},
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'context': context,
+                    'timestamp': self.current_timestamp
+                }
+            else:
+                result = {
+                    'has_leakage': leakage_results.get('leakage_detected', False),
+                    'leakage_details': leakage_results.get('issues', []),
+                    'warnings': leakage_results.get('warnings', []),
+                    'recommendations': leakage_results.get('recommendations', []),
+                    'feature_analysis': leakage_results.get('feature_analysis', {}),
+                    'temporal_analysis': leakage_results.get('temporal_analysis', {}),
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'context': context,
+                    'timestamp': self.current_timestamp
+                }
             
             # Log results
             if result['has_leakage']:

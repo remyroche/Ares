@@ -36,6 +36,7 @@ from src.utils.math_validation import (
 )
 
 # Hardware optimization imports
+HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
@@ -45,6 +46,7 @@ except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 
 # Advanced feature selection imports
+FEATURE_SELECTION_AVAILABLE = False
 try:
     from src.utils.feature_selection.step08_unified_final import (
         Step08Unified, FinancialMetrics, RiskMetrics, RegimeBalanceMetrics,
@@ -55,12 +57,39 @@ try:
     )
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError:
+    # Create dummy classes for fallback
+    class Step08Unified:
+        pass
+    class FinancialMetrics:
+        pass
+    class RiskMetrics:
+        pass
+    class RegimeBalanceMetrics:
+        pass
+    class FeatureSelectionValidation:
+        pass
+    class Step08Results:
+        pass
+    class Step08AdvancedFeatureSelection:
+        pass
     FEATURE_SELECTION_AVAILABLE = False
 
 # Data quality and processing utilities
 try:
-    from src.utils.data_validation import DataFrameValidator, DataFrameCleaner, DataFrameTransformer
+    from src.utils.data import DataFrameValidator, DataFrameCleaner, DataFrameTransformer
     from src.utils.parquet_utils import ParquetUtils
+    DATA_VALIDATION_AVAILABLE = True
+except ImportError:
+    # Create dummy classes for fallback
+    class DataFrameValidator:
+        pass
+    class DataFrameCleaner:
+        pass
+    class DataFrameTransformer:
+        pass
+    class ParquetUtils:
+        pass
+    DATA_VALIDATION_AVAILABLE = False
     from src.utils.serialization_utils import JSONSerializer, ParquetSerializer
     from src.utils.caching import IntelligentCache
     UTILITIES_AVAILABLE = True

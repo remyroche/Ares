@@ -183,7 +183,8 @@ class MemoryManager:
             # Standard optimization
             if array.dtype == np.float64:
                 # Try to convert to float32 if precision allows
-                if np.all(np.isfinite(array)) and np.max(np.abs(array)) < 3.4e38:
+                finite_mask = np.isfinite(array)
+                if finite_mask.all() and np.max(np.abs(array)) < 3.4e38:
                     return array.astype(np.float32)
             
             return array

@@ -402,6 +402,130 @@ class MetricsCalculator:
             if self.verbose:
                 tprint_error(f"❌ [METRICS] Comprehensive metrics calculation failed: {e}")
             raise ValueError(f"Comprehensive metrics calculation failed: {e}")
+    
+    def calculate_all_metrics(
+        self,
+        features: Union[np.ndarray, Any],
+        assignments: Union[np.ndarray, List[int]],
+        market_data: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate all available metrics for clustering evaluation.
+        
+        Args:
+            features: Feature matrix (can be numpy array or DataFrame)
+            assignments: Cluster assignments
+            market_data: Optional market data for additional metrics
+            
+        Returns:
+            Dictionary containing all calculated metrics
+        """
+        if self.verbose:
+            tprint("📊 [METRICS] Calculating comprehensive clustering metrics", color="blue")
+        
+        try:
+            # Convert inputs to appropriate formats
+            if isinstance(assignments, np.ndarray):
+                assignments_list = assignments.tolist()
+            else:
+                assignments_list = list(assignments)
+            
+            # Initialize results
+            all_metrics = {
+                'clustering_metrics': {},
+                'economic_scores': [],
+                'trading_scores': [],
+                'stability_scores': [],
+                'feature_metrics': {}
+            }
+            
+            # Calculate economic scores if market data available
+            if market_data is not None:
+                try:
+                    economic_scores = self.calculate_economic_scores(assignments_list, market_data)
+                    all_metrics['economic_scores'] = economic_scores
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"⚠️ [METRICS] Economic scores calculation failed: {e}")
+            
+            # Calculate trading scores
+            try:
+                trading_scores = self.calculate_trading_scores(assignments_list, market_data)
+                all_metrics['trading_scores'] = trading_scores
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"⚠️ [METRICS] Trading scores calculation failed: {e}")
+            
+            # Calculate stability scores
+            try:
+                stability_scores = self.calculate_stability_scores(assignments_list, market_data)
+                all_metrics['stability_scores'] = stability_scores
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"⚠️ [METRICS] Stability scores calculation failed: {e}")
+            
+            # Calculate basic clustering metrics if features available
+            if features is not None:
+                try:
+                    # Handle both numpy arrays and DataFrames
+                    if isinstance(features, np.ndarray):
+                        feature_array = features
+                    elif hasattr(features, 'values'):
+                        feature_array = features.values
+                    else:
+                        feature_array = np.array(features)
+                    
+                    if feature_array.size > 0 and len(assignments_list) > 0:
+                        # Basic clustering metrics
+                        from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+                        
+                        if len(np.unique(assignments_list)) > 1:  # Need at least 2 clusters
+                            try:
+                                silhouette = silhouette_score(feature_array, assignments_list)
+                                all_metrics['clustering_metrics']['silhouette_score'] = silhouette
+                            except Exception:
+                                pass
+                            
+                            try:
+                                davies_bouldin = davies_bouldin_score(feature_array, assignments_list)
+                                all_metrics['clustering_metrics']['davies_bouldin_score'] = davies_bouldin
+                            except Exception:
+                                pass
+                            
+                            try:
+                                calinski_harabasz = calinski_harabasz_score(feature_array, assignments_list)
+                                all_metrics['clustering_metrics']['calinski_harabasz_score'] = calinski_harabasz
+                            except Exception:
+                                pass
+                        
+                        # Feature statistics
+                        all_metrics['feature_metrics'] = {
+                            'n_features': feature_array.shape[1] if len(feature_array.shape) > 1 else 1,
+                            'n_samples': feature_array.shape[0],
+                            'feature_mean': np.mean(feature_array, axis=0).tolist() if feature_array.size > 0 else [],
+                            'feature_std': np.std(feature_array, axis=0).tolist() if feature_array.size > 0 else []
+                        }
+                        
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"⚠️ [METRICS] Feature metrics calculation failed: {e}")
+            
+            # Add assignment statistics
+            all_metrics['assignment_metrics'] = {
+                'n_clusters': len(set(assignments_list)),
+                'cluster_sizes': [assignments_list.count(i) for i in set(assignments_list)],
+                'total_assignments': len(assignments_list)
+            }
+            
+            if self.verbose:
+                tprint("✅ [METRICS] All metrics calculation completed", color="green")
+            
+            return all_metrics
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ [METRICS] All metrics calculation failed: {e}")
+            return {'error': str(e)}
 
 
 # Convenience functions for backward compatibility

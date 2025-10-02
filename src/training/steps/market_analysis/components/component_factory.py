@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import glob
 import pickle
-from typing import Dict, Type, Any, Optional
+from typing import Dict, Type, Any, Optional, List
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .sr_parameter_optimization import SRParameterOptimizationComponent
@@ -18,7 +18,7 @@ from .sr_clustering import SRClusteringComponent
 from .nas_regime_discovery import NASRegimeDiscoveryComponent
 from .tas_regime_discovery import TASRegimeDiscoveryComponent
 from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
-from .nas_tas_clustering import NASTASClusteringComponent
+# from .nas_tas_clustering import NASTASClusteringComponent  # DEPRECATED - using new clustering pipeline
 # from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
@@ -38,6 +38,66 @@ try:
     PID_COMPONENT_AVAILABLE = True
 except ImportError:
     PID_COMPONENT_AVAILABLE = False
+
+# Import the new clustering component from clustering directory
+try:
+    from ..clustering.main_component import NASTASClusteringComponent as NewNASTASClusteringComponent
+    NEW_CLUSTERING_AVAILABLE = True
+except ImportError:
+    NEW_CLUSTERING_AVAILABLE = False
+    NewNASTASClusteringComponent = None
+
+
+class NewNASTASClusteringWrapper(BaseMarketAnalysisComponent):
+    """
+    Wrapper for the new refactored clustering component to adapt it to the expected interface.
+    """
+
+    def __init__(self, config: Optional[ComponentConfig] = None):
+        super().__init__(config)
+        self.new_component = None
+
+    def get_required_artifacts(self) -> List[str]:
+        """Get list of required artifacts for this component."""
+        return ["market_data", "features"]
+
+    async def execute(self, data, pipeline_state: Dict[str, Any]) -> ComponentResult:
+        """Execute the new clustering component."""
+        try:
+            # Import and initialize the new component
+            if self.new_component is None:
+                if not NEW_CLUSTERING_AVAILABLE:
+                    raise ImportError("New clustering component not available")
+                self.new_component = NewNASTASClusteringComponent()
+
+            # The new component uses fit() method instead of execute()
+            # Execute the new component using fit method
+            clustering_result = await self.new_component.fit(data, None, pipeline_state)
+
+            # Create artifacts in the expected format
+            artifacts = {
+                'optimal_regime_clustering_result': {
+                    'clustering_result': clustering_result,
+                    'component_type': 'NASTASClusteringComponent',
+                    'execution_mode': 'new_structure',
+                    'timestamp': pd.Timestamp.now().isoformat()
+                }
+            }
+
+            # Return ComponentResult
+            return ComponentResult(
+                success=True,
+                artifacts=artifacts,
+                metadata={'component_type': 'new_nas_tas_clustering', 'execution_mode': 'clustering_directory'}
+            )
+
+        except Exception as e:
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=str(e),
+                metadata={'component_type': 'new_nas_tas_clustering'}
+            )
 
 
 class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
@@ -631,7 +691,7 @@ class ComponentFactory:
         'nas_regime_discovery': NASRegimeDiscoveryComponent,
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
         'nas_tas_regime_discovery': NASTASRegimeDiscoveryComponent,
-        'nas_tas_clustering': NASTASClusteringComponent,  # NAS-TAS combined clustering
+        'nas_tas_clustering': NewNASTASClusteringWrapper if NEW_CLUSTERING_AVAILABLE else None,  # Use new clustering pipeline if available
         'nas_tas_models_training': RegimeModelsTrainingComponent,  # NAS-TAS models training
         'nas_tas_ensemble_training': RegimeEnsembleTrainingComponent,  # NAS-TAS ensemble training
         'nas_ensemble_training': NASEnsembleTrainingComponent,  # Simplified NAS ensemble training
@@ -707,9 +767,15 @@ class ComponentFactory:
                 f"Unknown component: {component_name}. "
                 f"Available components: {available_components}"
             )
-        
+
         tprint(f"🔧 [COMPONENT_FACTORY] Creating {component_name} from registered components", color="yellow")
         component_class = self._components[component_name]
+
+        # Handle None component classes
+        if component_class is None:
+            tprint(f"❌ [COMPONENT_FACTORY] Component {component_name} is not available", color="red")
+            raise ValueError(f"Component {component_name} is not available. Required dependencies may be missing.")
+
         component = component_class(config)
         tprint(f"✅ [COMPONENT_FACTORY] Successfully created {component_name}", color="green")
         return component

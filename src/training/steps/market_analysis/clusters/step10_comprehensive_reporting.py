@@ -24,6 +24,12 @@ import seaborn as sns
 from pathlib import Path
 import json
 
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_structured,
+    tprint_timer, tprint_logged, LogLevel, TimestampFormat
+)
+
 from ..shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
@@ -84,13 +90,15 @@ class ComprehensiveReporter:
         """Initialize the comprehensive reporter."""
         self.verbose = verbose
         self.logger = get_logger('ComprehensiveReporter')
-        
+
         # Set up plotting style
         plt.style.use('seaborn-v0_8')
         # sns.set_palette("husl")  # This function doesn't exist in newer seaborn versions
+
+        tprint("📊 Comprehensive Reporter initialized", "INFO")
         
     def generate_comprehensive_report(
-        self, 
+        self,
         context: ClusteringContext,
         clustering_result: Dict[str, Any],
         market_data: pd.DataFrame,
@@ -99,8 +107,9 @@ class ComprehensiveReporter:
     ) -> ComprehensiveReport:
         """Generate comprehensive clustering report."""
         try:
+            tprint("📊 Generating comprehensive clustering report...", "INFO")
             self.logger.info("📊 Generating comprehensive clustering report...")
-            
+
             # Extract basic information
             assignments = clustering_result.get('cluster_assignments', [])
             n_clusters = len(np.unique(assignments))
@@ -150,6 +159,7 @@ class ComprehensiveReporter:
                 timestamp=datetime.now().isoformat()
             )
             
+            tprint("✅ Comprehensive report generated successfully", "SUCCESS")
             self.logger.info("✅ Comprehensive report generated successfully")
             return report
             

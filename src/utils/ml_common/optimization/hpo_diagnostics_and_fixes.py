@@ -34,6 +34,9 @@ try:
 except ImportError as e:
     DATA_LEAKAGE_UTILS_AVAILABLE = False
     logging.warning(f"ML Common utilities not fully available: {e}")
+except Exception as e:
+    DATA_LEAKAGE_UTILS_AVAILABLE = False
+    logging.warning(f"Error importing ML Common utilities: {e}")
 
 logger = logging.getLogger(__name__)
 

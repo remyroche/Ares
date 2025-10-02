@@ -107,12 +107,9 @@ try:
     
     # Legacy imports for backward compatibility
     from .feature_selection_backwards_compat import FeatureSelector, FeatureSelectionConfig
-    # Avoid importing HMMRegimeDetector at package import to prevent circulars; callers should import directly
-    try:
-        from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
-    except Exception:
-        HMMRegimeDetector = None  # type: ignore
-        RegimeConfig = None  # type: ignore
+    # HMM regime detection module - needs to be implemented
+    HMM_REGIME_DETECTION_AVAILABLE = False
+    # HMMRegimeDetector and RegimeConfig classes would be imported here when available
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
     # Defer matrix operations to avoid circular import at init
     try:

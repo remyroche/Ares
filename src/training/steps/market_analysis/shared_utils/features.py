@@ -49,6 +49,7 @@ class FeatureConfig:
     min_persistence: Optional[float] = None
     max_noise_ratio: Optional[float] = None
     min_stability: Optional[float] = None
+    min_feature_importance: Optional[float] = None
     
     # Data validation
     handle_missing_values: bool = True

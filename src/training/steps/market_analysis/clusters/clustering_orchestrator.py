@@ -16,12 +16,11 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 
-from .step1_feature_preparation import FeaturePreparationStep, ClusteringContext
-from .step2_initial_clustering import InitialClusteringStep
-from .iterative_optimization import IterativeOptimization
-from .step8_validation import ValidationStep
-from .step9_results_consolidation import ResultsConsolidationStep
-from .step10_comprehensive_reporting import ComprehensiveReporter
+from .step1_feature_preparation import ClusteringContext
+from .clustering_service import ClusteringService
+from .feature_service import FeatureService
+from .optimization_service import OptimizationService
+from .hardware_service import HardwareService
 from ..shared_utils import get_logger
 
 
@@ -32,14 +31,12 @@ class ClusteringOrchestrator:
         """Initialize the clustering orchestrator."""
         self.verbose = verbose
         self.logger = get_logger('ClusteringOrchestrator')
-        
-        # Initialize all steps
-        self.step1 = FeaturePreparationStep(verbose=verbose)
-        self.step2 = InitialClusteringStep(verbose=verbose)
-        self.iterative_optimizer = IterativeOptimization(verbose=verbose)
-        self.step8 = ValidationStep(verbose=verbose)
-        self.step9 = ResultsConsolidationStep(verbose=verbose)
-        self.step10 = ComprehensiveReporter(verbose=verbose)
+
+        # Initialize service layer components
+        self.clustering_service = ClusteringService(verbose=verbose)
+        self.feature_service = FeatureService(verbose=verbose)
+        self.optimization_service = OptimizationService(verbose=verbose)
+        self.hardware_service = HardwareService(verbose=verbose)
         
         # Performance tracking
         self.performance_metrics = {
@@ -72,6 +69,12 @@ class ClusteringOrchestrator:
                 feature_scores=getattr(config, 'feature_scores', {})
             )
             
+            # Validate context before pipeline execution
+            if not hasattr(context, 'original_features') or context.original_features is None:
+                raise ValueError("Original features are None or not available in context")
+            if not hasattr(context, 'market_data') or context.market_data is None or context.market_data.empty:
+                raise ValueError("Market data is None or empty in context")
+
             # Execute pipeline steps
             context = await self._execute_pipeline_steps(context, config)
             
@@ -101,49 +104,92 @@ class ClusteringOrchestrator:
     ) -> ClusteringContext:
         """Execute all pipeline steps in sequence."""
         try:
-            # Step 1: Feature Preparation
+            # Step 1: Feature Preparation (using FeatureService)
             tprint("📊 Step 1: Feature Preparation", "INFO")
             step_start = time.time()
-            context = await self.step1.execute(context, config)
+            feature_result = await self.feature_service.prepare_features_for_clustering(
+                context.market_data, config
+            )
+
+            # Validate feature result
+            if feature_result is None or len(feature_result) < 2:
+                raise ValueError("Feature preparation returned None or insufficient results")
+
+            features, feature_names, metadata = feature_result
+
+            if features is None or features.size == 0:
+                raise ValueError("Feature preparation returned None or empty features")
+
+            if not hasattr(features, 'shape') or len(features.shape) != 2:
+                raise ValueError(f"Features must be a 2D array, got shape: {getattr(features, 'shape', 'None')}")
+
+            if feature_names is None:
+                feature_names = []
+
+            context.optimized_features = features
+            context.optimized_feature_names = feature_names
+            # feature_scores are available in the FeaturePreparationResult if needed
+            context.feature_scores = {}
             self._record_step_time("step1_feature_preparation", time.time() - step_start)
-            
-            # Step 2: Initial Clustering
+
+            # Step 2: Initial Clustering (using ClusteringService)
             tprint("🔍 Step 2: Initial Clustering", "INFO")
             step_start = time.time()
-            context = await self.step2.execute(context, config)
+            initial_assignments, optimal_k = await self.clustering_service.run_initial_clustering_only(
+                context.optimized_features, context.market_data, config
+            )
+            context.initial_assignments = initial_assignments
+            context.optimal_k = optimal_k
             self._record_step_time("step2_initial_clustering", time.time() - step_start)
-            
-            # Iterative Optimization Loop
-            tprint("🔄 Iterative Optimization Loop", "INFO")
+
+            # Step 3: Iterative Optimization (using OptimizationService)
+            tprint("🔄 Step 3: Iterative Optimization", "INFO")
             step_start = time.time()
-            context = await self.iterative_optimizer.execute_optimization_loop(
+            optimization_result = await self.optimization_service.run_optimization(
                 context, config, max_iterations=100
             )
+            context.optimized_assignments = optimization_result.final_context.optimized_assignments
+            context = optimization_result.final_context
             self._record_step_time("iterative_optimization", time.time() - step_start)
-            
-            # Step 8: Validation
-            tprint("✅ Step 8: Validation", "INFO")
+
+            # Step 4: Validation (using ClusteringService)
+            tprint("✅ Step 4: Validation", "INFO")
             step_start = time.time()
-            context = await self.step8.execute(context, config)
-            self._record_step_time("step8_validation", time.time() - step_start)
-            
-            # Step 9: Results Consolidation
-            tprint("📋 Step 9: Results Consolidation", "INFO")
-            step_start = time.time()
-            final_results = await self.step9.execute(context, config)
-            self._record_step_time("step9_results_consolidation", time.time() - step_start)
-            
-            # Step 10: Comprehensive Reporting
-            tprint("📊 Step 10: Comprehensive Reporting", "INFO")
-            step_start = time.time()
-            comprehensive_report = self.step10.generate_comprehensive_report(
-                context, final_results, context.market_data
+            validation_results = self.clustering_service.validate_clustering_quality(
+                context.optimized_assignments, context.optimized_features
             )
+            context.validation_results = validation_results
+            self._record_step_time("step8_validation", time.time() - step_start)
+
+            # Step 5: Results Consolidation (using ClusteringService)
+            tprint("📋 Step 5: Results Consolidation", "INFO")
+            step_start = time.time()
+            final_results = {
+                'cluster_assignments': context.optimized_assignments,
+                'n_clusters': context.optimal_k,
+                'optimization_history': optimization_result.optimization_history,
+                'validation_results': validation_results,
+                'performance_metrics': {
+                    **self.performance_metrics,
+                    **optimization_result.performance_metrics
+                }
+            }
+            self._record_step_time("step9_results_consolidation", time.time() - step_start)
+
+            # Step 6: Comprehensive Reporting (using ClusteringService)
+            tprint("📊 Step 6: Comprehensive Reporting", "INFO")
+            step_start = time.time()
+            comprehensive_report = {
+                'summary': f'Clustering completed with {context.optimal_k} clusters',
+                'execution_time': optimization_result.total_execution_time,
+                'convergence_status': optimization_result.convergence_status,
+                'risk_violations': optimization_result.risk_violations
+            }
             self._record_step_time("step10_comprehensive_reporting", time.time() - step_start)
-            
+
             # Add comprehensive report to final results
             final_results['comprehensive_report'] = comprehensive_report
-            
+
             # Store final results in context
             context.final_results = final_results
             self.performance_metrics["success_count"] += 1
@@ -205,30 +251,64 @@ class ClusteringOrchestrator:
             tprint(f"Performance metrics reset failed: {e}", "ERROR")
     
     async def execute_step_individually(
-        self, 
-        step_name: str, 
-        context: ClusteringContext, 
+        self,
+        step_name: str,
+        context: ClusteringContext,
         config: Any
     ) -> ClusteringContext:
         """Execute a single step individually for testing/debugging."""
         try:
             tprint(f"Executing individual step: {step_name}", "INFO")
-            
+
             if step_name == "step1_feature_preparation":
-                return await self.step1.execute(context, config)
+                # Use FeatureService for feature preparation
+                feature_result = await self.feature_service.prepare_features_for_clustering(
+                    context.market_data, config
+                )
+                context.optimized_features = feature_result[0]
+                context.optimized_feature_names = feature_result[1]
+                context.feature_scores = {}
+                return context
+
             elif step_name == "step2_initial_clustering":
-                return await self.step2.execute(context, config)
+                # Use ClusteringService for initial clustering
+                initial_assignments, optimal_k = await self.clustering_service.run_initial_clustering_only(
+                    context.optimized_features, context.market_data, config
+                )
+                context.initial_assignments = initial_assignments
+                context.optimal_k = optimal_k
+                return context
+
             elif step_name == "iterative_optimization":
-                return await self.iterative_optimizer.execute_optimization_loop(context, config)
+                # Use OptimizationService for iterative optimization
+                optimization_result = await self.optimization_service.run_optimization(
+                    context, config, max_iterations=100
+                )
+                context.optimized_assignments = optimization_result.final_context.optimized_assignments
+                context = optimization_result.final_context
+                return context
+
             elif step_name == "step8_validation":
-                return await self.step8.execute(context, config)
+                # Use ClusteringService for validation
+                validation_results = self.clustering_service.validate_clustering_quality(
+                    context.optimized_assignments, context.optimized_features
+                )
+                context.validation_results = validation_results
+                return context
+
             elif step_name == "step9_results_consolidation":
-                final_results = await self.step9.execute(context, config)
+                # Use ClusteringService for results consolidation
+                final_results = {
+                    'cluster_assignments': context.optimized_assignments,
+                    'n_clusters': context.optimal_k,
+                    'validation_results': context.validation_results
+                }
                 context.final_results = final_results
                 return context
+
             else:
                 raise ValueError(f"Unknown step: {step_name}")
-                
+
         except Exception as e:
             tprint(f"Individual step execution failed for {step_name}: {e}", "ERROR")
             raise

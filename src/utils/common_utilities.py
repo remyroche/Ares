@@ -6,6 +6,7 @@ data validation, and common data processing utilities.
 """
 
 import logging
+import os
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Union, Callable
@@ -45,9 +46,195 @@ def safe_convert_dtypes(df: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.D
         logger.warning(f"Error converting dtypes: {e}")
         return df
 
-def calculate_data_quality_metrics(df: pd.DataFrame) -> Dict[str, Any]:
-    """Calculate data quality metrics for DataFrame."""
+def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Perform comprehensive analysis of NaN values in the dataset.
+    
+    Args:
+        data: DataFrame or numpy array to analyze
+        feature_names: Optional list of feature names for numpy arrays
+        
+    Returns:
+        Dictionary with detailed NaN analysis results
+    """
     try:
+        # Convert to DataFrame if numpy array
+        if isinstance(data, np.ndarray):
+            if feature_names is None:
+                feature_names = [f"feature_{i}" for i in range(data.shape[1])]
+            df = pd.DataFrame(data, columns=feature_names)
+        else:
+            df = data.copy()
+        
+        # Basic NaN statistics
+        total_cells = df.size
+        total_nans = df.isnull().sum().sum()
+        nan_percentage = (total_nans / total_cells) * 100
+        
+        # Feature-wise NaN analysis
+        feature_nan_counts = df.isnull().sum()
+        feature_nan_percentages = (feature_nan_counts / len(df)) * 100
+        
+        # Features with most NaN values
+        features_with_nans = feature_nan_counts[feature_nan_counts > 0].sort_values(ascending=False)
+        top_nan_features = features_with_nans.head(10).to_dict()
+        
+        # Row-wise NaN analysis
+        row_nan_counts = df.isnull().sum(axis=1)
+        rows_with_nans = (row_nan_counts > 0).sum()
+        rows_with_all_nans = (row_nan_counts == df.shape[1]).sum()
+        
+        # Rows with most NaN values
+        rows_with_most_nans = row_nan_counts[row_nan_counts > 0].sort_values(ascending=False)
+        top_nan_rows = rows_with_most_nans.head(10).to_dict()
+        
+        # Complete rows (no NaN values)
+        complete_rows = (row_nan_counts == 0).sum()
+        complete_row_percentage = (complete_rows / len(df)) * 100
+        
+        # Complete features (no NaN values)
+        complete_features = (feature_nan_counts == 0).sum()
+        complete_feature_percentage = (complete_features / df.shape[1]) * 100
+        
+        # NaN patterns analysis
+        nan_patterns = {}
+        for threshold in [0.1, 0.25, 0.5, 0.75, 0.9]:
+            features_above_threshold = (feature_nan_percentages >= threshold * 100).sum()
+            nan_patterns[f"features_with_{int(threshold*100)}%_or_more_nans"] = features_above_threshold
+        
+        # Correlation between NaN patterns
+        nan_matrix = df.isnull().astype(int)
+        if nan_matrix.shape[1] > 1:
+            nan_correlation = nan_matrix.corr()
+            # Find features with similar NaN patterns (high correlation)
+            similar_nan_patterns = []
+            for i in range(len(nan_correlation.columns)):
+                for j in range(i+1, len(nan_correlation.columns)):
+                    corr_val = nan_correlation.iloc[i, j]
+                    if corr_val > 0.7:  # High correlation threshold
+                        similar_nan_patterns.append({
+                            'feature1': nan_correlation.columns[i],
+                            'feature2': nan_correlation.columns[j],
+                            'correlation': corr_val
+                        })
+        else:
+            similar_nan_patterns = []
+        
+        return {
+            'total_cells': total_cells,
+            'total_nans': int(total_nans),
+            'nan_percentage': round(nan_percentage, 2),
+            'total_features': df.shape[1],
+            'total_rows': len(df),
+            'features_with_nans': int(features_with_nans.count()),
+            'rows_with_nans': int(rows_with_nans),
+            'rows_with_all_nans': int(rows_with_all_nans),
+            'complete_rows': int(complete_rows),
+            'complete_row_percentage': round(complete_row_percentage, 2),
+            'complete_features': int(complete_features),
+            'complete_feature_percentage': round(complete_feature_percentage, 2),
+            'top_nan_features': top_nan_features,
+            'top_nan_rows': top_nan_rows,
+            'nan_patterns': nan_patterns,
+            'similar_nan_patterns': similar_nan_patterns[:10],  # Top 10 similar patterns
+            'feature_nan_percentages': feature_nan_percentages.to_dict(),
+            'row_nan_counts': row_nan_counts.to_dict()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing NaN values: {e}")
+        return {
+            'error': str(e),
+            'total_nans': 0,
+            'nan_percentage': 0
+        }
+
+def format_nan_analysis_report(analysis_results: Dict[str, Any], prefix: str = "") -> str:
+    """
+    Format detailed NaN analysis results into a readable report.
+    
+    Args:
+        analysis_results: Results from analyze_nan_values_detailed
+        prefix: Optional prefix for log messages
+        
+    Returns:
+        Formatted report string
+    """
+    try:
+        if 'error' in analysis_results:
+            return f"{prefix}❌ Error in NaN analysis: {analysis_results['error']}"
+        
+        report_lines = []
+        report_lines.append(f"{prefix}📊 NaN Analysis Summary:")
+        report_lines.append(f"{prefix}  • Total cells: {analysis_results['total_cells']:,}")
+        report_lines.append(f"{prefix}  • Total NaN values: {analysis_results['total_nans']:,}")
+        report_lines.append(f"{prefix}  • NaN percentage: {analysis_results['nan_percentage']:.2f}%")
+        report_lines.append(f"{prefix}  • Dataset shape: {analysis_results['total_rows']} rows × {analysis_results['total_features']} features")
+        
+        report_lines.append(f"\n{prefix}📈 Row Analysis:")
+        report_lines.append(f"{prefix}  • Rows with NaN values: {analysis_results['rows_with_nans']:,} ({analysis_results['rows_with_nans']/analysis_results['total_rows']*100:.1f}%)")
+        report_lines.append(f"{prefix}  • Complete rows (no NaN): {analysis_results['complete_rows']:,} ({analysis_results['complete_row_percentage']:.1f}%)")
+        report_lines.append(f"{prefix}  • Rows with all NaN values: {analysis_results['rows_with_all_nans']:,}")
+        
+        report_lines.append(f"\n{prefix}🔍 Feature Analysis:")
+        report_lines.append(f"{prefix}  • Features with NaN values: {analysis_results['features_with_nans']:,} ({analysis_results['features_with_nans']/analysis_results['total_features']*100:.1f}%)")
+        report_lines.append(f"{prefix}  • Complete features (no NaN): {analysis_results['complete_features']:,} ({analysis_results['complete_feature_percentage']:.1f}%)")
+        
+        # Top problematic features
+        if analysis_results['top_nan_features']:
+            report_lines.append(f"\n{prefix}⚠️ Top Features with Most NaN Values:")
+            for feature, count in list(analysis_results['top_nan_features'].items())[:5]:
+                percentage = (count / analysis_results['total_rows']) * 100
+                report_lines.append(f"{prefix}  • {feature}: {count:,} NaN values ({percentage:.1f}%)")
+        
+        # Top problematic rows
+        if analysis_results['top_nan_rows']:
+            report_lines.append(f"\n{prefix}⚠️ Rows with Most NaN Values:")
+            for row_idx, count in list(analysis_results['top_nan_rows'].items())[:5]:
+                percentage = (count / analysis_results['total_features']) * 100
+                report_lines.append(f"{prefix}  • Row {row_idx}: {count:,} NaN values ({percentage:.1f}%)")
+        
+        # NaN patterns
+        if analysis_results['nan_patterns']:
+            report_lines.append(f"\n{prefix}📊 NaN Distribution Patterns:")
+            for pattern, count in analysis_results['nan_patterns'].items():
+                if count > 0:
+                    report_lines.append(f"{prefix}  • {pattern}: {count} features")
+        
+        # Similar NaN patterns
+        if analysis_results['similar_nan_patterns']:
+            report_lines.append(f"\n{prefix}🔗 Features with Similar NaN Patterns:")
+            for pattern in analysis_results['similar_nan_patterns'][:3]:
+                report_lines.append(f"{prefix}  • {pattern['feature1']} ↔ {pattern['feature2']}: {pattern['correlation']:.3f} correlation")
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        logger.error(f"Error formatting NaN analysis report: {e}")
+        return f"{prefix}❌ Error formatting NaN analysis report: {e}"
+
+def calculate_data_quality_metrics(df: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+    """Calculate data quality metrics for DataFrame or numpy array."""
+    try:
+        # Convert numpy array to DataFrame if needed
+        if isinstance(df, np.ndarray):
+            # If it's a 2D array, assume first row contains column names or create generic names
+            if df.ndim == 2:
+                if df.shape[1] <= 50:  # Reasonable number of features
+                    # Try to infer column names from the array
+                    df = pd.DataFrame(df)
+                else:
+                    logger.warning("Large numpy array detected, using generic column names")
+                    df = pd.DataFrame(df)
+            else:
+                logger.error("1D numpy array not supported for data quality metrics")
+                return {'error': '1D numpy array not supported'}
+
+        # Ensure we have a DataFrame at this point
+        if not isinstance(df, pd.DataFrame):
+            logger.error(f"Unsupported data type: {type(df)}")
+            return {'error': f'Unsupported data type: {type(df)}'}
+
         metrics = {
             'total_rows': len(df),
             'total_columns': len(df.columns),

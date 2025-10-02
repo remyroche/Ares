@@ -357,11 +357,21 @@ class QualityMetricsCalculator:
                 from .selection_methods import preprocess_features_for_ml
                 X_processed = preprocess_features_for_ml(X_selected, "quality_metrics_cross_validation")
 
-                # Additional NaN handling
+                # Additional NaN handling with detailed analysis
                 nan_mask = np.isnan(X_processed)
                 if np.any(nan_mask):
                     nan_count = np.sum(nan_mask)
+                    
+                    # Import the detailed NaN analysis function
+                    from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
+                    
+                    # Perform detailed NaN analysis
+                    nan_analysis = analyze_nan_values_detailed(X_processed)
+                    detailed_report = format_nan_analysis_report(nan_analysis, "[QUALITY_METRICS] ")
+                    
                     _LOGGER.warning(f"⚠️ Found {nan_count} NaN values in features after preprocessing, filling with column means")
+                    _LOGGER.warning(detailed_report)
+                    
                     # Fill NaN values with column means
                     for col in range(X_processed.shape[1]):
                         col_data = X_processed[:, col]

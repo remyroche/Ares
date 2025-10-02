@@ -131,7 +131,7 @@ class DataLeakagePrevention:
         logger.info("✅ Data Leakage Prevention initialized")
 
     def detect_temporal_leakage(self,
-                               data: pd.DataFrame,
+                               data: Union[pd.DataFrame, np.ndarray],
                                timestamp_column: str,
                                target_column: Optional[str] = None,
                                dataset_name: str = "dataset") -> LeakageReport:
@@ -139,7 +139,7 @@ class DataLeakagePrevention:
         Detect temporal leakage in dataset.
 
         Args:
-            data: Dataset to analyze
+            data: Dataset to analyze (DataFrame or numpy array)
             timestamp_column: Name of timestamp column
             target_column: Optional target column for additional checks
             dataset_name: Name for reporting
@@ -147,6 +147,22 @@ class DataLeakagePrevention:
         Returns:
             LeakageReport with temporal leakage analysis
         """
+        # Convert numpy array to DataFrame if needed
+        if isinstance(data, np.ndarray):
+            # Create DataFrame with generic column names
+            n_features = data.shape[1] if len(data.shape) > 1 else 1
+            if len(data.shape) == 1:
+                data = data.reshape(-1, 1)
+            df = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(n_features)])
+            
+            # Add timestamp column if not present
+            if timestamp_column not in df.columns:
+                df[timestamp_column] = pd.date_range('2020-01-01', periods=len(df), freq='1H')
+            
+            data = df
+        elif not isinstance(data, pd.DataFrame):
+            raise ValueError(f"Data must be pandas DataFrame or numpy array, got {type(data)}")
+        
         report = LeakageReport(dataset_name=dataset_name)
         report.total_samples = len(data)
         report.timestamp_columns = [timestamp_column]
@@ -225,6 +241,69 @@ class DataLeakagePrevention:
             report.critical_issues.append(f"Detection failed: {str(e)}")
             report.severity_level = "critical"
             return report
+
+    def check_data_leakage(self, data: Union[pd.DataFrame, np.ndarray], labels: Optional[np.ndarray] = None, dataset_name: str = "dataset") -> Dict[str, Any]:
+        """
+        Check for data leakage in the provided data.
+
+        Args:
+            data: Dataset to analyze (DataFrame or numpy array)
+            labels: Optional labels for the data
+            dataset_name: Name for reporting
+
+        Returns:
+            Dictionary with leakage check results
+        """
+        try:
+            # Convert numpy array to DataFrame if needed
+            if isinstance(data, np.ndarray):
+                # Create DataFrame with generic column names
+                n_features = data.shape[1] if len(data.shape) > 1 else 1
+                if len(data.shape) == 1:
+                    data = data.reshape(-1, 1)
+                df = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(n_features)])
+                
+                # Add labels if provided
+                if labels is not None:
+                    df['target'] = labels
+                
+                # Add timestamp column
+                df['timestamp'] = pd.date_range('2020-01-01', periods=len(df), freq='1H')
+                data = df
+            elif not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Data must be pandas DataFrame or numpy array, got {type(data)}")
+            
+            # Use timestamp column if available, otherwise use index
+            timestamp_column = None
+            for col in data.columns:
+                if 'timestamp' in col.lower() or 'time' in col.lower() or 'date' in col.lower():
+                    timestamp_column = col
+                    break
+
+            if timestamp_column:
+                report = self.detect_temporal_leakage(data, timestamp_column, dataset_name=dataset_name)
+            else:
+                # Create a basic report if no timestamp column found
+                report = LeakageReport(dataset_name=dataset_name)
+                report.total_samples = len(data)
+                report.recommendations.append("Consider adding timestamp column for better leakage detection")
+
+            # Return results in expected format
+            return {
+                'status': 'clean' if report.overall_leakage_rate == 0 else 'warning' if report.overall_leakage_rate < 0.1 else 'critical',
+                'leakage_rate': report.overall_leakage_rate,
+                'severity': report.severity_level,
+                'violations': len(report.violation_details),
+                'recommendations': report.recommendations[:3],  # Return top 3 recommendations
+                'report': report
+            }
+        except Exception as e:
+            logger.error(f"Data leakage check failed: {e}")
+            return {
+                'status': 'error',
+                'error': str(e),
+                'recommendations': ['Fix data format issues for proper leakage detection']
+            }
 
     def detect_train_test_leakage(self,
                                  X_train: np.ndarray,

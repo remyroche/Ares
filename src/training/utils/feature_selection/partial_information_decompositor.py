@@ -16,6 +16,7 @@ Author: Feature Selection Framework Team
 Version: 1.0.0
 """
 
+import json
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Set
@@ -442,9 +443,11 @@ class PartialInformationDecompositor:
             y_clean = np.nan_to_num(y, nan=0.0, posinf=1e10, neginf=-1e10)
             
             # Validate finite values (check for any non-finite values)
-            if not np.all(np.isfinite(X_clean)):
+            x_finite = np.isfinite(X_clean)
+            y_finite = np.isfinite(y_clean)
+            if not x_finite.all():
                 _LOGGER.warning("⚠️ Non-finite values detected in X after cleaning")
-            if not np.all(np.isfinite(y_clean)):
+            if not y_finite.all():
                 _LOGGER.warning("⚠️ Non-finite values detected in y after cleaning")
         else:
             X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)

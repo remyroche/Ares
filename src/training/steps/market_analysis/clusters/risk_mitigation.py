@@ -315,6 +315,9 @@ class RiskMitigationSystem:
         gates = ReadinessGates()
         
         try:
+            tprint(f"🔍 DEBUG: Checking readiness gates - features shape: {features.shape}, assignments shape: {assignments.shape}", "DEBUG")
+            tprint(f"🔍 DEBUG: assignments dtype: {assignments.dtype}, unique values: {np.unique(assignments)}", "DEBUG")
+
             # Geometry gates
             if len(np.unique(assignments)) > 1:
                 silhouette = silhouette_score(features, assignments)
@@ -352,10 +355,14 @@ class RiskMitigationSystem:
                 gates.monotone_passed = True
             
             # Size gates
-            min_size = max(self.config.min_cluster_size_absolute, 
+            min_size = max(self.config.min_cluster_size_absolute,
                           int(self.config.min_cluster_size_factor * n_samples))
             cluster_sizes = stats.cluster_sizes[stats.cluster_sizes > 0]
-            gates.min_size_passed = len(cluster_sizes) == 0 or np.min(cluster_sizes) >= min_size
+            # Ensure cluster_sizes is numeric and handle the boolean logic safely
+            min_size_passed = len(cluster_sizes) == 0
+            if not min_size_passed and len(cluster_sizes) > 0:
+                min_size_passed = int(np.min(cluster_sizes)) >= min_size
+            gates.min_size_passed = min_size_passed
             
             # Overall readiness
             gates.overall_ready = (
@@ -477,9 +484,9 @@ class RiskMitigationSystem:
             # Size statistics
             cluster_sizes = stats.cluster_sizes[stats.cluster_sizes > 0]
             size_stats = {
-                'min': np.min(cluster_sizes) if len(cluster_sizes) > 0 else 0,
-                'median': np.median(cluster_sizes) if len(cluster_sizes) > 0 else 0,
-                'p95': np.percentile(cluster_sizes, 95) if len(cluster_sizes) > 0 else 0
+                'min': int(np.min(cluster_sizes)) if len(cluster_sizes) > 0 else 0,
+                'median': float(np.median(cluster_sizes)) if len(cluster_sizes) > 0 else 0.0,
+                'p95': float(np.percentile(cluster_sizes, 95)) if len(cluster_sizes) > 0 else 0.0
             }
             
             # Operations summary
@@ -549,6 +556,54 @@ class RiskMitigationSystem:
             self.objective_history = self.objective_history[-50:]
         
         self.last_objective = objective
+    
+    def apply_risk_mitigation(self, features: np.ndarray, assignments: np.ndarray, 
+                             total_delta: float, iteration: int) -> Dict[str, Any]:
+        """Apply risk mitigation checks and return results."""
+        try:
+            violations = 0
+            warnings = []
+            
+            # Check for unbounded k growth
+            current_k = len(np.unique(assignments))
+            if not self.check_unbounded_k_growth(current_k, current_k, len(features)):
+                violations += 1
+                warnings.append("Unbounded k growth detected")
+            
+            # Check for over-churn (simplified)
+            if abs(total_delta) > 0.1:  # High delta might indicate over-churn
+                violations += 1
+                warnings.append("Potential over-churn detected")
+            
+            # Check metric drift
+            if len(self.objective_history) >= 2:
+                current_j = total_delta
+                previous_j = self.objective_history[-1] if self.objective_history else 0.0
+                drift_ok, drift_msg = self.check_metric_drift(current_j, previous_j)
+                if not drift_ok:
+                    violations += 1
+                    warnings.append(f"Metric drift: {drift_msg}")
+            
+            # Update objective history
+            self.update_objective_history(total_delta)
+            
+            return {
+                "violations": violations,
+                "warnings": warnings,
+                "total_delta": total_delta,
+                "iteration": iteration,
+                "status": "success" if violations == 0 else "warning"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Risk mitigation error: {e}")
+            return {
+                "violations": 1,
+                "warnings": [f"Risk mitigation error: {e}"],
+                "total_delta": total_delta,
+                "iteration": iteration,
+                "status": "error"
+            }
 
 
 # Default configuration for production use

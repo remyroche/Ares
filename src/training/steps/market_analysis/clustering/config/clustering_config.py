@@ -17,7 +17,7 @@ from collections import defaultdict
 import pickle
 import re
 
-from ..shared_utils import (
+from ...shared_utils import (
     # Configuration
     validate_regime_count,
     normalize_weights,
@@ -33,7 +33,7 @@ from ..shared_utils import (
     LoggingContext,
 )
 
-from ..shared_utils.calibration_registry import (
+from ...shared_utils.calibration_registry import (
     get_current_calibration,
     get_quality_thresholds as get_calibrated_thresholds,
     update_quality_calibration,
@@ -79,6 +79,7 @@ class ClusteringContext:
     feature_scores: Dict[str, float] = field(default_factory=dict)
     pca_loading_scores: Dict[str, float] = field(default_factory=dict)
     pre_pca_feature_count: Optional[int] = None
+    duration: Optional[float] = None
     
     def __enter__(self):
         """Context manager entry for memory management."""
@@ -241,3 +242,34 @@ class NASTASClusteringConfig(BaseConfig):
             self.max_feature_noise_ratio = thresholds.get('max_feature_noise_ratio', 0.3)
         if self.min_temporal_stability is None:
             self.min_temporal_stability = thresholds.get('min_temporal_stability', 0.6)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary for serialization."""
+        return {
+            'exchange': self.exchange,
+            'regime_search_min': self.regime_search_min,
+            'regime_search_max': self.regime_search_max,
+            'n_regimes': self.n_regimes,
+            'enable_economic_clustering': self.enable_economic_clustering,
+            'enable_ensemble_clustering': self.enable_ensemble_clustering,
+            'max_regime_percentage': self.max_regime_percentage,
+            'min_regime_percentage': self.min_regime_percentage,
+            'balance_weight': self.balance_weight,
+            'economic_weight': self.economic_weight,
+            'volatility_regime_weight': self.volatility_regime_weight,
+            'volume_regime_weight': self.volume_regime_weight,
+            'structural_trend_weight': self.structural_trend_weight,
+            'feature_categories': self.feature_categories,
+            'use_regime_focused_features': self.use_regime_focused_features,
+            'exclude_trading_features': self.exclude_trading_features,
+            'use_standardized_features': self.use_standardized_features,
+            'signal_like_patterns': self.signal_like_patterns,
+            'feature_category_caps': self.feature_category_caps,
+            'pca_components_factor': self.pca_components_factor,
+            'zscore_clip_threshold': self.zscore_clip_threshold,
+            'min_regime_persistence': self.min_regime_persistence,
+            'max_feature_noise_ratio': self.max_feature_noise_ratio,
+            'min_temporal_stability': self.min_temporal_stability,
+            'output_dir': self.output_dir,
+            'save_intermediate_results': self.save_intermediate_results,
+        }

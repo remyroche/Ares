@@ -3437,10 +3437,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             distances_to_others = [np.linalg.norm(centroid - other_cent) for other_cent in other_centroids]
                             min_distance_to_other = min(distances_to_others)
                             separation_score = min_distance_to_other
+                            else:
+                                separation_score = 0.0
                         else:
                             separation_score = 0.0
-                    else:
-                        separation_score = 0.0
 
                         # Calculate overall stability score
                         stability_score = (mean_local_sil * 0.4 + cohesion_score * 0.3 + separation_score * 0.3)

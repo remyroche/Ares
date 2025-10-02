@@ -8,7 +8,7 @@ feature integration for the clustering process.
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 
@@ -32,7 +32,7 @@ class ClusteringContext:
     memory_optimizer: Any = None
     original_feature_names: Optional[List[str]] = None
     feature_scores: Optional[Dict[str, float]] = None
-    
+
     # Outputs
     optimized_features: Optional[np.ndarray] = None
     optimized_feature_names: Optional[List[str]] = None
@@ -40,6 +40,20 @@ class ClusteringContext:
     pca_loading_scores: Optional[Dict[str, float]] = None
     pre_pca_feature_names: Optional[List[str]] = None
     pre_pca_feature_count: Optional[int] = None
+
+    # Clustering results
+    initial_assignments: Optional[np.ndarray] = None
+    optimized_assignments: Optional[np.ndarray] = None
+    optimal_k: Optional[int] = None
+    optimal_bic: Optional[float] = None
+    k_metadata: Dict[str, Any] = field(default_factory=dict)
+    tas_assignments: Optional[np.ndarray] = None
+    nas_assignments: Optional[np.ndarray] = None
+    optimization_metrics: Dict[str, Any] = field(default_factory=dict)
+    raw_assignments: Optional[np.ndarray] = None
+    smoothed_assignments: Optional[np.ndarray] = None
+    fusion_metadata: Dict[str, Any] = field(default_factory=dict)
+    summary: Dict[str, Any] = field(default_factory=dict)
 
 
 class FeaturePreparationStep:
@@ -94,9 +108,30 @@ class FeaturePreparationStep:
                 market_data=market_data,
                 config=feature_config
             )
-            
-            tprint(f"Shared utilities prepared {feature_result.features.shape[1]} features", "SUCCESS")
-            return feature_result
+
+            # Handle both return types: FeaturePreparationResult or numpy array
+            if hasattr(feature_result, 'features'):
+                # It's a FeaturePreparationResult
+                features = feature_result.features
+                tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
+            else:
+                # It's a numpy array
+                features = feature_result
+                tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
+
+            # Ensure we return a FeaturePreparationResult-like object
+            if hasattr(feature_result, 'features'):
+                return feature_result
+            else:
+                # Create a FeaturePreparationResult-like object for consistency
+                return FeaturePreparationResult(
+                    features=features,
+                    feature_names=[f'feature_{i}' for i in range(features.shape[1])],
+                    feature_scores={},
+                    dropped_features=[],
+                    preparation_time=0.0,
+                    metadata={'prepared_directly': True, 'total_features': features.shape[1]}
+                )
             
         except Exception as e:
             tprint(f"Shared feature preparation failed: {e}", "ERROR")

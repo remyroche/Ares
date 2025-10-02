@@ -14,6 +14,7 @@ Key Features:
 """
 
 import asyncio
+import concurrent.futures
 import logging
 import time
 import traceback
@@ -1009,7 +1010,8 @@ class PIDBasedFeatureOrchestrator:
                     corr_matrix = np.corrcoef(feature_matrix.T)
                 
                 # Validate correlation matrix
-                if not np.all(np.isfinite(corr_matrix)):
+                finite_mask = np.isfinite(corr_matrix)
+                if not finite_mask.all():
                     tprint_warning("Correlation matrix contains non-finite values")
                     return 0.0
                     

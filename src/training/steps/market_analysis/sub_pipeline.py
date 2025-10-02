@@ -496,6 +496,98 @@ class MarketAnalysisSubPipeline:
                 return await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
             else:
                 raise
+    
+    async def _execute_nas_tas_clustering_with_new_structure(self) -> SubPipelineResult:
+        """Execute NAS-TAS clustering using the new clustering directory structure."""
+        start_time = datetime.now()
+        
+        try:
+            self.logger.info("🚀 Using new clustering directory structure for NAS-TAS clustering")
+            tprint("🚀 [CLUSTERING] Using new clustering directory structure for NAS-TAS clustering", color="cyan", bold=True)
+            
+            # Import the new clustering component
+            from src.training.steps.market_analysis.clustering import NASTASClusteringComponent
+            from src.training.steps.market_analysis.clustering.config.clustering_config import NASTASClusteringConfig
+            
+            # Create configuration for the clustering component
+            clustering_config = NASTASClusteringConfig()
+            
+            # Initialize the clustering component
+            clustering_component = NASTASClusteringComponent(config=clustering_config)
+            
+            # Prepare data for clustering
+            # Use the current data and pipeline state
+            data = self._current_data
+            pipeline_state = self._current_pipeline_state.copy()
+            
+            # Add regime discovery results to pipeline state if available
+            if 'regime_models' in self._current_pipeline_state:
+                pipeline_state['regime_models'] = self._current_pipeline_state['regime_models']
+            if 'regime_assignments' in self._current_pipeline_state:
+                pipeline_state['regime_assignments'] = self._current_pipeline_state['regime_assignments']
+            
+            self.logger.info(f"📊 Data prepared for clustering: {data.shape if data is not None else 'None'}")
+            self.logger.info(f"📊 Pipeline state keys: {list(pipeline_state.keys())}")
+            
+            # Execute clustering using the component's fit method
+            if data is not None:
+                clustering_result = await clustering_component.fit(data, None, pipeline_state)
+                
+                # Create artifacts in the expected format
+                artifacts = {
+                    'optimal_regime_clustering_result': {
+                        'clustering_result': clustering_result,
+                        'component_config': clustering_config.__dict__,
+                        'execution_metadata': {
+                            'component_type': 'NASTASClusteringComponent',
+                            'execution_mode': 'new_structure',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    }
+                }
+                
+                end_time = datetime.now()
+                duration = (end_time - start_time).total_seconds()
+                
+                result = SubPipelineResult(
+                    sub_pipeline_name='nas_tas_clustering',
+                    status=SubPipelineStatus.COMPLETED,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_seconds=duration,
+                    artifacts=artifacts,
+                    metadata={'component_type': 'NASTASClusteringComponent', 'execution_mode': 'new_structure'}
+                )
+                
+                self.logger.info("✅ NAS-TAS clustering completed successfully with new structure")
+                tprint("✅ [CLUSTERING] NAS-TAS clustering completed successfully with new structure", color="green", bold=True)
+                
+                return result
+            else:
+                raise ValueError("No data available for clustering")
+                
+        except Exception as e:
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            self.logger.error(f"❌ NAS-TAS clustering with new structure failed: {e}")
+            tprint(f"❌ [CLUSTERING] NAS-TAS clustering with new structure failed: {e}", color="red", bold=True)
+            
+            # Fallback to legacy clustering if available
+            self.logger.info("🔄 Falling back to legacy clustering")
+            try:
+                return await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            except Exception as fallback_error:
+                self.logger.error(f"❌ Legacy clustering fallback also failed: {fallback_error}")
+                
+                return SubPipelineResult(
+                    sub_pipeline_name='nas_tas_clustering',
+                    status=SubPipelineStatus.FAILED,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_seconds=duration,
+                    error_message=f"New structure failed: {e}, Legacy fallback failed: {fallback_error}"
+                )
 
     async def execute_all_steps_from_start(
         self, 
@@ -689,14 +781,10 @@ class MarketAnalysisSubPipeline:
             
             # Stage 5: NAS-TAS Clustering
             self.logger.info('🎯 Executing Stage 5: NAS-TAS Clustering')
+            tprint("🎯 [MARKET_ANALYSIS] Executing Stage 5: NAS-TAS Clustering", color="yellow")
             
-            # Use unified pipeline if available and enabled
-            if (UNIFIED_PIPELINE_AVAILABLE and 
-                self.config.use_unified_pipeline and 
-                self.config.unified_pipeline_mode in ["nas", "hybrid"]):
-                nas_tas_clustering_result = await self._execute_unified_nas_tas_clustering()
-            else:
-                nas_tas_clustering_result = await self.execute_sub_pipeline('nas_tas_clustering', self.config)
+            # Use the new clustering directory structure
+            nas_tas_clustering_result = await self._execute_nas_tas_clustering_with_new_structure()
             
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_clustering_result, "NAS-TAS Clustering")
             if not is_success:

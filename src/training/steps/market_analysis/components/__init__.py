@@ -18,7 +18,7 @@ from .sr_clustering import SRClusteringComponent
 from .nas_regime_discovery import NASRegimeDiscoveryComponent
 from .tas_regime_discovery import TASRegimeDiscoveryComponent
 from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
-from .nas_tas_clustering import NASTASClusteringComponent
+# from .nas_tas_clustering import NASTASClusteringComponent  # DEPRECATED - using new clustering pipeline
 # from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
@@ -45,7 +45,7 @@ __all__ = [
     'NASRegimeDiscoveryComponent',
     'TASRegimeDiscoveryComponent',
     'NASTASRegimeDiscoveryComponent',
-    'NASTASClusteringComponent',
+    # 'NASTASClusteringComponent',  # DEPRECATED - using new clustering pipeline
     # NAS-TAS components use the same regime training components
     # 'NASTASModelsTrainingComponent',  # Uses RegimeModelsTrainingComponent
     # 'NASTASEnsembleTrainingComponent',  # Uses RegimeEnsembleTrainingComponent

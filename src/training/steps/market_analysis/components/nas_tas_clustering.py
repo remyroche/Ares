@@ -5,6 +5,7 @@ This component uses shared utilities to eliminate redundancy between NAS and TAS
 It demonstrates how to use the shared_utils package for common functionality.
 """
 
+import copy
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -13,6 +14,9 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from dataclasses import dataclass, field
 import traceback
 from pathlib import Path
+from collections import defaultdict
+import pickle
+import re
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import adjusted_rand_score
 from hmmlearn import hmm
@@ -37,6 +41,7 @@ from ..shared_utils import (
     # Features
     prepare_market_features,
     FeatureConfig,
+    FeaturePreparationResult,
 
     # Configuration
     validate_regime_count,
@@ -411,7 +416,27 @@ class NASTASClusteringConfig(BaseConfig):
     use_regime_focused_features: bool = True
     exclude_trading_features: bool = True
     use_standardized_features: bool = True
-    
+    signal_like_patterns: List[str] = field(
+        default_factory=lambda: [
+            r"signal",
+            r"entry",
+            r"exit",
+            r"crossover",
+            r"trade",
+        ]
+    )
+    feature_category_caps: Dict[str, int] = field(
+        default_factory=lambda: {
+            'volatility_regime': 30,
+            'volume_regime': 25,
+            'structural_trend': 25,
+            'statistical_regime': 30,
+            'regime_quality': 20,
+        }
+    )
+    pca_components_factor: float = 1.5
+    zscore_clip_threshold: float = 5.0
+
     # Regime-specific feature quality thresholds (calibrated dynamically)
     min_regime_persistence: Optional[float] = None
     max_feature_noise_ratio: Optional[float] = None
@@ -439,11 +464,29 @@ class NASTASClusteringConfig(BaseConfig):
         if self.feature_categories is None:
             # Regime-focused feature categories only
             self.feature_categories = [
-                'regime_volatility', 
-                'regime_volume', 
-                'regime_structural_trend', 
+                'regime_volatility',
+                'regime_volume',
+                'regime_structural_trend',
                 'regime_statistical'
             ]
+
+        if not self.signal_like_patterns:
+            self.signal_like_patterns = [
+                r"signal",
+                r"entry",
+                r"exit",
+                r"crossover",
+                r"trade",
+            ]
+
+        if not self.feature_category_caps:
+            self.feature_category_caps = {
+                'volatility_regime': 30,
+                'volume_regime': 25,
+                'structural_trend': 25,
+                'statistical_regime': 30,
+                'regime_quality': 20,
+            }
         
         # Ensure n_regimes is within learned bounds
         if not (self.regime_search_min <= self.n_regimes <= self.regime_search_max):
@@ -501,6 +544,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             
             self.clustering_result = None
             self.execution_metadata = {}
+
+            # Stage 1 feature preparation outputs
+            self.stage1_features_df: Optional[pd.DataFrame] = None
+            self.stage1_filtered_df: Optional[pd.DataFrame] = None
+            self.stage1_metadata: Dict[str, Any] = {}
+            self.feature_projection_metadata: Dict[str, Any] = {}
+            self.feature_projection_artifact_path: Optional[Path] = None
 
             # Learned metric weight state
             self.metric_weight_history: List[Dict[str, Any]] = []
@@ -1041,9 +1091,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     ) -> Tuple[int, int, int]:
         """Estimate regime count bounds using discovery metrics."""
 
-        default_min = getattr(self.config, 'regime_search_min', 5)
-        default_max = getattr(self.config, 'regime_search_max', 15)
-        default_mode = getattr(self.config, 'n_regimes', 8)
+        default_min = int(max(5, getattr(self.config, 'regime_search_min', 5) or 5))
+        default_max = int(max(default_min, min(15, getattr(self.config, 'regime_search_max', 15) or 15)))
+        default_mode = int(min(max(default_min, getattr(self.config, 'n_regimes', 8) or 8), default_max))
 
         discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {}) or {}
 
@@ -1729,27 +1779,62 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as exc:  # pragma: no cover - calibration should not block execution
             tprint_warning(f"Quality threshold calibration failed: {exc}")
 
-    def _prepare_features(self, market_data: pd.DataFrame) -> Any:
-        """Prepare market features for clustering."""
+    def _prepare_features(self, market_data: pd.DataFrame) -> FeaturePreparationResult:
+        """Prepare market features for clustering and retain Stage 1 metadata."""
         tprint("Step 4: Preparing features using shared utilities", "INFO")
-        feature_frame, feature_metadata = prepare_market_features(
+        result = prepare_market_features(
             market_data,
             self.feature_config,
             verbose=True,
+            return_metadata=True,
         )
-        if feature_frame is None or feature_frame.empty:
+
+        if result is None:
             tprint("Failed to prepare features for clustering", "ERROR")
             raise ValueError("Failed to prepare features for clustering")
 
-        self.feature_metadata = feature_metadata
-        features_array = feature_frame.to_numpy()
-        self.features = features_array
-        tprint(f"Features prepared: {features_array.shape}", "SUCCESS")
-        return features_array
+        if not isinstance(result, FeaturePreparationResult):
+            features_array = np.asarray(result)
+            if features_array.size == 0:
+                raise ValueError("Failed to prepare features for clustering")
+            result = FeaturePreparationResult(
+                features_array=features_array,
+                features_df=pd.DataFrame(features_array, columns=[f"feature_{i}" for i in range(features_array.shape[1])]),
+                summary={},
+                metadata={'stage_metadata': {}, 'feature_columns': []},
+            )
+
+        if result.features_array.size == 0:
+            tprint("Failed to prepare features for clustering", "ERROR")
+            raise ValueError("Failed to prepare features for clustering")
+
+        self.stage1_features_df = result.features_df.copy()
+        self.stage1_filtered_df = self.stage1_features_df.copy()
+        self.stage1_metadata = copy.deepcopy(result.metadata or {})
+        self.features = result.features_array
+
+        tprint(f"Features prepared: {result.features_array.shape}", "SUCCESS")
+        return result
+
+    def _infer_feature_category(self, feature_name: str) -> str:
+        """Infer the high-level category of a feature name."""
+        name = feature_name.lower()
+        if 'volatility' in name or 'vol_' in name:
+            return 'volatility_regime'
+        if 'volume' in name or 'liquidity' in name:
+            return 'volume_regime'
+        if 'trend' in name or 'structural' in name:
+            return 'structural_trend'
+        if 'statistical' in name or 'distribution' in name or 'entropy' in name or 'autocorr' in name:
+            return 'statistical_regime'
+        if 'stability' in name or 'persistence' in name or 'quality' in name:
+            return 'regime_quality'
+        return 'other'
+
 
     def _select_regime_features(
-        self, 
-        features: np.ndarray, 
+        self,
+        feature_result: FeaturePreparationResult,
         market_data: pd.DataFrame,
         target_n_features: int = 200
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
@@ -1761,15 +1846,31 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         for robust regime clustering.
         
         Args:
-            features: Feature matrix (n_samples, n_features)
+            feature_result: Stage 1 feature preparation result
             market_data: Market data with potential target labels
             target_n_features: Target number of features to select (default: 200)
-            
+
         Returns:
             Tuple of (selected_features, selected_feature_names, selection_metadata)
         """
-        n_samples, n_features = features.shape
-        
+        if not isinstance(feature_result, FeaturePreparationResult):
+            raise ValueError("Feature preparation result is required for regime feature selection")
+
+        stage1_df = feature_result.features_df.copy()
+        stage1_metadata = copy.deepcopy(feature_result.metadata or {})
+        if stage1_df.empty:
+            raise ValueError("Stage 1 feature DataFrame is empty")
+
+        n_samples, n_features = stage1_df.shape
+
+        selection_metadata: Dict[str, Any] = {
+            'stage1_metadata': stage1_metadata,
+            'stage1_feature_count': int(n_features),
+            'operations': list(stage1_metadata.get('stage_metadata', {}).get('operations', [])),
+        }
+
+        selection_operations: List[Dict[str, Any]] = stage1_metadata.setdefault('selection_operations', [])
+
         # Always perform feature selection to ensure we have exactly target_n_features maximum
         tprint(f"🔍 FEATURE SELECTION: Starting with {n_features} features, target: {target_n_features}", color="cyan", bold=True)
         
@@ -1789,22 +1890,80 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 tprint(f"   • Performing PID-based feature selection to reduce to {target_n_features} features", color="cyan")
         
-        if not PID_FEATURE_SELECTION_AVAILABLE:
-            tprint("⚠️ PID feature selection not available, using regime feature generator", "WARNING")
-            tprint(
-                f"🔍 REGIME GENERATOR: Using dedicated regime feature generator for {target_n_features} features",
-                color="cyan",
-            )
-            base_features, base_names, metadata = self._regime_feature_generation(features, target_n_features)
-        else:
-            tprint(
-                f"🔍 REGIME FEATURES: Using dedicated regime feature generator for {target_n_features} features",
-                color="blue",
-            )
-            base_features, base_names, metadata = self._regime_feature_generation(features, target_n_features)
+        # Stage 1.1: Drop signal-like features according to configuration patterns
+        compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.config.signal_like_patterns or []]
+        signal_like_columns = [
+            column for column in stage1_df.columns
+            if any(pattern.search(column) for pattern in compiled_patterns)
+        ] if compiled_patterns else []
 
-        if base_features is None or base_features.size == 0:
-            raise ValueError("Regime feature generation returned no features")
+        if signal_like_columns:
+            stage1_df = stage1_df.drop(columns=signal_like_columns)
+            operation_record = {
+                'type': 'signal_filter',
+                'dropped_columns': signal_like_columns,
+            }
+            selection_metadata['operations'].append(operation_record)
+            selection_operations.append(operation_record)
+            tprint_info(f"🔎 Signal-like feature filter removed {len(signal_like_columns)} columns")
+
+        # Stage 1.2: Enforce per-category caps prior to dimensionality reduction
+        category_caps = self.config.feature_category_caps or {}
+        category_counts_before = defaultdict(int)
+        for col in stage1_df.columns:
+            category_counts_before[self._infer_feature_category(col)] += 1
+
+        if category_caps:
+            kept_columns: List[str] = []
+            category_counts_after = defaultdict(int)
+            dropped_by_cap: List[str] = []
+            for column in stage1_df.columns:
+                category = self._infer_feature_category(column)
+                cap = category_caps.get(category)
+                if cap is None or category_counts_after[category] < cap:
+                    kept_columns.append(column)
+                    category_counts_after[category] += 1
+                else:
+                    dropped_by_cap.append(column)
+
+            if dropped_by_cap:
+                stage1_df = stage1_df[kept_columns]
+                operation_record = {
+                    'type': 'category_cap',
+                    'dropped_columns': dropped_by_cap,
+                    'caps': category_caps,
+                }
+                selection_metadata['operations'].append(operation_record)
+                selection_operations.append(operation_record)
+                tprint_info(
+                    f"🔧 Category caps enforced: {len(dropped_by_cap)} features removed to respect per-category limits"
+                )
+            else:
+                category_counts_after = category_counts_before
+        else:
+            category_counts_after = category_counts_before
+
+        selection_metadata['category_counts_before'] = dict(category_counts_before)
+        selection_metadata['category_counts_after'] = dict(category_counts_after)
+
+        stage1_metadata['filtered_feature_columns'] = list(stage1_df.columns)
+        self.stage1_filtered_df = stage1_df.copy()
+        self.stage1_metadata = stage1_metadata
+
+        base_features = stage1_df.to_numpy()
+        base_names = list(stage1_df.columns)
+        if base_features.size == 0:
+            raise ValueError("No features available after Stage 1 filtering")
+
+        operations_combined = list(selection_metadata['operations'])
+        metadata: Dict[str, Any] = {
+            'selection_performed': True,
+            'stage1_operations': operations_combined,
+            'operations': operations_combined,
+            'original_n_features': int(n_features),
+            'post_stage1_n_features': int(base_features.shape[1]),
+            'stage1_metadata': stage1_metadata,
+        }
 
         # Attempt to extract interim TAS/NAS assignments for discriminative scoring
         assignment_sources: List[np.ndarray] = []
@@ -1905,6 +2064,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             'retained_feature_scores': retained_scores,
             'dropped_features': dropped_feature_names,
             'retained_features': selected_feature_names,
+            'stage1_feature_count': selection_metadata.get('stage1_feature_count'),
+            'category_counts_before': selection_metadata.get('category_counts_before', {}),
+            'category_counts_after': selection_metadata.get('category_counts_after', {}),
+            'signal_like_dropped': signal_like_columns,
+            'operations': operations_combined,
         })
 
         self.feature_scores = feature_scores
@@ -1926,7 +2090,60 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 + ", ".join(dropped_feature_names[:5])
             )
 
-        return selected_features, selected_feature_names, metadata
+        # Stage 2: Standardize, clip, and project using PCA
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA
+
+        scaler = StandardScaler()
+        scaled_features = scaler.fit_transform(selected_features)
+        clip_threshold = float(max(0.0, getattr(self.config, 'zscore_clip_threshold', 0.0)))
+        if clip_threshold > 0.0:
+            scaled_features = np.clip(scaled_features, -clip_threshold, clip_threshold)
+
+        pca_factor = float(max(1.0, getattr(self.config, 'pca_components_factor', 1.0)))
+        n_regimes = int(max(1, getattr(self.config, 'n_regimes', self.config.regime_search_min)))
+        n_components = int(max(1, round(pca_factor * n_regimes)))
+        n_components = min(n_components, scaled_features.shape[1], scaled_features.shape[0])
+        if n_components <= 0:
+            n_components = min(1, scaled_features.shape[1])
+
+        pca = PCA(n_components=n_components, svd_solver='auto', random_state=42)
+        projected_features = pca.fit_transform(scaled_features)
+
+        explained_ratio = getattr(pca, 'explained_variance_ratio_', np.array([]))
+        explained_ratio_list = explained_ratio.tolist() if explained_ratio.size else []
+        cumulative_variance = float(np.sum(explained_ratio)) if explained_ratio.size else 0.0
+
+        artifact_dir = Path(getattr(self.config, 'artifact_dir', 'artifacts'))
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        projection_path = artifact_dir / 'clustering_projection.pkl'
+        with projection_path.open('wb') as handle:
+            pickle.dump(
+                {
+                    'scaler': scaler,
+                    'pca': pca,
+                    'feature_names': selected_feature_names,
+                    'clip_threshold': clip_threshold,
+                },
+                handle,
+            )
+
+        projection_metadata = {
+            'n_components': int(getattr(pca, 'n_components_', n_components)),
+            'explained_variance_ratio': explained_ratio_list,
+            'explained_variance_cumulative': cumulative_variance,
+            'clip_threshold': clip_threshold,
+            'selected_feature_names': selected_feature_names,
+        }
+
+        metadata['projection'] = projection_metadata
+        metadata['projection_artifact'] = str(projection_path)
+
+        self.feature_projection_metadata = projection_metadata
+        self.feature_projection_artifact_path = projection_path
+        self.features = projected_features
+
+        return projected_features, selected_feature_names, metadata
     
     def _regime_feature_generation(
         self, 
@@ -2091,7 +2308,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 "stability_scores": stability_scores,
                 "cluster_centers": cluster_centers,
                 "n_clusters": len(set(cluster_assignments)),
-                "total_assignments": len(cluster_assignments)
+                "total_assignments": len(cluster_assignments),
+                "feature_projection": {
+                    "selected_feature_names": getattr(self, 'feature_names', []),
+                    "projection_metadata": getattr(self, 'feature_projection_metadata', {}),
+                    "projection_artifact": str(self.feature_projection_artifact_path)
+                    if getattr(self, 'feature_projection_artifact_path', None)
+                    else None,
+                },
             }
             
             tprint("Clustering metrics calculated using shared utilities", "SUCCESS")
@@ -2169,7 +2393,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         'regime_distribution': dict(zip(*np.unique(cluster_assignments, return_counts=True))) if len(cluster_assignments) > 0 else {},
                         'regime_centers': cluster_centers,
                         'regime_quality': clustering_result.get('clustering_quality', {})
-                    }
+                    },
+                    'projection_metadata': getattr(self, 'feature_projection_metadata', {}),
+                    'projection_artifact': str(self.feature_projection_artifact_path)
+                    if getattr(self, 'feature_projection_artifact_path', None)
+                    else None,
                 },
                 
                 # Raw and smoothed assignments
@@ -2187,7 +2415,17 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 
                 # Comprehensive metrics
                 'clustering_metrics': clustering_metrics,
-                
+
+                'feature_projection': {
+                    'selected_feature_names': getattr(self, 'feature_names', []),
+                    'projection_metadata': getattr(self, 'feature_projection_metadata', {}),
+                    'projection_artifact': str(self.feature_projection_artifact_path)
+                    if getattr(self, 'feature_projection_artifact_path', None)
+                    else None,
+                    'stage1_metadata': getattr(self, 'stage1_metadata', {}),
+                    'selection_metadata': getattr(self, 'selection_metadata', {}),
+                },
+
                 # Data information
                 'data_info': {
                     'total_samples': len(cluster_assignments),
@@ -2388,19 +2626,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Market data loaded: {len(market_data)} rows", "SUCCESS")
 
             # Step 4: Prepare features using shared utilities
-            features = self._prepare_features(market_data)
+            feature_result = self._prepare_features(market_data)
 
             # Step 4.5: Perform PID-based feature selection for regime discovery
             tprint("Step 4.5: Performing intelligent feature selection for regime discovery", "INFO")
             features, feature_names, selection_metadata = self._select_regime_features(
-                features=features,
+                feature_result=feature_result,
                 market_data=market_data,
                 target_n_features=100  # Target 100 features to avoid overfitting with 1,921 samples
             )
-            
+
             # Store feature names and selection metadata for later use
             self.feature_names = feature_names
             self.selection_metadata = selection_metadata
+            self.stage1_metadata = feature_result.metadata or {}
+            self.features = features
             tprint(f"Feature selection completed: {selection_metadata.get('selected_n_features', len(feature_names))} features", "SUCCESS")
 
             # Step 5: Create clustering configuration using shared utilities

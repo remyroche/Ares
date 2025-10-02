@@ -103,11 +103,26 @@ class FeatureConfig:
             )
 
 
+@dataclass
+class FeaturePreparationResult:
+    """Container object for Stage 1 feature preparation outputs."""
+
+    features_array: np.ndarray
+    features_df: pd.DataFrame
+    summary: Dict[str, Any]
+    metadata: Dict[str, Any]
+
+    def __array__(self) -> np.ndarray:  # pragma: no cover - helper for numpy interop
+        return self.features_array
+
+
 def prepare_market_features(
     market_data: pd.DataFrame,
     feature_config: Optional[FeatureConfig] = None,
-    verbose: bool = False
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    verbose: bool = False,
+    return_metadata: bool = False,
+) -> Optional[Union[np.ndarray, FeaturePreparationResult]]:
+
     """
     Prepare comprehensive market features for regime detection and clustering.
     
@@ -296,6 +311,12 @@ def prepare_market_features(
                     columns=list(features_dict.keys()),
                     index=market_data.index[:len(features_array)]
                 )
+
+            stage_metadata: Dict[str, Any] = {
+                'original_feature_count': int(features_df.shape[1]),
+                'original_row_count': int(features_df.shape[0]),
+                'operations': [],
+            }
             
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Generated {len(features_df.columns)} features")
@@ -339,29 +360,24 @@ def prepare_market_features(
         if feature_config.handle_missing_values:
             features_df = features_df.fillna(method='bfill')
 
-        features_df = features_df.dropna(axis=0, how='any')
-        rows_after = len(features_df)
-        metadata['filters']['missing_values'] = {
-            'rows_before': rows_before,
-            'rows_after': rows_after,
-            'rows_removed': rows_before - rows_after,
-        }
+            # Remove rows with any remaining NaN values
+            valid_rows = ~np.isnan(features_array).any(axis=1)
+            valid_indices = np.where(valid_rows)[0]
+            features_array = features_array[valid_rows]
+            features_df = features_df.iloc[valid_indices]
+            removed_rows = int(len(valid_rows) - valid_rows.sum())
+            stage_metadata['operations'].append({
+                'type': 'nan_row_filter',
+                'removed_rows': removed_rows,
+            })
+
 
         if rows_after == 0:
             if verbose:
-                tprint_error("❌ [SHARED_FEATURES] No valid rows after missing value handling")
-            raise ValueError("No valid rows after missing value handling")
+                tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
 
-        # Variance filtering
-        variance_result = filter_low_variance(features_df, feature_config.min_variance)
-        metadata['filters']['variance'] = {
-            'dropped': variance_result.dropped_columns,
-            'metrics': variance_result.column_metadata,
-        }
-        for col, info in variance_result.column_metadata.items():
-            metadata['columns'].setdefault(col, {}).update(info)
-        if variance_result.dropped_columns:
-            metadata['dropped_columns']['variance'] = variance_result.dropped_columns
+        if len(features_array) == 0:
+
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Dropped low-variance features: {variance_result.dropped_columns}")
         features_df = variance_result.frame
@@ -385,23 +401,36 @@ def prepare_market_features(
         if quality_dropped:
             metadata['dropped_columns']['quality'] = list(quality_dropped.keys())
             if verbose:
-                tprint_debug(f"📊 [SHARED_FEATURES] Dropped quality-failing features: {quality_dropped}")
-        features_df = quality_filtered_df
+                tprint_debug("🔧 [SHARED_FEATURES] Removing highly correlated features")
+            
+            # Calculate correlation matrix
+            corr_matrix = np.corrcoef(features_array.T)
+            
+            # Find highly correlated pairs
+            high_corr_pairs = []
+            for i in range(len(corr_matrix)):
+                for j in range(i+1, len(corr_matrix)):
+                    if abs(corr_matrix[i, j]) > 0.95:  # High correlation threshold
+                        high_corr_pairs.append((i, j))
+            
+            # Remove one feature from each highly correlated pair
+            features_to_remove = set()
+            for i, j in high_corr_pairs:
+                if i not in features_to_remove:
+                    features_to_remove.add(j)
+            
+            # Remove highly correlated features
+            if features_to_remove:
+                keep_indices = [i for i in range(features_array.shape[1]) if i not in features_to_remove]
+                features_array = features_array[:, keep_indices]
+                features_df = features_df.iloc[:, keep_indices]
+                stage_metadata['operations'].append({
+                    'type': 'correlation_filter',
+                    'removed_features': int(len(features_to_remove)),
+                    'threshold': feature_config.correlation_threshold,
+                })
 
-        if features_df.empty:
-            raise ValueError("No features remain after quality filtering")
 
-        # Correlation pruning
-        if feature_config.drop_highly_correlated and features_df.shape[1] > 1:
-            corr_result = prune_correlated_features(features_df, feature_config.correlation_threshold)
-            metadata['filters']['correlation'] = {
-                'dropped': corr_result.dropped_columns,
-                'metrics': corr_result.column_metadata,
-            }
-            for col, info in corr_result.column_metadata.items():
-                metadata['columns'].setdefault(col, {}).update(info)
-            if corr_result.dropped_columns:
-                metadata['dropped_columns']['correlation'] = corr_result.dropped_columns
                 if verbose:
                     tprint_debug(f"📊 [SHARED_FEATURES] Dropped correlated features: {corr_result.dropped_columns}")
             features_df = corr_result.frame
@@ -429,15 +458,18 @@ def prepare_market_features(
             from sklearn.preprocessing import StandardScaler
 
             scaler = StandardScaler()
-            scaled_values = scaler.fit_transform(features_df.values)
-            features_df = pd.DataFrame(
-                scaled_values,
-                index=features_df.index,
-                columns=features_df.columns,
-            )
-            metadata['filters']['standardization'] = {'applied': True}
-        else:
-            metadata['filters']['standardization'] = {'applied': False}
+            features_array = scaler.fit_transform(features_array)
+            features_df = pd.DataFrame(features_array, index=features_df.index, columns=features_df.columns)
+            stage_metadata['operations'].append({
+                'type': 'standardization',
+                'scaler': 'StandardScaler',
+            })
+        
+        # Final validation
+        if features_array.shape[0] < feature_config.min_observations:
+            if verbose:
+                tprint_error(f"❌ [SHARED_FEATURES] Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
+            raise ValueError(f"Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
 
         # Performance metrics
         feature_prep_time = time.time() - feature_prep_start
@@ -449,14 +481,30 @@ def prepare_market_features(
             tprint_debug(f"📊 [SHARED_FEATURES] Feature frame memory usage: {features_df.values.nbytes / 1024 / 1024:.1f} MB")
             tprint_debug(f"📊 [SHARED_FEATURES] Memory used: {memory_used:.1f} MB")
 
-            if not features_df.empty:
-                tprint_debug("📊 [SHARED_FEATURES] Feature statistics:")
-                tprint_debug(f"   - Mean: {float(features_df.values.mean()):.6f}")
-                tprint_debug(f"   - Std: {float(features_df.values.std()):.6f}")
-                tprint_debug(f"   - Min: {float(features_df.values.min()):.6f}")
-                tprint_debug(f"   - Max: {float(features_df.values.max()):.6f}")
+            # Feature statistics
+            if features_array.size > 0:
+                tprint_debug(f"📊 [SHARED_FEATURES] Feature statistics:")
+                tprint_debug(f"   - Mean: {np.mean(features_array):.6f}")
+                tprint_debug(f"   - Std: {np.std(features_array):.6f}")
+                tprint_debug(f"   - Min: {np.min(features_array):.6f}")
+                tprint_debug(f"   - Max: {np.max(features_array):.6f}")
 
-        return features_df, metadata
+        if return_metadata:
+            summary = locals().get('summary', {}) or {}
+            metadata = {
+                'stage_metadata': stage_metadata,
+                'feature_columns': list(features_df.columns),
+                'summary': summary,
+            }
+            return FeaturePreparationResult(
+                features_array=features_array,
+                features_df=features_df.copy(),
+                summary=summary,
+                metadata=metadata,
+            )
+
+        return features_array
+
 
     except Exception as e:
         if verbose:

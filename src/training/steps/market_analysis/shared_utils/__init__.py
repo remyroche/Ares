@@ -6,7 +6,7 @@ NAS and TAS components, including feature preparation, configuration validation,
 logging utilities, metrics calculation, and regime characteristics.
 """
 
-from .features import prepare_market_features, FeatureConfig
+from .features import prepare_market_features, FeatureConfig, FeaturePreparationResult
 from .feature_filters import (
     winsorize_frame,
     filter_low_variance,
@@ -33,7 +33,7 @@ from .characteristics import (
 
 __all__ = [
     # Features
-    'prepare_market_features', 'FeatureConfig',
+    'prepare_market_features', 'FeatureConfig', 'FeaturePreparationResult',
     'winsorize_frame', 'filter_low_variance', 'prune_correlated_features', 'apply_quality_thresholds',
     
     # Configuration

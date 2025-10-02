@@ -25,6 +25,7 @@ from ..shared_utils import (
     MetricsCalculator,
     get_logger
 )
+from .step1_feature_preparation import ClusteringContext
 
 
 class ResultsConsolidationStep:

@@ -169,6 +169,30 @@ class ClusteringStats:
             return 0.0
         return self.total_bcss / self.total_wcss
     
+    def get_objective_value(self, w_cv: float = 0.55, w_bal: float = 0.15, 
+                           w_sil: float = 0.10, w_temp: float = 0.20,
+                           k_complexity_penalty: float = 0.25, k_max: int = 20) -> float:
+        """Calculate the full objective function value with k-complexity penalty."""
+        cv_ratio = self.get_cv_ratio()
+        balance = self.get_balance_score()
+        
+        # Placeholder for silhouette and temporal (would be calculated in full implementation)
+        silhouette_proxy = 0.5  # Placeholder
+        temporal_proxy = 0.5    # Placeholder
+        
+        objective = (
+            w_cv * cv_ratio +
+            w_bal * balance +
+            w_sil * silhouette_proxy +
+            w_temp * temporal_proxy
+        )
+        
+        # Add k-complexity penalty to prevent runaway splitting
+        k_penalty = k_complexity_penalty * (self.n_clusters - 1) / k_max
+        objective -= k_penalty
+        
+        return objective
+    
     def get_balance_score(self) -> float:
         """Calculate cluster balance score."""
         if self.n_clusters <= 1:
@@ -849,6 +873,64 @@ class IterativeOptimization:
         except Exception:
             return 0.0
     
+    def _validate_invariants(self, stats: ClusteringStats, n_samples: int, validation_results: Dict):
+        """Validate clustering invariants."""
+        # Check no empty clusters
+        empty_clusters = np.sum(stats.cluster_sizes == 0)
+        if empty_clusters > 0:
+            self.logger.error(f"Found {empty_clusters} empty clusters")
+            validation_results['invariant_violations'] += 1
+        
+        # Check min size constraint
+        min_size = max(25, int(0.005 * n_samples))  # 0.5% of N
+        small_clusters = np.sum(stats.cluster_sizes < min_size)
+        if small_clusters > 0:
+            self.logger.warning(f"Found {small_clusters} clusters below min size {min_size}")
+        
+        # Check total samples
+        total_assigned = np.sum(stats.cluster_sizes)
+        if total_assigned != n_samples:
+            self.logger.error(f"Total assigned {total_assigned} != {n_samples}")
+            validation_results['invariant_violations'] += 1
+    
+    def _validate_monotone_objective(self, previous_j: float, current_j: float, validation_results: Dict):
+        """Validate that objective function is monotone."""
+        if current_j < previous_j - 1e-10:
+            self.logger.error(f"Monotone violation: {previous_j:.6f} -> {current_j:.6f}")
+            validation_results['monotone_violations'] += 1
+            return False
+        return True
+    
+    def _validate_incremental_correctness(self, features: np.ndarray, stats: ClusteringStats, validation_results: Dict):
+        """Validate incremental updates match full recomputation (sample)."""
+        sample_size = min(50, len(features))
+        sample_indices = np.random.choice(len(features), sample_size, replace=False)
+        
+        for idx in sample_indices:
+            current_cluster = int(stats.assignments[idx])
+            other_clusters = [c for c in range(stats.n_clusters) if c != current_cluster]
+            if not other_clusters:
+                continue
+                
+            target_cluster = np.random.choice(other_clusters)
+            
+            # Calculate incremental delta
+            delta_inc = stats.calculate_move_delta(idx, current_cluster, target_cluster)
+            
+            # Calculate full recomputation (simplified)
+            temp_assignments = stats.assignments.copy()
+            temp_assignments[idx] = target_cluster
+            temp_stats = ClusteringStats(features, temp_assignments)
+            
+            # Compare CV ratios
+            cv_inc = delta_inc['cv']
+            cv_full = temp_stats.get_cv_ratio() - stats.get_cv_ratio()
+            
+            if abs(cv_inc - cv_full) / max(1, abs(cv_full)) > 1e-8:
+                validation_results['incremental_checks_failed'] += 1
+            else:
+                validation_results['incremental_checks_passed'] += 1
+
     def _generate_final_report(self):
         """Generate final optimization report."""
         try:

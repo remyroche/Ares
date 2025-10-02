@@ -21,6 +21,7 @@ from .step2_initial_clustering import InitialClusteringStep
 from .iterative_optimization import IterativeOptimization
 from .step8_validation import ValidationStep
 from .step9_results_consolidation import ResultsConsolidationStep
+from .step10_comprehensive_reporting import ComprehensiveReporter
 from ..shared_utils import get_logger
 
 
@@ -38,6 +39,7 @@ class ClusteringOrchestrator:
         self.iterative_optimizer = IterativeOptimization(verbose=verbose)
         self.step8 = ValidationStep(verbose=verbose)
         self.step9 = ResultsConsolidationStep(verbose=verbose)
+        self.step10 = ComprehensiveReporter(verbose=verbose)
         
         # Performance tracking
         self.performance_metrics = {
@@ -130,6 +132,17 @@ class ClusteringOrchestrator:
             step_start = time.time()
             final_results = await self.step9.execute(context, config)
             self._record_step_time("step9_results_consolidation", time.time() - step_start)
+            
+            # Step 10: Comprehensive Reporting
+            tprint("📊 Step 10: Comprehensive Reporting", "INFO")
+            step_start = time.time()
+            comprehensive_report = self.step10.generate_comprehensive_report(
+                context, final_results, context.market_data
+            )
+            self._record_step_time("step10_comprehensive_reporting", time.time() - step_start)
+            
+            # Add comprehensive report to final results
+            final_results['comprehensive_report'] = comprehensive_report
             
             # Store final results in context
             context.final_results = final_results

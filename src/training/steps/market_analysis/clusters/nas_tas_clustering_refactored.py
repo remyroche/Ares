@@ -65,11 +65,11 @@ from ..shared_utils import (
     CharacteristicsGenerator,
 )
 
-from ...shared_utils.calibration_registry import (
-    get_current_calibration,
-    get_quality_thresholds as get_calibrated_thresholds,
-    update_quality_calibration,
-)
+# from ...shared_utils.calibration_registry import (
+#     get_current_calibration,
+#     get_quality_thresholds as get_calibrated_thresholds,
+#     update_quality_calibration,
+# )
 
 # Import the refactored clustering modules
 from . import (
@@ -1018,7 +1018,8 @@ class NASTASClusteringComponent:
     def _get_calibrated_quality_thresholds(self) -> Dict[str, float]:
         """Get calibrated quality thresholds."""
         try:
-            return get_calibrated_thresholds()
+            # return get_calibrated_thresholds()
+            return {}
         except Exception as e:
             tprint(f"Failed to get calibrated quality thresholds: {e}", "WARNING")
             return {}

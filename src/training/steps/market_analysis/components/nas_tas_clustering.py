@@ -2113,7 +2113,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         explained_ratio_list = explained_ratio.tolist() if explained_ratio.size else []
         cumulative_variance = float(np.sum(explained_ratio)) if explained_ratio.size else 0.0
 
-        artifact_dir = Path('artifacts')
+        artifact_dir = Path(getattr(self.config, 'artifact_dir', 'artifacts'))
         artifact_dir.mkdir(parents=True, exist_ok=True)
         projection_path = artifact_dir / 'clustering_projection.pkl'
         with projection_path.open('wb') as handle:

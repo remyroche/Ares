@@ -21,7 +21,8 @@ from .step2_initial_clustering import InitialClusteringStep
 from .iterative_optimization import IterativeOptimization
 from .step8_validation import ValidationStep
 from .step9_results_consolidation import ResultsConsolidationStep
-from ...shared_utils import get_logger
+from .step10_comprehensive_reporting import ComprehensiveReporter
+from ..shared_utils import get_logger
 
 
 class ClusteringOrchestrator:
@@ -38,6 +39,7 @@ class ClusteringOrchestrator:
         self.iterative_optimizer = IterativeOptimization(verbose=verbose)
         self.step8 = ValidationStep(verbose=verbose)
         self.step9 = ResultsConsolidationStep(verbose=verbose)
+        self.step10 = ComprehensiveReporter(verbose=verbose)
         
         # Performance tracking
         self.performance_metrics = {
@@ -60,6 +62,7 @@ class ClusteringOrchestrator:
             # Initialize performance tracking
             self.performance_metrics["start_time"] = time.time()
             tprint("🚀 Starting NAS-TAS Clustering Pipeline (Refactored)", "INFO")
+            tprint("🎯 Using advanced 3-step iterative clustering with risk mitigation", "INFO")
             
             # Create clustering context
             context = ClusteringContext(
@@ -81,6 +84,8 @@ class ClusteringOrchestrator:
             # Add performance metrics to results
             if hasattr(context, 'final_results'):
                 context.final_results['performance_metrics'] = self.performance_metrics
+                context.final_results['clustering_method'] = 'advanced_3_step_iterative'
+                context.final_results['risk_mitigation_enabled'] = True
             
             return context.final_results
             
@@ -127,6 +132,17 @@ class ClusteringOrchestrator:
             step_start = time.time()
             final_results = await self.step9.execute(context, config)
             self._record_step_time("step9_results_consolidation", time.time() - step_start)
+            
+            # Step 10: Comprehensive Reporting
+            tprint("📊 Step 10: Comprehensive Reporting", "INFO")
+            step_start = time.time()
+            comprehensive_report = self.step10.generate_comprehensive_report(
+                context, final_results, context.market_data
+            )
+            self._record_step_time("step10_comprehensive_reporting", time.time() - step_start)
+            
+            # Add comprehensive report to final results
+            final_results['comprehensive_report'] = comprehensive_report
             
             # Store final results in context
             context.final_results = final_results

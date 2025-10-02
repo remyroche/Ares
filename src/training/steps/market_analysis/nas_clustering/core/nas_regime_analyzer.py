@@ -4,29 +4,61 @@ NAS Regime Analyzer
 Implementation for NAS regime analysis.
 """
 
+from rich.console import Console
+from rich import print as tprint
+
+tprint("🔍 [NAS_REGIME_ANALYZER] Loading NAS Regime Analyzer module")
+tprint("🔍 [NAS_REGIME_ANALYZER] Module path: /workspace/src/training/steps/market_analysis/nas_clustering/core/nas_regime_analyzer.py")
+tprint("🔍 [NAS_REGIME_ANALYZER] Purpose: Implementation for NAS regime analysis")
+tprint("🔍 [NAS_REGIME_ANALYZER] Status: Starting module import")
+
 import numpy as np
+tprint("🔍 [NAS_REGIME_ANALYZER] ✓ NumPy imported successfully")
+
 from typing import Dict, List, Any, Optional, Tuple
+tprint("🔍 [NAS_REGIME_ANALYZER] ✓ Typing imports completed")
+
 from dataclasses import dataclass
+tprint("🔍 [NAS_REGIME_ANALYZER] ✓ Dataclasses imported successfully")
+
 from enum import Enum
+tprint("🔍 [NAS_REGIME_ANALYZER] ✓ Enum imported successfully")
+
 import time
+tprint("🔍 [NAS_REGIME_ANALYZER] ✓ Time module imported successfully")
+
+tprint("🔍 [NAS_REGIME_ANALYZER] All imports completed successfully")
 
 
 class AnalysisType(Enum):
     """Types of regime analysis."""
+    tprint("🔍 [ANALYSIS_TYPE] Defining AnalysisType enum")
     PERFORMANCE = "performance"
+    tprint("🔍 [ANALYSIS_TYPE] ✓ PERFORMANCE defined")
     STABILITY = "stability"
+    tprint("🔍 [ANALYSIS_TYPE] ✓ STABILITY defined")
     TRANSITION = "transition"
+    tprint("🔍 [ANALYSIS_TYPE] ✓ TRANSITION defined")
     CORRELATION = "correlation"
+    tprint("🔍 [ANALYSIS_TYPE] ✓ CORRELATION defined")
+    tprint("🔍 [ANALYSIS_TYPE] All analysis types defined successfully")
 
 
 @dataclass
 class AnalysisConfig:
     """Configuration for regime analysis."""
+    tprint("🔍 [ANALYSIS_CONFIG] Defining AnalysisConfig dataclass")
     analysis_types: List[AnalysisType]
+    tprint("🔍 [ANALYSIS_CONFIG] ✓ analysis_types field defined")
     window_size: int = 50
+    tprint("🔍 [ANALYSIS_CONFIG] ✓ window_size field defined (default: 50)")
     correlation_threshold: float = 0.7
+    tprint("🔍 [ANALYSIS_CONFIG] ✓ correlation_threshold field defined (default: 0.7)")
     stability_threshold: float = 0.8
+    tprint("🔍 [ANALYSIS_CONFIG] ✓ stability_threshold field defined (default: 0.8)")
     performance_metrics: List[str] = None
+    tprint("🔍 [ANALYSIS_CONFIG] ✓ performance_metrics field defined (default: None)")
+    tprint("🔍 [ANALYSIS_CONFIG] All configuration fields defined successfully")
 
 
 class NASRegimeAnalyzer:
@@ -38,10 +70,27 @@ class NASRegimeAnalyzer:
         Args:
             config: Analysis configuration
         """
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] Initializing NASRegimeAnalyzer")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Config received: {config}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Config type: {type(config)}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Analysis types: {config.analysis_types}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Window size: {config.window_size}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Correlation threshold: {config.correlation_threshold}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_INIT] Stability threshold: {config.stability_threshold}")
+        
         self.config = config
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] ✓ Config assigned to self.config")
+        
         self.analysis_results = []
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] ✓ analysis_results initialized as empty list")
+        
         self.regime_patterns = {}
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] ✓ regime_patterns initialized as empty dict")
+        
         self.analysis_metrics = {}
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] ✓ analysis_metrics initialized as empty dict")
+        
+        tprint("🔍 [NAS_REGIME_ANALYZER_INIT] Initialization complete!")
         
     def analyze_regimes(self, data: np.ndarray, regimes: List[Dict], 
                        architectures: List[Dict]) -> Dict:
@@ -55,49 +104,99 @@ class NASRegimeAnalyzer:
         Returns:
             Dictionary containing analysis results
         """
+        tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Starting regime analysis")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data shape: {data.shape}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data type: {type(data)}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data dtype: {data.dtype}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data min: {np.min(data):.6f}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data max: {np.max(data):.6f}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data mean: {np.mean(data):.6f}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Data std: {np.std(data):.6f}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Number of regimes: {len(regimes)}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Number of architectures: {len(architectures)}")
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Analysis types: {self.config.analysis_types}")
+        
         start_time = time.time()
+        tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Start time recorded: {start_time}")
         
         try:
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Starting try block")
             analysis_results = {}
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Analysis results dictionary initialized")
             
             # Performance analysis
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Checking for performance analysis...")
             if AnalysisType.PERFORMANCE in self.config.analysis_types:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Performance analysis enabled - starting analysis")
                 performance_results = self._analyze_performance(data, regimes, architectures)
                 analysis_results['performance'] = performance_results
+                tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Performance analysis completed: {performance_results}")
+            else:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Performance analysis disabled")
             
             # Stability analysis
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Checking for stability analysis...")
             if AnalysisType.STABILITY in self.config.analysis_types:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Stability analysis enabled - starting analysis")
                 stability_results = self._analyze_stability(data, regimes)
                 analysis_results['stability'] = stability_results
+                tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Stability analysis completed: {stability_results}")
+            else:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Stability analysis disabled")
             
             # Transition analysis
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Checking for transition analysis...")
             if AnalysisType.TRANSITION in self.config.analysis_types:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Transition analysis enabled - starting analysis")
                 transition_results = self._analyze_transitions(regimes)
                 analysis_results['transitions'] = transition_results
+                tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Transition analysis completed: {transition_results}")
+            else:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Transition analysis disabled")
             
             # Correlation analysis
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Checking for correlation analysis...")
             if AnalysisType.CORRELATION in self.config.analysis_types:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Correlation analysis enabled - starting analysis")
                 correlation_results = self._analyze_correlations(data, regimes, architectures)
                 analysis_results['correlations'] = correlation_results
+                tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Correlation analysis completed: {correlation_results}")
+            else:
+                tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Correlation analysis disabled")
             
             # Record analysis
+            analysis_time = time.time() - start_time
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Analysis completed in {analysis_time:.4f}s")
+            
             analysis_record = {
                 'analysis_results': analysis_results,
-                'analysis_time': time.time() - start_time,
+                'analysis_time': analysis_time,
                 'timestamp': time.time()
             }
+            tprint("🔍 [NAS_REGIME_ANALYZER_ANALYZE] Creating analysis record...")
             self.analysis_results.append(analysis_record)
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Analysis record added to history (total: {len(self.analysis_results)})")
             
-            return {
+            result = {
                 'analysis_results': analysis_results,
-                'analysis_time': time.time() - start_time
+                'analysis_time': analysis_time
             }
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ✓ Analysis completed successfully")
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Result: {result}")
+            return result
             
         except Exception as e:
-            return {
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] ❌ Exception occurred: {e}")
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Exception type: {type(e)}")
+            analysis_time = time.time() - start_time
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Analysis time before error: {analysis_time:.4f}s")
+            
+            error_result = {
                 'error': str(e),
-                'analysis_time': time.time() - start_time
+                'analysis_time': analysis_time
             }
+            tprint(f"🔍 [NAS_REGIME_ANALYZER_ANALYZE] Returning error result: {error_result}")
+            return error_result
     
     def _analyze_performance(self, data: np.ndarray, regimes: List[Dict], 
                            architectures: List[Dict]) -> Dict:

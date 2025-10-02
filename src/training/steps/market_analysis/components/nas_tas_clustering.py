@@ -1732,14 +1732,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _prepare_features(self, market_data: pd.DataFrame) -> Any:
         """Prepare market features for clustering."""
         tprint("Step 4: Preparing features using shared utilities", "INFO")
-        features = prepare_market_features(market_data, self.feature_config, verbose=True)
-        if features is None:
+        feature_frame, feature_metadata = prepare_market_features(
+            market_data,
+            self.feature_config,
+            verbose=True,
+        )
+        if feature_frame is None or feature_frame.empty:
             tprint("Failed to prepare features for clustering", "ERROR")
             raise ValueError("Failed to prepare features for clustering")
 
-        self.features = features
-        tprint(f"Features prepared: {features.shape}", "SUCCESS")
-        return features
+        self.feature_metadata = feature_metadata
+        features_array = feature_frame.to_numpy()
+        self.features = features_array
+        tprint(f"Features prepared: {features_array.shape}", "SUCCESS")
+        return features_array
 
     def _select_regime_features(
         self, 

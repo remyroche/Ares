@@ -7,11 +7,19 @@ redundancy between NAS and TAS components.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import time
 import psutil
 from src.utils.tprint import tprint, tprint_debug, tprint_success, tprint_warning, tprint_error
+
+from src.config.regime_feature_thresholds import get_regime_feature_thresholds
+from .feature_filters import (
+    apply_quality_thresholds,
+    filter_low_variance,
+    prune_correlated_features,
+    winsorize_frame,
+)
 
 
 @dataclass
@@ -32,13 +40,26 @@ class FeatureConfig:
     # Feature processing options
     use_standardized_features: bool = True
     drop_highly_correlated: bool = True
-    correlation_threshold: float = 0.95
+    correlation_threshold: Optional[float] = None
+
+    # Feature quality thresholds
+    min_variance: Optional[float] = None
+    winsorize_lower_quantile: Optional[float] = None
+    winsorize_upper_quantile: Optional[float] = None
+    min_persistence: Optional[float] = None
+    max_noise_ratio: Optional[float] = None
+    min_stability: Optional[float] = None
     
     # Data validation
     handle_missing_values: bool = True
     min_observations: int = 100
     
     def __post_init__(self):
+        thresholds = get_regime_feature_thresholds()
+        filter_thresholds = thresholds.get('filter_thresholds', {})
+        quality_thresholds = thresholds.get('quality_thresholds', {})
+        quality_filter_cfg = filter_thresholds.get('quality', {})
+
         if self.feature_categories is None:
             # Use regime-focused feature categories for regime classification
             self.feature_categories = [
@@ -48,12 +69,45 @@ class FeatureConfig:
                 'regime_statistical'       # Statistical regime features (11 features)
             ]
 
+        if self.correlation_threshold is None:
+            self.correlation_threshold = (
+                filter_thresholds.get('correlation', {}).get('threshold', 0.95)
+            )
+
+        if self.min_variance is None:
+            self.min_variance = filter_thresholds.get('variance', {}).get('min_variance', 1.0e-8)
+
+        if self.winsorize_lower_quantile is None:
+            self.winsorize_lower_quantile = (
+                filter_thresholds.get('winsorization', {}).get('lower_quantile', 0.01)
+            )
+
+        if self.winsorize_upper_quantile is None:
+            self.winsorize_upper_quantile = (
+                filter_thresholds.get('winsorization', {}).get('upper_quantile', 0.99)
+            )
+
+        if self.min_persistence is None:
+            self.min_persistence = quality_filter_cfg.get(
+                'min_persistence', quality_thresholds.get('min_regime_persistence', 0.2)
+            )
+
+        if self.max_noise_ratio is None:
+            self.max_noise_ratio = quality_filter_cfg.get(
+                'max_noise_ratio', quality_thresholds.get('max_feature_noise_ratio', 1.2)
+            )
+
+        if self.min_stability is None:
+            self.min_stability = quality_filter_cfg.get(
+                'min_stability', quality_thresholds.get('min_temporal_stability', 0.1)
+            )
+
 
 def prepare_market_features(
     market_data: pd.DataFrame,
     feature_config: Optional[FeatureConfig] = None,
     verbose: bool = False
-) -> Optional[np.ndarray]:
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Prepare comprehensive market features for regime detection and clustering.
     
@@ -67,7 +121,7 @@ def prepare_market_features(
         verbose: Whether to enable verbose logging
         
     Returns:
-        Feature array or None if preparation fails
+        Tuple containing the processed feature DataFrame and associated metadata.
         
     Raises:
         ValueError: If market data is invalid or insufficient
@@ -253,114 +307,156 @@ def prepare_market_features(
                 tprint_error(error_msg)
             raise ValueError(error_msg) from e
         
-        # Convert to numpy array and handle missing values
-        if verbose:
-            tprint_debug("🔧 [SHARED_FEATURES] Handling missing values")
+        metadata: Dict[str, Any] = {
+            'columns': {col: {} for col in features_df.columns},
+            'filters': {},
+            'dropped_columns': {},
+        }
 
-        # Convert to numpy array
-        features_array = features_df.values
-
-        # Check for NaN/inf values before processing
-        nan_mask = np.isnan(features_array)
-        inf_mask = np.isinf(features_array)
-        total_invalid = np.sum(nan_mask) + np.sum(inf_mask)
-
-        if verbose:
-            tprint_debug(f"📊 [SHARED_FEATURES] Found {np.sum(nan_mask)} NaN and {np.sum(inf_mask)} Inf values ({total_invalid} total invalid)")
-
-        if total_invalid > 0:
+        # Winsorize extreme values prior to downstream filtering
+        if (
+            feature_config.winsorize_lower_quantile is not None
+            and feature_config.winsorize_upper_quantile is not None
+        ):
             if verbose:
-                tprint_warning(f"⚠️ [SHARED_FEATURES] Found {total_invalid} invalid values, attempting to fix...")
+                tprint_debug("🔧 [SHARED_FEATURES] Applying winsorization")
+            features_df, winsor_meta = winsorize_frame(
+                features_df,
+                feature_config.winsorize_lower_quantile,
+                feature_config.winsorize_upper_quantile,
+            )
+            metadata['filters']['winsorization'] = winsor_meta
+            for col, info in winsor_meta.items():
+                metadata['columns'].setdefault(col, {}).update({'winsorization': info})
 
-            # Replace infinite values with NaN first
-            features_array = np.where(np.isinf(features_array), np.nan, features_array)
+        # Handle missing and infinite values
+        if verbose:
+            tprint_debug("🔧 [SHARED_FEATURES] Handling missing and infinite values")
 
-            # Fill missing values with backward fill only (no forward fill to prevent data leakage)
-            features_df = pd.DataFrame(features_array, index=features_df.index, columns=features_df.columns)
+        features_df = features_df.replace([np.inf, -np.inf], np.nan)
+        rows_before = len(features_df)
+
+        if feature_config.handle_missing_values:
             features_df = features_df.fillna(method='bfill')
-            features_array = features_df.values
 
-            # Check remaining NaN values
-            remaining_nan = np.sum(np.isnan(features_array))
-            if remaining_nan > 0 and verbose:
-                tprint_warning(f"⚠️ [SHARED_FEATURES] Still have {remaining_nan} NaN values after backward fill")
+        features_df = features_df.dropna(axis=0, how='any')
+        rows_after = len(features_df)
+        metadata['filters']['missing_values'] = {
+            'rows_before': rows_before,
+            'rows_after': rows_after,
+            'rows_removed': rows_before - rows_after,
+        }
 
-            # Remove rows with any remaining NaN values
-            valid_rows = ~np.isnan(features_array).any(axis=1)
-            features_array = features_array[valid_rows]
-
+        if rows_after == 0:
             if verbose:
-                removed_rows = len(features_df) - len(features_array)
-                tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
+                tprint_error("❌ [SHARED_FEATURES] No valid rows after missing value handling")
+            raise ValueError("No valid rows after missing value handling")
 
-        if len(features_array) == 0:
+        # Variance filtering
+        variance_result = filter_low_variance(features_df, feature_config.min_variance)
+        metadata['filters']['variance'] = {
+            'dropped': variance_result.dropped_columns,
+            'metrics': variance_result.column_metadata,
+        }
+        for col, info in variance_result.column_metadata.items():
+            metadata['columns'].setdefault(col, {}).update(info)
+        if variance_result.dropped_columns:
+            metadata['dropped_columns']['variance'] = variance_result.dropped_columns
             if verbose:
-                tprint_error("❌ [SHARED_FEATURES] No valid features after cleaning - all rows contained NaN/inf values")
-            raise ValueError("No valid features after cleaning - all rows contained NaN/inf values")
-        
-        # Remove highly correlated features if requested
-        if feature_config.drop_highly_correlated:
+                tprint_debug(f"📊 [SHARED_FEATURES] Dropped low-variance features: {variance_result.dropped_columns}")
+        features_df = variance_result.frame
+
+        if features_df.empty:
+            raise ValueError("No features remain after variance filtering")
+
+        # Quality thresholds (persistence/noise/stability)
+        quality_filtered_df, quality_metrics, quality_dropped = apply_quality_thresholds(
+            features_df,
+            feature_config.min_persistence,
+            feature_config.max_noise_ratio,
+            feature_config.min_stability,
+        )
+        metadata['filters']['quality'] = {
+            'metrics': quality_metrics,
+            'dropped': quality_dropped,
+        }
+        for col, info in quality_metrics.items():
+            metadata['columns'].setdefault(col, {}).update(info)
+        if quality_dropped:
+            metadata['dropped_columns']['quality'] = list(quality_dropped.keys())
             if verbose:
-                tprint_debug("🔧 [SHARED_FEATURES] Removing highly correlated features")
-            
-            # Calculate correlation matrix
-            corr_matrix = np.corrcoef(features_array.T)
-            
-            # Find highly correlated pairs
-            high_corr_pairs = []
-            for i in range(len(corr_matrix)):
-                for j in range(i+1, len(corr_matrix)):
-                    if abs(corr_matrix[i, j]) > 0.95:  # High correlation threshold
-                        high_corr_pairs.append((i, j))
-            
-            # Remove one feature from each highly correlated pair
-            features_to_remove = set()
-            for i, j in high_corr_pairs:
-                if i not in features_to_remove:
-                    features_to_remove.add(j)
-            
-            # Remove highly correlated features
-            if features_to_remove:
-                keep_indices = [i for i in range(features_array.shape[1]) if i not in features_to_remove]
-                features_array = features_array[:, keep_indices]
-                
+                tprint_debug(f"📊 [SHARED_FEATURES] Dropped quality-failing features: {quality_dropped}")
+        features_df = quality_filtered_df
+
+        if features_df.empty:
+            raise ValueError("No features remain after quality filtering")
+
+        # Correlation pruning
+        if feature_config.drop_highly_correlated and features_df.shape[1] > 1:
+            corr_result = prune_correlated_features(features_df, feature_config.correlation_threshold)
+            metadata['filters']['correlation'] = {
+                'dropped': corr_result.dropped_columns,
+                'metrics': corr_result.column_metadata,
+            }
+            for col, info in corr_result.column_metadata.items():
+                metadata['columns'].setdefault(col, {}).update(info)
+            if corr_result.dropped_columns:
+                metadata['dropped_columns']['correlation'] = corr_result.dropped_columns
                 if verbose:
-                    tprint_debug(f"📊 [SHARED_FEATURES] Removed {len(features_to_remove)} highly correlated features")
-        
+                    tprint_debug(f"📊 [SHARED_FEATURES] Dropped correlated features: {corr_result.dropped_columns}")
+            features_df = corr_result.frame
+
+        if features_df.empty:
+            raise ValueError("No features remain after correlation pruning")
+
+        # Final NaN guard
+        features_df = features_df.replace([np.inf, -np.inf], np.nan).dropna(axis=0, how='any')
+
+        if len(features_df) < feature_config.min_observations:
+            if verbose:
+                tprint_error(
+                    f"❌ [SHARED_FEATURES] Insufficient valid observations: {len(features_df)} < {feature_config.min_observations}"
+                )
+            raise ValueError(
+                f"Insufficient valid observations: {len(features_df)} < {feature_config.min_observations}"
+            )
+
         # Standardize features if requested
         if feature_config.use_standardized_features:
             if verbose:
                 tprint_debug("🔧 [SHARED_FEATURES] Standardizing features")
-            
+
             from sklearn.preprocessing import StandardScaler
+
             scaler = StandardScaler()
-            features_array = scaler.fit_transform(features_array)
-        
-        # Final validation
-        if features_array.shape[0] < feature_config.min_observations:
-            if verbose:
-                tprint_error(f"❌ [SHARED_FEATURES] Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
-            raise ValueError(f"Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
-        
+            scaled_values = scaler.fit_transform(features_df.values)
+            features_df = pd.DataFrame(
+                scaled_values,
+                index=features_df.index,
+                columns=features_df.columns,
+            )
+            metadata['filters']['standardization'] = {'applied': True}
+        else:
+            metadata['filters']['standardization'] = {'applied': False}
+
         # Performance metrics
         feature_prep_time = time.time() - feature_prep_start
         final_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
         memory_used = final_memory - initial_memory
-        
+
         if verbose:
-            tprint_success(f"✅ [SHARED_FEATURES] Features prepared: {features_array.shape} in {feature_prep_time:.3f}s")
-            tprint_debug(f"📊 [SHARED_FEATURES] Feature array memory usage: {features_array.nbytes / 1024 / 1024:.1f} MB")
+            tprint_success(f"✅ [SHARED_FEATURES] Features prepared: {features_df.shape} in {feature_prep_time:.3f}s")
+            tprint_debug(f"📊 [SHARED_FEATURES] Feature frame memory usage: {features_df.values.nbytes / 1024 / 1024:.1f} MB")
             tprint_debug(f"📊 [SHARED_FEATURES] Memory used: {memory_used:.1f} MB")
-            
-            # Feature statistics
-            if features_array.size > 0:
-                tprint_debug(f"📊 [SHARED_FEATURES] Feature statistics:")
-                tprint_debug(f"   - Mean: {np.mean(features_array):.6f}")
-                tprint_debug(f"   - Std: {np.std(features_array):.6f}")
-                tprint_debug(f"   - Min: {np.min(features_array):.6f}")
-                tprint_debug(f"   - Max: {np.max(features_array):.6f}")
-        
-        return features_array
+
+            if not features_df.empty:
+                tprint_debug("📊 [SHARED_FEATURES] Feature statistics:")
+                tprint_debug(f"   - Mean: {float(features_df.values.mean()):.6f}")
+                tprint_debug(f"   - Std: {float(features_df.values.std()):.6f}")
+                tprint_debug(f"   - Min: {float(features_df.values.min()):.6f}")
+                tprint_debug(f"   - Max: {float(features_df.values.max()):.6f}")
+
+        return features_df, metadata
 
     except Exception as e:
         if verbose:

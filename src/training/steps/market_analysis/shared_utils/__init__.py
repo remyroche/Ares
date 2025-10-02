@@ -6,7 +6,7 @@ NAS and TAS components, including feature preparation, configuration validation,
 logging utilities, metrics calculation, and regime characteristics.
 """
 
-from .features import prepare_market_features, FeatureConfig
+from .features import prepare_market_features, FeatureConfig, FeaturePreparationResult
 from .config import (
     validate_regime_count, normalize_weights, validate_algorithm_type,
     create_default_config, create_adaptive_config, ConfigValidator, BaseConfig, NASConfig, TASConfig, HybridConfig
@@ -27,7 +27,7 @@ from .characteristics import (
 
 __all__ = [
     # Features
-    'prepare_market_features', 'FeatureConfig',
+    'prepare_market_features', 'FeatureConfig', 'FeaturePreparationResult',
     
     # Configuration
     'validate_regime_count', 'normalize_weights', 'validate_algorithm_type',

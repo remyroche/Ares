@@ -59,6 +59,7 @@ if not hasattr(nas_module, "get_logger"):
     nas_module.get_logger = lambda name: _DummyLogger()  # type: ignore[attr-defined]
 
 NASTASClusteringComponent = nas_module.NASTASClusteringComponent
+FeaturePreparationResult = nas_module.FeaturePreparationResult
 
 
 def _build_component():
@@ -146,28 +147,37 @@ def test_prepare_features_uses_shared_utility(monkeypatch):
 
     prepared = pd.DataFrame({"feature": [0.1, 0.2, 0.3]})
 
-    def fake_prepare_market_features(data, feature_config, verbose=True):
+    def fake_prepare_market_features(data, feature_config, verbose=True, return_metadata=False):
         assert data.equals(market_data)
         assert feature_config == component.feature_config
         assert verbose is True
-        return prepared
+        assert return_metadata is True
+        return FeaturePreparationResult(
+            features_array=prepared.values,
+            features_df=prepared.copy(),
+            summary={},
+            metadata={'stage_metadata': {}, 'feature_columns': list(prepared.columns)},
+        )
 
     monkeypatch.setattr(
         "src.training.steps.market_analysis.components.nas_tas_clustering.prepare_market_features",
         fake_prepare_market_features,
     )
 
-    features = component._prepare_features(market_data)
+    result = component._prepare_features(market_data)
 
-    pd.testing.assert_frame_equal(features, prepared)
-    pd.testing.assert_frame_equal(component.features, prepared)
+    assert isinstance(result, nas_module.FeaturePreparationResult)
+    pd.testing.assert_frame_equal(result.features_df, prepared)
+    pd.testing.assert_frame_equal(component.stage1_features_df, prepared)
+    assert component.features.shape == prepared.values.shape
+    assert component.stage1_metadata['feature_columns'] == list(prepared.columns)
 
 
 def test_prepare_features_raises_when_none(monkeypatch):
     component = _build_component()
     market_data = pd.DataFrame({"close": [1, 2, 3]})
 
-    def fake_prepare_market_features(data, feature_config, verbose=True):
+    def fake_prepare_market_features(data, feature_config, verbose=True, return_metadata=False):
         return None
 
     monkeypatch.setattr(
